@@ -5,7 +5,9 @@
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 
-// Values must stay in sync with EdFi.DataManagementService.Core.External.Logging.RequestLoggingEventIds.
+// The event id values are defined in docs/LOGGING.md and must stay in sync with
+// EdFi.DataManagementService.Core.External.Logging.RequestLoggingEventIds. CMS and DMS build as
+// separate solutions, so each application pins the documented values with its own unit test.
 public static class RequestLoggingEventIds
 {
     public static readonly EventId HttpRequestCompleted = new(1228001, "HttpRequestCompleted");

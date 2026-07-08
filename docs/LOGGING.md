@@ -32,6 +32,12 @@ this contract. The console sink is the production collector contract for CMS and
 DMS request logs and must emit newline-delimited JSON using
 `Serilog.Formatting.Json.JsonFormatter, Serilog`.
 
+The bundled `appsettings.json` files configure the file sink with the same JSON
+formatter, so file logs carry the same structured properties as console logs.
+File logs are a local convenience rather than part of the collector contract,
+and they omit `RenderedMessage` because the file sink does not set
+`renderMessage`.
+
 > [!WARNING]
 > Do not set `Serilog:WriteTo:*:Args:outputTemplate` in an environment override
 > such as a local `appsettings.development.json`. Serilog configuration arrays
@@ -49,6 +55,11 @@ request logging layer:
 * `Application`: `EdFi.DmsConfigurationService` or
   `EdFi.DataManagementService`.
 * `EventName`: `HttpRequestCompleted` or `HttpRequestFailed`.
+* `EventId`: structured event id with `Id` `1228001` (`HttpRequestCompleted`)
+  or `1228002` (`HttpRequestFailed`). This document is the source of truth for
+  these values; CMS and DMS build as separate solutions, so each application
+  defines them in its own `RequestLoggingEventIds` class and pins them with its
+  own unit test.
 * `SourceContext`: logger category emitted by Serilog/Microsoft logging.
 * `RequestLayer`: DMS-only value of `Frontend` or `Core`. Use this field to
   separate externally visible HTTP request events from core pipeline request
@@ -119,8 +130,10 @@ remain visible to the request-log contract as client-error responses rather than
 failures. CMS rethrows the original exception for upstream middleware;
 DMS frontend preserves its existing behavior of wrapping the original exception
 after logging and writing its existing JSON error response when the response has
-not started. DMS core preserves its existing behavior of wrapping core pipeline
-failures after logging them.
+not started. The `traceId` in that error response body is the same sanitized
+value the request logs carry as `TraceId`, so a client-reported trace id can be
+located in the logs. DMS core preserves its existing behavior of wrapping core
+pipeline failures after logging them.
 
 Information-level request logs must not include request bodies, response
 bodies, authorization headers, bearer tokens, API keys, client secrets,

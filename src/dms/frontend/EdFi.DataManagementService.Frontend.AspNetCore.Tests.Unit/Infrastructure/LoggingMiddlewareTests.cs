@@ -15,13 +15,16 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 using Serilog.Extensions.Logging;
 using Serilog.Formatting.Json;
+using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
@@ -342,7 +345,7 @@ public class Given_LoggingMiddleware
     }
 
     [Test]
-    public async Task It_writes_the_trace_identifier_not_the_correlation_id_in_the_500_error_body()
+    public async Task It_writes_the_logged_trace_id_in_the_500_error_body_so_clients_can_correlate()
     {
         var httpContext = new DefaultHttpContext();
         httpContext.TraceIdentifier = "host-trace-identifier";
@@ -362,9 +365,8 @@ public class Given_LoggingMiddleware
         await invoke.Should().ThrowAsync<InvalidOperationException>();
 
         var body = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(responseBody.ToArray()));
-        body?["traceId"]?.GetValue<string>().Should().Be("host-trace-identifier");
+        (body?["traceId"]?.GetValue<string>()).Should().Be("operator-correlation-id");
 
-        // The log events still carry the sanitized correlation value, proving the two diverge.
         var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
         entry.State.ContainStructuredProperty("TraceId", "operator-correlation-id");
         entry
@@ -440,15 +442,15 @@ public class Given_LoggingMiddleware
         var json = JsonNode.Parse(writer.ToString());
         var properties = json?["Properties"];
 
-        properties?["Application"]?.GetValue<string>().Should().Be("EdFi.DataManagementService");
-        properties?["EventName"]?.GetValue<string>().Should().Be("HttpRequestCompleted");
-        properties?["TraceId"]?.GetValue<string>().Should().Be("json-trace-id");
-        properties?["RequestLayer"]?.GetValue<string>().Should().Be("Frontend");
-        properties?["Method"]?.GetValue<string>().Should().Be("GET");
-        properties?["Path"]?.GetValue<string>().Should().Be("/ed-fi/students");
-        properties?["StatusCode"]?.GetValue<int>().Should().Be(200);
-        properties?["DurationMs"]?.GetValue<long>().Should().Be(42L);
-        json?["RenderedMessage"]?.GetValue<string>().Should().Contain("DMS request completed");
+        (properties?["Application"]?.GetValue<string>()).Should().Be("EdFi.DataManagementService");
+        (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
+        (properties?["TraceId"]?.GetValue<string>()).Should().Be("json-trace-id");
+        (properties?["RequestLayer"]?.GetValue<string>()).Should().Be("Frontend");
+        (properties?["Method"]?.GetValue<string>()).Should().Be("GET");
+        (properties?["Path"]?.GetValue<string>()).Should().Be("/ed-fi/students");
+        (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
+        (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
+        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("DMS request completed");
     }
 
     [Test]
@@ -466,6 +468,121 @@ public class Given_LoggingMiddleware
 
         writeTo.Should().NotBeNull();
         writeTo!.Any(sink => IsConsoleJsonFormatterSink(sink)).Should().BeTrue();
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void It_emits_json_console_output_when_serilog_reads_the_actual_appsettings_configuration()
+    {
+        var appsettingsPath = FindRepositoryFile(
+            "src",
+            "dms",
+            "frontend",
+            "EdFi.DataManagementService.Frontend.AspNetCore",
+            "appsettings.json"
+        );
+        var configuration = BuildConfigurationWithRedirectedFileSink(appsettingsPath);
+
+        var originalConsoleOut = Console.Out;
+        using var consoleOutput = new StringWriter();
+        try
+        {
+            Console.SetOut(consoleOutput);
+            using var serilogLogger = new Serilog.LoggerConfiguration()
+                .ReadFrom.Configuration(configuration)
+                .Enrich.FromLogContext()
+                .CreateLogger();
+            using var loggerFactory = new SerilogLoggerFactory(serilogLogger);
+            var logger = loggerFactory.CreateLogger("DmsAppsettingsBindingTest");
+            using var scope = logger.BeginScope(
+                new Dictionary<string, object>
+                {
+                    ["Application"] = "EdFi.DataManagementService",
+                    ["TraceId"] = "dms-appsettings-binding-trace-id",
+                    ["RequestLayer"] = "Frontend",
+                    ["Method"] = "GET",
+                    ["Path"] = "/ed-fi/students",
+                    ["PathBase"] = "",
+                }
+            );
+
+            logger.Log(
+                LogLevel.Information,
+                RequestLoggingEventIds.HttpRequestCompleted,
+                "{EventName}: DMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                RequestLoggingEventIds.HttpRequestCompleted.Name,
+                "GET",
+                "/ed-fi/students",
+                200,
+                42L,
+                "dms-appsettings-binding-trace-id"
+            );
+        }
+        finally
+        {
+            Console.SetOut(originalConsoleOut);
+        }
+
+        // Console redirection is process-wide, so select the line carrying this test's
+        // trace id rather than assuming the captured output holds only one event.
+        var jsonLine = consoleOutput
+            .ToString()
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Should()
+            .ContainSingle(line =>
+                line.Contains("dms-appsettings-binding-trace-id", StringComparison.Ordinal)
+            )
+            .Subject;
+        var json = JsonNode.Parse(jsonLine);
+        var properties = json?["Properties"];
+
+        (properties?["Application"]?.GetValue<string>()).Should().Be("EdFi.DataManagementService");
+        (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
+        (properties?["EventId"]?["Id"]?.GetValue<int>()).Should().Be(1228001);
+        (properties?["TraceId"]?.GetValue<string>()).Should().Be("dms-appsettings-binding-trace-id");
+        (properties?["RequestLayer"]?.GetValue<string>()).Should().Be("Frontend");
+        (properties?["Method"]?.GetValue<string>()).Should().Be("GET");
+        (properties?["Path"]?.GetValue<string>()).Should().Be("/ed-fi/students");
+        (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
+        (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
+        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("DMS request completed");
+    }
+
+    [Test]
+    public void It_keeps_request_logging_event_ids_in_sync_with_the_documented_contract()
+    {
+        // EventId equality ignores Name, so pin Id and Name separately. The shared values
+        // are documented in docs/LOGGING.md and mirrored by the CMS request logging tests.
+        RequestLoggingEventIds.HttpRequestCompleted.Id.Should().Be(1228001);
+        RequestLoggingEventIds.HttpRequestCompleted.Name.Should().Be("HttpRequestCompleted");
+        RequestLoggingEventIds.HttpRequestFailed.Id.Should().Be(1228002);
+        RequestLoggingEventIds.HttpRequestFailed.Name.Should().Be("HttpRequestFailed");
+    }
+
+    private static IConfiguration BuildConfigurationWithRedirectedFileSink(string appsettingsPath)
+    {
+        // Keep the real console sink binding under test, but point the file sink at the
+        // test work directory so creating the logger does not write into the repository.
+        var fileConfiguration = new ConfigurationBuilder()
+            .AddJsonFile(appsettingsPath, optional: false)
+            .Build();
+        var overrides = new Dictionary<string, string?>();
+        foreach (var sink in fileConfiguration.GetSection("Serilog:WriteTo").GetChildren())
+        {
+            if (sink["Name"] == "File")
+            {
+                overrides[$"Serilog:WriteTo:{sink.Key}:Args:path"] = Path.Combine(
+                    TestContext.CurrentContext.WorkDirectory,
+                    "serilog-binding-test-logs",
+                    ".log"
+                );
+            }
+        }
+
+        return new ConfigurationBuilder()
+            .AddJsonFile(appsettingsPath, optional: false)
+            .AddInMemoryCollection(overrides)
+            .Build();
     }
 
     private static IOptions<AppSettings> AppSettingsWithCorrelationHeader(string correlationHeader) =>

@@ -15,6 +15,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Serilog;
@@ -226,10 +227,14 @@ internal class Given_RequestLoggingMiddleware
     }
 
     [Test]
-    public void It_keeps_request_logging_event_ids_in_sync_with_the_local_contract()
+    public void It_keeps_request_logging_event_ids_in_sync_with_the_documented_contract()
     {
-        RequestLoggingEventIds.HttpRequestCompleted.Should().Be(new EventId(1228001, "HttpRequestCompleted"));
-        RequestLoggingEventIds.HttpRequestFailed.Should().Be(new EventId(1228002, "HttpRequestFailed"));
+        // EventId equality ignores Name, so pin Id and Name separately. The shared values
+        // are documented in docs/LOGGING.md and mirrored by the DMS request logging tests.
+        RequestLoggingEventIds.HttpRequestCompleted.Id.Should().Be(1228001);
+        RequestLoggingEventIds.HttpRequestCompleted.Name.Should().Be("HttpRequestCompleted");
+        RequestLoggingEventIds.HttpRequestFailed.Id.Should().Be(1228002);
+        RequestLoggingEventIds.HttpRequestFailed.Name.Should().Be("HttpRequestFailed");
     }
 
     [Test]
@@ -469,14 +474,14 @@ internal class Given_RequestLoggingMiddleware
         var json = JsonNode.Parse(writer.ToString());
         var properties = json?["Properties"];
 
-        properties?["Application"]?.GetValue<string>().Should().Be("EdFi.DmsConfigurationService");
-        properties?["EventName"]?.GetValue<string>().Should().Be("HttpRequestCompleted");
-        properties?["TraceId"]?.GetValue<string>().Should().Be("json-trace-id");
-        properties?["Method"]?.GetValue<string>().Should().Be("GET");
-        properties?["Path"]?.GetValue<string>().Should().Be("/v3/vendors");
-        properties?["StatusCode"]?.GetValue<int>().Should().Be(200);
-        properties?["DurationMs"]?.GetValue<long>().Should().Be(42L);
-        json?["RenderedMessage"]?.GetValue<string>().Should().Contain("CMS request completed");
+        (properties?["Application"]?.GetValue<string>()).Should().Be("EdFi.DmsConfigurationService");
+        (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
+        (properties?["TraceId"]?.GetValue<string>()).Should().Be("json-trace-id");
+        (properties?["Method"]?.GetValue<string>()).Should().Be("GET");
+        (properties?["Path"]?.GetValue<string>()).Should().Be("/v3/vendors");
+        (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
+        (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
+        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("CMS request completed");
     }
 
     [Test]
@@ -494,6 +499,108 @@ internal class Given_RequestLoggingMiddleware
 
         writeTo.Should().NotBeNull();
         writeTo!.Any(sink => IsConsoleJsonFormatterSink(sink)).Should().BeTrue();
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void It_emits_json_console_output_when_serilog_reads_the_actual_appsettings_configuration()
+    {
+        var appsettingsPath = FindRepositoryFile(
+            "src",
+            "config",
+            "frontend",
+            "EdFi.DmsConfigurationService.Frontend.AspNetCore",
+            "appsettings.json"
+        );
+        var configuration = BuildConfigurationWithRedirectedFileSink(appsettingsPath);
+
+        var originalConsoleOut = Console.Out;
+        using var consoleOutput = new StringWriter();
+        try
+        {
+            Console.SetOut(consoleOutput);
+            using var serilogLogger = new LoggerConfiguration()
+                .ReadFrom.Configuration(configuration)
+                .Enrich.FromLogContext()
+                .CreateLogger();
+            using var loggerFactory = new SerilogLoggerFactory(serilogLogger);
+            var logger = loggerFactory.CreateLogger("CmsAppsettingsBindingTest");
+            using var scope = logger.BeginScope(
+                new Dictionary<string, object>
+                {
+                    ["Application"] = "EdFi.DmsConfigurationService",
+                    ["TraceId"] = "cms-appsettings-binding-trace-id",
+                    ["Method"] = "GET",
+                    ["Path"] = "/v3/vendors",
+                    ["PathBase"] = "",
+                }
+            );
+
+            logger.Log(
+                LogLevel.Information,
+                RequestLoggingEventIds.HttpRequestCompleted,
+                "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                RequestLoggingEventIds.HttpRequestCompleted.Name,
+                "GET",
+                "/v3/vendors",
+                200,
+                42L,
+                "cms-appsettings-binding-trace-id"
+            );
+        }
+        finally
+        {
+            Console.SetOut(originalConsoleOut);
+        }
+
+        // Console redirection is process-wide, so select the line carrying this test's
+        // trace id rather than assuming the captured output holds only one event.
+        var jsonLine = consoleOutput
+            .ToString()
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Should()
+            .ContainSingle(line =>
+                line.Contains("cms-appsettings-binding-trace-id", StringComparison.Ordinal)
+            )
+            .Subject;
+        var json = JsonNode.Parse(jsonLine);
+        var properties = json?["Properties"];
+
+        (properties?["Application"]?.GetValue<string>()).Should().Be("EdFi.DmsConfigurationService");
+        (properties?["EventName"]?.GetValue<string>()).Should().Be("HttpRequestCompleted");
+        (properties?["EventId"]?["Id"]?.GetValue<int>()).Should().Be(1228001);
+        (properties?["TraceId"]?.GetValue<string>()).Should().Be("cms-appsettings-binding-trace-id");
+        (properties?["Method"]?.GetValue<string>()).Should().Be("GET");
+        (properties?["Path"]?.GetValue<string>()).Should().Be("/v3/vendors");
+        (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
+        (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
+        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("CMS request completed");
+    }
+
+    private static IConfiguration BuildConfigurationWithRedirectedFileSink(string appsettingsPath)
+    {
+        // Keep the real console sink binding under test, but point the file sink at the
+        // test work directory so creating the logger does not write into the repository.
+        var fileConfiguration = new ConfigurationBuilder()
+            .AddJsonFile(appsettingsPath, optional: false)
+            .Build();
+        var overrides = new Dictionary<string, string?>();
+        foreach (var sink in fileConfiguration.GetSection("Serilog:WriteTo").GetChildren())
+        {
+            if (sink["Name"] == "File")
+            {
+                overrides[$"Serilog:WriteTo:{sink.Key}:Args:path"] = Path.Combine(
+                    TestContext.CurrentContext.WorkDirectory,
+                    "serilog-binding-test-logs",
+                    ".log"
+                );
+            }
+        }
+
+        return new ConfigurationBuilder()
+            .AddJsonFile(appsettingsPath, optional: false)
+            .AddInMemoryCollection(overrides)
+            .Build();
     }
 
     private static string FindRepositoryFile(params string[] pathParts)

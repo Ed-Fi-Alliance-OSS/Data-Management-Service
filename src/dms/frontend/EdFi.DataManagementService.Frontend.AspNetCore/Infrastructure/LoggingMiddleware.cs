@@ -152,10 +152,9 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                                 new
                                 {
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                    // The error response body preserves the ASP.NET request identifier so this
-                                    // path keeps its existing contract; the sanitized correlation value is used
-                                    // only for log events.
-                                    traceId = context.TraceIdentifier,
+                                    // The error response body must carry the same value the log events use
+                                    // as TraceId, or a client-reported trace id cannot be found in the logs.
+                                    traceId,
                                 }
                             )
                         );
