@@ -290,10 +290,11 @@ exit $ExitCode
             $params | Should -Contain "DatabaseName"
             $params | Should -Contain "Configuration"
             $params | Should -Contain "PostgresContainerName"
+            $params | Should -Contain "DatabaseEngine"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "DataStoreId"
             $params | Should -Not -Contain "SchoolYear"
-            $params.Count | Should -Be 4
+            $params.Count | Should -Be 5
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
@@ -369,11 +370,13 @@ exit $ExitCode
         }
 
         It "start-published-dms.ps1 retains transitional flags pending consumer migration" {
-            # start-published-dms.ps1 keeps -LoadSeedData, -NoDataStore, -SchoolYearRange, and
+            # start-published-dms.ps1 keeps -NoDataStore, -SchoolYearRange, and
             # -AddSmokeTestCredentials until the published-image consumer path is migrated (separate task).
+            # -LoadSeedData (the direct-SQL database-template path) has been removed; use the
+            # bootstrap-published-dms.ps1 -RestoreTemplate flow instead.
             $params = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1")
 
-            $params | Should -Contain "LoadSeedData"
+            $params | Should -Not -Contain "LoadSeedData"
             $params | Should -Contain "NoDataStore"
             $params | Should -Contain "SchoolYearRange"
             $params | Should -Contain "AddSmokeTestCredentials"

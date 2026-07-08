@@ -138,13 +138,17 @@ image from source code.
 
 ## Running on the MSSQL backend
 
-The local stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
-`-DatabaseEngine mssql` switch. Pass it to either `bootstrap-local-dms.ps1` (turnkey) or
-`start-local-dms.ps1` (infrastructure) — no `-EnvironmentFile` is required:
+The stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
+`-DatabaseEngine mssql` switch, on both the local-build and published-image workflows. Pass it to
+`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` (turnkey) or `start-local-dms.ps1` /
+`start-published-dms.ps1` (infrastructure) — no `-EnvironmentFile` is required:
 
 ```pwsh
-# Turnkey: stand up SQL Server, provision the relational schema, and (optionally) load seed data
+# Turnkey, local build: stand up SQL Server, provision the relational schema, and (optionally) load seed data
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
+
+# Turnkey, published image: same shape, against the published DMS image
+./bootstrap-published-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
 
 # Tear down (delete volumes)
 ./start-local-dms.ps1 -DatabaseEngine mssql -d -v
@@ -174,8 +178,35 @@ A few things are specific to the MSSQL path:
   `dms-schema ddl provision --dialect mssql --create-database`.
 * **No Debezium CDC.** The relational backend serves both writes and queries directly from
   SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
-* **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
-  it is database-engine agnostic.
+* **Two opt-in, mutually exclusive data-delivery modes**, database-engine agnostic on both the
+  local and published wrappers. Omitting both leaves a provisioned, unseeded environment:
+  * **API bulk-load** (`-LoadSeedData`, with `-SeedTemplate Minimal|Populated` or a custom
+    `-SeedDataPath`) loads sample data through the DMS REST API via `load-dms-seed-data.ps1` and
+    the BulkLoadClient — the same path used for PostgreSQL.
+  * **Published-package template restore** (`-RestoreTemplate Minimal|Populated`) restores a
+    pre-built database-template NuGet package instead of provisioning schema and loading data
+    through the API: the wrapper sequences infra -> configure -> restore -> DMS start, replacing
+    `provision-dms-schema.ps1` for that run. The restored database already carries the effective
+    schema, so DMS startup validates it against the effective schema hash exactly as it would
+    after DDL provisioning. Mutually exclusive with `-LoadSeedData`, `-SeedTemplate`, and
+    `-SeedDataPath`.
+
+    ```pwsh
+    ./bootstrap-local-dms.ps1 -RestoreTemplate Populated -DatabaseEngine mssql
+    ```
+
+    The restore phase (`Restore-DatabaseTemplate` in `setup-database-template.psm1`) resolves the
+    package id from the composed environment file's `DATABASE_TEMPLATE_PACKAGE`, swapping only its
+    `Minimal`/`Populated` segment to match `-RestoreTemplate`, then dispatches to
+    `Restore-TemplatePackage` in `eng/DatabaseTemplates/Template-Management.psm1`. Package ids
+    follow the shape `<prefix>.<Minimal|Populated>.Template.<PostgreSql|MsSql>.<version>` (e.g.
+    `EdFi.Api.Populated.Template.MsSql.6.1.0`); base environment files carry the PostgreSQL form,
+    and composing the `.env.mssql` overlay for `-DatabaseEngine mssql` rewrites the engine segment
+    to `MsSql` automatically, so the same base `-EnvironmentFile` drives either engine. On MSSQL
+    the package contains a native `BACKUP DATABASE` `.bak` file restored with `RESTORE DATABASE`;
+    that `.bak` is coupled to the pinned `mcr.microsoft.com/mssql/server:2022-latest` image it was
+    built and restored against, the same way the PostgreSQL `.sql` dump is coupled to the
+    PostgreSQL major version it was built and restored against.
 
 After the stack is up, run the smoke tests the same way as for PostgreSQL:
 

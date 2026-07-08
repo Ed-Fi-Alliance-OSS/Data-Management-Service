@@ -145,7 +145,7 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 | **Outputs** | Running Docker services; provider-specific local identity clients including `CMSReadOnlyAccess`; healthy Config Service; healthy DMS container |
 | **Side effects** | Docker Compose up/down; runs provider-specific local identity setup, including the fixed `CMSReadOnlyAccess` read-only client; activates manifest-selected staged claims and staged schema at startup when a valid bootstrap manifest is present (Story 04, delivered); calls `setup-openiddict.ps1 -InitDb` after PostgreSQL health; calls `setup-openiddict.ps1 -InsertData` after Config Service readiness (self-contained path); in bootstrap mode, skips default Debezium connector registration because the bootstrap relational schema does not include the legacy CDC tables the default connector targets |
 | **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present |
-| **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; accept schema or claims parameters; configure data stores; create smoke-test or seed-loading CMS application credentials; load seed data. **Note:** `start-published-dms.ps1` retains `-NoDataStore`, `-LoadSeedData`, and `-AddSmokeTestCredentials` as transitional flags for the published-image workflow; the local `start-local-dms.ps1` is infrastructure-lifecycle-only as of DMS-1153. |
+| **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; accept schema or claims parameters; configure data stores; create smoke-test or seed-loading CMS application credentials; load seed data. **Note:** `start-published-dms.ps1` retains `-NoDataStore`, `-SchoolYearRange`, and `-AddSmokeTestCredentials` as transitional flags for the published-image workflow; the local `start-local-dms.ps1` is infrastructure-lifecycle-only as of DMS-1153. `start-published-dms.ps1` also accepts `-DatabaseEngine` (DMS-1255, mirroring the local flow's engine selection), but neither start script accepts `-RestoreTemplate`: template restore is wrapper-orchestrated only (§3.7). |
 
 **Boundary note:** Story 00 makes staged schema/security the prepared bootstrap contract. Story 04 (DMS-1154,
 delivered) makes it the Docker runtime source of truth by activating staged schema and staged claims together
@@ -162,8 +162,13 @@ by the developer invoking the next phase command explicitly.
 
 The Must-NOT row is permanent for `start-local-dms.ps1`. DMS-1153 (`epics/16-bootstrap/03-entry-point-and-ide-workflow.md`)
 made `start-local-dms.ps1` infrastructure-lifecycle-only by removing `-NoDataStore`, `-SchoolYearRange`,
-`-LoadSeedData`, and `-AddSmokeTestCredentials`. The published `start-published-dms.ps1` retains those
-transitional flags for the published-image workflow and is not subject to this de-scope.
+`-LoadSeedData`, and `-AddSmokeTestCredentials`. At the time, `start-published-dms.ps1` retained all four as
+transitional flags for the published-image workflow and was not subject to this de-scope. DMS-1255 removed
+one of those four from `start-published-dms.ps1`: its `-LoadSeedData` switch, which ran the direct-SQL
+template load through `setup-database-template.psm1`, is gone, and that direct-SQL restore behavior became
+the engine-dispatched template-restore phase (`Restore-DatabaseTemplate`) reachable only through
+`bootstrap-published-dms.ps1 -RestoreTemplate` (§3.7). `-NoDataStore`, `-SchoolYearRange`, and
+`-AddSmokeTestCredentials` remain on `start-published-dms.ps1` unchanged.
 
 ---
 
@@ -221,6 +226,12 @@ Docker-internal database host is translated to the host-side mapped port for bot
 `DMS_DATASTORE`, and `New-ProvisionTarget` fails fast with remediation guidance before any
 SchemaTools invocation when a target's resolved dialect contradicts it.
 
+**DMS-1255 addition — bypass on template restore:** When the wrapper's `-RestoreTemplate` is supplied,
+`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` do not invoke this phase at all for that run; the
+wrapper's restore phase (§3.7) takes its place in the sequence. This phase's ownership of DDL provisioning
+and hash validation (§5) is unchanged — the wrapper decides which of the two mutually exclusive branches to
+run, never both, and never by having this phase itself perform or skip DDL work conditionally.
+
 ---
 
 ### 3.6 `load-dms-seed-data.ps1` — Seed Delivery
@@ -242,14 +253,14 @@ SchemaTools invocation when a target's resolved dialect contradicts it.
 
 ### 3.7 `bootstrap-local-dms.ps1` — Thin Convenience Wrapper (Optional)
 
-**Delivery status:** Convenience packaging plus a narrow slice of cross-phase orchestration policy: materializing a per-invocation `.bootstrap/.env.derived` with the bootstrap profile (loose `FAILURE_RATIO` so intra-tier BulkLoadClient retries don't trip the circuit breaker); unifying `-IdentityProvider` across the start and seed phases so a single wrapper invocation can't run infra under one provider and authenticate seeds under another; expanding the developer-facing `-SchoolYearRange "YYYY-YYYY"` into the `-SchoolYear <int[]>` array the seed phase consumes. The wrapper is optional and owns no phase-specific policy. The composable phase commands remain the authoritative bootstrap contract for DMS-916.
+**Delivery status:** Convenience packaging plus a narrow slice of cross-phase orchestration policy: materializing a per-invocation `.bootstrap/.env.derived` with the bootstrap profile (loose `FAILURE_RATIO` so intra-tier BulkLoadClient retries don't trip the circuit breaker); unifying `-IdentityProvider` across the start and seed phases so a single wrapper invocation can't run infra under one provider and authenticate seeds under another; expanding the developer-facing `-SchoolYearRange "YYYY-YYYY"` into the `-SchoolYear <int[]>` array the seed phase consumes; (DMS-1255) choosing between the API-seed branch and the database-template-restore branch based on `-RestoreTemplate`, and, on the restore branch, calling `Restore-DatabaseTemplate` in place of `provision-dms-schema.ps1` with no seed-phase invocation afterward. The wrapper is optional and owns no phase-specific policy. The composable phase commands remain the authoritative bootstrap contract for DMS-916.
 
 **Primary concern:** Sequence the above phase commands in the correct order for the common happy path.
 
 | Item | Detail |
 |---|---|
 | **Preconditions** | None additional beyond what phase commands require. |
-| **Inputs** | `-EnvironmentFile <path>` (forwarded to the start and seed phases); `-IdentityProvider` (resolved once and forwarded to `start-local-dms.ps1` or `start-published-dms.ps1`, and also to `load-dms-seed-data.ps1` when seed loading is selected); `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, and `-AddExtensionSecurityMetadata` (forwarded to the selected start phase; `-EnableConfig` is forced when seed loading is selected); `-SchoolYearRange <range>` (forwarded to the selected start phase and expanded to `-SchoolYear <int[]>` for the seed phase when seed loading is selected); `-LoadSeedData` (wrapper-level opt-in that causes the wrapper to invoke `load-dms-seed-data.ps1`); `-SeedTemplate`, `-SeedDataPath <path>`, and `-AdditionalNamespacePrefix <string[]>` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-NoDataStore` and `-AddSmokeTestCredentials` (forwarded to `configure-local-data-store.ps1` during the configure -> provision sequence); **`bootstrap-local-dms.ps1` only** (DMS-1153): `-InfraOnly` (pre-DMS stop shape: run infrastructure startup, configure, provision, print IDE next-step guidance, then stop; terminal for that invocation); `-DmsBaseUrl <url>` (health-wait continuation shape: valid only with `-InfraOnly`; withheld from the initial `start-local-dms.ps1` invocation and used only for the post-provision health-wait; when `-LoadSeedData` is also set, forwarded to `load-dms-seed-data.ps1`) — **`bootstrap-published-dms.ps1` does not gain these parameters in DMS-1153** |
+| **Inputs** | `-EnvironmentFile <path>` (forwarded to the start and seed phases); `-IdentityProvider` (resolved once and forwarded to `start-local-dms.ps1` or `start-published-dms.ps1`, and also to `load-dms-seed-data.ps1` when seed loading is selected); `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, and `-AddExtensionSecurityMetadata` (forwarded to the selected start phase; `-EnableConfig` is forced when seed loading is selected); `-SchoolYearRange <range>` (forwarded to the selected start phase and expanded to `-SchoolYear <int[]>` for the seed phase when seed loading is selected); `-LoadSeedData` (wrapper-level opt-in that causes the wrapper to invoke `load-dms-seed-data.ps1`); `-SeedTemplate`, `-SeedDataPath <path>`, and `-AdditionalNamespacePrefix <string[]>` (forwarded to `load-dms-seed-data.ps1` when seed loading is selected); `-NoDataStore` and `-AddSmokeTestCredentials` (forwarded to `configure-local-data-store.ps1` during the configure -> provision sequence); `-DatabaseEngine postgresql\|mssql` (forwarded to the configure phase and the selected start phase on both wrappers so every phase agrees on the datastore engine; `bootstrap-local-dms.ps1` since DMS-1238, `bootstrap-published-dms.ps1` since DMS-1255); `-RestoreTemplate Minimal\|Populated` (DMS-1255, both wrappers: wrapper-level opt-in that restores a pre-built database-template package in place of running `provision-dms-schema.ps1` and the seed phase; mutually exclusive with `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath`); **`bootstrap-local-dms.ps1` only** (DMS-1153): `-InfraOnly` (pre-DMS stop shape: run infrastructure startup, configure, provision, print IDE next-step guidance, then stop; terminal for that invocation); `-DmsBaseUrl <url>` (health-wait continuation shape: valid only with `-InfraOnly`; withheld from the initial `start-local-dms.ps1` invocation and used only for the post-provision health-wait; when `-LoadSeedData` is also set, forwarded to `load-dms-seed-data.ps1`) — **`bootstrap-published-dms.ps1` does not gain these parameters in DMS-1153** |
 | **Outputs** | Delegated entirely to the phase commands it calls |
 | **Side effects** | Delegates to phase commands; prints next-step guidance when a phase is intentionally omitted |
 | **Failure conditions** | Propagates non-zero exit from any called phase command |
@@ -284,6 +295,23 @@ that the wrapper drives internally) and `-DmsBaseUrl` (health-wait continuation,
 `bootstrap-published-dms.ps1` does not gain these flags. The wrapper also forwards `-NoDataStore` and
 `-AddSmokeTestCredentials` to `configure-local-data-store.ps1` (which owns both per §3.4) as part of its
 configure → provision sequencing.
+
+**Restore phase (DMS-1255):** `-RestoreTemplate Minimal|Populated` is accepted identically by
+`bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1` — unlike the DMS-1153 IDE-shape flags above, it
+is not local-only. Ordering: infra → configure → **restore** → DMS start (`-DmsOnly`), on both wrappers; the
+restore phase runs immediately after `configure-local-data-store.ps1` and in place of
+`provision-dms-schema.ps1` (§3.5) for that run, and no seed phase runs afterward. Mutual exclusion: `-RestoreTemplate` is
+rejected together with `-LoadSeedData`, `-SeedTemplate`, or `-SeedDataPath` before any Docker or CMS side
+effect, the same fail-fast timing as the other seed-flag preflights. Must-NOT boundaries carried over from
+the phase it replaces: the restore phase (`Restore-DatabaseTemplate` in `setup-database-template.psm1`,
+dispatching to `Restore-TemplatePackage` in `eng/DatabaseTemplates/Template-Management.psm1`) must not do
+any schema or claims staging work (owned by `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`), must not
+create the `CMSReadOnlyAccess` client or any CMS application credential (owned by `start-local-dms.ps1` /
+`start-published-dms.ps1` local identity setup and by `configure-local-data-store.ps1`'s smoke-test
+credentials), and must not invoke BulkLoadClient or otherwise seed data through the DMS API (owned by
+`load-dms-seed-data.ps1`). It operates only on the physical database identified by the composed environment
+file's engine and database-name settings, not on CMS instance records, so — unlike `provision-dms-schema.ps1`
+— it takes no `-DataStoreId` selector.
 
 ---
 
@@ -329,6 +357,7 @@ The following concerns are each owned by exactly one phase:
 | DDL provisioning and hash validation | `provision-dms-schema.ps1` | Perform or bypass DDL work |
 | `SeedLoader` credential creation and namespace-prefix composition | `load-dms-seed-data.ps1` | Create or reference SeedLoader credentials or infer seed namespace prefixes |
 | BulkLoadClient seed invocation | `load-dms-seed-data.ps1` | Invoke BulkLoadClient |
+| Database-template restore (DMS-1255) | Wrapper restore phase (`Restore-DatabaseTemplate`, invoked from `bootstrap-wrapper.psm1` only, behind `-RestoreTemplate`) | Restore a database template outside the `-RestoreTemplate` gate; perform schema/claims staging, CMS credential creation, or API-based seeding as part of the restore |
 | Orchestration sequence | `bootstrap-local-dms.ps1` | Replicate the full phase sequence |
 
 ---
@@ -345,8 +374,8 @@ Each phase accepts only the parameters relevant to its concern.
 | `configure-local-data-store.ps1` | `-EnvironmentFile <path>`, `-NoDataStore`, `-SchoolYearRange`, `-AddSmokeTestCredentials` |
 | `provision-dms-schema.ps1` | `-EnvironmentFile <path>`, `-DataStoreId <long[]>`, `-SchoolYear <int[]>` |
 | `load-dms-seed-data.ps1` | `-EnvironmentFile <path>`, `-BootstrapManifestPath <path>`, `-DataStoreId <long[]>`, `-DmsBaseUrl <url>`, `-IdentityProvider`, `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix <string[]>`, `-SchoolYear <int[]>` |
-| `bootstrap-local-dms.ps1` | DMS-1152: `-EnvironmentFile <path>`, `-IdentityProvider`, `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, `-AddExtensionSecurityMetadata`, `-SchoolYearRange`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath <path>`, `-AdditionalNamespacePrefix <string[]>`; DMS-1151: `-NoDataStore`, `-AddSmokeTestCredentials` (forwarded to configure); DMS-1153: `-InfraOnly`, `-DmsBaseUrl <url>` (local wrapper only) |
-| `bootstrap-published-dms.ps1` | Same as `bootstrap-local-dms.ps1` except **does not** include `-InfraOnly` or `-DmsBaseUrl` (DMS-1153 IDE workflow parameters are local-only) |
+| `bootstrap-local-dms.ps1` | DMS-1152: `-EnvironmentFile <path>`, `-IdentityProvider`, `-EnableKafkaUI`, `-EnableSwaggerUI`, `-EnableConfig`, `-AddExtensionSecurityMetadata`, `-SchoolYearRange`, `-LoadSeedData`, `-SeedTemplate`, `-SeedDataPath <path>`, `-AdditionalNamespacePrefix <string[]>`; DMS-1151: `-NoDataStore`, `-AddSmokeTestCredentials` (forwarded to configure); DMS-1153: `-InfraOnly`, `-DmsBaseUrl <url>` (local wrapper only); DMS-1238: `-DatabaseEngine postgresql\|mssql`; DMS-1255: `-RestoreTemplate Minimal\|Populated` |
+| `bootstrap-published-dms.ps1` | Same as `bootstrap-local-dms.ps1` except **does not** include `-InfraOnly` or `-DmsBaseUrl` (DMS-1153 IDE workflow parameters are local-only). DMS-1255 gives it the same `-DatabaseEngine` and `-RestoreTemplate` as `bootstrap-local-dms.ps1` (`-DatabaseEngine` was local-only before DMS-1255); it also removes the `-LoadSeedData` direct-SQL switch previously retained on `start-published-dms.ps1` (§3.3), so seed delivery on the published flow is API-based (`-LoadSeedData` here) exactly as on the local flow |
 
 `-DmsBaseUrl` is phase-owned by direct `load-dms-seed-data.ps1` invocation for seed delivery. The local
 wrapper also accepts `-DmsBaseUrl` (with `-InfraOnly`) as a convenience input for the IDE health-wait

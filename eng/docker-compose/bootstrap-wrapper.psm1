@@ -272,6 +272,16 @@ function Invoke-BootstrapWrapper {
 
         [string]$SeedDataPath,
 
+        # Restores a pre-built Minimal|Populated database-template package instead of running
+        # schema provisioning (provision-dms-schema.ps1) and, further downstream, the API-based
+        # seed phase. Mutually exclusive with -LoadSeedData, -SeedTemplate, and -SeedDataPath: the
+        # restored database already carries sample data, so there is nothing left for the seed
+        # phase to load. The composed environment file's engine-correct DATABASE_TEMPLATE_PACKAGE
+        # (see -DatabaseEngine below) determines which package is downloaded; only its
+        # Minimal|Populated segment is swapped to match this value.
+        [ValidateSet("Minimal", "Populated")]
+        [string]$RestoreTemplate,
+
         [string[]]$AdditionalNamespacePrefix = @(),
 
         [string]$EnvironmentFile,
@@ -307,8 +317,8 @@ function Invoke-BootstrapWrapper {
         [string]$DmsBaseUrl,
 
         # Database engine for the DMS datastore ("postgresql" or "mssql"). Forwarded to the
-        # configure phase always, and to the start phases only for start-local-dms.ps1 (mssql.yml
-        # is a local-only tier; start-published-dms.ps1 has no -DatabaseEngine parameter).
+        # configure phase and to the start phase, both of which understand -DatabaseEngine
+        # regardless of whether the target is start-local-dms.ps1 or start-published-dms.ps1.
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
@@ -331,11 +341,6 @@ function Invoke-BootstrapWrapper {
     )
 
     $ErrorActionPreference = "Stop"
-
-    # mssql.yml is a local-only datastore tier. Only start-local-dms.ps1 understands
-    # -DatabaseEngine; start-published-dms.ps1 does not, so the engine is forwarded to the start
-    # phases only for the local start script. The configure phase always accepts it.
-    $startScriptSupportsDatabaseEngine = ($StartScriptName -eq "start-local-dms.ps1")
 
     # Fail fast: IDE workflow shape parameter validation — runs before any phase invocation.
     # -DmsBaseUrl is only valid with -InfraOnly; reject it without -InfraOnly so a misuse
@@ -372,6 +377,23 @@ function Invoke-BootstrapWrapper {
     # function entry rather than inside the -LoadSeedData branch.
     $seedTemplateSupplied = $PSBoundParameters.ContainsKey('SeedTemplate') -and -not [string]::IsNullOrWhiteSpace($SeedTemplate)
     $seedDataPathSupplied = $PSBoundParameters.ContainsKey('SeedDataPath') -and -not [string]::IsNullOrWhiteSpace($SeedDataPath)
+    $restoreTemplateSupplied = $PSBoundParameters.ContainsKey('RestoreTemplate') -and -not [string]::IsNullOrWhiteSpace($RestoreTemplate)
+
+    # -RestoreTemplate restores a pre-built database template instead of running schema
+    # provisioning and the API-based seed phase, so it cannot be combined with any seed-source
+    # flag. Checked here, before any Docker/CMS side effects, alongside the other seed-flag
+    # preflights below.
+    if ($restoreTemplateSupplied) {
+        if ($LoadSeedData) {
+            throw "-RestoreTemplate and -LoadSeedData are mutually exclusive. -RestoreTemplate restores a pre-built database template; -LoadSeedData runs the API-based seed phase against a schema-provisioned database."
+        }
+        if ($seedTemplateSupplied) {
+            throw "-RestoreTemplate and -SeedTemplate are mutually exclusive. -SeedTemplate selects a built-in seed source for the API-based seed phase, which -RestoreTemplate bypasses entirely."
+        }
+        if ($seedDataPathSupplied) {
+            throw "-RestoreTemplate and -SeedDataPath are mutually exclusive. -SeedDataPath selects a custom seed source for the API-based seed phase, which -RestoreTemplate bypasses entirely."
+        }
+    }
 
     # Pre-start seed preflights: catch mutually-exclusive seed-source flags and ApiSchemaPath combos
     # here so a known-bad -LoadSeedData invocation doesn't first spin up Docker + CMS state.
@@ -565,7 +587,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
-        if ($startScriptSupportsDatabaseEngine) { $startArgs.DatabaseEngine = $DatabaseEngine }
+        $startArgs.DatabaseEngine = $DatabaseEngine
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -624,16 +646,30 @@ function Invoke-BootstrapWrapper {
         $configured = $configurationResults[0]
         $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
 
-        $provisionArgs = @{
-            EnvironmentFile = $effectiveEnvFile
-            DataStoreId = $configuredDataStoreIds
+        if ($restoreTemplateSupplied) {
+            # Restore phase: replaces schema provisioning entirely. The composed environment
+            # file already carries the engine-correct DATABASE_TEMPLATE_PACKAGE (the -DatabaseEngine
+            # overlay above rewrote its engine segment); Restore-DatabaseTemplate additionally swaps
+            # its Minimal|Populated segment to -RestoreTemplate and restores the resulting package
+            # directly into the target database, so there is no per-data-store selector to forward
+            # here (unlike provisioning, restore operates on the physical database, not CMS
+            # instances). DMS startup validates the restored database against the effective schema
+            # hash staged above, so no redundant DDL work happens after this point.
+            Import-Module (Join-Path $PSScriptRoot "setup-database-template.psm1") -Force
+            Restore-DatabaseTemplate -EnvironmentFile $effectiveEnvFile -RestoreTemplate $RestoreTemplate
         }
+        else {
+            $provisionArgs = @{
+                EnvironmentFile = $effectiveEnvFile
+                DataStoreId = $configuredDataStoreIds
+            }
 
-        # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
-        $global:LASTEXITCODE = 0
-        & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs
-        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-            throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+            # provision-dms-schema.ps1 throws on failure (no exit code); clear any stale native exit code first.
+            $global:LASTEXITCODE = 0
+            & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+            }
         }
 
         if ($InfraOnly) {
@@ -683,7 +719,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableKafkaUI) { $healthWaitArgs.EnableKafkaUI = $true }
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
-            if ($startScriptSupportsDatabaseEngine) { $healthWaitArgs.DatabaseEngine = $DatabaseEngine }
+            $healthWaitArgs.DatabaseEngine = $DatabaseEngine
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -722,7 +758,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $dmsStartArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
-        if ($startScriptSupportsDatabaseEngine) { $dmsStartArgs.DatabaseEngine = $DatabaseEngine }
+        $dmsStartArgs.DatabaseEngine = $DatabaseEngine
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

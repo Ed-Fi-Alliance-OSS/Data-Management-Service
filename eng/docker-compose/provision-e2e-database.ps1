@@ -3,6 +3,18 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+<#
+.SYNOPSIS
+    Provisions a dedicated E2E database via SchemaTools DDL provisioning. Supports PostgreSQL
+    and SQL Server data stores.
+.DESCRIPTION
+    Resets (drops if present, then recreates) the E2E database named by -DatabaseName or the
+    environment file's E2E_DATABASE_NAME, then runs SchemaTools ddl provision against it. The
+    dialect (--dialect pgsql|mssql) and connection shape follow -DatabaseEngine; the SQL Server
+    branch mirrors the readiness-wait, host-side target translation, and dialect dispatch
+    patterns used by provision-dms-schema.ps1.
+#>
+
 [CmdletBinding()]
 param(
     [string]$EnvironmentFile = "./.env.e2e",
@@ -13,7 +25,15 @@ param(
     [ValidateSet("Debug", "Release")]
     $Configuration = "Release",
 
-    [string]$PostgresContainerName = "dms-postgresql"
+    [string]$PostgresContainerName = "dms-postgresql",
+
+    # Database engine overlay selector: composes the .env.mssql overlay onto -EnvironmentFile
+    # (Resolve-DatabaseEngineEnvironmentFile) so the reset and SchemaTools steps below target
+    # the same engine the caller intends. The default "postgresql" is a no-op via that helper's
+    # idempotency guard, so the PostgreSQL invocation is unaffected when this parameter is
+    # omitted.
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql"
 )
 
 Set-StrictMode -Version Latest
@@ -21,6 +41,33 @@ $ErrorActionPreference = "Stop"
 $script:ResolvedSchemaDirectory = $null
 
 Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+
+if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
+    function Format-LogSafeText {
+        param($Value)
+
+        if ($null -eq $Value) { return "" }
+        $text = [string]$Value
+        $builder = [System.Text.StringBuilder]::new()
+        foreach ($character in $text.ToCharArray()) {
+            # Comma is whitelisted so SQL Server "host,port" targets log readably; newlines
+            # and other control characters stay stripped, which is what prevents log forging.
+            if ([char]::IsLetterOrDigit($character) -or
+                $character -eq " " -or
+                $character -eq "_" -or
+                $character -eq "-" -or
+                $character -eq "." -or
+                $character -eq ":" -or
+                $character -eq "," -or
+                $character -eq "/") {
+                $null = $builder.Append($character)
+            }
+        }
+
+        return $builder.ToString()
+    }
+}
 
 function Resolve-ScriptRelativePath {
     param([string]$Path)
@@ -84,6 +131,10 @@ function Assert-SafeDatabaseName {
 
     if ($DatabaseName -iin @("postgres", "template0", "template1")) {
         throw "Database name '$DatabaseName' is a reserved PostgreSQL system database and cannot be used for E2E provisioning."
+    }
+
+    if ($DatabaseName -iin @("master", "model", "msdb", "tempdb")) {
+        throw "Database name '$DatabaseName' is a reserved SQL Server system database and cannot be used for E2E provisioning."
     }
 }
 
@@ -199,6 +250,33 @@ function Wait-ForPostgresql {
     throw "PostgreSQL container '$ContainerName' did not become ready after $MaxAttempts attempts."
 }
 
+function Wait-ForMssql {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    param(
+        [string]$ContainerName,
+        [string]$SaPassword,
+        [int]$MaxAttempts = 40
+    )
+
+    # SQL Server can take 30+ seconds to accept connections on a cold start. Poll sqlcmd the
+    # same way start-local-dms.ps1's Wait-MssqlReady does so the reset/provision steps that
+    # follow always find a reachable server.
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $SaPassword -Q "SELECT 1" -C -b *> $null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Information "SQL Server container is ready: $(Format-LogSafeText $ContainerName)" -InformationAction Continue
+            return
+        }
+
+        if ($attempt -lt $MaxAttempts) {
+            Start-Sleep -Seconds 3
+        }
+    }
+
+    throw "SQL Server container '$(Format-LogSafeText $ContainerName)' did not become ready after $MaxAttempts attempts."
+}
+
 function Reset-E2EDatabase {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -229,23 +307,82 @@ function Reset-E2EDatabase {
     }
 }
 
+function Reset-E2EMssqlDatabase {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string]$ContainerName,
+        [string]$DatabaseName,
+        [string]$SaPassword
+    )
+
+    Assert-SafeDatabaseName -DatabaseName $DatabaseName
+
+    if (-not $PSCmdlet.ShouldProcess($DatabaseName, "Reset E2E SQL Server database")) {
+        return
+    }
+
+    # SQL Server has no equivalent of pg_terminate_backend + dropdb --if-exists: dropping active
+    # connections and reclaiming the database is instead a two-statement ALTER DATABASE / DROP
+    # DATABASE sequence, each guarded so a database that does not yet exist is a no-op.
+    $setSingleUserSql =
+        "IF DB_ID(N'$DatabaseName') IS NOT NULL ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
+
+    & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $SaPassword -Q $setSingleUserSql -C -b
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to terminate active connections for E2E database '$DatabaseName'."
+    }
+
+    $dropDatabaseSql = "DROP DATABASE IF EXISTS [$DatabaseName];"
+
+    & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $SaPassword -Q $dropDatabaseSql -C -b
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to drop E2E database '$DatabaseName'."
+    }
+}
+
 function Build-ConnectionString {
     param(
         [string]$ServerHost,
         [string]$Port,
         [System.Management.Automation.PSCredential]$Credential,
-        [string]$DatabaseName
+        [string]$DatabaseName,
+
+        [ValidateSet("pgsql", "mssql")]
+        [string]$Dialect = "pgsql"
     )
+
+    if ($Dialect -eq "mssql") {
+        return "Server=$ServerHost,$Port;Initial Catalog=$DatabaseName;User ID=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);TrustServerCertificate=true;"
+    }
 
     return "Host=$ServerHost;Port=$Port;Username=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);Database=$DatabaseName;NoResetOnClose=true;"
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $environmentFilePath = Resolve-ScriptRelativePath $EnvironmentFile
+$environmentFilePath = Resolve-DatabaseEngineEnvironmentFile `
+    -DatabaseEngine $DatabaseEngine `
+    -BaseEnvironmentFile $environmentFilePath `
+    -DockerComposeRoot $PSScriptRoot
 
 $environmentValues = Get-EnvironmentValueMap $environmentFilePath
-$postgresPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PORT"
-$postgresPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PASSWORD"
+# Fixed container name for the single-engine MSSQL stack (mirrors the "dms-mssql" literal used
+# by start-local-dms.ps1's Wait-MssqlReady call site); -PostgresContainerName stays parameterized
+# for backward compatibility with existing callers.
+$mssqlContainerName = "dms-mssql"
+
+if ($DatabaseEngine -eq "mssql") {
+    $mssqlPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "MSSQL_PORT"
+    $mssqlSaPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "MSSQL_SA_PASSWORD"
+}
+else {
+    $postgresPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PORT"
+    $postgresPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PASSWORD"
+}
+
 $e2eDatabaseName =
     if ([string]::IsNullOrWhiteSpace($DatabaseName)) {
         Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "E2E_DATABASE_NAME"
@@ -253,26 +390,45 @@ $e2eDatabaseName =
     else {
         $DatabaseName
     }
-$postgresUsername =
-    if ([string]::IsNullOrWhiteSpace([string]$environmentValues["POSTGRES_USER"])) {
-        "postgres"
+
+if ($DatabaseEngine -eq "mssql") {
+    $secureMssqlSaPassword = New-Object System.Security.SecureString
+    foreach ($character in $mssqlSaPassword.ToCharArray()) {
+        $secureMssqlSaPassword.AppendChar($character)
     }
-    else {
-        [string]$environmentValues["POSTGRES_USER"]
-    }
-$securePostgresPassword = New-Object System.Security.SecureString
-foreach ($character in $postgresPassword.ToCharArray()) {
-    $securePostgresPassword.AppendChar($character)
+    $secureMssqlSaPassword.MakeReadOnly()
+    $mssqlCredential = [System.Management.Automation.PSCredential]::new(
+        "sa",
+        $secureMssqlSaPassword
+    )
 }
-$securePostgresPassword.MakeReadOnly()
-$postgresCredential = [System.Management.Automation.PSCredential]::new(
-    $postgresUsername,
-    $securePostgresPassword
-)
+else {
+    $postgresUsername =
+        if ([string]::IsNullOrWhiteSpace([string]$environmentValues["POSTGRES_USER"])) {
+            "postgres"
+        }
+        else {
+            [string]$environmentValues["POSTGRES_USER"]
+        }
+    $securePostgresPassword = New-Object System.Security.SecureString
+    foreach ($character in $postgresPassword.ToCharArray()) {
+        $securePostgresPassword.AppendChar($character)
+    }
+    $securePostgresPassword.MakeReadOnly()
+    $postgresCredential = [System.Management.Automation.PSCredential]::new(
+        $postgresUsername,
+        $securePostgresPassword
+    )
+}
 
 Write-Information "Provisioning E2E database" -InformationAction Continue
 Write-Information "Environment file: $environmentFilePath" -InformationAction Continue
-Write-Information "PostgreSQL container: $PostgresContainerName" -InformationAction Continue
+if ($DatabaseEngine -eq "mssql") {
+    Write-Information "SQL Server container: $(Format-LogSafeText $mssqlContainerName)" -InformationAction Continue
+}
+else {
+    Write-Information "PostgreSQL container: $PostgresContainerName" -InformationAction Continue
+}
 Write-Information "E2E database: $e2eDatabaseName" -InformationAction Continue
 Write-Information "Configuration: $Configuration" -InformationAction Continue
 
@@ -281,7 +437,12 @@ Assert-E2EDatabaseIsDedicated `
     -EnvironmentFilePath $environmentFilePath `
     -E2EDatabaseName $e2eDatabaseName
 
-Wait-ForPostgresql -ContainerName $PostgresContainerName -PostgresUsername $postgresUsername
+if ($DatabaseEngine -eq "mssql") {
+    Wait-ForMssql -ContainerName $mssqlContainerName -SaPassword $mssqlSaPassword
+}
+else {
+    Wait-ForPostgresql -ContainerName $PostgresContainerName -PostgresUsername $postgresUsername
+}
 
 $script:ResolvedSchemaDirectory =
     Join-Path ([System.IO.Path]::GetTempPath()) "dms-e2e-schema-$([Guid]::NewGuid().ToString('N'))"
@@ -294,17 +455,38 @@ $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
 
 try {
     Write-Information "Dropping E2E database if it exists: $e2eDatabaseName" -InformationAction Continue
-    Reset-E2EDatabase `
-        -ContainerName $PostgresContainerName `
-        -DatabaseName $e2eDatabaseName `
-        -PostgresUsername $postgresUsername
 
     $schemaToolsProject = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
-    $connectionString = Build-ConnectionString `
-        -ServerHost "127.0.0.1" `
-        -Port $postgresPort `
-        -Credential $postgresCredential `
-        -DatabaseName $e2eDatabaseName
+
+    if ($DatabaseEngine -eq "mssql") {
+        Reset-E2EMssqlDatabase `
+            -ContainerName $mssqlContainerName `
+            -DatabaseName $e2eDatabaseName `
+            -SaPassword $mssqlSaPassword
+
+        $connectionString = Build-ConnectionString `
+            -ServerHost "127.0.0.1" `
+            -Port $mssqlPort `
+            -Credential $mssqlCredential `
+            -DatabaseName $e2eDatabaseName `
+            -Dialect "mssql"
+
+        $schemaToolsDialect = "mssql"
+    }
+    else {
+        Reset-E2EDatabase `
+            -ContainerName $PostgresContainerName `
+            -DatabaseName $e2eDatabaseName `
+            -PostgresUsername $postgresUsername
+
+        $connectionString = Build-ConnectionString `
+            -ServerHost "127.0.0.1" `
+            -Port $postgresPort `
+            -Credential $postgresCredential `
+            -DatabaseName $e2eDatabaseName
+
+        $schemaToolsDialect = "pgsql"
+    }
 
     Write-Information "Running SchemaTools ddl provision for $e2eDatabaseName" -InformationAction Continue
 
@@ -323,7 +505,7 @@ try {
         "--connection-string",
         $connectionString,
         "--dialect",
-        "pgsql",
+        $schemaToolsDialect,
         "--create-database"
     )
 

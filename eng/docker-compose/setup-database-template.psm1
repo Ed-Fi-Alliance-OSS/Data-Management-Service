@@ -3,118 +3,235 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Retained pending the implementation gate in reference/design/backend-redesign/design-docs/
-# bootstrap/bootstrap-design.md §6.4 (line 1250). DMS-1153 removed -LoadSeedData from
-# start-local-dms.ps1 (the relocated local call site is build-dms.ps1's Start-DockerEnvironment);
-# start-published-dms.ps1 still owns -LoadSeedData and calls this module directly. Deleting the
-# module is explicitly gated on "verifying the repo-pinned BulkLoadClient XML mode against DMS
-# discovery, dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." That
-# verification requires the full bootstrap verification gate in §6.4 to close. The slice that
-# closes the gate owns this module's removal.
+# Engine-dispatched database-template restore phase. Restore-DatabaseTemplate resolves the
+# effective database engine (PostgreSQL or SQL Server), the target database name, and the
+# Minimal|Populated template package for a composed bootstrap environment file, then restores
+# that package into the running database container via Template-Management.psm1's
+# Restore-TemplatePackage. It is invoked by the bootstrap wrappers (bootstrap-local-dms.ps1 /
+# bootstrap-published-dms.ps1) as an alternative to schema provisioning: the restored database
+# already carries the effective schema, so DMS startup validates it against the effective
+# schema hash instead of provisioning DDL.
 
-function LoadSeedData {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Database template bootstrap helper intentionally writes operator progress and container diagnostics to the console.')]
-    param (
-        [string]$EnvironmentFile
+function Format-LogSafeText {
+    <#
+    .SYNOPSIS
+    Sanitizes a string for safe logging by allowing only safe characters (letters, digits,
+    space, and _-.:/). Values sourced from the environment file - package ids, database names,
+    connection-string fragments - are external data and must be sanitized before they reach
+    Write-Information. Mirrors the Format-LogSafeText helper in provision-dms-schema.ps1.
+    #>
+    param($Value)
+
+    if ($null -eq $Value) { return "" }
+    $text = [string]$Value
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in $text.ToCharArray()) {
+        if ([char]::IsLetterOrDigit($character) -or
+            $character -eq " " -or
+            $character -eq "_" -or
+            $character -eq "-" -or
+            $character -eq "." -or
+            $character -eq ":" -or
+            $character -eq "/") {
+            $null = $builder.Append($character)
+        }
+    }
+
+    return $builder.ToString()
+}
+
+function Get-EnvValueOrDefault {
+    param(
+        [hashtable]$EnvValues,
+        [string]$Name,
+        [string]$DefaultValue = ""
     )
 
-    Import-Module ./env-utility.psm1
+    return Get-EnvValue -EnvValues $EnvValues -Name $Name -DefaultValue $DefaultValue
+}
 
-    $envValues = ReadValuesFromEnvFile $EnvironmentFile
-    $User = "postgres"
-    $Database = $envValues["POSTGRES_DB_NAME"]
-    $PackageId = $envValues["DATABASE_TEMPLATE_PACKAGE"]
+function Resolve-RestoreDatabaseEngine {
+    <#
+    .SYNOPSIS
+    Resolves the database engine ("postgresql" or "mssql") the restore phase targets from the
+    composed environment file.
 
-    Write-Host -ForegroundColor Cyan "Loading database template for database '$Database' using package '$PackageId'"
+    .DESCRIPTION
+    DMS_DATASTORE is the primary signal, matching Resolve-ExpectedProvisioningDialect in
+    provision-dms-schema.ps1. When it is absent or blank, falls back to connection-string-shape
+    detection on DATABASE_CONNECTION_STRING_ADMIN, using the same definitive-marker precedence
+    as Resolve-TargetDialect in provision-dms-schema.ps1: host/username/port/sslmode identify
+    PostgreSQL; server/data source/initial catalog/user id/trusted_connection identify SQL
+    Server. Defaults to "postgresql" when neither signal is present, matching local-dms.yml's
+    compose-level default (AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}).
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
 
-    if ([string]::IsNullOrWhiteSpace($PackageId)) {
-        $PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
-        Write-Host -ForegroundColor Yellow "Environment variable DATABASE_TEMPLATE_PACKAGE is not set. Using default package: $PackageId"
-    } else {
-        Write-Host -ForegroundColor Green "Using package from environment variable: $PackageId"
+    $engineValue = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_DATASTORE"
+    if (-not [string]::IsNullOrWhiteSpace($engineValue)) {
+        $normalizedEngine = $engineValue.Trim().ToLowerInvariant()
+        if ($normalizedEngine -eq "mssql") { return "mssql" }
+        if ($normalizedEngine -eq "postgresql") { return "postgresql" }
     }
 
-    Write-Host -ForegroundColor Cyan "Setting up database template with package: $PackageId"
+    $adminConnectionString = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DATABASE_CONNECTION_STRING_ADMIN"
+    if (-not [string]::IsNullOrWhiteSpace($adminConnectionString)) {
+        try {
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder.set_ConnectionString($adminConnectionString)
 
-    Import-Module ../Package-Management.psm1
+            foreach ($marker in @("host", "username", "port", "sslmode")) {
+                if ($builder.ContainsKey($marker)) { return "postgresql" }
+            }
 
-    $pkgPath = Get-NugetPackage -PackageName $PackageId -PackageVersion $Version -PreRelease
-
-    $sqlPath = Join-Path $pkgPath "$PackageId.sql"
-
-    if (-Not (Test-Path $sqlPath)) {
-        throw "Database script file not found at: $sqlPath"
+            foreach ($marker in @("server", "data source", "initial catalog", "user id", "trusted_connection")) {
+                if ($builder.ContainsKey($marker)) { return "mssql" }
+            }
+        }
+        catch {
+            # Not a parseable connection string; fall through to the default below.
+            Write-Verbose "Admin connection string is not parseable; defaulting to postgresql."
+        }
     }
 
-    # Wait for PostgreSQL to be ready with retries and detailed logging
-    Write-Host -ForegroundColor Cyan "Waiting for PostgreSQL to be ready..."
-    $maxAttempts = 30
-    $attempt = 0
-    $isReady = $false
+    return "postgresql"
+}
 
-    do {
-        Write-Host "Attempt $($attempt + 1)/$maxAttempts`: Checking PostgreSQL connection..."
+function Resolve-RestoreDatabaseName {
+    <#
+    .SYNOPSIS
+    Resolves the target database name from the same engine-specific env key
+    configure-local-data-store.ps1 uses: POSTGRES_DB_NAME for PostgreSQL, MSSQL_DB_NAME for
+    SQL Server. Both default to "edfi_datamanagementservice", matching that script's defaults.
+    #>
+    param(
+        [hashtable]$EnvValues,
 
-        # Check if container is running first
-        $containerStatus = docker ps --filter "name=dms-postgresql" --format "{{.Status}}"
-        if ([string]::IsNullOrWhiteSpace($containerStatus)) {
-            Write-Host -ForegroundColor Red "PostgreSQL container 'dms-postgresql' is not running"
-            docker ps -a --filter "name=postgres" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-        } else {
-            Write-Host -ForegroundColor Yellow "Container status: $containerStatus"
-        }
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql"
+    )
 
-        # Test database connection
-        docker exec dms-postgresql psql -U $User -d $Database -c "SELECT 1;" 2>$null
+    if ($DatabaseEngine -eq "mssql") {
+        return Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+    }
 
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host -ForegroundColor Green "✅ PostgreSQL is ready!"
-            $isReady = $true
-            break
-        } else {
-            Write-Host -ForegroundColor Yellow "PostgreSQL not ready yet (exit code: $LASTEXITCODE)"
+    return Get-EnvValueOrDefault -EnvValues $EnvValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
+}
 
-            # Show container logs for debugging on first attempt and every 10th attempt
-            if ($attempt -eq 0 -or $attempt % 10 -eq 0) {
-                Write-Host -ForegroundColor Cyan "Recent PostgreSQL logs:"
-                docker logs --tail 5 dms-postgresql 2>$null
-            }
-        }
+function Resolve-RestoreTemplatePackageId {
+    <#
+    .SYNOPSIS
+    Resolves the DATABASE_TEMPLATE_PACKAGE id to restore, with its Minimal|Populated template
+    segment swapped to match -RestoreTemplate.
 
-        if ($attempt -lt ($maxAttempts - 1)) {
-            Write-Host "Waiting 10 seconds before next attempt..."
-            Start-Sleep -Seconds 10
-        }
-        $attempt++
-    } while ($attempt -lt $maxAttempts)
+    .DESCRIPTION
+    DATABASE_TEMPLATE_PACKAGE is already engine-correct for the composed environment file
+    (Resolve-DatabaseEngineEnvironmentFile rewrites its engine segment when composing the MSSQL
+    overlay), so only the template segment is swapped here via Convert-TemplatePackageToken.
+    When the env file does not set DATABASE_TEMPLATE_PACKAGE, falls back to the historical
+    PostgreSQL Minimal default and rewrites both its engine and template segments to match the
+    resolved engine and the requested template.
+    #>
+    param(
+        [hashtable]$EnvValues,
 
-    if ($isReady) {
-        Write-Host "PostgreSQL is running. Proceeding with bootstrap..."
-        $schemaName = "dms"
-        $schemaExists = docker exec dms-postgresql psql -U $User -d $Database -tAc "SELECT 1 FROM pg_namespace WHERE nspname = '$schemaName';"
-        if (-not $schemaExists) {
-            docker cp $sqlPath "dms-postgresql:/tmp/restore.sql"
-            docker exec dms-postgresql psql -U postgres -d $database -f /tmp/restore.sql
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
 
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "Template data loaded successfully."
-            } else {
-                Write-Error "Failed to execute the database script file."
-            }
+        [Parameter(Mandatory)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$RestoreTemplate
+    )
+
+    $packageId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DATABASE_TEMPLATE_PACKAGE"
+    if ([string]::IsNullOrWhiteSpace($packageId)) {
+        $defaultPackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+        Write-Information "Environment variable DATABASE_TEMPLATE_PACKAGE is not set. Falling back to default package: $(Format-LogSafeText $defaultPackageId)." -InformationAction Continue
+        $engineToken = if ($DatabaseEngine -eq "mssql") { "MsSql" } else { "PostgreSql" }
+        return Convert-TemplatePackageToken -PackageId $defaultPackageId -Engine $engineToken -Template $RestoreTemplate
+    }
+
+    return Convert-TemplatePackageToken -PackageId $packageId -Template $RestoreTemplate
+}
+
+function Restore-DatabaseTemplate {
+    <#
+    .SYNOPSIS
+    Restores a Minimal or Populated database-template package into the running database
+    container for a composed bootstrap environment file.
+
+    .DESCRIPTION
+    Reads the composed environment file to resolve the effective database engine
+    (Resolve-RestoreDatabaseEngine), the target database name (Resolve-RestoreDatabaseName),
+    and the template package id with its Minimal|Populated segment swapped to -RestoreTemplate
+    (Resolve-RestoreTemplatePackageId). The package is downloaded via Get-NugetPackage unless
+    -PackageDirectory points at an already-extracted package (used for pre-publish validation
+    and tests), then restored into the target database via Template-Management.psm1's
+    Restore-TemplatePackage, which drops and recreates the database (PostgreSQL: .sql dump;
+    SQL Server: .bak backup).
+
+    Invoked by the bootstrap wrappers as an alternative to schema provisioning: the restored
+    database already carries the effective schema, so DMS startup validates it against the
+    effective schema hash without any additional DDL work.
+
+    .PARAMETER EnvironmentFile
+    Path to the composed bootstrap environment file.
+
+    .PARAMETER RestoreTemplate
+    Which built-in template to restore: "Minimal" or "Populated".
+
+    .PARAMETER PackageDirectory
+    Directory already containing the extracted template .nupkg. When omitted, the package is
+    downloaded via Get-NugetPackage.
+
+    .EXAMPLE
+    Restore-DatabaseTemplate -EnvironmentFile ./.env -RestoreTemplate Populated
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$RestoreTemplate,
+
+        [string]$PackageDirectory
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+
+    $envValues = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
+    $databaseEngine = Resolve-RestoreDatabaseEngine -EnvValues $envValues
+    $databaseName = Resolve-RestoreDatabaseName -EnvValues $envValues -DatabaseEngine $databaseEngine
+    $packageId = Resolve-RestoreTemplatePackageId -EnvValues $envValues -DatabaseEngine $databaseEngine -RestoreTemplate $RestoreTemplate
+
+    Write-Information "Restoring $RestoreTemplate database template for database '$(Format-LogSafeText $databaseName)' (engine: $databaseEngine) using package '$(Format-LogSafeText $packageId)'." -InformationAction Continue
+
+    $resolvedPackageDirectory =
+        if (-not [string]::IsNullOrWhiteSpace($PackageDirectory)) {
+            $PackageDirectory
         }
         else {
-           Write-Warning "PostgreSQL Data Seed Load failed: existing volumes were detected with data loaded. Please remove them before proceeding."
+            Import-Module (Join-Path $PSScriptRoot "../Package-Management.psm1") -Force
+            Get-NugetPackage -PackageName $packageId -PreRelease
         }
-    } else {
-        Write-Error "PostgreSQL server failed to become ready after $maxAttempts attempts (5 minutes total)"
-        Write-Host -ForegroundColor Red "Expected container: dms-postgresql, Database: $Database, User: $User"
 
-        Write-Host -ForegroundColor Cyan "Current PostgreSQL containers:"
-        docker ps -a --filter "name=postgresql" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    Import-Module (Join-Path $PSScriptRoot "../DatabaseTemplates/Template-Management.psm1") -Force
 
-        Write-Host -ForegroundColor Cyan "Recent container logs:"
-        docker logs --tail 15 dms-postgresql 2>$null
-
-        throw "PostgreSQL connection failed - check container status and logs above"
+    $restoreArgs = @{
+        PackageDirectory = $resolvedPackageDirectory
+        DatabaseName = $databaseName
+        DatabaseEngine = $databaseEngine
     }
+    if ($databaseEngine -eq "mssql") {
+        $restoreArgs.MssqlPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+    }
+
+    $restoredPackageName = Restore-TemplatePackage @restoreArgs
+
+    Write-Information "Database template restored successfully from package '$(Format-LogSafeText $restoredPackageName)'." -InformationAction Continue
 }
+
+Export-ModuleMember -Function Restore-DatabaseTemplate

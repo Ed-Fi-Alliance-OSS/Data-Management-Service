@@ -44,6 +44,15 @@ on:
         required: false
         type: boolean
         default: false
+      # The built package's data dump is coupled to a specific engine image: the mssql .bak
+      # backup is coupled to the pinned mcr.microsoft.com/mssql/server:2022-latest image used to
+      # create and restore it, the same way the postgresql .sql dump is coupled to the
+      # PostgreSQL major version it was built and restored against.
+      database_engine:
+        description: "Database engine for the relational template datastore (postgresql or mssql)"
+        required: false
+        type: string
+        default: "postgresql"
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
         required: true
@@ -95,6 +104,12 @@ jobs:
           $publishPackage = [bool]::Parse('${{ inputs.publish_package }}')
           $environmentFile = '${{ inputs.environment_file }}'
           $packageName = '${{ inputs.package_name }}'
+          $databaseEngine = '${{ inputs.database_engine }}'
+
+          $databaseEngines = @('postgresql', 'mssql')
+          if ($databaseEngine -notin $databaseEngines) {
+            throw "database_engine must be one of: $($databaseEngines -join ', '); got '$databaseEngine'."
+          }
 
           $templateEnvFiles = @('./.env.template', './.env.template.ds61', './.env.smoke', './.env.smoke.ds61')
           if ($environmentFile -notin $templateEnvFiles) {
@@ -103,14 +118,26 @@ jobs:
 
           # The smoke surface (Core+[TPDM]+Sample+Homograph) is an in-run smoke artifact only. It
           # must never publish under the product template contract, and must not reuse a product
-          # package name.
+          # package name. The smoke env files are PostgreSQL-only; MSSQL smoke coverage is out of
+          # scope, so combining a smoke env file with database_engine mssql is rejected outright.
           $smokeEnvFiles = @('./.env.smoke', './.env.smoke.ds61')
           if ($environmentFile -in $smokeEnvFiles) {
+            if ($databaseEngine -eq 'mssql') {
+              throw "environment_file '$environmentFile' is PostgreSQL-only and cannot be combined with database_engine 'mssql'."
+            }
             if ($publishPackage) {
               throw "environment_file '$environmentFile' is smoke-only and must not be published; set publish_package to false."
             }
             if ($packageName -notlike 'EdFi.Api.Smoke.Template.PostgreSql*') {
               throw "environment_file '$environmentFile' requires a smoke package_name (prefix 'EdFi.Api.Smoke.Template.PostgreSql'); got '$packageName'."
+            }
+          }
+          else {
+            # Non-smoke (product) template package names are engine-dependent so a build cannot
+            # silently publish an MSSQL dump under the PostgreSQL product name, or vice versa.
+            $expectedPackagePrefix = if ($databaseEngine -eq 'mssql') { 'EdFi.Api.Populated.Template.MsSql' } else { 'EdFi.Api.Populated.Template.PostgreSql' }
+            if ($packageName -notlike "$expectedPackagePrefix*") {
+              throw "environment_file '$environmentFile' with database_engine '$databaseEngine' requires a package_name with prefix '$expectedPackagePrefix'; got '$packageName'."
             }
           }
 
@@ -179,7 +206,7 @@ jobs:
       - name: Start DMS infrastructure
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -InfraOnly
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -InfraOnly -DatabaseEngine "${{ inputs.database_engine }}"
         working-directory: eng/docker-compose/
 
       # No data store is created by default; register the template data store before
@@ -193,9 +220,20 @@ jobs:
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
           $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
           $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
+
+          # Add-DataStore always requires a PostgresCredential; for mssql it goes unused because
+          # -ConnectionString is supplied verbatim below. The Configuration Service backing store
+          # is always PostgreSQL regardless of database_engine, so $postgresCredential above is
+          # unaffected.
+          $dataStoreConnectionString = ""
+          if ("${{ inputs.database_engine }}" -eq "mssql") {
+            $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+            $dataStoreConnectionString = New-DataStoreConnectionString -DatabaseEngine "mssql" -DbHost "dms-mssql" -Port 1433 -Username "sa" -Password $mssqlPassword -DatabaseName $env:TEMPLATE_DB_NAME
+          }
+
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:TEMPLATE_DB_NAME -Name "Template Data Store" -DataStoreType "Template"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:TEMPLATE_DB_NAME -ConnectionString $dataStoreConnectionString -Name "Template Data Store" -DataStoreType "Template"
           if (-not $dataStoreId) {
             throw "Failed to register the template data store."
           }
@@ -204,13 +242,13 @@ jobs:
 
       - name: Provision template database
         run: |
-          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
+          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release -DatabaseEngine "${{ inputs.database_engine }}"
         working-directory: eng/docker-compose/
 
       - name: Start DMS Docker
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -DmsOnly
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -DmsOnly -DatabaseEngine "${{ inputs.database_engine }}"
         working-directory: eng/docker-compose/
 
       - name: Wait for DMS to be ready
@@ -261,13 +299,17 @@ jobs:
                   -ApplicationName $uniqueAppName `
                   -DataStoreDatabaseName $env:TEMPLATE_DB_NAME `
                   -DataStoreId $env:TEMPLATE_DATA_STORE_ID `
-                  -DumpAllUserSchemas
+                  -DumpAllUserSchemas `
+                  -DatabaseEngine '${{ inputs.database_engine }}'
         working-directory: eng/DatabaseTemplates/
 
       - name: Verify template package restore
         if: ${{ inputs.verify_restore }}
         run: |
-          $verifyParams = @{ SourceDatabaseName = $env:TEMPLATE_DB_NAME }
+          $verifyParams = @{
+            SourceDatabaseName = $env:TEMPLATE_DB_NAME
+            DatabaseEngine = '${{ inputs.database_engine }}'
+          }
           if ([bool]::Parse('${{ inputs.require_populated_data }}')) {
             $verifyParams.RequirePopulatedData = $true
           }

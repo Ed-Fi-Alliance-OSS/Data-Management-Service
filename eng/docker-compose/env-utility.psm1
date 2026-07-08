@@ -650,6 +650,60 @@ function Resolve-DataStandardEnvironmentFile {
         -TargetPath $derivedPath
 }
 
+function Convert-TemplatePackageToken {
+    <#
+    .SYNOPSIS
+        Rewrites the engine and/or template segments of a DATABASE_TEMPLATE_PACKAGE-shaped
+        package id, leaving every other segment (including the version) untouched.
+
+    .DESCRIPTION
+        Package ids follow the shape <prefix>.<template>.Template.<engine>.<version>, e.g.
+        EdFi.Api.Populated.Template.PostgreSql.5.2.0 or EdFi.Dms.Minimal.Template.MsSql.6.1.0.
+        <prefix> varies (EdFi.Api, EdFi.Dms, ...) and is preserved verbatim, as is <version>.
+
+        -Engine and -Template are independent: pass either, both, or neither. Omitting one
+        leaves that segment as found in PackageId - in particular, a Smoke template segment is
+        left alone unless -Template is passed explicitly. When PackageId does not match the
+        expected shape (blank, or an unrecognized format), it is returned unchanged.
+
+    .PARAMETER PackageId
+        The package id to rewrite.
+
+    .PARAMETER Engine
+        Optional target engine token ("PostgreSql" or "MsSql") to replace the existing engine
+        segment.
+
+    .PARAMETER Template
+        Optional target template token ("Minimal", "Populated", or "Smoke") to replace the
+        existing template segment.
+
+    .OUTPUTS
+        [string] The rewritten package id, or PackageId unchanged when it is blank or does not
+        match the expected <template>.Template.<engine>.<version> shape.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$PackageId,
+        [ValidateSet("PostgreSql", "MsSql")]
+        [string]$Engine,
+        [ValidateSet("Minimal", "Populated", "Smoke")]
+        [string]$Template
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PackageId)) {
+        return $PackageId
+    }
+
+    $match = [regex]::Match($PackageId, '^(?<prefix>.+)\.(?<template>Minimal|Populated|Smoke)\.Template\.(?<engine>PostgreSql|MsSql)\.(?<version>.+)$')
+    if (-not $match.Success) {
+        return $PackageId
+    }
+
+    $templateSegment = if (-not [string]::IsNullOrWhiteSpace($Template)) { $Template } else { $match.Groups['template'].Value }
+    $engineSegment = if (-not [string]::IsNullOrWhiteSpace($Engine)) { $Engine } else { $match.Groups['engine'].Value }
+
+    return "$($match.Groups['prefix'].Value).$templateSegment.Template.$engineSegment.$($match.Groups['version'].Value)"
+}
+
 function Resolve-DatabaseEngineEnvironmentFile {
     <#
     .SYNOPSIS
@@ -657,7 +711,10 @@ function Resolve-DatabaseEngineEnvironmentFile {
         default "postgresql" engine the base file is returned unchanged. With "mssql" the
         .env.mssql overlay (DMS_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server admin
         connection string) is composed onto the base into a derived file under
-        <DockerComposeRoot>/.derived/ and that path is returned.
+        <DockerComposeRoot>/.derived/ and that path is returned. DATABASE_TEMPLATE_PACKAGE
+        (inherited from the base file - .env.mssql never carries it, so DS-version and
+        Minimal/Populated variance keep coming from the base file) is rewritten from its
+        PostgreSql engine token to MsSql in the returned file.
 
     .DESCRIPTION
         Reuses New-DataStandardDerivedEnvFile's generic base+overlay composition (it is not
@@ -669,7 +726,9 @@ function Resolve-DatabaseEngineEnvironmentFile {
 
         Idempotency guard: when the base file already carries DMS_DATASTORE=mssql (an earlier
         phase - typically the bootstrap wrapper - already composed the overlay onto it) the base
-        file is returned unchanged instead of composing a derived-of-derived file.
+        file is returned unchanged instead of composing a derived-of-derived file, unless its
+        DATABASE_TEMPLATE_PACKAGE still carries a stale PostgreSql engine token, in which case a
+        corrected derived file is materialized rather than mutating the caller's source file.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -695,9 +754,24 @@ function Resolve-DatabaseEngineEnvironmentFile {
         $DockerComposeRoot = $PSScriptRoot
     }
 
+    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).mssql"
+    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
+
     $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
+    $templatePackage = Get-EnvValue -EnvValues $baseValues -Name "DATABASE_TEMPLATE_PACKAGE"
+    $correctedTemplatePackage = Convert-TemplatePackageToken -PackageId $templatePackage -Engine "MsSql"
+
     if ((Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql") {
-        return $BaseEnvironmentFile
+        if ($correctedTemplatePackage -eq $templatePackage) {
+            return $BaseEnvironmentFile
+        }
+
+        Write-DerivedEnvFile `
+            -BaseEnvironmentFile $BaseEnvironmentFile `
+            -TargetPath $derivedPath `
+            -KeyOverrides @{ DATABASE_TEMPLATE_PACKAGE = $correctedTemplatePackage }
+
+        return $derivedPath
     }
 
     $overlayPath = Join-Path $DockerComposeRoot ".env.mssql"
@@ -705,11 +779,19 @@ function Resolve-DatabaseEngineEnvironmentFile {
         throw "Resolve-DatabaseEngineEnvironmentFile: no MSSQL engine overlay found (expected '$overlayPath')."
     }
 
-    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).mssql"
-    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
-
-    return New-DataStandardDerivedEnvFile `
+    $composedPath = New-DataStandardDerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
         -OverlayEnvironmentFile $overlayPath `
         -TargetPath $derivedPath
+
+    # The overlay never carries DATABASE_TEMPLATE_PACKAGE (see .env.mssql's header), so the
+    # composed file's value is still exactly the base file's value at this point.
+    if ($correctedTemplatePackage -ne $templatePackage) {
+        Write-DerivedEnvFile `
+            -BaseEnvironmentFile $composedPath `
+            -TargetPath $composedPath `
+            -KeyOverrides @{ DATABASE_TEMPLATE_PACKAGE = $correctedTemplatePackage }
+    }
+
+    return $composedPath
 }

@@ -2919,19 +2919,18 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "start-published-dms.ps1 still declares -LoadSeedData pending bootstrap verification gate" {
-            # bootstrap-design.md Section 6.4 gates the removal of -LoadSeedData on
-            # "verifying the repo-pinned BulkLoadClient XML mode against DMS discovery,
-            # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Until that
-            # gate closes, -LoadSeedData stays on start-published-dms.ps1 invoking the
-            # direct-SQL database-template path for direct published-image startup.
+        It "start-published-dms.ps1 no longer declares -LoadSeedData" {
+            # The direct-SQL database-template path moves to the phase-command model: use
+            # Restore-DatabaseTemplate (setup-database-template.psm1) via the
+            # bootstrap-published-dms.ps1 -RestoreTemplate flow, or load-dms-seed-data.ps1
+            # directly for the API-based seed path.
             $startScript = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             Test-Path -LiteralPath $startScript | Should -BeTrue
             $content = Get-Content -LiteralPath $startScript -Raw
             $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
             $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
                 ForEach-Object { $_.Groups[1].Value }
-            $declaredParams | Should -Contain "LoadSeedData" -Because "start-published-dms.ps1 must retain -LoadSeedData until the bootstrap-design.md Section 6.4 verification gate closes"
+            $declaredParams | Should -Not -Contain "LoadSeedData" -Because "start-published-dms.ps1 must not declare -LoadSeedData after the direct-SQL seed path is removed"
         }
 
         It "start-local-dms.ps1 no longer declares -LoadSeedData (DMS-1153 de-scope)" {
@@ -2957,6 +2956,181 @@ EdFi.BulkLoadClient.Console fake
                 $content = Get-Content -LiteralPath $startScript -Raw
                 $content | Should -Match 'Resolve-CmsBaseUrl\s+-EnvValues\s+\$envValues' -Because "$name must resolve CMS URL via Resolve-CmsBaseUrl so a custom DMS_CONFIG_ASPNETCORE_HTTP_PORTS is honored"
                 $content | Should -Not -Match '"http://localhost:8081"' -Because "$name must not hard-code the default CMS URL; the resolver fallback already returns http://localhost:8081 when the env override is absent"
+            }
+        }
+    }
+
+    Context "wrapper -RestoreTemplate mutual exclusion with seed-source flags" {
+        It "rejects -RestoreTemplate combined with -LoadSeedData, -SeedTemplate, or -SeedDataPath on both wrappers before any phase invocation" {
+            foreach ($wrapperEntryScriptName in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                $wrapperScript = Join-Path $script:sourceDockerComposeRoot $wrapperEntryScriptName
+                $tmpRoot = New-TestDirectory
+                $tmpDockerCompose = Join-Path $tmpRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $tmpDockerCompose -Force | Out-Null
+
+                Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
+                Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+                Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
+
+                $startScriptName = $wrapperEntryScriptName -replace '^bootstrap-', 'start-'
+                $startProbe = Join-Path $tmpRoot "start-invoked.txt"
+                $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
+
+                "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$startProbe' -Value 'invoked' -Encoding utf8" |
+                    Set-Content -LiteralPath (Join-Path $tmpDockerCompose $startScriptName) -Encoding utf8
+                "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$seedProbe' -Value 'invoked' -Encoding utf8" |
+                    Set-Content -LiteralPath (Join-Path $tmpDockerCompose "load-dms-seed-data.ps1") -Encoding utf8
+
+                $wrapperCopy = Join-Path $tmpDockerCompose $wrapperEntryScriptName
+                $customSeedDir = Join-Path $tmpRoot "custom-seeds"
+                New-Item -ItemType Directory -Path $customSeedDir -Force | Out-Null
+
+                { & $wrapperCopy -RestoreTemplate Minimal -LoadSeedData } |
+                    Should -Throw -ExpectedMessage "*-RestoreTemplate and -LoadSeedData are mutually exclusive*" -Because "$wrapperEntryScriptName must reject -RestoreTemplate + -LoadSeedData"
+                { & $wrapperCopy -RestoreTemplate Minimal -SeedTemplate Populated } |
+                    Should -Throw -ExpectedMessage "*-RestoreTemplate and -SeedTemplate are mutually exclusive*" -Because "$wrapperEntryScriptName must reject -RestoreTemplate + -SeedTemplate"
+                { & $wrapperCopy -RestoreTemplate Minimal -SeedDataPath $customSeedDir } |
+                    Should -Throw -ExpectedMessage "*-RestoreTemplate and -SeedDataPath are mutually exclusive*" -Because "$wrapperEntryScriptName must reject -RestoreTemplate + -SeedDataPath"
+
+                Test-Path -LiteralPath $startProbe | Should -BeFalse -Because "no phase may run when $wrapperEntryScriptName rejects the -RestoreTemplate combination"
+                Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "no phase may run when $wrapperEntryScriptName rejects the -RestoreTemplate combination"
+
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
+        }
+
+        It "rejects -RestoreTemplate combined with -LoadSeedData on both wrappers under -DatabaseEngine mssql (gating is engine-agnostic)" {
+            foreach ($wrapperEntryScriptName in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                $wrapperScript = Join-Path $script:sourceDockerComposeRoot $wrapperEntryScriptName
+                $tmpRoot = New-TestDirectory
+                $tmpDockerCompose = Join-Path $tmpRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $tmpDockerCompose -Force | Out-Null
+
+                Copy-Item -LiteralPath $wrapperScript -Destination $tmpDockerCompose
+                Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
+                Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
+
+                $startScriptName = $wrapperEntryScriptName -replace '^bootstrap-', 'start-'
+                $startProbe = Join-Path $tmpRoot "start-invoked.txt"
+
+                "param([Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$startProbe' -Value 'invoked' -Encoding utf8" |
+                    Set-Content -LiteralPath (Join-Path $tmpDockerCompose $startScriptName) -Encoding utf8
+
+                $wrapperCopy = Join-Path $tmpDockerCompose $wrapperEntryScriptName
+
+                { & $wrapperCopy -RestoreTemplate Minimal -LoadSeedData -DatabaseEngine mssql } |
+                    Should -Throw -ExpectedMessage "*-RestoreTemplate and -LoadSeedData are mutually exclusive*" -Because "$wrapperEntryScriptName must reject the combination the same way under -DatabaseEngine mssql"
+
+                Test-Path -LiteralPath $startProbe | Should -BeFalse -Because "no phase may run when $wrapperEntryScriptName rejects the -RestoreTemplate combination under -DatabaseEngine mssql"
+
+                Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+            }
+        }
+    }
+
+    Context "database-template package id engine-token conversion" {
+        BeforeAll {
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+        }
+
+        Context "Convert-TemplatePackageToken" {
+            It "maps the template segment Populated to Minimal and back, leaving prefix, engine, and version untouched" {
+                $populated = "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+
+                $minimal = Convert-TemplatePackageToken -PackageId $populated -Template "Minimal"
+                $minimal | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+
+                (Convert-TemplatePackageToken -PackageId $minimal -Template "Populated") | Should -Be $populated
+            }
+
+            It "maps the engine segment PostgreSql to MsSql and back, leaving prefix, template, and version untouched" {
+                $postgres = "EdFi.Dms.Minimal.Template.PostgreSql.6.1.0"
+
+                $mssql = Convert-TemplatePackageToken -PackageId $postgres -Engine "MsSql"
+                $mssql | Should -Be "EdFi.Dms.Minimal.Template.MsSql.6.1.0"
+
+                (Convert-TemplatePackageToken -PackageId $mssql -Engine "PostgreSql") | Should -Be $postgres
+            }
+
+            It "leaves the Smoke template segment untouched unless -Template is passed explicitly" {
+                $smoke = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
+
+                (Convert-TemplatePackageToken -PackageId $smoke -Engine "MsSql") | Should -Be "EdFi.Api.Smoke.Template.MsSql.5.2.0" -Because "omitting -Template must leave the Smoke segment alone"
+                (Convert-TemplatePackageToken -PackageId $smoke -Template "Minimal") | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" -Because "an explicit -Template must still rewrite Smoke"
+            }
+
+            It "returns a package id unchanged when it does not match the <template>.Template.<engine>.<version> shape, and passes blank input through" {
+                $unrecognized = "Some.Unrelated.Package.Id.1.0.0"
+                (Convert-TemplatePackageToken -PackageId $unrecognized -Engine "MsSql" -Template "Populated") | Should -Be $unrecognized
+                (Convert-TemplatePackageToken -PackageId "" -Engine "MsSql") | Should -Be ""
+            }
+        }
+
+        Context "Resolve-DatabaseEngineEnvironmentFile DATABASE_TEMPLATE_PACKAGE rewrite" {
+            BeforeEach {
+                $script:engineTokenWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-enginetoken-$([Guid]::NewGuid().ToString('N'))"
+                $script:engineTokenComposeRoot = Join-Path $script:engineTokenWork "compose"
+                New-Item -ItemType Directory -Path $script:engineTokenComposeRoot -Force | Out-Null
+
+                Set-Content -LiteralPath (Join-Path $script:engineTokenComposeRoot ".env.mssql") -Value @"
+MSSQL_SA_PASSWORD=Abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_DATASTORE=mssql
+DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+            }
+
+            AfterEach {
+                if (Test-Path -LiteralPath $script:engineTokenWork) {
+                    Remove-Item -LiteralPath $script:engineTokenWork -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            It "rewrites a PostgreSql DATABASE_TEMPLATE_PACKAGE to MsSql when composing from a plain .env-style base" {
+                $basePath = Join-Path $script:engineTokenWork ".env"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n" -NoNewline
+
+                $derivedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $values = ReadValuesFromEnvFile $derivedPath
+                $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            }
+
+            It "rewrites a PostgreSql DATABASE_TEMPLATE_PACKAGE to MsSql when composing from a data-standard-derived (.env.ds61-style) base" {
+                $basePath = Join-Path $script:engineTokenWork ".env.ds61"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0`n" -NoNewline
+
+                $derivedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $values = ReadValuesFromEnvFile $derivedPath
+                $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Populated.Template.MsSql.6.1.0"
+            }
+
+            It "is idempotent on re-compose: composing an already-corrected derived file returns it unchanged" {
+                $basePath = Join-Path $script:engineTokenWork ".env"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n" -NoNewline
+
+                $firstPass = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+                $secondPass = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $firstPass -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $secondPass | Should -Be $firstPass -Because "re-composing an already-corrected mssql-flagged file must not produce a derived-of-derived file"
+                (ReadValuesFromEnvFile $secondPass)["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            }
+
+            It "corrects a stale PostgreSql DATABASE_TEMPLATE_PACKAGE on an already-composed mssql base without mutating the source file" {
+                # Models a base file that already carries DMS_DATASTORE=mssql (e.g. hand-edited, or
+                # composed by an earlier phase) but whose DATABASE_TEMPLATE_PACKAGE was never rewritten.
+                $staleBasePath = Join-Path $script:engineTokenWork ".env"
+                $staleContent = "DMS_DATASTORE=mssql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n"
+                Set-Content -LiteralPath $staleBasePath -Value $staleContent -NoNewline
+
+                $correctedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $staleBasePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $correctedPath | Should -Not -Be $staleBasePath -Because "the correction must land in a new derived file, not the source"
+                (ReadValuesFromEnvFile $correctedPath)["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+
+                # The source file must be untouched.
+                (Get-Content -LiteralPath $staleBasePath -Raw) | Should -Be $staleContent
             }
         }
     }
@@ -3308,6 +3482,36 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
             $mgmtContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "../Dms-Management.psm1") -Raw
             $mgmtContent | Should -Match '\[int\]\$MaxAttempts\s*=\s*60' -Because "60 attempts x 500ms gives the intended 30-second default wait budget"
             $mgmtContent | Should -Match '\[int\]\$DelayMs\s*=\s*500'
+        }
+
+        It "build-dms.ps1 Start-BootstrapDockerEnvironment rejects -RestoreTemplate combined with -LoadSeedData before any Docker work" {
+            # Mirrors the mutual-exclusion check the bootstrap wrapper enforces at its own entry point;
+            # Start-BootstrapDockerEnvironment must reject the same combination before DockerBuild or
+            # Stop-DockerEnvironment run.
+            $throwIndex = $script:buildDmsContent.IndexOf('throw "-RestoreTemplate and -LoadSeedData are mutually exclusive.')
+            $throwIndex | Should -BeGreaterThan -1 -Because "Start-BootstrapDockerEnvironment must reject -RestoreTemplate + -LoadSeedData with the same contract message as the bootstrap wrapper"
+
+            $functionStart = $script:buildDmsContent.IndexOf("function Start-BootstrapDockerEnvironment")
+            $functionStart | Should -BeGreaterThan -1
+            $dockerBuildIndex = $script:buildDmsContent.IndexOf("Invoke-Step { DockerBuild }", $functionStart)
+            # Search for the actual call site (line-continued with a backtick), not the explanatory
+            # comment above the throw, which also mentions "Stop-DockerEnvironment" by name.
+            $stopEnvironmentIndex = $script:buildDmsContent.IndexOf("Stop-DockerEnvironment ``", $functionStart)
+
+            $throwIndex | Should -BeGreaterThan $functionStart
+            $throwIndex | Should -BeLessThan $dockerBuildIndex -Because "the mutual-exclusion check must run before any Docker build work"
+            $throwIndex | Should -BeLessThan $stopEnvironmentIndex -Because "the mutual-exclusion check must run before stopping the existing Docker environment"
+
+            # The check must not be conditioned on -DatabaseEngine: the same throw applies to both engines.
+            $checkLine = ($script:buildDmsContent -split "`n") | Where-Object { $_ -match 'if \(\$LoadSeedData -and \$RestoreTemplate\)' } | Select-Object -First 1
+            $checkLine | Should -Not -BeNullOrEmpty
+            $checkLine | Should -Not -Match "DatabaseEngine" -Because "the mutual-exclusion gating must be identical for both database engines"
+        }
+
+        It "build-dms.ps1 Start-BootstrapDockerEnvironment forwards -RestoreTemplate, -DatabaseEngine, and -DataStandardVersion into the bootstrap wrapper splat" {
+            $script:buildDmsContent | Should -Match 'if\s*\(\$RestoreTemplate\)\s*\{\s*\$bootstrapArgs\.RestoreTemplate\s*=\s*\$RestoreTemplate\s*\}' -Because "-RestoreTemplate must be forwarded to the bootstrap wrapper only when supplied"
+            $script:buildDmsContent | Should -Match 'if\s*\(\$DatabaseEngine\)\s*\{\s*\$bootstrapArgs\.DatabaseEngine\s*=\s*\$DatabaseEngine\s*\}' -Because "-DatabaseEngine must be forwarded to the bootstrap wrapper only when supplied"
+            $script:buildDmsContent | Should -Match 'if\s*\(\$DataStandardVersionSupplied\)\s*\{\s*\$bootstrapArgs\.DataStandardVersion\s*=\s*\$DataStandardVersion\s*\}' -Because "-DataStandardVersion must be forwarded to the bootstrap wrapper only when the caller explicitly supplied it"
         }
     }
 }

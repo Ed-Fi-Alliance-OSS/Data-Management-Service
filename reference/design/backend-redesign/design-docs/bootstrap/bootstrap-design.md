@@ -1249,13 +1249,58 @@ Rationale: the direct-SQL path bypasses DMS API validation and serialization, wh
 > behavior. Phase 2 migration to JSONL remains gated on BulkLoadClient JSONL support (`--input-format jsonl`),
 > which is a cross-team dependency (see [Section 14.3](#143-blocking-cross-team-dependencies)).
 
+> **DMS-1255 update — evolution, not deletion.** The verification gate above closed for the `-LoadSeedData`
+> API seed path (Story 02/DMS-1152), which is the hard cut-over this section anticipated: `-LoadSeedData` /
+> `load-dms-seed-data.ps1` never falls back to direct SQL, and the BulkLoadClient XML verification gate
+> remains in force for that path. `setup-database-template.psm1`, however, was not deleted. It was
+> repurposed into a second, independent, opt-in data-delivery mode — engine-dispatched database-template
+> **restore** — gated behind the wrapper-level `-RestoreTemplate Minimal|Populated` flag on
+> `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` and mutually exclusive with `-LoadSeedData`. Its
+> `Restore-DatabaseTemplate` function no longer runs ad hoc SQL against a live developer database; it
+> restores a versioned NuGet package (a PostgreSQL `.sql` dump or, on MSSQL, a native `BACKUP DATABASE`
+> `.bak`) built and CI-verified ahead of time, then dispatches to `Restore-TemplatePackage` in
+> `eng/DatabaseTemplates/Template-Management.psm1` for the actual restore.
+>
+> The corruption rationale above does not carry over to this path. It applied to hand-written, ad hoc SQL
+> executed against a live database outside any validation path. A template package instead comes from
+> `Build-Template`, which populates its source database by loading the same sample data through the DMS
+> REST API (`Invoke-BulkLoad` against a running DMS instance) that `-LoadSeedData` uses — the package is a
+> snapshot of an API-validated database, not a bypass of it. Every published package is additionally
+> restore-verified in CI (`verify-template-restore.ps1`): the restored database must match the source
+> schema set, serve an authenticated read through DMS, and — for the `Populated` tier — reproduce the exact
+> source row counts. After a wrapper restores a package into a developer's database, DMS startup runs its
+> normal effective-schema-hash validation against it, the same check that follows DDL provisioning, so a
+> restored database is not exempt from that safeguard either.
+
 **Removal checklist (for implementation slice):**
 
-- Delete `eng/docker-compose/setup-database-template.psm1`.
-- Remove the `Import-Module ./setup-database-template.psm1` and `LoadSeedData` call from `start-local-dms.ps1` (lines 174–176).
-- Remove the `DATABASE_TEMPLATE_PACKAGE` variable from `.env.example`.
-- Replace with the BulkLoadClient invocation logic described in [Seed Delivery Phase Behavior](#631-seed-delivery-phase-behavior).
-- Update any developer-facing documentation that references the old SQL template package.
+The items below were the intended DMS-1152/DMS-916 removal plan. DMS-1255 changed the outcome for the
+module itself; each item is annotated with what actually happened.
+
+- Delete `eng/docker-compose/setup-database-template.psm1`. **Superseded (DMS-1255).** The module was
+  rewritten rather than deleted: it now exports `Restore-DatabaseTemplate`, the engine-dispatched
+  template-restore phase, instead of the old direct-SQL seed loader.
+- Remove the `Import-Module ./setup-database-template.psm1` and `LoadSeedData` call from `start-local-dms.ps1`
+  (lines 174–176). **Completed, differently (DMS-1153, then DMS-1255).** DMS-1153 already removed
+  `-LoadSeedData` and all seed-related parameters from `start-local-dms.ps1`, making it
+  infrastructure-lifecycle-only; the script never called `setup-database-template.psm1` again after that.
+  DMS-1255 gave the module a new caller instead: the bootstrap wrapper's restore phase
+  (`bootstrap-wrapper.psm1`), invoked only when `-RestoreTemplate` is supplied.
+- Remove the `DATABASE_TEMPLATE_PACKAGE` variable from `.env.example`. **Superseded (DMS-1255).** The
+  variable was kept and is now the template-restore package selector: base environment files carry its
+  PostgreSQL-shaped package id, and composing the `.env.mssql` engine overlay rewrites its engine segment to
+  the SQL Server equivalent automatically (`Convert-TemplatePackageToken`).
+- Replace with the BulkLoadClient invocation logic described in
+  [Seed Delivery Phase Behavior](#631-seed-delivery-phase-behavior). **Completed for the seed path; not
+  applicable to restore.** `load-dms-seed-data.ps1` is the BulkLoadClient replacement for API-based seed
+  delivery, as designed. Template restore is an additive, separate data-delivery mode that does not invoke
+  BulkLoadClient at restore time (only earlier, offline, when the source package was built), so there is no
+  BulkLoadClient equivalent to substitute in for it.
+- Update any developer-facing documentation that references the old SQL template package. **Completed
+  (DMS-1255).** `eng/docker-compose/README.md`'s "Running on the MSSQL backend" section documents the
+  current template-restore contract — engine dispatch, the `.bak`/pinned-SQL-Server-image coupling, and the
+  `DATABASE_TEMPLATE_PACKAGE` engine-token derivation — as an active, supported data-delivery mode rather
+  than a legacy path awaiting removal.
 
 ### 6.5 Performance Considerations
 
@@ -2295,8 +2340,11 @@ The proposed split of the current `setup-database-template.psm1` responsibilitie
 | Schema DDL (CREATE TABLE, indexes, schema) | Bundled in NuGet SQL template | Direct SchemaTools provisioning (`dms-schema ddl provision` or an equivalent helper over the same APIs) against the selected staged schema set and its exact physical footprint |
 | Seed data (descriptors, ed-org types, bootstrap records) | Bundled in NuGet SQL template | API-based seed loading via BulkLoadClient: XML in Phase 1, JSONL in Phase 2 ([API-Based Seed Data Loading](#6-api-based-seed-data-loading)) |
 
-`setup-database-template.psm1` is deprecated as part of this design. Its removal is tracked in the
-API-based seed-delivery slice (see [Companion Implementation Stories](#13-companion-implementation-stories)).
+`setup-database-template.psm1` is deprecated as part of this design for the seed-loading role described in
+this table. Its removal was tracked in the API-based seed-delivery slice (see [Companion Implementation
+Stories](#13-companion-implementation-stories)); see [Section 6.4](#64-deprecation-of-direct-sql-path) for
+the DMS-1255 outcome — the module was not deleted, but repurposed into the unrelated, opt-in
+database-template-restore data-delivery mode.
 
 ### 11.5 Selected ApiSchema.json Drives Exact Physical DDL Shape
 
@@ -2825,4 +2873,5 @@ or contributors.
 | 3 | Seed-loading parameter ownership | `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath` were accepted directly by `start-local-dms.ps1` | `-LoadSeedData` is a wrapper-level opt-in only; direct `load-dms-seed-data.ps1` invocation always loads seed data and owns `-SeedTemplate`, `-SeedDataPath`, `-AdditionalNamespacePrefix`, `-BootstrapManifestPath`, the seed-phase BulkLoadClient target `-DmsBaseUrl`, and the seed-phase token endpoint selector `-IdentityProvider`; `start-local-dms.ps1` no longer accepts seed-source or seed-authorization parameters | Call `load-dms-seed-data.ps1` directly for seed loading after `prepare-dms-schema.ps1` and `prepare-dms-claims.ps1`, passing `-DmsBaseUrl` for an IDE-hosted endpoint, `-IdentityProvider` when the running environment uses a non-default provider, and `-AdditionalNamespacePrefix` when custom seed data needs additional vendor namespace authorization, or use `bootstrap-local-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` which orchestrates the phase commands including seed loading |
 | 4 | Persisted data-store-ID hand-off via `.bootstrap/run-context.json` | `configure-local-data-store.ps1` wrote selected data store IDs to `.bootstrap/run-context.json`; downstream phases read that file to resolve their target set | data store IDs are emitted in a structured `configure-local-data-store.ps1` result and **forwarded in-memory** within the same wrapper invocation. Separate phase-command invocations use explicit `-DataStoreId <long[]>` or `-SchoolYear <int[]>` selectors with CMS-backed lookup; no disk artifact is written | Remove any scripts that read or depend on `.bootstrap/run-context.json`; use explicit `-DataStoreId` or `-SchoolYear` selectors when invoking `provision-dms-schema.ps1` or `load-dms-seed-data.ps1` independently |
 | 5 | Wrapper explicit instance targeting | `bootstrap-local-dms.ps1 -DataStoreId` could target downstream provision/seed phases while the configure phase still created or selected a different target set | The wrapper no longer exposes `-DataStoreId`; it always provisions and optionally seeds the instance set from the structured `configure-local-data-store.ps1` result in the same invocation. Explicit `-DataStoreId` targeting is **phase-command-only**. | Use `provision-dms-schema.ps1 -DataStoreId ...` or `load-dms-seed-data.ps1 -DataStoreId ...` directly for explicit ID targeting; use the wrapper only when its configure phase owns target selection for the run |
-| 6 | `start-local-dms.ps1` parameter surface (DMS-1153) | `-NoDataStore`, `-SchoolYearRange`, `-LoadSeedData`, and `-AddSmokeTestCredentials` were accepted by `start-local-dms.ps1` | `start-local-dms.ps1` is **infrastructure-lifecycle-only** as of DMS-1153; these four flags are removed. `-NoDataStore` is now owned by `configure-local-data-store.ps1` (narrow rerun escape hatch — see row #2). `-SchoolYearRange` and `-AddSmokeTestCredentials` are also owned by `configure-local-data-store.ps1`. `-LoadSeedData` is a wrapper-level opt-in (see row #3). `start-published-dms.ps1` retains these transitional flags unchanged. | Replace `start-local-dms.ps1 -NoDataStore` with `start-local-dms.ps1 -InfraOnly` followed by `configure-local-data-store.ps1 -NoDataStore`; or use `bootstrap-local-dms.ps1 -NoDataStore` which forwards the flag to the configure phase. For fresh-stack runs, drop `-NoDataStore` entirely and let `configure-local-data-store.ps1` create the instance. |
+| 6 | `start-local-dms.ps1` parameter surface (DMS-1153) | `-NoDataStore`, `-SchoolYearRange`, `-LoadSeedData`, and `-AddSmokeTestCredentials` were accepted by `start-local-dms.ps1` | `start-local-dms.ps1` is **infrastructure-lifecycle-only** as of DMS-1153; these four flags are removed. `-NoDataStore` is now owned by `configure-local-data-store.ps1` (narrow rerun escape hatch — see row #2). `-SchoolYearRange` and `-AddSmokeTestCredentials` are also owned by `configure-local-data-store.ps1`. `-LoadSeedData` is a wrapper-level opt-in (see row #3). `start-published-dms.ps1` retained these transitional flags unchanged at DMS-1153 (see row #7 for the subsequent DMS-1255 change to its `-LoadSeedData`). | Replace `start-local-dms.ps1 -NoDataStore` with `start-local-dms.ps1 -InfraOnly` followed by `configure-local-data-store.ps1 -NoDataStore`; or use `bootstrap-local-dms.ps1 -NoDataStore` which forwards the flag to the configure phase. For fresh-stack runs, drop `-NoDataStore` entirely and let `configure-local-data-store.ps1` create the instance. |
+| 7 | `start-published-dms.ps1` `-LoadSeedData` and `-DatabaseEngine` (DMS-1255) | `start-published-dms.ps1` retained its own `-LoadSeedData` switch that ran the direct-SQL database-template load via `setup-database-template.psm1` — a different mechanism from the wrapper-level, API-based `-LoadSeedData` in row #3, despite the shared name. `-DatabaseEngine` existed only on the local flow (`bootstrap-local-dms.ps1`, `start-local-dms.ps1`). | `start-published-dms.ps1`'s own `-LoadSeedData` switch is removed. Its direct-SQL template-restore behavior became the engine-dispatched `Restore-DatabaseTemplate` phase, reachable only through the wrapper-level `-RestoreTemplate Minimal\|Populated` on both `bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1` (mutually exclusive with the wrapper's API-based `-LoadSeedData`). `-DatabaseEngine postgresql\|mssql` is extended to `bootstrap-published-dms.ps1` and `start-published-dms.ps1`, mirroring the local flow. | Replace `start-published-dms.ps1 -LoadSeedData` with `bootstrap-published-dms.ps1 -RestoreTemplate Minimal\|Populated` for a pre-built template, or `bootstrap-published-dms.ps1 -LoadSeedData [-SeedTemplate <name>]` for the API-based path. |

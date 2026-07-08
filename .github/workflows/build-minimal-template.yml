@@ -40,6 +40,15 @@ on:
         required: false
         type: string
         default: "./.env.template"
+      # The built package's data dump is coupled to a specific engine image: the mssql .bak
+      # backup is coupled to the pinned mcr.microsoft.com/mssql/server:2022-latest image used to
+      # create and restore it, the same way the postgresql .sql dump is coupled to the
+      # PostgreSQL major version it was built and restored against.
+      database_engine:
+        description: "Database engine for the relational template datastore (postgresql or mssql)"
+        required: false
+        type: string
+        default: "postgresql"
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
         required: true
@@ -143,12 +152,12 @@ jobs:
       - name: Start DMS Docker
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -EnableConfig -DatabaseEngine "${{ inputs.database_engine }}"
         working-directory: eng/docker-compose/
 
       - name: Provision relational database
         run: |
-          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release
+          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release -DatabaseEngine "${{ inputs.database_engine }}"
         working-directory: eng/docker-compose/
 
       # DMS fails fatally at startup when the Configuration Service has no data stores.
@@ -163,9 +172,20 @@ jobs:
           $envValues = ReadValuesFromEnvFile "${{ inputs.environment_file }}"
           $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
           $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
+
+          # Add-DataStore always requires a PostgresCredential; for mssql it goes unused because
+          # -ConnectionString is supplied verbatim below. The Configuration Service backing store
+          # is always PostgreSQL regardless of database_engine, so $postgresCredential above is
+          # unaffected.
+          $dataStoreConnectionString = ""
+          if ("${{ inputs.database_engine }}" -eq "mssql") {
+            $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+            $dataStoreConnectionString = New-DataStoreConnectionString -DatabaseEngine "mssql" -DbHost "dms-mssql" -Port 1433 -Username "sa" -Password $mssqlPassword -DatabaseName $env:RELATIONAL_DB_NAME
+          }
+
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:RELATIONAL_DB_NAME -Name "Relational Template Data Store" -DataStoreType "Template"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:RELATIONAL_DB_NAME -ConnectionString $dataStoreConnectionString -Name "Relational Template Data Store" -DataStoreType "Template"
           if (-not $dataStoreId) {
             throw "Failed to register the relational data store."
           }
@@ -223,12 +243,13 @@ jobs:
                   -ApplicationName $uniqueAppName `
                   -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
                   -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
-                  -DumpAllUserSchemas
+                  -DumpAllUserSchemas `
+                  -DatabaseEngine '${{ inputs.database_engine }}'
         working-directory: eng/DatabaseTemplates/
 
       - name: Verify template package restore
         run: |
-          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME
+          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME -DatabaseEngine '${{ inputs.database_engine }}'
         working-directory: eng/DatabaseTemplates/
 
       - name: Upload Bulk Load Logs

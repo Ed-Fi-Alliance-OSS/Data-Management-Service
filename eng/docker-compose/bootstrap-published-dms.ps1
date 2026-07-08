@@ -40,6 +40,14 @@
     Custom XML interchange directory. Forwarded to the seed phase. Mutually exclusive with
     `-SeedTemplate` (enforced by the seed phase).
 
+.PARAMETER RestoreTemplate
+    Restores a pre-built `Minimal` or `Populated` database-template package instead of running
+    schema provisioning (`provision-dms-schema.ps1`) and the API-based seed phase: infra ->
+    configure -> restore -> DMS start, with no `-LoadSeedData` step afterward. The restored
+    database already carries the effective schema, so DMS startup validates it against the
+    effective schema hash without any additional DDL work. Mutually exclusive with
+    `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath`.
+
 .PARAMETER AdditionalNamespacePrefix
     Additional namespace prefixes for SeedLoader vendor authorization. Forwarded to the
     seed phase.
@@ -71,6 +79,12 @@
     `start-published-dms.ps1`; when seed loading is requested, every year in the range is
     also passed to the seed phase via `-SchoolYear`.
 
+.PARAMETER DatabaseEngine
+    Database engine for the whole stack ("postgresql" or "mssql"). Forwarded to
+    `start-published-dms.ps1`, which swaps mssql.yml in for postgresql.yml: SQL Server then
+    hosts the DMS datastore, the Configuration Service (CMS SQL Server backend), and the
+    self-contained OpenIddict identity stores.
+
 .EXAMPLE
     pwsh ./bootstrap-published-dms.ps1
     Standard mode, core only. Stages the core ApiSchema package and claims in-line (when no
@@ -82,6 +96,12 @@
     pwsh ./bootstrap-published-dms.ps1 -LoadSeedData -SeedDataPath ./my-seed-xml/
     Expert mode with seed loading. Stage an extension-containing or custom schema set via
     -ApiSchemaPath, then start the stack and load developer-supplied XML interchange files.
+
+.EXAMPLE
+    pwsh ./bootstrap-published-dms.ps1 -RestoreTemplate Populated -DatabaseEngine mssql
+    Restore flow: start infrastructure, configure the data store, restore the Populated
+    database-template `.bak` package into the SQL Server data store, then start DMS. No schema
+    provisioning and no seed phase run.
 #>
 [CmdletBinding()]
 param(
@@ -91,6 +111,12 @@ param(
     [string]$SeedTemplate,
 
     [string]$SeedDataPath,
+
+    # Restores a pre-built Minimal|Populated database-template package instead of running schema
+    # provisioning and the API-based seed phase. Mutually exclusive with -LoadSeedData,
+    # -SeedTemplate, and -SeedDataPath. See .PARAMETER RestoreTemplate above.
+    [ValidateSet("Minimal", "Populated")]
+    [string]$RestoreTemplate,
 
     [string[]]$AdditionalNamespacePrefix = @(),
 
@@ -115,6 +141,16 @@ param(
     [Switch]$AddSmokeTestCredentials,
 
     [string]$SchoolYearRange = "",
+
+    # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
+    # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
+    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores - no
+    # PostgreSQL container runs. Forwarded to start-published-dms.ps1. The .env.mssql overlay
+    # (DMS_DATASTORE=mssql, DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server
+    # connection strings) is composed automatically onto -EnvironmentFile, so no
+    # -EnvironmentFile is needed for a turnkey MSSQL deploy.
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql",
 
     # Data standard version for the local-bootstrap package surface. The .env.bootstrap.<token>
     # overlay (DS 5.2, the default: core + TPDM; DS 6.1: core only, since TPDM is folded into

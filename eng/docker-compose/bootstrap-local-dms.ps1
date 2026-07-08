@@ -64,6 +64,14 @@
     Custom XML interchange directory. Forwarded to the seed phase. Mutually exclusive with
     `-SeedTemplate` (enforced by the seed phase).
 
+.PARAMETER RestoreTemplate
+    Restores a pre-built `Minimal` or `Populated` database-template package instead of running
+    schema provisioning (`provision-dms-schema.ps1`) and the API-based seed phase: infra ->
+    configure -> restore -> DMS start, with no `-LoadSeedData` step afterward. The restored
+    database already carries the effective schema, so DMS startup validates it against the
+    effective schema hash without any additional DDL work. Mutually exclusive with
+    `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath`.
+
 .PARAMETER AdditionalNamespacePrefix
     Additional namespace prefixes for SeedLoader vendor authorization. Forwarded to the
     seed phase and to `load-dms-seed-data.ps1` in the IDE continuation shape.
@@ -157,6 +165,12 @@
     pwsh ./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl http://localhost:8080 -LoadSeedData -SeedDataPath ./my-seed-xml/
     IDE full workflow: pre-DMS phase, health-wait for IDE DMS, then load seed data against
     the IDE-hosted DMS endpoint.
+
+.EXAMPLE
+    pwsh ./bootstrap-local-dms.ps1 -RestoreTemplate Populated -DatabaseEngine mssql
+    Restore flow: start infrastructure, configure the data store, restore the Populated
+    database-template `.bak` package into the SQL Server data store, then start DMS. No schema
+    provisioning and no seed phase run.
 #>
 [CmdletBinding()]
 param(
@@ -166,6 +180,12 @@ param(
     [string]$SeedTemplate,
 
     [string]$SeedDataPath,
+
+    # Restores a pre-built Minimal|Populated database-template package instead of running schema
+    # provisioning and the API-based seed phase. Mutually exclusive with -LoadSeedData,
+    # -SeedTemplate, and -SeedDataPath. See .PARAMETER RestoreTemplate above.
+    [ValidateSet("Minimal", "Populated")]
+    [string]$RestoreTemplate,
 
     [string[]]$AdditionalNamespacePrefix = @(),
 

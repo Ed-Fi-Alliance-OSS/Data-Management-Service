@@ -1089,4 +1089,178 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $infraBlock | Should -Match 'else\s*\{[\s\S]*?Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on no-bootstrap run\." -InformationAction Continue'
         }
     }
+
+    Context "Bootstrap -RestoreTemplate parameter surface" {
+        It "bootstrap-local-dms.ps1 and bootstrap-published-dms.ps1 both declare -RestoreTemplate validated to Minimal/Populated" {
+            foreach ($name in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                $params = Get-DeclaredScriptParameters -Path (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                )
+                $params | Should -Contain "RestoreTemplate"
+
+                $source = Get-Content -LiteralPath (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                ) -Raw
+                $source | Should -Match '\[ValidateSet\("Minimal",\s*"Populated"\)\]\s*\[string\]\$RestoreTemplate'
+            }
+        }
+
+        It "the wrapper module declares the same validated -RestoreTemplate set" {
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+
+            $wrapperSource | Should -Match '\[ValidateSet\("Minimal",\s*"Populated"\)\]\s*\[string\]\$RestoreTemplate'
+        }
+    }
+
+    Context "Bootstrap -RestoreTemplate ordering: restore replaces provisioning" {
+        BeforeAll {
+            # Builds an isolated repo carrying one of the two wrapper entry scripts plus recording
+            # stubs for every downstream phase command, so a wrapper invocation's call sequence can
+            # be asserted from a single shared log file (mirrors the call-log recording stubs used
+            # by the -InfraOnly call-graph tests above).
+            function script:New-RestoreOrderingRepo {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScriptName
+                )
+
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    $WrapperEntryScriptName,
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                New-BootstrapManifestFile -DockerComposeRoot $dockerComposeRoot | Out-Null
+
+                $callLog = Join-Path $repoRoot "call-log.txt"
+                $startScriptName = $WrapperEntryScriptName -replace '^bootstrap-', 'start-'
+
+                New-RecordingConfigureScript -Directory $dockerComposeRoot -CallLogPath $callLog | Out-Null
+                New-RecordingProvisionScript -Directory $dockerComposeRoot -CallLogPath $callLog | Out-Null
+
+                @"
+param(
+    [switch] `$InfraOnly,
+    [switch] `$DmsOnly,
+    [switch] `$EnableConfig,
+    [string] `$EnvironmentFile,
+    [string] `$IdentityProvider,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+`$label = if (`$DmsOnly) { "start-dms" } else { "start-infra" }
+Add-Content -LiteralPath '$callLog' -Value `$label
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
+
+                # Stub restore module: records the call and its -RestoreTemplate value instead of
+                # performing a real database-template restore (no NuGet download, no Docker).
+                @"
+function Restore-DatabaseTemplate {
+    param(
+        [string] `$EnvironmentFile,
+        [string] `$RestoreTemplate,
+        [string] `$PackageDirectory
+    )
+    Add-Content -LiteralPath '$callLog' -Value "restore RestoreTemplate=`$RestoreTemplate"
+}
+Export-ModuleMember -Function Restore-DatabaseTemplate
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "setup-database-template.psm1") -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot          = $repoRoot
+                    DockerComposeRoot = $dockerComposeRoot
+                    WrapperScript     = Join-Path $dockerComposeRoot $WrapperEntryScriptName
+                    CallLog           = $callLog
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -ne $script:restoreOrderingRepo -and (Test-Path -LiteralPath $script:restoreOrderingRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:restoreOrderingRepo.RepoRoot -Recurse -Force
+            }
+            $script:restoreOrderingRepo = $null
+        }
+
+        It "bootstrap-local-dms.ps1 -RestoreTemplate invokes the restore phase after configure, skips schema provisioning, then starts DMS" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+
+            & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Populated
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+
+            $log | Should -Not -Contain "provision" -Because "the restore-template branch must skip schema provisioning"
+            $log | Should -Contain "restore RestoreTemplate=Populated" -Because "the restore phase must run with the requested template"
+
+            $configureIndex = [array]::IndexOf($log, ($log | Where-Object { $_ -like "configure*" } | Select-Object -First 1))
+            $restoreIndex   = [array]::IndexOf($log, "restore RestoreTemplate=Populated")
+            $dmsStartIndex  = [array]::IndexOf($log, "start-dms")
+
+            $configureIndex | Should -BeGreaterOrEqual 0
+            $restoreIndex   | Should -BeGreaterThan $configureIndex -Because "restore must run after configure"
+            $dmsStartIndex  | Should -BeGreaterThan $restoreIndex -Because "DMS startup must follow the restore phase"
+        }
+
+        It "bootstrap-published-dms.ps1 -RestoreTemplate invokes the restore phase after configure, skips schema provisioning, then starts DMS" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+
+            & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Minimal
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+
+            $log | Should -Not -Contain "provision" -Because "the restore-template branch must skip schema provisioning"
+            $log | Should -Contain "restore RestoreTemplate=Minimal" -Because "the restore phase must run with the requested template"
+
+            $configureIndex = [array]::IndexOf($log, ($log | Where-Object { $_ -like "configure*" } | Select-Object -First 1))
+            $restoreIndex   = [array]::IndexOf($log, "restore RestoreTemplate=Minimal")
+            $dmsStartIndex  = [array]::IndexOf($log, "start-dms")
+
+            $configureIndex | Should -BeGreaterOrEqual 0
+            $restoreIndex   | Should -BeGreaterThan $configureIndex -Because "restore must run after configure"
+            $dmsStartIndex  | Should -BeGreaterThan $restoreIndex -Because "DMS startup must follow the restore phase"
+        }
+
+        It "bootstrap-local-dms.ps1 without -RestoreTemplate still provisions the schema" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+
+            & $script:restoreOrderingRepo.WrapperScript
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+
+            $log | Should -Contain "provision" -Because "the default branch must still run schema provisioning"
+            $log | Where-Object { $_ -like "restore*" } | Should -BeNullOrEmpty -Because "the restore phase must not run without -RestoreTemplate"
+        }
+
+        It "bootstrap-published-dms.ps1 without -RestoreTemplate still provisions the schema" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+
+            & $script:restoreOrderingRepo.WrapperScript
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+
+            $log | Should -Contain "provision" -Because "the default branch must still run schema provisioning"
+            $log | Where-Object { $_ -like "restore*" } | Should -BeNullOrEmpty -Because "the restore phase must not run without -RestoreTemplate"
+        }
+    }
 }

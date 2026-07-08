@@ -113,6 +113,19 @@ param(
     [switch]
     $LoadSeedData,
 
+    # For StartEnvironment only: restores a pre-built database template instead of running the
+    # API-based seed phase. Forwarded to the bootstrap wrapper. Mutually exclusive with
+    # -LoadSeedData, checked before any Docker work starts.
+    [string]
+    [ValidateSet("Minimal", "Populated")]
+    $RestoreTemplate,
+
+    # For StartEnvironment only: database engine backing the stack. Forwarded to the bootstrap
+    # wrapper, whose own default governs when this is omitted.
+    [string]
+    [ValidateSet("postgresql", "mssql")]
+    $DatabaseEngine,
+
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
@@ -131,6 +144,11 @@ param(
     [string]
     $DataStandardVersion
 )
+
+# Captured here (script scope) rather than at the point of use: $PSBoundParameters inside the
+# Invoke-Main script block below reflects that block's own bindings, not this script's, so the
+# ContainsKey check has to run in this scope while the top-level $PSBoundParameters is populated.
+$dataStandardVersionSupplied = $PSBoundParameters.ContainsKey('DataStandardVersion')
 
 $solutionRoot = "$PSScriptRoot/src/dms"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
@@ -858,9 +876,39 @@ function Start-BootstrapDockerEnvironment {
         [switch]
         $LoadSeedData,
 
+        # Restores a pre-built database template instead of running the API-based seed phase.
+        # Mutually exclusive with -LoadSeedData; see the preflight throw below. Validated against
+        # ValidateSet("Minimal", "Populated") at the top-level parameter; left as a plain string
+        # here so forwarding an unset (null) value from the caller does not trip validation.
         [string]
-        $IdentityProvider="self-contained"
+        $RestoreTemplate,
+
+        # Forwarded to the bootstrap wrapper only when supplied, so the wrapper's own default
+        # ("postgresql") governs when this is omitted. Validated against
+        # ValidateSet("postgresql", "mssql") at the top-level parameter; left as a plain string
+        # here so forwarding an unset (null) value from the caller does not trip validation.
+        [string]
+        $DatabaseEngine,
+
+        [string]
+        $IdentityProvider="self-contained",
+
+        # Forwarded to the bootstrap wrapper only when the caller explicitly supplied it (see
+        # $dataStandardVersionSupplied), so the wrapper's own default-composition behavior governs
+        # when it is absent.
+        [string]
+        $DataStandardVersion,
+
+        [switch]
+        $DataStandardVersionSupplied
     )
+
+    # Checked before any Docker work (DockerBuild, Stop-DockerEnvironment) runs: -RestoreTemplate
+    # restores a pre-built database template, while -LoadSeedData runs the API-based seed phase
+    # against a schema-provisioned database, so combining them is contradictory.
+    if ($LoadSeedData -and $RestoreTemplate) {
+        throw "-RestoreTemplate and -LoadSeedData are mutually exclusive. -RestoreTemplate restores a pre-built database template; -LoadSeedData runs the API-based seed phase against a schema-provisioned database."
+    }
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
 
@@ -885,6 +933,18 @@ function Start-BootstrapDockerEnvironment {
 
             if ($LoadSeedData) {
                 $bootstrapArgs.LoadSeedData = $true
+            }
+
+            if ($RestoreTemplate) {
+                $bootstrapArgs.RestoreTemplate = $RestoreTemplate
+            }
+
+            if ($DatabaseEngine) {
+                $bootstrapArgs.DatabaseEngine = $DatabaseEngine
+            }
+
+            if ($DataStandardVersionSupplied) {
+                $bootstrapArgs.DataStandardVersion = $DataStandardVersion
             }
 
             Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
@@ -1370,7 +1430,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -RestoreTemplate $RestoreTemplate -DatabaseEngine $DatabaseEngine -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
         default { throw "Command '$Command' is not recognized" }
     }
 }
