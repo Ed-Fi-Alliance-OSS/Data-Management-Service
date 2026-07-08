@@ -988,7 +988,7 @@ DMS_HTTP_PORTS=18080
 DMS_CONFIG_IDENTITY_PROVIDER=self-contained
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_DATASTORE=postgresql
-SCHEMA_PACKAGES='[{"version":"1.0.332","name":"EdFi.DataStandard52.ApiSchema"},{"version":"1.0.332","name":"EdFi.DataStandard52.TPDM.ApiSchema"}]'
+SCHEMA_PACKAGES='[{"version":"1.0.333","name":"EdFi.DataStandard52.ApiSchema"},{"version":"1.0.333","name":"EdFi.DataStandard52.TPDM.ApiSchema"}]'
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 $capturedEnvPath = Join-Path $repoRoot "captured.env"

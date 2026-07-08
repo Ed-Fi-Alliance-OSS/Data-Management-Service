@@ -279,7 +279,7 @@ elsewhere).
 > the staged `.bootstrap/ApiSchema` workspace's effective schema hash matches what the DMS
 > container downloads at startup. Only when prepare runs without an env file (direct diagnostic
 > invocation with no `-EnvironmentFile`, or an env file lacking `SCHEMA_PACKAGES`) does it fall
-> back to the catalog-pinned core-only default (`EdFi.DataStandard52.ApiSchema` at `1.0.332`).
+> back to the catalog-pinned core-only default (`EdFi.DataStandard52.ApiSchema` at `1.0.333`).
 
 ### Expert mode (filesystem)
 

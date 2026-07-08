@@ -411,7 +411,7 @@ exit $ExitCode
         New-FixtureNupkgForSchema `
             -FeedFolder $feedFolder `
             -PackageId "EdFi.DataStandard52.ApiSchema" `
-            -Version "1.0.332" `
+            -Version "1.0.333" `
             -ProjectName "Ed-Fi" `
             -ProjectEndpointName "ed-fi" `
             -IsExtensionProject $false | Out-Null
@@ -422,7 +422,7 @@ exit $ExitCode
             New-FixtureNupkgForSchema `
                 -FeedFolder $feedFolder `
                 -PackageId "EdFi.DataStandard52.$title.ApiSchema" `
-                -Version "1.0.332" `
+                -Version "1.0.333" `
                 -ProjectName $title `
                 -ProjectEndpointName $lower `
                 -IsExtensionProject $true | Out-Null
