@@ -2009,14 +2009,19 @@ internal sealed class DescriptorWriteHandler(
         ReferentialId referentialId
     )
     {
-        // OUTPUT INSERTED.[ContentVersion] on the [dms].[Document] INSERT surfaces the insert-time
-        // value: [dms].[Document] itself carries no trigger, so a plain OUTPUT is legal, and the
-        // descriptor stamp trigger only mirrors (never bumps) ContentVersion on descriptor INSERT.
+        // Capture the insert-time ContentVersion into a table variable via OUTPUT ... INTO, run every
+        // insert, then return it with a trailing SELECT so the row-producing statement is the final
+        // one (matching the PG insert CTE and every UPDATE builder). This keeps the reader's single
+        // result set unambiguous rather than relying on the batch fully executing after the first
+        // statement's OUTPUT is read. [dms].[Document] carries no trigger, so OUTPUT is legal there,
+        // and the descriptor stamp trigger only mirrors (never bumps) ContentVersion on descriptor
+        // INSERT, so the captured value is exactly what a later GET reads.
         const string Sql = """
             DECLARE @newDocumentId BIGINT;
+            DECLARE @insertedContentVersion TABLE ([ContentVersion] BIGINT);
 
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[ContentVersion]
+            OUTPUT INSERTED.[ContentVersion] INTO @insertedContentVersion ([ContentVersion])
             VALUES (@documentUuid, @resourceKeyId);
 
             SET @newDocumentId = SCOPE_IDENTITY();
@@ -2035,6 +2040,7 @@ internal sealed class DescriptorWriteHandler(
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @newDocumentId, @resourceKeyId);
 
+            SELECT [ContentVersion] FROM @insertedContentVersion;
             """;
 
         return new RelationalCommand(
