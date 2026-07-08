@@ -383,7 +383,9 @@ The strategy is **hybrid, deterministic, and fail-fast**. On SQL Server, DMS kee
 that is not part of a diamond — including **independent** parents into a shared receiver — and, only
 where one origin reaches a receiver by two distinct paths (a *diamond*), prunes **one covered
 reconverging edge** to `NO ACTION` (still full composite). It refuses to emit DDL for any graph where
-no safe pruning exists — a cascade cycle, or a diamond whose reconverging edge cannot be covered.
+no safe pruning exists — a cascade cycle/SCC/self-loop, or diamonds that cannot be jointly broken (a
+single uncovered diamond, or globally infeasible overlapping diamonds where no global survivor
+assignment satisfies the retained-`NativeCascade` invariant).
 This replaces the current "strip identity columns everywhere + trigger" default. **No pruned edge is
 ever reduced to a `DocumentId`-only FK, and an independent live edge is never pruned** (that would
 only reintroduce error 547).
@@ -735,8 +737,10 @@ safely; a cascade cycle/SCC, or diamonds that cannot be jointly broken (a single
 - New derivation pass and output: the classification detects diamonds by **per-origin reachability**
   (ancestor sets), not raw in-degree, so independent parents keep `CASCADE`. It emits per-edge
   `MssqlPropagationMode` (`NativeCascade` / `NoPropagation` / `ImmutableNoAction`), coverage/carrier
-  diagnostics for `NoPropagation` edges only, and hard derivation errors for cascade cycles and
-  uncovered diamonds (see the contract above). Immutable references — which `ResolveOnUpdate` already
+  diagnostics for `NoPropagation` edges only, and hard derivation errors for a cascade cycle/SCC/self-loop
+  or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible
+  overlapping diamonds where no global survivor assignment satisfies the retained-`NativeCascade`
+  invariant (see the contract above). Immutable references — which `ResolveOnUpdate` already
   emits as `NO ACTION` — become `ImmutableNoAction` rather than being conflated with pruned/covered
   edges.
 
