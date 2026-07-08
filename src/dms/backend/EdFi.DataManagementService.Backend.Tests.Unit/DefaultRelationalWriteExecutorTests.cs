@@ -22,6 +22,7 @@ using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -35,7 +36,6 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
     private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
     private RecordingRelationalCurrentEtagPreconditionChecker _currentEtagPreconditionChecker = null!;
-    private RecordingRelationalCommittedRepresentationReader _committedRepresentationReader = null!;
     private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
     private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
     private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
@@ -54,7 +54,6 @@ public class Given_Default_Relational_Write_Executor
         _writeFlattener = new RecordingRelationalWriteFlattener();
         _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
         _currentEtagPreconditionChecker = new RecordingRelationalCurrentEtagPreconditionChecker();
-        _committedRepresentationReader = new RecordingRelationalCommittedRepresentationReader();
         _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
         _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
         _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
@@ -69,7 +68,6 @@ public class Given_Default_Relational_Write_Executor
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
-            _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
@@ -79,7 +77,8 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator()
+            new IfMatchEvaluator(),
+            Options.Create(new ResourceLinksOptions())
         );
     }
 
@@ -128,7 +127,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -302,7 +301,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -341,7 +339,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -377,7 +374,6 @@ public class Given_Default_Relational_Write_Executor
             );
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -461,7 +457,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -501,7 +496,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -545,7 +539,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -605,7 +598,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -658,7 +650,6 @@ public class Given_Default_Relational_Write_Executor
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
-            _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
@@ -669,6 +660,7 @@ public class Given_Default_Relational_Write_Executor
             _readMaterializer,
             new ServedEtagComposer(),
             new IfMatchEvaluator(),
+            Options.Create(new ResourceLinksOptions()),
             parameterConfigurator
         );
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -743,7 +735,6 @@ public class Given_Default_Relational_Write_Executor
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
-            _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
@@ -754,6 +745,7 @@ public class Given_Default_Relational_Write_Executor
             _readMaterializer,
             new ServedEtagComposer(),
             new IfMatchEvaluator(),
+            Options.Create(new ResourceLinksOptions()),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
         );
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
@@ -801,7 +793,6 @@ public class Given_Default_Relational_Write_Executor
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
-            _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
@@ -812,6 +803,7 @@ public class Given_Default_Relational_Write_Executor
             _readMaterializer,
             new ServedEtagComposer(),
             new IfMatchEvaluator(),
+            Options.Create(new ResourceLinksOptions()),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             logger: logger
         );
@@ -1125,7 +1117,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -1162,13 +1154,7 @@ public class Given_Default_Relational_Write_Executor
             ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
             77L
         );
-        var committedEtag = CommittedWriteEtag(
-            persistedTarget,
-            JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
-        );
-
         _noProfilePersister.ResultToReturn = persistedTarget;
-        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -1176,13 +1162,13 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(persistedTarget.DocumentUuid, ComposedWriteResultEtag),
+                    new UpsertResult.InsertSuccess(
+                        persistedTarget.DocumentUuid,
+                        ComposedWriteResultEtag(persistedTarget.ContentVersion)
+                    ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
-        _committedRepresentationReader.CapturedRequest.Should().BeEquivalentTo(request);
-        _committedRepresentationReader.CapturedPersistedTarget.Should().BeEquivalentTo(persistedTarget);
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -1223,7 +1209,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ComposedWriteResultEtag),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ComposedWriteResultEtag(77L)),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -1257,18 +1243,9 @@ public class Given_Default_Relational_Write_Executor
             345L,
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
         );
-        // The guarded no-op path reads the reader from the target's ObservedContentVersion
-        // (44L, from the default Put ExistingDocument target context built by CreateRequest),
-        // not from any persister-produced stamp — no persister runs on this path.
-        var expectedPersistedTarget = persistedTarget with
-        {
-            ContentVersion = 44L,
-        };
-        var committedEtag = CommittedWriteEtag(
-            persistedTarget,
-            JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
-        );
-        _committedRepresentationReader.ResultToReturn = committedEtag;
+        // The guarded no-op path composes the write-result etag from the target's
+        // ObservedContentVersion (44L, from the default Put ExistingDocument target context built by
+        // CreateRequest), not from any persister-produced stamp — no persister runs on this path.
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -1276,7 +1253,10 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateSuccess(persistedTarget.DocumentUuid, ComposedWriteResultEtag),
+                    new UpdateResult.UpdateSuccess(
+                        persistedTarget.DocumentUuid,
+                        ComposedWriteResultEtag(44L)
+                    ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
             );
@@ -1284,10 +1264,6 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
-        _committedRepresentationReader
-            .CapturedPersistedTarget.Should()
-            .BeEquivalentTo(expectedPersistedTarget);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeFreshnessChecker.CapturedRequest.Should().NotBeNull();
         _writeFreshnessChecker.CapturedRequest!.TargetRequest.Should().BeEquivalentTo(request.TargetRequest);
@@ -1326,7 +1302,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(44L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1335,7 +1311,6 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
@@ -1359,7 +1334,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(45L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1391,7 +1366,6 @@ public class Given_Default_Relational_Write_Executor
                     45L
                 )
             );
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -1419,7 +1393,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(45L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1451,7 +1425,6 @@ public class Given_Default_Relational_Write_Executor
                     45L
                 )
             );
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -1504,7 +1477,6 @@ public class Given_Default_Relational_Write_Executor
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
-            _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
             new RelationalWriteNoProfileMergeSynthesizer(),
@@ -1514,7 +1486,8 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator()
+            new IfMatchEvaluator(),
+            Options.Create(new ResourceLinksOptions())
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -1525,7 +1498,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(44L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1533,7 +1506,6 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -1801,7 +1773,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -1842,7 +1814,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(candidateDocumentUuid, ComposedWriteResultEtag),
+                    new UpsertResult.InsertSuccess(candidateDocumentUuid, ComposedWriteResultEtag(77L)),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -1903,7 +1875,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ComposedWriteResultEtag),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ComposedWriteResultEtag(77L)),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -2075,7 +2047,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -2128,7 +2100,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -2220,7 +2192,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -2788,7 +2760,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -2880,7 +2851,6 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -2907,7 +2877,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -3696,15 +3666,6 @@ public class Given_Default_Relational_Write_Executor
             WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
-        var committedEtag = CommittedWriteEtag(
-            new RelationalWritePersistResult(
-                existingTargetContext.DocumentId,
-                existingTargetContext.DocumentUuid
-            ),
-            JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
-        );
-        _committedRepresentationReader.ResultToReturn = committedEtag;
-
         var result = await _sut.ExecuteAsync(request);
 
         _readMaterializer
@@ -3745,7 +3706,7 @@ public class Given_Default_Relational_Write_Executor
             .Result.Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
             .Which.ETag.Should()
-            .Be(ComposedWriteResultEtag);
+            .Be(ComposedWriteResultEtag(77L, "test-write-profile"));
     }
 
     [Test]
@@ -4260,10 +4221,6 @@ public class Given_Default_Relational_Write_Executor
             ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid,
             77L
         );
-        var committedEtag = CommittedWriteEtag(
-            persistedTarget,
-            JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
-        );
 
         _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
             [
@@ -4289,7 +4246,6 @@ public class Given_Default_Relational_Write_Executor
             supportsGuardedNoOp: false
         );
         _noProfilePersister.ResultToReturn = persistedTarget;
-        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -4320,7 +4276,7 @@ public class Given_Default_Relational_Write_Executor
             .Result.Should()
             .BeOfType<UpsertResult.InsertSuccess>()
             .Which.ETag.Should()
-            .Be(ComposedWriteResultEtag);
+            .Be(ComposedWriteResultEtag(persistedTarget.ContentVersion, "test-write-profile"));
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
     }
 
@@ -4331,14 +4287,6 @@ public class Given_Default_Relational_Write_Executor
         var baseRequest = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
         var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
         var request = baseRequest with { ProfileWriteContext = profileContext };
-        var persistedTarget = new RelationalWritePersistResult(
-            345L,
-            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
-        );
-        var committedEtag = CommittedWriteEtag(
-            persistedTarget,
-            JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
-        );
 
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
         var sampleRow = new RelationalWriteMergedTableRow(
@@ -4359,7 +4307,6 @@ public class Given_Default_Relational_Write_Executor
             [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
             supportsGuardedNoOp: true
         );
-        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -4369,7 +4316,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Result.Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
             .Which.ETag.Should()
-            .Be(ComposedWriteResultEtag);
+            .Be(ComposedWriteResultEtag(44L, "test-write-profile"));
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -4395,14 +4342,6 @@ public class Given_Default_Relational_Write_Executor
         );
         var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, baseRequest.WritePlan);
         var request = baseRequest with { ProfileWriteContext = profileContext };
-        var persistedTarget = new RelationalWritePersistResult(
-            existingTarget.DocumentId,
-            existingTarget.DocumentUuid
-        );
-        var committedEtag = CommittedWriteEtag(
-            persistedTarget,
-            JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
-        );
 
         var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
         var sampleRow = new RelationalWriteMergedTableRow(
@@ -4423,7 +4362,6 @@ public class Given_Default_Relational_Write_Executor
             [new RelationalWriteMergedTableState(rootPlan, [sampleRow], [sampleRow])],
             supportsGuardedNoOp: true
         );
-        _committedRepresentationReader.ResultToReturn = committedEtag;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -4433,7 +4371,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Result.Should()
             .BeOfType<UpsertResult.UpdateSuccess>()
             .Which.ETag.Should()
-            .Be(ComposedWriteResultEtag);
+            .Be(ComposedWriteResultEtag(44L, "test-write-profile"));
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -4950,7 +4888,6 @@ public class Given_Default_Relational_Write_Executor
             .BeNull();
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -4981,7 +4918,6 @@ public class Given_Default_Relational_Write_Executor
                 RelationshipAuthorizationSecurityConfigurationFailureMessages.InvalidFailurePayloadSecurityConfigurationError
             );
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -5035,7 +4971,6 @@ public class Given_Default_Relational_Write_Executor
 
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -5113,7 +5048,6 @@ public class Given_Default_Relational_Write_Executor
             .Equal(new object?[] { null, "Lincoln High" });
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -5139,7 +5073,6 @@ public class Given_Default_Relational_Write_Executor
             .Subject;
         notAuthorized.RelationshipFailure.Should().BeSameAs(relationshipFailure);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -5174,7 +5107,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -5209,7 +5141,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -5243,7 +5174,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -5275,7 +5205,7 @@ public class Given_Default_Relational_Write_Executor
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
         var updateSuccess = upsertResult.Result.Should().BeOfType<UpsertResult.UpdateSuccess>().Subject;
         updateSuccess.ExistingDocumentUuid.Should().Be(existingDocumentUuid);
-        updateSuccess.ETag.Should().Be(ComposedWriteResultEtag);
+        updateSuccess.ETag.Should().Be(ComposedWriteResultEtag(77L));
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         GetSubjectRuntimeValue(
@@ -5289,7 +5219,6 @@ public class Given_Default_Relational_Write_Executor
             .Be(255901);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -5804,7 +5733,6 @@ public class Given_Default_Relational_Write_Executor
             _writeFlattener,
             _currentStateLoader,
             _currentEtagPreconditionChecker,
-            _committedRepresentationReader,
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
@@ -5815,6 +5743,7 @@ public class Given_Default_Relational_Write_Executor
             _readMaterializer,
             new ServedEtagComposer(),
             new IfMatchEvaluator(),
+            Options.Create(new ResourceLinksOptions()),
             relationshipAuthorizationProviderFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
                 providerMessage
@@ -5850,7 +5779,7 @@ public class Given_Default_Relational_Write_Executor
         updateSuccess
             .ExistingDocumentUuid.Should()
             .Be(new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")));
-        updateSuccess.ETag.Should().Be(ComposedWriteResultEtag);
+        updateSuccess.ETag.Should().Be(ComposedWriteResultEtag(77L));
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
@@ -5904,7 +5833,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -5981,7 +5909,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -6011,7 +5938,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -6053,7 +5979,6 @@ public class Given_Default_Relational_Write_Executor
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -6094,7 +6019,6 @@ public class Given_Default_Relational_Write_Executor
         _readMaterializer.MaterializeCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -6133,7 +6057,6 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.Commands.Should().ContainSingle();
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -6179,7 +6102,6 @@ public class Given_Default_Relational_Write_Executor
         _readMaterializer.MaterializeCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -6217,7 +6139,6 @@ public class Given_Default_Relational_Write_Executor
         _readMaterializer.MaterializeCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -6334,7 +6255,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(44L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -6346,7 +6267,6 @@ public class Given_Default_Relational_Write_Executor
         _readMaterializer.MaterializeCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _committedRepresentationReader.ReadCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -7386,11 +7306,19 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    // A deterministic composed-shaped write-result etag. The committed-representation reader is faked
-    // here, so the executor simply propagates whatever etag that reader supplies for the persisted
-    // (committed) state; these tests verify that propagation, not the etag format. Any stable opaque
-    // value produced without the etag formatter suffices.
-    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l";
+    // The composed write-result etag the executor produces for a committed write at a given
+    // ContentVersion: schema epoch from the standard test mapping set ("schema-hash"), JSON format,
+    // the write profile (or none), and links-on (the default ResourceLinksOptions).
+    private static string ComposedWriteResultEtag(long contentVersion, string? profileName = null) =>
+        new ServedEtagComposer().Compose(
+            new ServedEtagContext(
+                "schema-hash",
+                ResponseFormat.Json,
+                profileName,
+                LinksEnabled: true,
+                contentVersion
+            )
+        );
 
     // The composed current etag the write If-Match path produces for a request at a given
     // ContentVersion: schema epoch from the mapping set, JSON format, the write profile (or none),
@@ -7405,18 +7333,6 @@ public class Given_Default_Relational_Write_Executor
                 linksEnabled: true
             )
         );
-
-    // A committed write surfaces only its served _etag (no document body), so the reader returns the
-    // etag string directly. The arguments mirror a real committed write for call-site readability.
-    private static string CommittedWriteEtag(
-        RelationalWritePersistResult persistedTarget,
-        JsonNode materializedBody
-    )
-    {
-        _ = persistedTarget;
-        _ = materializedBody;
-        return ComposedWriteResultEtag;
-    }
 
     private static MappingSet CreateMappingSet(
         RelationalResourceModel resourceModel,
@@ -8096,34 +8012,6 @@ public class Given_Default_Relational_Write_Executor
                         ],
                         []
                     )
-            );
-        }
-    }
-
-    private sealed class RecordingRelationalCommittedRepresentationReader
-        : IRelationalCommittedRepresentationReader
-    {
-        public int ReadCallCount { get; private set; }
-
-        public RelationalWriteExecutorRequest? CapturedRequest { get; private set; }
-
-        public RelationalWritePersistResult? CapturedPersistedTarget { get; private set; }
-
-        public string? ResultToReturn { get; set; }
-
-        public Task<string> ReadAsync(
-            RelationalWriteExecutorRequest request,
-            RelationalWritePersistResult persistedTarget,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ReadCallCount++;
-            CapturedRequest = request;
-            CapturedPersistedTarget = persistedTarget;
-
-            return Task.FromResult(
-                ResultToReturn ?? CommittedWriteEtag(persistedTarget, request.SelectedBody)
             );
         }
     }

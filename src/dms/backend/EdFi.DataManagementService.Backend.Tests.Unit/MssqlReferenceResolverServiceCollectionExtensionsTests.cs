@@ -64,8 +64,6 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteConstraintResolver>();
         var deleteConstraintResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteConstraintResolver>();
-        var committedRepresentationReader =
-            scope.ServiceProvider.GetRequiredService<IRelationalCommittedRepresentationReader>();
         var currentEtagPreconditionChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
         var deleteEtagPreconditionChecker =
@@ -93,7 +91,6 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         writeExceptionClassifier.Should().BeOfType<MssqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
         deleteConstraintResolver.Should().BeOfType<RelationalDeleteConstraintResolver>();
-        committedRepresentationReader.Should().BeOfType<RelationalCommittedRepresentationReader>();
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeSameAs(currentEtagPreconditionChecker);

@@ -417,8 +417,11 @@ Concretely:
 - `RelationalWritePersistResult` carries the final `ContentVersion` (read after
   `ExecuteDeletesAsync` / `ExecuteUpsertsAsync` in `RelationalWriteNoProfilePersister.PersistAsync`
   via `ReadCommittedContentVersionAsync`).
-- `RelationalCommittedRepresentationReader` composes the etag from `persistedTarget.ContentVersion`
-  and issues **no** `dms.Document` query of its own.
+- `DefaultRelationalWriteExecutor` composes the served write-response etag directly from
+  `persistedTarget.ContentVersion` and issues **no** `dms.Document` query of its own. (Originally this
+  ran through a `RelationalCommittedRepresentationReader` seam; once the readback was gone that type was
+  an async interface wrapping only `IServedEtagComposer` + `ResourceLinksOptions`, so it was collapsed
+  into the executor.)
 - The guarded no-op path (no persister runs) composes from `guardedTarget.ObservedContentVersion`,
   which the freshness check already established.
 
