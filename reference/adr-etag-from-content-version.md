@@ -14,6 +14,9 @@ correctness — see [Amendment (2026-07-07, descriptor profile etag)](#amendment
 **Amended 2026-07-08:** a final `ContentVersion` read is restored — relocated into the persister,
 after every table mutation — because the root-insert stamp is stale once child-table writes fire
 stamp triggers; see [Amendment (2026-07-08, final ContentVersion read)](#amendment-2026-07-08-final-contentversion-read-relocated-into-the-persister). \
+**Amended 2026-07-08:** the `variantKey` `profileCode` is a SHA-256 prefix of the profile *name*, not
+a compile-time index — this hashes the profile descriptor, never the representation, so it upholds the
+original no-representation-hash decision; see [Amendment (2026-07-08, profileCode hash)](#amendment-2026-07-08-profilecode-encodes-a-hash-of-the-profile-name). \
 **Date:** 2026-06-30 (accepted 2026-07-03) \
 **Deciders:** Development team (signed off 2026-07-03). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
@@ -149,6 +152,16 @@ Components, in fixed order:
 2. **`format`** — a stable one-or-two-char code for the response media type, from a fixed server-side registry. Defined today: `j` = `application/json`. Reserve further codes (e.g. `x` = XML) as formats are added. Never derive this from the raw media-type string at runtime; map through the registry so codes stay stable.
 3. **`profileCode`** — `_` when no profile is applied; otherwise the readable profile's stable compile-time index within the current `MappingSet` (a non-negative integer, e.g. `3`). Indices need only be stable within a `schemaEpoch`; because any profile redefinition rotates `schemaEpoch`, the index unambiguously identifies the profile for that epoch. No hashing required.
 4. **`linkFlag`** — `l` when `ResourceLinksOptions.Enabled` is true (links emitted), `n` when false.
+
+> [!NOTE]
+> **`profileCode` encoding (clarified 2026-07-08).** The implementation encodes `profileCode` as a
+> short lowercase-hex **SHA-256 prefix of the readable profile _name_** (8 hex characters), not the
+> compile-time integer index described in item 3 — a `MappingSet` exposes no enumerable profile
+> catalog from which to assign stable ordinals. The value is `_` (no profile) or an 8-hex token; the
+> `3` in the examples below is illustrative of the original index form. This hashes only the tiny,
+> static profile-name descriptor — never the representation JSON — so it upholds, rather than
+> contradicts, this ADR's decision to stop hashing the representation. See
+> [Amendment (2026-07-08, profileCode hash)](#amendment-2026-07-08-profilecode-encodes-a-hash-of-the-profile-name).
 
 Examples (`ContentVersion` = 5, schema epoch `a1b2c3d4`):
 
@@ -437,3 +450,65 @@ Write-response etags reflect the true post-commit `ContentVersion` — including
 stamp triggers — so a write's etag matches a follow-up GET's etag. The remaining per-write cost is a
 single `ContentVersion` read located in the persistence layer, where it is visible and can be removed
 later without touching the response contract.
+
+## Amendment (2026-07-08): `profileCode` encodes a hash of the profile name
+
+**Status:** Accepted — clarifies the `variantKey` encoding to match the implementation; the etag
+contract (state derives from `ContentVersion`; representation selectors are appended) is unchanged. \
+**Date:** 2026-07-08 \
+**Deciders:** Development team (pending sign-off). \
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+
+> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-08 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
+
+### What changed
+
+The [`variantKey` encoding](#variantkey-encoding-specification) specified `profileCode` as "the
+readable profile's stable **compile-time index** within the current `MappingSet` (a non-negative
+integer, e.g. `3`)." The implementation instead derives it as a short lowercase-hex **SHA-256 prefix
+of the readable profile _name_** — `ProfileVariantCode.Of` returns `VariantKey.NoProfileCode` (`_`)
+when no profile applies, otherwise the first 4 bytes (8 hex characters) of
+`SHA-256(UTF-8(profileName))`. A served etag's `profileCode` is therefore `_` or an 8-hex token
+(e.g. `5-a1b2c3d4.j.9f3a2b1c.n`), not a small integer.
+
+The index form was not used because a `MappingSet` exposes no enumerable profile catalog from which to
+assign stable ordinals. The name-hash prefix is deterministic and stable across processes and engines,
+draws only from `etagc`-safe characters (`[0-9a-f]`), and needs no catalog — it identifies the profile
+directly from the name already carried on the read/write request. This is the same hashing tradeoff the
+ADR already sanctioned in its "Alternative (fixed-length opaque token)" note, applied to the
+`profileCode` component only while `schemaEpoch`, `format`, and `linkFlag` remain structured.
+
+### Why this does not violate the spirit of the original decision
+
+This ADR's performance driver was eliminating the per-write hash of **the representation itself** — the
+hydrate-materialize-hash readback that reconstructs the canonical resource-state JSON inside the write
+transaction (see [Context](#context) and Option 2). Hashing the profile **name** is categorically
+different:
+
+- It hashes a **tiny, static descriptor string** (the profile's name), not the document body.
+- It requires **no readback** and **no per-document work** — the name is known from request context,
+  and the 8-hex code is a pure function of it, computable once and cacheable per
+  (`schemaEpoch`, profile) variant.
+- Its cost is constant and independent of resource size or child-collection count, so it cannot
+  reintroduce the throughput bottleneck the ADR removed.
+
+The etag's **state** signal still comes entirely from `ContentVersion`; the profile hash only
+distinguishes **representations** so that two profile-different responses carry distinct strong
+validators, exactly as RFC 7232 §2.1 requires (see
+[ETag format and HTTP validator semantics](#etag-format-and-http-validator-semantics-rfc-7232)).
+
+### What did not change
+
+- The etag format `"{ContentVersion}-{variantKey}"` and the fixed four-component `variantKey` order.
+- `If-Match` comparison, which projects `profileCode` out entirely (along with `format` and
+  `linkFlag`) per [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison),
+  so the profile-name hash never affects optimistic-concurrency behavior — it only affects served-etag
+  distinctness for conditional **GET** / `If-None-Match`.
+- No representation hashing is introduced anywhere; the readback the ADR eliminated stays eliminated.
+
+### Consequence
+
+The `variantKey` documentation now matches the shipped encoding: `profileCode` is `_` or an 8-hex
+SHA-256 prefix of the profile name. The change is descriptive — it records how the etag is already
+built and affirms that hashing the profile descriptor (not the representation) is consistent with the
+ADR's core decision.
