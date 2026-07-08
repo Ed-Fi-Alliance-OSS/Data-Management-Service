@@ -323,7 +323,7 @@ bootstrap stages the selected inputs into the normalized file-based ApiSchema as
 `eng/docker-compose/.bootstrap/ApiSchema/`. The schema JSON files in that workspace are the only schema files
 used for:
 
-- bootstrap-time `dms-schema hash` calculation,
+- bootstrap-time `api-schema-tools hash` calculation,
 - Docker-hosted DMS startup,
 - IDE-hosted DMS startup.
 
@@ -348,7 +348,7 @@ DMS runtime reads `eng/docker-compose/.bootstrap/ApiSchema/` and applies the sam
 staged file set:
 
 - exactly one normalized schema file must have `projectSchema.isExtensionProject=false`; that file is the core
-  schema passed to `dms-schema hash`,
+  schema passed to `api-schema-tools hash`,
 - zero or more normalized schema files may have `projectSchema.isExtensionProject=true`; those files are passed as
   extensions,
 - expert-mode `-ApiSchemaPath` fails fast if the staged directory does not normalize to that shape,
@@ -369,7 +369,7 @@ not carry separate seed or claims policy. `prepare-dms-claims.ps1` still owns al
 validation.
 
 Hash calculation always runs through the existing SchemaTools normalization path by invoking
-`dms-schema hash <coreSchemaPath> <extensionSchemaPath...>` over that staged file set. Bootstrap does not
+`api-schema-tools hash <coreSchemaPath> <extensionSchemaPath...>` over that staged file set. Bootstrap does not
 invent a package-only surrogate fingerprint. For DMS-916, bootstrap depends on the existing SchemaTools CLI
 through a deliberately narrow black-box contract:
 
@@ -492,7 +492,7 @@ prepare-dms-schema.ps1
         and optional static content into the same workspace
   -> Stage one normalized core schema file plus 0..N normalized extension schema files
   -> Write bootstrap-api-schema-manifest.json with manifest-relative schema/content paths
-  -> Run `dms-schema hash <coreSchemaPath> <extensionSchemaPath...>` over the normalized schema files
+  -> Run `api-schema-tools hash <coreSchemaPath> <extensionSchemaPath...>` over the normalized schema files
   -> Write/update .bootstrap/bootstrap-manifest.json schema section with selection mode, selected extensions,
      EffectiveSchemaHash, ApiSchema workspace fingerprint, and the relative ApiSchema manifest path
   -> Docker-hosted DMS:
@@ -2207,7 +2207,7 @@ DDL provisioning phase after instance configuration and before DMS becomes the a
 startup script also has a legacy pre-launch provisioning path controlled by `NEED_DATABASE_SETUP` that
 invokes `EdFi.DataManagementService.Backend.Installer.dll`; the DMS-916 flow must disable that path (for
 example by setting `NEED_DATABASE_SETUP=false`) or remove it from the story-aligned startup path entirely.
-`provision-dms-schema.ps1` uses the existing SchemaTools provisioning surface (`dms-schema ddl provision`)
+`provision-dms-schema.ps1` uses the existing SchemaTools provisioning surface (`api-schema-tools ddl provision`)
 or a thin helper over the same `IDatabaseProvisioner` and runtime-owned validation APIs against each target
 database before any DMS process is expected to serve requests. This matches the repo's existing provisioning
 surface and keeps schema preparation on the authoritative toolchain path rather than on host-start side
@@ -2232,7 +2232,7 @@ responsibilities are:
    produced earlier by `prepare-dms-schema.ps1` for logging or comparison.
 2. Collect the target connection strings and dialect details from the DMS instances selected or created by
    `configure-local-data-store.ps1`.
-3. Invoke `dms-schema ddl provision` (or a thin helper over the same provisioning/runtime contract) for the
+3. Invoke `api-schema-tools ddl provision` (or a thin helper over the same provisioning/runtime contract) for the
    selected targets before DMS starts, using the staged schema files from `prepare-dms-schema.ps1`.
 4. Let the shared provisioning/runtime contract perform the authoritative live-state inspection, any
    required provisioning work, and the serviceability checks needed to accept or reject the target for the
@@ -2241,9 +2241,9 @@ responsibilities are:
    and surface its diagnostics without bootstrap-owned classification of specific stdout/stderr text.
 
 **Precomputed fingerprint metadata:** `prepare-dms-schema.ps1` still records the expected
-`EffectiveSchemaHash` using the same algorithm DMS and `dms-schema hash` already use. The provisioning phase
+`EffectiveSchemaHash` using the same algorithm DMS and `api-schema-tools hash` already use. The provisioning phase
 may log that value, or compare it through a stable machine-readable SchemaTools contract if one is added,
-but the direct `dms-schema ddl provision` handoff is the staged schema files plus target connection details.
+but the direct `api-schema-tools ddl provision` handoff is the staged schema files plus target connection details.
 SchemaTools computes the effective schema and hash internally, and the shared runtime/SchemaTools path
 remains the authority for serviceability checks such as schema-component validation and resource-key seed
 validation.
@@ -2254,7 +2254,7 @@ Invoke-DmsSchemaProvisioning `
     -TargetConnectionStrings $targetConnectionStrings
 ```
 
-**Failure detection** happens in `provision-dms-schema.ps1` itself. `dms-schema ddl provision` already
+**Failure detection** happens in `provision-dms-schema.ps1` itself. `api-schema-tools ddl provision` already
 executes inside a transaction and performs preflight validation through the repo's existing provisioning
 APIs. Because DMS-916 delegates to that authoritative path before DMS starts, the DMS-start/health-wait
 phase only waits for DMS health; it does not introduce a second bootstrap-owned schema-readiness classifier
@@ -2292,7 +2292,7 @@ The proposed split of the current `setup-database-template.psm1` responsibilitie
 
 | Concern | Current location | Proposed location |
 |---------|-----------------|-------------------|
-| Schema DDL (CREATE TABLE, indexes, schema) | Bundled in NuGet SQL template | Direct SchemaTools provisioning (`dms-schema ddl provision` or an equivalent helper over the same APIs) against the selected staged schema set and its exact physical footprint |
+| Schema DDL (CREATE TABLE, indexes, schema) | Bundled in NuGet SQL template | Direct SchemaTools provisioning (`api-schema-tools ddl provision` or an equivalent helper over the same APIs) against the selected staged schema set and its exact physical footprint |
 | Seed data (descriptors, ed-org types, bootstrap records) | Bundled in NuGet SQL template | API-based seed loading via BulkLoadClient: XML in Phase 1, JSONL in Phase 2 ([API-Based Seed Data Loading](#6-api-based-seed-data-loading)) |
 
 `setup-database-template.psm1` is deprecated as part of this design. Its removal is tracked in the
@@ -2365,7 +2365,7 @@ The IDE debugging pattern follows the standard "Docker for infrastructure, local
 This separation means the DMS binary under the debugger is the live code being edited, while all persistence
 and auth services are stable and shared across debug sessions. The staged schema workspace is part of that
 topology: bootstrap materializes `ApiSchema*.json` files once under
-`eng/docker-compose/.bootstrap/ApiSchema/`, `dms-schema hash` runs over those exact staged files, the
+`eng/docker-compose/.bootstrap/ApiSchema/`, `api-schema-tools hash` runs over those exact staged files, the
 Docker-hosted DMS bind-mounts them at `/app/ApiSchema`, and the IDE-hosted DMS reads the host path
 directly. This is the only sanctioned local-process variation within the Docker-first design; it does not
 define a second non-Docker bootstrap path.
@@ -2471,7 +2471,7 @@ creates admin-scoped clients.
 | `JwtAuthentication__ClientRole` | `dms-client` | Required DMS client role issued by the Docker-managed local identity provider. Overrides the committed DMS default so IDE-hosted DMS uses the same role contract as Docker-hosted local DMS. |
 | `JwtAuthentication__RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | Role claim type emitted by the Docker-managed local identity provider. Overrides the committed DMS default so local IDE token validation maps `dms-client` into role claims. |
 | `AppSettings__UseApiSchemaPath` | `true` | Required for IDE-hosted DMS so it reads the staged schema workspace instead of falling back to the default packaged schema input. |
-| `AppSettings__ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` | Host path to the staged schema workspace created by bootstrap. This must point at the same staged files used for `dms-schema hash` and for Docker-hosted DMS runs. |
+| `AppSettings__ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` | Host path to the staged schema workspace created by bootstrap. This must point at the same staged files used for `api-schema-tools hash` and for Docker-hosted DMS runs. |
 | `AppSettings__UseRelationalBackend` | `true` | Required for this IDE workflow because DMS-916 provisions the relational schema before DMS starts and expects the IDE-hosted process to run against that relational backend. |
 | `AppSettings__DeployDatabaseOnStartup` | `false` | Keep the committed default at `false`. Bootstrap provisions schema directly before DMS starts and does not rely on DMS startup side effects in the IDE path. |
 | `Serilog__MinimumLevel__Default` | `Debug` | Log verbosity for local development. |

@@ -135,7 +135,7 @@ Example shape:
 ```
 
 The manifest is not a second schema authority and not the bootstrap compatibility manifest. The schema files
-remain the authoritative inputs for `dms-schema hash`, DDL provisioning, and runtime API surface. The manifest
+remain the authoritative inputs for `api-schema-tools hash`, DDL provisioning, and runtime API surface. The manifest
 only records the project identity needed to interpret each file and the normalized relative paths to schema and
 schema-adjacent runtime content.
 

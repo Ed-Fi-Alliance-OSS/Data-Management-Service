@@ -268,18 +268,28 @@ jobs:
           $toolPath = Join-Path $env:RUNNER_TEMP "api-schema-tools"
           New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
 
+          # --source (not --add-source) keeps the install hermetic: it resolves ONLY from the
+          # locally packed .nupkg and never falls back to nuget.org. .NET tool packages bundle
+          # their full dependency closure, so no other feed is required, and this closes the
+          # dependency-confusion window on the (public) EdFi.Api.SchemaTools id.
           dotnet tool install EdFi.Api.SchemaTools `
             --tool-path $toolPath `
-            --add-source "${{ github.workspace }}" `
+            --source "${{ github.workspace }}" `
             --version $packageVersion
 
           $env:PATH = "$toolPath$([System.IO.Path]::PathSeparator)$env:PATH"
           api-schema-tools --help
 
-          # Exercise a real, DB-free command against a committed fixture so the packaged
-          # dependency closure is verified doing actual work (schema load + normalize + hash),
-          # not just constructing the command tree as `--help` does.
-          api-schema-tools hash ./src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json
+          # Exercise real, DB-free commands against a committed fixture so the packaged
+          # dependency closure is verified doing actual work, not just constructing the
+          # command tree as `--help` does.
+          $fixture = "./src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json"
+
+          # Core stack: schema load -> normalize -> hash.
+          api-schema-tools hash $fixture
+
+          # Backend.Ddl stack: effective-schema-set build -> DDL generation (both dialects) -> file emission.
+          api-schema-tools ddl emit --schema $fixture --output "$env:RUNNER_TEMP/ddl-verify" --dialect both
 
   run-unit-tests:
     name: Run Unit Tests

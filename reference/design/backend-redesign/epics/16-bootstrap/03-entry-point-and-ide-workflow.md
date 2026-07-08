@@ -125,7 +125,7 @@ across separate invocations.
 - That IDE guidance explicitly uses the staged schema workspace:
   - `AppSettings__UseApiSchemaPath=true`,
   - `AppSettings__ApiSchemaPath=<repo-root>/eng/docker-compose/.bootstrap/ApiSchema`.
-- The same staged schema files are used for `dms-schema hash`, Docker-hosted DMS, and IDE-hosted DMS.
+- The same staged schema files are used for `api-schema-tools hash`, Docker-hosted DMS, and IDE-hosted DMS.
 - `provision-dms-schema.ps1` remains responsible for validating the selected target databases against the
   exact selected schema set before any DMS-dependent continuation work begins.
 - When `start-local-dms.ps1` starts the DMS container in the story-aligned Docker flow, it must ensure the
