@@ -47,7 +47,7 @@ Describe "DMS-1154 Invoke-BootstrapDockerSmoke static contract" {
         It "declares -SchemaPackageVersion with default 1.0.333" {
             $params = Get-DeclaredScriptParameters -Path $script:smokeScriptPath
             $params | Should -Contain "SchemaPackageVersion"
-            $script:smokeContent | Should -Match 'SchemaPackageVersion\s*=\s*"1\.0\.332"'
+            $script:smokeContent | Should -Match 'SchemaPackageVersion\s*=\s*"1\.0\.333"'
         }
 
         It "declares -SchemaPackageFeedUrl pointing at the Ed-Fi Alliance OSS feed" {
