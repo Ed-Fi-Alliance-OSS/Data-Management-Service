@@ -99,9 +99,10 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
   `UPDATE(column)` gates.
 - SQL Server identity-value propagation is **not** a trigger and produces no trigger intents. It is handled by
   foreign-key pruning in `ReferenceConstraintPass` / DDL generation (see `design-docs/mssql-cascading.md`):
-  - SQL Server reference composite FKs use `ON UPDATE CASCADE` on the one surviving edge into each cascade receiver and
-    `ON UPDATE NO ACTION` (full composite) on pruned covered edges; every FK keeps the full composite key.
-  - a cascade cycle/SCC, or a receiver with an uncovered convergent live edge, fails derivation.
+  - SQL Server reference composite FKs use `ON UPDATE CASCADE` on eligible edges (including independent parents into a
+    shared receiver); only at a diamond (a receiver reached by two distinct cascade paths from one origin) is one covered
+    reconverging edge pruned to `ON UPDATE NO ACTION` (full composite); every FK keeps the full composite key.
+  - a cascade cycle/SCC, or an uncovered diamond, fails derivation.
   - the retired `MssqlIdentityPropagationTrigger` fan-out is **not** part of the trigger inventory.
 - Trigger names follow `data-model.md` rules and are collision-checked after dialect shortening.
   - Trigger naming should use `TR_{TableName}_{Purpose}` with purpose tokens aligned to `data-model.md`:

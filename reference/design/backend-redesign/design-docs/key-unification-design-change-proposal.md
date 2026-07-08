@@ -7,8 +7,8 @@ Draft (proposal).
 > **SQL Server mechanism superseded (DMS-1129).** References below to SQL Server
 > `MssqlIdentityPropagationTrigger` triggers (including the "extend the trigger to non-root reference
 > sites" work item) are **historical and non-normative**. SQL Server identity-value propagation is
-> now native `ON UPDATE CASCADE` on the surviving edge into each cascade receiver, with covered-edge
-> pruning and fail-fast — see [mssql-cascading.md](mssql-cascading.md). Native cascade already
+> now native `ON UPDATE CASCADE` on eligible edges, pruning only a covered edge at a diamond, with
+> fail-fast on cycles/uncovered diamonds — see [mssql-cascading.md](mssql-cascading.md). Native cascade already
 > follows composite reference FKs on child/extension binding tables, so no trigger change is needed
 > to reach non-root reference sites. This proposal's **cross-scope key-unification** subject (root ↔
 > child duplicated key parts that are *not* linked by a reference edge) is independent of the

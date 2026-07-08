@@ -117,16 +117,17 @@ DDL generator requirements (derived from ApiSchema):
     - abstract target: `{schema}.{AbstractResource}Identity(<CanonicalIdentityParts...>, DocumentId)` using
       `ON UPDATE CASCADE`.
   - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
-    - surviving edge into each cascade receiver: full composite FK with `ON UPDATE CASCADE`.
-    - pruned edges: full composite FK with `ON UPDATE NO ACTION`, allowed only when the pruned edge is covered by the
-      surviving cascade (its identity columns are maintained by that cascade under key unification). There is no
-      `DocumentId`-only trigger fallback — every SQL Server reference FK keeps the full composite key.
-    - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or a receiver with an uncovered convergent
-      live edge.
+    - eligible edges (including independent parents into a shared receiver): full composite FK with `ON UPDATE CASCADE`.
+    - pruning happens only at a **diamond** (one update would otherwise reach a table by two cascade paths): the
+      surviving path stays `ON UPDATE CASCADE` and one reconverging edge is pruned to full-composite `ON UPDATE NO ACTION`,
+      allowed only when covered by the survivor (its identity columns are maintained by that cascade under key
+      unification). Independent parents are never pruned; there is no `DocumentId`-only trigger fallback — every SQL Server
+      reference FK keeps the full composite key.
+    - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or an uncovered diamond.
 
 When a referenced document’s identity changes, the database propagates updated identity values into all direct
-referrers’ **canonical/storage columns** (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on the surviving
-edge into each receiver). Any per-site binding aliases recompute automatically while preserving optional-reference
+referrers’ **canonical/storage columns** (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible
+edges, pruned to a surviving path only at a diamond). Any per-site binding aliases recompute automatically while preserving optional-reference
 presence semantics.
 
 #### Descriptor references (`..._DescriptorId`)
@@ -148,8 +149,8 @@ The pieces fit together like this:
    - The referencing row stores both the resolved `DocumentId` and the abstract identity column values provided in the payload.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
    - The composite FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses `ON UPDATE CASCADE`, SQL Server uses
-     foreign-key pruning — native `ON UPDATE CASCADE` on the surviving edge into each receiver, `ON UPDATE NO ACTION` on
-     pruned covered edges (see [mssql-cascading.md](mssql-cascading.md)). This ensures:
+     foreign-key pruning — native `ON UPDATE CASCADE` on eligible edges, pruning a covered edge to `ON UPDATE NO ACTION`
+     only at a diamond (see [mssql-cascading.md](mssql-cascading.md)). This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored abstract identity columns are kept correct automatically.
 5. **Read-time reference identity projection is local**
@@ -234,8 +235,8 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - `dms.Descriptor` upsert if the resource is a descriptor.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
    - Composite FK propagation is dialect-specific: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges; SQL Server
-     uses foreign-key pruning — native `ON UPDATE CASCADE` on the surviving edge into each receiver and
-     `ON UPDATE NO ACTION` on pruned covered edges (see [mssql-cascading.md](mssql-cascading.md)). Both paths update
+     uses foreign-key pruning — native `ON UPDATE CASCADE` on eligible edges, pruning a covered edge to
+     `ON UPDATE NO ACTION` only at a diamond (see [mssql-cascading.md](mssql-cascading.md)). Both paths update
      canonical/storage columns (binding aliases recompute).
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
@@ -259,10 +260,10 @@ This redesign keeps relationships keyed by stable `..._DocumentId`, but also sto
 fields alongside every document reference. Composite-FK update behavior is dialect-specific:
 - PostgreSQL: `ON UPDATE CASCADE` for abstract targets and concrete targets whose identity can change transitively
   (`ON UPDATE NO ACTION` otherwise).
-- SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on the one surviving edge into each cascade receiver,
-  `ON UPDATE NO ACTION` (full composite) on pruned covered edges, and fail-fast when no safe pruning exists (a cascade
-  cycle, or a receiver with an uncovered convergent live edge). There is no `DocumentId`-only trigger fallback (see
-  [mssql-cascading.md](mssql-cascading.md)).
+- SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on eligible edges (including independent parents into a shared
+  receiver), pruning a covered edge to `ON UPDATE NO ACTION` (full composite) only where one update would otherwise reach
+  a table by two cascade paths (a diamond), and fail-fast when no safe pruning exists (a cascade cycle, or an uncovered
+  diamond). There is no `DocumentId`-only trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
@@ -274,8 +275,9 @@ Engine considerations:
 - PostgreSQL supports “cycles or multiple cascade paths” for FK cascades, so it keeps `ON UPDATE CASCADE` on every eligible edge.
 - SQL Server rejects a table reached by multiple cascade paths, and cascade cycles (error 1785), so it uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child): `ON UPDATE CASCADE` on
-  the one surviving edge into each cascade receiver and `ON UPDATE NO ACTION` (full composite) on pruned covered edges,
-  failing fast when no safe pruning exists (a cascade cycle/SCC, or a receiver with an uncovered convergent live edge).
+  eligible edges (including independent parents into a shared receiver), pruning a covered edge to `ON UPDATE NO ACTION`
+  (full composite) only at a diamond (where one update would otherwise reach a table by two cascade paths),
+  failing fast when no safe pruning exists (a cascade cycle/SCC, or an uncovered diamond).
   Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
   propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 

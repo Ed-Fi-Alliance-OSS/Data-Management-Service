@@ -610,7 +610,7 @@ flowchart LR
     subgraph P7["Pass 7: Reference Constraints"]
         direction TB
         P7A["Derive composite FKs to<br/>target reference-key UNIQUE"]
-        P7B["Set ON UPDATE CASCADE<br/>or NO ACTION based on<br/>allowIdentityUpdates"]
+        P7B["Classify ON UPDATE via<br/>transitive mutability +<br/>SQL Server FK pruning<br/>(MssqlPropagationMode)"]
         P7C["Derive all-or-none CHECK<br/>constraints for optional refs"]
         P7A --> P7B --> P7C
     end

@@ -559,7 +559,7 @@ Within a single transaction:
    - collection/common-type extension scope rows keyed by the owning base row identity
    - extension child collections using the same merge strategy as core collections
 6. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); use `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`; otherwise `ON UPDATE NO ACTION`) — on SQL Server, foreign-key pruning further limits `CASCADE` to the surviving edge into each cascade receiver (see [mssql-cascading.md](mssql-cascading.md)), and
+   - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); use `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`; otherwise `ON UPDATE NO ACTION`) — on SQL Server, foreign-key pruning prunes a covered edge to `NO ACTION` only at a diamond (native `CASCADE` on eligible edges otherwise; see [mssql-cascading.md](mssql-cascading.md)), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):

@@ -332,9 +332,9 @@ public abstract record TriggerKindParameters
     ) : TriggerKindParameters;
 
     // RETIRED by the DMS-1129 revision (see design-docs/mssql-cascading.md): SQL Server
-    // identity-value propagation is now native `ON UPDATE CASCADE` on the surviving edge into each
-    // cascade receiver, not an AFTER trigger. DMS-1258 removes this trigger kind and its emission.
-    // The abstract-identity and referential-identity *maintenance* triggers above are unaffected.
+    // identity-value propagation is now native `ON UPDATE CASCADE` on eligible edges (pruned to a
+    // surviving path only at a diamond), not an AFTER trigger. DMS-1258 removes this trigger kind and
+    // its emission. The abstract-identity and referential-identity *maintenance* triggers above are unaffected.
     public sealed record MssqlIdentityPropagationTrigger(
         IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates
     ) : TriggerKindParameters;
@@ -397,8 +397,8 @@ Notes:
   - coverage / carrier diagnostics **for `NoPropagation` edges only** (which surviving edge and shared canonical columns
     cover the pruned edge), emitted into `relational-model.manifest.json` so pruning is auditable and reproducible.
     `NativeCascade` and `ImmutableNoAction` edges carry no carrier diagnostics — there is nothing to attribute.
-  - hard derivation errors for the two fail-fast conditions (a cascade cycle/SCC, or a receiver with an uncovered
-    convergent live edge), each naming the offending tables and FK constraint names.
+  - hard derivation errors for the two fail-fast conditions (a cascade cycle/SCC, or an uncovered diamond — a receiver
+    reached twice from one origin with no coverable prune), each naming the offending tables and FK constraint names.
   This classification replaces the retired `MssqlIdentityPropagationTrigger` inventory for identity-value propagation;
   PostgreSQL model sets keep `ON UPDATE CASCADE` on every eligible edge and do not use `MssqlPropagationMode`.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.

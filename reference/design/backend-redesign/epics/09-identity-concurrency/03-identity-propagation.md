@@ -28,7 +28,7 @@ Align with:
 
 1. Emit/validate DDL for identity-component propagation:
    - composite FKs with `ON UPDATE CASCADE` where allowed, and
-   - on SQL Server, foreign-key pruning (analyzed in propagation direction) — native `ON UPDATE CASCADE` on the one surviving edge into each cascade receiver, `ON UPDATE NO ACTION` (full composite) on pruned covered edges, and fail-fast when no safe pruning exists (a cascade cycle/SCC, or a receiver with an uncovered convergent live edge). Every SQL Server reference FK keeps the full composite key; there is no `DocumentId`-only shape and no identity-value propagation trigger (see `design-docs/mssql-cascading.md`).
+   - on SQL Server, foreign-key pruning (analyzed in propagation direction) — native `ON UPDATE CASCADE` on eligible edges (including independent parents into a shared receiver), pruning one covered reconverging edge to `ON UPDATE NO ACTION` (full composite) only at a diamond (a receiver reached by two distinct cascade paths from one origin), and fail-fast when no safe pruning exists (a cascade cycle/SCC, or an uncovered diamond). Every SQL Server reference FK keeps the full composite key; there is no `DocumentId`-only shape and no identity-value propagation trigger (see `design-docs/mssql-cascading.md`).
 2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes, recomputing `ReferentialId` using the engine UUIDv5 helper (`E02-S06`).
 3. Integrate identity-stamp behavior (`IdentityVersion/IdentityLastModifiedAt`) with trigger maintenance.
 4. Add integration tests for a small identity dependency chain scenario.

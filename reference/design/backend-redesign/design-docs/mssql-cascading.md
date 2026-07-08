@@ -19,15 +19,18 @@ design only.
 
 > **What changed in this revision (for reviewers).** Relative to the first spike draft this note:
 > models the cascade graph in **propagation direction** (referenced/parent → referrer/child) and
-> analyzes SQL Server error 1785 at the **cascade receiver** (the referrer reached by multiple
-> cascade paths), not at the referenced parent; adds explicit **cycle / SCC** handling (fail fast);
-> **removes `TriggerFallback`** (the `DocumentId`-only + trigger outcome) entirely, so every emitted
-> SQL Server reference FK keeps the full composite key and a pruned live/uncovered edge is a
-> fail-fast error; reframes the cross-dialect detection as a **SQL Server portability / authoring
-> guard**, not a PostgreSQL correctness requirement; and uses **transitive** identity mutability
-> consistently. A follow-up review round added a third `MssqlPropagationMode` value,
+> analyzes SQL Server error 1785 as **duplicate reachability within a single update's cascade action
+> tree** (a diamond, or a cycle), not at the referenced parent; adds explicit **cycle / SCC**
+> handling (fail fast); **removes `TriggerFallback`** (the `DocumentId`-only + trigger outcome)
+> entirely, so every emitted SQL Server reference FK keeps the full composite key and a pruned
+> live/uncovered edge is a fail-fast error; reframes the cross-dialect detection as a **SQL Server
+> portability / authoring guard**, not a PostgreSQL correctness requirement; and uses **transitive**
+> identity mutability consistently. A later review round added a third `MssqlPropagationMode` value,
 > **`ImmutableNoAction`**, so genuinely immutable full-composite `NO ACTION` FKs are classified
-> explicitly instead of being conflated with pruned/covered edges. See
+> explicitly instead of being conflated with pruned/covered edges. A further round **corrected the
+> 1785 test from raw cascade in-degree > 1 to per-origin duplicate reachability** (a multitree
+> violation): *independent* parents into one receiver are legal and are never pruned — pruning an
+> independent live edge would only reintroduce error 547. See
 > [Resolved design decisions](#resolved-design-decisions).
 
 ## The problem
@@ -67,22 +70,30 @@ in the database rejects it.
 These are the load-bearing decisions this note settles; the sections below elaborate each. They
 also drive the corrections applied to the other design docs by DMS-1129.
 
-1. **Pruning / detection unit is the cascade receiver, in propagation direction.** The cascade
-   graph is directed **referenced/parent table → referrer/child (receiver) table** — the direction
-   an identity update actually propagates. SQL Server 1785 is analyzed at the *receiver*: a table
-   reached by more than one cascade path (equivalently, with cascade in-degree > 1), **not** a
-   referenced parent that happens to have several inbound reference FKs.
+1. **The 1785 test is per-origin duplicate reachability, not raw in-degree.** The cascade graph is
+   directed **referenced/parent table → referrer/child (receiver) table** — the direction an identity
+   update actually propagates. SQL Server 1785 forbids a table from appearing more than once in the
+   cascade action tree of a *single* `UPDATE`/`DELETE`: the legal graph is a **multitree** (at most
+   one cascade path between any two tables). A receiver is an actual conflict only when two of its
+   incoming cascade edges have source tables that **share a common cascade ancestor** — i.e. some
+   origin reaches the receiver by two distinct paths (a *diamond*), or a cycle revisits it. **Direct
+   cascade in-degree > 1 is only a cheap candidate signal**, not proof: *independent* parents (with
+   disjoint ancestor sets) into one receiver are legal and require no pruning. (See the Microsoft
+   reference: [MSSQLSERVER_1785](https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1785-database-engine-error).)
 
 2. **Cascade cycles fail fast.** Any nontrivial strongly-connected component (SCC) or self-loop
-   among cascade edges in the propagation graph is a hard derivation error with a diagnostic that
-   names the SCC's tables and the FK edges that form the cycle. No pruning rule is claimed safe for
-   cycles.
+   among cascade edges in the propagation graph makes the action tree revisit a table (the "cycles"
+   half of 1785) and is a hard derivation error, with a diagnostic that names the SCC's tables and
+   the FK edges that form the cycle. No pruning rule is claimed safe for cycles.
 
 3. **`TriggerFallback` is removed.** There is no `DocumentId`-only + trigger outcome. Every emitted
    SQL Server reference FK keeps the **full composite** key (identity columns restored), so
-   value-level RI is always enforced. A pruned edge is either *covered* by the surviving cascade
-   (safe `NO ACTION`) or it is *live and uncovered*, which is a **fail-fast** error. This also
-   removes the DMS-1002 stale-identity race, which the `DocumentId`-only shape reintroduced.
+   value-level RI is always enforced. To break a diamond, one reconverging edge is pruned to
+   `NO ACTION` **only if it is covered** by the surviving path for the *same originating update and
+   the same canonical columns*; an uncovered reconvergence is a **fail-fast** error. An independent
+   live edge is **never** pruned (no surviving cascade would carry its own origin's value — that is
+   exactly the 547 trap). This also removes the DMS-1002 stale-identity race, which the
+   `DocumentId`-only shape reintroduced.
 
 4. **Coverage / immutability use transitive identity mutability.** Cascade-eligibility *and*
    liveness are both defined as `IsAbstract || TransitivelyAllowIdentityUpdates`, matching
@@ -150,62 +161,101 @@ flowchart LR
 that carries `MssqlPropagationMode`; the dashed triggers are the unaffected maintenance triggers,
 not the retired identity-value propagation trigger.
 
-### B. Propagation-direction graph and the convergence receiver
+### B. Direct in-degree > 1 is NOT proof — legal independent parents
 
-Edges point in **propagation direction** (referenced/parent → referrer/child). The diamond makes the
-receiver explicit.
+Edges point in **propagation direction** (referenced/parent → referrer/child). A receiver can have
+two incoming cascade edges and still be legal when the parents are **independent origins**.
 
 ```mermaid
 flowchart TD
-  A["A - hub identity (referenced parent)"]
+  P1["Parent P1 (origin O1)"]
+  P2["Parent P2 (origin O2, unrelated to O1)"]
+  R["Receiver R (cascade in-degree 2)"]
+  P1 -->|"CASCADE (NativeCascade)"| R
+  P2 -->|"CASCADE (NativeCascade)"| R
+```
+
+*For DMS-1258:* O1's update action tree reaches R once (O1→R) and O2's reaches R once — **no origin
+reaches R twice**, so this is a legal multitree. Both edges stay `CASCADE`; nothing is pruned.
+In-degree > 1 is a cheap candidate signal only; confirm a real conflict by shared ancestry.
+
+### C. Illegal — duplicate reachability under one origin (diamond)
+
+```mermaid
+flowchart TD
+  A["A (single origin)"]
   B["B"]
-  C["C - cascade receiver, reached by A-to-C and A-to-B-to-C"]
+  C["C"]
+  R["Receiver R (reached twice from A)"]
   A -->|"cascade"| B
   A -->|"cascade"| C
-  B -->|"cascade"| C
+  B -->|"cascade"| R
+  C -->|"cascade"| R
 ```
 
-*For DMS-1258:* SQL Server error 1785 is a property of **C** (cascade in-degree 2), not of the hub
-**A**. The prune/survivor decision is made at each receiver with in-degree > 1 — never "per
-referenced table".
+*For DMS-1258:* A's update action tree reaches R by **A→B→R and A→C→R**, so R appears twice → 1785.
+This diamond (two of R's incoming edges share the ancestor A) is what needs classification — prune a
+covered reconverging edge, or fail fast.
 
-### C. Safe pruning — covered edge (restores identity-value RI)
+### D. Safe covered pruning tied to the same origin (restores identity-value RI)
 
-Both incoming edges bind the **same key-unified canonical column** on the receiver, so the survivor's
-cascade keeps it current and the pruned `NO ACTION` FK never observes a mismatch (probe 6).
+The two reconverging edges bind the **same key-unified canonical column** `K` on R, and the surviving
+path from A maintains `K`, so the pruned `NO ACTION` edge never observes a mismatch (probe 6).
 
 ```mermaid
 flowchart TD
-  P1["Parent P1"]
-  P2["Parent P2"]
-  R["Receiver R: ONE key-unified column, e.g. StudentUniqueId_Unified; full composite FK on BOTH edges"]
-  P1 -->|"ON UPDATE CASCADE - survivor (NativeCascade), maintains the shared column"| R
-  P2 -->|"ON UPDATE NO ACTION - pruned + COVERED (NoPropagation), same column kept current by the survivor"| R
+  A["A (origin); its identity is stored as canonical column K on R"]
+  B["B"]
+  C["C"]
+  R["Receiver R: single key-unified column K; full composite FK on BOTH reconverging edges"]
+  A -->|"cascade"| B
+  A -->|"cascade"| C
+  B -->|"ON UPDATE CASCADE - survivor path, maintains K"| R
+  C -->|"ON UPDATE NO ACTION - pruned + COVERED (NoPropagation): K kept current by the survivor path from A"| R
 ```
 
-*For DMS-1258:* both edges keep the **full composite** FK, so identity values are enforced by the
-DB — no `DocumentId`-only shape, no stale-identity window. Only the pruned edge carries
-coverage/carrier diagnostics (which survivor covers it, over which columns).
+*For DMS-1258:* both edges keep the **full composite** FK, so identity values are enforced by the DB
+— no `DocumentId`-only shape, no stale-identity window. The pruned edge's carrier diagnostics record
+the **origin A, receiver R, both paths, and the shared column K**.
 
-### D. Unsafe convergence — fail fast (no DocumentId-only fallback)
-
-The two incoming edges carry **independent** identities into **separate, non-unified** columns, so no
-survivor choice covers the other.
+### E. Do NOT prune an independent live edge — it reintroduces 547
 
 ```mermaid
 flowchart TD
-  P1["Parent P1 - identity X"]
-  P2["Parent P2 - identity Y (independent of X)"]
-  R["Receiver R: stores X and Y in separate, non-unified columns"]
-  P1 -->|"live cascade (X)"| R
-  P2 -->|"live cascade (Y)"| R
-  R -.->|"keep one as CASCADE; the other must be NO ACTION, but that blocks real updates (547), and there is no DocumentId-only fallback"| FAIL(["FAIL FAST - uncovered convergent live edge; diagnostic names R + the conflicting edges"])
+  P1["Parent P1 (origin O1)"]
+  P2["Parent P2 (origin O2, independent)"]
+  R["Receiver R"]
+  P1 -->|"CASCADE"| R
+  P2 -.->|"WRONG: prune to NO ACTION. When O2's identity changes, no surviving cascade updates R, so the composite FK blocks it (error 547)"| R
 ```
 
-*For DMS-1258:* this is the case ODS prunes silently and wrongly. DMS raises a hard derivation
-error; MetaEd (METAED-1667) should reject it at authoring time.
+*For DMS-1258:* pruning an independent parent is never allowed — there is no surviving cascade from
+O2 to carry O2's new value into R. Independent parents are legal exactly as in diagram B and stay
+`CASCADE`. "Covered" is therefore defined **per originating tree**: an edge is prunable only if a
+survivor carries the *same* value into the *same* canonical columns for **every** origin that reaches
+R through it.
 
-### E. Cascade cycle / SCC — fail fast
+### F. Uncovered diamond — fail fast (no DocumentId-only fallback)
+
+A genuine diamond (origin A reaches R twice) whose reconverging paths carry **different, non-unified**
+values, so no survivor covers the other.
+
+```mermaid
+flowchart TD
+  A["A (origin)"]
+  B["B carries value X into R"]
+  C["C carries value Y into R (X and Y are distinct, non-unified columns)"]
+  R["Receiver R: X and Y in separate columns"]
+  A -->|"cascade"| B
+  A -->|"cascade"| C
+  B -->|"survivor: CASCADE maintains X"| R
+  C -.->|"reconverging edge carries Y, NOT covered by the survivor; NO ACTION would block A's update (547)"| FAIL(["FAIL FAST - uncovered diamond; diagnostic names origin A, receiver R, both paths, and the uncovered columns"])
+```
+
+*For DMS-1258:* this is the case ODS prunes silently and wrongly. DMS raises a hard derivation error;
+MetaEd (METAED-1667) should reject it at authoring time.
+
+### G. Cascade cycle / SCC — fail fast
 
 ```mermaid
 flowchart LR
@@ -214,11 +264,11 @@ flowchart LR
   C -->|"cascade"| A
 ```
 
-*For DMS-1258:* a nontrivial SCC (or a self-loop) is the "cycles" half of error 1785. Pruning one
-edge does not leave a cascade that still propagates every identity, so no pruning rule is claimed
-safe → fail fast, naming the SCC tables and the FK edges in the cycle.
+*For DMS-1258:* a nontrivial SCC (or a self-loop) makes the action tree revisit a table (the "cycles"
+half of error 1785). Pruning one edge does not leave a cascade that still propagates every identity,
+so no pruning rule is claimed safe → fail fast, naming the SCC tables and the FK edges in the cycle.
 
-### F. Before (DMS-1002 workaround) vs after (DMS-1129 pruning)
+### H. Before (DMS-1002 workaround) vs after (DMS-1129 pruning)
 
 ```mermaid
 flowchart TB
@@ -258,6 +308,17 @@ self-contained.
 | 4 | Kept `ON UPDATE CASCADE` composite FK (identity parts + DocumentId); update parent identity | Succeeds; referrer auto-updated | A kept cascade edge preserves full value-level RI and propagates natively. |
 | 5 | `INSTEAD OF UPDATE` trigger on a table that has a cascading FK | **Msg 2113** | The "reorder children-first via `INSTEAD OF`" alternative is unavailable on any table participating in a kept cascade. |
 | 6 | Diamond where the pruned `NO ACTION` edge shares a **key-unified** column with a surviving cascade path; update the shared key | Succeeds; shared column propagated | Pruning is *safe* exactly when the pruned edge's stored column is maintained by the surviving cascade, because `NO ACTION` never observes an inconsistent value. |
+
+**Scope of these probes.** Probe 1 exercises a **diamond** — one origin (`A`) reaching one receiver
+(`C`) by two distinct cascade paths, i.e. *duplicate reachability within a single update's action
+tree*. That is the actual 1785 condition (with cycles), per the Microsoft reference
+([MSSQLSERVER_1785](https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1785-database-engine-error):
+"a table cannot appear more than one time in the list of all the cascading referential actions … The
+tree of cascading referential actions must only have one path to a particular table"). It is **not**
+the case that any table with cascade in-degree > 1 is illegal: two `ON UPDATE CASCADE` FKs into one
+table from **independent** parents (no shared cascade ancestor) are legal, because no single
+`UPDATE`/`DELETE` reaches the table twice. The design below treats in-degree > 1 only as a candidate
+signal and confirms a real conflict by shared ancestry.
 
 Minimal reproductions:
 
@@ -310,12 +371,14 @@ mirrors — using transactions that were rolled back, so the database was left u
 ## Design: pruning with a safety classification
 
 The strategy is **hybrid, deterministic, and fail-fast**. On SQL Server, DMS keeps
-`ON UPDATE CASCADE` (with the full composite FK, identity columns included) on the *surviving*
-edge into each convergence receiver, prunes the redundant edges into that receiver to `NO ACTION`
-(still full composite), and refuses to emit DDL for any graph where no safe pruning exists — a
-cascade cycle, or a receiver whose redundant edges cannot all be covered. This replaces the current
-"strip identity columns everywhere + trigger" default. **No pruned edge is ever reduced to a
-`DocumentId`-only FK.**
+`ON UPDATE CASCADE` (with the full composite FK, identity columns included) on every cascade edge
+that is not part of a diamond — including **independent** parents into a shared receiver — and, only
+where one origin reaches a receiver by two distinct paths (a *diamond*), prunes **one covered
+reconverging edge** to `NO ACTION` (still full composite). It refuses to emit DDL for any graph where
+no safe pruning exists — a cascade cycle, or a diamond whose reconverging edge cannot be covered.
+This replaces the current "strip identity columns everywhere + trigger" default. **No pruned edge is
+ever reduced to a `DocumentId`-only FK, and an independent live edge is never pruned** (that would
+only reintroduce error 547).
 
 ### 1. Build the cascade graph in propagation direction
 
@@ -346,54 +409,78 @@ pruning rule** — pruning any single edge of a cycle does not make the remainin
 way that still propagates every identity. DMS **fails derivation** with a diagnostic that names the
 SCC's tables and the exact FK edges (constraint names) forming the cycle.
 
-### 3. Detect convergence receivers (multiple cascade paths)
+### 3. Detect duplicate reachability (diamonds) — not raw in-degree
 
-A table is legal on SQL Server iff no table is reached by more than one cascade path. Because two
-distinct cascade paths to a receiver must reconverge at some table with cascade **in-degree > 1**,
-it is sufficient to reduce the graph so **every receiver has at most one incoming cascade edge**:
-a forest of cascade edges has no reconvergence and therefore no multiple-path table. So the
-convergence unit is a **receiver (child/referrer) table whose cascade in-degree is greater than 1**
-— a *pruning candidate*. (This is the correction to the earlier "collect a referenced table's
-incoming reference FKs" framing, which grouped on the wrong vertex.)
+A table is legal on SQL Server iff it appears at most once in the cascade action tree of any single
+`UPDATE`/`DELETE` — equivalently, the cascade graph is a **multitree**: at most one directed cascade
+path between any ordered pair of tables. So the unit of analysis is **duplicate reachability**, not
+raw in-degree:
+
+- **Candidate signal (cheap prefilter).** A receiver with cascade in-degree > 1 is a *candidate* to
+  investigate — nothing more. Most such receivers are legal.
+- **Confirmed conflict (a diamond).** A candidate receiver `R` is an actual 1785 conflict only when
+  two of its incoming cascade edges have source tables that **share a common cascade ancestor** — i.e.
+  there is an origin `O` with two distinct `O → R` cascade paths. Compute this with ancestor sets
+  (`ancestor(v)` = `v` plus everything that reaches `v` via cascade edges): `R` conflicts iff two
+  incoming edges' sources have intersecting ancestor sets.
+- **Independent parents are legal.** If `R`'s incoming edges come from sources with **disjoint**
+  ancestor sets, no single update reaches `R` twice; every such edge stays `ON UPDATE CASCADE` and
+  **nothing is pruned** (diagram B). Pruning one of them would strand that parent's own identity
+  updates with no surviving cascade — the error-547 trap (diagram E).
+
+(This corrects the earlier "reduce every receiver to at most one incoming cascade edge" rule, which
+over-approximated 1785 by treating a multitree as if it had to be a forest.)
 
 ### 4. Classify coverage using transitive mutability
 
 Every cascade edge is *live* by construction (an immutable reference would not be in the graph —
-decision 4). For a candidate receiver, exactly one incoming edge can remain `ON UPDATE CASCADE`
-(the **survivor** `S`); the rest must be pruned to `NO ACTION`. A pruned edge `E` is:
+decision 4). Only edges that participate in a **diamond** (step 3) are pruning candidates; the two
+(or more) paths from the shared origin `O` to the receiver `R` reconverge, and one reconverging edge
+must be pruned so `R` appears once in `O`'s action tree. The surviving path keeps `ON UPDATE CASCADE`;
+a reconverging edge `E` chosen for pruning is:
 
-- **Covered** — `E`'s stored identity-part columns are, under key unification, the *same canonical
-  storage columns* the surviving cascade `S` already maintains on the receiver. Pruning `E` to a
-  full-composite `NO ACTION` FK is safe: `S` keeps the shared column consistent, so the pruned FK
-  never observes a mismatch (probe 6). `E` becomes `NoPropagation` and keeps the **full composite**
-  FK — RI is preserved without a second cascade path.
+- **Covered** — for **every** origin that reaches `R` through `E`, the surviving path from that origin
+  maintains the *same canonical storage columns* on `R` that `E` constrains (under key unification).
+  Pruning `E` to a full-composite `NO ACTION` FK is then safe: a survivor always keeps the shared
+  column consistent, so the pruned FK never observes a mismatch (probe 6). `E` becomes `NoPropagation`
+  and keeps the **full composite** FK — RI is preserved without a second cascade path.
 
-- **Uncovered** — `E` propagates an identity into columns that `S` does not maintain. A
-  full-composite `NO ACTION` on those columns would block real identity updates (probe 3), and
-  neither a trigger (probe 3) nor an `INSTEAD OF` reorder (probe 5) can rescue it while the identity
-  columns remain in the FK. There is no safe emission for `E` → **fail fast** (step 6).
+- **Uncovered** — some origin reaches `R` through `E` with no surviving path maintaining `E`'s
+  columns (a different/non-unified value, or `E` is the *sole* path from an independent origin). A
+  full-composite `NO ACTION` on those columns would block that origin's real identity updates
+  (probe 3), and neither a trigger (probe 3) nor an `INSTEAD OF` reorder (probe 5) can rescue it while
+  the identity columns remain in the FK. There is no safe emission for `E` → **fail fast** (step 6).
 
-### 5. Choose the survivor and emit outcomes
+**Independent edges are never candidates.** An incoming edge whose source shares no ancestor with the
+receiver's other retained edges is not part of any diamond; it stays `NativeCascade`. Coverage is
+therefore evaluated *per originating tree* — never "does some other edge into `R` happen to touch the
+same column", which would wrongly green-light pruning an independent parent.
 
-For each candidate receiver, choose the survivor deterministically so that **every** other incoming
-edge is covered by it:
+### 5. Choose survivors and emit outcomes
 
-1. Consider each incoming cascade edge as a candidate survivor.
-2. Keep the first candidate (by receiver-edge order: source table identifier, then constraint name)
-   for which *all* other incoming edges are covered under key unification.
-3. If such a survivor exists: emit it as `NativeCascade` and emit the remaining edges as
-   `NoPropagation`.
-4. If no candidate survivor covers all the others, the receiver has ≥1 uncovered live edge under
-   every choice → **fail fast** (step 6).
+Independent edges (and every edge into an in-degree-≤-1 receiver) are emitted as `NativeCascade` — no
+pruning. For each **diamond** (a receiver `R` reachable twice from a common origin), break the
+duplicate deterministically:
 
-Receivers with cascade in-degree ≤ 1 keep their single edge as `NativeCascade` (no pruning needed).
+1. Among the reconverging incoming edges of the diamond, consider each as the candidate survivor,
+   in a stable order (source table identifier, then constraint name).
+2. Keep the first candidate for which every *other reconverging* edge is covered (step 4) for all of
+   its origins under key unification.
+3. If such a survivor exists: emit it (and the rest of its path) as `NativeCascade` and emit the
+   covered reconverging edge(s) as `NoPropagation`.
+4. If no candidate survivor covers the others — including any case where a reconverging edge is also
+   the sole path from an independent origin — the diamond cannot be broken safely → **fail fast**
+   (step 6).
+
+The choice is local to each diamond; edges outside diamonds are untouched. Immutable references are
+outside the cascade graph entirely and are emitted as `ImmutableNoAction` (step 1).
 
 | Final per-edge outcome (`MssqlPropagationMode`) | FK shape | `ON UPDATE` | Propagation mechanism | Carrier diagnostics |
 |------------------------|----------|-------------|-----------------------|---------------------|
-| `NativeCascade` (cascade-eligible; surviving edge, or the sole edge into a receiver) | full composite (identity parts + DocumentId) | `CASCADE` | engine cascade (probe 4) | none |
-| `NoPropagation` (cascade-eligible; pruned, covered) | full composite | `NO ACTION` | none needed — covered by the surviving cascade (probe 6) | **yes** — records the covering survivor + shared columns |
+| `NativeCascade` (cascade-eligible; an independent edge, the surviving path of a diamond, or the sole edge into a receiver) | full composite (identity parts + DocumentId) | `CASCADE` | engine cascade (probe 4) | none |
+| `NoPropagation` (cascade-eligible; a covered reconverging edge of a diamond) | full composite | `NO ACTION` | none needed — covered by the surviving path for the same origin (probe 6) | **yes** — records the origin, receiver, both paths, and shared columns |
 | `ImmutableNoAction` (not cascade-eligible; immutable target, not in the cascade graph) | full composite | `NO ACTION` | none — the referenced identity cannot change | none |
-| **derivation fails** (cascade cycle/SCC, or a receiver with any uncovered live pruned edge) | — | — | **fail fast** with a diagnostic | n/a |
+| **derivation fails** (cascade cycle/SCC, or a diamond whose reconverging edge cannot be covered) | — | — | **fail fast** with a diagnostic | n/a |
 
 There is **no** `TriggerFallback` / `DocumentId`-only outcome. Every emitted SQL Server reference FK
 keeps the full composite key, so value-level RI is always enforced and the DMS-1002 stale-identity
@@ -406,14 +493,15 @@ alone; that is exactly why it is carried explicitly (see the contract).
 
 Derivation fails, with a diagnostic, in exactly two situations:
 
-- **Cascade cycle** (step 2): the propagation graph has a nontrivial SCC or self-loop. Diagnostic
-  names the SCC tables and the FK edges forming the cycle.
-- **Uncovered convergence** (step 5): a candidate receiver has, under every survivor choice, at
-  least one live incoming edge that is not covered by the survivor. There is no legal SQL Server
-  DDL that preserves identity RI here — SQL Server allows at most one cascade path into the receiver
+- **Cascade cycle** (step 2): the propagation graph has a nontrivial SCC or self-loop, so the action
+  tree revisits a table. Diagnostic names the SCC tables and the FK edges forming the cycle.
+- **Uncovered diamond** (step 5): an origin reaches a receiver by two distinct cascade paths, and no
+  survivor choice covers the reconverging edge (a different/non-unified value, or a reconverging edge
+  that is also the sole path from an independent origin). There is no legal SQL Server DDL that
+  preserves identity RI here — SQL Server allows at most one cascade path from an origin to a table
   (probe 1), a `NO ACTION` composite FK cannot be trigger-rescued (probe 3), and `INSTEAD OF` is
-  unavailable (probe 5). Diagnostic names the receiver table and the conflicting live edges
-  (referrer table + constraint name for each).
+  unavailable (probe 5). Diagnostic names the **origin/root, the receiver, the two (or more) distinct
+  cascade paths, the candidate/pruned edges, and the coverage columns**.
 
 Both are precisely the cases ODS prunes silently and incorrectly. Failing here is safe because the
 schema that produces it should have been rejected at authoring time (see the MetaEd follow-up), so
@@ -430,10 +518,11 @@ multiple-cascade-paths restriction and no `NO ACTION`-before-trigger problem: it
 composite cascades on all paths of a multi-path graph (and can cascade through cycles), so pruning
 on PostgreSQL would only *remove* native RI enforcement for no benefit.
 
-The unsafe-graph condition ("a receiver with uncovered convergent live paths", or "a cascade
-cycle") is therefore **not a PostgreSQL correctness problem** — PostgreSQL handles those graphs
-natively. It is a **SQL Server portability / parity concern**: a schema authored and validated on
-PostgreSQL could fail to create on SQL Server. The split is:
+The unsafe-graph condition (an **uncovered diamond** — duplicate reachability that cannot be safely
+broken — or a **cascade cycle**) is therefore **not a PostgreSQL correctness problem**: PostgreSQL
+resolves multiple cascade paths and cycles at run time, so it handles those graphs natively. It is a
+**SQL Server portability / parity concern**: a schema authored and validated on PostgreSQL could
+fail to create on SQL Server. The split is:
 
 - **Detect** the SQL-Server-unsatisfiable condition during model derivation for both dialects, so a
   non-portable schema is surfaced early regardless of the engine currently in use (schema
@@ -473,14 +562,16 @@ DMS-1258 must add:
   draft's `TriggerFallback` value is removed, and the `MssqlFkShape`
   (`FullComposite` / `DocumentIdOnly`) axis is dropped entirely — every SQL Server reference FK is
   full composite, so shape is no longer a variable.)
-- **Coverage / carrier diagnostics — only for `NoPropagation` edges**: which surviving cascade edge
-  (receiver + survivor constraint name) covers the pruned edge and over which shared canonical
-  columns, emitted into the relational-model manifest so pruning decisions are auditable and
-  reproducible. `NativeCascade` and `ImmutableNoAction` edges carry **no** carrier diagnostics —
+- **Coverage / carrier diagnostics — only for `NoPropagation` edges**: enough to reconstruct the
+  diamond that justified the prune — the **originating root, the receiver, the surviving path and the
+  pruned path** (as ordered FK-constraint sequences), and the **shared canonical columns** the
+  survivor maintains — emitted into the relational-model manifest so pruning decisions are auditable
+  and reproducible. `NativeCascade` and `ImmutableNoAction` edges carry **no** carrier diagnostics —
   there is nothing to attribute (a survivor is self-carrying; an immutable target never changes).
-- **Fail-fast derivation errors** for the two conditions in step 6 (cycle/SCC; uncovered
-  convergence), each carrying the offending tables and FK constraint names, surfaced as hard
-  derivation errors (not manifest warnings).
+- **Fail-fast derivation errors** for the two conditions in step 6, surfaced as hard derivation
+  errors (not manifest warnings): a **cycle/SCC** error carrying the SCC tables and the FK edges in
+  the cycle; an **uncovered-diamond** error carrying the origin/root, the receiver, the two (or more)
+  distinct cascade paths, the candidate/pruned edges, and the coverage columns.
 
 PostgreSQL emission and its `OnUpdate` values are unchanged; `MssqlPropagationMode` is meaningful
 only for SQL Server model sets (it is absent / not applicable on PostgreSQL FKs).
@@ -509,17 +600,19 @@ the case where a pruned edge is a live, uncovered identity source — it prunes 
 regardless, which can silently drop a cascade that was actually required (the failure mode called
 out in DMS-1129).
 
-DMS keeps the deterministic graph/sort skeleton but analyzes it in propagation direction, adds
-explicit **cycle/SCC detection** (step 2), the **coverage classification** (step 4), and the
-**fail-fast** (step 6): a covered edge is pruned safely; a cascade cycle or an uncovered live
-conflict is a hard error, never a silent prune.
+DMS keeps the deterministic graph/sort skeleton but makes three refinements. First, it **narrows the
+detection from `inEdges > 1` (raw in-degree) to per-origin duplicate reachability** (step 3): ODS's
+in-degree test over-approximates 1785 and would prune legal *independent* parents, whereas DMS leaves
+them as `CASCADE`. Second, it adds explicit **cycle/SCC detection** (step 2). Third, it adds the
+**coverage classification** (step 4) and **fail-fast** (step 6): a covered reconverging edge is pruned
+safely; a cascade cycle or an uncovered diamond is a hard error, never a silent prune.
 
 ## Migration from the current code
 
 - `ReferenceConstraintPass.ResolveOnUpdate` — currently returns `NoAction` for **all** SQL Server
-  reference FK updates. Under this design it returns `Cascade` for `NativeCascade` survivors (and
-  sole edges into a receiver) and `NoAction` for pruned `NoPropagation` edges, driven by the new
-  classification.
+  reference FK updates. Under this design it returns `Cascade` for `NativeCascade` edges (independent
+  edges, diamond survivors, and sole edges into a receiver) and `NoAction` for `NoPropagation`
+  (covered reconverging) and `ImmutableNoAction` edges, driven by the new classification.
 - `ReferenceConstraintPass` `mssqlTriggerHandlesPropagation` branch — currently drops identity
   columns from the FK (the `DocumentId`-only shape) for every abstract / transitively-mutable
   target on SQL Server. Under this design that branch is **removed**: SQL Server reference FKs are
@@ -532,11 +625,13 @@ conflict is a hard error, never a silent prune.
   propagation. The `MssqlIdentityPropagationTrigger` trigger kind is retired for identity-value
   propagation. (The UUIDv5 referential-identity and abstract-identity *maintenance* triggers are
   unaffected — see Non-goals.)
-- New derivation output: per-edge `MssqlPropagationMode` (`NativeCascade` / `NoPropagation` /
-  `ImmutableNoAction`), coverage/carrier diagnostics for `NoPropagation` edges only, and hard
-  derivation errors for cascade cycles and uncovered convergence (see the contract above). Immutable
-  references — which `ResolveOnUpdate` already emits as `NO ACTION` — become `ImmutableNoAction`
-  rather than being conflated with pruned/covered edges.
+- New derivation pass and output: the classification detects diamonds by **per-origin reachability**
+  (ancestor sets), not raw in-degree, so independent parents keep `CASCADE`. It emits per-edge
+  `MssqlPropagationMode` (`NativeCascade` / `NoPropagation` / `ImmutableNoAction`), coverage/carrier
+  diagnostics for `NoPropagation` edges only, and hard derivation errors for cascade cycles and
+  uncovered diamonds (see the contract above). Immutable references — which `ResolveOnUpdate` already
+  emits as `NO ACTION` — become `ImmutableNoAction` rather than being conflated with pruned/covered
+  edges.
 
 PostgreSQL emission is unchanged.
 
@@ -546,9 +641,11 @@ The DMS-1258 implementation ticket (and any residual doc text) describes pruning
 survivor "per referenced table". That orientation is wrong per decision 1 and must be restated
 before implementation begins:
 
-- The survivor/prune decision is made **per cascade receiver** (the referrer/child table reached by
-  multiple cascade paths), analyzed in **propagation direction**, using **path convergence**
-  (cascade in-degree > 1), not per referenced/parent table.
+- The survivor/prune decision is made **per diamond** — a receiver reached by two distinct cascade
+  paths from a common origin — analyzed in **propagation direction** using **per-origin duplicate
+  reachability** (a multitree violation). Raw cascade in-degree > 1 is only a candidate signal, and
+  it is **not** decided "per referenced/parent table"; independent parents into one receiver are
+  legal and are never pruned.
 - The ticket must also drop `TriggerFallback` / `DocumentId`-only wording: the per-edge outcomes are
   `NativeCascade`, `NoPropagation`, `ImmutableNoAction`, or fail-fast, and every emitted FK is full
   composite.
@@ -557,9 +654,9 @@ before implementation begins:
 ## Follow-up work
 
 - **MetaEd** (authoring guard — now load-bearing): disallow `allow primary key updates`
-  configurations that yield a cascade cycle or a receiver with an uncovered convergent live edge —
-  i.e. any graph where no safe pruning exists — so unsafe schemas are rejected before they reach
-  DMS. Because `TriggerFallback` no longer provides a permissive fallback, this guard is the
+  configurations that yield a cascade cycle or an uncovered diamond (per-origin duplicate reachability
+  that cannot be safely broken) — i.e. any graph where no safe pruning exists — so unsafe schemas are
+  rejected before they reach DMS. Because `TriggerFallback` no longer provides a permissive fallback, this guard is the
   primary place such schemas should be caught; the DMS fail-fast is the backstop. Tracked as
   METAED-1667.
 - **DMS-1258** (implementation): implement the propagation-direction graph, cycle/SCC detection, the

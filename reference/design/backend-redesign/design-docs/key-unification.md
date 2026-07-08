@@ -30,8 +30,8 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   - absent optional paths MUST reconstitute as absent (`NULL` at the binding column), and
   - predicates against a per-path column MUST continue to imply that the path was present.
 - **Remain compatible with identity propagation** via composite FKs and dialect-specific propagation mechanics
-  (PostgreSQL `ON UPDATE CASCADE`; SQL Server foreign-key pruning — native `ON UPDATE CASCADE` on the surviving edge into
-  each cascade receiver, `ON UPDATE NO ACTION` on pruned covered edges; see [mssql-cascading.md](mssql-cascading.md)).
+  (PostgreSQL `ON UPDATE CASCADE`; SQL Server foreign-key pruning — native `ON UPDATE CASCADE` on eligible edges, pruning
+  a covered edge to `ON UPDATE NO ACTION` only at a diamond; see [mssql-cascading.md](mssql-cascading.md)).
 - **Support both PostgreSQL and SQL Server** with deterministic DDL generation.
 
 ## Non-Goals
@@ -79,8 +79,8 @@ For each document reference site, the relational mapping stores:
 
 Composite FKs target `(<IdentityParts...>, DocumentId)` on the referenced table (identity parts first, `DocumentId`
 last), using `ON UPDATE CASCADE` only when the referenced target's identity can change (transitively). On SQL Server,
-`ON UPDATE CASCADE` is limited to the one surviving edge into each cascade receiver under foreign-key pruning; see
-[mssql-cascading.md](mssql-cascading.md).
+foreign-key pruning limits `ON UPDATE CASCADE` only at a diamond (one covered reconverging edge becomes `NO ACTION`);
+independent parents keep `CASCADE`; see [mssql-cascading.md](mssql-cascading.md).
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -358,7 +358,7 @@ Any consumer that needs a column for **DML/DDL that targets writable storage** M
 
 - Writes (flattening / parameter binding): write only storage columns.
 - Foreign key derivation + emission: define FKs only over storage columns.
-- Identity propagation (PostgreSQL cascades; SQL Server foreign-key pruning — native cascade on the surviving edge into each receiver, `NO ACTION` on pruned covered edges; see [mssql-cascading.md](mssql-cascading.md)): update storage columns only.
+- Identity propagation (PostgreSQL cascades; SQL Server foreign-key pruning — native cascade on eligible edges, `NO ACTION` on a covered edge pruned at a diamond; see [mssql-cascading.md](mssql-cascading.md)): update storage columns only.
 - FK-supporting index derivation: index the final FK column list after storage mapping and de-duplication.
 
 Any consumer that needs a column for **API-path semantics** MUST continue to use binding columns:
@@ -1629,10 +1629,11 @@ Referential actions:
 - `ON UPDATE` is dialect-specific:
   - PostgreSQL: for concrete targets, use `CASCADE` only when the target's identity can change transitively
     (`IsAbstract || TransitivelyAllowIdentityUpdates`); otherwise `NO ACTION`. For abstract targets, use `CASCADE`.
-  - SQL Server: foreign-key pruning (see [mssql-cascading.md](mssql-cascading.md)). Emit `ON UPDATE CASCADE` on the one
-    surviving edge into each cascade receiver and `ON UPDATE NO ACTION` on pruned covered edges; every FK keeps the full
-    composite key (identity columns are never dropped). Identity-value propagation is native cascade, not a trigger; a
-    cascade cycle/SCC or a receiver with an uncovered convergent live edge fails derivation.
+  - SQL Server: foreign-key pruning (see [mssql-cascading.md](mssql-cascading.md)). Emit `ON UPDATE CASCADE` on eligible
+    edges (including independent parents into a shared receiver); only at a diamond (one update would otherwise reach a
+    table by two cascade paths) keep the surviving path as `ON UPDATE CASCADE` and prune one covered reconverging edge to
+    `ON UPDATE NO ACTION`; every FK keeps the full composite key (identity columns are never dropped). Identity-value
+    propagation is native cascade, not a trigger; a cascade cycle/SCC or an uncovered diamond fails derivation.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1691,7 +1692,7 @@ This section defines the required cross-engine behavior and mitigation strategy.
 #### PostgreSQL (supported; no special mitigation required)
 
 PostgreSQL supports “cycles or multiple cascade paths” for FK cascades. Therefore, it is valid for DDL emission to use
-declarative `ON UPDATE CASCADE` on all eligible edges (per the baseline design’s `allowIdentityUpdates` rule).
+declarative `ON UPDATE CASCADE` on all eligible edges (eligibility defined by transitive identity mutability: `IsAbstract || TransitivelyAllowIdentityUpdates`).
 
 Key properties under unification:
 
@@ -1714,26 +1715,31 @@ Normative guidance:
 
 #### SQL Server (foreign-key pruning; native cascade on the surviving edge)
 
-SQL Server rejects a table reached by more than one cascade path, and cascade cycles (error 1785). DMS handles this
-with **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child); see
-[mssql-cascading.md](mssql-cascading.md) for the full algorithm. Identity-value propagation is native
+SQL Server rejects a table that would appear more than once in one `UPDATE`/`DELETE`'s cascade action tree — a table
+reached by two distinct cascade paths from a **single origin** (a *diamond*), or a cycle (error 1785). It does **not**
+reject a table merely for having cascade in-degree > 1: *independent* parents into one receiver are legal. DMS handles
+diamonds and cycles with **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child);
+see [mssql-cascading.md](mssql-cascading.md) for the full algorithm. Identity-value propagation is native
 `ON UPDATE CASCADE`, not a trigger. Every SQL Server reference composite FK keeps the **full composite** key — identity
 columns are never dropped, so value-level referential integrity is always enforced.
 
-The multi-edge shape above is exactly the convergence case: the referrer table (here `A`) is the **cascade receiver**
-reached by two cascade paths (through `FK_A_B` and `FK_A_C`). Because both composite FKs share the same unified
-canonical column (`StudentUniqueId_Unified`), pruning one of them is *covered* by the surviving cascade.
+The multi-edge shape above becomes a genuine diamond only when `B` and `C` depend on the **same upstream identity**: an
+update to that origin then reaches the referrer `A` by two paths (through `FK_A_B` and `FK_A_C`). Because both composite
+FKs share the same unified canonical column (`StudentUniqueId_Unified`), pruning one of them is *covered* by the
+surviving path. (If `B` and `C` were independent, both edges would stay `CASCADE` — no diamond, no pruning.)
 
 Normative rules:
 
 1. Build the cascade graph in propagation direction over identity-propagating edges (target is abstract or
    `TransitivelyAllowIdentityUpdates = true`). Fail derivation fast on any cascade cycle/SCC.
-2. For each cascade receiver reached by more than one cascade path, keep `ON UPDATE CASCADE` on exactly one surviving
-   edge (deterministic winner) and emit `ON UPDATE NO ACTION` on the rest. A pruned edge is allowed only when it is
-   **covered** — its stored canonical identity column(s) are maintained by the surviving cascade (as when the composite
-   FKs share a unified canonical column). Both survivor and pruned edges keep the full composite FK.
-3. Fail derivation fast when a receiver has an uncovered convergent live edge (no safe pruning). There is no
-   `DocumentId`-only FK and no identity-value propagation trigger.
+2. Detect diamonds by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
+   ancestor), not raw in-degree. Independent parents into a shared receiver stay `ON UPDATE CASCADE` and are never
+   pruned. For each diamond, keep `ON UPDATE CASCADE` on the surviving path (deterministic winner) and emit
+   `ON UPDATE NO ACTION` on one reconverging edge — allowed only when it is **covered** (its stored canonical identity
+   column(s) are maintained by the surviving path, as when the composite FKs share a unified canonical column). Both
+   survivor and pruned edges keep the full composite FK.
+3. Fail derivation fast on an uncovered diamond (no safe pruning). There is no `DocumentId`-only FK and no identity-value
+   propagation trigger.
 
 Because the pruned edge keeps its identity columns and the shared canonical value is maintained by the surviving
 cascade, the `NO ACTION` FK never observes a mismatch — the same safety property probe 6 confirms in
@@ -2254,13 +2260,13 @@ semantics, or cascade correctness.
 - FK-supporting referenced-key UNIQUE constraints are defined over canonical storage columns (after mapping + de-dup).
 - FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
 - SQL Server propagation strategy (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
-  - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); cascade cycles/SCCs
-    fail derivation,
-  - each cascade receiver reached by multiple cascade paths keeps `ON UPDATE CASCADE` on one surviving edge and
-    `ON UPDATE NO ACTION` on the pruned covered edges,
+  - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
+    per-origin duplicate reachability (a diamond), not raw in-degree; cascade cycles/SCCs fail derivation,
+  - eligible edges (including independent parents into a shared receiver) keep `ON UPDATE CASCADE`; only at a diamond is
+    the surviving path kept as `ON UPDATE CASCADE` and one covered reconverging edge pruned to `ON UPDATE NO ACTION`,
   - every reference composite FK keeps the full composite key (identity columns are never dropped); there is no
     `DocumentId`-only FK and no identity-value propagation trigger,
-  - a receiver with an uncovered convergent live edge fails derivation.
+  - an uncovered diamond fails derivation.
 
 ### Write planning + flattening
 
