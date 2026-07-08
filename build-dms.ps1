@@ -24,7 +24,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds pre-release and release NuGet packages for the DMS API application and SchemaTools.
+        * Package: builds pre-release and release NuGet packages for the DMS API application and SchemaTools. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -68,6 +68,11 @@ param(
     [string]
     [ValidateSet("Debug", "Release")]
     $Configuration = "Debug",
+
+    # Selects which NuGet package(s) the Package command builds.
+    [string]
+    [ValidateSet("All", "Api", "SchemaTools")]
+    $PackageTarget = "All",
 
     # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
     # packages.lock.json is out of sync. The release/publish build and the relational scheduled
@@ -1235,8 +1240,21 @@ function BuildSchemaToolsPackage {
 }
 
 function BuildPackage {
-    BuildApiPackage
-    BuildSchemaToolsPackage
+    switch ($PackageTarget) {
+        "All" {
+            BuildApiPackage
+            BuildSchemaToolsPackage
+        }
+        "Api" {
+            BuildApiPackage
+        }
+        "SchemaTools" {
+            BuildSchemaToolsPackage
+        }
+        default {
+            throw "PackageTarget '$PackageTarget' is not recognized"
+        }
+    }
 }
 
 function Invoke-Build {

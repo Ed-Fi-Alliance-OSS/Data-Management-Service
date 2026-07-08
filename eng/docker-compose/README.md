@@ -171,7 +171,7 @@ A few things are specific to the MSSQL path:
 * **Relational backend only.** MSSQL is supported through the relational backend
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
-  `dms-schema ddl provision --dialect mssql --create-database`.
+  `api-schema-tools ddl provision --dialect mssql --create-database`.
 * **No Debezium CDC.** The relational backend serves both writes and queries directly from
   SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;

@@ -50,6 +50,62 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    public class Given_Help_Command_From_A_Temp_Working_Directory : SchemaToolsTests
+    {
+        private int _exitCode;
+        private string _output = null!;
+        private string _workingDirectory = null!;
+        private string _originalWorkingDirectory = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _originalWorkingDirectory = Directory.GetCurrentDirectory();
+            _workingDirectory = Path.Combine(Path.GetTempPath(), $"api-schema-tools-cwd-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(_workingDirectory);
+
+            Directory.SetCurrentDirectory(_workingDirectory);
+            try
+            {
+                (_exitCode, _output, _) = CliTestHelper.RunCli("--help");
+            }
+            finally
+            {
+                Directory.SetCurrentDirectory(_originalWorkingDirectory);
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Directory.SetCurrentDirectory(_originalWorkingDirectory);
+
+            if (Directory.Exists(_workingDirectory))
+            {
+                Directory.Delete(_workingDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_returns_exit_code_0()
+        {
+            _exitCode.Should().Be(0);
+        }
+
+        [Test]
+        public void It_prints_usage_information()
+        {
+            _output.Should().Contain("Usage:");
+        }
+
+        [Test]
+        public void It_does_not_create_logs_directory()
+        {
+            Directory.Exists(Path.Combine(_workingDirectory, "logs")).Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
     [Category("Authoritative")]
     public class Given_Hash_Command_With_Valid_Schema : SchemaToolsTests
     {

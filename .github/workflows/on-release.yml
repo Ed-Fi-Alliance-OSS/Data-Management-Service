@@ -85,21 +85,6 @@ jobs:
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
-      - name: Promote EdFi.Api.SchemaTools Package
-        shell: pwsh
-        run: |
-          $arguments = @{
-            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
-            ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "EdFi.Api.SchemaTools"
-          }
-
-          Import-Module ./package-helpers.psm1
-          Invoke-Promote @arguments
-
       - name: Promote EdFi.Api.ConfigurationService Package
         shell: pwsh
         run: |
@@ -110,6 +95,26 @@ jobs:
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
             PackageName = "EdFi.Api.ConfigurationService"
+          }
+
+          Import-Module ./package-helpers.psm1
+          Invoke-Promote @arguments
+
+      # Promote SchemaTools last. It is the newest package and may be absent from the feed
+      # for a version whose prerelease was cut before this package existed. Steps in this job
+      # run sequentially and fail-fast, so keeping SchemaTools last ensures a missing (or
+      # otherwise un-promotable) SchemaTools package cannot block promotion of EdFi.Api or
+      # EdFi.Api.ConfigurationService.
+      - name: Promote EdFi.Api.SchemaTools Package
+        shell: pwsh
+        run: |
+          $arguments = @{
+            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
+            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            ViewId      = "release"
+            ReleaseRef  = "${{ github.ref_name }}"
+            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            PackageName = "EdFi.Api.SchemaTools"
           }
 
           Import-Module ./package-helpers.psm1

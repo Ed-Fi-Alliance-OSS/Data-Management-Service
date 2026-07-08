@@ -301,7 +301,7 @@ function Resolve-TargetDialect {
 
     # The data store connection string CMS hands back determines the dialect: SQL Server uses
     # Server / Data Source / Initial Catalog / User Id keys; PostgreSQL uses host / database /
-    # username / port / sslmode. SchemaTools provisions both (dms-schema ddl provision
+    # username / port / sslmode. SchemaTools provisions both (api-schema-tools ddl provision
     # --dialect pgsql|mssql).
     #
     # host, username, port, and sslmode are checked first and are each a definitive PostgreSQL
