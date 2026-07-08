@@ -15,6 +15,7 @@ public static class LoggingUtility
     /// Uses a whitelist approach to prevent log injection and log forging attacks.
     /// Allows: letters, digits, spaces, and safe punctuation (_-.:/\)
     /// Explicitly excludes all control characters (ASCII &lt; 32, including \r, \n, \t, etc.)
+    /// Whitelist must remain equivalent to EdFi.DataManagementService.Backend.External.LogSanitizer.SanitizeForLog.
     /// </summary>
     /// <param name="input">The input string to sanitize</param>
     /// <returns>A sanitized string containing only safe characters</returns>

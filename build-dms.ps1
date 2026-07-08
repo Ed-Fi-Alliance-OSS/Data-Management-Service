@@ -148,6 +148,7 @@ $targetDir = "coveragereport"
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
+Import-Module -Name "$PSScriptRoot/eng/docker-compose/effective-schema-hash.psm1" -Force
 Import-Module -Name "$PSScriptRoot/package-helpers.psm1" -Force
 
 function DotNetClean {
@@ -604,25 +605,6 @@ function RunE2E {
                 -ResultNameSuffix $E2ETestSettings.TestResultSuffix
         }
     }
-}
-
-function Get-EffectiveSchemaHashFromOutput {
-    param(
-        [object[]]
-        $Output
-    )
-
-    $effectiveSchemaHash = $null
-
-    foreach ($line in $Output) {
-        $lineText = [string]$line
-
-        if ($lineText -match '(?i)Effective schema hash:\s*([a-f0-9]{64})') {
-            $effectiveSchemaHash = $Matches[1].ToLowerInvariant()
-        }
-    }
-
-    return $effectiveSchemaHash
 }
 
 function Invoke-E2EDatabaseProvisioning {

@@ -86,6 +86,7 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
+            NullLoggerFactory.Instance,
             appSettings,
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
