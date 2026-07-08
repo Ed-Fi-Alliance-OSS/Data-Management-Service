@@ -581,7 +581,7 @@ Typical structure:
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
   - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
-- Reference key columns → **FK-supporting** unique constraint over `(DocumentId, <StorageIdentityParts...>)` (the referenced key used by composite reference FKs).
+- Reference key columns → **FK-supporting** unique constraint over `(<StorageIdentityParts...>, DocumentId)` (the referenced key used by composite reference FKs; identity storage columns first, `DocumentId` last — see [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes").
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
 - Scalar columns for top-level non-collection properties
 - Reference columns (document references):
@@ -590,16 +590,16 @@ Typical structure:
     - one **binding/path** column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`).
       - Under key unification, these per-site columns remain in the table shape but may be generated/persisted `UnifiedAlias` columns of canonical storage columns; see `key-unification.md`.
   - Enforce a composite reference FK using only stored/writable **storage** columns:
-    - `FOREIGN KEY (..._DocumentId, <StorageIdentityParts...>) REFERENCES <TargetRefKey>(DocumentId, <TargetStorageIdentityParts...>)`
+    - `FOREIGN KEY (<StorageIdentityParts...>, ..._DocumentId) REFERENCES <TargetRefKey>(<TargetStorageIdentityParts...>, DocumentId)` (identity storage columns first, `DocumentId` last)
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
       - PostgreSQL:
         - concrete targets: `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise)
         - abstract targets: `ON UPDATE CASCADE`
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
-        - surviving live edge per referenced table: full composite FK with `ON UPDATE CASCADE`
-        - pruned edges: `ON UPDATE NO ACTION` — full composite FK when covered by a surviving cascade, else a `DocumentId`-only FK plus deterministic `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced table (updating canonical/storage columns only) when the pruned edge remains live
-        - derivation fails fast when a table has two or more uncovered live cascade paths
+        - surviving edge into each cascade receiver: full composite FK with `ON UPDATE CASCADE`
+        - pruned edges: full composite FK with `ON UPDATE NO ACTION`, allowed only when the pruned edge is covered by the surviving cascade (its identity columns are maintained by that cascade under key unification) — there is no `DocumentId`-only trigger fallback
+        - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or a receiver with an uncovered convergent live edge
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
@@ -654,9 +654,9 @@ This redesign provisions an **identity table per abstract resource**:
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
 - FKs for abstract reference sites:
-  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)`.
+  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)` (identity fields first, `DocumentId` last).
     - PostgreSQL: `ON UPDATE CASCADE`.
-    - SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on the surviving edge, `ON UPDATE NO ACTION` on pruned edges (with `TriggerKindParameters.MssqlIdentityPropagationTrigger` fan-out only where a pruned edge remains live); see [mssql-cascading.md](mssql-cascading.md). Abstract identity tables are themselves trigger-maintained; `allowIdentityUpdates` applies to concrete targets.
+    - SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on the surviving edge into each receiver, `ON UPDATE NO ACTION` (full composite) on pruned covered edges, and fail-fast when no safe pruning exists; see [mssql-cascading.md](mssql-cascading.md). Abstract identity tables are themselves trigger-maintained (abstract-identity *maintenance* triggers, distinct from identity-value propagation); `allowIdentityUpdates` applies to concrete targets.
 
 Required: `{schema}.{AbstractResource}_View` union view
 
@@ -669,7 +669,7 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 Usage:
 
 - Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
-- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades, SQL Server `MssqlIdentityPropagationTrigger` triggers).
+- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on surviving edges — see [mssql-cascading.md](mssql-cascading.md)).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
 DDL generation requirement:
@@ -743,7 +743,7 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
     BirthDate        date         NULL,
 
     CONSTRAINT UX_Student_NK UNIQUE (StudentUniqueId),
-    CONSTRAINT UX_Student_RefKey UNIQUE (DocumentId, StudentUniqueId)
+    CONSTRAINT UX_Student_RefKey UNIQUE (StudentUniqueId, DocumentId) -- identity parts first, DocumentId last
 );
 
 -- Descriptor references are stored as FKs directly to dms.Descriptor.
@@ -760,7 +760,7 @@ CREATE TABLE IF NOT EXISTS edfi.School (
                            REFERENCES dms.Descriptor(DocumentId),
 
     CONSTRAINT UX_School_NK UNIQUE (SchoolId),
-    CONSTRAINT UX_School_RefKey UNIQUE (DocumentId, SchoolId)
+    CONSTRAINT UX_School_RefKey UNIQUE (SchoolId, DocumentId) -- identity parts first, DocumentId last
 );
 
 -- Example collection table: School has a collection of GradeLevelDescriptor values
@@ -830,12 +830,14 @@ CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     EntryDate          date   NOT NULL,
     ExitWithdrawDate   date   NULL,
 
-    CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey FOREIGN KEY (Student_DocumentId, Student_StudentUniqueId)
-        REFERENCES edfi.Student (DocumentId, StudentUniqueId),
-    CONSTRAINT FK_StudentSchoolAssociation_School_RefKey FOREIGN KEY (School_DocumentId, School_SchoolId)
-        REFERENCES edfi.School (DocumentId, SchoolId),
+    -- Composite reference FKs: identity storage columns first, the reference _DocumentId last
+    -- (positional pairing with the target *_RefKey, which is identity parts first, DocumentId last).
+    CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey FOREIGN KEY (Student_StudentUniqueId, Student_DocumentId)
+        REFERENCES edfi.Student (StudentUniqueId, DocumentId),
+    CONSTRAINT FK_StudentSchoolAssociation_School_RefKey FOREIGN KEY (School_SchoolId, School_DocumentId)
+        REFERENCES edfi.School (SchoolId, DocumentId),
     CONSTRAINT UX_StudentSchoolAssociation_NK UNIQUE (Student_DocumentId, School_DocumentId, EntryDate),
-    CONSTRAINT UX_StudentSchoolAssociation_RefKey UNIQUE (DocumentId, Student_StudentUniqueId, School_SchoolId, EntryDate)
+    CONSTRAINT UX_StudentSchoolAssociation_RefKey UNIQUE (Student_StudentUniqueId, School_SchoolId, EntryDate, DocumentId)
 );
 
 CREATE INDEX IF NOT EXISTS IX_SSA_StudentDocumentId ON edfi.StudentSchoolAssociation(Student_DocumentId);

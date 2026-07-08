@@ -23,7 +23,7 @@ The backend redesign needs resource-state-sensitive metadata:
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
 
 - persisting referenced identity values as local columns alongside every `..._DocumentId` reference, and
-- using `ON UPDATE CASCADE` (or trigger-based propagation where required) only when the referenced target allows identity updates (`allowIdentityUpdates=true`); otherwise `ON UPDATE NO ACTION`.
+- using `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`); otherwise `ON UPDATE NO ACTION`. On SQL Server, `ON UPDATE CASCADE` is limited to the one surviving edge into each cascade receiver under foreign-key pruning (native cascade, no propagation trigger); see [mssql-cascading.md](mssql-cascading.md).
 
 Those referrer updates naturally trigger the same stamping rules as “direct” writes.
 

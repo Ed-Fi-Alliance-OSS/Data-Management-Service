@@ -145,7 +145,7 @@ StudentSchoolAssociation_StudentUniqueId AS (
 ## Cascade Safety
 
 - **PostgreSQL**: Multiple cascade paths reaching the same canonical column are safe — only one writable column exists, so no mid-cascade check failure can occur.
-- **SQL Server**: May reject `ON UPDATE CASCADE` for multi-path FK graphs. Eligible identity propagation uses `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` to update canonical storage columns (never aliases).
+- **SQL Server**: Rejects a table reached by multiple cascade paths (and cascade cycles). Foreign-key pruning keeps native `ON UPDATE CASCADE` on the one surviving edge into each cascade receiver and `ON UPDATE NO ACTION` (full composite) on pruned covered edges; a cascade cycle or an uncovered convergent live edge fails derivation. No propagation trigger (see `design-docs/mssql-cascading.md`).
 
 ## Triggers Under Unification
 

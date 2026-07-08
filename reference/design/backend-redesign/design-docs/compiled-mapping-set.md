@@ -331,6 +331,10 @@ public abstract record TriggerKindParameters
         string DiscriminatorValue
     ) : TriggerKindParameters;
 
+    // RETIRED by the DMS-1129 revision (see design-docs/mssql-cascading.md): SQL Server
+    // identity-value propagation is now native `ON UPDATE CASCADE` on the surviving edge into each
+    // cascade receiver, not an AFTER trigger. DMS-1258 removes this trigger kind and its emission.
+    // The abstract-identity and referential-identity *maintenance* triggers above are unaffected.
     public sealed record MssqlIdentityPropagationTrigger(
         IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates
     ) : TriggerKindParameters;
@@ -378,6 +382,19 @@ public sealed record DerivedRelationalModelSet(
 Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
+- **SQL Server cascade classification (derived, to be added by DMS-1258).** The `ReferentialAction OnUpdate` on each
+  `TableConstraint.ForeignKey` records the *result* of pruning, but the derived model must also carry the classification
+  so DDL generation, runtime, and manifest verification agree. DMS-1258 must add to the shared derived contract (concrete
+  C# shape deferred to DMS-1258; the required contract is fixed here — see `design-docs/mssql-cascading.md`):
+  - a per-edge `MssqlPropagationMode` with exactly two values — `NativeCascade` (surviving edge, `ON UPDATE CASCADE`) and
+    `NoPropagation` (pruned covered edge, `ON UPDATE NO ACTION`). There is no `TriggerFallback` value and no
+    `MssqlFkShape` axis: every SQL Server reference FK keeps the full composite key, so shape is not a variable.
+  - coverage / carrier diagnostics for each `NoPropagation` edge (which surviving edge and shared canonical columns cover
+    it), emitted into `relational-model.manifest.json` so pruning is auditable and reproducible.
+  - hard derivation errors for the two fail-fast conditions (a cascade cycle/SCC, or a receiver with an uncovered
+    convergent live edge), each naming the offending tables and FK constraint names.
+  This classification replaces the retired `MssqlIdentityPropagationTrigger` inventory for identity-value propagation;
+  PostgreSQL model sets keep `ON UPDATE CASCADE` on every eligible edge and do not use `MssqlPropagationMode`.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
   - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a Change Queries key-change row should be emitted.

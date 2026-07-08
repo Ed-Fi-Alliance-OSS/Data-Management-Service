@@ -34,7 +34,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Full natural-key propagation for document references
 
-- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation updates to referrers’ canonical stored identity-part columns (PostgreSQL FK cascades; SQL Server `MssqlIdentityPropagationTrigger` triggers for eligible edges), with per-site binding columns available for query compilation and reconstitution.
+- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation updates to referrers’ canonical stored identity-part columns (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on surviving edges), with per-site binding columns available for query compilation and reconstitution.
 - Improves query compilation for reference-identity query parameters by enabling local predicates on per-site binding identity columns (no referenced-table subqueries).
 
 ### Key unification for equality-constrained identity parts (single source of truth)
@@ -64,7 +64,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server foreign-key pruning — `ON UPDATE CASCADE` on surviving edges, `NO ACTION` on pruned edges, `TriggerKindParameters.MssqlIdentityPropagationTrigger` fallback only where a pruned edge remains live; see [mssql-cascading.md](mssql-cascading.md)), and
+- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server foreign-key pruning — `ON UPDATE CASCADE` on surviving edges, `NO ACTION` (full composite) on pruned covered edges, fail-fast when no safe pruning exists; see [mssql-cascading.md](mssql-cascading.md)), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -79,13 +79,13 @@ Mitigations / guidance:
 
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
-SQL Server may reject FK graphs with “cycles or multiple cascade paths” (confirmed: error 1785). The design handles this with **foreign-key pruning** rather than by disabling all update cascades. The DDL generator must:
-- classify each cascade-eligible edge and emit `ON UPDATE CASCADE` (full composite FK) on the one surviving live edge into each referenced table,
-- emit `ON UPDATE NO ACTION` on pruned edges — keeping the full composite FK when the pruned edge is covered by a surviving cascade, and falling back to a `DocumentId`-only FK plus deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` propagation only where a pruned edge remains live, and
-- fail derivation fast when a table has two or more uncovered live cascade paths (no safe pruning). See [mssql-cascading.md](mssql-cascading.md).
+SQL Server may reject FK graphs with “cycles or multiple cascade paths” (confirmed: error 1785). The design handles this with **foreign-key pruning** (analyzed in propagation direction, referenced/parent → referrer/child) rather than by disabling all update cascades. The DDL generator must:
+- build the cascade graph in propagation direction and fail fast on any cascade cycle/SCC,
+- for each cascade receiver reached by more than one cascade path, emit `ON UPDATE CASCADE` (full composite FK) on the one surviving edge and `ON UPDATE NO ACTION` (still full composite) on the pruned edges, allowed only when each pruned edge is covered by the surviving cascade, and
+- fail derivation fast when a receiver has an uncovered convergent live edge (no safe pruning). Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 
 Risks:
-- extra trigger complexity,
+- extra derivation complexity (propagation-direction graph, cycle/SCC detection, coverage classification, deterministic survivor selection),
 - higher likelihood of engine-specific behavior and performance differences.
 - key unification can increase the chance of “multiple cascade paths”: shared canonical columns can participate in multiple composite FKs, creating multi-edge cascades.
 

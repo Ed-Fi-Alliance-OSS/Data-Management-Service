@@ -93,7 +93,7 @@ classDiagram
 | `AbstractIdentityTablesInNameOrder` | Trigger-maintained identity tables for polymorphic abstract resources |
 | `AbstractUnionViewsInNameOrder` | Diagnostic union views over concrete members of abstract resources |
 | `IndexesInCreateOrder` | Complete index inventory (PK, unique, FK-support, explicit) |
-| `TriggersInCreateOrder` | Complete trigger inventory (stamping, referential identity, abstract identity, `MssqlIdentityPropagationTrigger`) |
+| `TriggersInCreateOrder` | Complete trigger inventory (stamping, referential identity, abstract identity). SQL Server identity-value propagation is native `ON UPDATE CASCADE` via FK pruning, not a trigger — see `design-docs/mssql-cascading.md` |
 
 ---
 
@@ -397,7 +397,6 @@ classDiagram
         DocumentStamping
         ReferentialIdentityMaintenance
         AbstractIdentityMaintenance
-        MssqlIdentityPropagationTrigger
     }
 
     DbIndexInfo --> DbIndexKind

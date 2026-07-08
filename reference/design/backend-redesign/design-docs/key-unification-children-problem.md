@@ -4,6 +4,18 @@
 
 Draft.
 
+> **SQL Server mechanism superseded (DMS-1129).** This document was written when SQL Server
+> identity-value propagation used `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`. That
+> mechanism is superseded by [mssql-cascading.md](mssql-cascading.md): SQL Server now uses native
+> `ON UPDATE CASCADE` on the surviving edge into each cascade receiver (with covered-edge pruning
+> and fail-fast), exactly like PostgreSQL. The `MssqlIdentityPropagationTrigger` references below are
+> retained as **historical analysis only** and are non-normative. Native cascade follows the FK on
+> child/extension binding tables directly, so the "SQL Server trigger only considers root-table
+> reference sites" limitation described here does not apply to the native-cascade design — a child
+> reference site that holds a composite reference FK is cascaded natively. The remaining
+> **cross-scope key-unification** parity gap (root ↔ child duplicated key parts not linked by a
+> reference edge) is orthogonal to the propagation mechanism and is still open.
+
 ## Purpose
 
 Describe a document-shape scenario we need to support where an upstream identity/key update propagates into a document’s

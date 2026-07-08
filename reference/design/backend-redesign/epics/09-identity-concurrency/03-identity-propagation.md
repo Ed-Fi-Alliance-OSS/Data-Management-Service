@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-999
 
 Implement strict identity maintenance for identity updates without application-managed identity closure traversal:
 
-- Persist identity-component referenced identity values as columns and enforce composite FKs with `ON UPDATE CASCADE` (or trigger-based propagation where required).
+- Persist identity-component referenced identity values as columns and enforce composite FKs with `ON UPDATE CASCADE` where eligible (on SQL Server, foreign-key pruning selects the surviving cascade edge; see `design-docs/mssql-cascading.md`).
 - Use per-resource triggers to recompute `dms.ReferentialIdentity` row-locally when identity projection values change (including changes caused by cascaded updates to identity-component propagated identity columns).
 
 Align with:
@@ -28,7 +28,7 @@ Align with:
 
 1. Emit/validate DDL for identity-component propagation:
    - composite FKs with `ON UPDATE CASCADE` where allowed, and
-   - on SQL Server, foreign-key pruning — cascade on the surviving edge, `ON UPDATE NO ACTION` on pruned edges, `MssqlIdentityPropagationTrigger` fallback only where a pruned edge remains live, and fail-fast when no safe pruning exists (SQL Server cascade-path restrictions; see `design-docs/mssql-cascading.md`).
+   - on SQL Server, foreign-key pruning (analyzed in propagation direction) — native `ON UPDATE CASCADE` on the one surviving edge into each cascade receiver, `ON UPDATE NO ACTION` (full composite) on pruned covered edges, and fail-fast when no safe pruning exists (a cascade cycle/SCC, or a receiver with an uncovered convergent live edge). Every SQL Server reference FK keeps the full composite key; there is no `DocumentId`-only shape and no identity-value propagation trigger (see `design-docs/mssql-cascading.md`).
 2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes, recomputing `ReferentialId` using the engine UUIDv5 helper (`E02-S06`).
 3. Integrate identity-stamp behavior (`IdentityVersion/IdentityLastModifiedAt`) with trigger maintenance.
 4. Add integration tests for a small identity dependency chain scenario.
