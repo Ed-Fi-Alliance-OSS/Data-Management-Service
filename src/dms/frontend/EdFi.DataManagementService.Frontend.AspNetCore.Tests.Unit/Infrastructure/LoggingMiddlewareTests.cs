@@ -510,6 +510,11 @@ public class Given_LoggingMiddleware
         (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
         (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
         (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("DMS request completed");
+        // JsonFormatter omits the Exception field when no exception is attached; the
+        // docs/LOGGING.md collector contract documents the field as absent, not null.
+        (json?.AsObject().ContainsKey("Exception"))
+            .Should()
+            .BeFalse();
     }
 
     [Test]
@@ -605,6 +610,11 @@ public class Given_LoggingMiddleware
         (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
         (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
         (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("DMS request completed");
+        // JsonFormatter omits the Exception field when no exception is attached; the
+        // docs/LOGGING.md collector contract documents the field as absent, not null.
+        (json?.AsObject().ContainsKey("Exception"))
+            .Should()
+            .BeFalse();
     }
 
     [Test]

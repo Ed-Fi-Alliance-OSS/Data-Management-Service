@@ -55,13 +55,13 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
                 await next();
 
                 stopwatch.Stop();
-                if (requestInfo.UnhandledException is not null)
+                if (requestInfo.CaughtException is not null)
                 {
                     var failureStatusCode = GetFailureStatusCode(requestInfo);
 
                     _logger.LogError(
                         RequestLoggingEventIds.HttpRequestFailed,
-                        requestInfo.UnhandledException,
+                        requestInfo.CaughtException,
                         "{EventName}: DMS core request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
                         RequestLoggingEventIds.HttpRequestFailed.Name,
                         method,

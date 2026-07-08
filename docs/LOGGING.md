@@ -100,7 +100,6 @@ this structure. CMS example:
   "Level": "Information",
   "MessageTemplate": "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
   "RenderedMessage": "HttpRequestCompleted: CMS request completed: GET /v3/vendors responded 200 in 42 ms with TraceId 0HN...",
-  "Exception": null,
   "Properties": {
     "Application": "EdFi.DmsConfigurationService",
     "EventName": "HttpRequestCompleted",
@@ -127,7 +126,6 @@ property:
   "Level": "Information",
   "MessageTemplate": "{EventName}: DMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
   "RenderedMessage": "HttpRequestCompleted: DMS request completed: GET /ed-fi/students responded 200 in 42 ms with TraceId 0HN...",
-  "Exception": null,
   "Properties": {
     "Application": "EdFi.DataManagementService",
     "EventName": "HttpRequestCompleted",
@@ -147,14 +145,16 @@ property:
 ```
 
 Request failure logs follow the same structure with `EventName` set to
-`HttpRequestFailed` and `Level` set to `Error`. The `Exception` field carries
-the exception the logging layer itself observed, when there is one: a request
-logged as failed only because the downstream pipeline produced a 5xx status has
-`Exception` `null`. In DMS, an exception caught by the core pipeline is
+`HttpRequestFailed` and `Level` set to `Error`. The `Exception` field is
+present only when the logging layer itself observed an exception; when there is
+none, the JSON formatter omits the field entirely rather than writing `null`,
+so collector rules must treat `Exception` as optional. A request logged as
+failed only because the downstream pipeline produced a 5xx status carries no
+`Exception` field. In DMS, an exception caught by the core pipeline is
 attached to the core-layer `HttpRequestFailed` event (`RequestLayer` = `Core`),
 and the frontend then logs its own `HttpRequestFailed` event for the resulting
-5xx response with `Exception` `null`; the two events share the same `TraceId`,
-so use `TraceId` plus `RequestLayer` to recover the exception behind a frontend
+5xx response without one; the two events share the same `TraceId`, so use
+`TraceId` plus `RequestLayer` to recover the exception behind a frontend
 failure event.
 
 Completion logs use `Information`, except CMS `/.well-known/*` completion logs,

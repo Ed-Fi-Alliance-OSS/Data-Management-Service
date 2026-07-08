@@ -13,7 +13,10 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Logs requests and responses, and converts exceptions to 500s
+/// Converts exceptions escaping the core pipeline into error responses: 403 for
+/// authorization failures, 500 otherwise. The 500-path exception is captured on the
+/// request so the outer request logging middleware attaches it to the structured
+/// request-failure event; this middleware does not log it.
 /// </summary>
 internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
 {
@@ -41,7 +44,7 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
         }
         catch (Exception ex)
         {
-            requestInfo.UnhandledException = ex;
+            requestInfo.CaughtException = ex;
             // Replace the frontend response (if any) with a 500 error
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
