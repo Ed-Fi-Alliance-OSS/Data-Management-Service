@@ -135,6 +135,20 @@ public class Given_AspNetCoreFrontend_Request_Header_Extraction
     }
 
     [Test]
+    public void It_delivers_a_multi_valued_if_none_match_header_unreduced()
+    {
+        var headers = ExtractHeaders(request =>
+            request.Headers["If-None-Match"] = new StringValues([
+                "\"1-stale\"",
+                "W/\"5-current\"",
+                "\"6-other\"",
+            ])
+        );
+
+        headers["If-None-Match"].Should().Be("\"1-stale\",W/\"5-current\",\"6-other\"");
+    }
+
+    [Test]
     public void It_omits_a_missing_authorization_header()
     {
         // A genuinely absent Authorization stays absent, so core reports it as missing rather

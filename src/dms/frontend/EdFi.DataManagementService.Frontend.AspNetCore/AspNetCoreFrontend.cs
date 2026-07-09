@@ -341,26 +341,29 @@ public static class AspNetCoreFrontend
 
     private const string ContentTypeHeaderName = "Content-Type";
     private const string AuthorizationHeaderName = "Authorization";
+    private const string IfNoneMatchHeaderName = "If-None-Match";
 
     /// <summary>
     /// Headers that must reach core verbatim rather than through the blank-dropping,
     /// first-non-blank reduction in <see cref="ExtractHeadersFrom"/>: Content-Type (an explicit
     /// blank is rejected with 415) and Authorization (an explicit blank or a repeated header is
     /// a malformed header rejected with 401, distinct from a missing header, which reports
-    /// "Authorization header is missing.").
+    /// "Authorization header is missing."), and If-None-Match (multiple values form one
+    /// comma-separated entity-tag list whose members must all reach core).
     /// </summary>
     private static readonly string[] HeadersPreservedWhenExplicitlySent =
     [
         ContentTypeHeaderName,
         AuthorizationHeaderName,
+        IfNoneMatchHeaderName,
     ];
 
     /// <summary>
     /// Takes an HttpRequest and returns its headers as a dictionary. Blank header values are
     /// dropped and multi-valued headers are reduced to their first non-blank value, except for
     /// the headers in <see cref="HeadersPreservedWhenExplicitlySent"/>, which are delivered
-    /// verbatim (blank preserved, multiple values comma-joined) so core can classify an
-    /// explicit blank or a repeated header as malformed rather than as missing or valid.
+    /// verbatim (blank preserved, multiple values comma-joined) so core can validate the complete
+    /// field value or apply list semantics.
     /// </summary>
     private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request)
     {
@@ -375,8 +378,8 @@ public static class AspNetCoreFrontend
 
         // The filtering above discards blank values and reduces a repeated header to its first
         // non-blank value. Normalize the preserved headers to their full comma-joined value so
-        // an explicit blank reaches core as present-but-invalid and a repeated header is not
-        // reduced to a single authenticatable value. string.Join is used instead of
+        // an explicit blank reaches core as present-but-invalid and a multi-valued header is not
+        // reduced before core can validate or interpret it. string.Join is used instead of
         // StringValues.ToString() because ToString() drops empty entries, which would silently
         // erase a blank duplicate sent alongside a valid value.
         foreach (string headerName in HeadersPreservedWhenExplicitlySent)
