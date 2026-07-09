@@ -73,7 +73,7 @@ Describe "Story 00 bootstrap" {
             $ExitCode = 0
         )
 
-        $path = Join-Path $Directory "fake-dms-schema.ps1"
+        $path = Join-Path $Directory "fake-api-schema-tools.ps1"
         @"
 param([Parameter(ValueFromRemainingArguments = `$true)][string[]] `$Arguments)
 Write-Output "Effective schema hash: $Hash"
@@ -623,11 +623,11 @@ exit $ExitCode
             }
         }
 
-        It "fails when dms-schema hashing fails" {
+        It "fails when api-schema-tools hashing fails" {
             $schemaDir = New-ApiSchemaSet
 
             { Invoke-PrepareSchema -ApiSchemaPath $schemaDir -ToolExitCode 1 } |
-                Should -Throw -ExpectedMessage "*dms-schema hash failed*"
+                Should -Throw -ExpectedMessage "*api-schema-tools hash failed*"
         }
 
         It "fails fast when manifest has stale claims/seed sections but ApiSchema workspace is missing" {
@@ -1693,7 +1693,7 @@ exit 0
             @($manifest.projects).projectName | Should -Not -Contain "RemovedPackage"
         }
 
-        It "run.sh skips PostgreSQL readiness checks when the datastore is MSSQL" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) {
+        It "run.sh skips PostgreSQL readiness checks when the datastore is MSSQL" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
             $workspace = Join-Path $script:repo.RepoRoot "run-sh-mssql"
             $stubDirectory = Join-Path $workspace "bin"
             $pgIsReadyInvocationsPath = Join-Path $workspace "pg-isready-invocations.log"

@@ -60,21 +60,24 @@ void ConfigureServices(IServiceCollection services, bool enableVerbose)
         enableVerbose ? LogEventLevel.Debug : LogEventLevel.Information
     );
 
-    try
+    if (enableVerbose)
     {
-        // Attempt file logging; fall back to console-only in restricted environments.
-        var logDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
-        Directory.CreateDirectory(logDir);
-        logConfiguration.WriteTo.File(
-            Path.Combine(logDir, "dms-schema.log"),
-            rollingInterval: RollingInterval.Day
-        );
-    }
-    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-    {
-        Console.Error.WriteLine(
-            $"Warning: Unable to create log file, continuing with console-only logging ({ex.GetType().Name})."
-        );
+        try
+        {
+            // Attempt file logging; fall back to console-only in restricted environments.
+            var logDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
+            Directory.CreateDirectory(logDir);
+            logConfiguration.WriteTo.File(
+                Path.Combine(logDir, "api-schema-tools.log"),
+                rollingInterval: RollingInterval.Day
+            );
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine(
+                $"Warning: Unable to create log file, continuing with console-only logging ({ex.GetType().Name})."
+            );
+        }
     }
 
     if (Console.IsOutputRedirected)

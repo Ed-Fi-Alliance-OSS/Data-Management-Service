@@ -211,6 +211,87 @@ jobs:
       - name: Restore with locked mode
         run: dotnet restore ./src/dms/EdFi.DataManagementService.sln --locked-mode
 
+  verify-schematools-package:
+    name: Verify SchemaTools Package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set DMS Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "dms"
+
+      - name: Build DMS .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 BuildAndPublish `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -DMSVersion $packageVersion `
+            -LockedMode
+
+      - name: Create SchemaTools NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 Package `
+            -DMSVersion $packageVersion `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -PackageTarget SchemaTools
+
+      - name: Install and Run SchemaTools Package
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          $toolPath = Join-Path $env:RUNNER_TEMP "api-schema-tools"
+          New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
+
+          # Redirect the NuGet global-packages folder to a throwaway location so the install
+          # cannot resolve a stale, already-extracted EdFi.Api.SchemaTools of the same
+          # (MinVer height-based, collision-prone) version from the restored ~/.nuget/packages
+          # cache: --source governs only download; the global-packages folder is consulted
+          # first, so a cache hit would otherwise silently validate old bits.
+          $env:NUGET_PACKAGES = Join-Path $env:RUNNER_TEMP "nuget-verify"
+
+          # --source (not --add-source) keeps the install hermetic: it resolves ONLY from the
+          # locally packed .nupkg and never falls back to nuget.org. .NET tool packages bundle
+          # their full dependency closure, so no other feed is required, and this closes the
+          # dependency-confusion window on the (public) EdFi.Api.SchemaTools id.
+          dotnet tool install EdFi.Api.SchemaTools `
+            --tool-path $toolPath `
+            --source "${{ github.workspace }}" `
+            --version $packageVersion
+
+          $env:PATH = "$toolPath$([System.IO.Path]::PathSeparator)$env:PATH"
+          $fixture = "./src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json"
+
+          # Backend.Ddl stack: effective-schema-set build -> DDL generation (both dialects) -> file emission.
+          api-schema-tools ddl emit --schema $fixture --output "$env:RUNNER_TEMP/ddl-verify" --dialect both
+
   run-unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
@@ -1745,7 +1826,7 @@ jobs:
             -EnvironmentFile "./eng/docker-compose/.env.e2e" `
             -Configuration "${{ env.CONFIGURATION }}" `
             -Dialect "pgsql" `
-            -OutputDirectory "${{ runner.temp }}/dms-schema-preflight"
+            -OutputDirectory "${{ runner.temp }}/api-schema-preflight"
 
       - name: Start DMS Docker
         run: |
@@ -2030,6 +2111,7 @@ jobs:
     needs:
       [
         verify-lock-files,
+        verify-schematools-package,
         run-unit-tests,
         run-e2e-tests,
         e2e-summary,

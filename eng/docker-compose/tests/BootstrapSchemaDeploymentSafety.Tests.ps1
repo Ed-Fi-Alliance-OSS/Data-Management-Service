@@ -199,7 +199,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 [string]$StderrText = ""
             )
 
-            $toolPath = Join-Path $Directory "fake-dms-schema.ps1"
+            $toolPath = Join-Path $Directory "fake-api-schema-tools.ps1"
             @"
 param([Parameter(ValueFromRemainingArguments = `$true)][string[]] `$Arguments)
 Add-Content -LiteralPath '$CapturePath' -Value 'BEGIN'
@@ -541,7 +541,7 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*mutually exclusive*"
         }
 
-        It "invokes dms-schema once per target database with host-side connection settings" {
+        It "invokes api-schema-tools once per target database with host-side connection settings" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath

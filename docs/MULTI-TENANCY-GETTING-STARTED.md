@@ -102,11 +102,11 @@ Start the DMS stack with your multi-tenancy configuration:
 cd eng/docker-compose
 
 # Prepare the ApiSchema workspace used by provisioning. On a clean checkout,
-# publish the dms-schema tool first.
+# publish the api-schema-tools tool first.
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
-$schemaToolOutput  = ".bootstrap/tools/dms-schema"
+$schemaToolOutput  = ".bootstrap/tools/api-schema-tools"
 dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
-$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/dms-schema.exe" } else { "$schemaToolOutput/dms-schema" }
+$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
 
 pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
 pwsh ./prepare-dms-claims.ps1
@@ -277,7 +277,7 @@ After creating all instances and route contexts, provision the tenant
 databases. `provision-dms-schema.ps1` reads data stores from Configuration
 Service for the tenant named by `CONFIG_SERVICE_TENANT` in the environment
 file, translates Docker-internal PostgreSQL connection strings to host-side
-targets, creates missing databases, and invokes `dms-schema ddl provision`.
+targets, creates missing databases, and invokes `api-schema-tools ddl provision`.
 
 For the two-tenant example, set `CONFIG_SERVICE_TENANT` to `DistrictA` in
 `.env.multitenancy`, provision, then repeat with `DistrictB`:

@@ -100,6 +100,21 @@ jobs:
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
+      - name: Promote EdFi.Api.SchemaTools Package
+        shell: pwsh
+        run: |
+          $arguments = @{
+            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
+            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            ViewId      = "release"
+            ReleaseRef  = "${{ github.ref_name }}"
+            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            PackageName = "EdFi.Api.SchemaTools"
+          }
+
+          Import-Module ./package-helpers.psm1
+          Invoke-Promote @arguments
+
   tag-dms-image:
     name: Release Tag DMS Image
     runs-on: ubuntu-latest

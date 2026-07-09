@@ -12,7 +12,7 @@ Describe "schema-package-utility" {
         )
 
         function script:New-TestDirectory {
-            $path = Join-Path ([System.IO.Path]::GetTempPath()) "dms-schema-package-$([Guid]::NewGuid().ToString('N'))"
+            $path = Join-Path ([System.IO.Path]::GetTempPath()) "api-schema-tools-package-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $path -Force | Out-Null
             return $path
         }
@@ -94,6 +94,66 @@ exit 0
 
             if ($IsLinux -or $IsMacOS) {
                 chmod +x $fakeDotnetPath
+            }
+            else {
+                @'
+@echo off
+setlocal
+
+set "package_name="
+set "output_directory="
+
+:parse
+if "%~1"=="" goto done
+if "%~1"=="-p" (
+    set "package_name=%~2"
+    shift
+    shift
+    goto parse
+)
+if "%~1"=="-d" (
+    set "output_directory=%~2"
+    shift
+    shift
+    goto parse
+)
+shift
+goto parse
+
+:done
+if "%package_name%"=="" (
+    echo Expected -p and -d arguments. 1>&2
+    exit /b 1
+)
+if "%output_directory%"=="" (
+    echo Expected -p and -d arguments. 1>&2
+    exit /b 1
+)
+
+set "downloaded_package_schema_directory=%output_directory%\DownloadedPackages\%package_name%\contentFiles\any\any\ApiSchema"
+set "generated_package_directory=%output_directory%\Packages\%package_name%"
+
+mkdir "%downloaded_package_schema_directory%"
+mkdir "%generated_package_directory%"
+
+> "%downloaded_package_schema_directory%\ApiSchema.json" echo {}
+> "%generated_package_directory%\ApiSchema.json" echo {}
+
+(
+echo {
+echo   "version": "1",
+echo   "projectName": "%package_name%",
+echo   "projectEndpointName": "example",
+echo   "isExtensionProject": false,
+echo   "schemaPath": "ApiSchema.json",
+echo   "discoverySpecPath": null,
+echo   "xsdDirectory": null
+echo }
+) > "%generated_package_directory%\package-manifest.json"
+
+echo fake package download complete
+exit /b 0
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "dotnet.cmd") -Encoding ascii
             }
 
             $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$previousPath"

@@ -42,10 +42,10 @@
     extension-containing or custom schema sets.
 
 .PARAMETER SchemaToolPath
-    Path to the dms-schema native executable. Defaults to the DMS_SCHEMA_TOOL_PATH environment
+    Path to the api-schema-tools native executable. Defaults to the DMS_SCHEMA_TOOL_PATH environment
     variable. Build the tool once before running this script on a clean checkout:
         dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
-            -c Release -p:UseAppHost=true -o .bootstrap/tools/dms-schema
+            -c Release -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
 
 .PARAMETER EnvironmentFile
     Standard mode only. Path to a docker-compose env file whose SCHEMA_PACKAGES value drives the
