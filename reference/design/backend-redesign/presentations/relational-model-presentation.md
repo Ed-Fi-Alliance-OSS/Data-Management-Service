@@ -16,11 +16,7 @@
 
 ## 1. The Big Picture
 
-The relational model is **derived** from `ApiSchema.json` at build time — no code generation, no handwritten SQL.
-Successful derivation returns `DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)`: the immutable
-model, success diagnostics, and provider-finalized semantic requirements for executable plans. SQL Server classification
-failures throw `RelationalModelDerivationException` with ordered structured errors. DDL, per-resource plan compilation,
-and manifest output consume only the completed global artifact; plan compilation from `.Model` alone is invalid.
+The relational model is **derived** from `ApiSchema.json` at build time — no code generation, no handwritten SQL. The derivation produces a single immutable object, `DerivedRelationalModelSet`, consumed by DDL emission, plan compilation, and manifest output.
 
 ```mermaid
 flowchart LR
@@ -37,12 +33,10 @@ flowchart LR
     end
 
     subgraph Output
-        DRMS["DerivedRelationalModelArtifact<br/>(Model + Diagnostics + ExecutorRequirements)"]
-        FAIL["RelationalModelDerivationException<br/>(structured errors; no artifact/manifest)"]
+        DRMS["DerivedRelationalModelSet<br/>(immutable)"]
     end
 
-    Input --> Builder --> DRMS
-    Builder --> FAIL
+    Input --> Builder --> Output
 
     DRMS --> DDL["DDL Emission"]
     DRMS --> PLANS["Plan Compilation"]
@@ -51,35 +45,18 @@ flowchart LR
 
 ---
 
-## 2. `DerivedRelationalModelArtifact` — The Output
+## 2. `DerivedRelationalModelSet` — The Output
 
-The artifact exists only after every global pass and provider action has finalized. PostgreSQL has no classifier failure
-or classifier decisions. SQL Server value-flow/action-selection errors are carried by a typed exception, never embedded
-in a partial model or successful manifest. Both dialects produce executor requirements: PostgreSQL constructs them from
-fixed retained routes without topology classification, while SQL Server produces them from an accepted representable
-assignment.
+The top-level immutable record produced by the builder.
 
 ```mermaid
 classDiagram
-    class DerivedRelationalModelArtifact {
-        DerivedRelationalModelSet Model
-        RelationalModelDerivationDiagnostics Diagnostics
-        RelationalExecutorRequirements ExecutorRequirements
-    }
-
-    class RelationalModelDerivationException {
-        IReadOnlyList~RelationalModelDerivationError~ Errors
-    }
-
     class DerivedRelationalModelSet {
         EffectiveSchemaInfo EffectiveSchema
         SqlDialect Dialect
         IReadOnlyList~ProjectSchemaInfo~ ProjectSchemasInEndpointOrder
         IReadOnlyList~ConcreteResourceModel~ ConcreteResourcesInNameOrder
         IReadOnlyList~AbstractIdentityTableInfo~ AbstractIdentityTablesInNameOrder
-        IReadOnlyList~AbstractIdentityMemberMapping~ AbstractIdentityMemberMappingsInNameOrder
-        IReadOnlyList~IdentityLineageAnchorInfo~ IdentityLineageAnchorsInIdOrder
-        IReadOnlyList~PropagationKeyInfo~ PropagationKeysInTableAndConstraintOrder
         IReadOnlyList~AbstractUnionViewInfo~ AbstractUnionViewsInNameOrder
         IReadOnlyList~DbIndexInfo~ IndexesInCreateOrder
         IReadOnlyList~DbTriggerInfo~ TriggersInCreateOrder
@@ -98,16 +75,10 @@ classDiagram
         DbSchemaName PhysicalSchema
     }
 
-    DerivedRelationalModelArtifact --> DerivedRelationalModelSet
-    DerivedRelationalModelArtifact --> RelationalModelDerivationDiagnostics
-    DerivedRelationalModelArtifact --> RelationalExecutorRequirements
     DerivedRelationalModelSet --> EffectiveSchemaInfo
     DerivedRelationalModelSet --> "0..*" ProjectSchemaInfo
     DerivedRelationalModelSet --> "0..*" ConcreteResourceModel
     DerivedRelationalModelSet --> "0..*" AbstractIdentityTableInfo
-    DerivedRelationalModelSet --> "0..*" AbstractIdentityMemberMapping
-    DerivedRelationalModelSet --> "0..*" IdentityLineageAnchorInfo
-    DerivedRelationalModelSet --> "0..*" PropagationKeyInfo
     DerivedRelationalModelSet --> "0..*" AbstractUnionViewInfo
     DerivedRelationalModelSet --> "0..*" DbIndexInfo
     DerivedRelationalModelSet --> "0..*" DbTriggerInfo
@@ -120,11 +91,9 @@ classDiagram
 | `ProjectSchemasInEndpointOrder` | Physical schema mappings per project (`ed-fi` → `edfi`, `tpdm` → `tpdm`) |
 | `ConcreteResourcesInNameOrder` | One entry per concrete resource — the full relational model for that resource |
 | `AbstractIdentityTablesInNameOrder` | Trigger-maintained identity tables for polymorphic abstract resources |
-| `IdentityLineageAnchorsInIdOrder` | Intrinsic target-table inventory/storage for reference-backed identity lineages |
-| `PropagationKeysInTableAndConstraintOrder` | Site-demanded propagation-key variants grouped by stable `AnchorSetId` |
 | `AbstractUnionViewsInNameOrder` | Diagnostic union views over concrete members of abstract resources |
 | `IndexesInCreateOrder` | Complete index inventory (PK, unique, FK-support, explicit) |
-| `TriggersInCreateOrder` | Complete maintenance-trigger inventory (stamping, referential identity, abstract identity). Identity-value propagation uses finalized native FK actions, not a propagation trigger |
+| `TriggersInCreateOrder` | Complete trigger inventory (stamping, referential identity, abstract identity). SQL Server identity-value propagation is native `ON UPDATE CASCADE` via FK pruning, not a trigger — see `design-docs/mssql-cascading.md` |
 
 ---
 
@@ -261,15 +230,13 @@ classDiagram
     }
 
     class ForeignKey {
-        PhysicalForeignKeyId PhysicalForeignKeyId
-        AnchorSetId? AnchorSetId
         string Name
         IReadOnlyList~DbColumnName~ Columns
         DbTableName TargetTable
         IReadOnlyList~DbColumnName~ TargetColumns
-        IReadOnlyList~ForeignKeyLineageAnchorMapping~ LineageAnchorsInOrder
         ReferentialAction OnDelete
         ReferentialAction OnUpdate
+        SqlServerCascadeMode? SqlServerMode
     }
 
     class AllOrNoneNullability {
@@ -278,77 +245,17 @@ classDiagram
         IReadOnlyList~DbColumnName~ DependentColumns
     }
 
-    class ForeignKeyLineageAnchorMapping {
-        IdentityLineageId IdentityLineage
-        DbColumnName LocalColumn
-        DbColumnName TargetColumn
-    }
-
     class ReferentialAction {
         <<enumeration>>
         NoAction
         Cascade
     }
 
-    class MssqlPropagationMode {
+    class SqlServerCascadeMode {
         <<enumeration>>
         NativeCascade
-        NoPropagation
+        CoveredNoAction
         ImmutableNoAction
-    }
-
-    class RelationalModelDerivationDiagnostics {
-        IReadOnlyList~AnchorOmissionProof~ AnchorOmissionProofs
-        IReadOnlyList~MssqlForeignKeyDecision~ MssqlForeignKeyDecisions
-    }
-
-    class RelationalExecutorRequirements {
-        IReadOnlyList~SameStatementReferenceResolutionRequirement~ SameStatementReferences
-    }
-
-    class SameStatementReferenceResolutionRequirement {
-        QualifiedResourceName OwningResource
-        ReferenceSiteId ReferenceSite
-        MutationOriginId AllowedDirectMutationOrigin
-        MutationCaseId MutationCase
-        PropagationRoute RetainedChangedTargetRoute
-        RowCorrelationProof TargetCorrelation
-        IReadOnlyList~SameStatementFutureValueRequirement~ FutureValues
-    }
-
-    class AnchorOmissionProof {
-        ReferenceSiteId ReferenceSite
-        IdentityLineageId OmittedIdentityLineage
-        AnchorSetId SelectedAnchorSet
-        IReadOnlyList~AnchorOmissionConsumerCheck~ ConsumerChecks
-        IReadOnlyList~AnchorOmissionMutationCoverage~ MutationCoverage
-    }
-
-    class MssqlForeignKeyDecision {
-        PhysicalForeignKeyId ForeignKeyId
-        MssqlPropagationMode Mode
-        IReadOnlyList~CoverageCertificate~ CoverageCertificates
-    }
-
-    class CoverageCertificate {
-        PhysicalForeignKeyId PrunedForeignKeyId
-        MutationOriginId MutationOrigin
-        MutationCaseId MutationCase
-        PropagationRoute ChangedTargetRoute
-        PropagationRoute ReceiverCarrierRoute
-        IReadOnlyList~ComponentEqualityProof~ ItemEqualityProofs
-        RowCorrelationProof OriginRowCorrelation
-        RowCorrelationProof ReceiverRowCorrelation
-        PresenceImplicationProof PresenceImplication
-        ConstraintTimingProof Timing
-        SubsetCompositionProof Composition
-    }
-
-    class SubsetCompositionProof {
-        SubsetCompositionKind Kind
-        AnchorSetId AnchorSetId
-        IReadOnlyList~PropagationItemRef~ ItemsInVectorOrder
-        IReadOnlyList~MutationCaseId~ SupportingCasesInIdOrder
     }
 
     TableConstraint <|-- Unique
@@ -356,50 +263,14 @@ classDiagram
     TableConstraint <|-- AllOrNoneNullability
     ForeignKey --> ReferentialAction : OnDelete
     ForeignKey --> ReferentialAction : OnUpdate
-    ForeignKey --> "0..*" ForeignKeyLineageAnchorMapping
-    RelationalModelDerivationDiagnostics --> "0..*" AnchorOmissionProof
-    RelationalModelDerivationDiagnostics --> "0..*" MssqlForeignKeyDecision
-    RelationalExecutorRequirements --> "0..*" SameStatementReferenceResolutionRequirement
-    MssqlForeignKeyDecision --> MssqlPropagationMode
-    MssqlForeignKeyDecision --> "0..*" CoverageCertificate : NoPropagation only
-    CoverageCertificate --> SubsetCompositionProof
+    ForeignKey --> SqlServerCascadeMode : SQL Server document refs only
 ```
-
-Targets intrinsically inventory/store every reference-backed lineage, while each incoming site's demanded anchor set
-starts empty. Receiver-side full-FK validity/correlation adds only necessary anchors, and demand propagates only through
-downstream identity/constraint consumers to a least fixed point. Equal demand sets share an `AnchorSetId`
-propagation-key/`RefKey` variant, so target-intrinsic anchors are not blanket-copied and each reference keeps exactly one
-full FK. Omission is accepted only when no receiver obligation needs the anchor across every mutation subset and
-simultaneous combination. Logical references are then mapped to canonical storage and de-duplicated as
-`PhysicalForeignKeyCandidate` objects; stable identity excludes `OnUpdate` and `MssqlPropagationMode`.
-
-DS 5.2 `CourseOffering -> Session` demands Session's School anchor because the unified School receiver is also read by
-`CourseOffering -> School`. An unrelated Session reference with no such receiver constraint uses the empty-demand
-variant.
-
-PostgreSQL receives fixed full-composite actions without DMS classification. SQL Server alone derives statement-scoped
-proofs and globally selects modes satisfying value flow and error 1785. Cycles may be broken when the pruned edge has a
-changed-target route and same-row receiver-carrier route; the carrier may be zero-hop `OriginWrite`. Certificates prove
-the complete selected vector, presence, separate origin/receiver row correlation, and constraint timing for each complete
-`MutationCaseId`. Reusing primitive cases requires typed `SubsetCompositionProof`; missing composition is
-`UnprovedSubsetComposition`.
-
-`MssqlForeignKeyDecision` values are success-only derivation/DDL/manifest diagnostics keyed by
-`PhysicalForeignKeyId`; they are separate from runtime `ForeignKey`. DDL emission consumes the finalized constraint.
-Mapping packs serialize its expanded local/target vectors, stable `PhysicalForeignKeyId`, selected `AnchorSetId`, and final
-actions, but omit classification certificates and composition proofs.
-
-`RelationalExecutorRequirements` is success-only compiler input, not a diagnostic. For every direct API mutation origin
-and existing request binding whose target changes along any retained same-boundary route, it carries each complete
-mutation case that can miss normal pre-statement lookup. The requirement records the exact site/origin/case key, stored
-target id, occurrence and target-row correlation, retained route, and every future-vector source. This rule also applies
-to retained acyclic `CASCADE` bindings; it is not restricted to a SQL Server cycle cut or zero-hop certificate.
 
 | Constraint type | Purpose | Example |
 |----------------|---------|---------|
 | `Unique` | Natural key (`UX_..._NK`), reference key (`UX_..._RefKey`), array uniqueness | `UX_Student_NK (StudentUniqueId)` |
 | `ForeignKey` | Composite ref FKs, parent FKs, descriptor FKs | `FK_StudentSchoolAssociation_Student_RefKey` |
-| `AllOrNoneNullability` | CHECK that site `..._DocumentId`, per-site aliases, and every dedicated demanded local anchor are all-null or all-populated | `CK_StudentSchoolAssociation_Student_AllNone` |
+| `AllOrNoneNullability` | CHECK that reference group columns are all-null or all-populated | `CK_StudentSchoolAssociation_Student_AllNone` |
 
 ---
 
@@ -416,10 +287,16 @@ classDiagram
         DbColumnName FkColumn
         QualifiedResourceName TargetResource
         IReadOnlyList~ReferenceIdentityBinding~ IdentityBindings
+        IReadOnlyList~ReferenceLineageAnchorBinding~ LineageAnchorBindings
     }
 
     class ReferenceIdentityBinding {
         JsonPathExpression ReferenceJsonPath
+        DbColumnName Column
+    }
+
+    class ReferenceLineageAnchorBinding {
+        JsonPathExpression TargetIdentityReferencePath
         DbColumnName Column
     }
 
@@ -432,11 +309,13 @@ classDiagram
     }
 
     DocumentReferenceBinding --> "1..*" ReferenceIdentityBinding
+    DocumentReferenceBinding --> "0..*" ReferenceLineageAnchorBinding
 ```
 
 **`DocumentReferenceBinding`** — records how a JSON reference object maps to:
 - a `..._DocumentId` FK column, plus
-- per-identity-part binding columns (e.g., `Student_StudentUniqueId`)
+- per-identity-part binding columns (e.g., `Student_StudentUniqueId`), plus
+- the target's complete intrinsic lineage-anchor inventory
 
 **`ReferenceIdentityBinding`** — maps a single identity scalar within a reference to:
 - a `ReferenceJsonPath` locating the scalar in the JSON reference object
@@ -490,10 +369,6 @@ classDiagram
 ```
 
 **`AbstractIdentityTableInfo`** — a trigger-maintained identity table that serves as a composite FK target for polymorphic references.
-
-**`AbstractIdentityMemberMapping`** — the shared table-qualified mapping from each concrete member's public identity,
-intrinsic target-lineage inventory/storage, `DocumentId`, discriminator, and storage expressions into the abstract identity table. Anchor-demand closure,
-SQL Server analysis, and abstract maintenance-trigger derivation consume this inventory; no later pass reconstructs it.
 
 **`AbstractUnionViewInfo`** — a `UNION ALL` view across concrete member root tables, for diagnostic/query use:
 - an `OutputColumnsInSelectOrder` defining the view's column list
@@ -559,16 +434,14 @@ flowchart TD
 
         LOOP["For each pass in ordered pass list:<br/>pass.Execute(context)"]
 
-        RESULT["context.BuildArtifact()<br/>(validates, canonicalizes ordering,<br/>returns DerivedRelationalModelArtifact)"]
-        ERROR["RelationalModelDerivationException<br/>(ordered structured errors;<br/>no partial artifact)"]
+        RESULT["context.BuildResult()<br/>(validates, canonicalizes ordering,<br/>returns immutable DerivedRelationalModelSet)"]
 
         CREATE --> LOOP --> RESULT
-        LOOP -->|SQL Server proof/selection failure| ERROR
     end
 
     ESS["EffectiveSchemaSet"] --> CREATE
     DIALECT["SqlDialect + ISqlDialectRules"] --> CREATE
-    RESULT --> ARTIFACT["DerivedRelationalModelArtifact<br/>(Model + Diagnostics + ExecutorRequirements)"]
+    RESULT --> DRMS["DerivedRelationalModelSet"]
 ```
 
 ### `RelationalModelSetBuilderContext` — the shared mutable state
@@ -638,9 +511,7 @@ Key properties populated by steps:
 
 ## 6. Set-Level Passes — Overview
 
-After the per-resource pipeline runs for all resources, subsequent set-level passes stitch cross-resource artifacts. The
-diagram shows the semantic spine; specialized semantic-identity, descriptor, authorization, and tracked-change passes
-remain in their documented positions around these stages.
+After the per-resource pipeline runs for all resources, subsequent set-level passes stitch cross-resource artifacts.
 
 ```mermaid
 flowchart TD
@@ -654,25 +525,21 @@ flowchart TD
 
         P4["4. ReferenceBindingPass<br/><i>Add FK + identity columns<br/>for document references</i>"]
 
-        P5["5. KeyUnificationPass<br/><i>Canonical storage +<br/>presence-gated aliases</i>"]
+        P5["5. AbstractIdentityTableAndUnionViewDerivationPass<br/><i>Derive identity tables and<br/>union views for abstract resources</i>"]
 
-        P6["6. AbstractIdentityTableAndUnionViewDerivationPass<br/><i>Identity tables, union views,<br/>shared member mappings</i>"]
+        P6["6. RootIdentityConstraintPass<br/><i>Natural-key UNIQUE constraints<br/>and reference-key UNIQUE constraints</i>"]
 
-        P7["7-9. Alias validation + root identity +<br/>transitive identity mutability"]
+        P7["7. ReferenceConstraintPass<br/><i>Complete-vector FKs and<br/>all-or-none CHECKs</i>"]
 
-        P8["10. IdentityLineageAnchorClosurePass<br/><i>Intrinsic target inventory + least-fixed-point<br/>site demand + AnchorSetId variants</i>"]
+        P8["8. ArrayUniquenessConstraintPass<br/><i>Collection-table UNIQUE<br/>constraints</i>"]
 
-        P9["11. Physical FK + dialect action passes<br/><i>PG fixed actions OR MSSQL<br/>global value-flow/1785 selection</i>"]
+        P9["9. ApplyConstraintDialectHashingPass<br/><i>Dialect-specific constraint<br/>name hashing</i>"]
 
-        P10["12. SameStatementReferenceResolutionRequirementPass<br/><i>Every direct origin + existing binding changed<br/>along a retained same-boundary route</i>"]
+        P10["10. ApplyDialectIdentifierShorteningPass<br/><i>Shorten identifiers exceeding<br/>engine limits</i>"]
 
-        P11["13-14. Reference finalization + remaining constraints<br/><i>Full FKs, all-or-none, semantic identity,<br/>arrays, stable collections, descriptors</i>"]
+        P11["11. CanonicalizeOrderingPass<br/><i>Re-sort for deterministic<br/>output after mutation</i>"]
 
-        P12["15. Naming + index/maintenance-trigger inventories"]
-
-        P13["16. Identifier shortening + canonical ordering"]
-
-        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9 --> P10 --> P11 --> P12 --> P13
+        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9 --> P10 --> P11
     end
 ```
 
@@ -714,9 +581,9 @@ flowchart LR
     P1 --> P2 --> P3
 ```
 
-### Group B: References and Unification (Passes 4-6)
+### Group B: References (Passes 4-5)
 
-Binds references, consolidates row-local equality storage, and handles polymorphism.
+Binds references across resources and handles polymorphism.
 
 ```mermaid
 flowchart LR
@@ -732,107 +599,79 @@ flowchart LR
         P4E --> P4F
     end
 
-    subgraph P5["Pass 5: Key Unification"]
+    subgraph P5["Pass 5: Abstract Artifacts"]
         direction TB
-        P5A["Resolve row-local<br/>equality classes"]
-        P5B["Create canonical<br/>stored columns"]
-        P5C["Convert path columns to<br/>presence-gated aliases"]
-        P5D["Emit class + diagnostic<br/>metadata"]
+        P5A["For each abstract resource:"]
+        P5B["Create identity table<br/>(PK DocumentId, public identity cols,<br/>normalized lineage anchors,<br/>Discriminator last)"]
+        P5C["Resolve canonical column<br/>signatures across members"]
+        P5D["Create union view<br/>(UNION ALL of concrete arms)"]
         P5A --> P5B --> P5C --> P5D
     end
 
-    subgraph P6["Pass 6: Abstract Artifacts"]
-        direction TB
-        P6A["For each abstract resource:"]
-        P6B["Create identity table<br/>(PK DocumentId, identity cols,<br/>Discriminator last)"]
-        P6C["Resolve canonical column<br/>signatures across members"]
-        P6D["Create union view + shared<br/>AbstractIdentityMemberMappings"]
-        P6A --> P6B --> P6C --> P6D
-    end
-
-    P4 --> P5 --> P6
+    P4 --> P5
 ```
 
-### Group C: Constraints and Propagation
+### Group C: Constraints (Passes 6-8)
 
-Derives uniqueness/referential constraints, provider actions, and the executor requirements that make future-identity
-request bindings executable through the API.
+Derives all constraint types — uniqueness and referential integrity.
 
 ```mermaid
 flowchart LR
-    subgraph P7["Pre-FK prerequisites"]
+    subgraph P6["Pass 6: Root Identity Constraints"]
         direction TB
-        P7A["Validate alias metadata"]
-        P7B["Derive root natural-key +<br/>reference-key UNIQUEs"]
-        P7C["Compute transitive<br/>identity mutability"]
+        P6A["Derive UX_..._NK<br/>(natural-key UNIQUE)"]
+        P6B["Derive UX_..._RefKey<br/>(complete-vector UNIQUE —<br/>FK target for document refs)"]
+        P6A --> P6B
+    end
+
+    subgraph P7["Pass 7: Reference Constraints"]
+        direction TB
+        P7A["Derive complete-vector FKs to<br/>target reference-key UNIQUE"]
+        P7B["Assign fixed PostgreSQL actions<br/>or globally select SQL Server actions<br/>(SqlServerCascadeMode)"]
+        P7C["Derive all-or-none CHECKs over<br/>public aliases + lineage anchors"]
         P7A --> P7B --> P7C
     end
 
-    subgraph P8["Identity-Lineage Anchor Closure"]
+    subgraph P8["Pass 8: Array Uniqueness"]
         direction TB
-        P8A["Inventory intrinsic target lineages;<br/>start each site demand empty"]
-        P8B["Add receiver validity/correlation demand;<br/>propagate through identity/constraint consumers"]
-        P8C["Equal demand sets -> AnchorSetId variants;<br/>validate provider limits"]
-        P8A --> P8B --> P8C
+        P8A["Derive collection-table UNIQUE<br/>constraints from<br/>arrayUniquenessConstraints"]
+        P8B["Map constraint paths to<br/>child-table scope columns"]
+        P8A --> P8B
     end
 
-    subgraph P9["Physical FK + Dialect Actions"]
-        direction TB
-        P9A["Map public values + site-demanded anchors;<br/>de-duplicate physical FKs"]
-        P9B["PG: fixed actions, no classifier<br/>MSSQL: global value-flow + 1785"]
-        P9C["Finalize provider actions and<br/>SQL Server typed certificates"]
-        P9A --> P9B --> P9C
-    end
-
-    subgraph P10["Executor Requirements"]
-        direction TB
-        P10A["For every direct origin + existing binding<br/>changed along a retained same-boundary route"]
-        P10B["PG: construct from fixed routes<br/>MSSQL: require representable assignment"]
-        P10C["Emit exact site/origin/case requirement +<br/>correlation, route, future-vector sources"]
-        P10A --> P10B --> P10C
-    end
-
-    subgraph P11["Constraint Finalization"]
-        direction TB
-        P11A["Full reference FKs + all-or-none checks;<br/>semantic identity, arrays, collections, descriptors"]
-    end
-
-    P7 --> P8 --> P9 --> P10 --> P11
+    P6 --> P7 --> P8
 ```
 
-The retained acyclic `R -> T -> RChild` fixture is a required counterexample to certificate-only selection: a direct R
-identity update changes T along a retained route while multiple existing child bindings submit T's future identity. Both
-providers emit batched plans even though the child FK remains `CASCADE`; the future vector combines an origin-written
-item with a locked unchanged target primitive/anchor, and a wrong unchanged value fails before DML.
-
-### Group D: Naming, Inventories, and Finalization
+### Group D: Naming and Finalization (Passes 9-11)
 
 Makes identifiers safe for the target engine and deterministic.
 
 ```mermaid
 flowchart LR
-    subgraph GDA["Constraint Naming + Validation"]
+    subgraph P9["Pass 9: Constraint Hashing"]
         direction TB
-        GDA1["Append deterministic<br/>signature hashes"]
-        GDA2["Validate final FK<br/>storage invariants"]
-        GDA1 --> GDA2
+        P9A["Append signature hash to<br/>constraint names that may<br/>exceed engine limits"]
+        P9B["Handles PK, UNIQUE, FK,<br/>CHECK constraint names"]
+        P9A --> P9B
     end
 
-    subgraph GDB["DDL Intent Inventories"]
+    subgraph P10["Pass 10: Identifier Shortening"]
         direction TB
-        GDB1["Indexes + maintenance triggers"]
-        GDB2["Tracked changes + auth artifacts"]
-        GDB1 --> GDB2
+        P10A["Shorten all identifiers<br/>exceeding engine limits"]
+        P10B["PG: 63 bytes<br/>MSSQL: 128 chars"]
+        P10C["prefix + '_' + sha256hex[0:10]"]
+        P10D["Validate no collisions"]
+        P10A --> P10B --> P10C --> P10D
     end
 
-    subgraph GDC["Shortening + Canonical Ordering"]
+    subgraph P11["Pass 11: Canonicalize Ordering"]
         direction TB
-        GDC1["Apply dialect identifier limits"]
-        GDC2["Re-sort all output after mutation"]
-        GDC1 --> GDC2
+        P11A["Re-sort tables, columns,<br/>constraints within each<br/>resource model"]
+        P11B["Ensures deterministic output<br/>after mutation passes"]
+        P11A --> P11B
     end
 
-    GDA --> GDB --> GDC
+    P9 --> P10 --> P11
 ```
 
 ---
@@ -855,23 +694,21 @@ flowchart TD
             P3["Pass 3: Extension Tables"]
         end
 
-        subgraph GroupB["Group B: References + Unification"]
+        subgraph GroupB["Group B: References"]
             P4["Pass 4: Reference Binding"]
-            P5["Pass 5: Key Unification"]
-            P6["Pass 6: Abstract Artifacts"]
+            P5["Pass 5: Abstract Artifacts"]
         end
 
-        subgraph GroupC["Group C: Constraints + Propagation"]
-            P7["Alias validation + root identity + mutability"]
-            P8["Intrinsic target lineages +<br/>least-fixed-point site demand"]
-            P9["Physical FKs + PG fixed actions /<br/>MSSQL global value-flow + 1785 selection"]
-            P10["Same-statement requirements from<br/>every retained target-changing route"]
+        subgraph GroupC["Group C: Constraints"]
+            P6["Pass 6: Root Identity"]
+            P7["Pass 7: Reference FKs"]
+            P8["Pass 8: Array Uniqueness"]
         end
 
-        subgraph GroupD["Group D: Finalization"]
-            P11["Reference + remaining constraints"]
-            P12["Naming + DDL intent inventories"]
-            P13["Shortening + ordering"]
+        subgraph GroupD["Group D: Naming"]
+            P9["Pass 9: Constraint Hashing"]
+            P10["Pass 10: Shortening"]
+            P11["Pass 11: Ordering"]
         end
 
         CTX --> GroupA --> GroupB --> GroupC --> GroupD
@@ -891,8 +728,7 @@ flowchart TD
 
     Inputs --> SetBuilder
 
-    GroupD --> RESULT["DerivedRelationalModelArtifact<br/>(Model + Diagnostics + ExecutorRequirements)"]
-    GroupC --> FAILURE["RelationalModelDerivationException<br/>no artifact / no success manifest"]
+    GroupD --> RESULT["DerivedRelationalModelSet"]
 
     RESULT --> DDL["DDL Emission"]
     RESULT --> PLANS["Plan Compilation"]
@@ -906,17 +742,9 @@ flowchart TD
 | Decision | Rationale |
 |----------|-----------|
 | **Ordered passes, not visitors** | Dependencies between passes are explicit in ordering; no DAG resolution needed |
-| **Mutable context, immutable output** | Passes freely mutate shared state; `BuildArtifact()` freezes `Model`, `Diagnostics`, and `ExecutorRequirements` together |
+| **Mutable context, immutable output** | Passes freely mutate shared state; `BuildResult()` freezes into immutable records |
 | **Per-resource pipeline inside Pass 1** | Base traversal is resource-local; cross-resource concerns live in later passes |
 | **Constraint passes after reference binding** | FK constraints need reference columns to already exist |
-| **Physical FK de-duplication before actions** | Logical-reference duplication and action choice cannot create duplicate physical constraints |
-| **Site-specific identity-lineage demand** | Targets store intrinsic lineages; incoming demand starts empty and grows only for receiver validity/correlation; equal sets share `AnchorSetId` variants |
-| **Explicit provider split** | PostgreSQL uses fixed actions without DMS classification; SQL Server alone proves value flow and globally breaks error-1785 cycles/diamonds |
-| **Route-driven executor requirements** | Every direct API origin and existing binding changed along a retained same-boundary route is considered, including retained acyclic `CASCADE` bindings on both providers |
-| **Typed failure separate from artifact** | SQL Server failures throw structured exceptions; consumers never receive an unsafe partial model |
-| **Shared DMS/MetaEd conformance corpus** | Fixtures have separate `metaEd`, `dmsPostgresql`, and `dmsSqlServer` outcomes |
-| **Cross-scope equality stays separate** | Root-to-child equality propagation is not a physical FK edge and cannot satisfy a coverage obligation |
-| **Pre-production v1 contract** | Keep `RelationalMappingVersion = v1`; add no migration, compatibility discriminator, or physical-model hash |
 | **Naming passes last** | All semantic derivation completes before identifier shortening and hashing |
 | **Canonical ordering at both levels** | Per-resource pipeline orders once; final pass re-orders after mutation |
 
@@ -930,12 +758,12 @@ flowchart TD
 | 2. Descriptor Mapping | DMS-942 | Descriptor → `dms.Descriptor` storage |
 | 3. Extension Tables | DMS-932, DMS-1035 | `_ext` relational mapping + common-type extensions |
 | 4. Reference Binding | DMS-930 | References/descriptors + identity columns |
-| 5. Key Unification | DMS-1033 | Canonical storage + presence-gated aliases |
-| 6. Abstract Artifacts | DMS-933 | Abstract identity tables + union views + shared concrete-member mappings |
-| Reference prerequisites | DMS-930 | Root identity constraints + transitive mutability |
-| Anchor demand + physical FK/action phases | DMS-1258 | Intrinsic lineage inventory, least-demand `AnchorSetId` variants, PostgreSQL fixed actions, SQL Server global cycle/diamond breaking + typed certificates/composition proofs |
-| Same-statement executor requirements | DMS-1258 | Provider-finalized site/origin/case requirements from retained target-changing routes, including the retained acyclic child case |
-| Downstream constraints/naming | DMS-930, DMS-931 | Array/descriptor constraints + dialect naming |
-| Shortening/ordering | DMS-931, DMS-934 | Engine identifier limits + deterministic output |
+| 5. Abstract Artifacts | DMS-933 | Abstract identity tables + union views |
+| 6. Root Identity | DMS-930 | Natural-key and reference-key UNIQUE constraints |
+| 7. Reference Constraints | DMS-930 | Complete-vector FKs + all-or-none CHECKs |
+| 8. Array Uniqueness | DMS-930 | Collection uniqueness constraints |
+| 9. Constraint Hashing | DMS-931 | Dialect-specific constraint naming |
+| 10. Shortening | DMS-931 | Engine identifier length limits |
+| 11. Ordering | DMS-934 | Deterministic manifest output |
 | Set Builder | DMS-1033 | Orchestrates all passes |
 | Index/Trigger Inventory | DMS-945 | Deterministic index + trigger derivation |

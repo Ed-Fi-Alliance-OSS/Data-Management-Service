@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "generated_by": "reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js",
+  "assumptions": {
+    "intrinsic_lineage": "One root identity-contributing document reference is one independently replaceable lineage. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
+    "propagation_vector": "Target public RefKey storage columns, every intrinsic lineage DocumentId anchor, then target DocumentId.",
+    "incoming_site_storage": "The conservative result allocates one BIGINT per incoming site and lineage. A sensitivity result reuses a required same-table direct-reference DocumentId only when every correlated canonical public column is identical.",
+    "mssql_strings": "nvarchar(n), two bytes per declared character.",
+    "pgsql_strings": "Both ASCII and four-byte UTF-8 payload bounds are reported; B-tree tuple overhead and compression are not modeled.",
+    "artifact_projection": "Adds only generic table columns and expanded FK, propagation-key, all-or-none, and FK-index arrays. It adds no proof, hash, solver, or generalized deferred-resolution protocol."
+  },
+  "provider_limits_used_for_screening": {
+    "mssql_columns_per_foreign_key": 32,
+    "mssql_documented_bytes_per_foreign_key_screen": 900,
+    "mssql_bytes_per_nonclustered_unique_key": 1700,
+    "mssql_columns_per_table": 1024,
+    "pgsql_columns_per_index_default_build": 32,
+    "pgsql_btree_payload_screen_bytes_default_8k_page": 2704
+  },
+  "implementation_status": {
+    "mapping_pack": "MappingPackPayload is an empty placeholder and MappingSet.FromPayload throws NotSupportedException; no .mpack size can be measured."
+  },
+  "fixtures": [
+    {
+      "fixture": "ds-5.2",
+      "label": "Data Standard 5.2",
+      "inputs": [
+        "src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json"
+      ],
+      "baseline": {
+        "concrete_resources": 349,
+        "abstract_identity_tables": 2,
+        "physical_tables": 467,
+        "document_reference_sites": 318,
+        "relational_manifest_bytes": 6102392,
+        "mssql_ddl_bytes": 6020620
+      },
+      "complete_vectors": {
+        "referenced_targets": 72,
+        "anchor_bearing_targets": 43,
+        "maximum_intrinsic_anchors": 3,
+        "maximum_vector_columns": 13,
+        "widest_by_columns": {
+          "target": "Ed-Fi|Grade",
+          "public_identity_columns": 10,
+          "anchors": 2,
+          "total_columns": 13
+        },
+        "maximum_mssql_declared_bytes": 1284,
+        "widest_by_mssql_declared_bytes": {
+          "target": "Ed-Fi|SurveySectionResponse",
+          "baseline_declared_bytes": 1268,
+          "anchors": 2,
+          "complete_vector_declared_bytes": 1284,
+          "total_columns": 7
+        },
+        "maximum_pgsql_ascii_payload_bytes": 654,
+        "maximum_pgsql_four_byte_utf8_payload_bytes": 2544
+      },
+      "anchor_storage": {
+        "target_anchor_columns_added": 3,
+        "dedicated_receiver_anchor_columns_added": 149,
+        "total_anchor_columns_added_conservative": 152,
+        "obvious_safe_receiver_reuses": 2,
+        "total_anchor_columns_added_after_obvious_reuse": 150,
+        "maximum_table_growth_conservative": {
+          "table": "edfi|StudentAssessmentRegistration",
+          "baseline_column_count": 25,
+          "added_anchor_columns": 8,
+          "added_fixed_bytes": 64,
+          "final_column_count": 33
+        },
+        "maximum_final_table_column_count_conservative": 44,
+        "reuse_sites": [
+          {
+            "owner": "Ed-Fi|CourseOffering",
+            "reference_object_path": "$.sessionReference",
+            "receiver_table": "edfi|CourseOffering",
+            "target": "Ed-Fi|Session",
+            "reused_columns": [
+              "School_DocumentId"
+            ]
+          },
+          {
+            "owner": "Ed-Fi|StudentSchoolAttendanceEvent",
+            "reference_object_path": "$.sessionReference",
+            "receiver_table": "edfi|StudentSchoolAttendanceEvent",
+            "target": "Ed-Fi|Session",
+            "reused_columns": [
+              "School_DocumentId"
+            ]
+          }
+        ]
+      },
+      "constraints": {
+        "full_composite_reference_fks": 318,
+        "anchor_bearing_reference_fks": 113,
+        "propagation_unique_constraints": 72,
+        "widened_existing_propagation_unique_constraints": 43,
+        "additional_propagation_unique_constraints_over_one_per_target": 0
+      },
+      "provider_limit_screen": {
+        "vector_column_limit_exceedances": [],
+        "table_column_limit_exceedances": [],
+        "mssql_vectors_over_900_declared_bytes": [
+          {
+            "target": "Ed-Fi|AssessmentAdministration",
+            "baseline_declared_bytes": 1156,
+            "complete_vector_declared_bytes": 1172,
+            "vector_column_count": 7
+          },
+          {
+            "target": "Ed-Fi|Grade",
+            "baseline_declared_bytes": 973,
+            "complete_vector_declared_bytes": 989,
+            "vector_column_count": 13
+          },
+          {
+            "target": "Ed-Fi|StudentAssessmentRegistration",
+            "baseline_declared_bytes": 1228,
+            "complete_vector_declared_bytes": 1244,
+            "vector_column_count": 9
+          },
+          {
+            "target": "Ed-Fi|SurveySection",
+            "baseline_declared_bytes": 1148,
+            "complete_vector_declared_bytes": 1156,
+            "vector_column_count": 5
+          },
+          {
+            "target": "Ed-Fi|SurveySectionResponse",
+            "baseline_declared_bytes": 1268,
+            "complete_vector_declared_bytes": 1284,
+            "vector_column_count": 7
+          }
+        ],
+        "mssql_vectors_newly_crossing_900_due_to_anchors": [],
+        "mssql_vectors_over_1700_declared_bytes": [],
+        "pgsql_vectors_over_2704_ascii_payload_bytes": [],
+        "pgsql_vectors_over_2704_four_byte_utf8_payload_bytes": [],
+        "full_inventory_fails_where_minimal_demand_would_fit": []
+      },
+      "artifact_projection": {
+        "relational_manifest_delta_bytes": 153861,
+        "relational_manifest_delta_percent": 2.52,
+        "mssql_ddl_delta_bytes_rough": 48520,
+        "mssql_ddl_delta_percent_rough": 0.81,
+        "mapping_pack_delta": "unavailable-not-implemented"
+      }
+    },
+    {
+      "fixture": "ds-5.2-tpdm",
+      "label": "Data Standard 5.2 with TPDM",
+      "inputs": [
+        "src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json",
+        "src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm/inputs/tpdm-api-schema-authoritative.json"
+      ],
+      "baseline": {
+        "concrete_resources": 382,
+        "abstract_identity_tables": 2,
+        "physical_tables": 511,
+        "document_reference_sites": 349,
+        "relational_manifest_bytes": 6946153,
+        "mssql_ddl_bytes": 6867305
+      },
+      "complete_vectors": {
+        "referenced_targets": 81,
+        "anchor_bearing_targets": 51,
+        "maximum_intrinsic_anchors": 3,
+        "maximum_vector_columns": 14,
+        "widest_by_columns": {
+          "target": "TPDM|EvaluationObjectiveRating",
+          "public_identity_columns": 11,
+          "anchors": 2,
+          "total_columns": 14
+        },
+        "maximum_mssql_declared_bytes": 1284,
+        "widest_by_mssql_declared_bytes": {
+          "target": "Ed-Fi|SurveySectionResponse",
+          "baseline_declared_bytes": 1268,
+          "anchors": 2,
+          "complete_vector_declared_bytes": 1284,
+          "total_columns": 7
+        },
+        "maximum_pgsql_ascii_payload_bytes": 654,
+        "maximum_pgsql_four_byte_utf8_payload_bytes": 2544
+      },
+      "anchor_storage": {
+        "target_anchor_columns_added": 3,
+        "dedicated_receiver_anchor_columns_added": 173,
+        "total_anchor_columns_added_conservative": 176,
+        "obvious_safe_receiver_reuses": 2,
+        "total_anchor_columns_added_after_obvious_reuse": 174,
+        "maximum_table_growth_conservative": {
+          "table": "edfi|StudentAssessmentRegistration",
+          "baseline_column_count": 25,
+          "added_anchor_columns": 8,
+          "added_fixed_bytes": 64,
+          "final_column_count": 33
+        },
+        "maximum_final_table_column_count_conservative": 48,
+        "reuse_sites": [
+          {
+            "owner": "Ed-Fi|CourseOffering",
+            "reference_object_path": "$.sessionReference",
+            "receiver_table": "edfi|CourseOffering",
+            "target": "Ed-Fi|Session",
+            "reused_columns": [
+              "School_DocumentId"
+            ]
+          },
+          {
+            "owner": "Ed-Fi|StudentSchoolAttendanceEvent",
+            "reference_object_path": "$.sessionReference",
+            "receiver_table": "edfi|StudentSchoolAttendanceEvent",
+            "target": "Ed-Fi|Session",
+            "reused_columns": [
+              "School_DocumentId"
+            ]
+          }
+        ]
+      },
+      "constraints": {
+        "full_composite_reference_fks": 349,
+        "anchor_bearing_reference_fks": 129,
+        "propagation_unique_constraints": 81,
+        "widened_existing_propagation_unique_constraints": 51,
+        "additional_propagation_unique_constraints_over_one_per_target": 0
+      },
+      "provider_limit_screen": {
+        "vector_column_limit_exceedances": [],
+        "table_column_limit_exceedances": [],
+        "mssql_vectors_over_900_declared_bytes": [
+          {
+            "target": "Ed-Fi|AssessmentAdministration",
+            "baseline_declared_bytes": 1156,
+            "complete_vector_declared_bytes": 1172,
+            "vector_column_count": 7
+          },
+          {
+            "target": "Ed-Fi|Grade",
+            "baseline_declared_bytes": 973,
+            "complete_vector_declared_bytes": 989,
+            "vector_column_count": 13
+          },
+          {
+            "target": "Ed-Fi|StudentAssessmentRegistration",
+            "baseline_declared_bytes": 1228,
+            "complete_vector_declared_bytes": 1244,
+            "vector_column_count": 9
+          },
+          {
+            "target": "Ed-Fi|SurveySection",
+            "baseline_declared_bytes": 1148,
+            "complete_vector_declared_bytes": 1156,
+            "vector_column_count": 5
+          },
+          {
+            "target": "Ed-Fi|SurveySectionResponse",
+            "baseline_declared_bytes": 1268,
+            "complete_vector_declared_bytes": 1284,
+            "vector_column_count": 7
+          }
+        ],
+        "mssql_vectors_newly_crossing_900_due_to_anchors": [],
+        "mssql_vectors_over_1700_declared_bytes": [],
+        "pgsql_vectors_over_2704_ascii_payload_bytes": [],
+        "pgsql_vectors_over_2704_four_byte_utf8_payload_bytes": [],
+        "full_inventory_fails_where_minimal_demand_would_fit": []
+      },
+      "artifact_projection": {
+        "relational_manifest_delta_bytes": 184863,
+        "relational_manifest_delta_percent": 2.66,
+        "mssql_ddl_delta_bytes_rough": 56200,
+        "mssql_ddl_delta_percent_rough": 0.82,
+        "mapping_pack_delta": "unavailable-not-implemented"
+      }
+    }
+  ]
+}

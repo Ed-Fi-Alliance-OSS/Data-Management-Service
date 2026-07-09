@@ -30,11 +30,6 @@ All slices inherit these constraints:
 - Final create-vs-update behavior comes from in-session target resolution.
 - Core-owned request/context metadata remains authoritative; backend does not re-evaluate writable-profile rules.
 - Slices that extend matched-row overlay beyond the root table inherit Slice 2's binding-classification and binding-accounting model for non-storage-managed bindings; they extend that model to their owned scope families rather than redefining it.
-- A demanded identity-lineage anchor has no independent profile path. Its `WriteValueSource.IdentityLineageAnchor`
-  inherits the owning `DocumentReferenceBinding` instance's visibility: hidden preserves the complete stored reference
-  tuple, visible-absent clears/deletes the complete optional tuple, and visible-present writes target `DocumentId`, public
-  values, and demanded anchors atomically from `ResolvedReferenceSet`. All-or-none validation and guarded no-op comparison
-  include the anchor columns.
 - Any slice that changes SQL-sensitive behavior must address PostgreSQL and SQL Server parity for that slice's behavior; Slice 7 is the branch-wide audit and gap-closure pass, not the first point where parity becomes required.
 - Unsupported profiled shapes may remain fenced until their owning slice lands, but the fence must be deterministic and narrow.
 
@@ -83,8 +78,6 @@ All slices inherit these constraints:
 - Nested / root-level extension child / collection-aligned extension child variants of `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, including the update-allowed/create-denied chain — Slice 5
 - `ProfileHiddenExtensionChildCollectionPreservation` — Slice 5
 - `ProfileUnchangedWriteGuardedNoOp` — Slice 6
-- Profiled reference tuple with hidden / visible-absent / visible-retargeted demanded lineage anchors — semantic behavior
-  inherited by Slices 2-5; provider parity completed with DMS-1258
 - pgsql/mssql parity closure and explicit `DMS-1132` handoff — Slice 7
 
 ## Notes For Review

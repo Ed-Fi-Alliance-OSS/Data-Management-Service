@@ -38,8 +38,6 @@ No functional profiled behavior should remain intentionally fenced except explic
 
 - There must not be a profile-only compare implementation separate from execution merge synthesis.
 - Comparable rowsets must be produced from the same post-merge values execution would use.
-- Comparable rowsets include demanded identity-lineage anchor columns and any explicit `..._DocumentId` columns reused as
-  anchors, even though those columns have no independent profile path. An anchor mismatch is not a no-op.
 - No-op success is provisional until freshness is revalidated under the executor's concurrency rules.
 - A stale compare must not return success.
 
@@ -67,8 +65,6 @@ No functional profiled behavior should remain intentionally fenced except explic
 - Unchanged profiled `PUT` and profiled `POST`-as-update can short-circuit successfully when current.
 - Stale compares return write conflict instead of success.
 - No DML-visible state or update-tracking-visible state changes occur on guarded no-op success.
-- A visible reference retarget with changed demanded anchors cannot short-circuit as a guarded no-op; an unchanged or
-  hidden-preserved complete reference tuple may short-circuit only after the normal freshness check.
 - Any dialect-sensitive freshness or locking behavior introduced by this slice has explicit PostgreSQL and SQL Server coverage or explicit review rationale.
 
 ## Tests Required
@@ -77,7 +73,6 @@ No functional profiled behavior should remain intentionally fenced except explic
 
 - Comparable profiled rowset is sourced from the same merge synthesis result used for execution
 - No-op candidate detection for supported profiled shapes
-- Reference-tuple comparison includes target `DocumentId`, public storage, demanded anchors, and reused anchor columns
 - Stale compare result mapping
 - Distinct handling for `PUT` vs `POST`-as-update result types
 

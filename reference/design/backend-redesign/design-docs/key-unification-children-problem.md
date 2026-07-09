@@ -2,16 +2,21 @@
 
 ## Status
 
-Deferred problem statement. This is **not part of DMS-1129**.
+Draft.
 
-> DMS-1129 inventories intrinsic target lineages and derives least-fixed-point, receiver-demanded anchors for all engines, assigns PostgreSQL's
-> fixed actions without DMS classification, and derives statement-scoped identity value-flow proofs
-> only while globally selecting SQL Server actions that satisfy value-flow safety and error 1785; see
-> [mssql-cascading.md](mssql-cascading.md). That analysis does not invent propagation edges from
-> `equalityConstraints`. Root-to-child, child-to-child, and base-to-extension equality propagation
-> remain a separate, unresolved feature. A cross-scope equality path MUST NOT be used as a
-> `CoverageCertificate` changed-target route, receiver-carrier route, component/anchor equality, row
-> correlation, or presence proof for a pruned FK.
+> **SQL Server mechanism superseded (DMS-1129).** This document was written when SQL Server
+> identity-value propagation used `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`. That
+> mechanism is superseded by [mssql-cascading.md](mssql-cascading.md): SQL Server now uses native
+> `ON UPDATE CASCADE` plus **SQL-Server-only** global physical action selection. Covered `NO ACTION`
+> edges may break diamonds, parallel conflicts, or cycles when exact same-row/same-boundary carriers exist; cycle
+> membership is not a failure. PostgreSQL is never pruned, topology-classified, or failed because of cascade topology.
+> The `MssqlIdentityPropagationTrigger` references below are
+> retained as **historical analysis only** and are non-normative. Native cascade follows the FK on
+> child/extension binding tables directly, so the "SQL Server trigger only considers root-table
+> reference sites" limitation described here does not apply to the native-cascade design — a child
+> reference site that holds a composite reference FK is cascaded natively. The remaining
+> **cross-scope key-unification** parity gap (root ↔ child duplicated key parts not linked by a
+> reference edge) is orthogonal to the propagation mechanism and is still open.
 
 ## Purpose
 
@@ -30,11 +35,10 @@ The backend redesign relies on:
 - **Stored identity parts at each reference site**: referenced natural-key components are duplicated into the referrer’s
   row as stored “identity-part” columns to support query/reconstitution.
 - **DB-driven identity propagation**:
-  - both engines share intrinsic target-lineage inventory, site-specific receiver-demand closure, and storage-mapped,
-    de-duplicated physical FKs;
-  - PostgreSQL directly uses its fixed eligible-`CASCADE`/immutable-`NO ACTION` assignment;
-  - SQL Server globally assigns actions that satisfy its value-flow obligations and error 1785, with certified
-    `NO ACTION` only where a same-row carrier, including a zero-hop origin write, covers the full propagation vector.
+  - PostgreSQL: `ON UPDATE CASCADE` on eligible composite reference FKs.
+  - SQL Server: native `ON UPDATE CASCADE` on eligible composite reference FKs (foreign-key pruning; see
+    [mssql-cascading.md](mssql-cascading.md)) — superseding the earlier `ON UPDATE NO ACTION` +
+    `MssqlIdentityPropagationTrigger` mechanism this document was written against.
 - **Key unification**: uses `equalityConstraints` to unify duplicated stored scalar/descriptor columns into a single
   canonical stored column *within one physical table row* (aliases remain available for API-path semantics).
 
@@ -91,8 +95,8 @@ constraints whose endpoints bind to different physical tables (`KeyUnificationIg
 
 ### 2) Identity propagation follows reference edges, not equality edges
 
-Identity propagation is defined over full-composite physical reference FKs. It updates the referrer’s stored
-identity-part columns **only for tables that directly reference the updated target**.
+Identity propagation is defined over composite reference FKs (or their SQL Server `MssqlIdentityPropagationTrigger`). It updates the
+referrer’s stored identity-part columns **only for tables that directly reference the updated target**.
 
 In this scenario:
 
@@ -102,14 +106,22 @@ In this scenario:
 
 So the root value changes but the child values do not.
 
-### 3) Direct non-root reference sites are already FK edges
+### 3) SQL Server `MssqlIdentityPropagationTrigger` currently only considers root-table reference sites
 
-A child or extension table that directly references the changed target contributes its own physical FK candidate. Native
-cascade can therefore reach it through PostgreSQL's fixed action or the finalized SQL Server assignment. The site starts
-with no anchor demand and carries only lineages needed by its receiver-side full-FK validity/correlation proof; omission
-still proves every target identity update and reference-backed component retargeting case. The retired root-only
-propagation-trigger limitation is not part of the current design. This does not help a child
-table that does **not** reference the changed target; an equality constraint alone is not a propagation edge.
+> **Superseded (DMS-1129), non-actionable.** Native `ON UPDATE CASCADE` follows composite reference FKs
+> on child/extension binding tables directly, so this trigger root-only limitation no longer applies —
+> a child reference site that holds a composite reference FK is cascaded natively. The analysis below
+> is retained for historical context only; see [mssql-cascading.md](mssql-cascading.md).
+
+The design docs call out that SQL Server `MssqlIdentityPropagationTrigger` triggers should fan out to “root and non-root reference
+sites” (`reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`).
+
+However, the current derived-trigger inventory limits reverse-reference indexing to root-table bindings only (see
+`src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`, the
+“Only consider root-table bindings” filter).
+
+Even for scenarios where a child table *does* directly reference the updated target, SQL Server `MssqlIdentityPropagationTrigger` propagation
+would currently miss those non-root referrers.
 
 ## Why This Matters
 
@@ -126,11 +138,21 @@ propagation.
 
 Below are candidate directions (not mutually exclusive).
 
-### A) Direct non-root reference sites (handled by the reference-FK design)
+### A) Implement SQL Server `MssqlIdentityPropagationTrigger` for non-root reference sites (baseline parity fix)
 
-No additional mechanism is needed for a child/extension table that directly references the changed target: it is part of
-the physical FK inventory. This still does not solve the motivating case, where the child references `School` rather
-than SSA and therefore has no value-flow edge from the SSA update.
+> **Superseded (DMS-1129), non-actionable.** No trigger change is needed: native `ON UPDATE CASCADE`
+> already reaches non-root reference sites via the composite reference FKs on child/extension tables
+> (see [mssql-cascading.md](mssql-cascading.md)). This item is retained only as historical analysis;
+> the remaining open question is the cross-scope key-unification parity gap (option B below), which is
+> independent of the propagation mechanism.
+
+Bring the implementation in line with the design intent:
+
+- Include child/extension table reference bindings when deriving `MssqlIdentityPropagationTrigger` triggers.
+- Ensure propagation updates canonical/storage columns for those non-root tables (and stamps documents appropriately).
+
+This does not solve the “SSA update must reach a child table that does not reference SSA” case by itself, but it is a
+prerequisite for correctness wherever child tables *do* have direct reference edges.
 
 ### B) Add “document-local equality propagation” for cross-table equality constraints
 
@@ -211,7 +233,8 @@ This is not preferred if the goal is full parity with document-level `equalityCo
 
 1. **Reference-site vs scalar propagation**
    - If a dependent endpoint is a *reference identity-part column* that participates in a composite FK (e.g., a child
-     table stores `SchoolId`, any site-demanded lineage anchors, and `School_DocumentId` under a full propagation-vector FK), then
+     table stores `SchoolId` plus `School_DocumentId` under a `FOREIGN KEY (SchoolId, School_DocumentId) ...`; School has
+     no intrinsic reference-backed lineage, so its complete vector is public value then `DocumentId`), then
      “propagate `SchoolId` only” may violate the composite FK unless the `..._DocumentId` already points to the same
      target row.
    - Supporting this scenario may therefore require one of:
@@ -248,8 +271,3 @@ This is not preferred if the goal is full parity with document-level `equalityCo
 2. Are we willing to accept fan-out updates to potentially large collections as part of identity propagation?
 3. Should cross-scope equality propagation be part of “key unification” or modeled as a separate derived-maintenance
    feature?
-
-Any future answer requires its own cross-engine conformance fixtures. The DMS/MetaEd cascade conformance corpus from
-METAED-1667 has separate `metaEd`, `dmsPostgresql`, and `dmsSqlServer` expected outcomes: MetaEd owns authoring
-representability, PostgreSQL always receives fixed DMS actions, and SQL Server owns physical selection/certificates.
-Passing that corpus does not claim support for the cross-scope scenario in this document.

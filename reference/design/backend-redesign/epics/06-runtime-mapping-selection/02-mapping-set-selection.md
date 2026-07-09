@@ -31,13 +31,6 @@ Runtime compilation fallback (when enabled) uses the shared plan compiler + cach
 - When runtime compilation fallback is allowed:
   - missing pack triggers runtime compilation for that schema hash.
 - Mapping set selection is cached and concurrency-safe (multiple requests for same hash do not compile/decode repeatedly).
-- Runtime compilation passes the complete
-  `DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)` to `MappingSetCompiler`; compiling from
-  `artifact.Model` alone is invalid. The resulting mapping set preserves every binding's
-  `DocumentReferenceResolutionPolicy` and every exact same-statement plan required by `ExecutorRequirements`.
-- For both PostgreSQL and SQL Server, pack decode and runtime compilation produce semantically identical certified-cycle
-  plans, including exact plan keys, retained routes, complete future-value sources, occurrence/target correlation, and
-  correlation/post-write-verification command contracts.
 
 ## Implementation Tasks
 
@@ -82,7 +75,7 @@ Implement the core coordinator in
 1. Check `MappingSetProviderOptions`:
    - If `Enabled`, call `IMappingPackStore.TryLoadPayloadAsync(key)`.
    - If pack found → validate envelope fields, decode payload, construct `MappingSet` via
-     `MappingSet.FromPayload(key, payload)` (placeholder; real decode deferred to DMS-968).
+     `MappingSet.FromPayload(...)` (placeholder; real decode deferred to DMS-968).
    - If pack missing and `AllowRuntimeCompileFallback` → delegate to
      `IRuntimeMappingSetCompiler.CompileAsync(key)`.
    - If pack missing and `Required` → throw with actionable error (DB hash, expected
@@ -110,12 +103,8 @@ Extract the compilation logic from
   `ISqlDialectRules` as constructor dependencies.
 - Implements `IRuntimeMappingSetCompiler`.
 - Performs `EffectiveSchemaSet` cloning, `DerivedRelationalModelSetBuilder` invocation, and
-  `MappingSetCompiler.Compile(artifact)` with the complete
-  `DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)` — the same logic currently in
+  `MappingSetCompiler.Compile()` — the same logic currently in
   `PostgresqlRuntimeMappingSetCompiler.CompileAsync()`.
-- Never calls the plan compiler with `artifact.Model` alone. `artifact.ExecutorRequirements` is the authoritative input
-  for provider-finalized same-statement reference-resolution plans; diagnostics remain audit output and are not
-  reconstructed into runtime requirements.
 - Validates that the resolved `MappingSetKey` matches the expected key (same guard as the
   existing Pgsql compiler).
 
@@ -192,9 +181,4 @@ Add tests in the appropriate `*.Tests.Unit` projects:
 4. **`RuntimeMappingSetCompiler` tests** (`Backend.Plans.Tests.Unit`):
    - Compiles successfully for Pgsql dialect.
    - Compiles successfully for Mssql dialect.
-   - For a safely breakable certified-cycle fixture, both dialects preserve binding resolution policy and compile every
-     exact same-statement plan from the complete artifact; compare plan keys, retained routes, future-vector sources,
-     occurrence/target correlation, normalized correlation/post-verification SQL hashes, and result ordinals with the
-     equivalent pack-decoded mapping set.
-   - Reject or fail a test double that drops `ExecutorRequirements` and attempts to compile from `artifact.Model` alone.
    - Key mismatch between expected and resolved → throws `InvalidOperationException`.

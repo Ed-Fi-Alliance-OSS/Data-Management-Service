@@ -13,9 +13,6 @@ This baseline redesign persists referenced identity natural-key fields alongside
 - no referenced-table joins for reference identity fields,
 - no union-view projection required for abstract references.
 
-Internal identity-lineage anchor columns are propagation-only metadata. They are not JSON-bound and are never emitted in
-the reconstructed reference object.
-
 Align with:
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` (reference reconstitution),
 - `reference/design/backend-redesign/design-docs/data-model.md` (propagated identity columns and abstract identity tables).

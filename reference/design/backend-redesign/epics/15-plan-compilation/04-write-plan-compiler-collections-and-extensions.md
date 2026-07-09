@@ -22,10 +22,6 @@ Design references:
 ## Scope (What This Story Is Talking About)
 
 - Owns compilation of `ResourceWritePlan` / `TableWritePlan` for resources stored as relational tables (non-descriptor resources).
-- Consumes the complete `DerivedRelationalModelArtifact`, not only `.Model`: provider-finalized
-  `ExecutorRequirements` supply the origin/case/route/correlation facts needed for root and non-collection 1:1 certified
-  same-statement plans. Requirements whose receiver is a stable collection row are compiled by E15-S04b after its merge
-  bindings and persisted occurrence locators exist.
 - Owns the SQL + binding metadata required by replace semantics:
   - delete existing child/extension rows for a parent key, then
   - bulk insert the current payload rows.
@@ -39,16 +35,6 @@ Design references:
   - `InsertSql` for all tables,
   - `UpdateSql` for any 1:1 table where applicable (table key contains no `Ordinal`),
   - `DeleteByParentSql` for non-root tables (child/collection/_ext).
-- For every `SameStatementReferenceResolutionRequirement` whose receiver is root or non-collection 1:1, the resource
-  plan contains exactly one executor plan with:
-  - PUT-by-`DocumentUuid` origin/case selection,
-  - the matched existing-row target-id source and stable row locator,
-  - canonical dialect locking/correlation SQL,
-  - a complete public/anchor/terminal-id future vector using proved changed origin bindings, locked unchanged target
-    columns, and the stored terminal id, with no dependency on deferred target ids/anchors, and
-  - cache-bypassing post-write referential-id/anchor verification SQL with typed result ordinals.
-- PostgreSQL compiles these plans from fixed-cascade requirements without topology classification. SQL Server compiles
-  them from its selected assignment requirements; no compiler re-derives or changes FK actions.
 - For non-root 1:1 tables (including root-scope `_ext` tables):
   - `InsertSql` is used when the scoped row is newly present,
   - `UpdateSql` is used when the scoped row already exists, and
@@ -89,10 +75,6 @@ Design references:
   - `_ext` tables,
   - key-unification cases (including presence gating),
   - deterministic SQL output (pgsql + mssql).
-  - the direct-`CycleB` requirement for every identity subset, including an anchor-bearing combined case, and negative
-    missing/recursive/incomplete requirements.
-  - rejection of any collection-backed requirement in this baseline compiler unless it is explicitly handed to the
-    E15-S04b compiler stage.
 - When fixture-based artifacts are emitted, `mappingset.manifest.json` includes stable, normalized SQL hashes and binding-order metadata for:
   - `InsertSql` (all tables),
   - `UpdateSql` (any 1:1 table when applicable),
@@ -107,7 +89,5 @@ Design references:
 2. Implement `DeleteByParentSql` compilation for all non-root tables using the parent key prefix semantics (`DocumentId` + parent ordinals).
 3. Implement dialect-aware batching metadata (e.g., SQL Server ~2100 parameter limit) and store it in `TableWritePlan` for bulk insert executors.
 4. Enforce key-unification compile-time invariants (exclude `UnifiedAlias`, require complete `Precomputed` coverage by `KeyUnificationWritePlan`).
-5. Compile certified same-statement plans for root/non-collection 1:1 requirements and leave collection-backed
-   requirements for E15-S04b without silently dropping them.
-6. Add unit tests for deterministic output and key-unification invariants on representative models (pgsql + mssql).
-7. Add (or extend) small fixtures that cover collections + `_ext` + key unification and validate write-plan output via `mappingset.manifest.json` golden comparisons (pgsql + mssql).
+5. Add unit tests for deterministic output and key-unification invariants on representative models (pgsql + mssql).
+6. Add (or extend) small fixtures that cover collections + `_ext` + key unification and validate write-plan output via `mappingset.manifest.json` golden comparisons (pgsql + mssql).

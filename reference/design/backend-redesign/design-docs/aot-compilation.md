@@ -22,10 +22,8 @@ The goal is to support **ahead-of-time compilation** into a redistributable arti
 In the baseline redesign, DMS:
 
 1. Loads `ApiSchema.json` (core + extensions) and builds an in-memory schema model.
-2. Builds one dialect-specific **DerivedRelationalModelArtifact** for the complete effective schema set, including
-   identity-lineage anchor closure and finalized global FK actions.
-3. Compiles global dialect-specific lineage-anchor resolution plans and per-resource read/write plans only after that
-   global model is final, then projects the result into `MappingSet`.
+2. Derives a **RelationalResourceModel** per resource type from that schema.
+3. Compiles **dialect-specific SQL plans** (read/write) from the model.
 4. Caches derived models/plans so requests do not repeat compilation work.
 
 ### 1.2 Optional AOT mode (mapping packs)
@@ -68,9 +66,7 @@ At runtime, after a request is routed to a database instance and DMS reads that 
 - **`EffectiveSchemaHash`**: deterministic SHA-256 fingerprint of the effective schema set and mapping-version constants (see `data-model.md`).
 - **Dialect**: the target SQL engine (e.g., PostgreSQL vs SQL Server).
   - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
-- **Relational mapping version**: a DMS-controlled constant used in selection and fingerprinting. The complete backend
-  redesign, including DMS-1129, defines the initial `v1` contract in place; later post-baseline breaking mapping changes
-  require a new value.
+- **Relational mapping version**: a DMS-controlled constant that forces a mismatch when mapping rules change even if `ApiSchema.json` content is unchanged.
 - **Mapping pack**: a redistributable artifact containing precompiled mapping objects for a single effective schema hash (and dialect).
 - **Pack format version**: a binary format/protocol version for the mapping pack serialization itself.
   - Purpose: allow the DMS consumer to detect “I do/do not know how to decode this pack” independent of `EffectiveSchemaHash`.
@@ -105,34 +101,18 @@ Pack contains:
   - ordered list of `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)` entries (ids are `smallint`, typically 1..N),
   - used by DMS runtime to validate `dms.ResourceKey` and to translate between `ResourceKeyId` (stored in core tables) and `QualifiedResourceName` (plan cache key),
 - per-resource compiled plans:
-  - `ResourceWritePlan` (including `TableWritePlan` SQL/bindings and any certified
-    `SameStatementReferenceResolutionPlan` values with pre/post correlation commands)
+  - `ResourceWritePlan` (including `TableWritePlan` SQL and bindings)
   - `ResourceReadPlan` (including `TableReadPlan` hydration SQL and executor-ready projection metadata)
     - table-local reference identity projection metadata (`ReferenceIdentityProjectionTablePlan`)
     - page-batched descriptor URI projection plans (`DescriptorProjectionPlan`)
-  - model-level reference binding metadata required by reconstitution (e.g., `DocumentReferenceBinding` /
-    `DescriptorEdgeSource`) plus each table's ordered `PersistedOccurrenceIdentity` used by collection merge and certified
-    receiver correlation
-- global `LineageAnchorResolutionPlan` values for every used non-empty `(target resource, AnchorSetId)` variant, including
-  canonical set-input SQL, batching metadata, and typed target-`DocumentId`/lineage result ordinals
-- minimal `AbstractTargetPropagationKey` records for every abstract identity-table variant targeted by a finalized FK;
-  these let pack load validate the abstract target key/vector even though abstract `ResourcePack`s omit a relational model
-- expanded finalized foreign keys from the global model, including stable physical FK and minimal `AnchorSetId` values,
-  identity/lineage-anchor/`DocumentId` vectors, and final provider actions
+  - model-level reference binding metadata required by reconstitution (e.g., `DocumentReferenceBinding` / `DescriptorEdgeSource`)
 - any additional metadata needed to execute those plans without re-deriving/compiling from `ApiSchema.json`.
-
-The pack does not contain SQL Server solver modes, decisions, coverage certificates, or shared abstract-member/anchor
-derivation inventories. Those are build/DDL/manifest concerns; runtime consumes the finalized columns, constraints, and
-bindings.
 
 Authorization note:
 - Mapping packs do not embed token-dependent authorization SQL (which depends on caller context and configured strategy sets). Authorization is applied at runtime using the `auth.*` companion objects and token-derived context described in `auth.md`.
 - Any schema-derived authorization metadata that benefits from precomputation (e.g., mapping `securableElements` JSON paths to DB columns/joins) can be derived at startup from the loaded effective schema and cached keyed by `EffectiveSchemaHash` alongside mapping-set selection.
 
 Logical plan pack identity is `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`.
-
-The initial backend redesign remains `RelationalMappingVersion = v1`; no dialect-specific physical-model hash is added to
-the envelope or lookup key. Pre-production packs are regenerated from the complete v1 producer.
 
 For file distribution, the lookup key is typically `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)` (directory + filename), and `PackFormatVersion` is validated from the envelope after reading.
 
@@ -251,7 +231,7 @@ Recommended:
 - Load/validate/decompress/deserialize only when a request targets a DB hash that is not already cached.
 
 Concurrency:
-- Ensure only one thread loads a given pack at a time (use `ConcurrentDictionary<MappingSetKey, Lazy<Task<...>>>`).
+- Ensure only one thread loads a given pack at a time (use `ConcurrentDictionary<MappingPackKey, Lazy<Task<...>>>`).
 
 ---
 
@@ -303,33 +283,48 @@ enum SqlDialect {
 }
 
 message MappingPackEnvelope {
+  // Self-identifying header
   string effective_schema_hash = 1;
   SqlDialect dialect = 2;
   string relational_mapping_version = 3;
   uint32 pack_format_version = 4;
-  CompressionAlgorithm compression_algorithm = 5;
-  uint64 zstd_uncompressed_payload_length = 6;
-  bytes payload_sha256 = 7;
-  string producer = 8;
-  string producer_version = 9;
-  uint64 produced_at_unix_ms_utc = 10;
-  bytes payload_zstd = 11;
+
+  // Payload is always MappingPackPayload encoded as protobuf, then zstd-compressed.
+  uint64 zstd_uncompressed_payload_length = 5;
+
+  // Zstd-compressed bytes of MappingPackPayload
+  bytes payload_zstd = 10;
 }
 
 message MappingPackPayload {
-  string api_schema_format_version = 1;
-  repeated SchemaComponent schema_components = 2;
-  uint32 resource_key_count = 10;
-  bytes resource_key_seed_hash = 11;
-  repeated ResourceKeyEntry resource_keys = 12;
-  repeated ResourcePack resources = 20;
-  repeated LineageAnchorResolutionPlan lineage_anchor_resolution_plans = 21;
-  repeated AbstractTargetPropagationKey abstract_target_propagation_keys = 22;
+  // The payload schema can evolve independently, but should remain compatible.
+  repeated ResourcePack resources = 1;
+  repeated ResourceKeyEntry resource_keys = 2;
+}
+
+message ResourceKeyEntry {
+  // Deterministic id (seeded by DDL generator) used in core tables.
+  uint32 resource_key_id = 1; // must fit in SQL smallint
+  string project_name = 2;
+  string resource_name = 3;
+  string resource_version = 4; // SemVer from ApiSchema projectSchema.projectVersion
+}
+
+message ResourcePack {
+  string project_name = 1;
+  string resource_name = 2;
+
+  // Plan packs always include dialect-specific compiled plans.
+  ResourceWritePlan write_plan = 21;
+  ResourceReadPlan read_plan = 22;
+}
+
+message ResourceReadPlan {
+  repeated TableReadPlan table_plans = 1;
+  repeated ReferenceIdentityProjectionTablePlan reference_identity_projection_table_plans = 2;
+  repeated DescriptorProjectionPlan descriptor_projection_plans = 3;
 }
 ```
-
-This is only the high-level envelope sketch. The field-complete, numbered v1 payload contract, including
-`LineageAnchorResolutionPlan`, is normative in [mpack-format-v1.md](mpack-format-v1.md).
 
 Notes:
 - The **envelope** is uncompressed protobuf.
@@ -346,14 +341,8 @@ A CLI utility (can be a new executable or a mode of the DDL generator) that:
 
 - loads the effective `ApiSchema.json` set,
 - computes `EffectiveSchemaHash` (same algorithm as `data-model.md`),
-- builds one `DerivedRelationalModelArtifact` for the complete effective schema set,
-  - derives minimal lineage-anchor/`AnchorSetId` propagation-key variants,
-  - assigns PostgreSQL's fixed FK actions without classification, or runs SQL Server's global value-flow/error-1785
-    selector (including safe cycle breaking),
-- compiles one `MappingSet` from the complete success artifact: the finalized global model supplies physical shape and
-  `ExecutorRequirements` supplies provider-finalized same-statement route/case/value facts. Output includes the runtime
-  model projection, abstract-target validation records, global lineage-anchor resolution plans, and per-resource
-  dialect-specific plans,
+- derives `RelationalResourceModel` per resource,
+- compiles dialect-specific plans,
 - serializes to protobuf payload,
 - zstd-compresses it,
 - writes the `.mpack` file.
@@ -371,8 +360,6 @@ dms-schema pack build \
 Notes:
 - A single CLI with subcommands is recommended because DDL generation and pack building share the same compilation pipeline (schema load/merge, hashing, derived model, dialect SQL compilation).
 - Alternate layout (equivalent): split `dms-schema` into separate executables (DDL/provisioning vs packs), but require they reference the same underlying compilation libraries and constants.
-- DDL, runtime compilation fallback, and pack production MUST call the same full-schema builder. No producer may derive or
-  classify one resource at a time.
 
 ### 10.2 Example producer code (sketch)
 
@@ -384,29 +371,20 @@ public sealed class MappingPackBuilder
         ApiSchemaDocuments docs = LoadAndMergeApiSchema(options.ApiSchemaPath);
         string effectiveSchemaHash = EffectiveSchemaHashCalculator.Compute(docs, options.RelMappingVersion);
 
-        // This is the same set-level builder used by DDL and runtime compilation fallback.
-        // It either returns one complete artifact or throws RelationalModelDerivationException.
-        DerivedRelationalModelArtifact artifact = DerivedRelationalModelSetBuilder.Build(
-            docs,
-            options.Dialect,
-            options.RelMappingVersion
-        );
+        MappingPackPayload payload = new();
 
-        var key = new MappingSetKey(
-            effectiveSchemaHash,
-            options.Dialect,
-            options.RelMappingVersion
-        );
+        foreach (var resource in docs.GetAllResources())
+        {
+            RelationalResourceModel model = RelationalResourceModelBuilder.Build(resource.Schema);
+            ResourcePlans plans = RelationalPlanCompiler.CompileAllPlans(model, options.Dialect, docs);
 
-        // One compiler projects the finalized model, including abstract-target key validation
-        // records, and compiles both global lineage-anchor resolution plans and all per-resource
-        // read/write plans.
-        MappingSet mappingSet = RelationalMappingSetCompiler.Compile(key, artifact);
-
-        // Serialization includes the runtime projection, abstract-target key records, global
-        // projection plans, and expanded finalized FK vectors/actions, but intentionally omits
-        // artifact.Diagnostics and all DDL-only inventories/SQL Server certificates.
-        MappingPackPayload payload = MappingPackPayloadSerializer.Serialize(mappingSet);
+            payload.Resources.Add(new ResourcePack
+            {
+                ProjectName = resource.ProjectName,
+                ResourceName = resource.ResourceName,
+                Plans = SerializePlans(plans),
+            });
+        }
 
         byte[] payloadBytes = payload.ToByteArray(); // generated by contracts package
         byte[] compressed = CompressZstd(payloadBytes);
@@ -419,7 +397,6 @@ public sealed class MappingPackBuilder
             Dialect = options.Dialect,
             RelationalMappingVersion = options.RelMappingVersion,
             PackFormatVersion = MappingPackFormat.V1,
-            CompressionAlgorithm = CompressionAlgorithm.Zstd,
             ZstdUncompressedPayloadLength = (ulong)payloadBytes.Length,
             PayloadSha256 = ByteString.CopyFrom(sha),
             Producer = "dms-mappingpack",
@@ -491,12 +468,12 @@ public sealed class FileMappingPackStore : IMappingPackStore
 
     public FileMappingPackStore(string rootPath) => _rootPath = rootPath;
 
-    public async Task<MappingPackPayload?> TryLoadPayloadAsync(MappingSetKey key, CancellationToken ct)
+    public async Task<MappingPackEnvelope?> TryGetAsync(MappingPackKey key, CancellationToken ct)
     {
         string dialectDir = key.Dialect switch
         {
-            SqlDialect.Pgsql => "pgsql",
-            SqlDialect.Mssql => "mssql",
+            SqlDialect.SqlDialectPgsql => "pgsql",
+            SqlDialect.SqlDialectMssql => "mssql",
             _ => throw new InvalidOperationException("Unsupported dialect")
         };
 
@@ -504,14 +481,10 @@ public sealed class FileMappingPackStore : IMappingPackStore
             $"dms-mappingpack-{key.RelationalMappingVersion}-{key.EffectiveSchemaHash}.mpack";
 
         string path = Path.Combine(_rootPath, dialectDir, fileName);
-        if (!File.Exists(path))
-        {
-            return null;
-        }
+        if (!File.Exists(path)) return null;
 
         byte[] bytes = await File.ReadAllBytesAsync(path, ct);
-        MappingPackEnvelope envelope = MappingPackEnvelope.Parser.ParseFrom(bytes);
-        return MappingPackLoader.LoadPayload(envelope, key);
+        return MappingPackEnvelope.Parser.ParseFrom(bytes);
     }
 }
 ```
@@ -521,7 +494,7 @@ public sealed class FileMappingPackStore : IMappingPackStore
 ```csharp
 public static class MappingPackLoader
 {
-    public static MappingPackPayload LoadPayload(MappingPackEnvelope env, MappingSetKey expectedKey)
+    public static MappingPackPayload LoadPayload(MappingPackEnvelope env, MappingPackKey expectedKey)
     {
         if (!string.Equals(env.EffectiveSchemaHash, expectedKey.EffectiveSchemaHash, StringComparison.Ordinal))
             throw new InvalidOperationException("Pack effective hash mismatch");
@@ -532,17 +505,8 @@ public static class MappingPackLoader
         if (!string.Equals(env.RelationalMappingVersion, expectedKey.RelationalMappingVersion, StringComparison.Ordinal))
             throw new InvalidOperationException("Pack mapping version mismatch");
 
-        if (env.PackFormatVersion != MappingPackFormat.V1)
+        if (env.PackFormatVersion != expectedKey.PackFormatVersion)
             throw new InvalidOperationException("Pack format version mismatch");
-
-        if (env.CompressionAlgorithm != CompressionAlgorithm.Zstd)
-            throw new InvalidOperationException("Pack compression algorithm mismatch");
-
-        if (
-            env.ZstdUncompressedPayloadLength is 0
-            || env.ZstdUncompressedPayloadLength > MappingPackLoadLimits.MaxUncompressedPayloadLength
-        )
-            throw new InvalidOperationException("Pack uncompressed payload length is invalid");
 
         byte[] compressed = env.PayloadZstd.ToByteArray();
         byte[] payloadBytes = DecompressZstd(compressed, (long)env.ZstdUncompressedPayloadLength);
@@ -589,7 +553,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
 {
     private readonly IMappingPackStore _store;
     private readonly IRuntimeCompiler _runtimeCompiler;
-    private readonly ConcurrentDictionary<MappingSetKey, Lazy<Task<MappingSet>>> _cache = new();
+    private readonly ConcurrentDictionary<MappingPackKey, Lazy<Task<IMappingSet>>> _cache = new();
 
     public MappingSetProvider(IMappingPackStore store, IRuntimeCompiler runtimeCompiler)
     {
@@ -597,18 +561,19 @@ public sealed class MappingSetProvider : IMappingSetProvider
         _runtimeCompiler = runtimeCompiler;
     }
 
-    public Task<MappingSet> GetOrCreateAsync(MappingSetKey key, CancellationToken ct)
+    public Task<IMappingSet> GetOrCreateAsync(MappingPackKey key, CancellationToken ct)
     {
-        var lazy = _cache.GetOrAdd(key, k => new Lazy<Task<MappingSet>>(() => LoadOrCompileAsync(k, ct)));
+        var lazy = _cache.GetOrAdd(key, k => new Lazy<Task<IMappingSet>>(() => LoadOrCompileAsync(k, ct)));
         return lazy.Value;
     }
 
-    private async Task<MappingSet> LoadOrCompileAsync(MappingSetKey key, CancellationToken ct)
+    private async Task<IMappingSet> LoadOrCompileAsync(MappingPackKey key, CancellationToken ct)
     {
-        MappingPackPayload? payload = await _store.TryLoadPayloadAsync(key, ct);
-        if (payload is not null)
+        var env = await _store.TryGetAsync(key, ct);
+        if (env != null)
         {
-            return MappingSet.FromPayload(key, payload);
+            var payload = MappingPackLoader.LoadPayload(env, key);
+            return MappingSet.FromPayload(payload);
         }
 
         // Optional fallback: compile at runtime if allowed by config.

@@ -90,7 +90,7 @@ Notes:
 | E04 | [Verification Harness](04-verification-harness/EPIC.md) | E00–E03 | Fixture runner + determinism/snapshot/golden/DB-apply tests |
 | E05 | [Mapping Pack Generation and Consumption (Optional)](05-mpack-generation/EPIC.md) | E00–E02, E15 | `.mpack` build/validate/load; enables AOT mapping distribution |
 | E06 | [Runtime Schema Validation & Mapping Set Selection](06-runtime-mapping-selection/EPIC.md) | E00, E03, E15 (and E05 optional) | Per-DB fingerprint validation + mapping selection + caching; removes hot reload |
-| E07 | [Relational Write Path (POST/PUT)](07-relational-write-path/EPIC.md) | E06, E01, E02, E15 | End-to-end relational writes; includes write-side current-document reconstitution for profile projection, populates propagated reference identity values plus lineage anchors, and relies on DB triggers for stamps/identity maintenance |
+| E07 | [Relational Write Path (POST/PUT)](07-relational-write-path/EPIC.md) | E06, E01, E02, E15 | End-to-end relational writes; includes write-side current-document reconstitution for profile projection, populates propagated reference identity columns, and relies on DB triggers for stamps/identity maintenance |
 | E08 | [Relational Read Path (GET + Query)](08-relational-read-path/EPIC.md) | E06, E01, E02 | End-to-end relational reads and reconstitution (incl. abstract+descriptor projection) |
 | E09 | [Strict Identity Maintenance & Concurrency](09-identity-concurrency/EPIC.md) | E07, E02 | Transactional referential-identity correctness + cascade/trigger propagation semantics + deadlock retry |
 | E10 | [Update Tracking + Change Queries](10-update-tracking-change-queries/EPIC.md) | E07, E08, E02 | Stored `_etag/_lastModifiedDate/ChangeVersion`, journaling triggers, change selection |
@@ -128,11 +128,11 @@ Epic: `01-relational-model/EPIC.md`
 | E01-S02 | [`02-naming-and-overrides.md`](01-relational-model/02-naming-and-overrides.md) | E01-S00 | E01-S01 | Deterministic naming + `relational.nameOverrides` parsing + collision/length rules |
 | E01-S03 | [`03-ext-mapping.md`](01-relational-model/03-ext-mapping.md) | E01-S00, E01-S02 | E01-S01 | `_ext` model derivation (extension schemas/tables aligned to base keys) |
 | E01-S04 | [`04-abstract-union-views.md`](01-relational-model/04-abstract-union-views.md) | E01-S01, E01-S02 | — | Abstract union view model (identity select-list + ordering + casts) |
-| E01-S05 | [`05-relational-model-manifest.md`](01-relational-model/05-relational-model-manifest.md) | E01-S08 | — | `relational-model.manifest.json` emitter (stable ordering) |
+| E01-S05 | [`05-relational-model-manifest.md`](01-relational-model/05-relational-model-manifest.md) | E01-S00–E01-S04, E01-S07 | — | `relational-model.manifest.json` emitter (stable ordering) |
 | E01-S06 | [`06-descriptor-resource-mapping.md`](01-relational-model/06-descriptor-resource-mapping.md) | E01-S00 | E01-S01 | Descriptor resource mapping to `dms.Descriptor` (no per-descriptor tables) |
-| E01-S07 | [`07-index-and-trigger-inventory.md`](01-relational-model/07-index-and-trigger-inventory.md) | E01-S00–E01-S04, E01-S06, E01-S11 | — | Derived index + trigger inventories (DDL intent; shared by manifest + DDL) |
-| E01-S08 | [`08-derived-relational-model-set-builder.md`](01-relational-model/08-derived-relational-model-set-builder.md) | E00-S00, E01-S07 | — | Set-level orchestration: build the complete `DerivedRelationalModelArtifact` |
-| E01-S11 | [`11-stable-collection-row-identity.md`](01-relational-model/11-stable-collection-row-identity.md) | E01-S00–E01-S03 | — | Stable `CollectionItemId` / `ParentCollectionItemId` collection/common-type key model + extension alignment |
+| E01-S07 | [`07-index-and-trigger-inventory.md`](01-relational-model/07-index-and-trigger-inventory.md) | E01-S00–E01-S04, E01-S06 | — | Derived index + trigger inventories (DDL intent; shared by manifest + DDL) |
+| E01-S08 | [`08-derived-relational-model-set-builder.md`](01-relational-model/08-derived-relational-model-set-builder.md) | E00-S00 | E01-S00–E01-S07 | Set-level orchestration: build `DerivedRelationalModelSet` from the effective schema set |
+| E01-S11 | [`11-stable-collection-row-identity.md`](01-relational-model/11-stable-collection-row-identity.md) | E01-S00–E01-S03, E01-S07 | E01-S05 | Stable `CollectionItemId` / `ParentCollectionItemId` collection/common-type key model + extension alignment |
 
 ### E02 — Deterministic DDL Emission (PostgreSQL + SQL Server)
 
@@ -197,7 +197,7 @@ Epic: `06-runtime-mapping-selection/EPIC.md`
 | --- | --- | --- | --- | --- |
 | E06-S00 | [`00-read-effective-schema.md`](06-runtime-mapping-selection/00-read-effective-schema.md) | E02-S01, E03-S01 | — | Runtime DB fingerprint reader + per-connection-string cache |
 | E06-S01 | [`01-resourcekey-validation.md`](06-runtime-mapping-selection/01-resourcekey-validation.md) | E06-S00, E00-S03 | — | Fast-path seed gate via `dms.EffectiveSchema`; slow-path `dms.ResourceKey` diff |
-| E06-S02 | [`02-mapping-set-selection.md`](06-runtime-mapping-selection/02-mapping-set-selection.md) | E06-S00, E06-S01, E15-S06 | E05-S05 | Mapping set selection/caching (pack-backed optional; runtime compile fallback) |
+| E06-S02 | [`02-mapping-set-selection.md`](06-runtime-mapping-selection/02-mapping-set-selection.md) | E06-S00, E06-S01, E15-S03 | E05-S05 | Mapping set selection/caching (pack-backed optional; runtime compile fallback) |
 | E06-S03 | [`03-config-and-failure-modes.md`](06-runtime-mapping-selection/03-config-and-failure-modes.md) | E06-S02 | — | Config surface + error contracts + multi-DB-safe failure behavior |
 | E06-S04 | [`04-remove-hot-reload.md`](06-runtime-mapping-selection/04-remove-hot-reload.md) | E06-S00–E06-S03 | — | Remove schema reload/hot-reload hooks; align tests/workflow to provisioning model |
 
@@ -208,7 +208,7 @@ Epic: `07-relational-write-path/EPIC.md`
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
 | E07-S00 | [`00-core-extraction-location.md`](07-relational-write-path/00-core-extraction-location.md) | — | — | Core emits concrete JSON locations for each extracted document reference |
-| E07-S01 | [`01-reference-and-descriptor-resolution.md`](07-relational-write-path/01-reference-and-descriptor-resolution.md) | E07-S00, E02-S01, E15-S06 | E09-S01 | Bulk resolver + descriptor validation + compiled lineage-plan execution |
+| E07-S01 | [`01-reference-and-descriptor-resolution.md`](07-relational-write-path/01-reference-and-descriptor-resolution.md) | E07-S00, E02-S01 | E09-S01 | Bulk `ReferentialId→DocumentId` resolver + descriptor discriminator validation |
 | E07-S01a | [`01a-core-profile-delivery-plan.md`](07-relational-write-path/01a-core-profile-delivery-plan.md) | — | — | Core-owned profile delivery plan spike + follow-on story inventory for profile support |
 | E07-S01a-C1 | [`01a-c1-compiled-scope-adapter-and-address-derivation.md`](07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md) | E07-S01a | — | Shared compiled-scope adapter contract + address derivation engine (Core, Tier 0) |
 | E07-S01a-C2 | [`01a-c2-semantic-identity-compatibility-validation.md`](07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md) | E07-S01a-C1, E07-S01a-C8 | — | Pre-runtime gate rejecting profiles hiding semantic-identity fields (Core, Tier 1) |
@@ -224,7 +224,7 @@ Epic: `07-relational-write-path/EPIC.md`
 | E07-S02b | [`02b-profile-applied-request-flattening.md`](07-relational-write-path/02b-profile-applied-request-flattening.md) | E07-S02, E07-S01b | — | Follow-on flattener integration: adapt `ProfileAppliedWriteRequest.WritableRequestBody` to the flattener without backend-side re-filtering |
 | E07-S03 | [`03-persist-and-batch.md`](07-relational-write-path/03-persist-and-batch.md) | E07-S02, E15-S04b | E10-S00 | Transactional persist executor foundation (no-profile stable-identity merge semantics, batching, guarded no-op freshness) |
 | E07-S03b | [`03b-profile-aware-persist-executor.md`](07-relational-write-path/03b-profile-aware-persist-executor.md) | E07-S03, E07-S02b, E07-S01b, E07-S01c | — | Profile-aware persist executor follow-on (hidden preservation, creatability, profiled guarded no-op) |
-| E07-S04 | [`04-propagated-reference-identity-columns.md`](07-relational-write-path/04-propagated-reference-identity-columns.md) | E07-S03 | E01-S01 | Populate propagation-complete reference identity values and lineage anchors for FK cascades |
+| E07-S04 | [`04-propagated-reference-identity-columns.md`](07-relational-write-path/04-propagated-reference-identity-columns.md) | E07-S03 | E01-S01 | Populate propagated reference identity columns for FK cascades |
 | E07-S05 | [`05-write-error-mapping.md`](07-relational-write-path/05-write-error-mapping.md) | E07-S03 | E01-S02 | DB constraint error mapping (pgsql/mssql parity) |
 | E07-S05b | [`05b-profile-error-classification.md`](07-relational-write-path/05b-profile-error-classification.md) | E07-S01a-C8, E07-S01b, E07-S03b | — | Profile contract/runtime error classification + API mapping |
 | E07-S06 | [`06-descriptor-writes.md`](07-relational-write-path/06-descriptor-writes.md) | E06-S02, E02-S05 | E01-S06 | Descriptor POST/PUT writes to `dms.Descriptor` + descriptor referential identities |
@@ -251,7 +251,7 @@ Epic: `09-identity-concurrency/EPIC.md`
 | E09-S00 | [`00-locking-and-retry.md`](09-identity-concurrency/00-locking-and-retry.md) | E02-S01 | — | Deadlock retry policy for cascade/trigger writes |
 | E09-S01 | [`01-referentialidentity-maintenance.md`](09-identity-concurrency/01-referentialidentity-maintenance.md) | E09-S00, E02-S06 | — | Transactional writes to `dms.ReferentialIdentity` (primary + alias rows) |
 | E09-S02 | [`02-identity-change-detection.md`](09-identity-concurrency/02-identity-change-detection.md) | E07-S02 | — | Detect “identity projection changed” from write inputs/outputs |
-| E09-S03 | [`03-identity-propagation.md`](09-identity-concurrency/03-identity-propagation.md) | E09-S00–E09-S02, E07-S04, E15-S04b | E12-S03 | Identity propagation plus transactional certified correlation/verification (no closure traversal) |
+| E09-S03 | [`03-identity-propagation.md`](09-identity-concurrency/03-identity-propagation.md) | E09-S00, E09-S01, E07-S04 | E12-S03 | Identity propagation via cascades/triggers (no closure traversal) |
 | E09-S04 | [`04-cache-invalidation.md`](09-identity-concurrency/04-cache-invalidation.md) | E06-S02, E09-S01 | — | Post-commit cache invalidation for identity resolution |
 
 ### E10 — Update Tracking (`_etag/_lastModifiedDate`) + Change Queries (`ChangeVersion`)
@@ -320,10 +320,10 @@ Epic: `15-plan-compilation/EPIC.md`
 | E15-S01 | [`01-plan-sql-foundations.md`](15-plan-compilation/01-plan-sql-foundations.md) | E02-S00 | — | Shared plan SQL writer/canonicalization + query plan foundations |
 | E15-S02 | [`02-plan-contracts-and-deterministic-bindings.md`](15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md) | E15-S01, E01-S05 | E01-S02 | Plan contracts + deterministic parameter naming/binding metadata |
 | E15-S03 | [`03-thin-slice-runtime-plan-compilation-and-cache.md`](15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md) | E15-S02 | E01-S02 | Root-only plan compiler + runtime cache/provider (first usable runtime compile fallback) |
-| E15-S04 | [`04-write-plan-compiler-collections-and-extensions.md`](15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md) | E15-S03, E01-S08 | — | Initial child/extension write-plan baseline plus root/1:1 certified plans |
+| E15-S04 | [`04-write-plan-compiler-collections-and-extensions.md`](15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md) | E15-S03 | — | Initial child/extension write-plan baseline (replace semantics, batching) |
 | E15-S04b | [`04b-stable-collection-merge-plans.md`](15-plan-compilation/04b-stable-collection-merge-plans.md) | E01-S11, E15-S04 | — | Stable-identity collection merge write-plan retrofit |
 | E15-S05 | [`05-read-plan-compiler-hydration.md`](15-plan-compilation/05-read-plan-compiler-hydration.md) | E15-S03 | — | Full hydration read plans (`SelectByKeysetSql`) for all tables |
-| E15-S06 | [`06-projection-plan-compilers.md`](15-plan-compilation/06-projection-plan-compilers.md) | E01-S08, E15-S04b, E15-S05 | E15-S04 | Projection plans (reference identity + descriptor URI + demanded lineage anchors) |
+| E15-S06 | [`06-projection-plan-compilers.md`](15-plan-compilation/06-projection-plan-compilers.md) | E15-S05 | E15-S04, E15-S04b | Projection plans (reference identity + descriptor URI) |
 
 ---
 
@@ -332,7 +332,7 @@ Epic: `15-plan-compilation/EPIC.md`
 This is the smallest “end-to-end usable” spine that enables: generate DDL → provision DB → validate DB fingerprint → write/read/delete a small resource.
 
 1. E00-S00 → E00-S01 → E00-S02 → E00-S03 → E00-S04
-2. E01-S00 → E01-S01 → E01-S02 → E01-S03 → E01-S04 → E01-S11 → E01-S07 → E01-S08 → E01-S05
+2. E01-S00 → E01-S01 → E01-S02 → E01-S03 → E01-S04 → E01-S05 → E01-S11
 3. E02-S00 → E02-S01 → E02-S06 → E02-S02 → E02-S07 → E02-S03 → E02-S04
 4. E03-S00 → E03-S01 → E03-S02
 5. E15-S01 → E15-S02 → E15-S03 → E15-S04 → E15-S04b → E15-S05 → E15-S06
@@ -440,7 +440,12 @@ Recommended Jira link creation:
 | Hard | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E01-S03` | `DMS-932` | `01-relational-model/03-ext-mapping.md` |
 | Hard | `E01-S01` | `DMS-930` | `01-relational-model/01-reference-and-constraints.md` | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` |
 | Hard | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` |
-| Hard | `E01-S08` | `DMS-1033` | `01-relational-model/08-derived-relational-model-set-builder.md` | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` |
+| Hard | `E01-S00` | `DMS-929` | `01-relational-model/00-base-schema-traversal.md` | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` |
+| Hard | `E01-S01` | `DMS-930` | `01-relational-model/01-reference-and-constraints.md` | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` |
+| Hard | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` |
+| Hard | `E01-S03` | `DMS-932` | `01-relational-model/03-ext-mapping.md` | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` |
+| Hard | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` |
+| Hard | `E01-S07` | `DMS-945` | `01-relational-model/07-index-and-trigger-inventory.md` | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` |
 | Hard | `E01-S00` | `DMS-929` | `01-relational-model/00-base-schema-traversal.md` | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` |
 | Soft | `E01-S01` | `DMS-930` | `01-relational-model/01-reference-and-constraints.md` | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` |
 | Hard | `E01-S00` | `DMS-929` | `01-relational-model/00-base-schema-traversal.md` | `E01-S07` | `DMS-945` | `01-relational-model/07-index-and-trigger-inventory.md` |
@@ -449,13 +454,6 @@ Recommended Jira link creation:
 | Hard | `E01-S03` | `DMS-932` | `01-relational-model/03-ext-mapping.md` | `E01-S07` | `DMS-945` | `01-relational-model/07-index-and-trigger-inventory.md` |
 | Hard | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` | `E01-S07` | `DMS-945` | `01-relational-model/07-index-and-trigger-inventory.md` |
 | Hard | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` | `E01-S07` | `DMS-945` | `01-relational-model/07-index-and-trigger-inventory.md` |
-| Hard | `E01-S11` | `DMS-1103` | `01-relational-model/11-stable-collection-row-identity.md` | `E01-S07` | `DMS-945` | `01-relational-model/07-index-and-trigger-inventory.md` |
-| Hard | `E01-S00` | `DMS-929` | `01-relational-model/00-base-schema-traversal.md` | `E01-S11` | `DMS-1103` | `01-relational-model/11-stable-collection-row-identity.md` |
-| Hard | `E01-S01` | `DMS-930` | `01-relational-model/01-reference-and-constraints.md` | `E01-S11` | `DMS-1103` | `01-relational-model/11-stable-collection-row-identity.md` |
-| Hard | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E01-S11` | `DMS-1103` | `01-relational-model/11-stable-collection-row-identity.md` |
-| Hard | `E01-S03` | `DMS-932` | `01-relational-model/03-ext-mapping.md` | `E01-S11` | `DMS-1103` | `01-relational-model/11-stable-collection-row-identity.md` |
-| Hard | `E00-S00` | `DMS-923` | `00-effective-schema-hash/00-schema-loader.md` | `E01-S08` | `DMS-1033` | `01-relational-model/08-derived-relational-model-set-builder.md` |
-| Hard | `E01-S07` | `DMS-945` | `01-relational-model/07-index-and-trigger-inventory.md` | `E01-S08` | `DMS-1033` | `01-relational-model/08-derived-relational-model-set-builder.md` |
 | Soft | `E00-S02` | `DMS-925` | `00-effective-schema-hash/02-effective-schema-hash.md` | `E02-S01` | `DMS-937` | `02-ddl-emission/01-core-dms-ddl.md` |
 | Hard | `E02-S00` | `DMS-936` | `02-ddl-emission/00-dialect-abstraction.md` | `E02-S01` | `DMS-937` | `02-ddl-emission/01-core-dms-ddl.md` |
 | Hard | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` | `E02-S02` | `DMS-938` | `02-ddl-emission/02-project-and-resource-ddl.md` |
@@ -520,7 +518,7 @@ Recommended Jira link creation:
 | Soft | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
 | Hard | `E06-S00` | `DMS-975` | `06-runtime-mapping-selection/00-read-effective-schema.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
 | Hard | `E06-S01` | `DMS-976` | `06-runtime-mapping-selection/01-resourcekey-validation.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
-| Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
+| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E06-S03` | `DMS-978` | `06-runtime-mapping-selection/03-config-and-failure-modes.md` |
 | Hard | `E06-S00` | `DMS-975` | `06-runtime-mapping-selection/00-read-effective-schema.md` | `E06-S04` | `DMS-979` | `06-runtime-mapping-selection/04-remove-hot-reload.md` |
 | Hard | `E06-S01` | `DMS-976` | `06-runtime-mapping-selection/01-resourcekey-validation.md` | `E06-S04` | `DMS-979` | `06-runtime-mapping-selection/04-remove-hot-reload.md` |
@@ -528,7 +526,6 @@ Recommended Jira link creation:
 | Hard | `E06-S03` | `DMS-978` | `06-runtime-mapping-selection/03-config-and-failure-modes.md` | `E06-S04` | `DMS-979` | `06-runtime-mapping-selection/04-remove-hot-reload.md` |
 | Hard | `E02-S01` | `DMS-937` | `02-ddl-emission/01-core-dms-ddl.md` | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` |
 | Hard | `E07-S00` | `DMS-981` | `07-relational-write-path/00-core-extraction-location.md` | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` |
-| Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` |
 | Soft | `E09-S01` | `DMS-997` | `09-identity-concurrency/01-referentialidentity-maintenance.md` | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S01b` | `DMS-1106` | `07-relational-write-path/01b-profile-write-context.md` |
 | Hard | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` | `E07-S01b` | `DMS-1106` | `07-relational-write-path/01b-profile-write-context.md` |
@@ -588,8 +585,6 @@ Recommended Jira link creation:
 | Hard | `E07-S04` | `DMS-985` | `07-relational-write-path/04-propagated-reference-identity-columns.md` | `E09-S03` | `DMS-999` | `09-identity-concurrency/03-identity-propagation.md` |
 | Hard | `E09-S00` | `DMS-996` | `09-identity-concurrency/00-locking-and-retry.md` | `E09-S03` | `DMS-999` | `09-identity-concurrency/03-identity-propagation.md` |
 | Hard | `E09-S01` | `DMS-997` | `09-identity-concurrency/01-referentialidentity-maintenance.md` | `E09-S03` | `DMS-999` | `09-identity-concurrency/03-identity-propagation.md` |
-| Hard | `E09-S02` | `DMS-998` | `09-identity-concurrency/02-identity-change-detection.md` | `E09-S03` | `DMS-999` | `09-identity-concurrency/03-identity-propagation.md` |
-| Hard | `E15-S04b` | `DMS-1108` | `15-plan-compilation/04b-stable-collection-merge-plans.md` | `E09-S03` | `DMS-999` | `09-identity-concurrency/03-identity-propagation.md` |
 | Soft | `E12-S03` | `DMS-1018` | `12-ops-guardrails/03-guardrails.md` | `E09-S03` | `DMS-999` | `09-identity-concurrency/03-identity-propagation.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E09-S04` | `DMS-1000` | `09-identity-concurrency/04-cache-invalidation.md` |
 | Hard | `E09-S01` | `DMS-997` | `09-identity-concurrency/01-referentialidentity-maintenance.md` | `E09-S04` | `DMS-1000` | `09-identity-concurrency/04-cache-invalidation.md` |
@@ -642,13 +637,11 @@ Recommended Jira link creation:
 | Hard | `E15-S01` | `DMS-1043` | `15-plan-compilation/01-plan-sql-foundations.md` | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
 | Hard | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` |
 | Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` |
-| Hard | `E01-S08` | `DMS-1033` | `01-relational-model/08-derived-relational-model-set-builder.md` | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` |
 | Hard | `E01-S11` | `DMS-1103` | `01-relational-model/11-stable-collection-row-identity.md` | `E15-S04b` | `DMS-1108` | `15-plan-compilation/04b-stable-collection-merge-plans.md` |
 | Hard | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` | `E15-S04b` | `DMS-1108` | `15-plan-compilation/04b-stable-collection-merge-plans.md` |
 | Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` |
 | Soft | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
-| Hard | `E01-S08` | `DMS-1033` | `01-relational-model/08-derived-relational-model-set-builder.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
-| Hard | `E15-S04b` | `DMS-1108` | `15-plan-compilation/04b-stable-collection-merge-plans.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
+| Soft | `E15-S04b` | `DMS-1108` | `15-plan-compilation/04b-stable-collection-merge-plans.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 | Hard | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 | Hard | `E07-S01a` | `DMS-1110` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` |
 | Hard | `E07-S01a` | `DMS-1110` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01a-C7` | `DMS-1113` | `07-relational-write-path/01a-c7-readable-profile-projection.md` |

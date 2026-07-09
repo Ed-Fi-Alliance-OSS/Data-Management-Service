@@ -29,9 +29,9 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
 - **Preserve per-path presence semantics** for equality-constrained non-reference fields:
   - absent optional paths MUST reconstitute as absent (`NULL` at the binding column), and
   - predicates against a per-path column MUST continue to imply that the path was present.
-- **Remain compatible with every form of identity change** via full-composite FKs, intrinsic target lineage inventory,
-  and least-fixed-point receiver-demanded anchors (PostgreSQL fixed actions without DMS classification; SQL Server-only statement-scoped
-  value-flow/global error-1785 action selection; see [mssql-cascading.md](mssql-cascading.md)).
+- **Remain compatible with identity propagation** via composite FKs and dialect-specific propagation mechanics
+  (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond/cycle cuts; see
+  [mssql-cascading.md](mssql-cascading.md)).
 - **Support both PostgreSQL and SQL Server** with deterministic DDL generation.
 
 ## Non-Goals
@@ -40,11 +40,6 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   - This design applies only when both sides of an equality constraint resolve to columns stored on the **same table
     row scope**.
 - Defining a general cross-table / cross-row equality enforcement mechanism.
-- Making root-to-child or other cross-scope equality propagation part of DMS-1129. Those constraints remain Core-only;
-  `key-unification-children-problem.md` and `key-unification-design-change-proposal.md` record separate future work.
-- Guaranteeing that arbitrary direct SQL identity updates succeed. The safety proof covers DMS-authorized writes and
-  DMS-owned maintenance triggers; an unsupported direct SQL write may be rejected by the full composite FKs but must not
-  corrupt stored identity values.
 - Defining schema migrations. The implementation is in progress and there are no production deployments.
 
 ## Terminology
@@ -61,7 +56,7 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
 - **Canonical column**: the single stored/writable physical column for a unification class.
 - **Alias column**: a generated/computed, persisted column that projects the canonical value under an existing column
   name, optionally gated by per-path presence.
-- **Path column**: the column that binds to an API JsonPath (`DbColumnModel.SourceJsonPath is not null`), used by endpoint
+- **Path column**: the column that binds to an API JsonPath (`DbColumnModel.SourceJsonPath != null`), used by endpoint
   resolution, query compilation, and reconstitution. Under key unification, a path column may be a stored column or a
   generated alias.
 - **Presence column**: a physical column whose nullability indicates whether a binding site is present for this row.
@@ -74,18 +69,6 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   - `FALSE`/`0` is not used (presence is `NULL` vs `TRUE`)
 - **Presence gating**: making an alias evaluate to `NULL` when its `PresenceColumn` is `NULL` (when a presence column is
   defined).
-- **Target lineage inventory/storage**: the intrinsic, table-qualified inventory of every reference-backed identity
-  lineage on a target, identified by stable `IdentityLineageId` and backed by a stored `DocumentId`. It exists independently
-  of incoming references.
-- **Site anchor demand set**: the subset of target lineage ids an incoming reference must carry to discharge
-  receiver-side full-FK validity/correlation obligations. Every site starts with an empty set; demand propagates only
-  through downstream identity/constraint consumers.
-- **Identity-lineage anchor**: the local storage-only `DocumentId` mapping for one demanded lineage. It participates in the
-  selected propagation key/FK but not API bindings.
-- **Propagation vector**: the ordered public identity storage columns, site-demanded lineage anchors, and stable target
-  `DocumentId` carried by a full-composite reference FK.
-- **`AnchorSetId`**: the stable identity of an equal demanded-anchor subset. Sites with equal subsets share one target
-  propagation-key/`RefKey` variant.
 
 ## Background (current redesign behavior)
 
@@ -94,12 +77,9 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_DocumentId` (stable key)
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
-Composite FKs target `(<IdentityParts...>, <DemandedLineageAnchors...>, DocumentId)` on the referenced table, using
-`ON UPDATE CASCADE` when the target can change transitively. PostgreSQL emits this fixed assignment without DMS topology
-classification. On SQL Server, analyzed physical FK candidates additionally pass through global value-flow/error-1785
-selection. A legal 1785 graph is not by itself runtime-safe: independent parents into one receiver can still conflict
-when their FKs read the same canonical column. SQL Server accepts a pruned edge only with exact statement-scoped
-coverage; see [mssql-cascading.md](mssql-cascading.md).
+Complete-vector FKs target public identity values, intrinsic lineage anchors, and target `DocumentId`. PostgreSQL assigns
+fixed actions mechanically. SQL Server globally selects actions and may use an exact-carrier `NO ACTION` edge to break a
+diamond or cycle; see [mssql-cascading.md](mssql-cascading.md).
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -135,7 +115,8 @@ For identity parts that belong to a reference group, aliases are presence-gated:
 
 This preserves the invariant used throughout the redesign:
 
-> An absent optional reference site implies `NULL` for that site’s identity part columns.
+> An absent optional reference site implies `NULL` for that site's public identity aliases, lineage-anchor columns, and
+> terminal target `DocumentId`.
 
 For equality-constrained non-reference path columns (scalar values and descriptor FK values) that are optional,
 aliases are presence-gated using a synthetic per-path presence flag column (stored, nullable `bool`/`bit`):
@@ -149,14 +130,13 @@ This preserves the invariant used by query compilation and reconstitution:
 
 ### 3) Constraints (FKs + all-or-none)
 
-- Composite reference FKs are defined over:
-  - `{RefBaseName}_DocumentId`, and
-  - the **canonical physical columns** for the public identity parts required by the target identity shape, and
-  - any **storage-only identity-lineage anchors** demanded for that incoming site by least-fixed-point receiver analysis.
+- Composite reference FKs are defined over the target's complete propagation vector:
+  - the **canonical physical columns** for its public identity values;
+  - the local stable `DocumentId` anchor for every intrinsic reference-backed identity lineage; and
+  - `{RefBaseName}_DocumentId` last.
 - “All-or-none” CHECK constraints are defined over:
   - `{RefBaseName}_DocumentId`, and
-  - the **per-site alias columns** (presence-gated) for that reference group, and
-  - every dedicated demanded local lineage-anchor column in the site's selected `AnchorSetId`.
+  - the **per-site alias columns** (presence-gated) and local lineage-anchor columns for that reference group.
 
 This preserves optional-reference semantics while keeping FK propagation on writable columns.
 
@@ -219,7 +199,6 @@ public sealed record DbColumnModel(
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,
     QualifiedResourceName? TargetResource,
-    IdentityLineageId? IdentityLineage,
     ColumnStorage Storage
 );
 ```
@@ -294,12 +273,10 @@ public sealed record KeyUnificationClass(
 public sealed record DbTableModel(
     DbTableName Table,
     JsonPathExpression JsonScope,
-    bool IsJsonArrayScopeRequired,
     TableKey Key,
     IReadOnlyList<DbColumnModel> Columns,
     IReadOnlyList<TableConstraint> Constraints,
-    IReadOnlyList<KeyUnificationClass> KeyUnificationClasses,
-    PersistedOccurrenceIdentity PersistedOccurrenceIdentity
+    IReadOnlyList<KeyUnificationClass> KeyUnificationClasses
 );
 ```
 
@@ -324,13 +301,14 @@ Semantics:
 
 **Constraint derivation (composite reference FKs)**
 
-- Derive the composite FK shape using the API identity-path ordering as today.
-- For each identity-part column in the composite FK, use `DbColumnModel.Storage` to map:
+- Derive the complete FK shape as public identity values, intrinsic lineage anchors, then target `DocumentId`.
+- For each public identity column in the composite FK, use `DbColumnModel.Storage` to map:
   - local FK columns → canonical storage columns
   - referenced target columns → canonical storage columns
-- Keep all-or-none constraints over the site `..._DocumentId`, per-site alias columns (presence-gated), and every
-  dedicated demanded local lineage-anchor column, preserving the original meaning and preventing a nullable anchor from
-  bypassing the full-composite FK.
+- Append the corresponding local/target `LineageAnchorBindings` in stable intrinsic-lineage order and the terminal
+  target `DocumentId`.
+- Keep all-or-none constraints over the per-site aliases and local lineage-anchor columns, preserving the original
+  meaning.
 
 **Writes (flattening / write-plan compilation)**
 
@@ -339,11 +317,8 @@ Semantics:
   `SourceJsonPath = null`.
 - When `UnifiedAlias.PresenceColumn` is non-null and is a synthetic `..._Present` presence flag column, writes MUST
   also populate that presence flag column (`NULL` when absent; non-null when present) for each materialized row.
-- Baseline unprofiled request coalescing MUST be deterministic and MUST NOT consult existing row values (“keep the
-  previous value”) to fill missing unified values. For a profiled matched update, this request-derived result is only an
-  input to the later profile merge: the merge uses `RequestScopeStates`, `StoredScopeStates`, and compiled member
-  ownership to preserve hidden canonical storage/presence, clear visible-absent members, and apply visible-present values
-  before guardrails and DML.
+- Writes MUST be deterministic and MUST NOT consult existing row values (“keep the previous value”) to fill missing
+  unified values.
 
 #### Binding vs storage semantics for existing derived metadata (normative)
 
@@ -387,10 +362,8 @@ Any consumer that needs a column for **DML/DDL that targets writable storage** M
 
 - Writes (flattening / parameter binding): write only storage columns.
 - Foreign key derivation + emission: define FKs only over storage columns.
-- Identity propagation: inventory intrinsic target lineages, complete least-fixed-point site-demand closure, map every
-  public component and site-demanded anchor to storage, and de-duplicate physical FK candidates. PostgreSQL then receives fixed actions without DMS classification;
-  SQL Server alone derives statement-scoped value flow and globally selects actions satisfying value flow and error 1785
-  (see [mssql-cascading.md](mssql-cascading.md)).
+- Identity propagation (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond/cycle
+  cuts; see [mssql-cascading.md](mssql-cascading.md)): update storage columns only.
 - FK-supporting index derivation: index the final FK column list after storage mapping and de-duplication.
 
 Any consumer that needs a column for **API-path semantics** MUST continue to use binding columns:
@@ -435,14 +408,14 @@ Required interpretation rules:
      - treat the full group as the endpoint-resolution result, or
      - group by `ReferenceJsonPath` after storage resolution and emit one logical JSON field for that path.
 2. **Composite reference FK derivation**:
-   - When deriving the local/target identity-part column list for a composite reference FK, each identity-part column
-     MUST be mapped to its storage column via `DbColumnModel.Storage` before emitting the FK.
+   - Derive the local/target list as public identity storage columns, every intrinsic `LineageAnchorBinding`, and the
+     terminal target `DocumentId`. Each public identity column MUST be mapped through `DbColumnModel.Storage` before
+     emitting the FK.
 3. **All-or-none constraints**:
    - All-or-none constraints MUST remain defined over:
      - `FkColumn`, and
-     - the per-site binding columns (identity-part aliases),
-     - every dedicated demanded local lineage-anchor column in the site's selected `AnchorSetId`,
-     preserving the “reference site absent implies identity parts are null” meaning.
+     - the per-site binding columns (public identity aliases) and local lineage-anchor columns,
+     preserving the “reference site absent implies the complete local vector is null” meaning.
    - All-or-none constraints MUST NOT be rewritten to use canonical columns, because canonical columns may remain
      non-null due to another reference site and would change the constraint’s semantics.
    - Dialect note (required): All-or-none CHECK constraints reference these per-site binding columns even when they are
@@ -509,7 +482,6 @@ public sealed record TableWritePlan(
     string? UpdateSql,
     string? DeleteByParentSql,
     CollectionMergePlan? CollectionMergePlan,
-    CollectionKeyPreallocationPlan? CollectionKeyPreallocationPlan,
     BulkInsertBatchingInfo BulkInsertBatching,
     IReadOnlyList<WriteColumnBinding> ColumnBindings,
     IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
@@ -612,8 +584,7 @@ two-phase approach:
 
 #### Canonical value coalescing (normative)
 
-For each request-derived table row being materialized, and for each `KeyUnificationClass` on that table, compute the
-proposed canonical value as follows:
+For each table row being materialized, and for each `KeyUnificationClass` on that table:
 
 1. Evaluate each member path column in `MemberPathColumns` against the request document at the current row’s JSON
    scope, producing **zero-or-one** candidate values per member:
@@ -648,13 +619,8 @@ proposed canonical value as follows:
 5. Write the canonical value to `CanonicalColumn`.
 
 Notes:
-- For baseline unprofiled writes, this coalescing rule applies identically to `POST` (upsert) and `PUT` (update-by-id) to
-  preserve full-document semantics and idempotency.
-- For a profiled matched update, `absent everywhere -> NULL` applies only after Core's scope/member state classifies the
-  effective member group as visible-absent. Hidden members preserve their stored canonical value and synthetic presence;
-  visible-present members contribute request-derived values. The profile merge recomputes one effective canonical value
-  and presence result from all governing members, preserves shared storage whenever a hidden member still owns it, and
-  runs the same conflict detection and guardrails on the merged result before DML. It never writes an alias directly.
+- This coalescing rule applies identically to `POST` (upsert) and `PUT` (update-by-id) to preserve full-document PUT
+  semantics and idempotency.
 - “First present member” uses the deterministic ordering already required by `KeyUnificationClass.MemberPathColumns`.
   The baseline ordering rule remains `SourceJsonPath.Canonical` ordinal sort unless an explicit preferred-source policy
   is added later.
@@ -814,7 +780,7 @@ Rules:
 - Emit one entry per `(table, storage_column)` where **two or more** descriptor binding columns map to the same storage
   column.
 - `storage_column` is the final physical storage column name after mapping through `DbColumnModel.Storage`.
-- `binding_columns` is the set of binding/path column names (`SourceJsonPath is not null`) that mapped to `storage_column`.
+- `binding_columns` is the set of binding/path column names (`SourceJsonPath != null`) that mapped to `storage_column`.
 - `constraint_name` is the single emitted descriptor FK constraint name for that `(table, storage_column)` pair (the
   same name that appears in the table’s emitted constraints list after any dialect hashing/shortening).
 - Ordering MUST be deterministic:
@@ -823,57 +789,6 @@ Rules:
 
 This report is a descriptor-FK emission diagnostic only; it is not part of the per-resource
 `key_unification_equality_constraints` applied/redundant/ignored classification.
-
-##### Identity propagation diagnostics (required)
-
-Reference FKs are identified and de-duplicated **after** binding columns have been mapped to canonical storage columns.
-The stable physical identity is `(semantic FK kind, local table, ordered local storage columns, target table, ordered
-target storage columns, ON DELETE)`; `OnUpdate`, `MssqlPropagationMode`, logical reference path, and generated constraint
-name do not participate in identity. All contributing logical reference sites and semantic roles remain as provenance on
-the one candidate. Incompatible metadata on contributors is a derivation error, not a second physical FK.
-
-`PhysicalForeignKeyId` is derived from the canonical serialization of that update-action-independent semantic identity
-before identifier shortening, with collision detection if a compact hash representation is used. Hashing/shortening and final constraint
-naming do not change it. Each success decision also records the final constraint name so a manifest consumer can
-correlate the stable id to emitted DDL.
-
-For a successful SQL Server model, success-only `MssqlForeignKeyDecision` diagnostics MUST expose the final
-`MssqlPropagationMode` for every physical reference FK, keyed by stable `PhysicalForeignKeyId`; the manifest serializes
-that collection. A `NoPropagation` decision MUST contain an ordered, non-empty `coverage_certificates` list. One
-certificate is required for every complete supported mutation case for which that FK is pruned, unless primitive cases
-are explicitly reused through a typed `SubsetCompositionProof`. Each `CoverageCertificate` records typed proof structures:
-
-- the stable physical FK id, selected `AnchorSetId`, `MutationCaseId`, and mutation-origin table/write kind;
-- a `ChangedTargetRoute` from the origin to the changed target;
-- a `ReceiverCarrierRoute`, represented by zero-hop `OriginWrite` or ordered native FK hops;
-- complete selected-vector equality proof (all public components plus every site-demanded anchor);
-- an origin-row correlation proof tying the mutation case to the changed target row;
-- a separate receiver-row correlation proof tying the carrier to the exact covered receiver row, including the complete
-  key that establishes same-row lineage;
-- presence implication proving that whenever the pruned reference is present, the carrier reaches that same receiver;
-- target-write, carrier-write, and constraint-check boundaries; and
-- when primitive proofs are reused, a `SubsetCompositionProof` identifying the selected vector items, supporting
-  primitive cases, and why route, origin/receiver row correlation, presence, and timing facts compose unchanged.
-
-Missing composition evidence is `UnprovedSubsetComposition`; proving each component separately is not sufficient for a
-simultaneous mutation case.
-
-Certificates MUST be ordered by stable mutation-origin id, `MutationCaseId`, changed-target route ids, then carrier-route
-ids. `NativeCascade` and `ImmutableNoAction` entries have no certificates. A shared canonical column, table
-reachability, or common ancestor is evidence only; none is a substitute for the typed equality, row-correlation,
-presence, and timing proofs above.
-
-These values are success-only derivation/DDL/manifest diagnostics, separate from the runtime
-`TableConstraint.ForeignKey`. DDL emission consumes the finalized FK. Mapping packs serialize each expanded local/target
-propagation vector, stable `PhysicalForeignKeyId`, selected `AnchorSetId`, and final actions; they do not serialize
-`MssqlPropagationMode`, `CoverageCertificate`, or `SubsetCompositionProof`.
-
-The relational-model manifest is a **success artifact** emitted from `DerivedRelationalModelArtifact`. A proven
-`NoSafeSqlServerAssignment` or `CascadeClassificationComplexityExceeded` throws
-`RelationalModelDerivationException` instead of returning a partial model. Solver-limit exhaustion is distinct from proof
-that no assignment exists. These errors MUST NOT be embedded as warnings or error entries in a successful manifest.
-Tooling may render the exception's structured errors as a separate diagnostic report. PostgreSQL has no classifier
-failure or classifier diagnostics.
 
 #### Equality-constraint diagnostics surface (required)
 
@@ -980,13 +895,10 @@ Mapping packs are required to contain enough information for a consumer to:
 - bind by API JsonPath (queries/reconstitution),
 - write only stored columns (never `UnifiedAlias`),
 - compute canonical values deterministically for storage-only canonical columns, and
-- populate synthetic presence flags deterministically, and
-- execute each finalized full FK contract from its expanded local/target vector, stable `PhysicalForeignKeyId`, selected
-  `AnchorSetId`, and final referential actions without re-running demand closure.
+- populate synthetic presence flags deterministically.
 
-Therefore, the complete pre-production `PackFormatVersion = 1` payload schema defined in `mpack-format-v1.md` MUST carry
-the unification metadata explicitly. Earlier draft packs are regenerated and are not a wire-compatibility target; the
-post-release compatibility rules in that document begin with the first supported v1 pack contract.
+Therefore, the PackFormatVersion=1 payload schema defined in `mpack-format-v1.md` MUST be extended (wire-compatible
+additions only) to carry the unification metadata explicitly.
 
 ##### Model payload additions (required)
 
@@ -1061,12 +973,15 @@ Pack producers and consumers MUST validate the following invariants at build/loa
   - each precomputed binding index corresponds to a `WriteValueSource.Precomputed` binding, and
   - each precomputed binding is populated by exactly one unification write plan.
 
-##### Pre-production baseline (required)
+##### Versioning (required)
 
-The backend redesign and key-unification contract are being finalized before any production deployment. The complete
-storage and unification metadata above is therefore part of the v1 baseline: no `PackFormatVersion` or
-`RelationalMappingVersion` bump or database migration is required. Producers and consumers implement the same complete
-payload contract.
+Adding proto fields is wire-compatible and does not require bumping `PackFormatVersion`. However, key unification is a
+semantic change to mapping behavior and is part of the initial pre-production relational contract:
+
+- `RelationalMappingVersion` remains `v1`; do not add an older-artifact compatibility mode or migration path.
+- Producers and consumers MUST require the same `v1` contract, including storage/unification metadata.
+- After the initial production v1 contract is frozen, a breaking mapping change requires a version bump. Missing
+  metadata must never be silently interpreted as an older mode by a v1 consumer.
 
 ## Deriving Unification Classes from ApiSchema
 
@@ -1699,32 +1614,29 @@ storage columns and converted unified member path columns into read-only aliases
 rewrite or emit reference FKs; it only mutates the derived model (columns + storage metadata + unification classes)
 and adds `NullOrTrue` hardening constraints for synthetic presence flags.
 
-For a reference site, the composite FK uses canonical storage columns for unified public identity parts plus every
-identity-lineage anchor in that site's demanded `AnchorSetId`. The target may intrinsically store other lineage anchors;
-they are absent from this variant when no receiver validity/correlation obligation demands them. Column order is **public
-identity parts first, demanded lineage anchors next, target `DocumentId` last**, and the local and target lists MUST be **positionally aligned** (FK pairing is
-positional: local column *i* pairs with target column *i*):
+For a reference site, the composite FK uses the target's complete propagation vector. Column order is **public identity
+storage columns, intrinsic lineage anchors, then target `DocumentId`**, and the local and target lists MUST be
+**positionally aligned** (FK pairing is positional: local column *i* pairs with target column *i*):
 
 - Local FK columns (in this order):
-  - `<CanonicalIdentityParts...>` (in the referenced target’s identity path order; derived by mapping each identity
+  - `<CanonicalPublicIdentityValues...>` (in the referenced target's identity path order; derived by mapping each identity
     part binding column through `DbColumnModel.Storage`)
-  - `<DemandedIdentityLineageAnchors...>` (in stable semantic-lineage-id order; always stored, never aliases)
+  - `<LocalIntrinsicLineageDocumentIdAnchors...>` (in stable target lineage order)
   - `{RefBaseName}_DocumentId`
 - Target columns (in the matching order):
-  - `<TargetIdentityColumns...>` (derived by mapping each target identity binding column through
+  - `<TargetPublicIdentityColumns...>` (derived by mapping each target identity binding column through
     `DbColumnModel.Storage`)
-  - `<TargetDemandedIdentityLineageAnchors...>` (selected from intrinsic target storage and positionally aligned with the local anchor list)
+  - `<TargetIntrinsicLineageDocumentIdAnchors...>`
   - `DocumentId`
 
 Referential actions:
 
-- `ON UPDATE` is assigned only after least-fixed-point site-demand closure and physical FK de-duplication:
-  - PostgreSQL: directly use the fixed assignment (`CASCADE` for abstract or transitively mutable targets; `NO ACTION`
-    for genuinely immutable targets). DMS does not classify, prune, certify, or reject PostgreSQL cascade topology.
-  - SQL Server: derive value-flow obligations and globally select the action implied by `MssqlPropagationMode` so the
-    complete assignment satisfies every obligation and error 1785 (see [mssql-cascading.md](mssql-cascading.md)).
-- Every reference FK keeps the full composite key. Identity-value propagation is native cascade, not a trigger; any
-  unproved value-flow or unclassifiable SQL Server action graph throws a typed derivation exception.
+- `ON UPDATE` is dialect-specific:
+  - PostgreSQL assigns complete-vector actions mechanically from target mutability and never runs topology
+    classification, pruning, or topology fail-fast.
+  - SQL Server globally selects physical actions (see [mssql-cascading.md](mssql-cascading.md)). Exact-carrier
+    `NO ACTION` edges may break diamonds, parallel conflicts, or cycles; cycle membership is not a failure. Every FK
+    keeps the complete vector and identity-value propagation is native cascade, not a trigger.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1761,12 +1673,11 @@ Normative rules:
 ### Multi-edge cascades (canonical columns shared across composite FKs) (normative)
 
 Key unification can cause a single canonical identity-part column to participate in **multiple composite reference FKs**
-on the same referencing table. That storage sharing prevents two writable copies from drifting, but it does **not** by
-itself prove that an identity update is safe.
+on the same referencing table.
 
 Example (illustrative only):
 
-- Table `A` has two reference sites to different targets `B` and `C`.
+- Table `A` has two independent reference sites to different targets `B` and `C`.
 - `B` and `C` each carry the same logical identity part `StudentUniqueId`.
 - ApiSchema emits `equalityConstraints` that relate the two identity JsonPaths in `A`, so key unification creates a
   single canonical column `StudentUniqueId_Unified` and converts the per-site columns into aliases.
@@ -1776,122 +1687,83 @@ Under this shape, `A` can end up with multiple composite FKs that share the same
 - `FK_A_B`: `(StudentUniqueId_Unified, B_DocumentId) → B(StudentUniqueId_Unified, DocumentId)`
 - `FK_A_C`: `(StudentUniqueId_Unified, C_DocumentId) → C(StudentUniqueId_Unified, DocumentId)`
 
-Suppose `B` and `C` are independent mutable parents. Updating `B.StudentUniqueId` cascades a new value into
-`A.StudentUniqueId_Unified`; the unchanged FK to `C` can then reject that same write because `C` still exposes the old
-value. SQL Server permits both edges in its 1785 action graph, and PostgreSQL permits the DDL, but neither fact alone is a
-SQL Server coverage proof. An immutable `NO ACTION` FK that reads the shared receiver column creates the same conflict.
-PostgreSQL still receives its fixed actions without DMS topology classification; MetaEd owns authoring-time
-representability feedback.
+If `B` and `C` themselves depend on the same upstream identity and that upstream identity is updated with
+`allowIdentityUpdates=true`, the cascade graph may contain **multiple update paths** that reach `A`.
 
-#### 1. Derive intrinsic lineage inventory and least-fixed-point site demand
+This section defines the required cross-engine behavior and mitigation strategy.
 
-1. For each target, inventory and store every independently replaceable reference-backed identity lineage under a stable
-   semantic `IdentityLineageId`. This intrinsic target inventory does **not** automatically widen an incoming reference.
-2. Initialize every incoming site's demanded anchor set empty; its initial vector is public identity components plus the
-   target `DocumentId`.
-3. Universally analyze every valid identity-mutation subset and simultaneous combination. Demand a target lineage anchor
-   at a site only when a receiver-side full-FK validity or row-correlation obligation cannot otherwise be proved.
-4. For a demanded lineage, reuse an existing local `..._DocumentId` only when complete identity equivalence and reference
-   co-presence are proved. Otherwise add a dedicated stored local anchor.
-5. Propagate a demand only through downstream identity/constraint consumers whose own validity/correlation proof needs
-   that lineage. Repeat in stable semantic order until no site's demand set changes.
-6. Canonically group equal demand sets under stable `AnchorSetId` values and derive one propagation-key/`RefKey` variant
-   per distinct `(target, AnchorSetId)`. Each reference emits exactly one full-composite FK to its selected variant.
-7. An omitted target-intrinsic anchor requires an explicit proof that no receiver validity/correlation obligation needs
-   it. Omission never narrows supported mutations; all subsets/combinations remain universally proved.
+#### PostgreSQL (full-composite cascade; not physically pruned)
 
-In DS 5.2, `CourseOffering -> Session` demands Session's intrinsic School anchor because the cascade writes
-`CourseOffering.SchoolId_Unified`, which is also read by `CourseOffering -> School`. Repointing Session from School A to B
-must therefore carry both values. An unrelated Session referrer with no receiver FK/correlation reader of that School
-value keeps the empty-demand vector. If a downstream identity/constraint consumer later needs the correlation, that
-demand propagates to it during the fixed point.
+PostgreSQL has no SQL Server 1785 DDL restriction on multiple cascade paths, so DMS emits declarative
+full-composite `ON UPDATE CASCADE` on **every** eligible edge (eligibility defined by transitive identity mutability:
+`IsAbstract || TransitivelyAllowIdentityUpdates`) and **never physically prunes** PostgreSQL FKs. This is unchanged by
+the SQL Server foreign-key-pruning design.
 
-Before emission, validate provider column-count, byte-width, and index limits. A model whose minimal demanded variant
-exceeds a hard provider limit is unsupported; never silently drop a demanded anchor or replace site-specific variants
-with a table-wide union.
+DMS does **not** run SQL Server graph/value-flow classification or fail-fast on PostgreSQL. PostgreSQL is never pruned,
+topology-classified, or failed because of cascade topology; multiple paths and cycles retain the fixed provider actions.
+Provider-independent storage validation still applies. MetaEd may provide early SQL Server realizability feedback, but
+DMS remains authoritative for physical SQL Server selection (see [mssql-cascading.md](mssql-cascading.md)).
 
-#### 2. Form final physical FK candidates
+Key properties under unification:
 
-Reference derivation MUST map every local and target public identity binding through `DbColumnModel.Storage`, append the
-site-demanded stored anchors, order all components positionally, and de-duplicate the resulting physical FKs. The physical
-identity is:
+- The historical PostgreSQL hazard was a `CHECK (colA = colB)` constraint across two **independently-cascaded writable**
+  columns (a “mid-cascade” failure). Key unification removes that pattern by ensuring there is only one writable
+  physical column for the unified value.
+- When multiple composite FKs on a referencing row share the same canonical identity-part columns, cascaded updates are
+  safe because the stored canonical key is updated atomically as a single value for that row (there is no second
+  writable copy to drift).
 
-`(semantic FK kind, local table, ordered local storage columns, target table, ordered target storage columns,
-ON DELETE)`.
+Normative guidance:
 
-`OnUpdate`, `MssqlPropagationMode`, logical reference path, and generated constraint name are not part of identity. A
-candidate retains all contributing logical-reference provenance and semantic roles, target transitive mutability,
-component-level source/target/receiver lineage, reference-presence predicates, and maintenance-trigger statement
-boundaries. Incompatible contributor metadata fails derivation. Its `PhysicalForeignKeyId` is derived from the canonical
-update-action-independent identity and survives later identifier shortening. No update action is selected before this
-inventory is complete.
+- Do **not** introduce DB-level equality checks across two independently-cascaded stored columns as an alternative to
+  unification. This design exists specifically to avoid that failure mode.
+- Prefer the default FK behavior (`NOT DEFERRABLE`) and rely on normal FK cascade semantics; unification is intended to
+  make the cascade behavior safe without requiring deferred constraints.
+- DDL verification MUST include a fixture scenario where a single identity update fans out across multiple cascade
+  paths that reach the same referrer table whose composite FKs share unified canonical columns, and MUST validate the
+  identity update succeeds (no transient FK violations and no mid-cascade check failures).
 
-#### 3. Derive SQL Server statement-scoped identity value-flow obligations
+#### SQL Server (foreign-key pruning; native cascade on eligible edges)
 
-For each DMS-supported mutation origin (a DMS-authorized identity write or DMS-owned maintenance-trigger write), complete
-mutation case, and changed item in the site's selected vector, SQL Server `ValueFlowAnalysis` MUST derive obligations for
-all of the following. A target-intrinsic lineage participates here only when the site demands it. The symbolic value label
-is `(mutation origin, origin-row identity, component/anchor id, statement boundary)`.
+SQL Server rejects a table that would appear more than once in one `UPDATE`/`DELETE`'s cascade action tree — a table
+reached by two distinct cascade paths from a **single origin** (a *diamond*), or a cycle (error 1785). It does **not**
+reject a table merely for having cascade in-degree > 1: *independent* parents into one receiver are legal. DMS handles
+diamonds and cycles with **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child);
+see [mssql-cascading.md](mssql-cascading.md) for the full algorithm. Identity-value propagation is native
+`ON UPDATE CASCADE`, not a trigger. Every SQL Server reference composite FK keeps the **full composite** key — identity
+columns are never dropped, so value-level referential integrity is always enforced.
 
-1. **Changed-target route:** whenever a present reference's target component or anchor changes, its corresponding local
-   storage column receives the identical symbolic value within the required constraint-check boundary.
-2. **Receiver write:** whenever a selected cascade writes a canonical receiver column, every other present FK that reads
-   the column remains valid, including independent and immutable parents.
-3. **Single value:** multiple writes reaching the same receiver row and column in one statement carry the same symbolic
-   value; equality of old values or a common table ancestor is insufficient.
-4. **Receiver-carrier route and row correlation:** retained propagation reaches the same logical origin and receiver row
-   as the edge it covers. A carrier may be zero-hop `OriginWrite` when the initiating statement already writes the
-   receiver. Table reachability or a common ancestor is insufficient.
-5. **Presence implication:** whenever a pruned/read-side optional reference is present, the retained write that supplies
-   its value is also present and reaches the row. Independently optional reference sites do not imply one another merely
-   because their aliases share a canonical column.
-6. **Constraint timing:** the proof holds at every statement-scoped FK check. An abstract-identity row written by an
-   AFTER maintenance trigger belongs to a later statement boundary and cannot retroactively cover the initiating update.
+The multi-edge shape above becomes a genuine diamond only when `B` and `C` depend on the **same upstream identity**: an
+update to that origin then reaches the referrer `A` by two paths (through `FK_A_B` and `FK_A_C`). Because both composite
+FKs share the same unified canonical column (`StudentUniqueId_Unified`), pruning one of them is *covered* by the
+surviving path. (If `B` and `C` were independent, both edges would stay `CASCADE` — no diamond, no pruning.)
 
-No SQL Server assignment may rely on a trigger fallback, weaken the FK, or assume that key unification alone establishes
-coverage. Certificates use typed routes and component/anchor equality, row-correlation, presence, and timing proofs.
+Normative rules:
 
-#### 4. Finalize PostgreSQL actions
+1. Build the physical cascade multigraph in propagation direction over identity-propagating candidates (target is
+   abstract or `TransitivelyAllowIdentityUpdates = true`). Cycles are action-choice constraints, not automatic failures.
+2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
+   ancestor), not raw in-degree. Independent parents into a shared receiver stay `ON UPDATE CASCADE` and are never
+   pruned. A candidate `NO ACTION` break for a diamond or cycle is admissible only when every applicable complete-vector
+   change has an exact same-row, same-value, same-presence, same-statement carrier. Candidate breaks are inputs to the
+   deterministic bounded **global** selection defined in [mssql-cascading.md](mssql-cascading.md), not local first-fit;
+   overlapping diamonds, parallel conflicts, and cycles can share edges, so the winning breaks are chosen by global
+   backtracking. Both survivor and pruned edges keep the complete vector.
+3. Fail derivation only when bounded search proves no complete safe assignment; report deterministic work-limit
+   exhaustion separately. There is no `DocumentId`-only FK and no identity-value propagation trigger.
 
-PostgreSQL directly receives full-composite `ON UPDATE CASCADE` for an abstract or transitively mutable target and
-`NO ACTION` for a genuinely immutable target. It does not run SQL Server value-flow analysis, error-1785 pruning,
-unsafe-graph detection, or cascade-topology fail-fast. Its success diagnostics contain no classifier decisions or
-certificates.
-
-#### 5. Select SQL Server actions
-
-SQL Server action selection operates on the final physical-candidate multigraph and jointly satisfies the phase-3
-value-flow obligations and error 1785. It assigns exactly one mode per candidate:
-
-- `NativeCascade`: full-composite `ON UPDATE CASCADE`;
-- `NoPropagation`: full-composite `ON UPDATE NO ACTION`, permitted only when every supported mutation case has a
-  statement-scoped coverage proof; or
-- `ImmutableNoAction`: full-composite `ON UPDATE NO ACTION` for a genuinely immutable target.
-
-Cycles and duplicate-reachability diamonds are action-choice constraints, not automatic failures. Independent parents do
-not create a 1785 duplicate-path conflict, but the assignment is accepted only if it also discharges their
-shared-receiver obligations. Each `MssqlForeignKeyDecision` in mode `NoPropagation` carries an ordered
-`CoverageCertificates` list covering every complete `MutationCaseId`. Primitive component/anchor certificates may be
-reused only with a typed `SubsetCompositionProof`; otherwise the case fails as `UnprovedSubsetComposition`. Each
-certificate contains a typed changed-target route, a receiver-carrier route (`OriginWrite` or ordered native FK hops),
-separate origin/receiver row-correlation proofs, complete selected-vector equality, presence implication, and
-target/carrier/check timing boundaries.
-
-Selection is deterministic and bounded as defined in [mssql-cascading.md](mssql-cascading.md). If no legal, fully
-certified assignment exists, or if deterministic proof-work limits are exhausted, derivation throws
-`RelationalModelDerivationException` with ordered structured errors instead of returning a partial model. Proven
-infeasibility and work-limit exhaustion have distinct codes; elapsed time is never a classification bound.
-Every emitted FK remains full-composite; there is no `DocumentId`-only FK and no identity-value propagation trigger.
+Because the pruned edge keeps its complete vector and an exact carrier supplies the same values in the same statement,
+the `NO ACTION` FK never observes a mismatch; see [mssql-cascading.md](mssql-cascading.md). If the two paths do **not**
+have an exact complete-vector carrier (an uncovered convergence), the graph is not representable on SQL Server and
+derivation fails fast rather than dropping a required cascade.
 
 ### All-or-none nullability constraints
 
-All-or-none constraints use the site `..._DocumentId`, per-site alias columns, and every dedicated demanded local
-lineage-anchor column in the selected
-`AnchorSetId`, preserving the original meaning and preventing any nullable propagation-vector member from bypassing the
-FK:
+All-or-none constraints use the per-site alias columns, preserving the original meaning:
 
-- If `{RefBaseName}_DocumentId` is `NULL`, all per-site identity aliases and dedicated demanded local anchors are `NULL`.
-- If `{RefBaseName}_DocumentId` is not `NULL`, all per-site identity aliases and dedicated demanded local anchors are not `NULL`.
+- If `{RefBaseName}_DocumentId` is `NULL` then all per-site identity aliases and complete lineage anchors are `NULL`.
+- If `{RefBaseName}_DocumentId` is not `NULL` then all per-site identity aliases and complete lineage anchors are not
+  `NULL`.
 
 ### UNIQUE constraints and indexes (binding vs storage)
 
@@ -1946,11 +1818,10 @@ Authorization note:
 
 Composite foreign keys require the referenced column set to be UNIQUE. In this redesign, many composite FKs target:
 
-- `(<IdentityParts...>, <DemandedLineageAnchors...>, DocumentId)` on a concrete root table, or
-- `(<AbstractIdentityParts...>, <DemandedLineageAnchors...>, DocumentId)` on an abstract identity table.
+- `(<PublicIdentityValues...>, <IntrinsicLineageDocumentIds...>, DocumentId)` on a concrete root table, or
+- `(<AbstractPublicIdentityValues...>, <IntrinsicLineageDocumentIds...>, DocumentId)` on an abstract identity table.
 
-(Public identity storage columns first, lineage anchors next, `DocumentId` last — see
-[change-queries.md](change-queries.md)
+(Public identity storage columns first, lineage anchors next, and `DocumentId` last — see [change-queries.md](change-queries.md)
 § "*_RefKey index ordering for /deletes".)
 
 Under key unification, composite reference FKs are defined over **canonical storage columns** for unified identity
@@ -1960,21 +1831,19 @@ the composite FK legal” MUST be defined over the same canonical storage column
 Normative rules:
 
 1. When deriving a referenced-key UNIQUE for a composite FK target, the target column list MUST be
-   ordered public identity storage columns first, the site's demanded lineage anchors next, and `DocumentId` last — matching the local FK's column order so
+   ordered public identity storage columns first, intrinsic lineage anchors next, and `DocumentId` last — matching the local FK's column order so
    the FK and its referenced-key UNIQUE are positionally aligned (see
    [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes"):
    - the target identity-part columns mapped to their **canonical storage columns**:
      - `Stored` → itself
      - `UnifiedAlias` → `UnifiedAlias.CanonicalColumn`
-   - followed by the site's ordered demanded anchor set and `DocumentId`.
+   - every intrinsic lineage `DocumentId` anchor in stable target order
+   - followed by `DocumentId`
 2. If two or more identity parts map to the same canonical column (because the identity schema contains duplicated
    endpoints that are equality-constrained), the derivation MUST de-duplicate the repeated canonical column name
    deterministically:
    - keep the **first** occurrence in identity-path order, and
    - drop subsequent duplicates.
-3. Derive only deterministic referenced-key variants for actual demanded anchor sets. Variant identity/naming uses a
-   stable `AnchorSetId`. Target-intrinsic anchors are not unioned into one table-wide key, and each reference targets
-   exactly one variant.
 
 Rationale:
 
@@ -2108,26 +1977,15 @@ Recommended set-level pass order (relative to the current default implementation
 3. `ExtensionTableDerivationPass`
 4. `ReferenceBindingPass`
 5. **`KeyUnificationPass` (new)** ← applies canonical columns + presence-gated aliases + `KeyUnificationClasses`
-6. `AbstractIdentityTableAndUnionViewDerivationPass` ← also emits shared table-qualified
-   `AbstractIdentityMemberMapping` inventory
-7. `ValidateUnifiedAliasMetadataPass`
-8. `RootIdentityConstraintPass`
-9. `StableCollectionRowIdentityPass` ← derives stable collection/parent/root keys and extension alignment from E01-S11
-10. `PersistedOccurrenceIdentityPass` ← finalizes ancestor context, semantic identity source roles, and stable row locators
-    from that physical shape before any assignment is judged executable
-11. `TransitiveIdentityMutabilityPass`
-12. `IdentityLineageAnchorClosurePass` ← inventories intrinsic target lineages, computes least-fixed-point site demand,
-    and derives deterministic propagation-key/`RefKey` variants keyed by `AnchorSetId`
-13. `ReferenceConstraintPass`, refactored by DMS-1258 into these ordered internal phases:
-    1. storage-map public components and site-demanded anchors, positionally align, and de-duplicate
-       `PhysicalForeignKeyCandidate` objects,
-    2. for PostgreSQL, assign fixed actions and construct executor requirements without DMS topology classification; for
-       SQL Server, derive typed statement-scoped `ValueFlowAnalysis` facts and, for every complete candidate assignment,
-       require representable executor requirements before that assignment can participate in deterministic global
-       selection, and
-    3. finalize FK constraints and all-or-none checks.
-14. Remaining semantic/array/stable-collection constraint emission from the finalized occurrence inventory, plus
-    descriptor-FK, naming, inventory, shortening, and canonical ordering passes in their existing order.
+6. `AbstractIdentityTableAndUnionViewDerivationPass`
+7. `RootIdentityConstraintPass`
+8. `ReferenceConstraintPass`
+9. `ArrayUniquenessConstraintPass`
+10. `ApplyConstraintDialectHashingPass`
+11. *(When implemented in E01)* `DeriveIndexInventoryPass` (DMS-945)
+12. *(When implemented in E01)* `DeriveTriggerInventoryPass` (DMS-945)
+13. `ApplyDialectIdentifierShorteningPass`
+14. `CanonicalizeOrderingPass`
 
 Notes:
 
@@ -2139,19 +1997,6 @@ Notes:
 - `KeyUnificationPass` MUST run **before** any constraint derivation pass that needs to target canonical storage
   columns (notably reference composite FKs), and before any pass that builds SourceJsonPath-based lookups that must see
   the post-unification table/column inventory.
-- Physical reference-FK candidates MUST be formed only after `TransitiveIdentityMutabilityPass` and storage mapping are
-  complete and `IdentityLineageAnchorClosurePass` has reached a fixed point. De-duplication MUST precede action
-  classification and use an identity that excludes `OnUpdate` and `MssqlPropagationMode`.
-- `PersistedOccurrenceIdentityPass` MUST run before dialect action/requirement evaluation. Its ordered model inventory is
-  the sole source for `SameStatementOccurrenceMatchRequirement` and E15 collection merge semantic bindings; neither
-  phase may reconstruct receiver identity or stable locators from a UNIQUE column list.
-- Anchor closure MUST start every incoming site's demand empty, add only receiver validity/correlation demands, and
-  propagate them only through downstream identity/constraint consumers. Equal demanded subsets share a deterministic
-  `AnchorSetId`. Each reference contributes one full FK to one matching variant; provider key limits are validated before
-  finalization. Omitting an intrinsic target anchor requires a universal no-demand proof for every mutation combination.
-- SQL Server `ValueFlowAnalysis` MUST derive its facts and obligations before global action selection or final FK
-  emission. Any obligation left undischarged throws a typed derivation exception and produces no model artifact or
-  successful relational-model manifest. PostgreSQL bypasses this analysis and receives fixed actions.
 - If E01 derives index/trigger inventories (DMS-945), `DeriveIndexInventoryPass` and `DeriveTriggerInventoryPass`
   SHOULD run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names
   reflect the final hashed constraint identifiers.
@@ -2418,51 +2263,28 @@ semantics, or cascade correctness.
   - canonical storage columns and any synthetic presence flag columns are emitted before dependent aliases.
 - Generated/computed alias column syntax is correct per dialect and matches `UnifiedAlias(Canonical, Presence)` rules.
 - No FK attempts to reference `UnifiedAlias` columns:
-  - composite reference FKs use canonical storage columns for unified identity parts,
+  - composite reference FKs use canonical public-identity storage columns, intrinsic lineage anchors, and terminal
+    target `DocumentId`,
   - descriptor FKs use canonical storage columns for unified descriptor parts.
 - Descriptor FK constraints:
   - if descriptor endpoints unify, the table emits exactly one FK anchored on the canonical storage column
     (de-duplicated by `(table, StorageColumn)`).
-- All-or-none constraints remain on the site `..._DocumentId`, reference-group binding columns (aliases), and every
-  dedicated demanded local lineage anchor.
+- All-or-none constraints remain on reference-group binding columns (aliases), local lineage anchors, and
+  `..._DocumentId`.
 - Synthetic `..._Present` columns have `NULL`-or-`TRUE` CHECK constraints (no `FALSE`/`0` allowed).
 - API-semantic UNIQUE constraints are defined over binding/path columns (aliases allowed) and do not collapse to
   canonicals.
-- FK-supporting referenced-key UNIQUE constraints are defined over canonical storage columns (after mapping + de-dup).
+- FK-supporting referenced-key UNIQUE constraints are defined over canonical public-identity storage columns (after
+  mapping + de-dup), intrinsic lineage anchors, and target `DocumentId`.
 - FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
-- Identity-lineage anchor closure and physical FK candidate derivation:
-  - every target has intrinsic inventory/storage for each reference-backed identity lineage,
-  - every incoming site's demand starts empty; only receiver full-FK validity/correlation obligations add anchors,
-  - DS 5.2 `CourseOffering -> Session` demands the School anchor because `SchoolId_Unified` is also read by
-    `CourseOffering -> School`; an unrelated Session referrer remains on the empty-demand variant,
-  - demand propagates only through downstream identity/constraint consumers to a deterministic least fixed point;
-    existing local `..._DocumentId` reuse requires complete equivalence and co-presence proof,
-  - equal demand sets share propagation-key/`RefKey` variants keyed by `AnchorSetId`; target-intrinsic anchors are not
-    blanket-copied, each reference emits one full FK, and provider key-width/count limits are tested,
-  - omitting an intrinsic anchor is accepted only with proof that no receiver validity/correlation obligation needs it,
-    while every mutation subset and simultaneous combination remains supported,
-  - storage mapping and physical de-duplication occur before action assignment; the de-dup key excludes `OnUpdate`,
-  - independent mutable parents and immutable `NO ACTION` readers sharing one canonical receiver column have SQL
-    Server positive and negative fixtures; a legal error-1785 graph is not accepted as proof of runtime safety,
-  - abstract-identity AFTER-trigger maintenance is modeled as a separate statement boundary.
-- PostgreSQL action assignment:
-  - full-composite actions are fixed from target mutability,
-  - DMS performs no pruning, value-flow classification, unsafe-graph rejection, or cascade-topology fail-fast,
-  - success diagnostics contain no classifier decisions or certificates.
-- SQL Server action selection (see [mssql-cascading.md](mssql-cascading.md)):
-  - selection runs over final physical candidates and jointly satisfies value-flow obligations and error 1785 with a
-    deterministic, bounded result,
-  - safely breakable cycle fixtures succeed; SCC membership alone is never a hard failure,
-  - every `NoPropagation` decision has an ordered, non-empty `CoverageCertificates` list covering every complete
-    `MutationCaseId` with typed changed-target route, receiver-carrier route, complete selected-vector equality, separate
-    origin/receiver row-correlation, presence, and timing proof,
-  - primitive proofs may cover a combined case only through typed `SubsetCompositionProof`; missing composition evidence
-    fails as `UnprovedSubsetComposition`,
-  - zero-hop `OriginWrite` carriers are accepted only when the initiating write targets the same receiver row and full
-    vector before the applicable constraint check,
-  - every reference FK remains full-composite; there is no `DocumentId`-only FK or propagation trigger,
-  - an unproved value flow or infeasible action assignment throws `RelationalModelDerivationException` and emits no
-    success artifact/manifest; deterministic work-limit exhaustion has a distinct failure code from proven infeasibility.
+- SQL Server propagation strategy (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
+  - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
+    per-origin duplicate reachability, not raw in-degree; cycles are searched for safe action cuts rather than rejected,
+  - eligible edges (including independent parents into a shared receiver) keep `ON UPDATE CASCADE`; a mutable edge uses
+    `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
+  - every reference FK keeps the complete vector (public identity storage, intrinsic lineage anchors, and terminal
+    target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,
+  - SQL Server reports proved no-solution separately from deterministic work-limit exhaustion.
 
 ### Write planning + flattening
 
@@ -2483,11 +2305,8 @@ semantics, or cascade correctness.
   - when canonical is `NOT NULL`, canonical must be non-null.
 - Descriptor resolution failures fail closed:
   - descriptor URI present but unresolved → write fails.
-- Baseline unprofiled PUT/full-document semantics remain deterministic:
+- PUT/full-document semantics remain deterministic:
   - missing unified values do not consult existing row values to “retain” canonical values.
-- Profiled matched updates use the same request-derived coalescing followed by the profile binding overlay: hidden
-  canonical values/presence are preserved, visible-absent members clear only when no hidden owner remains, and
-  visible-present values are applied before conflict/guardrail validation.
 
 ### Read / reconstitution / query semantics
 
@@ -2524,11 +2343,7 @@ semantics, or cascade correctness.
   - canonical columns are storage-only,
   - member-path columns are distinct, resolvable, and reference the correct canonical.
 - Plan payload carries precomputed bindings and key-unification write plans with consistent binding indices.
-- Mapping packs carry each finalized expanded FK vector (ordered local/target columns), stable `PhysicalForeignKeyId`,
-  selected `AnchorSetId`, and final `on_delete`/`on_update` actions. They do not serialize derivation-only
-  `MssqlPropagationMode`, `CoverageCertificate`, or `SubsetCompositionProof` diagnostics.
-- The complete contract is finalized as the pre-production v1 baseline; no `RelationalMappingVersion` bump or migration
-  path, compatibility discriminator, or physical-model hash is required.
+- `RelationalMappingVersion` gating is enforced (packs with mismatched version are rejected).
 
 ### Determinism / ordering / shortening
 
@@ -2545,16 +2360,6 @@ DMS treats ApiSchema `resourceSchema.equalityConstraints` as the authoritative c
 derived-model key unification. Legacy Ed-Fi ODS physical schema choices (including cases where two equality-constrained
 values are stored as separate writable columns) are not authoritative for DMS and do not change key-unification
 behavior.
-
-DMS owns the SQL Server physical-model value-flow validator/classifier as a runtime/provisioning backstop. MetaEd
-(METAED-1667) owns earlier authoring feedback. Both consume one versioned conformance corpus with distinct `metaEd`,
-`dmsPostgresql`, and `dmsSqlServer` expectations. The corpus includes anchor closure, shared receiver columns,
-optional-site co-presence, row correlation, abstract identity trigger boundaries, safely breakable cycles, overlapping
-1785 paths, zero-hop carriers, and deterministic certificate output. PostgreSQL DMS outcomes always use fixed actions and
-never report classifier rejection; SQL Server and MetaEd must not replace the fixtures with table reachability alone.
-
-Cross-table/root-to-child equality propagation is outside this contract. It remains Core-validated and is tracked as
-separate future design work; it must not be inferred from the value-flow coverage rules for physical reference FKs.
 
 DMS also treats same-site duplicate `DocumentReferenceBinding.IdentityBindings[*].ReferenceJsonPath` values as a
 supported ApiSchema flattening pattern when all duplicates stay within one reference site and one table. This pattern

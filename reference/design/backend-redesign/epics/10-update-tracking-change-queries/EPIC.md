@@ -35,7 +35,8 @@ Deliverables include:
 - `DMS-1169` — `08-remove-document-change-event.md` — Remove `dms.DocumentChangeEvent`; superseded by the per-resource `tracked_changes_*` tables and the `ContentVersion` mirror
 - `DMS-1172` — `09-change-version-mirror-model.md` — Derive concrete-table `ContentVersion` / `ContentLastModifiedAt` mirrors and indexes
 - `DMS-1173` — `10-mirror-stamping-triggers.md` — Keep concrete-table mirrors in lock-step from document-stamping triggers
-- `DMS-1174` — `11-refkey-documentid-ordering.md` — Emit `*_RefKey` indexes with `DocumentId` last for recreated-resource probes
+- `DMS-1174` — `11-refkey-documentid-ordering.md` — Emit `*_RefKey` indexes with public identity first, intrinsic
+  lineage anchors next, and `DocumentId` last for recreated-resource probes
 - `DMS-1175` — `12-tracked-change-inventory.md` — Derive tracked-change table, column, join, and trigger inventory
 - `DMS-1176` — `13-readchanges-authorization-inventory.md` — Derive `ReadChangesAuthorizationViewInfo` inventory for `*IncludingDeletes` views
 - `DMS-1177` — `14-tracked-change-table-ddl.md` — Emit `tracked_changes_<schema>` tables from derived inventory

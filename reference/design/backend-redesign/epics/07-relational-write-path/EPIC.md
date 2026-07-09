@@ -23,8 +23,7 @@ Core produces validated JSON + extracted references; the backend:
 - invokes the Core-owned stored-state projector when profile-constrained merge semantics apply,
 - persists changed rows in a single transaction using a shared stable-identity merge executor foundation for full-surface writes and a profiled follow-on that adds hidden-data preservation and creatability semantics,
 - surfaces profile contract/runtime failures through dedicated typed error classification rather than DB constraint mapping, and
-- relies on database-driven maintenance for derived artifacts required for correctness (propagated reference identity
-  values and lineage anchors, `dms.ReferentialIdentity`, and update-tracking stamps).
+- relies on database-driven maintenance for derived artifacts required for correctness (propagated reference identity columns, `dms.ReferentialIdentity`, and update-tracking stamps).
 
 Authorization remains out of scope; however, the roundtrip and transaction structures built in this epic should accommodate future authorization queries being batched into the same DB roundtrips. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" for the expected roundtrip layout per operation.
 
@@ -33,7 +32,7 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 ## Stories
 
 - `DMS-981` — `00-core-extraction-location.md` — Core emits concrete JSON locations for document references
-- `DMS-982` — `01-reference-and-descriptor-resolution.md` — Bulk resolve target and identity-lineage `DocumentId` values and validate descriptors
+- `DMS-982` — `01-reference-and-descriptor-resolution.md` — Bulk resolve `ReferentialId → DocumentId` and validate descriptors
 - `DMS-1110` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
 - `DMS-1111` — `01a-c1-compiled-scope-adapter-and-address-derivation.md` — Shared Compiled-Scope Adapter Contract + Address Derivation Engine (Core, Tier 0)
 - `DMS-1114` — `01a-c2-semantic-identity-compatibility-validation.md` — Semantic Identity Compatibility Validation (Core, Tier 1)
@@ -50,7 +49,7 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 - `DMS-1123` — `02b-profile-applied-request-flattening.md` — Integrate `ProfileAppliedWriteRequest.WritableRequestBody` into the flattener after `DMS-1106`
 - `DMS-984` — `03-persist-and-batch.md` — Persist rows with stable-identity merge semantics, batching, and guarded no-op freshness for the shared/no-profile executor foundation (pgsql + mssql); blocked on `DMS-1108` for the executor-facing collection merge-plan contract
 - `DMS-1124` — `03b-profile-aware-persist-executor.md` — Apply profile-aware merge, hidden-data preservation, and creatability in the persist executor after `DMS-984`, `DMS-1106`, `DMS-1105`, and `DMS-1123`; planning recut on this branch is split into serial slice docs under `03b-profile-aware-persist-executor/`
-- `DMS-985` — `04-propagated-reference-identity-columns.md` — Populate propagation-complete reference identity values and lineage anchors (no reverse-edge table)
+- `DMS-985` — `04-propagated-reference-identity-columns.md` — Populate propagated reference identity columns (no reverse-edge table)
 - `DMS-986` — `05-write-error-mapping.md` — Map DB constraint errors to DMS error shapes (consistent across dialects)
 - `DMS-1104` — `05b-profile-error-classification.md` — Classify and map profile write failures to DMS error shapes
 - `DMS-987` — `06-descriptor-writes.md` — Descriptor POST/PUT: maintain `dms.Descriptor` + descriptor referential identities (no per-descriptor tables)

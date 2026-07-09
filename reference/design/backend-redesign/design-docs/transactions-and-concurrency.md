@@ -42,12 +42,15 @@ Reference validation is provided by **two layers**:
 ### 1) Write-time validation (application-level)
 
 During POST/PUT processing, the backend:
-- Normally resolves each extracted reference (`DocumentReference` / `DescriptorReference`) to a target `DocumentId`
-  using an ApiSchema-derived natural-key resolver.
-- Fails the request if a referenced identity does not exist, except for an existing PUT-by-`DocumentUuid` binding instance
-  that exactly satisfies a compiled `SameStatementReferenceResolutionPlan`. That update-only plan may reuse the locked
-  stored target id only when the retained cascade will give the same row the submitted future identity in the initiating
-  statement; it is not a general lookup-miss fallback.
+- Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) to a target `DocumentId` using an ApiSchema-derived “natural-key resolver”.
+- Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
+
+The sole proposed exception is an identity-changing PUT of an existing row with a compiled deferred-binding marker.
+Normal lookup still runs first and wins. After stored authorization and current-state loading, the executor may reuse only
+the persisted stable target `DocumentId` for an already-present binding whose target receives the submitted future
+identity through the selected initiating-statement cascade. It must rerun a fresh ordinary resolver after DML and require
+that identity to resolve to the same target before commit. This update-only workflow remains gated on the concrete DMS
+PUT POC in [mssql-cascading.md](mssql-cascading.md).
 
 This is required because relational tables store **stable `DocumentId` foreign keys**, and we cannot write those without resolving them.
 
@@ -77,11 +80,6 @@ It is used for:
 1. Dedupe referential ids across all extracted references.
 2. Resolve in bulk via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`).
 3. For descriptor references, validate “is a descriptor” (and optional descriptor type) via `dms.Descriptor`.
-4. For an eligible unresolved PUT instance only, select one exact binding/origin/mutation-case executor plan after stored
-   authorization/current-state load; prove locked row correlation and the complete future public/anchor/id vector, then
-   create an instance-scoped override.
-5. After the initiating update, bypass caches and verify the submitted referential id, stable target id, and demanded
-   anchors before commit. Any mismatch rolls back.
 
 ##### Caching
 
@@ -91,7 +89,6 @@ The resolver uses layered caching:
   - `ReferentialId → DocumentId`
 
 When identity updates occur, any cross-request cache of `ReferentialId → DocumentId` must be updated/evicted for affected keys after commit (or disabled / short-TTL; see [Caching](#caching-low-complexity-options)).
-Never seed a cache from a certified future-identity override; v1 waits for ordinary post-commit lookup behavior.
 
 ### 2) Database enforcement (FKs + propagation)
 
@@ -103,11 +100,6 @@ relational model distinguishes:
   aliases.
 - **Canonical/storage columns**: the single stored/writable source of truth for unified values; used for cascades,
   composite FKs, and propagation.
-- **Intrinsic identity-lineage inventory/storage**: each target records a stable lineage id and stored `DocumentId` for
-  every reference-backed identity lineage, independently of any incoming reference.
-- **Site anchor demand**: an incoming reference starts with no anchors and gains a local anchor mapping only when a
-  receiver-side full-FK validity/correlation obligation requires that target lineage. Demanded anchors participate in the
-  site's propagation key/FK but never in API reconstitution.
 
 #### Document references (`..._DocumentId` + identity-part columns)
 
@@ -115,7 +107,8 @@ For each document reference site, the referencing table includes:
 - the stable `..._DocumentId` (stored/writable), and
 - the referenced resource’s identity natural-key fields as local per-site identity-part columns
   (`{RefBaseName}_{IdentityPart}`), and
-- only the storage-only identity-lineage anchor columns in that site's demanded `AnchorSetId`.
+- one stable lineage-anchor `DocumentId` for every independently replaceable identity-contributing document reference
+  intrinsic to the target.
 
 Under key unification, `{RefBaseName}_{IdentityPart}` columns are treated as **path/binding columns**. They may be
 stored (baseline redesign) or generated/persisted aliases of canonical storage columns (unified redesign), preserving
@@ -125,37 +118,21 @@ DDL generator requirements (derived from ApiSchema):
 - Enforce “all-or-none” nullability for the reference group via a CHECK constraint over:
   - `{RefBaseName}_DocumentId`, and
   - the per-site identity-part binding columns (aliases when unified), and
-  - every dedicated demanded local lineage-anchor column in the site's selected `AnchorSetId`.
+  - every complete lineage-anchor column.
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
-- Inventory/store each target's intrinsic reference-backed identity lineages, then initialize every incoming site's
-  demanded anchor set empty.
-- Add an anchor demand only when receiver-side full-FK validity or row correlation requires it. Reuse an existing local
-  `..._DocumentId` only when complete identity equivalence and presence are proved; otherwise add an internal stored
-  local anchor. Propagate demand only through downstream identity/constraint consumers until the least fixed point.
-- Group equal demanded subsets under a stable `AnchorSetId`. Omit a target-intrinsic anchor from a site only when no
-  receiver validity/correlation obligation needs it; this omission proof still universally covers every valid
-  identity-mutation subset and simultaneous combination.
-- Example: DS 5.2 `CourseOffering -> Session` demands Session's intrinsic School anchor because its local
-  `SchoolId_Unified` is also read by `CourseOffering -> School`. An unrelated Session referrer whose receiver has no such
-  FK/correlation obligation remains on the empty-anchor variant.
-- Map each logical reference through canonical public-identity storage and anchor storage, then canonicalize and
-  deduplicate the result into a full-composite physical FK candidate. Its propagation vector contains public identity
-  components, the site's demanded anchors, and target `DocumentId`.
-- For PostgreSQL, directly assign `ON UPDATE CASCADE` when the target can change transitively and `NO ACTION` otherwise.
-  DMS does not prune, classify, certify, or fail PostgreSQL because of cascade topology.
-- For SQL Server, derive statement-scoped `ValueFlowAnalysis` facts and globally select `NativeCascade` /
-  `NoPropagation` modes so the final assignment satisfies error 1785 and every value-flow obligation. A
-  `NoPropagation` candidate is valid only when its changed-target route and receiver-carrier route prove same-row,
-  same-vector coverage through the relevant constraint-check boundary. A carrier route may be the zero-hop initiating
-  write. Cycles are breakable when this proof exists. Certificates cover complete mutation cases; primitive proofs may
-  be reused only with typed `SubsetCompositionProof`, or derivation fails as `UnprovedSubsetComposition`.
-- SQL Server infeasibility and deterministic work-limit exhaustion throw `RelationalModelDerivationException` with
-  distinct structured errors. No partial model, DDL, success manifest, or pack is emitted.
-- Every physical FK remains full composite. There is no `DocumentId`-only or identity-value propagation-trigger fallback.
+- Enforce a complete-vector FK over canonical storage: public identity values, all intrinsic lineage anchors, and target
+  `DocumentId`.
+  - PostgreSQL assigns full-vector actions mechanically from target mutability. It is never pruned,
+    topology-classified, or failed because of cascade topology.
+  - SQL Server globally selects physical actions that satisfy error 1785 and exact carrier safety. Diamonds, parallel
+    edges, and cycles are action choices; safely covered cycles are supported. Derivation fails before DDL only when no
+    safe assignment exists or the distinct deterministic work limit is reached. There is no `DocumentId`-only or
+    identity-value trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
 
-When a referenced document's identity changes, the database propagates updated public identity values and site-demanded
-lineage anchors through the finalized physical FK actions into direct referrers' **canonical/storage columns**. Any
-per-site binding aliases recompute automatically while preserving optional-reference presence semantics.
+When a referenced document’s identity changes, the database propagates updated identity values into all direct
+referrers’ **canonical/storage columns** (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible
+edges plus exact-carrier covered `NO ACTION` edges). Public values and lineage anchors move together. Any per-site binding
+aliases recompute automatically while preserving optional-reference presence semantics.
 
 #### Descriptor references (`..._DescriptorId`)
 
@@ -163,7 +140,9 @@ Descriptor references are stored as `..._DescriptorId` FKs to `dms.Descriptor` f
 
 #### How polymorphic (abstract) references work end-to-end
 
-Polymorphic references are stored as a single `BIGINT` `DocumentId` FK value, but the logical target is an *abstract* resource (e.g., `EducationOrganization`) with one abstract identity shape.
+Polymorphic references store a complete vector: public abstract identity values, normalized intrinsic lineage
+`DocumentId` anchors, and a terminal `BIGINT` target `DocumentId`. The logical target is an *abstract* resource (for
+example, `EducationOrganization`) with one abstract identity shape.
 
 The pieces fit together like this:
 
@@ -172,17 +151,15 @@ The pieces fit together like this:
 2. **Write-time resolution uses `dms.ReferentialIdentity`**:
    - DMS computes the target `ReferentialId` for the abstract resource type + identity values and resolves `ReferentialId → DocumentId` in bulk via `dms.ReferentialIdentity`.
    - This works because each concrete subtype maintains superclass/abstract **alias** referential-id rows, so abstract references can resolve without per-subtype SQL.
-3. **Persist `..._DocumentId`, abstract identity columns, and demanded lineage anchors**:
-   - The abstract target intrinsically stores all reference-backed lineage values. The referencing row stores the
-     resolved `DocumentId`, abstract public identity values, and only the site-demanded anchor values derived from the
-     resolved concrete member.
+3. **Persist the complete abstract-target vector**:
+   - The referencing row stores the public abstract identity values, normalized intrinsic lineage anchors, and resolved
+     target `DocumentId`.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
-   - The composite FK targets `{schema}.{AbstractResource}Identity`. Abstract derivation emits one shared,
-     table-qualified concrete-member mapping inventory used by anchor closure and trigger derivation. PostgreSQL uses its
-     fixed action without DMS classification; SQL Server analysis includes the statement boundary between a concrete-row
-     write and the abstract-identity maintenance trigger (see [mssql-cascading.md](mssql-cascading.md)). This ensures:
+   - The complete-vector FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses its fixed action and SQL
+     Server includes the candidate in global action selection, including safe cycle breaking (see
+     [mssql-cascading.md](mssql-cascading.md)). This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
-     - the stored abstract identity columns are kept correct automatically.
+     - the stored public identity values and lineage anchors are kept correct automatically.
 5. **Read-time reference identity projection is local**
    - Reconstitution emits reference objects from the local per-site binding columns (stored or alias; no join required).
    - A `{schema}.{AbstractResource}_View` union view can still be emitted for diagnostics/integrations, but it is not required for API correctness.
@@ -242,20 +219,15 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - `DocumentIdentity` + `ReferentialId`
    - Document references (with `ReferentialId`s)
    - Descriptor references (with `ReferentialId`s, normalized URI)
-2. Backend resolves target context without DML. For an existing target, observe the minimal stored authorization inputs
-   and complete stored-value authorization before loading full current/profile/correlation state or validating request
-   references. A denial takes precedence over submitted-reference errors.
-3. After the stored gate, backend loads current rows/concurrency state and resolves request references in bulk:
+2. Backend resolves references in bulk:
    - Use an ApiSchema-derived resolver to turn references into `DocumentId`s via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`), including:
      - self-contained identities
      - reference-bearing identities (kept current via cascades + per-resource triggers)
      - polymorphic/abstract identities via superclass/abstract alias rows in `dms.ReferentialIdentity`
    - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
-   - Normal lookup always wins. An unresolved instance may use only an exact PUT certified same-statement plan with a
-     stored target id, complete future vector, and locked retained-route correlation; all other misses fail closed.
-4. Backend materializes the final profile-aware merged rowset (including hidden preserved stored values and completed
-   ordinary/certified surrogate ids) and authorizes proposed/request values against that exact state.
-5. Backend writes within a single transaction:
+   - For an approved existing-binding future-identity miss on PUT, defer only the stable target id after stored-state
+     authorization/current-state correlation. Changing public values still come from submitted/origin bindings.
+3. Backend writes within a single transaction:
    - For update flows that already loaded the current document state, backend SHOULD compare the request-derived
      post-merge rowset to the current persisted rowset before issuing DML. If they are equal, treat the request as a successful
      no-op and skip data-modifying statements (see “No-op update detection” below).
@@ -264,24 +236,22 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - For each document reference site:
      - persist the stable `..._DocumentId`, and
      - populate canonical/storage identity-part columns deterministically (key-unified when required).
-     - populate every anchor in the site's demanded `AnchorSetId` from the resolved target lineage.
+     - populate every complete lineage-anchor column from ordinary resolved inputs or a proved origin-write binding.
      - per-site identity-part binding columns (`{RefBaseName}_{IdentityPart}`) may be generated aliases and are not
        written directly.
    - If key unification introduces synthetic presence flags for optional non-reference paths, writers MUST set those
      flags deterministically (`NULL` when absent; true/1 when present). There is no “keep previous” behavior based on
      missing inputs.
    - `dms.Descriptor` upsert if the resource is a descriptor.
-6. Database enforces propagation and maintains derived artifacts (in-transaction):
-   - Composite FK propagation uses finalized dialect actions over public identity components plus site-demanded anchors.
-     PostgreSQL uses its fixed assignment without DMS classification. SQL Server's globally selected modes satisfy
-     value-flow obligations and error 1785; full-composite `NO ACTION` is certified only from final-assignment coverage
-     (see [mssql-cascading.md](mssql-cascading.md)). Both paths update canonical/storage columns (binding aliases
-     recompute).
+4. Database enforces propagation and maintains derived artifacts (in-transaction):
+   - Complete-vector FK propagation is dialect-specific: PostgreSQL uses its fixed actions; SQL Server uses globally
+     selected native cascades and exact-carrier covered `NO ACTION` edges, including accepted cycle breaks (see
+     [mssql-cascading.md](mssql-cascading.md)). Both paths update canonical storage and binding aliases recompute.
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
    - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
-7. For every certified future-identity override, execute its cache-bypassing post-write verification query before commit
-   and compare the resolved target id plus demanded anchors to the retained predicted full vector.
+5. For every deferred binding, a fresh ordinary resolver verifies the submitted future referential identity resolves to
+   the same persisted target `DocumentId`. Commit only after all checks pass; otherwise roll back everything.
 
 ### Authorization (CRUD checks)
 
@@ -289,42 +259,34 @@ Authorization is enforced for all writes and MUST be applied before executing an
 
 Integration points:
 - Authentication occurs before the write path begins and produces a token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens, and any claim-set-derived strategy configuration).
-- Existing-target writes use two ordered gates. Minimal target observation and **stored-value** authorization happen first;
-  full current-state/profile loading, submitted reference resolution (including certified correlation), and their errors
-  are not observable until that gate succeeds. **Proposed-value** authorization then uses the completed resolved/merged
-  request state and runs before inserts/updates/deletes.
-- Create operations have no stored gate; they normally resolve request references, authorize proposed values, and only
-  then insert `dms.Document` or resource rows.
+- Authorization checks run after reference resolution (so checks can use already-resolved `DocumentId`s) and before inserts/updates/deletes.
+- For update operations, authorization is evaluated against:
+  - **stored values** (to authorize the current state), and
+  - **new values** (to authorize the requested state) when identifying values change (see [auth.md](auth.md) for the execution order and error semantics).
 - On create, `dms.Document.CreatedByOwnershipTokenId` is stamped from the authenticated client context (not from the request body) and is used by the ownership-based authorization strategy.
 
 ### Identity propagation and derived maintenance (DB-driven)
 
-This redesign keeps relationships keyed by stable `..._DocumentId` and stores referenced identity natural-key fields at
-every site. Targets intrinsically store their reference-backed lineage inventory. Each incoming site starts with an empty
-anchor demand set and carries a lineage `DocumentId` only when receiver-side full-FK validity/correlation needs it.
-Demand flows only through downstream identity/constraint consumers to the least fixed point; omission is allowed only
-after proving no receiver obligation needs that anchor across every valid identity-mutation subset and combination.
-Logical sites become deduplicated full-composite physical FK candidates only after storage mapping, key unification, and
-anchor closure. PostgreSQL directly assigns fixed actions. SQL Server alone derives statement-scoped value-flow facts and
-globally selects `NativeCascade` / `NoPropagation` modes satisfying both the obligations and error 1785. Cycles may be
-broken when every pruned edge has a proved receiver carrier. There is no `DocumentId`-only or identity-value
-propagation-trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
+This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key
+fields and complete stable lineage anchors alongside every document reference. PostgreSQL assigns fixed full-vector
+actions mechanically. SQL Server globally selects native cascades and exact-carrier covered `NO ACTION` edges. Its
+search handles overlapping diamonds and safely breakable cycles and fails before DDL only when no safe assignment exists
+(or a separately reported work limit is reached). See [mssql-cascading.md](mssql-cascading.md).
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
-  propagates updated public values and each site's demanded anchors into direct referrers' canonical/storage columns;
-  per-site/per-path binding aliases recompute and preserve presence semantics.
+  propagates updated identity values into all direct referrers’ canonical/storage columns; per-site/per-path binding
+  aliases recompute and preserve presence semantics.
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL has no SQL Server 1785 DDL restriction. DMS never prunes, classifies, or fails its cascade topology; it emits
-  the fixed full-composite action assignment.
-- SQL Server rejects a table reached by multiple cascade paths or a retained cascade cycle (error 1785), so it globally
-  searches for modes that satisfy the action-graph restriction and all value-flow obligations. Cycles are deliberately
-  breakable: a cycle edge may use `NoPropagation` when exact changed-target and receiver-carrier proofs cover every
-  mutation case. No independent-parent or shared-column shortcut is valid.
-- Every physical FK keeps the full composite key. There is no `DocumentId`-only shape and no identity-value propagation
-  trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
+- PostgreSQL is never pruned, topology-classified, or failed because of cascade topology. Provider-independent storage
+  and model validation still applies.
+- SQL Server rejects a table reached by multiple cascade paths, and cascade cycles (error 1785), so it uses
+  **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child). Global bounded search
+  chooses a legal retained graph and proves every pruned edge has the same-row, same-value, same-boundary carrier.
+  Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
+  propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 
 ### Insert vs update detection
 
@@ -355,16 +317,10 @@ stored state.
 
 If identity changes on update:
 - Treat `dms.ReferentialIdentity` as a derived index and recompute it **transactionally** (via triggers) for the changed document and any documents whose identity projection changes due to cascaded identity-component updates.
-- Incoming relationships to the changed document remain keyed by its stable target `DocumentId`; those columns are not
-  rewritten. When the changed identity itself contains a retargeted outgoing reference, that outgoing
-  `..._DocumentId`, its public values, and the target row's intrinsic lineage storage change together.
-- Support changes to every public identity component, reference-backed component retargeting, and simultaneous component
-  changes. Site-demanded lineage anchors cascade through downstream identity/constraint consumers in the same
-  transaction; an empty-demand site remains valid for the same universally quantified mutation cases.
-- When a still-present reference names a target identity that will exist only after the same initiating cascade, PUT uses
-  the compiled certified plan to retain the same stable target `DocumentId`, bind predicted anchors, and verify the future
-  referential id/full vector before commit. POST continues to locate existing subjects only by the request's current
-  referential id and never uses this update-only fallback.
+- Relationships stored as `DocumentId` FKs remain valid; no rewrite of `..._DocumentId` columns is required.
+- Support every independently writable primitive component and non-empty primitive subset, one or more
+  reference-backed replacements, multiple reference replacements, and mixed primitive/reference changes in one
+  operation. Each reference replacement moves all public values and stable lineage anchors atomically.
 
 Operational guidance:
 - Identity updates can fan out broadly (cascaded updates + trigger work). Keep them rare; consider operational guardrails (rate limiting, maintenance window guidance, deadlock retry).
@@ -373,7 +329,7 @@ Operational guidance:
 
 Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change,
 because relationships are stored as stable `DocumentId` FKs. Identity propagation still exists for
-**canonical/storage identity-part and site-demanded lineage-anchor columns** (through finalized dialect physical FK actions) and for
+**canonical/storage identity-part columns** (FK cascades on PostgreSQL; native `ON UPDATE CASCADE` on eligible edges on SQL Server) and for
 **derived artifacts** (referential ids and stamps), and is handled in the database:
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
@@ -383,10 +339,8 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
 
 - **Outgoing reference changes on a document** (`..._DocumentId` value changes)
   - Relational writes update the FK columns (`..._DocumentId`) and the canonical/storage identity-part columns (plus any
-    demanded lineage anchors and synthetic presence flags required by key unification). Per-site binding aliases are not
-    written directly.
-  - Composite FK enforcement guarantees the public identity values and every site-demanded anchor match the referenced
-    target. Omitted target-intrinsic anchors have no receiver validity/correlation obligation at that site.
+    synthetic presence flags required by key unification). Per-site binding aliases are not written directly.
+  - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
   - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the full resource-state document those stamps track, before readable profile projection and excluding response decorations such as `link`.
@@ -408,12 +362,6 @@ With stored representation stamps:
 
 Because FK cascades update referrers’ rows and triggers bump their representation stamps, indirect changes correctly cause `If-Match` failures on subsequently stale clients.
 
-Certified same-statement resolution acquires its origin/current-row/changed-target locks only after stored authorization,
-in the plan's canonical table/key order, and holds them through the initiating update plus post-write verification.
-PostgreSQL uses `FOR UPDATE`; SQL Server uses `UPDLOCK, HOLDLOCK`. The stored target id and observed `ContentVersion` must
-still match at execution; otherwise the request follows normal stale-precondition/retry behavior rather than reusing an
-unlocked id.
-
 Collection-write note:
 - For profile-constrained writes, backend loads/reconstitutes the current stored document and invokes the Core-owned projector with the same mapping-set-scoped compiled-scope catalog used for address derivation to derive `ProfileAppliedWriteContext`, including `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
 - Backend determines the visible persisted rows for merge/delete from `StoredScopeStates` / `VisibleStoredCollectionRows` in that Core-projected stored-state contract, using the compiled semantic-identity values already supplied there. Backend MUST NOT evaluate writable-profile member filters or collection-item value predicates itself, and MUST NOT infer hidden-vs-visible-absent from `VisibleStoredBody` alone.
@@ -428,6 +376,10 @@ Collection-write note:
 ### Deadlock + retry policy
 
 Deadlocks are possible under contention, especially for identity updates with large cascades. The correct response is to roll back and retry the **entire** write transaction.
+
+For deferred existing-reference PUTs, gather the subject, receiver, and target `DocumentId` values before resource DML,
+lock them in deterministic numeric order, reload/validate the correlated state, and then write. Locking one root and later
+discovering a reciprocal target is insufficient and can deadlock with the inverse operation.
 
 Recommended: bounded retry (e.g., 3 attempts) with jittered backoff. Treat these as retryable:
 - PostgreSQL: `40P01` (deadlock detected)

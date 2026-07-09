@@ -44,12 +44,7 @@ Authorization is addressed separately in [auth.md](auth.md). Extension-specific 
 
 - **Schema-driven, no codegen**: derive extension tables/columns from effective `ApiSchema.json` (`jsonSchemaForInsert` + `documentPathsMapping`) and compile plans at startup.
 - **Low coupling to document shape**: treat `_ext` as a generic “project-scoped subtree” discovered via JSON schema traversal (no hard-coded paths).
-- **Cross-engine**: extension tables/columns must be supported on both PostgreSQL and SQL Server. Shared derivation gives
-  targets intrinsic lineage storage, starts each extension reference site's demand empty, and adds anchors only for its
-  receiver-side full-FK validity/correlation obligations before forming full-composite physical FK candidates. PostgreSQL uses fixed
-  actions without DMS pruning, topology classification, or fail-fast. SQL Server alone performs value-flow analysis and
-  global action selection for error 1785, including safely breakable cycles. See
-  [mssql-cascading.md](mssql-cascading.md).
+- **Cross-engine**: extension tables/columns must be supported on both PostgreSQL and SQL Server — shared behavior where practical, explicit engine-specific behavior where the engines diverge (e.g. SQL-Server-only cascade pruning/fail-fast; PostgreSQL left as-is — see [mssql-cascading.md](mssql-cascading.md)).
 - **No core-table widening**: avoid merging extension columns into core resource tables; keep extension projects’ data in their own table hierarchies.
 
 ## Table naming patterns (borrowed from the old flattening design)
@@ -169,17 +164,6 @@ The mapping for references/descriptors inside `_ext` is identical to core:
 - document references become `..._DocumentId` FK columns (resolved via `dms.ReferentialIdentity`)
 - descriptor references become `..._DescriptorId` FK columns to `dms.Descriptor` (resolved via `dms.ReferentialIdentity`, validated via `dms.Descriptor`)
 
-Document-reference sites in extension tables follow the same physical-FK contract as core sites: targets inventory
-intrinsic reference-backed lineages; each incoming site begins with no anchor demand; receiver validity/correlation adds
-only necessary anchors; and demand propagates only through downstream identity/constraint consumers to a least fixed
-point. Equal demanded subsets share an `AnchorSetId` variant. Omission is proved across all mutation subsets and
-simultaneous combinations, not inferred from sampled writes. Public bindings and demanded anchors map through canonical
-storage before identical full-composite candidates are deduplicated. PostgreSQL emits its fixed actions without DMS classification. SQL Server globally selects
-`NativeCascade` / `NoPropagation` modes satisfying statement-scoped public-component/anchor value flow and error 1785.
-Every `NO ACTION` edge requires a changed-target route and same-row receiver carrier, which may be a zero-hop origin
-write. An unsafe SQL Server assignment throws a typed derivation exception. There is no reduced-FK or
-propagation-trigger fallback.
-
 `documentPathsMapping` remains the authoritative source for “this is a reference/descriptor” and for identity mapping.
 
 ## Flattening (POST/PUT) integration
@@ -192,13 +176,7 @@ During write materialization, extension row buffers are produced alongside core 
    - matched extension-scope rows keep their stable base identity and overlay visible request/resolved values onto stored row values using compiled bindings plus `HiddenMemberPaths`,
    - new extension child rows receive new `CollectionItemId`s,
    - omitted visible extension child rows are deleted,
-   - a separate-table non-collection `_ext` scope classified `VisibleAbsent` is deleted, while the same scope classified
-     `Hidden` is preserved,
-   - an inlined `_ext` scope classified `VisibleAbsent` clears its visible/clearable bindings; hidden bindings and any
-     shared canonical storage still governed by a hidden member are preserved,
-   - hidden profile-scoped extension collection rows and hidden extension columns on matched rows are preserved, and
-   - document-reference target ids, public storage, and demanded lineage anchors follow the owning reference's same
-     hidden / visible-absent / visible-present classification as one atomic group.
+   - hidden profile-scoped extension rows and hidden extension columns on matched rows are preserved.
 
 This keeps extension semantics aligned with the core collection merge rules and avoids exposing per-element IDs in the API surface.
 

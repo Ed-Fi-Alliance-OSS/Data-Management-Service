@@ -14,13 +14,9 @@ Derive a fully explicit relational model (schemas, tables, columns, constraints,
 - `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` (unified `DerivedRelationalModelSet` shape)
 - `reference/design/backend-redesign/design-docs/extensions.md`
 
-This epic focuses on *model derivation* (not SQL emission yet). The primary in-memory deliverable is
-`DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)`: the finalized `DerivedRelationalModelSet`,
-provider-neutral and SQL Server-specific success diagnostics, and provider-finalized
-`RelationalExecutorRequirements` (see `compiled-mapping-set.md`). The complete artifact is then:
+This epic focuses on *model derivation* (not SQL emission yet). The primary in-memory deliverable is `DerivedRelationalModelSet` (see `compiled-mapping-set.md`), which is then:
 - consumed by DDL emission (E02) to generate SQL, and
-- consumed as a complete artifact by plan compilation (E15) to generate dialect-specific CRUD plans, including certified
-  same-statement reference plans (used by runtime and optional packs).
+- consumed by plan compilation (E15) to generate dialect-specific CRUD plans (used by runtime and optional packs).
 
 This epic also produces a deterministic `relational-model.manifest.json` suitable for snapshot/golden tests.
 
@@ -32,13 +28,6 @@ The end-to-end build is orchestrated by `DMS-1033` as an ordered set-level build
 
 - The per-resource derivation pipeline builds a model for one resource at a time (given a specific `resourceSchema` selection).
 - The set-level builder executes **ordered passes**, where each pass iterates all projects/resources in canonical ordinal order and may consult any other resource/project metadata as needed.
-- Cross-resource reference finalization includes key unification, abstract-member mappings, minimal fixed-point
-  identity-lineage anchor closure, physical FK candidate de-duplication, PostgreSQL fixed-action assignment, and
-  SQL Server-only global cascade selection. After its fixed actions, PostgreSQL constructively derives same-statement
-  reference-resolution requirements from every retained target-changing same-boundary route. SQL Server derives and
-  checks those requirements while evaluating each complete candidate assignment, before choosing the deterministic best
-  assignment, so an unrepresentable candidate does not prevent trying the next one. No producer may bypass these passes
-  by rebuilding one resource in isolation.
 - A story may contribute:
   - per-resource pipeline step(s) that derive additional per-resource model detail, and/or
   - a set-level pass that stitches/validates cross-resource artifacts, registered into the ordered pass list in `DMS-1033`.

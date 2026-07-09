@@ -21,7 +21,13 @@ Draft. This is an initial design proposal for replacing the current three-table 
 1. **Relational-first storage**: Store resources in traditional relational tables (one root table per resource, plus child tables for collections).
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
-4. **Bounded cascades with stable FKs**: Store relationships as stable surrogate keys (`DocumentId`) for referential integrity, but also persist the referenced identity parts needed for query/reconstitution at the reference site (the `{RefBaseName}_{IdentityPart}` *binding* columns). Every target inventories and stores its intrinsic reference-backed identity lineages, but each incoming reference site's anchor demand starts empty. Least-fixed-point analysis adds a target lineage `DocumentId` to that site only when a receiver-side full-FK validity or row-correlation obligation requires it, then propagates that demand only through downstream identity/constraint consumers. Omission is valid only after proving no such receiver obligation needs the anchor; the proof still universally covers every valid identity-mutation subset and simultaneous combination. Equal demand sets share deterministic propagation-key/`RefKey` variants keyed by `AnchorSetId`, preventing blanket anchor copying while each reference retains one full FK. Derivation then maps bindings and demanded anchors through canonical storage and de-duplicates the physical FK candidates. PostgreSQL assigns full-composite `ON UPDATE CASCADE` to abstract/transitively mutable targets and `NO ACTION` to immutable targets without DMS pruning, topology classification, or fail-fast. SQL Server alone derives statement-scoped `ValueFlowAnalysis` obligations and globally selects `NativeCascade` / `NoPropagation` modes that satisfy both error 1785 and exact component/anchor lineage, origin-row correlation, reference co-presence, and constraint timing. Cycles are action-choice constraints and may be broken when a carrier route, including a zero-hop origin write, proves coverage. There is no `DocumentId`-only shape or identity-value propagation-trigger fallback; see [mssql-cascading.md](mssql-cascading.md). When `equalityConstraints` unify identity parts across sites/paths on the same row, those per-site/per-path bindings may be generated/persisted aliases of a canonical stored column (presence-gated when optional); see [key-unification.md](key-unification.md).
+4. **Bounded cascades with stable FKs**: Store relationships as full-composite vectors containing referenced identity
+   values, complete intrinsic lineage anchors, and stable target `DocumentId`. PostgreSQL assigns fixed actions
+   mechanically and is never pruned, topology-classified, or failed because of cascade topology. SQL Server globally
+   selects error-1785-legal actions and permits exact-carrier `NO ACTION` cuts for diamonds or safely breakable cycles.
+   Every FK keeps the complete vector; there is no reduced-FK or identity-value trigger fallback (see
+   [mssql-cascading.md](mssql-cascading.md)). Key-unified bindings may be presence-gated aliases of canonical storage;
+   see [key-unification.md](key-unification.md).
 5. **Cross-engine support**: The design must be implementable (DDL + CRUD + query) on both PostgreSQL and SQL Server, with shared behavior where practical and explicit engine-specific behavior where the engines diverge.
    - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
@@ -34,7 +40,10 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - requests are authenticated before any schema-dependent work (mapping selection, queries, writes), and
   - authorization is applied in the backend at the SQL layer (page selection + CRUD checks) using `auth.*` companion objects and token-derived authorization context.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
-- **Polymorphic references use abstract identity tables and abstract union views**: For abstract reference targets (e.g., `EducationOrganization`), provision an `{AbstractResource}Identity` table with `DocumentId`, abstract identity fields, intrinsic lineage-anchor storage, and `Discriminator` (NOT NULL). Each incoming abstract reference selects only the demanded-anchor propagation-key variant. Abstract derivation emits a shared, table-qualified concrete-member mapping inventory consumed by both demand closure and abstract-identity trigger derivation. PostgreSQL uses its fixed actions without DMS classification. SQL Server value-flow analysis records the later abstract-identity maintenance statement boundary rather than treating it as an ordinary same-statement cascade source. Also provision `{AbstractResource}_View` union views for query/diagnostics; they are no longer required for reference identity projection. See [data-model.md](data-model.md) and [mssql-cascading.md](mssql-cascading.md).
+- **Polymorphic references use abstract identity tables and abstract union views**: For abstract targets, provision an
+  `{AbstractResource}Identity` table and target it with the same complete-vector/provider-action rules as concrete
+  resources, including SQL Server safe cycle breaking. Also provision `{AbstractResource}_View` for diagnostics; see
+  [data-model.md](data-model.md) and [mssql-cascading.md](mssql-cascading.md).
 
 ## Key Implications vs the Current Three-Table Design
 
@@ -45,8 +54,11 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - plus JSON rewrite cascades (`UpdateCascadeHandler`) to keep embedded reference identity values consistent.
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
-  - responses can reconstitute reference identity values directly from local reference-identity binding columns. Under key unification, those binding columns may be presence-gated aliases of canonical stored columns, preserving “absent optional reference ⇒ `NULL` at the binding columns”. Storage-only lineage anchors do not appear in the API representation; see [mssql-cascading.md](mssql-cascading.md).
-- Identity/URI changes do not rewrite the stable target `..._DocumentId` of a reference to that target, but **do** propagate public identity components and any site-demanded identity-lineage anchors into local canonical storage. PostgreSQL always uses its fixed actions. SQL Server may use a full-composite `NO ACTION` edge only when the global solution proves its `NoPropagation` coverage. Cascades still exist for derived artifacts, but they are handled row-locally:
+  - responses reconstitute reference identity values from local bindings. Complete public/anchor vectors stay consistent
+    through PostgreSQL fixed actions or SQL Server globally selected actions, including safe cycle cuts (see
+    [mssql-cascading.md](mssql-cascading.md)).
+- Identity/URI changes do not rewrite terminal target `..._DocumentId` values, but **do** propagate complete public and
+  lineage-anchor values. Cascades still exist for derived artifacts, but they are handled row-locally:
   - `dms.ReferentialIdentity` is maintained transactionally by per-resource triggers that recompute referential ids from locally present identity columns (including propagated reference identity values).
   - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
 - Identity uniqueness is enforced by:
@@ -82,19 +94,10 @@ Keep DMS Core mostly intact:
 
 - Core remains the home of API canonicalization, validation, identity extraction, and referential-id computation.
 - For baseline non-profile relational writes, the required Core extraction-model change is to add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
-- Profile-constrained writes add a second Core/backend contract. Core supplies an optional request-scoped
-  `ProfileAppliedWriteRequest` with `WritableRequestBody`, `RootResourceCreatable`, `RequestScopeStates`, and
-  `VisibleRequestCollectionItems`; backend then loads the current stored document and invokes a Core-owned projector to
-  derive `ProfileAppliedWriteContext` (`VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`). These
-  contracts govern non-collection scopes as well as collections: `Hidden` preserves stored bindings/rows,
-  `VisibleAbsent` clears visible inlined bindings or deletes a separately stored visible scope, and `VisiblePresent`
-  overlays the request-derived values. Merge/delete decisions therefore come from Core-projected profile state rather
-  than backend-owned profile evaluation.
+- Profile-constrained collection merges add a second Core/backend contract: Core supplies an optional request-scoped `ProfileAppliedWriteRequest` with a `WritableRequestBody`; backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext` (`VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`) so merge/delete decisions come from Core-projected stored state rather than backend-owned profile evaluation.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
-- Core continues to produce `DocumentInfo` (identity + `ReferentialId` + extracted references/descriptors, including
-  reference locations) and operates on JSON bodies. Whenever a writable profile applies, Core also provides the complete
-  request-scoped scope/member/collection write-shaping input described above.
+- Core continues to produce `DocumentInfo` (identity + `ReferentialId` + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
 - Backend repositories (`IDocumentStoreRepository`, `IQueryHandler`) become responsible for:
   1. **Flattening** incoming JSON into relational tables
   2. **Reference resolution** (natural keys → `DocumentId`)
@@ -131,7 +134,10 @@ This redesign is split into focused docs in this directory:
 
 ## Risks / Open Questions
 
-1. **Identity-update feasibility (SQL Server)**: Key unification can make several physical FKs read one canonical receiver column, and error 1785 requires cycles and duplicate paths to be broken. Site-specific anchor demand preserves receiver-side full-FK validity/correlation without widening unrelated referrers. SQL Server globally selects modes and proves every pruned edge with changed-target and receiver-carrier routes, exact public-component/anchor equality, row correlation, co-presence, and constraint timing. A carrier route may be the zero-hop initiating write. No safe bounded assignment causes a typed derivation exception. PostgreSQL is never pruned, classified, or failed by DMS for cascade topology. There is no `DocumentId`-only or propagation-trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
+1. **Cascade feasibility (SQL Server)**: Error 1785 is handled by deterministic bounded global physical action
+   selection. Exact-carrier cuts may safely break diamonds or cycles; cycle membership alone is not a failure. Proved
+   no-solution and work-limit exhaustion are distinct, with no reduced-FK/trigger fallback. See
+   [mssql-cascading.md](mssql-cascading.md).
 2. **Operational fan-out**: an identity update on a “hub” document can synchronously update many referencing rows (via PostgreSQL FK cascades or SQL Server native `ON UPDATE CASCADE` on eligible edges), increasing deadlock and latency risk.
 3. **Schema width/index pressure**: persisting referenced identity fields for all document reference sites increases table width and may require additional indexing for query performance.
 4. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).

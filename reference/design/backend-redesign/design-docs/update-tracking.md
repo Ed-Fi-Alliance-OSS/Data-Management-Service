@@ -20,19 +20,11 @@ The backend redesign needs resource-state-sensitive metadata:
   only the descriptor resource's own representation.
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
 
-This redesign accomplishes indirect-update semantics without a reverse-edge table by:
-
-- persisting referenced identity values at every site, intrinsic reference-backed lineage storage on each target, and only
-  the receiver-demanded lineage anchors alongside a particular incoming `..._DocumentId` reference, and
-- deriving deduplicated full-composite physical FK candidates after canonical storage mapping and least-fixed-point
-  demand closure. Each site starts with no anchors; demand is added only for receiver full-FK validity/correlation and
-  propagated only through downstream identity/constraint consumers. Omitting an intrinsic target anchor requires proof
-  that no such receiver obligation needs it across every identity-mutation subset/combination. PostgreSQL uses fixed
-  eligible-`CASCADE`/immutable-`NO ACTION` actions without DMS classification.
-  SQL Server alone derives statement-scoped value-flow obligations and globally selects `NativeCascade` /
-  `NoPropagation` modes satisfying value flow and error 1785, including safely breakable cycles. A certified carrier may
-  be the zero-hop initiating write. Uncertifiable SQL Server cases throw a typed derivation exception, with no
-  `DocumentId`-only or propagation-trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
+This redesign accomplishes indirect-update semantics without a reverse-edge table by persisting complete referenced
+public/lineage vectors alongside each stable target `..._DocumentId` and propagating them through native FK actions.
+PostgreSQL assigns fixed actions mechanically; SQL Server globally selects native cascades and exact-carrier covered
+`NO ACTION` edges, including safe cycle cuts. There is no identity-value propagation trigger; see
+[mssql-cascading.md](mssql-cascading.md).
 
 Those referrer updates naturally trigger the same stamping rules as “direct” writes.
 
@@ -96,9 +88,7 @@ See [data-model.md](data-model.md) for the sequence DDL.
 A document's full resource-state representation changes when any of the following occur:
 
 - the document’s own persisted scalar/collection content changes (root/child/extension tables), or
-- any referenced document's identity values embedded in the representation change, which is realized as an FK cascade
-  update to the document's stored reference identity columns and any anchors demanded by that receiver site (canonical
-  under key unification; anchors are excluded from reconstitution; see [key-unification.md](key-unification.md)).
+- any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
 A successful update request that results in **no persisted row changes** is **not** a representation change. In that
 case, `ContentVersion` and `ContentLastModifiedAt` MUST remain unchanged.
