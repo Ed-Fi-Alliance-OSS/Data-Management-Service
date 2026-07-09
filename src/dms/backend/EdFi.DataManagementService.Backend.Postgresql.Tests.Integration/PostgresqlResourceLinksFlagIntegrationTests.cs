@@ -191,7 +191,7 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
             .Should()
             .Be(
                 EtagMatchProjection.Of(_recordedEtagWithFlagEnabled!),
-                "If-Match compares ContentVersion + schemaEpoch + profileCode only; link mode must not cause a 412"
+                "If-Match compares ContentVersion + schemaEpoch only; link mode must not cause a 412"
             );
     }
 

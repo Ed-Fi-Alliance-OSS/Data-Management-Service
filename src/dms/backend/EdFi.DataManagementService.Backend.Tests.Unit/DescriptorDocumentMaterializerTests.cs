@@ -14,7 +14,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_DescriptorDocumentMaterializer
 {
-    private static readonly VariantKey _descriptorVariantKey = DescriptorVariantKey.For("abcd1234");
+    private static readonly VariantKey _descriptorVariantKey =
+        DescriptorEtagTestSupport.NoProfileNoLinksJsonVariantKey("abcd1234");
 
     [Test]
     public void It_materializes_external_response_documents_with_public_fields_metadata_and_null_omission()

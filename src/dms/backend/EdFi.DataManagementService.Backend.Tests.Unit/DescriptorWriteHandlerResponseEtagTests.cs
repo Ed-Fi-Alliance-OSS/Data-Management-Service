@@ -348,7 +348,9 @@ public class Given_Descriptor_Write_Response_Etags
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
         EtagComposer.Compose(
             contentVersion,
-            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+            DescriptorEtagTestSupport.NoProfileNoLinksJsonVariantKey(
+                CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
+            )
         );
 
     private static string ExpectedProfiledDescriptorEtag(long contentVersion, string profileName) =>

@@ -7,8 +7,9 @@ namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
 /// The representation context needed to compose a served etag. <see cref="ProfileName"/> is
-/// <see langword="null"/> when no readable profile applies. Descriptor callers pass
-/// <c>ProfileName: null</c>, <c>Format: Json</c>, <c>LinksEnabled: false</c>.
+/// <see langword="null"/> when no readable profile applies. Descriptor responses use
+/// <c>Format: Json</c> and <c>LinksEnabled: false</c>; <see cref="ProfileName"/> is populated only
+/// when the descriptor response is governed by a readable profile.
 /// </summary>
 public readonly record struct ServedEtagContext(
     string EffectiveSchemaHash,

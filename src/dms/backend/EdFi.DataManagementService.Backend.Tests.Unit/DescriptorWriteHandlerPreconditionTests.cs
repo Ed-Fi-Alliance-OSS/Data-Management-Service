@@ -942,7 +942,9 @@ public class Given_Descriptor_Write_Preconditions
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
         EtagComposer.Compose(
             contentVersion,
-            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+            DescriptorEtagTestSupport.NoProfileNoLinksJsonVariantKey(
+                CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
+            )
         );
 
     private static InMemoryRelationalResultSet CreateContentVersionRow(long contentVersion) =>

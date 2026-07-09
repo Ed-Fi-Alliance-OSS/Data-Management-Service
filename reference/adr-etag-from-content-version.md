@@ -127,14 +127,7 @@ A bare `ContentVersion` is a strong validator only when each resource state maps
 
 **`ContentVersion` MUST be treated as a string.** HTTP entity-tags are opaque, quoted strings (e.g. `ETag: "5-json"`). Neither the server nor clients may interpret the `ContentVersion` portion as a number: serialize it as a string in the `_etag` body field and as a quoted value in the `ETag` header, compare it as an opaque string (RFC strong comparison is character-by-character), and document it to clients as opaque so they never parse it or compare it numerically.
 
-**`If-Match` comparison (decided).** The _served_ etag carries the full `variantKey`, but `If-Match` evaluation compares only the **state-significant projection** of the tag. The origin server mints these tags and may therefore compare them with knowledge of their structure — etag opacity binds clients, not the server. Two `variantKey` components, **`format`** and **`linkFlag`**, encode only how the representation is rendered: they never reflect resource state and never change as the result of a `PUT`/`DELETE` (a `DELETE` has no representation at all). Comparing them would produce spurious `412`s across representation variants that denote the _same_ state, so they are **excluded** from the `If-Match` match. The retained, compared components are `ContentVersion`, `schemaEpoch`, and **`profileCode`**.
-
-> [!WARNING]
-> **Superseded 2026-07-04.** The `profileCode`-significant decision described in this paragraph and the next was reversed for legacy compatibility. `profileCode` is **no longer** compared during `If-Match`; a cross-profile or profiled-vs-unprofiled `If-Match` now matches whenever `ContentVersion` and `schemaEpoch` agree. See [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison).
-
-**`profileCode` is deliberately significant for `If-Match` (decision made 2026-07-01).** A readable profile changes which fields the client actually saw, so an etag obtained under profile A is treated as distinct from one obtained under profile B: a cross-profile `If-Match` returns `412` even when `ContentVersion` is unchanged. This is a chosen scoping guarantee, not an accident of encoding, and it is the point on which this design departs from the "compare only `ContentVersion`" lenient option.
-
-Concretely, the precondition passes **if and only if** the client's `If-Match` tag and the server-composed expected tag agree on `ContentVersion`, `schemaEpoch`, and `profileCode`; differences in `format` or `linkFlag` are ignored. This preserves optimistic-concurrency safety — the ignored components cannot mask a state change — while avoiding false `412`s from link/format variance (e.g. an etag read from a links-on instance used to guard a write on a links-off instance). It is a deliberate, documented refinement of RFC 7232 §3.1: the _served_ etags remain full strong validators for conditional **GET** / `If-None-Match` cache correctness, and only the _write-time_ `If-Match` comparison is projected to the state-significant subset.
+**`If-Match` comparison (decided).** The _served_ etag carries the full `variantKey`, but `If-Match` evaluation compares only the **state-significant projection** of the tag. The origin server mints these tags and may therefore compare them with knowledge of their structure — etag opacity binds clients, not the server. The compared components are `ContentVersion` and `schemaEpoch`. The `variantKey` components **`format`**, **`profileCode`**, and **`linkFlag`** encode representation selectors rather than resource state, so they are excluded from the write-time `If-Match` match. This preserves optimistic-concurrency safety — ignored components cannot mask a state change because any persisted change advances `ContentVersion` — while avoiding false `412`s across representation variants that denote the same state. The _served_ etags remain full strong validators for conditional **GET** / `If-None-Match` cache correctness, and only the write-time `If-Match` comparison is projected to the state-significant subset.
 
 ### `variantKey` encoding (specification)
 
@@ -150,25 +143,15 @@ Components, in fixed order:
 
 1. **`schemaEpoch`** — the first 8 lowercase hex characters of the in-force `EffectiveSchemaHash`. Captures every rendering input that is _not_ the document state itself: the resource's field set / ordering and all profile _definitions_. A schema or profile-definition change rotates this segment, correctly invalidating prior etags whose bytes are no longer reproducible. (Team option: substitute a coarser API-standard-version token if per-schema-hash invalidation is judged too aggressive; the hash is the strict-correct choice, because a profile redefinition genuinely changes the served bytes for an unchanged `ContentVersion`.)
 2. **`format`** — a stable one-or-two-char code for the response media type, from a fixed server-side registry. Defined today: `j` = `application/json`. Reserve further codes (e.g. `x` = XML) as formats are added. Never derive this from the raw media-type string at runtime; map through the registry so codes stay stable.
-3. **`profileCode`** — `_` when no profile is applied; otherwise the readable profile's stable compile-time index within the current `MappingSet` (a non-negative integer, e.g. `3`). Indices need only be stable within a `schemaEpoch`; because any profile redefinition rotates `schemaEpoch`, the index unambiguously identifies the profile for that epoch. No hashing required.
+3. **`profileCode`** — `_` when no profile is applied; otherwise the first 8 lowercase hex characters of `SHA-256(UTF-8(profileName))`, where `profileName` is the readable profile name. This hashes only the tiny, static profile-name descriptor — never the representation JSON — so it preserves the decision to stop hashing document bodies.
 4. **`linkFlag`** — `l` when `ResourceLinksOptions.Enabled` is true (links emitted), `n` when false.
-
-> [!NOTE]
-> **`profileCode` encoding (clarified 2026-07-08).** The implementation encodes `profileCode` as a
-> short lowercase-hex **SHA-256 prefix of the readable profile _name_** (8 hex characters), not the
-> compile-time integer index described in item 3 — a `MappingSet` exposes no enumerable profile
-> catalog from which to assign stable ordinals. The value is `_` (no profile) or an 8-hex token; the
-> `3` in the examples below is illustrative of the original index form. This hashes only the tiny,
-> static profile-name descriptor — never the representation JSON — so it upholds, rather than
-> contradicts, this ADR's decision to stop hashing the representation. See
-> [Amendment (2026-07-08, profileCode hash)](#amendment-2026-07-08-profilecode-encodes-a-hash-of-the-profile-name).
 
 Examples (`ContentVersion` = 5, schema epoch `a1b2c3d4`):
 
 | Representation | `_etag` body value | `ETag` header |
 |---|---|---|
 | JSON, no profile, links on | `5-a1b2c3d4.j._.l` | `"5-a1b2c3d4.j._.l"` |
-| JSON, profile #3, links off | `5-a1b2c3d4.j.3.n` | `"5-a1b2c3d4.j.3.n"` |
+| JSON, profiled, links off | `5-a1b2c3d4.j.9f1d2c3a.n` | `"5-a1b2c3d4.j.9f1d2c3a.n"` |
 | (future) XML, no profile, links on | `5-a1b2c3d4.x._.l` | `"5-a1b2c3d4.x._.l"` |
 
 Rules:
@@ -176,9 +159,9 @@ Rules:
 - The opaque-tag value is everything between the quotes (`5-a1b2c3d4.j._.l`); the double-quotes are HTTP framing only. The `_etag` JSON body field carries the **unquoted** value; the `ETag` / `If-Match` headers the server **emits** carry it **quoted**. On **input**, however, the server accepts an `If-Match` value whether or not it is quoted (see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted)); this asymmetry is deliberate, for legacy compatibility. A bare `If-Match: *` is handled separately as an RFC 7232 §3.1 wildcard, not as an opaque tag (see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching)).
 - `ContentVersion` and every `variantKey` component are treated as **opaque strings** — no component is parsed or compared numerically.
 - All components are always present (use `_` / `n` for "none" / "off") so the token has a fixed shape and is never ambiguous.
-- The server recomputes the full tag deterministically from request context (negotiated format, profile in effect, link mode) plus the loaded schema at three points — read response, write response, and `If-Match` precondition — with **no database dependency** and **no document hashing**. At the `If-Match` precondition the comparison is against the **state-significant projection** (`ContentVersion`, `schemaEpoch`, `profileCode`; `format` and `linkFlag` excluded) — see "`If-Match` comparison (decided)".
+- The server composes the full tag deterministically from `ContentVersion`, request context (negotiated format, profile in effect, link mode), and the loaded schema at three points: read response, write response, and `If-Match` precondition. Reads use the row's `ContentVersion`; write responses use the final `ContentVersion` returned by the persistence layer after all mutations, including the lightweight scalar read described in the 2026-07-08 amendment; `If-Match` preconditions compose the current served tag from the currently loaded row/version. No document hydration or document hashing is performed for etag construction. At the `If-Match` precondition the comparison is against the **state-significant projection** (`ContentVersion`, `schemaEpoch`; `format`, `profileCode`, and `linkFlag` excluded) — see "`If-Match` comparison (decided)" and the 2026-07-04 amendment.
 
-Cost: each etag is a string concatenation of the counter with four small, precomputable tokens. `schemaEpoch`, the `format` registry, and per-profile indices are computed once at schema load and cached; `linkFlag` is a config read. No per-document hashing occurs.
+Cost: each etag is a string concatenation of the counter with four small tokens. `schemaEpoch` and the `format` registry are derived from already-loaded schema metadata, `profileCode` is `_` or a short SHA-256 prefix of the readable profile name, and `linkFlag` is a config read. For write responses, the current implementation pays one scalar `ContentVersion` lookup after persistence-side mutations so trigger-stamped child changes are reflected in the returned etag. No per-document hashing occurs.
 
 **Alternative (fixed-length opaque token).** If a uniform, fully-opaque etag is preferred over the debuggable structured form, set `variantKey` to the first 12 hex characters of `SHA-256("{schemaEpoch}|{format}|{profileCode}|{linkFlag}")`. This hashes only a tiny descriptor string (cacheable per variant), not the document, so it preserves the performance goal; it trades operator readability for fixed width. The structured form is recommended unless fixed-length tags are specifically required.
 
@@ -204,10 +187,7 @@ The redesign docs that currently _specify_ the content hash must be updated: `up
 
 ### Client-visible behavior
 
-`_etag` values become compact, opaque, quoted strong entity-tags of the form `"{ContentVersion}-{variantKey}"` rather than hashes; the `ContentVersion` portion is treated as an opaque string, never a number. Acceptable because the contract has not shipped. The _served_ etag varies by profile, format, and link mode — a deliberate change from the redesign's original profile/link-insensitive etag, for RFC 7232 conditional-GET correctness. `If-Match` matching, however, compares only the **state-significant projection** (`ContentVersion`, `schemaEpoch`, `profileCode`): it is sensitive to **profile** (a cross-profile `If-Match` returns `412`) but **not** to `format` or `link` mode (see "`If-Match` comparison (decided)"). `If-None-Match` (weak comparison, conditional GET) continues to use the full served etag.
-
-> [!WARNING]
-> **Superseded 2026-07-04.** `profileCode` is no longer part of the `If-Match` projection; the compared components are now `ContentVersion` and `schemaEpoch` only. The _served_ etag is unchanged (it still carries the full `variantKey`, so conditional-GET / `If-None-Match` caching is unaffected). See [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison).
+`_etag` values become compact, opaque, quoted strong entity-tags of the form `"{ContentVersion}-{variantKey}"` rather than hashes; the `ContentVersion` portion is treated as an opaque string, never a number. Acceptable because the contract has not shipped. The _served_ etag varies by profile, format, and link mode — a deliberate change from the redesign's original profile/link-insensitive etag, for RFC 7232 conditional-GET correctness. `If-Match` matching, however, compares only the **state-significant projection** (`ContentVersion`, `schemaEpoch`): it is insensitive to `profileCode`, `format`, and `linkFlag`, so representation-only differences do not cause a spurious `412` when the resource state is unchanged. `If-None-Match` (weak comparison, conditional GET) continues to use the full served etag.
 
 ### What is given up
 

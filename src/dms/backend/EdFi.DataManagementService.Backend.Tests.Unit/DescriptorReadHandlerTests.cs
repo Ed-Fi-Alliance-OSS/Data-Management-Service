@@ -873,7 +873,9 @@ public class Given_DescriptorReadHandler
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
         EtagComposer.Compose(
             contentVersion,
-            DescriptorVariantKey.For(CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash)
+            DescriptorEtagTestSupport.NoProfileNoLinksJsonVariantKey(
+                CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
+            )
         );
 
     private static QueryElement CreateQueryElement(
