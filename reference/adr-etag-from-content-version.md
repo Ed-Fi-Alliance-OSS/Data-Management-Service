@@ -3,6 +3,7 @@
 **Status:** Accepted — implemented in the relational backend; the three design docs
 (`update-tracking.md`, `transactions-and-concurrency.md`, `flattening-reconstitution.md`) have been
 updated to match. \
+**Date:** 2026-06-30 (accepted 2026-07-03) \
 **Amended 2026-07-04:** `profileCode` removed from the `If-Match` comparison to restore legacy
 compatibility — see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison). \
 **Amended 2026-07-05:** unquoted `If-Match` values accepted as equivalent to quoted ones for legacy
@@ -19,11 +20,8 @@ stamp triggers; see [Amendment (2026-07-08, final ContentVersion read)](#amendme
 **Amended 2026-07-08:** the `variantKey` `profileCode` is a SHA-256 prefix of the profile *name*, not
 a compile-time index — this hashes the profile descriptor, never the representation, so it upholds the
 original no-representation-hash decision; see [Amendment (2026-07-08, profileCode hash)](#amendment-2026-07-08-profilecode-encodes-a-hash-of-the-profile-name). \
-**Date:** 2026-06-30 (accepted 2026-07-03) \
-**Deciders:** Development team (signed off 2026-07-03). \
+**Deciders:** Development team (signed off 2026-07-08). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This ADR and the supporting code analysis were drafted with substantial AI assistance. The findings reflect the source code as it existed on 2026-06-30 and must be re-verified before implementation. Accountability for the decision rests with the development team.
 
 ## Executive Summary
 
@@ -211,10 +209,7 @@ Confirm that an **identity-update cascade into referrers** (e.g. a `StudentUniqu
 
 **Status:** Accepted — amends the 2026-07-01 "`profileCode` is deliberately significant" decision. \
 **Date:** 2026-07-04 \
-**Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code and the confirmed legacy ODS/API behavior as understood on 2026-07-04 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
 
 ### What changed
 
@@ -247,10 +242,7 @@ Cross-profile and profiled-vs-unprofiled `If-Match` (and DELETE `If-Match`) now 
 
 **Status:** Accepted — clarifies the RFC 9110 posture stated in "ETag format and HTTP validator semantics". \
 **Date:** 2026-07-05 \
-**Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code and the confirmed legacy ODS/API behavior as understood on 2026-07-05 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
 
 ### What changed
 
@@ -284,10 +276,7 @@ A client may send `If-Match` with or without surrounding quotes and receive iden
 
 **Status:** Proposed — **requires a code change** (not yet implemented; contrast the two amendments above, which the code already satisfied). \
 **Date:** 2026-07-05 \
-**Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-05 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
 
 ### What changed
 
@@ -338,10 +327,7 @@ Unlike the 2026-07-04 (`profileCode`) and earlier 2026-07-05 (unquoted) amendmen
 
 **Status:** Proposed — implemented (pending sign-off). This is the first amendment to touch the read path. \
 **Date:** 2026-07-06 \
-**Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-06 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
 
 ### What changed
 
@@ -435,10 +421,7 @@ These may be revisited if a concrete client need arises; none is a conformance g
 
 **Status:** Accepted — closes a gap left open when the profile-sensitive served etag (see "ETag format and HTTP validator semantics (RFC 7232)") was implemented only for non-descriptor resources. \
 **Date:** 2026-07-07 \
-**Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-07 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
 
 ### What changed
 
@@ -478,10 +461,7 @@ Two profile-different descriptor GET representations now carry distinct strong `
 **Status:** Accepted — refines how Option 4's "serve `_etag` from the persisted `ContentVersion`"
 is realized on the write path; the served-etag and `If-Match` contracts are unchanged. \
 **Date:** 2026-07-08 \
-**Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-08 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
 
 ### What changed
 
@@ -549,10 +529,7 @@ later without touching the response contract.
 **Status:** Accepted — clarifies the `variantKey` encoding to match the implementation; the etag
 contract (state derives from `ContentVersion`; representation selectors are appended) is unchanged. \
 **Date:** 2026-07-08 \
-**Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-> **AI-use disclosure.** This amendment and its supporting analysis were drafted with substantial AI assistance. Findings reflect the source code as understood on 2026-07-08 and must be human-reviewed before merge. Accountability for the decision rests with the development team.
 
 ### What changed
 
