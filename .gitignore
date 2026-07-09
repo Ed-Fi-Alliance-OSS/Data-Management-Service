@@ -462,7 +462,6 @@ CLAUDE.local.md
 # SDK generation artifacts
 /eng/sdkGen/csharp/*
 openApi-codegen-cli*.jar
-/.github/copilot-instructions.md
 
 # Claude temporary files leaking into the project root in 2.1.5
 tmpclaude*

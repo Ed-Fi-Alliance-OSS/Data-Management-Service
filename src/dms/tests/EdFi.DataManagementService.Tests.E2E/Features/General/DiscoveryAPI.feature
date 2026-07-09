@@ -34,7 +34,7 @@ Feature: The Discovery API provides information about the application version, s
                     "urls": {
                       "dependencies": "{BASE_URL}/metadata/dependencies",
                       "openApiMetadata": "{BASE_URL}/metadata/specifications",
-                      "oauth": "{OAUTH_URL}",
+                      "oauth": "{BASE_URL}/oauth/token",
                       "tokenInfo": "{BASE_URL}/oauth/token_info",
                       "dataManagementApi": "{BASE_URL}/data",
                       "changeQueries": "{BASE_URL}/changeQueries/v1/",
@@ -75,7 +75,7 @@ Feature: The Discovery API provides information about the application version, s
                     "urls": {
                       "dependencies": "{BASE_URL}/metadata/dependencies",
                       "openApiMetadata": "{BASE_URL}/metadata/specifications",
-                      "oauth": "{OAUTH_URL}",
+                      "oauth": "{BASE_URL}/oauth/token",
                       "tokenInfo": "{BASE_URL}/oauth/token_info",
                       "dataManagementApi": "{BASE_URL}/data",
                       "changeQueries": "{BASE_URL}/changeQueries/v1/",

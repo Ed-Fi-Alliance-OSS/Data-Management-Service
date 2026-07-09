@@ -7,13 +7,18 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+#pragma warning disable S1128
+using Microsoft.Extensions.Options;
+#pragma warning restore S1128
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -174,4 +179,255 @@ public class TokenEndpointModuleTests
             _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
         }
     }
+
+    [TestFixture]
+    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Json_Content :
+        TokenEndpointModuleTests
+    {
+        private JsonNode? _jsonContent;
+        private HttpResponseMessage? _response;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // Arrange
+            var oAuthManager = A.Fake<IOAuthManager>();
+            var json =
+                """{"status_code":200, "body":{"token":"fake_access_token","token_type":"bearer","expires_in":300}}""";
+            JsonNode _fake_responseJson = JsonNode.Parse(json)!;
+            var _fake_response_200 = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
+            };
+
+            A.CallTo(() =>
+                    oAuthManager.GetAccessTokenAsync(
+                        A<IHttpClientWrapper>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<TraceId>.Ignored
+                    )
+                )
+                .Returns(_fake_response_200);
+
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        TestMockHelper.AddEssentialMocks(collection);
+                        collection.AddTransient((x) => oAuthManager);
+                        // Configure AppSettings for multitenancy and route qualifiers
+                        collection.Configure<AppSettings>(opts =>
+                        {
+                            opts.MultiTenancy = true;
+                            opts.RouteQualifierSegments = "schoolYear";
+                        });
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+            var requestContent = """{"grant_type":"client_credentials"}""";
+            var proxyRequest = ProxyRequest(requestContent, "application/json");
+            // Set request URI to qualified path
+            proxyRequest.RequestUri = new Uri(client.BaseAddress!, "/tenant1/2026/oauth/token");
+
+            // Act
+            _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
+            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
+        }
+
+        [TearDown]
+        public void TearDownAttribute()
+        {
+            _response?.Dispose();
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_code()
+        {
+            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_body()
+        {
+            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
+            _jsonContent?["expires_in"]?.Should().Be(300);
+            _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
+        }
+    }
+
+    [TestFixture]
+    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Form_Content :
+        TokenEndpointModuleTests
+    {
+        private JsonNode? _jsonContent;
+        private HttpResponseMessage? _response;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // Arrange
+            var oAuthManager = A.Fake<IOAuthManager>();
+            var json =
+                """{"status_code":200, "body":{"token":"fake_access_token","token_type":"bearer","expires_in":300}}""";
+            JsonNode _fake_responseJson = JsonNode.Parse(json)!;
+            var _fake_response_200 = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
+            };
+
+            A.CallTo(() =>
+                    oAuthManager.GetAccessTokenAsync(
+                        A<IHttpClientWrapper>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<TraceId>.Ignored
+                    )
+                )
+                .Returns(_fake_response_200);
+
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        TestMockHelper.AddEssentialMocks(collection);
+                        collection.AddTransient((x) => oAuthManager);
+                        // Configure AppSettings for multitenancy and route qualifiers
+                        collection.Configure<AppSettings>(opts =>
+                        {
+                            opts.MultiTenancy = true;
+                            opts.RouteQualifierSegments = "schoolYear";
+                        });
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+            var requestContent = "grant_type=client_credentials";
+            var proxyRequest = ProxyRequest(requestContent, "application/x-www-form-urlencoded");
+            // Set request URI to qualified path
+            proxyRequest.RequestUri = new Uri(client.BaseAddress!, "/tenant1/2026/oauth/token");
+
+            // Act
+            _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
+            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
+        }
+
+        [TearDown]
+        public void TearDownAttribute()
+        {
+            _response?.Dispose();
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_code()
+        {
+            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_body()
+        {
+            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
+            _jsonContent?["expires_in"]?.Should().Be(300);
+            _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
+        }
+    }
+
+    [TestFixture]
+    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Invalid_Tenant :
+        TokenEndpointModuleTests
+    {
+        private JsonNode? _jsonContent;
+        private HttpResponseMessage? _response;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // Arrange
+            var oAuthManager = A.Fake<IOAuthManager>();
+            var json =
+                """{"status_code":200, "body":{"token":"fake_access_token","token_type":"bearer","expires_in":300}}""";
+            JsonNode _fake_responseJson = JsonNode.Parse(json)!;
+            var _fake_response_200 = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
+            };
+
+            A.CallTo(() =>
+                    oAuthManager.GetAccessTokenAsync(
+                        A<IHttpClientWrapper>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<TraceId>.Ignored
+                    )
+                )
+                .Returns(_fake_response_200);
+
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        TestMockHelper.AddEssentialMocks(collection);
+                        collection.AddTransient((x) => oAuthManager);
+                        collection.AddTransient<ITenantValidator>(_ =>
+                        {
+                            var tenantValidator = A.Fake<ITenantValidator>();
+                            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>.Ignored)).Returns(false);
+                            return tenantValidator;
+                        });
+                        // Configure AppSettings for multitenancy and route qualifiers
+                        collection.Configure<AppSettings>(opts =>
+                        {
+                            opts.MultiTenancy = true;
+                            opts.RouteQualifierSegments = "schoolYear";
+                        });
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+            var requestContent = "{\"grant_type\":\"client_credentials\"}";
+            var proxyRequest = ProxyRequest(requestContent, "application/json");
+            // Set request URI to qualified path
+            proxyRequest.RequestUri = new Uri(client.BaseAddress!, "/tenant1/2026/oauth/token");
+
+            // Act
+            _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
+            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
+        }
+
+        [TearDown]
+        public void TearDownAttribute()
+        {
+            _response?.Dispose();
+        }
+
+        [Test]
+        public void Then_it_returns_not_found_for_an_invalid_tenant()
+        {
+            _response!.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public void Then_it_returns_a_standard_not_found_payload()
+        {
+            _jsonContent?["detail"]?.ToString().Should().Be("The specified resource could not be found.");
+            _jsonContent?["type"]?.ToString().Should().Be("urn:ed-fi:api:not-found");
+            _jsonContent?["title"]?.ToString().Should().Be("Not Found");
+            _jsonContent?["status"]?.GetValue<int>().Should().Be(404);
+        }
+    }
 }
+

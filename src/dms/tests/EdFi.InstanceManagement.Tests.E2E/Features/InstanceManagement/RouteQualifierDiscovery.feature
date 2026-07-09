@@ -24,7 +24,7 @@ Feature: Route Qualifier Discovery API
                 {
                     "dependencies": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/metadata/specifications",
-                    "oauth": "http://ed-fi-api-config:8081/connect/token/Tenant_RouteQualifier/255901/2024",
+                    "oauth": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/oauth/token",
                     "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/data",
                     "changeQueries": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/changeQueries/v1/",
@@ -40,7 +40,7 @@ Feature: Route Qualifier Discovery API
                 {
                     "dependencies": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/metadata/specifications",
-                    "oauth": "http://ed-fi-api-config:8081/connect/token/Tenant_RouteQualifier/255901/{schoolYear}",
+                    "oauth": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/oauth/token",
                     "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/changeQueries/v1/",
@@ -56,7 +56,7 @@ Feature: Route Qualifier Discovery API
                 {
                     "dependencies": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/metadata/specifications",
-                    "oauth": "http://ed-fi-api-config:8081/connect/token/Tenant_RouteQualifier/{districtId}/{schoolYear}",
+                    "oauth": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/oauth/token",
                     "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/changeQueries/v1/",
@@ -72,7 +72,7 @@ Feature: Route Qualifier Discovery API
                 {
                     "dependencies": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/specifications",
-                    "oauth": "http://ed-fi-api-config:8081/connect/token/{tenant}/{districtId}/{schoolYear}",
+                    "oauth": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/oauth/token",
                     "tokenInfo": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/changeQueries/v1/",
