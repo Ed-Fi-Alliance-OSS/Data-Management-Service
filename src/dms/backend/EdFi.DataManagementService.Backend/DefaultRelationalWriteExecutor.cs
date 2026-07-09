@@ -29,7 +29,6 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer,
     IServedEtagComposer servedEtagComposer,
-    IIfMatchEvaluator ifMatchEvaluator,
     IOptions<ResourceLinksOptions> linksOptions,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =

@@ -1237,7 +1237,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             sessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             providerFailureExtractor
         );
 

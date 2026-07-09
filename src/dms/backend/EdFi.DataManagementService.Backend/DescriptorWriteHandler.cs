@@ -25,7 +25,6 @@ internal sealed class DescriptorWriteHandler(
     IRelationalWriteSessionFactory writeSessionFactory,
     ILogger<DescriptorWriteHandler> logger,
     IServedEtagComposer servedEtagComposer,
-    IIfMatchEvaluator ifMatchEvaluator,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null
 ) : IDescriptorWriteHandler
@@ -42,8 +41,6 @@ internal sealed class DescriptorWriteHandler(
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IServedEtagComposer _servedEtagComposer =
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
-    private readonly IIfMatchEvaluator _ifMatchEvaluator =
-        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;

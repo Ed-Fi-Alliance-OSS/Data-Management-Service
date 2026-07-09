@@ -1340,8 +1340,7 @@ public class Given_Descriptor_Write_Preconditions
             deleteConstraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
-            new ServedEtagComposer(),
-            new IfMatchEvaluator()
+            new ServedEtagComposer()
         );
     }
 

@@ -77,7 +77,6 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             Options.Create(new ResourceLinksOptions())
         );
     }
@@ -659,7 +658,6 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             Options.Create(new ResourceLinksOptions()),
             parameterConfigurator
         );
@@ -744,7 +742,6 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             Options.Create(new ResourceLinksOptions()),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor
         );
@@ -802,7 +799,6 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             Options.Create(new ResourceLinksOptions()),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             logger: logger
@@ -1486,7 +1482,6 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             Options.Create(new ResourceLinksOptions())
         );
 
@@ -6114,7 +6109,6 @@ public class Given_Default_Relational_Write_Executor
             _writeConstraintResolver,
             _readMaterializer,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             Options.Create(new ResourceLinksOptions()),
             relationshipAuthorizationProviderFailureExtractor: new StubRelationshipAuthorizationProviderFailureExtractor(
                 NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
