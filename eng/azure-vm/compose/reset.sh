@@ -38,5 +38,5 @@ echo "Reset complete. The Keycloak realm + clients survived; finish the rebuild 
 echo "  1. Re-create CMS clients/tenants/data stores (Keycloak is already set up):"
 echo "         pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure"
 echo "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2"
-echo "     (dms-schema; see docs/infrastructure.md \"Provisioning method\")."
+echo "     (api-schema-tools; see docs/infrastructure.md \"Provisioning method\")."
 echo "  3. Start the DMS services:  ./up.sh st-dms mt-dms"

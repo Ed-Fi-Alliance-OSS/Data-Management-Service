@@ -15,7 +15,7 @@
 # Keycloak realm/clients, and CMS-encrypted rows, which are all keyed to the first-run values.
 # Use -Bootstrap to force a re-bootstrap on an existing .env (e.g. after reset.sh).
 #
-# !! GAP: this does NOT provision the relational schema (dms-schema), stage
+# !! GAP: this does NOT provision the relational schema (api-schema-tools), stage
 #    .bootstrap/ApiSchema, or seed data. Because of that it bootstraps but does NOT start the
 #    DMS services by default (a DMS booted against an unprovisioned data DB won't pass /health):
 #    stage the ApiSchema workspace, provision the schema, then start them with -StartDms (or
@@ -229,7 +229,7 @@ try {
 
     # --- 6. relational schema (MANUAL) + start the DMS services -------------
     # The DMS data DBs use the relational backend and are provisioned OUT OF BAND with the
-    # dms-schema tool (docs/infrastructure.md "Provisioning method", step 3). This script does
+    # api-schema-tools tool (docs/infrastructure.md "Provisioning method", step 3). This script does
     # NOT provision schema, so by default it does not start the DMS services -- a DMS booted
     # against an unprovisioned data DB will not pass /health. Provision the schema, then re-run
     # with -StartDms (or `./up.sh st-dms mt-dms`).
@@ -265,7 +265,7 @@ try {
         Write-Output "`nNext steps (manual):"
         Write-Output "  1. Stage the ApiSchema workspace into compose/.bootstrap/ApiSchema (eng/docker-compose/prepare-dms-schema.ps1"
         Write-Output "     writes eng/docker-compose/.bootstrap/ApiSchema -- copy that folder here; the DMS services mount it read-only)."
-        Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (dms-schema, against the same staged"
+        Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged"
         Write-Output "     workspace; see docs/infrastructure.md)."
         Write-Output "  3. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
     }

@@ -17,7 +17,7 @@
 # (Data Standard + extensions); a mismatch makes DMS reject the database at startup.
 #
 # Restore into a FRESH, EMPTY database (no 'dms' schema yet), BEFORE starting DMS. Do NOT
-# pre-provision the target with dms-schema for this path — the template creates the schema.
+# pre-provision the target with api-schema-tools for this path — the template creates the schema.
 # (DMS is pinned to AppSettings__DeployDatabaseOnStartup=false in docker-compose.yml.)
 #
 # To seed the OTHER data DBs from an ALREADY-seeded one (how multi-tenant was populated

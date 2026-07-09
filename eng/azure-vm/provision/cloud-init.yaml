@@ -17,7 +17,8 @@ runcmd:
   # certbot (Let's Encrypt)
   - snap install certbot --classic
   - ln -sf /snap/bin/certbot /usr/local/bin/certbot
-  # GAP (provision/README.md "Known gaps" #1): no .NET SDK installed, so the dms-schema
-  # relational provisioner can't be built here. Prefer restoring a relational populated
-  # template (DMS-1159) over provisioning from source.
+  # No .NET SDK installed: api-schema-tools (the relational provisioner, published as the
+  # EdFi.Api.SchemaTools .NET tool) needs a .NET 10 SDK on the host, so build it self-contained
+  # in a container or restore a relational populated template (DMS-1159) instead — see
+  # provision/REDEPLOY.md Part C and docs/infrastructure.md "Known issues" #5.
   - touch /var/lib/cloud/dms-sec-provisioned

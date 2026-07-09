@@ -149,29 +149,29 @@ Order used to stand the environment up (and that a re-deploy should follow):
    **full** stack including the DMS — only safe once bootstrap + schema already exist, e.g. a restart.)
 2. **Stage the ApiSchema workspace** at `compose/.bootstrap/ApiSchema`:
    `eng/docker-compose/prepare-dms-schema.ps1` writes the normalized workspace to
-   `eng/docker-compose/.bootstrap/ApiSchema` (it needs the `dms-schema` tool — see issue 5);
+   `eng/docker-compose/.bootstrap/ApiSchema` (it needs the `api-schema-tools` tool — see issue 5);
    copy that folder to `eng/azure-vm/compose/.bootstrap/ApiSchema`. The DMS services mount it
    read-only at `/app/ApiSchema` and will not start without it — if it were never staged, Docker
    would create the mount empty and DMS would fail startup/health, so `setup-env.ps1 -StartDms`
    and `up.sh` refuse to start the DMS services until it contains staged schema files.
 3. **Provision the relational schema** into each DMS data DB (`edfi_st`, `edfi_mt`,
-   `edfi_mt_t2`) with the `dms-schema` tool, against the same staged ApiSchema workspace that
+   `edfi_mt_t2`) with the `api-schema-tools` tool, against the same staged ApiSchema workspace that
    is mounted into the DMS containers. **Exception:** a DB you intend to seed via
    `seed/grandbend.sh` must be left **empty** — the populated template restores its own schema
    **and** data, and `grandbend.sh` skips any DB that already has a `dms` schema. So for that DB,
-   run `grandbend.sh` here **instead of** `dms-schema` (see step 6).
+   run `grandbend.sh` here **instead of** `api-schema-tools` (see step 6).
 4. **`bootstrap/bootstrap.ps1`** creates the Keycloak realm + service clients, the CMS
    tenants / data stores, and the review applications. This **must run before the DMS
    services start** (issue 3).
 5. Start the DMS services (`./up.sh st-dms mt-dms`); each `/health` should return 200.
 6. **Seed data** — two mutually exclusive paths per DB:
-   - **Provision-then-load** (step 3 already ran `dms-schema` on the DB): **single-tenant**
+   - **Provision-then-load** (step 3 already ran `api-schema-tools` on the DB): **single-tenant**
      (`edfi_st`) via API bulk-load (ODS BulkLoadClient, descriptors first then resources);
      **multi-tenant** (`edfi_mt` = tenant1, `edfi_mt_t2` = tenant2) via API bulk-load
      (`DMS-1230` fixed — issue 1) or `seed/clone-data.sh` from a seeded `edfi_st` (faster).
    - **Template restore** (the DB was left empty at step 3): `seed/grandbend.sh` restores a
      *relational* populated template (schema + data together) into `edfi_st`. Do **not** run
-     `dms-schema` on a DB you restore this way. `setup-env.ps1 -LoadGrandbend` does this before
+     `api-schema-tools` on a DB you restore this way. `setup-env.ps1 -LoadGrandbend` does this before
      provisioning; the multi-tenant DBs still need their own schema + seed.
 
 > **Verified 2026-06-20:** single-tenant + both tenants carry the full Grand Bend graph
@@ -200,8 +200,12 @@ Order used to stand the environment up (and that a re-deploy should follow):
    resilience circuit breaker (`FAILURE_RATIO=0.01`), which can silently corrupt a partial
    load. Load **descriptors first**, then resources, and raise the rate limit before a
    parallel run. (The clone / template-restore paths avoid this entirely.)
-5. **`dms-schema` is build-from-source only** (no published image or dotnet tool): `dotnet
-   publish src/dms/clis/EdFi.DataManagementService.SchemaTools -r linux-x64 --self-contained`.
+5. **`api-schema-tools` distribution.** The SchemaTools CLI (formerly `dms-schema`) is published
+   as the `EdFi.Api.SchemaTools` .NET tool on the Ed-Fi Azure Artifacts feed (`DMS-1242`):
+   `dotnet tool install --global EdFi.Api.SchemaTools --source <Ed-Fi feed>` — this needs a
+   .NET 10 SDK on the host. The VM hosts install no .NET, so build it self-contained in a
+   container instead: `dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools
+   -r linux-x64 --self-contained` (see `provision/REDEPLOY.md` Part C).
 6. **Populated template must be RELATIONAL.** `seed/grandbend.sh` requires a relational build
    of `EdFi.Api.Populated.Template.PostgreSql.5.2.0` (post `DMS-1159`, 2026-06-09); the older
    `0.7.x` builds are the legacy document-store format and are rejected by the relational

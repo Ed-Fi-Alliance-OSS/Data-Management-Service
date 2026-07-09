@@ -50,7 +50,7 @@ x-dms-common-env: &dms-common-env
   AppSettings__ApiSchemaPath: "/app/ApiSchema"
   # The staged ApiSchema workspace (.bootstrap/ApiSchema, produced by the official
   # prepare-dms-schema.ps1) is mounted read-only at /app/ApiSchema in each DMS service below,
-  # so the image's effective-schema hash matches exactly what 'dms-schema ddl provision' wrote.
+  # so the image's effective-schema hash matches exactly what 'api-schema-tools ddl provision' wrote.
   # Opt-in for troubleshooting / claim-set iteration (default off).
   AppSettings__EnableManagementEndpoints: "${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}"
   AppSettings__EnableClaimsetReload: "${DMS_ENABLE_CLAIMSET_RELOAD:-false}"

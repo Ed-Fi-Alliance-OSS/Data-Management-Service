@@ -99,7 +99,7 @@ Everything below runs **on the VM**.
 ## Step 5 — Get the deployment tooling onto the VM
 
 The tooling lives in the (public) Data-Management-Service repo under `eng/azure-vm/` — which you
-also need for the source review and the `dms-schema` build:
+also need for the source review and the `api-schema-tools` build:
 
 ```bash
 git clone https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service.git ~/dms-src
@@ -195,7 +195,7 @@ It prints the **API key/secret** for the single-tenant app and each tenant — r
 **private** vault / credentials doc, **never** in this repo (`docs/infrastructure.md` is tracked).
 
 After bootstrap, stage the ApiSchema workspace into `compose/.bootstrap/ApiSchema` and provision
-the relational schema (dms-schema; see `provision/README.md` "What `setup-env.ps1` does NOT do"),
+the relational schema (api-schema-tools; see `provision/README.md` "What `setup-env.ps1` does NOT do"),
 then start the DMS services: `./up.sh st-dms mt-dms` (it refuses while the workspace is unstaged).
 They reach `/health` 200 once the schema exists.
 
@@ -239,7 +239,7 @@ cd ~/dms-src/eng/azure-vm/compose && git pull && \
 # stand-up), then prints the remaining steps:
 ./reset.sh
 pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
-# provision the relational schema (dms-schema; see docs/infrastructure.md), then:
+# provision the relational schema (api-schema-tools; see docs/infrastructure.md), then:
 ./up.sh st-dms mt-dms
 
 # Tear everything down (workstation):

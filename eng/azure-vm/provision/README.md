@@ -4,7 +4,7 @@
 Stand up the two-stack (single-tenant + multi-tenant) DMS environment on one Azure VM, with
 deallocate-when-idle cost control. The deployment tooling is this `eng/azure-vm/` folder in the
 Data-Management-Service repo — clone that repo onto the VM (you need it for the source review and
-the `dms-schema` build anyway) and work from `eng/azure-vm/`.
+the `api-schema-tools` build anyway) and work from `eng/azure-vm/`.
 
 > Credentials and per-deployment specifics are **not** stored here — keep them in a private
 > deployment doc / vault (see the [folder README](../README.md)).
@@ -54,7 +54,7 @@ skips bootstrap, so it only starts the DMS services.
 
 > **The relational schema provisioning and Grand Bend seeding are manual** — `setup-env.ps1` does
 > not do them. See [`../docs/infrastructure.md`](../docs/infrastructure.md#provisioning-method-as-deployed)
-> for the order: provision each data DB with `dms-schema` (or restore the relational populated
+> for the order: provision each data DB with `api-schema-tools` (or restore the relational populated
 > template), bootstrap, start, then seed (single-tenant via bulk-load; the tenants via
 > [`../compose/seed/clone-data.sh`](../compose/seed/clone-data.sh)).
 
@@ -67,6 +67,7 @@ skips bootstrap, so it only starts the DMS services.
 - **Update (in WSL / on the VM):**
   `cd ~/dms-src/eng/azure-vm/compose && git pull && docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull && docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d`
 - **Cert renewal:** `pwsh provision/renew-cert.ps1 -PublicHost <FQDN>`.
+- **Wipe + redeploy** (existing VM, fresh secrets/schema/data): [`REDEPLOY.md`](REDEPLOY.md).
 - **Teardown:** `provision/teardown-vm.ps1` (or delete the resource group in the Portal).
 
 ## What `setup-env.ps1` does NOT do (provisioning notes)
@@ -81,9 +82,10 @@ skips bootstrap, so it only starts the DMS services.
   DMS services while it is unstaged — Docker would otherwise mount it empty and DMS would fail
   startup/health even with the databases provisioned.
 - **Relational schema** — the DMS runs `DeployDatabaseOnStartup=false`; provision each data DB with
-  `dms-schema` (build-from-source only; publishing it as a tool/image is a known gap, not yet
-  ticketed), **or** restore the relational populated template (**DMS-1159**, e.g.
-  `eng/docker-compose/bootstrap-published-dms.ps1 -SeedTemplate Populated`).
+  `api-schema-tools` (published as the `EdFi.Api.SchemaTools` .NET tool — **DMS-1242**; on the
+  no-.NET VM hosts, build it self-contained in a container instead, see
+  [`REDEPLOY.md`](REDEPLOY.md) Part C), **or** restore the relational populated template
+  (**DMS-1159**, e.g. `eng/docker-compose/bootstrap-published-dms.ps1 -SeedTemplate Populated`).
 - **Startup order** — the DMS fail-fast crash-loops until Keycloak + CMS data stores exist
   (**DMS-1093 / DMS-1109**); `setup-env.ps1` therefore bootstraps first and starts the DMS only
   with `-StartDms` (after the schema is provisioned).

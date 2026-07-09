@@ -14,7 +14,7 @@
 # schema-fingerprint / provisioning tables (EffectiveSchema, SchemaComponent, ResourceKey),
 # which already exist (identical) in the provisioned target.
 #
-# PREREQ: target DB(s) provisioned with dms-schema (same ApiSchema as the source) and empty
+# PREREQ: target DB(s) provisioned with api-schema-tools (same ApiSchema as the source) and empty
 # of documents; source DB already seeded (e.g. edfi_st via API bulk-load or grandbend.sh).
 #
 # Usage (from compose/):
