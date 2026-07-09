@@ -18,6 +18,15 @@
     and seed-source flags to the appropriate phase command without becoming the owner of
     those concerns.
 
+    TEARDOWN: this entry point stops the local stack as well as starting it. `-d` stops the
+    services and keeps volumes (delegating to `start-local-dms.ps1 -d`); `-d -v` also deletes
+    data volumes and removes the `.bootstrap/` workspace (delegating to
+    `start-local-dms.ps1 -d -v -RemoveBootstrap`). Teardown short-circuits to that delegation and
+    returns before any staging, configure, provision, DMS-startup, or seed orchestration. Only the
+    options that shape the Docker compose set (`-EnvironmentFile`, `-IdentityProvider`,
+    `-EnableKafkaUI`, `-EnableSwaggerUI`, `-DatabaseEngine`) are forwarded to teardown; pass the
+    same infrastructure flags used at start so teardown targets the same compose shape.
+
     Seed loading is wrapper-level opt-in: when `-LoadSeedData` is absent the wrapper does
     not invoke `load-dms-seed-data.ps1`. Direct invocation of `load-dms-seed-data.ps1`
     always loads seed data and does not accept `-LoadSeedData`.
@@ -51,6 +60,16 @@
     expert `-ApiSchemaPath` flow) is used as-is. There is no `-Extensions` parameter; extension or
     custom schema sets are staged via expert `-ApiSchemaPath` before invoking the wrapper. All
     staging is delegated to `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
+
+.PARAMETER d
+    Teardown switch. Stops the local DMS Docker stack instead of starting it, delegating to
+    `start-local-dms.ps1 -d`. Returns before any staging/configure/provision/DMS/seed orchestration.
+    Combine with `-v` to also delete data volumes and remove the `.bootstrap/` workspace.
+
+.PARAMETER v
+    Teardown volume/workspace deletion modifier. Valid only with `-d`. Delegates to
+    `start-local-dms.ps1 -d -v -RemoveBootstrap`, deleting data volumes and removing the
+    `eng/docker-compose/.bootstrap` workspace. Rejected when supplied without `-d`.
 
 .PARAMETER LoadSeedData
     When supplied, invokes `load-dms-seed-data.ps1` after DMS startup completes. When
@@ -113,6 +132,14 @@
     workspace is staged), then starts the stack. No manual prepare step and no seed loading.
 
 .EXAMPLE
+    pwsh ./bootstrap-local-dms.ps1 -d
+    Stop the local DMS stack, keeping data volumes and the .bootstrap workspace.
+
+.EXAMPLE
+    pwsh ./bootstrap-local-dms.ps1 -d -v
+    Stop the local DMS stack, delete data volumes, and remove the .bootstrap workspace.
+
+.EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
@@ -160,6 +187,16 @@
 #>
 [CmdletBinding()]
 param(
+    # Teardown: stop the local DMS stack instead of starting it. Delegates to
+    # start-local-dms.ps1 -d and returns before any staging/configure/provision/DMS/seed work.
+    # Combine with -v to also delete data volumes and remove the .bootstrap workspace.
+    [Switch]$d,
+
+    # Teardown volume + workspace deletion modifier. Valid only with -d. Delegates to
+    # start-local-dms.ps1 -d -v -RemoveBootstrap so data volumes and the .bootstrap workspace are
+    # removed. Rejected when supplied without -d.
+    [Switch]$v,
+
     [Switch]$LoadSeedData,
 
     [ValidateSet("Minimal", "Populated")]
@@ -223,9 +260,50 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Teardown short-circuit: bootstrap-local-dms.ps1 is the documented entry point for BOTH start and
+# stop. -d stops the stack; -d -v also deletes volumes and removes the .bootstrap workspace.
+# start-local-dms.ps1 owns -d/-v/-RemoveBootstrap, so teardown delegates to it and returns before
+# any staging/configure/provision/DMS/seed orchestration (and before the wrapper module is even
+# imported). -v maps to -v -RemoveBootstrap so the workspace is wiped; -RemoveBootstrap is not
+# exposed here because -v implies it through the delegation. -v alone is meaningless (it only
+# modifies a teardown), so it is rejected before any work runs.
+if ($v -and -not $d) {
+    throw "-v requires -d. Use bootstrap-local-dms.ps1 -d -v to stop services, delete volumes, and remove the .bootstrap workspace."
+}
+if ($d) {
+    $teardownArgs = @{ d = $true }
+    if ($v) {
+        $teardownArgs.v = $true
+        $teardownArgs.RemoveBootstrap = $true
+    }
+    # Forward only the options that shape the Docker compose set start-local-dms.ps1 rebuilds for
+    # `docker compose ... down`, so teardown targets the same containers/volumes and env the stack
+    # started with: -DatabaseEngine (postgresql.yml vs mssql.yml), -IdentityProvider (keycloak.yml),
+    # -EnableKafkaUI (kafka.yml + kafka-ui.yml), -EnableSwaggerUI (swagger-ui.yml), and the env file.
+    # Seed/configure/IDE options and -DataStandardVersion do not change the compose-file set (the DS
+    # overlay only rewrites env values such as SCHEMA_PACKAGES), so they are not forwarded.
+    if ($PSBoundParameters.ContainsKey('EnvironmentFile')) { $teardownArgs.EnvironmentFile = $EnvironmentFile }
+    if ($PSBoundParameters.ContainsKey('IdentityProvider')) { $teardownArgs.IdentityProvider = $IdentityProvider }
+    if ($EnableKafkaUI) { $teardownArgs.EnableKafkaUI = $true }
+    if ($EnableSwaggerUI) { $teardownArgs.EnableSwaggerUI = $true }
+    $teardownArgs.DatabaseEngine = $DatabaseEngine
+
+    $global:LASTEXITCODE = 0
+    & "$PSScriptRoot/start-local-dms.ps1" @teardownArgs
+    if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+        throw "start-local-dms.ps1 teardown failed with exit code $LASTEXITCODE."
+    }
+    return
+}
+
 Import-Module "$PSScriptRoot/bootstrap-wrapper.psm1" -Force
 
+# Copy the bound parameters for the start path. -d/-v are teardown-only and are handled above
+# (this point is unreachable with either bound), but strip them defensively so the wrapper - which
+# declares neither - never receives them if the short-circuit above is ever changed.
 $wrapperArgs = @{} + $PSBoundParameters
+$wrapperArgs.Remove("d") | Out-Null
+$wrapperArgs.Remove("v") | Out-Null
 $wrapperArgs["StartScriptName"] = "start-local-dms.ps1"
 
 Invoke-BootstrapWrapper @wrapperArgs
