@@ -285,7 +285,7 @@ Feature: ETag validations
              When a POST request is made to "/ed-fi/students" with header "If-None-Match" value "*"
                   """
                   {
-                      "studentUniqueId": "111111",
+                     "studentUniqueId": "111115",
                       "birthDate": "2014-08-14",
                       "firstName": "Russella",
                       "lastSurname": "Mayers"

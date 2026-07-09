@@ -595,7 +595,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
 
-            ifNoneMatch = ifNoneMatch.Replace("{IfMatch}", _etag);
+            ifNoneMatch = ifNoneMatch.Replace("{IfNoneMatch}", _etag).Replace("{IfMatch}", _etag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                 new()
@@ -934,7 +934,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information($"GET url: {url}");
 
-            ifNoneMatch = ifNoneMatch.Replace("{IfMatch}", _etag);
+            ifNoneMatch = ifNoneMatch.Replace("{IfNoneMatch}", _etag).Replace("{IfMatch}", _etag);
 
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.GetAsync(

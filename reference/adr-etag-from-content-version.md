@@ -336,7 +336,7 @@ Unlike the 2026-07-04 (`profileCode`) and earlier 2026-07-05 (unquoted) amendmen
 
 ## Amendment (2026-07-06): `If-None-Match` support
 
-**Status:** Proposed — **requires a code change** (not yet implemented; like the 2026-07-05 wildcard amendment, and unlike the two earlier 2026-07-05 amendments that the code already satisfied). This is the first amendment to touch the read path. \
+**Status:** Proposed — implemented (pending sign-off). This is the first amendment to touch the read path. \
 **Date:** 2026-07-06 \
 **Deciders:** Development team (pending sign-off). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
