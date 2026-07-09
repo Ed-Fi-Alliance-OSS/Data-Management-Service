@@ -98,11 +98,11 @@ jobs:
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-            changed_files="$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")"
+            changed_files="$(git diff --no-renames --name-only "origin/${{ github.base_ref }}...HEAD")"
           elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
             base_sha="${{ github.event.merge_group.base_sha }}"
 
-            if [[ -z "$base_sha" ]] || ! changed_files="$(git diff --name-only "$base_sha" "${{ github.sha }}")"; then
+            if [[ -z "$base_sha" ]] || ! changed_files="$(git diff --no-renames --name-only "$base_sha" "${{ github.sha }}")"; then
               emit true true
               exit 0
             fi
@@ -110,9 +110,9 @@ jobs:
             before="${{ github.event.before }}"
 
             if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
-              changed_files="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+              changed_files="$(git diff-tree --no-commit-id --no-renames --name-only -r HEAD)"
             else
-              changed_files="$(git diff --name-only "$before" "${{ github.sha }}")"
+              changed_files="$(git diff --no-renames --name-only "$before" "${{ github.sha }}")"
             fi
           fi
 
@@ -132,7 +132,7 @@ jobs:
                 ;;
             esac
             case "$file" in
-              .github/workflows/*|build-dms.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/dms/*|src/config/*)
+              .github/actions/*|.github/workflows/*|build-dms.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/dms/*|src/config/*)
                 dms_relevant=true
                 ;;
             esac
