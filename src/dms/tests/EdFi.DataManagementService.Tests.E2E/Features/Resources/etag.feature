@@ -502,3 +502,13 @@ Feature: ETag validations
                   }
                   """
              Then it should respond with 204
+        @e2e-ci-shard-1
+        Scenario: 22 Ensure that a wildcard If-None-Match on a GET to a non-existent resource returns 404
+             # The id value is a non-existing resource
+             When a GET if-none-match "*" request is made to "/ed-fi/students/00000000-0000-4000-a000-000000000000"
+             Then it should respond with 404
+        @e2e-ci-shard-1
+        Scenario: 23 Ensure that a specific If-None-Match on a GET to a non-existent resource returns 404
+             # The id value is a non-existing resource
+             When a GET if-none-match "some-etag" request is made to "/ed-fi/students/00000000-0000-4000-a000-000000000000"
+             Then it should respond with 404
