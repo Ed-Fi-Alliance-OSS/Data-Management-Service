@@ -119,7 +119,7 @@ Effective schema hash: a1b2c3d4e5f6...
 ### Via SchemaTools CLI
 
 ```bash
-dms-schema core/ApiSchema.json extensions/tpdm/ApiSchema.json
+api-schema-tools hash core/ApiSchema.json extensions/tpdm/ApiSchema.json
 ```
 
 Output includes:

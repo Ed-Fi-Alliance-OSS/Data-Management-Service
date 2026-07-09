@@ -33,7 +33,7 @@ public class SchemaToolsTests
         public void It_prints_usage_information()
         {
             _output.Should().Contain("Usage:");
-            _output.Should().Contain("dms-schema");
+            _output.Should().Contain("api-schema-tools");
         }
 
         [Test]
@@ -46,6 +46,62 @@ public class SchemaToolsTests
         public void It_shows_ddl_command()
         {
             _output.Should().Contain("ddl");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Help_Command_From_A_Temp_Working_Directory : SchemaToolsTests
+    {
+        private int _exitCode;
+        private string _output = null!;
+        private string _workingDirectory = null!;
+        private string _originalWorkingDirectory = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _originalWorkingDirectory = Directory.GetCurrentDirectory();
+            _workingDirectory = Path.Combine(Path.GetTempPath(), $"api-schema-tools-cwd-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(_workingDirectory);
+
+            Directory.SetCurrentDirectory(_workingDirectory);
+            try
+            {
+                (_exitCode, _output, _) = CliTestHelper.RunCli("--help");
+            }
+            finally
+            {
+                Directory.SetCurrentDirectory(_originalWorkingDirectory);
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Directory.SetCurrentDirectory(_originalWorkingDirectory);
+
+            if (Directory.Exists(_workingDirectory))
+            {
+                Directory.Delete(_workingDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_returns_exit_code_0()
+        {
+            _exitCode.Should().Be(0);
+        }
+
+        [Test]
+        public void It_prints_usage_information()
+        {
+            _output.Should().Contain("Usage:");
+        }
+
+        [Test]
+        public void It_does_not_create_logs_directory()
+        {
+            Directory.Exists(Path.Combine(_workingDirectory, "logs")).Should().BeFalse();
         }
     }
 
@@ -118,7 +174,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
             var fixturePath = CliTestHelper.GetMinimalSchemaPath();
             (_exitCode, _output, _) = CliTestHelper.RunCli(
                 "ddl",
@@ -218,7 +274,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
             var fixturePath = CliTestHelper.GetMinimalSchemaPath();
             (_exitCode, _, _) = CliTestHelper.RunCli(
                 "ddl",
@@ -278,10 +334,10 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            _outputDir1 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            _outputDir2 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            _outputDir3 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            _outputDir4 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir1 = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
+            _outputDir2 = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
+            _outputDir3 = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
+            _outputDir4 = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
             var fixturePath = CliTestHelper.GetMinimalSchemaPath();
 
             var (exit1, _, err1) = CliTestHelper.RunCli(
@@ -403,7 +459,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
             var fixturePath = CliTestHelper.GetMinimalSchemaPath();
             (_exitCode, _, _) = CliTestHelper.RunCli(
                 "ddl",
@@ -454,7 +510,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
             var fixturePath = CliTestHelper.GetMinimalSchemaPath();
             (_exitCode, _, _) = CliTestHelper.RunCli(
                 "ddl",
@@ -508,7 +564,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
             var fixturePath = CliTestHelper.GetMinimalSchemaPath();
             (_exitCode, _, _error) = CliTestHelper.RunCli(
                 "ddl",
@@ -555,7 +611,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"api-schema-tools-test-{Guid.NewGuid():N}");
             (_exitCode, _, _error) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",

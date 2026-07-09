@@ -15,6 +15,7 @@ env:
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   DMS_PACKAGE_NAME: "EdFi.Api"
+  SCHEMA_TOOLS_PACKAGE_NAME: "EdFi.Api.SchemaTools"
   CS_PACKAGE_NAME: "EdFi.Api.ConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
@@ -68,19 +69,89 @@ jobs:
 
           ./build-dms.ps1 -Command Package `
               -DMSVersion $packageVersion `
-              -Configuration Release
+              -Configuration Release `
+              -PackageTarget Api
 
       - name: Generate DMS hash for NuGet package
         id: hash-code
         run: |
-          "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $packageFile = "${{ env.DMS_PACKAGE_NAME }}.${{ steps.versions.outputs.dms-v }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected DMS package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload DMS Packages as Artifacts
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: "${{ env.DMS_PACKAGE_NAME }}-NuGet"
-          path: ${{ github.workspace }}/*.nupkg
+          path: ${{ github.workspace }}/${{ env.DMS_PACKAGE_NAME }}.${{ steps.versions.outputs.dms-v }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  pack-schema-tools:
+    name: Build and Pack SchemaTools
+    if: startsWith(github.event.release.tag_name, 'dms-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      dms-version: ${{ steps.versions.outputs.dms-v }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set DMS Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "dms"
+
+      - name: Build DMS .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DMSVersion $packageVersion `
+              -LockedMode
+
+      - name: Create SchemaTools NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 -Command Package `
+              -DMSVersion $packageVersion `
+              -Configuration Release `
+              -PackageTarget SchemaTools
+
+      - name: Generate SchemaTools hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}.${{ steps.versions.outputs.dms-v }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SchemaTools package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload SchemaTools Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}.${{ steps.versions.outputs.dms-v }}.nupkg
           if-no-files-found: error
           retention-days: 30
 
@@ -109,7 +180,11 @@ jobs:
           $packageName = "${{ env.DMS_PACKAGE_NAME }}"
           $version = "${{ needs.pack-dms.outputs.dms-version }}"
 
-          Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected DMS package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
 
           dotnet tool install --global Microsoft.Sbom.DotNetTool
 
@@ -142,6 +217,66 @@ jobs:
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
           echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
 
+  sbom-create-schema-tools:
+    name: Create SchemaTools SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-schema-tools
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Get SchemaTools Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: ${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}-NuGet
+
+      - name: Generate SchemaTools Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}"
+          $version = "${{ needs.pack-schema-tools.outputs.dms-version }}"
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SchemaTools package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload SchemaTools SBOM
+        if: success()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: ${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate SchemaTools hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+
   provenance-create-dms:
     name: Create DMS Provenance
     needs: pack-dms
@@ -155,6 +290,20 @@ jobs:
       provenance-name: edfiApi.intoto.jsonl
       upload-assets: false
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
+      compile-generator: true
+
+  provenance-create-schema-tools:
+    name: Create SchemaTools Provenance
+    needs: pack-schema-tools
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-schema-tools.outputs.hash-code }}
+      provenance-name: edfiApiSchemaTools.intoto.jsonl
+      upload-assets: false
       compile-generator: true
 
   publish-package-dms:
@@ -179,16 +328,53 @@ jobs:
 
       - name: Push DMS Package to Azure Artifacts
         run: |
-         $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
-         $arguments = @{
-           EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
-         }
-
-         $artifact | ForEach-Object {
-             $arguments.PackageFile = $_
-             ./build-dms.ps1 Push @arguments
+          $packageFile = "${{ env.DMS_PACKAGE_NAME }}.${{ needs.pack-dms.outputs.dms-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected DMS package was not found: $packageFile"
           }
+
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            PackageFile = $packageFile
+          }
+
+          ./build-dms.ps1 Push @arguments
+
+  publish-package-schema-tools:
+    name: Publish SchemaTools NuGet Package
+    needs: pack-schema-tools
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Get SchemaTools Artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: ${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}-NuGet
+
+      - name: Install-credential-handler SchemaTools
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push SchemaTools Package to Azure Artifacts
+        run: |
+          $packageFile = "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-schema-tools.outputs.dms-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SchemaTools package was not found: $packageFile"
+          }
+
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            PackageFile = $packageFile
+          }
+
+          ./build-dms.ps1 Push @arguments
 
   # dms-pre and dms-*-alpha releases, will not have artifacts attached.
   # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
@@ -199,6 +385,8 @@ jobs:
       - pack-dms
       - sbom-create-dms
       - provenance-create-dms
+      - sbom-create-schema-tools
+      - provenance-create-schema-tools
     if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
     permissions:
       contents: write
@@ -225,6 +413,22 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: edfiApi.intoto.jsonl
+
+      - name: Prepare SchemaTools SBOM download directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force schematools/_manifest/spdx_2.2 | Out-Null
+
+      - name: Download SchemaTools SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}-SBOM"
+          path: schematools/${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-schema-tools.outputs.sbom-hash-code }}"
+
+      - name: Download SchemaTools Provenance
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: edfiApiSchemaTools.intoto.jsonl
 
       - name: Attach DMS SBOM and Provenance to release
         shell: pwsh
@@ -265,6 +469,28 @@ jobs:
               -Uri "$($uploadUrl)?name=$($provenanceUploadName)" `
               -Headers $gh_headers `
               -InFile $provenanceFile
+
+          # Upload SchemaTools SBOM
+          $schemaToolsSbomFile = "schematools/${{ env.MANIFEST_FILE }}"
+          $schemaToolsSbomUploadName = "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}-SBOM.zip"
+
+          Compress-Archive $schemaToolsSbomFile -DestinationPath $schemaToolsSbomUploadName
+
+          Write-Host "Uploading SchemaTools SBOM as $schemaToolsSbomUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($schemaToolsSbomUploadName)" `
+              -Headers $gh_headers `
+              -InFile $schemaToolsSbomUploadName
+
+          # Upload SchemaTools Provenance
+          $schemaToolsProvenanceFile = "edfiApiSchemaTools.intoto.jsonl"
+          $schemaToolsProvenanceUploadName = "edfiApiSchemaTools.intoto.jsonl"
+
+          Write-Host "Uploading SchemaTools Provenance as $schemaToolsProvenanceUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($schemaToolsProvenanceUploadName)" `
+              -Headers $gh_headers `
+              -InFile $schemaToolsProvenanceFile
 
   docker-publish-dms:
     name: Publish DMS to Docker Hub

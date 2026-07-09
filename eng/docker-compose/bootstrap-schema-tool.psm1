@@ -27,11 +27,11 @@ function Get-DmsSchemaToolCandidateDirectory {
     $candidateDirectories = [System.Collections.ArrayList]::new()
 
     # Documented publish location (README "Standard mode" / prepare-dms-schema.ps1 help):
-    # `dotnet publish ... -o .bootstrap/tools/dms-schema` drops the apphost executable directly in this
+    # `dotnet publish ... -o .bootstrap/tools/api-schema-tools` drops the apphost executable directly in this
     # flat directory. Probing it lets the documented wrapper shorthand
     # (`bootstrap-local-dms.ps1` core-only standard staging) resolve the tool after the documented one-time
     # publish step, without requiring -SchemaToolPath (which the wrapper does not forward) or DMS_SCHEMA_TOOL_PATH.
-    $publishedToolDirectory = Join-Path (Get-BootstrapRoot) "tools/dms-schema"
+    $publishedToolDirectory = Join-Path (Get-BootstrapRoot) "tools/api-schema-tools"
     if (Test-Path -LiteralPath $publishedToolDirectory -PathType Container) {
         $null = $candidateDirectories.Add($publishedToolDirectory)
     }
@@ -77,13 +77,13 @@ function Get-DmsSchemaToolCandidateDirectory {
 function Resolve-DmsSchemaTool {
     <#
     .SYNOPSIS
-    Resolves the absolute path to the dms-schema executable used by the bootstrap schema phase.
+    Resolves the absolute path to the api-schema-tools executable used by the bootstrap schema phase.
     .DESCRIPTION
     Honors an explicit -RequestedPath when supplied, otherwise probes the in-repo build output
     directories. PATH-resolved fallback is opt-in via DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true;
     when nothing resolves, throws with build/configuration guidance.
     .PARAMETER RequestedPath
-    Optional explicit path to the dms-schema executable. When set, it must exist or resolution throws.
+    Optional explicit path to the api-schema-tools executable. When set, it must exist or resolution throws.
     #>
     param(
         [string]
@@ -93,16 +93,16 @@ function Resolve-DmsSchemaTool {
     if (-not [string]::IsNullOrWhiteSpace($RequestedPath)) {
         $fullPath = [System.IO.Path]::GetFullPath($RequestedPath)
         if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
-            throw "The configured dms-schema executable was not found: $(Format-LogSafeText $fullPath)"
+            throw "The configured api-schema-tools executable was not found: $(Format-LogSafeText $fullPath)"
         }
 
         return $fullPath
     }
 
     $candidateNames = if ($IsWindows) {
-        @("dms-schema.exe", "dms-schema")
+        @("api-schema-tools.exe", "api-schema-tools")
     } else {
-        @("dms-schema")
+        @("api-schema-tools")
     }
 
     foreach ($candidateDirectory in Get-DmsSchemaToolCandidateDirectory) {
@@ -114,28 +114,28 @@ function Resolve-DmsSchemaTool {
         }
     }
 
-    $pathCommand = Get-Command "dms-schema" -ErrorAction SilentlyContinue
+    $pathCommand = Get-Command "api-schema-tools" -ErrorAction SilentlyContinue
     if ($null -ne $pathCommand) {
         if ($env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -ne "true") {
-            throw "In-repo dms-schema tool not found. Build src/dms/clis/EdFi.DataManagementService.SchemaTools, set DMS_SCHEMA_TOOL_PATH, or set DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true to opt in to PATH fallback."
+            throw "In-repo api-schema-tools tool not found. Build src/dms/clis/EdFi.DataManagementService.SchemaTools, set DMS_SCHEMA_TOOL_PATH, or set DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true to opt in to PATH fallback."
         }
 
-        Write-Warning "Falling back to PATH-resolved dms-schema executable: $(Format-LogSafeText ($pathCommand.Source))"
+        Write-Warning "Falling back to PATH-resolved api-schema-tools executable: $(Format-LogSafeText ($pathCommand.Source))"
         return $pathCommand.Source
     }
 
-    throw "Unable to resolve the dms-schema executable. Build src/dms/clis/EdFi.DataManagementService.SchemaTools or set DMS_SCHEMA_TOOL_PATH."
+    throw "Unable to resolve the api-schema-tools executable. Build src/dms/clis/EdFi.DataManagementService.SchemaTools or set DMS_SCHEMA_TOOL_PATH."
 }
 
 function Invoke-DmsSchemaHash {
     <#
     .SYNOPSIS
-    Runs 'dms-schema hash' and returns the lowercased effective schema hash.
+    Runs 'api-schema-tools hash' and returns the lowercased effective schema hash.
     .DESCRIPTION
-    Invokes the resolved dms-schema tool against the supplied core and extension schema paths,
+    Invokes the resolved api-schema-tools tool against the supplied core and extension schema paths,
     throwing on a non-zero exit code or when the tool does not report an effective schema hash.
     .PARAMETER ToolPath
-    Path to the dms-schema executable (or .ps1 wrapper) returned by Resolve-DmsSchemaTool.
+    Path to the api-schema-tools executable (or .ps1 wrapper) returned by Resolve-DmsSchemaTool.
     .PARAMETER CoreSchemaPath
     Path to the core ApiSchema content to hash.
     .PARAMETER ExtensionSchemaPath
@@ -165,11 +165,11 @@ function Invoke-DmsSchemaHash {
     $outputText = ($output | Out-String).Trim()
 
     if ($exitCode -ne 0) {
-        throw "dms-schema hash failed with exit code $exitCode. $(Format-LogSafeText $outputText)"
+        throw "api-schema-tools hash failed with exit code $exitCode. $(Format-LogSafeText $outputText)"
     }
 
     if ($outputText -notmatch "(?m)^Effective schema hash:\s*([a-fA-F0-9]{64})\s*$") {
-        throw "dms-schema hash completed but did not report an Effective schema hash. $(Format-LogSafeText $outputText)"
+        throw "api-schema-tools hash completed but did not report an Effective schema hash. $(Format-LogSafeText $outputText)"
     }
 
     return $matches[1].ToLowerInvariant()

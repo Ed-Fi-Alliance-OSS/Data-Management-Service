@@ -37,7 +37,7 @@ the stable core contract. Later package-backed selection is an input-materializa
 the same workspace. The schema JSON files in that workspace are the stable target source for all schema
 consumers, but Story 00 activates only the staging, hashing, and manifest handoff path:
 
-- `dms-schema hash`,
+- `api-schema-tools hash`,
 - downstream schema provisioning input,
 - future Docker-hosted and IDE-hosted DMS startup after Story 04 updates runtime content loading.
 

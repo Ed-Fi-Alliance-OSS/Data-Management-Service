@@ -89,11 +89,11 @@ public static class CliTestHelper
             framework
         );
 
-        var exePath = Path.Combine(schemaToolsBinDir, "dms-schema.exe");
+        var exePath = Path.Combine(schemaToolsBinDir, "api-schema-tools.exe");
         if (!File.Exists(exePath))
         {
             // Try .dll with dotnet on non-Windows
-            exePath = Path.Combine(schemaToolsBinDir, "dms-schema.dll");
+            exePath = Path.Combine(schemaToolsBinDir, "api-schema-tools.dll");
         }
 
         return Path.GetFullPath(exePath);
