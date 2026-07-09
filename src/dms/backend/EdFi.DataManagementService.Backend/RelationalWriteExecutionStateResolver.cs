@@ -44,7 +44,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
     internal static bool HasEtagPrecondition(WritePrecondition precondition) =>
         precondition is WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch;
 
-    public static IfMatchPreconditionEvaluation GetEtagPreconditionEvaluation(
+    public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(
         RelationalWriteExecutorRequest request
     ) =>
         HasEtagPrecondition(request.WritePrecondition)
@@ -53,8 +53,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
             || request.StoredNamespaceAuthorization is not null
             || request.ProposedNamespaceAuthorization is not null
         )
-            ? IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-            : IfMatchPreconditionEvaluation.BeforeProposedAuthorization;
+            ? EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+            : EtagPreconditionEvaluation.BeforeProposedAuthorization;
 
     public async Task<ResolvedExecutionState> ResolveAsync(
         RelationalWriteExecutorRequest request,
@@ -283,8 +283,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
         }
 
         if (
-            options.IfMatchPreconditionEvaluation
-                is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+            options.EtagPreconditionEvaluation
+                is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             && options.ExistingTargetLock is ExistingTargetLockMode.LockBeforeCurrentStateLoad
         )
         {
@@ -312,7 +312,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
         }
 
         if (
-            options.IfMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
+            options.EtagPreconditionEvaluation is EtagPreconditionEvaluation.BeforeProposedAuthorization
             && HasEtagPrecondition(request.WritePrecondition)
         )
         {
@@ -436,7 +436,7 @@ internal sealed record ResolvedExecutionState(
     RelationalWriteExecutorResult? ImmediateResult
 );
 
-internal enum IfMatchPreconditionEvaluation
+internal enum EtagPreconditionEvaluation
 {
     BeforeProposedAuthorization,
     DeferredUntilAfterProposedAuthorization,
@@ -456,7 +456,7 @@ internal enum CurrentStateProjectionMode
 }
 
 internal sealed record ExecutionStateResolutionOptions(
-    IfMatchPreconditionEvaluation IfMatchPreconditionEvaluation,
+    EtagPreconditionEvaluation EtagPreconditionEvaluation,
     ExistingTargetLockMode ExistingTargetLock,
     CurrentStateProjectionMode CurrentStateProjection,
     PostTargetReevaluationMode PostTargetReevaluation
@@ -468,7 +468,7 @@ internal sealed record ExecutionStateResolutionOptions(
         PostTargetReevaluationMode postTargetReevaluation
     ) =>
         new(
-            IfMatchPreconditionEvaluation.BeforeProposedAuthorization,
+            EtagPreconditionEvaluation.BeforeProposedAuthorization,
             ExistingTargetLockMode.NotRequired,
             CurrentStateProjectionMode.Standard,
             postTargetReevaluation
@@ -484,7 +484,7 @@ internal sealed record ExecutionStateResolutionOptions(
             : ExistingTargetLockMode.LockBeforeCurrentStateLoad;
 
         return new ExecutionStateResolutionOptions(
-            IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization,
+            EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization,
             existingTargetLock,
             CurrentStateProjectionMode.IncludeDescriptorsForDeferredPrecondition,
             postTargetReevaluation

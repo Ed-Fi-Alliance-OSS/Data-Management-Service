@@ -127,7 +127,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             executionRequest = storedAuthorizationBoundary.ExecutionRequest;
-            var ifMatchPreconditionEvaluation =
+            var etagPreconditionEvaluation =
                 RelationalWriteExecutionStateResolver.GetEtagPreconditionEvaluation(executionRequest);
             // A stored-auth POST lookup is the authorization boundary for this attempt. If it saw
             // CreateNew, keep that decision stable so a later race cannot become an update without
@@ -140,7 +140,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             // single predicate so the two cannot drift and re-open the fail-open path.
             if (
                 RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition)
-                && ifMatchPreconditionEvaluation is IfMatchPreconditionEvaluation.BeforeProposedAuthorization
+                && etagPreconditionEvaluation is EtagPreconditionEvaluation.BeforeProposedAuthorization
             )
             {
                 var resolvedExecutionState = await _executionStateResolver
@@ -206,13 +206,13 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (
                 !RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition)
-                || ifMatchPreconditionEvaluation
-                    is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+                || etagPreconditionEvaluation
+                    is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             )
             {
                 var executionStateResolutionOptions =
-                    ifMatchPreconditionEvaluation
-                    is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+                    etagPreconditionEvaluation
+                    is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
                         ? ExecutionStateResolutionOptions.DeferredIfMatch(
                             storedAuthorizationBoundary,
                             postTargetReevaluation
@@ -300,8 +300,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             mergeResult = proposedAuthorizationBoundary.MergeResult;
 
             if (
-                ifMatchPreconditionEvaluation
-                is IfMatchPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
+                etagPreconditionEvaluation
+                is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             )
             {
                 var deferredPreconditionResult =
