@@ -589,7 +589,8 @@ actual: {requestInfo.FrontendResponse.Body}
             resourceInfo: _fixture.ResourceInfo,
             writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.InsertSuccess(
-                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
+                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid,
+                    "\"test-etag\""
                 )
             )
         );

@@ -79,7 +79,7 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
             InsertSuccess insertSuccess => new FrontendResponse(
                 StatusCode: 201,
                 Body: null,
-                Headers: new() { ["etag"] = insertSuccess.ETag ?? "" },
+                Headers: new() { ["etag"] = insertSuccess.ETag },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     requestInfo.PathComponents,
                     insertSuccess.NewDocumentUuid
@@ -88,7 +88,7 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
             UpdateSuccess updateSuccess => new(
                 StatusCode: 200,
                 Body: null,
-                Headers: new() { ["etag"] = updateSuccess.ETag ?? "" },
+                Headers: new() { ["etag"] = updateSuccess.ETag },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     requestInfo.PathComponents,
                     updateSuccess.ExistingDocumentUuid

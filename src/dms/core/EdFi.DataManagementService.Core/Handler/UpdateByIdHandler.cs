@@ -74,7 +74,7 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
             UpdateSuccess updateSuccess => new FrontendResponse(
                 StatusCode: 204,
                 Body: null,
-                Headers: new() { ["etag"] = updateSuccess.ETag ?? "" },
+                Headers: new() { ["etag"] = updateSuccess.ETag },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     requestInfo.PathComponents,
                     updateSuccess.ExistingDocumentUuid

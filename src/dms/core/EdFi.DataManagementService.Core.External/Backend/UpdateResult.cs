@@ -24,8 +24,23 @@ public record UpdateResult
     /// A successful update request
     /// </summary>
     /// <param name="ExistingDocumentUuid">The DocumentUuid of the existing document</param>
-    /// <param name="ETag">The response ETag to emit for the committed representation, when available.</param>
-    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid, string? ETag = null) : UpdateResult();
+    /// <param name="ETag">The required response ETag to emit for the committed representation.</param>
+    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid, string ETag) : UpdateResult()
+    {
+        private string _etag = RequireEtag(ETag);
+
+        public string ETag
+        {
+            get => _etag;
+            init => _etag = RequireEtag(value);
+        }
+
+        private static string RequireEtag(string etag)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(etag);
+            return etag;
+        }
+    }
 
     /// <summary>
     /// A failure because the document does not exist

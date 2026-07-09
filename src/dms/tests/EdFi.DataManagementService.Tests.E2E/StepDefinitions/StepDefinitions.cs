@@ -566,11 +566,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
 
-            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
-            ifMatch = ifMatch.Replace("{IfMatchQuoted}", _rawEtag);
-            // Resolve any stored-variable placeholder (e.g. a baseline ETag captured earlier) so a
-            // deliberately stale If-Match can be replayed after the resource has since changed.
-            ifMatch = ifMatch.ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+            ifMatch = ResolveIfMatchHeaderValue(ifMatch);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                 new()
@@ -889,8 +885,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information($"DELETE url: {url}");
 
-            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
-            ifMatch = ifMatch.Replace("{IfMatchQuoted}", _rawEtag);
+            ifMatch = ResolveIfMatchHeaderValue(ifMatch);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
                 new() { Headers = GetHeadersWithIfMatch(ifMatch) }
@@ -1692,6 +1687,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             etag is { Length: >= 2 } && etag[0] == '"' && etag[^1] == '"'
                 ? etag[1..^1]
                 : etag ?? string.Empty;
+
+        private string ResolveIfMatchHeaderValue(string ifMatch) =>
+            ifMatch
+                .Replace("{IfMatch}", _etag)
+                .Replace("{IfMatchQuoted}", _rawEtag)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         [Then("the lastModifiedDate has not changed")]
         public async Task ThenTheLastModifiedDateHasNotChanged()

@@ -485,7 +485,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             resourceKeyId
         );
 
-        return new UpsertResult.InsertSuccess(seed.DocumentUuid);
+        return new UpsertResult.InsertSuccess(seed.DocumentUuid, "\"test-etag\"");
     }
 
     public async Task<UpsertResult> UpsertAuthorizationStudentAcademicRecordAsync(

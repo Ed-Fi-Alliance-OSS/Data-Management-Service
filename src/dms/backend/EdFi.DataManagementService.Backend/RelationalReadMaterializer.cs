@@ -86,8 +86,9 @@ public interface IRelationalReadMaterializer
     /// Final response-shaping pass: strips the <c>link</c> subtree from every document-reference
     /// object when <see cref="ResourceLinksOptions.Enabled"/> is <see langword="false"/>; no-op
     /// otherwise. Invoked by the repository wrapper after readable-profile projection so the
-    /// flag governs the served body without affecting intermediate caching or <c>_etag</c>.
-    /// Safe to call unconditionally — mutates <paramref name="document"/> in place.
+    /// flag governs the served body. The same flag is included in served <c>_etag</c> composition,
+    /// giving link-enabled and link-suppressed representations distinct variant keys. Safe to call
+    /// unconditionally; mutates <paramref name="document"/> in place.
     /// </summary>
     void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan);
 }

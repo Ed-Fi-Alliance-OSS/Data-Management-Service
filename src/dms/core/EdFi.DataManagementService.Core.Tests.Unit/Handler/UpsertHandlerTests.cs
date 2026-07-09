@@ -93,7 +93,9 @@ public class UpsertHandlerTests
         {
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpdateSuccess(upsertRequest.DocumentUuid));
+                return Task.FromResult<UpsertResult>(
+                    new UpdateSuccess(upsertRequest.DocumentUuid, "\"test-etag\"")
+                );
             }
         }
 
@@ -238,7 +240,9 @@ public class UpsertHandlerTests
             {
                 CapturedRequest = upsertRequest;
 
-                return Task.FromResult<UpsertResult>(new InsertSuccess(CapturedRequest.DocumentUuid));
+                return Task.FromResult<UpsertResult>(
+                    new InsertSuccess(CapturedRequest.DocumentUuid, "\"test-etag\"")
+                );
             }
         }
 
