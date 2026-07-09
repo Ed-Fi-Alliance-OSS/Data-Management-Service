@@ -79,7 +79,11 @@ x-cms-common-env: &cms-common-env
   AppSettings__Datastore: "postgresql"
   DatabaseSettings__EncryptionKey: "${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:?set DMS_CONFIG_DATABASE_ENCRYPTION_KEY in .env}"
   AppSettings__DeployDatabaseOnStartup: "true"
-  AppSettings__IdentityProvider: "${IDENTITY_PROVIDER:-keycloak}"
+  # Keycloak-only: the DMS/CMS token endpoints, JWT authority, and metadata addresses in
+  # these env blocks are all wired to the shared Keycloak realm, so an alternative identity
+  # provider cannot work here. For self-contained OpenIddict identity use the official
+  # eng/docker-compose local stack instead.
+  AppSettings__IdentityProvider: "keycloak"
   # Same trusted-forwarded-headers model as the DMS block above (DMS-1067).
   AppSettings__ReverseProxy__UseForwardedHeaders: "true"
   AppSettings__ReverseProxy__KnownNetworks: "172.16.0.0/12,192.168.0.0/16"
@@ -134,7 +138,7 @@ services:
   # databases (see postgres/init-databases.sh).
   # =========================================================================
   postgres:
-    image: postgres:16.8-alpine
+    image: postgres:16.14-alpine
     hostname: postgres
     container_name: dms-sec-postgres
     command: ["postgres", "-c", "max_locks_per_transaction=256"]
@@ -253,7 +257,9 @@ services:
   # =========================================================================
   pgadmin:
     <<: *app-defaults
-    image: dpage/pgadmin4:8.14
+    # Keep this pin CURRENT before each deployment: pgAdmin is a public, DB-privileged
+    # surface and ships security fixes frequently (https://www.pgadmin.org/security/).
+    image: dpage/pgadmin4:9.16
     hostname: pgadmin
     container_name: dms-sec-pgadmin
     environment:
@@ -267,7 +273,7 @@ services:
   # NGINX gateway — TLS termination + path routing (single public hostname).
   # =========================================================================
   gateway:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     hostname: gateway
     container_name: dms-sec-gateway
     environment:

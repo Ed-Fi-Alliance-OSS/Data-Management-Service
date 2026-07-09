@@ -4,8 +4,8 @@
 # Post-start bootstrap for the DMS security-review environment.
 #
 # Sequence (mirrors eng/docker-compose/start-published-dms.ps1, adapted for two
-# stacks reached through the gateway):
-#   1. (keycloak mode) Create realm + the three CMS service clients.
+# stacks reached through the gateway; this environment is Keycloak-only):
+#   1. Create realm + the three CMS service clients (unless -SkipKeycloak).
 #   2. Single-tenant: register admin client, create a data store, vendor, and
 #      application -> emit API key/secret.
 #   3. Multi-tenant: create two tenants; per tenant create a data store (+ schoolYear
@@ -22,8 +22,6 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ClaimSetName', Justification = 'Consumed as the default value of the New-ReviewApplication -ClaimSet parameter; the analyzer does not track usage inside nested function parameter defaults.')]
 param(
     [string]$EnvFile = "$PSScriptRoot/../.env",
-    [ValidateSet("", "keycloak", "self-contained")]
-    [string]$IdentityProvider = "",
     [string]$ClaimSetName = "E2E-NoFurtherAuthRequiredClaimSet",
     # Override the gateway base URL (default: PUBLIC_BASE_URL from .env). Set to
     # https://localhost when running on the VM to use the loopback and avoid
@@ -71,7 +69,6 @@ function EnvVal([string]$key, [string]$default = "") {
     return $default
 }
 
-if (-not $IdentityProvider) { $IdentityProvider = EnvVal "IDENTITY_PROVIDER" "keycloak" }
 $publicBaseUrl = if ($BaseUrl) { $BaseUrl.TrimEnd("/") } else { (EnvVal "PUBLIC_BASE_URL" "https://localhost").TrimEnd("/") }
 $realm         = EnvVal "KEYCLOAK_REALM" "edfi"
 $pgUser        = EnvVal "POSTGRES_USER" "postgres"
@@ -84,6 +81,12 @@ $tenant1       = EnvVal "MT_TENANT_1" "tenant1"
 $tenant2       = EnvVal "MT_TENANT_2" "tenant2"
 $adminClientId     = EnvVal "BOOTSTRAP_ADMIN_CLIENT_ID" "dms-bootstrap-admin"
 $adminClientSecret = EnvVal "BOOTSTRAP_ADMIN_CLIENT_SECRET"
+# The service client ids/scope MUST be the ones the compose services request: read them from
+# the same .env keys (with the same defaults) the compose file consumes, so a customized value
+# yields the same client on both sides instead of an authentication mismatch.
+$cmsClientId   = EnvVal "DMS_CONFIG_IDENTITY_CLIENT_ID" "DmsConfigurationService"
+$roClientId    = EnvVal "CONFIG_SERVICE_CLIENT_ID" "CMSReadOnlyAccess"
+$roClientScope = EnvVal "CONFIG_SERVICE_CLIENT_SCOPE" "edfi_admin_api/readonly_access"
 
 # Grand Bend sample-data education organizations (district LEA 255901 + sample schools).
 $grandBendEdOrgIds = @([long]255901, [long]255901001, [long]255901107)
@@ -94,19 +97,19 @@ $mtConfig = "$publicBaseUrl/mt-config/"
 $created = [System.Collections.Generic.List[object]]::new()
 
 # --- 1. Keycloak realm + service clients ------------------------------------
-if ($IdentityProvider -eq "keycloak" -and -not $SkipKeycloak) {
+if (-not $SkipKeycloak) {
     Write-Output "== Configuring Keycloak realm '$realm' and service clients =="
     $kc = "$publicBaseUrl/auth"
     $kcAdmin = EnvVal "KEYCLOAK_ADMIN" "admin"
     $kcAdminPw = EnvVal "KEYCLOAK_ADMIN_PASSWORD"
 
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
-        -NewClientId "DmsConfigurationService" -NewClientName "DMS Configuration Service" `
+        -NewClientId $cmsClientId -NewClientName "DMS Configuration Service" `
         -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret (EnvVal "DMS_CONFIG_IDENTITY_CLIENT_SECRET")
 
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
-        -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" `
-        -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret (EnvVal "CONFIG_SERVICE_CLIENT_SECRET")
+        -NewClientId $roClientId -NewClientName "CMS ReadOnly Access" `
+        -ClientScopeName $roClientScope -NewClientSecret (EnvVal "CONFIG_SERVICE_CLIENT_SECRET")
 
     # Bootstrap admin client -- created directly in Keycloak (full_access scope + cms-client role)
     # so we never rely on the CMS public self-registration endpoint (/connect/register), which is
@@ -118,15 +121,6 @@ if ($IdentityProvider -eq "keycloak" -and -not $SkipKeycloak) {
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $adminClientId -NewClientName "DMS Bootstrap Admin" `
         -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret -SkipRealmAdmin
-}
-elseif ($IdentityProvider -eq "self-contained" -and -not $SkipKeycloak) {
-    # Public self-registration (/connect/register) is disabled, so there is no automated path to
-    # create the bootstrap admin client in self-contained mode -- it must be provisioned out of band
-    # (OpenIddict keys/clients via eng/docker-compose/setup-openiddict.ps1). Fail fast and clearly
-    # rather than erroring later on the first token request. Once that is done, re-run with
-    # -SkipKeycloak: this branch is then skipped and execution falls through to the CMS/data-store/
-    # application bootstrap below (which is identity-provider-agnostic).
-    throw "bootstrap.ps1 automates the Keycloak identity provider only. For 'self-contained', provision the OpenIddict bootstrap admin client out of band (see eng/docker-compose/setup-openiddict.ps1) and then re-run with -SkipKeycloak."
 }
 
 # --- Helper: provision one application and capture credentials --------------
@@ -198,7 +192,9 @@ foreach ($t in @($tenant1, $tenant2)) {
 
 # --- Summary ----------------------------------------------------------------
 Write-Output "`n== API credentials created (store in your private vault / credentials doc -- NEVER commit to this repo) =="
-$created | Format-Table -AutoSize
+# Format-List, not Format-Table: a table truncates the long key/secret columns at normal
+# terminal widths, and the application secret cannot be retrieved after creation.
+$created | Format-List
 Write-Output "DMS endpoints:"
 Write-Output "  single-tenant: $publicBaseUrl/st-dms/data/ed-fi/..."
 Write-Output "  multi-tenant : $publicBaseUrl/mt-dms/{tenant}/$schoolYear/data/ed-fi/...   (tenant in PATH: $tenant1 or $tenant2)"

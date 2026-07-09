@@ -6,9 +6,9 @@
 # realm + clients survive `reset.sh`, which drops only the app/database volumes.
 # Reachable through the gateway at /auth.
 #
-# Realm + service clients are created by bootstrap/bootstrap.ps1 (which vendors
-# setup-keycloak.ps1). MFA is intentionally NOT enabled so credentials can be
-# shared with the review team — recommend enforcing MFA for any real deployment.
+# Realm + service clients are created by bootstrap/bootstrap.ps1 (which imports the
+# repo's canonical setup-keycloak.ps1). MFA is intentionally NOT enabled so credentials
+# can be shared with the review team — recommend enforcing MFA for any real deployment.
 #
 # NOT FOR PRODUCTION.
 
@@ -16,7 +16,7 @@ name: dms-security-review
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.1
+    image: quay.io/keycloak/keycloak:26.7
     hostname: dms-keycloak
     container_name: dms-sec-keycloak
     environment:

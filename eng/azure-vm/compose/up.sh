@@ -28,9 +28,16 @@ fi
 # DMS booted against an empty schema directory fails startup/health -- refuse before that happens.
 starts_dms=false
 if [ "$#" -eq 0 ]; then
-  starts_dms=true
+  starts_dms=true   # no args -> full stack, DMS included
 else
-  case " $* " in *" st-dms "* | *" mt-dms "*) starts_dms=true ;; esac
+  for arg in "$@"; do
+    case "$arg" in
+      st-dms | mt-dms) starts_dms=true ;;
+      # A compose option makes the started set ambiguous (`./up.sh --wait` starts everything,
+      # and option values look like service names) -- be conservative and require the schema.
+      -*) starts_dms=true ;;
+    esac
+  done
 fi
 if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json' 2>/dev/null | grep -q .; then
   echo "ERROR: .bootstrap/ApiSchema is missing or has no staged schema files, so the DMS services cannot start."

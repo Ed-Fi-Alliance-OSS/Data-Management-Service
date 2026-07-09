@@ -18,11 +18,14 @@ parts need care that the plain Linux VM doesn't:
 2. **Headless autostart.** WSL/Docker don't start on boot by themselves. We add a startup
    task; if containers don't return after a Start, RDP in and run `wsl` once.
 
-Also: a Windows VM costs more (license + a larger size). **Recommend Windows Server 2025 +
-mirrored networking + Standard_D8s_v4 (8 vCPU / 32 GiB)** to match the reference ODS box (a
-lighter Standard_B4ms / 16 GiB also runs the DMS stack fine if cost matters). Deallocate when
-idle so the larger size only costs you during sessions. This path has more to validate than the
-Linux VM; smoke-test before handoff.
+Also: a Windows VM costs more (license + a larger size), and WSL2 itself needs **nested
+virtualization**, which constrains the VM: create it with **Security type: Standard** (the
+portal's Trusted Launch default blocks nested virtualization on these sizes) and a size that
+supports it — **B-series never does**. **Recommend Windows Server 2025 + mirrored networking +
+Standard_D8s_v4 (8 vCPU / 32 GiB)** to match the reference ODS box (a lighter Standard_D4s_v4 /
+16 GiB also runs the DMS stack fine if cost matters). Deallocate when idle so the larger size
+only costs you during sessions. This path has more to validate than the Linux VM; smoke-test
+before handoff.
 
 > If RDP is only about avoiding SSH-key setup, the `Linux VM + xRDP` option is far less
 > moving parts. This doc assumes you've decided on a Windows host.
@@ -35,7 +38,10 @@ Search **Virtual machines → + Create → Azure virtual machine**.
 
 - **Resource group:** `rg-dms-security-review` · **Name:** `dms-sec-vm` · **Region:** East US
 - **Image:** **Windows Server 2025 Datacenter** (Gen2). *(2022 works; you'll use portproxy.)*
-- **Size:** **Standard_D8s_v4** (8 vCPU / 32 GiB — matches the reference ODS VM; B4ms is enough for DMS)
+- **Security type:** **Standard** — the portal defaults Gen2 images to **Trusted Launch**, which
+  blocks the nested virtualization WSL2 requires on these sizes.
+- **Size:** **Standard_D8s_v4** (8 vCPU / 32 GiB — matches the reference ODS VM; **Standard_D4s_v4**
+  if cost matters). The size must support **nested virtualization** — B-series never does.
 - **Authentication:** Username + **Password** (this is your RDP login). Save it.
 - **Public inbound ports:** **None** (we add NSG rules in step 3)
 - **Disks:** OS disk **Standard SSD**
@@ -110,9 +116,11 @@ elevated PowerShell:
 .\setup-windows-host.ps1 -UsePortProxy
 ```
 
-This writes `.wslconfig`, opens the Windows firewall for 80/443, installs Docker + PowerShell +
-git + certbot **inside WSL**, enables systemd in WSL, and registers a startup task so WSL/Docker
-come back after a reboot (plus portproxy refresh in `-UsePortProxy` mode).
+This writes `.wslconfig`, opens the Windows firewall — and, for mirrored mode, the **Hyper-V
+firewall** (mirrored inbound is gated there, not by the classic firewall) — for 80/443, installs
+Docker + PowerShell + git + certbot **inside WSL**, enables systemd in WSL, verifies mirrored
+networking actually applied (falling back to portproxy when it did not), and registers a startup
+task so WSL/Docker come back after a reboot (plus portproxy refresh in portproxy mode).
 
 ## 7. Set up the DMS environment (inside WSL)
 

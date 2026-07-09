@@ -162,7 +162,9 @@ try {
         # install (not cp) sets the destination mode atomically: the private key stays owner-only
         # (a bare cp inherits the shell umask, often leaving the key group/other-readable).
         sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt
+        if ($LASTEXITCODE -ne 0) { throw "installing fullchain.pem -> ssl/server.crt failed ($LASTEXITCODE)." }
         sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key
+        if ($LASTEXITCODE -ne 0) { throw "installing privkey.pem -> ssl/server.key failed ($LASTEXITCODE)." }
     }
     elseif (Test-Path "ssl/server.crt") {
         Write-Output "Reusing existing self-signed certificate (delete ssl/server.crt to regenerate)."
@@ -170,6 +172,7 @@ try {
     else {
         Write-Output "No -LetsEncryptEmail: generating a self-signed certificate."
         ./ssl/generate-certificate.sh $PublicHost
+        if ($LASTEXITCODE -ne 0) { throw "generate-certificate.sh failed ($LASTEXITCODE)." }
     }
 
     # --- 4. (optional) Grand Bend sample data -------------------------------
@@ -178,12 +181,15 @@ try {
         docker network inspect dms-sec *> $null
         if ($LASTEXITCODE -ne 0) { docker network create dms-sec | Out-Null }
         docker compose -f docker-compose.yml --env-file .env up -d postgres
+        if ($LASTEXITCODE -ne 0) { throw "docker compose up postgres failed ($LASTEXITCODE)." }
         $pgDeadline = (Get-Date).AddMinutes(3)
         do {
             Start-Sleep -Seconds 5
             $pg = (docker inspect -f '{{.State.Health.Status}}' dms-sec-postgres 2>$null)
         } while ($pg -ne "healthy" -and (Get-Date) -lt $pgDeadline)
+        if ($pg -ne "healthy") { throw "PostgreSQL did not report healthy within 3 minutes; cannot restore the template. Check './logs.sh postgres'." }
         bash ./seed/grandbend.sh
+        if ($LASTEXITCODE -ne 0) { throw "seed/grandbend.sh failed ($LASTEXITCODE); see its output above." }
         Write-Output "Grand Bend template loaded into edfi_st (schema + data). Single-tenant is ready to start; the multi-tenant DBs still need schema + seed."
     }
 
@@ -199,6 +205,7 @@ try {
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
     docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps `
         postgres keycloak st-config mt-config pgadmin gateway
+    if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
     Write-Output "Waiting for Keycloak + config services to report healthy..."
     $deadline = (Get-Date).AddMinutes(8)
@@ -213,7 +220,7 @@ try {
         if ($kcCode -ne "200") { $healthy = $false }
     } while (-not $healthy -and (Get-Date) -lt $deadline)
     if ($healthy) { Write-Output "Identity + config services healthy." }
-    else { Write-Warning "Identity/config not all healthy yet. Check './logs.sh' before continuing." }
+    else { throw "Identity/config services did not report healthy within 8 minutes. Check './logs.sh', then re-run (re-runs preserve secrets and skip bootstrap)." }
 
     # Bootstrap on first stand-up only. On a re-run (e.g. the '-StartDms' second pass) the realm,
     # clients, tenants, and data stores already exist; re-running would also fail on the now-existing
@@ -248,6 +255,7 @@ try {
         }
         Write-Output "Starting DMS services..."
         docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d st-dms mt-dms
+        if ($LASTEXITCODE -ne 0) { throw "docker compose up st-dms/mt-dms failed ($LASTEXITCODE)." }
         Write-Output "Waiting for DMS services to report healthy (requires provisioned schema)..."
         $deadline = (Get-Date).AddMinutes(8)
         do {
@@ -259,7 +267,7 @@ try {
             }
         } while (-not $healthy -and (Get-Date) -lt $deadline)
         if ($healthy) { Write-Output "DMS services healthy." }
-        else { Write-Warning "DMS not healthy. Is the relational schema provisioned? See docs/infrastructure.md." }
+        else { throw "DMS services did not report healthy within 8 minutes. Is the relational schema provisioned? See docs/infrastructure.md, then re-run with -StartDms." }
     }
     else {
         Write-Output "`nNext steps (manual):"

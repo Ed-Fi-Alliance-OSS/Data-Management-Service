@@ -30,13 +30,13 @@ docker image rm edfialliance/data-management-service:pre edfialliance/dms-config
 docker system prune -f
 ```
 
-## Part B — Get the current branch  [bash]
+## Part B — Check out the revision to deploy  [bash]
 
 ```bash
 cd ~/dms-src
-git fetch origin
-git checkout DMS-1196
-git pull --ff-only
+REF=origin/main   # or a release tag, or the branch under review (e.g. origin/DMS-1196)
+git fetch origin --tags
+git switch --detach "$REF"
 git log -1 --oneline
 ```
 
@@ -49,8 +49,11 @@ workspace, then copy it into the azure-vm compose folder.
 ```bash
 cd ~/dms-src/eng/docker-compose
 
-# 1. Build the api-schema-tools tool (self-contained; runs in WSL without a host .NET runtime):
-docker run --rm -v ~/dms-src:/src -w /src/eng/docker-compose mcr.microsoft.com/dotnet/sdk:10.0 \
+# 1. Build the api-schema-tools tool (self-contained; runs in WSL without a host .NET runtime).
+#    --user keeps the bind-mounted output owned by you: published as root, .bootstrap/ would be
+#    root-owned on a clean clone and the host-side prepare step below could not write into it.
+docker run --rm --user "$(id -u):$(id -g)" -e DOTNET_CLI_HOME=/tmp -e NUGET_PACKAGES=/tmp/nuget \
+  -v ~/dms-src:/src -w /src/eng/docker-compose mcr.microsoft.com/dotnet/sdk:10.0 \
   dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
   -c Release -r linux-x64 --self-contained -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
 
@@ -83,8 +86,8 @@ both Config Services + gateway, and runs `bootstrap.ps1` (Keycloak realm/clients
 data stores, review apps). **Record the API key/secret pairs it prints** into your private vault.
 It deliberately does **not** start the DMS.
 
-> With `IDENTITY_PROVIDER=keycloak` (default), don't use `localhost` as the FQDN — CMS calls the
-> public host from inside its container. A real FQDN (Let's Encrypt) is the tested path.
+> Don't use `localhost` as the FQDN — CMS calls the public host from inside its container. A
+> real FQDN (Let's Encrypt) is the tested path.
 
 ## Part E — Seed all three data databases  [bash]
 

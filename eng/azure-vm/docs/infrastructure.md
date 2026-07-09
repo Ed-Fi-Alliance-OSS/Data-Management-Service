@@ -214,7 +214,8 @@ Order used to stand the environment up (and that a re-deploy should follow):
 7. **Keycloak issuer behind the proxy.** Tokens are issued with `iss =
    https://<PUBLIC_HOST>/auth/realms/edfi`; if DMS rejects valid tokens, re-check
    `KC_HOSTNAME`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`, and that the metadata `issuer` matches
-   the public URL. (Self-contained identity is the lower-risk fallback.)
+   the public URL. (This environment is Keycloak-only — the DMS/CMS auth wiring in the
+   compose file is Keycloak-specific.)
 8. **Claim sets.** Defaults use the embedded `E2E-NoFurtherAuthRequiredClaimSet` (full
    access) and `E2E-RelationshipsWithEdOrgsOnlyClaimSet` (EdOrg-scoped). Confirm the live
    list with `GET /st-config/v3/claimSets`; add custom claim sets via the API or Hybrid mode
