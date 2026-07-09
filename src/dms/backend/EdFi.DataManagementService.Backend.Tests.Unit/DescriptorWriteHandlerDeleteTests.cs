@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -206,7 +207,9 @@ public class Given_Descriptor_Write_Handler_Delete
                 Classifier,
                 Resolver,
                 SessionFactory,
-                Logger
+                Logger,
+                new ServedEtagComposer(),
+                new IfMatchEvaluator()
             );
         }
 

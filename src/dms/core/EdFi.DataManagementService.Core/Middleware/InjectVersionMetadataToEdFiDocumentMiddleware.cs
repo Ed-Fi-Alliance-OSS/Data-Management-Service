@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware
@@ -17,8 +16,6 @@ namespace EdFi.DataManagementService.Core.Middleware
                 "Entering InjectPropertiesToEdFiDocumentMiddleware - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
-
-            requestInfo.ParsedBody["_etag"] = ResourceEtagFormatter.FormatEtag(requestInfo.ParsedBody);
 
             requestInfo.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString(
                 "yyyy-MM-ddTHH:mm:ssZ"

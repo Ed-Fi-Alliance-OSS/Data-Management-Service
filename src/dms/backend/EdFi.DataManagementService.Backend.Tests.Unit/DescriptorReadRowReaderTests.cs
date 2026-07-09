@@ -20,6 +20,7 @@ public class Given_DescriptorReadRowReader
             RelationalAccessTestData.CreateRow(
                 ("DocumentId", 101L),
                 ("DocumentUuid", documentUuid),
+                ("ContentVersion", 777L),
                 ("ContentLastModifiedAt", new DateTime(2026, 5, 5, 14, 30, 45, DateTimeKind.Unspecified)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
@@ -40,6 +41,7 @@ public class Given_DescriptorReadRowReader
                 new DescriptorReadRow(
                     DocumentId: 101L,
                     DocumentUuid: documentUuid,
+                    ContentVersion: 777L,
                     ContentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
                     ResourceKeyId: 13,
                     Namespace: "uri://ed-fi.org/SchoolTypeDescriptor",
@@ -62,6 +64,7 @@ public class Given_DescriptorReadRowReader
             RelationalAccessTestData.CreateRow(
                 ("DocumentId", 202L),
                 ("DocumentUuid", documentUuid),
+                ("ContentVersion", 202L),
                 ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 15, 0, 0, TimeSpan.Zero)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
@@ -90,6 +93,7 @@ public class Given_DescriptorReadRowReader
             .CreateRow(
                 ("DocumentId", 303L),
                 ("DocumentUuid", Guid.Parse("aaaaaaaa-1111-2222-3333-dddddddddddd")),
+                ("ContentVersion", 303L),
                 ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 16, 0, 0, TimeSpan.Zero)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
@@ -125,6 +129,7 @@ public class Given_DescriptorReadRowReader
             .CreateRow(
                 ("DocumentId", 304L),
                 ("DocumentUuid", Guid.Parse("bbbbbbbb-1111-2222-3333-dddddddddddd")),
+                ("ContentVersion", 304L),
                 ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 16, 0, 0, TimeSpan.Zero)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
@@ -154,6 +159,7 @@ public class Given_DescriptorReadRowReader
             RelationalAccessTestData.CreateRow(
                 ("DocumentId", 401L),
                 ("DocumentUuid", Guid.Parse("aaaaaaaa-1111-2222-3333-eeeeeeeeeeee")),
+                ("ContentVersion", 401L),
                 ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 17, 0, 0, TimeSpan.Zero)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
@@ -166,6 +172,7 @@ public class Given_DescriptorReadRowReader
             RelationalAccessTestData.CreateRow(
                 ("DocumentId", 402L),
                 ("DocumentUuid", Guid.Parse("aaaaaaaa-1111-2222-3333-ffffffffffff")),
+                ("ContentVersion", 402L),
                 ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 18, 0, 0, TimeSpan.Zero)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
@@ -191,6 +198,7 @@ public class Given_DescriptorReadRowReader
             RelationalAccessTestData.CreateRow(
                 ("DocumentId", 501L),
                 ("DocumentUuid", Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111")),
+                ("ContentVersion", 501L),
                 ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 19, 0, 0, TimeSpan.Zero)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
@@ -203,6 +211,7 @@ public class Given_DescriptorReadRowReader
             RelationalAccessTestData.CreateRow(
                 ("DocumentId", 502L),
                 ("DocumentUuid", Guid.Parse("aaaaaaaa-1111-2222-3333-222222222222")),
+                ("ContentVersion", 502L),
                 ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 20, 0, 0, TimeSpan.Zero)),
                 ("ResourceKeyId", (short)13),
                 ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),

@@ -184,4 +184,4 @@ Feature: Read a Descriptor
               And the response body should not contain fields "description, effectiveBeginDate, effectiveEndDate"
               And the response body path "namespace" should have value "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
               And the response body path "codeValue" should have value "Sick Leave"
-              And the response body path "_etag" should equal variable "fullDescriptorEtag"
+              And the response body path "_etag" should not equal variable "fullDescriptorEtag"

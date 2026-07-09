@@ -400,10 +400,12 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             .GetValue<string>()
             .Should()
             .Be(UpdatedSpringSessionName);
-        successAfterCascade.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(expectedExternalResponse["_etag"]!.GetValue<string>());
+        // The composed _etag cannot be reconstructed from the request body (it embeds ContentVersion),
+        // so assert its shape and that the referenced-identity cascade bumped it away from the pre-cascade
+        // etag (the cascade increments the referrer's ContentVersion — the ADR's identity-cascade precondition).
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(
+            successAfterCascade.EdfiDoc["_etag"]!.GetValue<string>()
+        );
         successAfterCascade.EdfiDoc["_etag"]!
             .GetValue<string>()
             .Should()

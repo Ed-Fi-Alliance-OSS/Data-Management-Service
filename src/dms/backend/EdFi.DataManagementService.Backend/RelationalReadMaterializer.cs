@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -37,6 +38,16 @@ public sealed record RelationalReadMaterializationRequest(
     /// does not have one in scope.
     /// </summary>
     public HydratedDocumentReferenceLookup? DocumentReferenceLookup { get; init; }
+
+    /// <summary>
+    /// Representation inputs for composing a ContentVersion-based <c>_etag</c>, required on every
+    /// <see cref="RelationalGetRequestReadMode.ExternalResponse"/> materialization (together with
+    /// <see cref="MappingSet"/>); the served <c>_etag</c> is composed as
+    /// <c>"{ContentVersion}-{variantKey}"</c>. <c>ComposeEtag</c> throws when this is
+    /// <see langword="null"/> on an external response — absence indicates a wiring bug in the caller,
+    /// not a fallback. There is no legacy content-hash path.
+    /// </summary>
+    public EtagVariantInputs? EtagVariant { get; init; }
 }
 
 public sealed record RelationalReadPageMaterializationRequest(
@@ -53,6 +64,14 @@ public sealed record RelationalReadPageMaterializationRequest(
     /// <see cref="ResourceLinksOptions.Enabled"/>.
     /// </summary>
     public MappingSet? MappingSet { get; init; }
+
+    /// <summary>
+    /// Representation inputs for composing a ContentVersion-based <c>_etag</c>; see
+    /// <see cref="RelationalReadMaterializationRequest.EtagVariant"/>. Required on every external-response
+    /// materialization; absence is a wiring bug in the caller, not a fallback. There is no legacy
+    /// content-hash path.
+    /// </summary>
+    public EtagVariantInputs? EtagVariant { get; init; }
 }
 
 public sealed record MaterializedDocument(DocumentMetadataRow DocumentMetadata, JsonNode Document);
@@ -67,15 +86,17 @@ public interface IRelationalReadMaterializer
     /// Final response-shaping pass: strips the <c>link</c> subtree from every document-reference
     /// object when <see cref="ResourceLinksOptions.Enabled"/> is <see langword="false"/>; no-op
     /// otherwise. Invoked by the repository wrapper after readable-profile projection so the
-    /// flag governs the served body without affecting intermediate caching or <c>_etag</c>.
-    /// Safe to call unconditionally — mutates <paramref name="document"/> in place.
+    /// flag governs the served body. The same flag is included in served <c>_etag</c> composition,
+    /// giving link-enabled and link-suppressed representations distinct variant keys. Safe to call
+    /// unconditionally; mutates <paramref name="document"/> in place.
     /// </summary>
     void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan);
 }
 
 internal sealed class RelationalReadMaterializer(
     IDocumentLinkSlugResolver slugResolver,
-    IOptions<ResourceLinksOptions> linksOptions
+    IOptions<ResourceLinksOptions> linksOptions,
+    IServedEtagComposer servedEtagComposer
 ) : IRelationalReadMaterializer
 {
     private const string IdPropertyName = "id";
@@ -87,6 +108,8 @@ internal sealed class RelationalReadMaterializer(
         slugResolver ?? throw new ArgumentNullException(nameof(slugResolver));
     private readonly ResourceLinksOptions _linksOptions =
         linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
@@ -108,6 +131,7 @@ internal sealed class RelationalReadMaterializer(
             )
             {
                 MappingSet = request.MappingSet,
+                EtagVariant = request.EtagVariant,
             }
         );
 
@@ -161,16 +185,24 @@ internal sealed class RelationalReadMaterializer(
                 (documentMetadata, index) =>
                     new MaterializedDocument(
                         documentMetadata,
-                        ApplyReadMode(reconstitutedDocuments[index], documentMetadata, request.ReadMode)
+                        ApplyReadMode(
+                            reconstitutedDocuments[index],
+                            documentMetadata,
+                            request.ReadMode,
+                            request.EtagVariant,
+                            request.MappingSet
+                        )
                     )
             ),
         ];
     }
 
-    private static JsonNode ApplyReadMode(
+    private JsonNode ApplyReadMode(
         JsonNode materializedDocument,
         DocumentMetadataRow documentMetadata,
-        RelationalGetRequestReadMode readMode
+        RelationalGetRequestReadMode readMode,
+        EtagVariantInputs? etagVariant,
+        MappingSet? mappingSet
     )
     {
         return readMode switch
@@ -178,7 +210,9 @@ internal sealed class RelationalReadMaterializer(
             RelationalGetRequestReadMode.StoredDocument => materializedDocument,
             RelationalGetRequestReadMode.ExternalResponse => InjectApiMetadata(
                 materializedDocument,
-                documentMetadata
+                documentMetadata,
+                etagVariant,
+                mappingSet
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(readMode),
@@ -196,9 +230,11 @@ internal sealed class RelationalReadMaterializer(
         DocumentReconstituter.StripReferenceLinks(document, readPlan, _linksOptions);
     }
 
-    private static JsonNode InjectApiMetadata(
+    private JsonNode InjectApiMetadata(
         JsonNode materializedDocument,
-        DocumentMetadataRow documentMetadata
+        DocumentMetadataRow documentMetadata,
+        EtagVariantInputs? etagVariant,
+        MappingSet? mappingSet
     )
     {
         ArgumentNullException.ThrowIfNull(materializedDocument);
@@ -210,17 +246,40 @@ internal sealed class RelationalReadMaterializer(
             );
         }
 
-        // ETag is computed over the link-bearing intermediate — the canonical formatter
-        // already strips {id, link, _etag, _lastModifiedDate} recursively before hashing
-        // (per DMS-1005), so the etag value is link-decoration-independent regardless of
-        // whether the response-boundary strip pass runs later in the repository wrapper.
-        var etag = RelationalApiMetadataFormatter.FormatEtag(materializedDocument);
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
-        documentObject[EtagPropertyName] = etag;
+        documentObject[EtagPropertyName] = ComposeEtag(documentMetadata, etagVariant, mappingSet);
         documentObject[LastModifiedDatePropertyName] = documentMetadata
             .ContentLastModifiedAt.ToUniversalTime()
             .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
 
         return documentObject;
+    }
+
+    // Every ExternalResponse read call site supplies representation inputs and a mapping set, so the
+    // served _etag is always composed as "{ContentVersion}-{variantKey}" (no hashing). Absence of
+    // either indicates a wiring bug in the caller.
+    private string ComposeEtag(
+        DocumentMetadataRow documentMetadata,
+        EtagVariantInputs? etagVariant,
+        MappingSet? mappingSet
+    )
+    {
+        if (etagVariant is not { } variant || mappingSet is not { } mappingSetValue)
+        {
+            throw new InvalidOperationException(
+                "Relational external response materialization requires both EtagVariant and MappingSet "
+                    + "to compose the _etag."
+            );
+        }
+
+        return _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSetValue.Key.EffectiveSchemaHash,
+                variant.Format,
+                variant.ProfileName,
+                _linksOptions.Enabled,
+                documentMetadata.ContentVersion
+            )
+        );
     }
 }

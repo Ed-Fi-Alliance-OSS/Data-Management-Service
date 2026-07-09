@@ -91,7 +91,7 @@ Source documents:
   - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`; back `/deletes` and `/keyChanges`. Populated by the same `*_Stamp` triggers extended with `DocumentStamping.ChangeTracking`.
   - `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server); backs `/availableChangeVersions`.
 - Served metadata:
-  - `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`.
+  - `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, and link flag); the document body is not hashed for etag construction.
   - `_lastModifiedDate` served from `ContentLastModifiedAt`.
 
 ### Per-project schemas and resource tables
@@ -213,7 +213,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 - **GET by id**
   1. Resolve `DocumentUuid → DocumentId`.
   2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured) using token-derived authorization context; see `auth.md`.
-  3. Hydrate relational tables and reconstitute JSON; compute `_etag` from the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`; serve `_lastModifiedDate/ChangeVersion` from `dms.Document`; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
+  3. Hydrate relational tables and reconstitute JSON; compose `_etag` from `ContentVersion` plus the current representation `variantKey`; serve `_lastModifiedDate/ChangeVersion` from `dms.Document`; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
 
 - **Query**
   - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
@@ -222,7 +222,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - materialize a page keyset of `DocumentId`s,
     - hydrate root + child + extension tables by joining each table to the page keyset in one command (multiple result sets),
     - batch descriptor URI lookups,
-    - compute `_etag` from the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`, and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
+    - compose `_etag` from `ContentVersion` plus the current representation `variantKey`, and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
 
 ## Schema management and DDL generation
 

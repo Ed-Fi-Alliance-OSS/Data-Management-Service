@@ -3,9 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -15,13 +18,15 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
         MappingSet mappingSet,
         ResourceReadPlan readPlan,
         RelationalWriteTargetContext.ExistingDocument targetContext,
-        WritePrecondition.IfMatch precondition
+        WritePrecondition.IfMatch precondition,
+        string? profileName = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
         Precondition = precondition ?? throw new ArgumentNullException(nameof(precondition));
+        ProfileName = profileName;
     }
 
     public MappingSet MappingSet { get; init; }
@@ -31,12 +36,19 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
 
     public WritePrecondition.IfMatch Precondition { get; init; }
+
+    /// <summary>
+    /// The readable-profile name of the representation the client is acting on, or <see langword="null"/>
+    /// when no profile applies (e.g. a DELETE). Drives the <c>profileCode</c> of the composed (served)
+    /// etag; as of the 2026-07-04 ADR amendment <c>profileCode</c> is projected out of the If-Match
+    /// comparison, so this affects the returned etag but not whether the precondition matches.
+    /// </summary>
+    public string? ProfileName { get; init; }
 }
 
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
     RelationalWriteCurrentState CurrentState,
     RelationalWriteTargetContext.ExistingDocument TargetContext,
-    string CurrentEtag,
     bool IsMatch
 );
 
@@ -51,39 +63,65 @@ internal interface IRelationalCurrentEtagPreconditionChecker
 
 internal sealed class RelationalCurrentEtagPreconditionChecker(
     IRelationalWriteCurrentStateLoader currentStateLoader,
-    IRelationalReadMaterializer readMaterializer
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
+    ILogger<RelationalCurrentEtagPreconditionChecker> logger
 ) : IRelationalCurrentEtagPreconditionChecker, IRelationalDeleteEtagPreconditionChecker
 {
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
 
-    private readonly IRelationalReadMaterializer _readMaterializer =
-        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
 
-    public async Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
+    private readonly IIfMatchEvaluator _ifMatchEvaluator =
+        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
+
+    private readonly ILogger<RelationalCurrentEtagPreconditionChecker> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
+
+    public RelationalDeleteEtagPreconditionCheckResult Evaluate(
         MappingSet mappingSet,
-        ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        WritePrecondition.IfMatch precondition,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken = default
+        RelationalWriteTargetContext.ExistingDocument lockedTargetContext,
+        WritePrecondition.IfMatch precondition
     )
     {
-        var result = await CheckAsync(
-                new RelationalCurrentEtagPreconditionCheckRequest(
-                    mappingSet,
-                    readPlan,
-                    targetContext,
-                    precondition
-                ),
-                writeSession,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(lockedTargetContext);
+        ArgumentNullException.ThrowIfNull(precondition);
 
-        return result is null
-            ? null
-            : new RelationalDeleteEtagPreconditionCheckResult(result.TargetContext, result.IsMatch);
+        // DELETE serves no body and applies no profile lens, so there is nothing to hydrate: the caller
+        // has already resolved and locked the target row (capturing its ContentVersion), so the current
+        // served etag is composed directly from that locked ContentVersion plus the schema epoch. If-Match
+        // then compares only the state-significant projection (ContentVersion, schemaEpoch); format,
+        // linkFlag, and profileCode are projected out. A wildcard (If-Match: *) matches unconditionally
+        // because reaching this point means the caller holds the lock on an existing row.
+        var currentEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: true,
+                lockedTargetContext.ObservedContentVersion
+            )
+        );
+
+        var evaluation = _ifMatchEvaluator.Evaluate(precondition, currentEtag);
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "DELETE If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                    + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                lockedTargetContext.DocumentId,
+                precondition.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(precondition.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+        }
+
+        return new RelationalDeleteEtagPreconditionCheckResult(lockedTargetContext, evaluation.IsMatch);
     }
 
     public async Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(
@@ -127,26 +165,45 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             return null;
         }
 
-        var currentRepresentation = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                request.ReadPlan,
-                currentState.DocumentMetadata,
-                currentState.TableRowsInDependencyOrder,
-                currentState.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.ExternalResponse
+        // Compose the current served etag for the If-Match comparison. If-Match compares only the
+        // state-significant projection (ContentVersion, schemaEpoch); format, linkFlag, and profileCode
+        // are projected out — profileCode as of the 2026-07-04 ADR amendment — so the profile/link inputs
+        // here do not affect the match, but the full composition keeps the debug log meaningful. A
+        // wildcard precondition (If-Match: *) is handled inside the evaluator, which matches
+        // unconditionally because reaching this point means the target row exists and is locked.
+        var currentEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                request.MappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                request.ProfileName,
+                LinksEnabled: true,
+                currentState.DocumentMetadata.ContentVersion
             )
         );
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentRepresentation);
         var refreshedTargetContext = request.TargetContext with
         {
             ObservedContentVersion = currentState.DocumentMetadata.ContentVersion,
         };
 
+        var evaluation = _ifMatchEvaluator.Evaluate(request.Precondition, currentEtag);
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, clientTag={ClientTag}, "
+                    + "currentTag={CurrentTag}, matched={IsMatch}",
+                request.TargetContext.DocumentId,
+                request.Precondition.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(request.Precondition.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+        }
+
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
             refreshedTargetContext,
-            currentEtag,
-            string.Equals(request.Precondition.Value, currentEtag, StringComparison.Ordinal)
+            evaluation.IsMatch
         );
     }
 

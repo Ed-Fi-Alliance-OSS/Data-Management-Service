@@ -250,18 +250,18 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
 
         commands.Select(static command => command.SessionId).Distinct().Should().ContainSingle();
 
-        var firstLockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
+        // The target is locked once, up front; authorization then runs against that locked row and the
+        // delete follows — all within the single guarded session. The If-Match precondition composes its
+        // etag from the already-locked ContentVersion, so it issues neither a second lock nor a
+        // state-hydration read.
+        var lockIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentLockCommand);
         var authorizationIndex = FindRequiredCommandIndex(commands, IsMssqlRelationshipAuthorizationCommand);
-        var secondLockIndex = FindRequiredCommandIndex(
-            commands,
-            IsMssqlDocumentLockCommand,
-            authorizationIndex + 1
-        );
         var deleteIndex = FindRequiredCommandIndex(commands, IsMssqlDocumentDeleteCommand);
 
-        firstLockIndex.Should().BeLessThan(authorizationIndex);
-        authorizationIndex.Should().BeLessThan(secondLockIndex);
-        secondLockIndex.Should().BeLessThan(deleteIndex);
+        lockIndex.Should().BeLessThan(authorizationIndex);
+        authorizationIndex.Should().BeLessThan(deleteIndex);
+
+        commands.Count(command => IsMssqlDocumentLockCommand(command.CommandText)).Should().Be(1);
     }
 
     public PageKeysetSpec.Query AssertSingleQueryHydration()
@@ -509,7 +509,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             resourceKeyId
         );
 
-        return new UpsertResult.InsertSuccess(seed.DocumentUuid);
+        return new UpsertResult.InsertSuccess(seed.DocumentUuid, "\"test-etag\"");
     }
 
     public async Task<UpsertResult> UpsertAuthorizationStudentAcademicRecordAsync(

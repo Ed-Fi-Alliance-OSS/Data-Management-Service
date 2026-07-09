@@ -6,7 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -23,12 +24,10 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalCurrentEtagPreconditionChecker
 {
     private IRelationalWriteCurrentStateLoader _currentStateLoader = null!;
-    private IRelationalReadMaterializer _readMaterializer = null!;
     private IRelationalWriteSession _writeSession = null!;
     private RelationalCurrentEtagPreconditionChecker _sut = null!;
     private RelationalCommand _capturedLockCommand = null!;
     private RelationalWriteCurrentStateLoadRequest _capturedCurrentStateLoadRequest = null!;
-    private RelationalReadMaterializationRequest _capturedMaterializationRequest = null!;
     private readonly DocumentUuid _documentUuid = new(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
     private const long DocumentId = 345L;
     private const long LockedContentVersion = 91L;
@@ -37,9 +36,13 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     public void Setup()
     {
         _currentStateLoader = A.Fake<IRelationalWriteCurrentStateLoader>();
-        _readMaterializer = A.Fake<IRelationalReadMaterializer>();
         _writeSession = A.Fake<IRelationalWriteSession>();
-        _sut = new RelationalCurrentEtagPreconditionChecker(_currentStateLoader, _readMaterializer);
+        _sut = new RelationalCurrentEtagPreconditionChecker(
+            _currentStateLoader,
+            new ServedEtagComposer(),
+            new IfMatchEvaluator(),
+            NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
+        );
 
         A.CallTo(() => _writeSession.CreateCommand(A<RelationalCommand>._))
             .Invokes(call => _capturedLockCommand = call.GetArgument<RelationalCommand>(0)!)
@@ -58,26 +61,20 @@ public class Given_RelationalCurrentEtagPreconditionChecker
                 )!
             )
             .Returns(CreateCurrentState(LockedContentVersion));
-
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Invokes(call =>
-                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
-            )
-            .ReturnsLazily(() => CreateCurrentExternalResponse());
     }
 
     [Test]
-    public async Task It_uses_a_postgresql_row_lock_and_matches_the_current_etag_exactly()
+    public async Task It_uses_a_postgresql_row_lock_and_matches_the_current_composed_etag()
     {
-        var request = CreateRequest(SqlDialect.Pgsql, CreateExactIfMatchPrecondition());
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfMatch(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion))
+        );
 
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
         result!.IsMatch.Should().BeTrue();
-        result
-            .CurrentEtag.Should()
-            .Be(RelationalApiMetadataFormatter.FormatEtag(CreateCurrentExternalResponse()));
         result.TargetContext.ObservedContentVersion.Should().Be(LockedContentVersion);
         _capturedLockCommand.CommandText.Should().Contain("FOR UPDATE");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.\"DocumentId\" = @documentId");
@@ -85,8 +82,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
         _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
-        _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
-        _capturedMaterializationRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
     }
 
     [Test]
@@ -104,85 +99,94 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
         _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
-        _capturedCurrentStateLoadRequest.IncludeDescriptorProjection.Should().BeTrue();
     }
 
     [Test]
-    public async Task It_matches_a_link_stripped_if_match_value_against_a_link_bearing_current_response()
+    public async Task It_ignores_link_and_format_differences_in_the_if_match_value()
     {
-        var linkStrippedCurrentResponse = CreateCurrentExternalResponseWithoutLinks();
+        // Client presents an etag captured under links-off / (hypothetical) XML; the checker composes
+        // the current tag under links-on / JSON. The state-significant projection drops format and
+        // linkFlag, so the precondition still matches.
+        var linkAndFormatDivergentEtag = EtagComposer.Compose(
+            LockedContentVersion,
+            new VariantKey($"{SchemaEpoch(SqlDialect.Pgsql)}.x._.n")
+        );
         var request = CreateRequest(
             SqlDialect.Pgsql,
-            new WritePrecondition.IfMatch(
-                RelationalApiMetadataFormatter.FormatEtag(linkStrippedCurrentResponse)
-            )
+            new WritePrecondition.IfMatch(linkAndFormatDivergentEtag)
         );
-
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Invokes(call =>
-                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
-            )
-            .Returns(CreateCurrentExternalResponse());
 
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
         result!.IsMatch.Should().BeTrue();
-        result
-            .CurrentEtag.Should()
-            .Be(RelationalApiMetadataFormatter.FormatEtag(linkStrippedCurrentResponse));
     }
 
     [Test]
-    public async Task It_matches_a_link_bearing_if_match_value_against_a_link_stripped_current_response()
+    public async Task It_reports_mismatch_when_the_content_version_differs()
     {
-        var linkBearingCurrentResponse = CreateCurrentExternalResponse();
-        var request = CreateRequest(
-            SqlDialect.Mssql,
-            new WritePrecondition.IfMatch(
-                RelationalApiMetadataFormatter.FormatEtag(linkBearingCurrentResponse)
-            )
-        );
-
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Invokes(call =>
-                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
-            )
-            .Returns(CreateCurrentExternalResponseWithoutLinks());
-
-        var result = await _sut.CheckAsync(request, _writeSession);
-
-        result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
-        result.CurrentEtag.Should().Be(RelationalApiMetadataFormatter.FormatEtag(linkBearingCurrentResponse));
-    }
-
-    [Test]
-    public async Task It_reports_mismatch_when_a_profile_hidden_field_changed_in_the_full_resource()
-    {
-        var originalFullResource = CreateCurrentExternalResponse();
         var request = CreateRequest(
             SqlDialect.Pgsql,
-            new WritePrecondition.IfMatch(RelationalApiMetadataFormatter.FormatEtag(originalFullResource))
+            new WritePrecondition.IfMatch(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion - 1))
         );
-
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Invokes(call =>
-                _capturedMaterializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
-            )
-            .Returns(CreateCurrentExternalResponseWithHiddenFieldChange());
 
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
         result!.IsMatch.Should().BeFalse();
-        result
-            .CurrentEtag.Should()
-            .Be(
-                RelationalApiMetadataFormatter.FormatEtag(
-                    CreateCurrentExternalResponseWithHiddenFieldChange()
-                )
-            );
+    }
+
+    [Test]
+    public async Task It_reports_mismatch_when_only_the_schema_epoch_differs()
+    {
+        // Same ContentVersion, same format/profile/link, but a different schema epoch. schemaEpoch IS
+        // state-significant for If-Match (only format/profileCode/linkFlag are projected out), so this
+        // must 412. Guards against a refactor accidentally dropping schemaEpoch from the comparison.
+        var differentEpochEtag = EtagComposer.Compose(
+            LockedContentVersion,
+            new VariantKey($"ffffffff.j._.l")
+        );
+        var request = CreateRequest(SqlDialect.Pgsql, new WritePrecondition.IfMatch(differentEpochEtag));
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_matches_when_the_if_match_value_was_obtained_under_a_profile()
+    {
+        // Amended 2026-07-04: profileCode is not state-significant for If-Match. An etag captured under
+        // a readable profile matches the current tag (composed with no profile) when ContentVersion and
+        // schemaEpoch agree — restoring legacy ODS/API cross-profile parity.
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfMatch(
+                CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion, profileName: "ReadableProfile")
+            )
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_matches_a_wildcard_precondition_when_the_document_exists()
+    {
+        // RFC 7232 If-Match: * matches whenever the target exists, regardless of the current etag.
+        // A deliberately non-matching Value proves the match comes from the wildcard flag, not the value.
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfMatch("not-the-current-etag", IsWildcard: true)
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsMatch.Should().BeTrue();
     }
 
     private RelationalCurrentEtagPreconditionCheckRequest CreateRequest(
@@ -202,10 +206,33 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         );
     }
 
-    private static WritePrecondition.IfMatch CreateExactIfMatchPrecondition()
+    // Recomposes the etag the checker is expected to produce for the current row: same schema epoch,
+    // JSON format, links-on, and (by default) no profile. linkFlag/format/profile are all projected out
+    // of the If-Match comparison (amended 2026-07-04); profileName still varies the composed served tag
+    // but does not affect the match.
+    private static string CurrentComposedEtag(
+        SqlDialect dialect,
+        long contentVersion,
+        string? profileName = null
+    ) =>
+        EtagComposer.Compose(
+            contentVersion,
+            VariantKeyFactory.Create(
+                BuildMappingSet(dialect).Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileVariantCode.Of(profileName),
+                linksEnabled: true
+            )
+        );
+
+    private static string SchemaEpoch(SqlDialect dialect) =>
+        BuildMappingSet(dialect).Key.EffectiveSchemaHash.ToLowerInvariant()[..8];
+
+    private static MappingSet BuildMappingSet(SqlDialect dialect)
     {
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(CreateCurrentExternalResponse());
-        return new WritePrecondition.IfMatch(currentEtag);
+        var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
+        return CreateMappingSet(dialect, writePlan, readPlan);
     }
 
     private static MappingSet CreateMappingSet(
@@ -240,50 +267,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
             [],
             []
         );
-
-    private static JsonNode CreateCurrentExternalResponse() =>
-        JsonNode.Parse(
-            """
-            {
-              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "schoolId": 255901,
-              "nameOfInstitution": "Lincoln High",
-              "link": {
-                "rel": "self",
-                "href": "/ed-fi/schools/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
-              },
-              "_etag": "stale",
-              "_lastModifiedDate": "2026-04-11T17:30:45Z"
-            }
-            """
-        )!;
-
-    private static JsonNode CreateCurrentExternalResponseWithoutLinks() =>
-        JsonNode.Parse(
-            """
-            {
-              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "schoolId": 255901,
-              "nameOfInstitution": "Lincoln High",
-              "_etag": "stale",
-              "_lastModifiedDate": "2026-04-11T17:30:45Z"
-            }
-            """
-        )!;
-
-    private static JsonNode CreateCurrentExternalResponseWithHiddenFieldChange() =>
-        JsonNode.Parse(
-            """
-            {
-              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "schoolId": 255901,
-              "nameOfInstitution": "Lincoln High",
-              "shortNameOfInstitution": "Lincoln North",
-              "_etag": "stale",
-              "_lastModifiedDate": "2026-04-11T17:30:45Z"
-            }
-            """
-        )!;
 
     private sealed class ScalarResultDbCommand(object? scalarResult) : DbCommand
     {

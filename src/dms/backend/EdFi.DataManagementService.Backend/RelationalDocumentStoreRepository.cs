@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -119,6 +120,7 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                     {
                         WritePrecondition = writePrecondition,
+                        ProfileName = upsertRequest.BackendProfileWriteContext?.ProfileName,
                     }
                 )
                 .ConfigureAwait(false);
@@ -253,6 +255,7 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                     {
                         WritePrecondition = writePrecondition,
+                        ProfileName = updateRequest.BackendProfileWriteContext?.ProfileName,
                     }
                 )
                 .ConfigureAwait(false);
@@ -372,18 +375,6 @@ public sealed class RelationalDocumentStoreRepository(
     {
         var documentUuid = relationalDeleteRequest.DocumentUuid;
         var traceId = relationalDeleteRequest.TraceId;
-        var readPlanPreparation =
-            writePrecondition is WritePrecondition.IfMatch
-                ? PrepareExistingDocumentReadPlan(mappingSet, resource)
-                : new ExistingDocumentReadPlanPreparation(null, null);
-
-        if (writePrecondition is WritePrecondition.IfMatch && readPlanPreparation.ReadPlan is null)
-        {
-            return new DeleteResult.UnknownFailure(
-                readPlanPreparation.FailureMessage
-                    ?? RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(resource)
-            );
-        }
 
         IRelationalWriteSession writeSession;
         try
@@ -427,7 +418,13 @@ public sealed class RelationalDocumentStoreRepository(
 
                 if (resolved is null)
                 {
-                    outcome = new DeleteResult.DeleteFailureNotExists();
+                    // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing
+                    // DELETE target yields the precondition-failed (412) result rather than 404.
+                    outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
+                        ? new DeleteResult.DeleteFailureETagMisMatch(
+                            ETagPreconditionFailureReason.TargetDoesNotExist
+                        )
+                        : new DeleteResult.DeleteFailureNotExists();
                 }
                 else
                 {
@@ -440,7 +437,13 @@ public sealed class RelationalDocumentStoreRepository(
 
                     if (lockedContentVersion is null)
                     {
-                        outcome = new DeleteResult.DeleteFailureNotExists();
+                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // target that vanished before locking yields 412 rather than 404.
+                        outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
+                            ? new DeleteResult.DeleteFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
+                            : new DeleteResult.DeleteFailureNotExists();
                     }
                     else
                     {
@@ -469,11 +472,9 @@ public sealed class RelationalDocumentStoreRepository(
                             outcome = await ExecuteAuthorizedDeleteAsync(
                                     mappingSet,
                                     resource,
-                                    readPlanPreparation,
                                     documentUuid,
                                     traceId,
                                     writePrecondition,
-                                    writeSession,
                                     sessionCommandExecutor,
                                     lockedTargetContext
                                 )
@@ -556,31 +557,25 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<DeleteResult> ExecuteAuthorizedDeleteAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ExistingDocumentReadPlanPreparation readPlanPreparation,
         DocumentUuid documentUuid,
         TraceId traceId,
         WritePrecondition writePrecondition,
-        IRelationalWriteSession writeSession,
         IRelationalCommandExecutor sessionCommandExecutor,
         RelationalWriteTargetContext.ExistingDocument lockedTargetContext
     )
     {
         if (writePrecondition is WritePrecondition.IfMatch ifMatch)
         {
-            var preconditionCheckResult = await _deleteEtagPreconditionChecker
-                .CheckAsync(
-                    mappingSet,
-                    readPlanPreparation.ReadPlan!,
-                    lockedTargetContext,
-                    ifMatch,
-                    writeSession
-                )
-                .ConfigureAwait(false);
-
-            if (preconditionCheckResult is null)
-            {
-                return new DeleteResult.DeleteFailureNotExists();
-            }
+            // Existence and concurrency were already settled by resolving and locking the target above,
+            // and its ContentVersion is carried on lockedTargetContext. The precondition is therefore a
+            // pure compare against that locked stamp — no re-lock and no state hydration. A wildcard
+            // matches unconditionally because the locked row exists; the missing-target 412/404 split is
+            // handled by the resolve/lock steps upstream.
+            var preconditionCheckResult = _deleteEtagPreconditionChecker.Evaluate(
+                mappingSet,
+                lockedTargetContext,
+                ifMatch
+            );
 
             if (!preconditionCheckResult.IsMatch)
             {
@@ -2144,7 +2139,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     operationKind,
-                    targetRequest
+                    targetRequest,
+                    writePrecondition
                 )
                 .ConfigureAwait(false);
 
@@ -2196,7 +2192,10 @@ public sealed class RelationalDocumentStoreRepository(
             if (
                 executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
                 && attemptIndex == 0
-                && writePrecondition is not WritePrecondition.IfMatch
+                // A wildcard If-Match (*) is an existence-only precondition, not a concurrency check, so
+                // a stale no-op against a still-existing row is retried like the no-precondition path
+                // rather than short-circuiting to a 412. Only a specific-tag If-Match blocks the retry.
+                && writePrecondition is not WritePrecondition.IfMatch { IsWildcard: false }
             )
             {
                 continue;
@@ -2214,7 +2213,8 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationalWriteOperationKind operationKind,
-        RelationalWriteTargetRequest targetRequest
+        RelationalWriteTargetRequest targetRequest,
+        WritePrecondition writePrecondition
     )
     {
         var targetLookupResult = targetRequest switch
@@ -2243,9 +2243,16 @@ public sealed class RelationalDocumentStoreRepository(
             && targetLookupResult is RelationalWriteTargetLookupResult.NotFound
         )
         {
+            // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+            // target yields the precondition-failed (412) result rather than not-exists (404).
             return new TargetContextResolution(
                 null,
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+                writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        operationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             );
         }
 
@@ -2506,6 +2513,11 @@ public sealed class RelationalDocumentStoreRepository(
                 continue;
             }
 
+            var appliesReadableProfileProjection = ShouldApplyReadableProfileProjection(relationalGetRequest);
+            var readProfileName = appliesReadableProfileProjection
+                ? relationalGetRequest.ReadableProfileProjectionContext!.ProfileName
+                : null;
+
             var edfiDoc = _readMaterializer.Materialize(
                 new RelationalReadMaterializationRequest(
                     readPlan,
@@ -2517,10 +2529,11 @@ public sealed class RelationalDocumentStoreRepository(
                 {
                     MappingSet = mappingSet,
                     DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
+                    EtagVariant = new EtagVariantInputs(readProfileName, ResponseFormat.Json),
                 }
             );
 
-            if (ShouldApplyReadableProfileProjection(relationalGetRequest))
+            if (appliesReadableProfileProjection)
             {
                 var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
                 edfiDoc = _readableProfileProjector.Project(
@@ -3902,6 +3915,7 @@ public sealed class RelationalDocumentStoreRepository(
             )
             {
                 MappingSet = relationalQueryRequest.MappingSet,
+                EtagVariant = new EtagVariantInputs(projectionContext?.ProfileName, ResponseFormat.Json),
             }
         );
 

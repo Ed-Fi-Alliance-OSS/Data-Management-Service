@@ -712,6 +712,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         new(
             commandExecutor,
             A.Fake<Core.Profile.IReadableProfileProjector>(),
+            new EdFi.DataManagementService.Backend.Etag.ServedEtagComposer(),
             NullLogger<DescriptorReadHandler>.Instance
         );
 
@@ -726,6 +727,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         {
             ["DocumentId"] = documentId,
             ["DocumentUuid"] = _documentUuid.Value,
+            ["ContentVersion"] = 42L,
             ["ContentLastModifiedAt"] = new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
             ["ResourceKeyId"] = (short)1,
             ["Namespace"] = ns,

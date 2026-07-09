@@ -3,9 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -13,7 +16,9 @@ internal sealed class RelationalWriteExecutionStateResolver(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
-    IRelationalReadMaterializer readMaterializer
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
+    ILogger<RelationalWriteExecutionStateResolver> logger
 )
 {
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
@@ -26,8 +31,14 @@ internal sealed class RelationalWriteExecutionStateResolver(
         currentEtagPreconditionChecker
         ?? throw new ArgumentNullException(nameof(currentEtagPreconditionChecker));
 
-    private readonly IRelationalReadMaterializer _readMaterializer =
-        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
+
+    private readonly IIfMatchEvaluator _ifMatchEvaluator =
+        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
+
+    private readonly ILogger<RelationalWriteExecutionStateResolver> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     public static IfMatchPreconditionEvaluation GetIfMatchPreconditionEvaluation(
         RelationalWriteExecutorRequest request
@@ -110,7 +121,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         if (request.TargetContext is RelationalWriteTargetContext.CreateNew)
         {
-            return RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
+            return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                request.OperationKind,
+                ETagPreconditionFailureReason.TargetDoesNotExist
+            );
         }
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
@@ -120,38 +134,75 @@ internal sealed class RelationalWriteExecutionStateResolver(
             );
         }
 
-        var readPlan = request.ExistingDocumentReadPlan;
-        if (readPlan is null)
+        if (request.ExistingDocumentReadPlan is null)
         {
             return RelationalWriteExecutorResults.BuildMissingExistingDocumentReadPlanResult(request);
         }
 
         if (currentState is null)
         {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                var missingTarget = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
+                _logger.LogDebug(
+                    "Deferred If-Match precondition for document {DocumentId}: no current representation "
+                        + "(operation={OperationKind}, wildcard={IsWildcard}, clientTag={ClientTag}); "
+                        + "resolving missing-target outcome",
+                    missingTarget.DocumentId,
+                    request.OperationKind,
+                    ifMatch.IsWildcard,
+                    LoggingSanitizer.SanitizeForLogging(ifMatch.Value)
+                );
+            }
             return request.OperationKind switch
             {
                 RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureWriteConflict()
                 ),
-                RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateFailureNotExists()
-                ),
+                // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+                // target yields the precondition-failed (412) result rather than not-exists (404).
+                RelationalWriteOperationKind.Put => ifMatch.IsWildcard
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        request.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
             };
         }
 
-        var currentRepresentation = _readMaterializer.Materialize(
-            new RelationalReadMaterializationRequest(
-                readPlan,
-                currentState.DocumentMetadata,
-                currentState.TableRowsInDependencyOrder,
-                currentState.DescriptorRowsInPlanOrder,
-                RelationalGetRequestReadMode.ExternalResponse
+        // If-Match compares the state-significant projection of the composed etag (ContentVersion,
+        // schemaEpoch). format, linkFlag, and profileCode are projected out (profileCode as of the
+        // 2026-07-04 ADR amendment), so the values passed for them here are not significant. The
+        // evaluator handles the wildcard precondition (If-Match: *) internally, short-circuiting to a
+        // match because currentState being non-null means the target row exists.
+        var currentEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                request.MappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                request.ProfileWriteContext?.ProfileName,
+                LinksEnabled: true,
+                currentState.DocumentMetadata.ContentVersion
             )
         );
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentRepresentation);
 
-        return string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal)
+        var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            var existing = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
+            _logger.LogDebug(
+                "Deferred If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                    + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                existing.DocumentId,
+                ifMatch.IsWildcard,
+                LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
+                currentEtag,
+                evaluation.IsMatch
+            );
+        }
+
+        return evaluation.IsMatch
             ? null
             : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
     }
@@ -261,7 +312,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
                         request.MappingSet,
                         request.ExistingDocumentReadPlan!,
                         targetContext,
-                        ifMatch
+                        ifMatch,
+                        request.ProfileWriteContext?.ProfileName
                     ),
                     writeSession,
                     cancellationToken
@@ -322,7 +374,15 @@ internal sealed class RelationalWriteExecutionStateResolver(
             RelationalWriteTargetRequest.Put => new InSessionTargetResolution(
                 null,
                 null,
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+                // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+                // target yields the precondition-failed (412) result rather than not-exists (404).
+                request.WritePrecondition
+                    is WritePrecondition.IfMatch { IsWildcard: true }
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        request.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             ),
             RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
                 options.AllowPostTargetReevaluation

@@ -144,7 +144,7 @@ Notes:
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the full resource-state document before readable profile projection, excluding server-generated response decorations such as `link`.
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, and link flag); the document body is not hashed for etag construction.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization is addressed separately in [auth.md](auth.md).
 

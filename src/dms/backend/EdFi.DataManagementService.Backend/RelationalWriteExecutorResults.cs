@@ -3,14 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using JsonObject = System.Text.Json.Nodes.JsonObject;
-using JsonValue = System.Text.Json.Nodes.JsonValue;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -136,10 +133,10 @@ internal static class RelationalWriteExecutorResults
     public static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
         RelationalWriteOperationKind operationKind,
         DocumentUuid documentUuid,
-        JsonNode committedResponse
+        string etag
     )
     {
-        var etag = GetCommittedResponseEtag(committedResponse);
+        RequireEtag(etag);
 
         return operationKind switch
         {
@@ -159,10 +156,10 @@ internal static class RelationalWriteExecutorResults
         RelationalWriteOperationKind operationKind,
         RelationalWriteTargetContext targetContext,
         RelationalWritePersistResult persistedTarget,
-        JsonNode committedResponse
+        string etag
     )
     {
-        var etag = GetCommittedResponseEtag(committedResponse);
+        RequireEtag(etag);
         var documentUuid = persistedTarget.DocumentUuid;
 
         return (operationKind, targetContext) switch
@@ -192,7 +189,10 @@ internal static class RelationalWriteExecutorResults
     )
     {
         ArgumentNullException.ThrowIfNull(writePrecondition);
-        var hasIfMatchPrecondition = writePrecondition is WritePrecondition.IfMatch;
+        // A wildcard If-Match (*) is an existence-only precondition, not a concurrency check. A stale
+        // guarded no-op against a still-existing row must NOT 412 for a wildcard; excluding it here
+        // routes the wildcard through the write-conflict branch, matching the no-precondition path.
+        var hasIfMatchPrecondition = writePrecondition is WritePrecondition.IfMatch { IsWildcard: false };
 
         return operationKind switch
         {
@@ -298,16 +298,17 @@ internal static class RelationalWriteExecutorResults
     }
 
     public static RelationalWriteExecutorResult BuildPreconditionFailureResult(
-        RelationalWriteOperationKind operationKind
+        RelationalWriteOperationKind operationKind,
+        ETagPreconditionFailureReason reason = ETagPreconditionFailureReason.Concurrency
     )
     {
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureETagMisMatch()
+                new UpsertResult.UpsertFailureETagMisMatch(reason)
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateFailureETagMisMatch()
+                new UpdateResult.UpdateFailureETagMisMatch(reason)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
@@ -339,22 +340,13 @@ internal static class RelationalWriteExecutorResults
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
 
-    private static string GetCommittedResponseEtag(JsonNode committedResponse)
+    private static void RequireEtag(string etag)
     {
-        ArgumentNullException.ThrowIfNull(committedResponse);
-
-        if (
-            committedResponse is not JsonObject documentObject
-            || documentObject["_etag"] is not JsonValue etagValue
-            || !etagValue.TryGetValue(out string? etag)
-            || string.IsNullOrWhiteSpace(etag)
-        )
+        if (string.IsNullOrWhiteSpace(etag))
         {
             throw new InvalidOperationException(
-                "Committed relational write readback did not produce an external response _etag."
+                "Committed relational write did not produce an external response _etag."
             );
         }
-
-        return etag;
     }
 }

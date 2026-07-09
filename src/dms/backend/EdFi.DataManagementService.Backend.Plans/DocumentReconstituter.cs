@@ -40,12 +40,10 @@ public static class DocumentReconstituter
     /// on the internal <c>CompiledReconstitutionPlan</c>.
     /// </summary>
     /// <remarks>
-    /// Shapes the served body only. <c>_etag</c> is link-decoration-independent in both flag
-    /// states — the canonical formatter strips <c>{id, link, _etag, _lastModifiedDate}</c>
-    /// recursively before hashing — so this strip does not change the etag value. Mutates
-    /// <paramref name="document"/> in place. Identity fields, <c>_etag</c>, and
-    /// <c>_lastModifiedDate</c> are never touched. See <c>design-docs/link-injection.md</c>
-    /// §Cache and Etag (clarified by DMS-1005).
+    /// Shapes the served body only. Served <c>_etag</c> composition happens at the backend
+    /// response boundary from <c>ContentVersion</c> and representation variant inputs, including
+    /// the links flag. This strip pass mutates <paramref name="document"/> in place but never
+    /// touches identity fields, <c>_etag</c>, or <c>_lastModifiedDate</c>.
     /// </remarks>
     public static void StripReferenceLinks(
         JsonNode? document,

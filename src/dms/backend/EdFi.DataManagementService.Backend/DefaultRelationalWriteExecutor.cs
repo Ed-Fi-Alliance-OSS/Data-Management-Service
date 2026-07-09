@@ -4,9 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -16,7 +20,6 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
-    IRelationalCommittedRepresentationReader committedRepresentationReader,
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
@@ -25,10 +28,14 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer,
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
+    IOptions<ResourceLinksOptions> linksOptions,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
-    ILogger<DefaultRelationalWriteExecutor>? logger = null
+    ILogger<DefaultRelationalWriteExecutor>? logger = null,
+    ILoggerFactory? loggerFactory = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -38,9 +45,11 @@ internal sealed class DefaultRelationalWriteExecutor(
         referenceResolverAdapterFactory
         ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory));
 
-    private readonly IRelationalCommittedRepresentationReader _committedRepresentationReader =
-        committedRepresentationReader
-        ?? throw new ArgumentNullException(nameof(committedRepresentationReader));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
+
+    private readonly ResourceLinksOptions _linksOptions =
+        linksOptions?.Value ?? throw new ArgumentNullException(nameof(linksOptions));
 
     private readonly IRelationalWriteFreshnessChecker _writeFreshnessChecker =
         writeFreshnessChecker ?? throw new ArgumentNullException(nameof(writeFreshnessChecker));
@@ -52,7 +61,9 @@ internal sealed class DefaultRelationalWriteExecutor(
         targetLookupResolver,
         currentStateLoader,
         currentEtagPreconditionChecker,
-        readMaterializer
+        servedEtagComposer,
+        ifMatchEvaluator,
+        (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<RelationalWriteExecutionStateResolver>()
     );
 
     private readonly RelationalWriteMergeOrchestrator _mergeOrchestrator = new(
@@ -152,7 +163,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                        executionRequest.OperationKind
+                        executionRequest.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
                     );
                 }
             }
@@ -326,23 +338,16 @@ internal sealed class DefaultRelationalWriteExecutor(
                     );
                 }
 
-                var guardedNoOpCommittedResponse = await _committedRepresentationReader
-                    .ReadAsync(
-                        executionRequest,
-                        new RelationalWritePersistResult(
-                            guardedTarget.DocumentId,
-                            guardedTarget.DocumentUuid
-                        ),
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                var guardedNoOpEtag = ComposeCommittedEtag(
+                    executionRequest,
+                    guardedTarget.ObservedContentVersion
+                );
 
                 await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
                 return RelationalWriteExecutorResults.BuildGuardedNoOpSuccessResult(
                     request.OperationKind,
                     guardedTarget.DocumentUuid,
-                    guardedNoOpCommittedResponse
+                    guardedNoOpEtag
                 );
             }
 
@@ -352,16 +357,14 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             RelationalWritePersistedTargetValidator.Validate(executionRequest.TargetContext, persistedTarget);
 
-            var committedResponse = await _committedRepresentationReader
-                .ReadAsync(executionRequest, persistedTarget, writeSession, cancellationToken)
-                .ConfigureAwait(false);
+            var committedEtag = ComposeCommittedEtag(executionRequest, persistedTarget.ContentVersion);
 
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildAppliedWriteSuccessResult(
                 request.OperationKind,
                 executionRequest.TargetContext,
                 persistedTarget,
-                committedResponse
+                committedEtag
             );
         }
         catch (RelationalWriteRequestValidationException ex)
@@ -447,5 +450,23 @@ internal sealed class DefaultRelationalWriteExecutor(
     private static bool HasMissingDocumentReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
         resolvedReferences.InvalidDocumentReferences.Any(static failure =>
             failure.Reason is DocumentReferenceFailureReason.Missing
+        );
+
+    /// <summary>
+    /// Composes the served <c>_etag</c> for a just-committed write. The write response carries only
+    /// the etag; the final committed <c>ContentVersion</c> is persistence metadata (from the persister,
+    /// or the freshness-checked stamp on the guarded no-op path). No <c>dms.Document</c> query, hydrate,
+    /// or hashing occurs here — this is a pure string composition over the stored counter and the
+    /// request's representation selectors (profile, format, link mode).
+    /// </summary>
+    private string ComposeCommittedEtag(RelationalWriteExecutorRequest request, long contentVersion) =>
+        _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                request.MappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                request.ProfileWriteContext?.ProfileName,
+                _linksOptions.Enabled,
+                contentVersion
+            )
         );
 }

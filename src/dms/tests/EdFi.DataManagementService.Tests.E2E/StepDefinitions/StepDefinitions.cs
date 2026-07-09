@@ -48,6 +48,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _id = string.Empty;
         private string _location = string.Empty;
         private string _etag = string.Empty;
+        private string _rawEtag = string.Empty;
         private string _lastModifiedDate = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
@@ -434,7 +435,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             if (apiResponse.Headers.TryGetValue("etag", out string? etagValue))
             {
-                _etag = etagValue;
+                _etag = StripEtagQuotes(etagValue);
             }
             if (apiResponse.Headers.TryGetValue("location", out string? value))
             {
@@ -565,7 +566,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
 
-            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            ifMatch = ResolveIfMatchHeaderValue(ifMatch);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                 new()
@@ -884,7 +885,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information($"DELETE url: {url}");
 
-            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            ifMatch = ResolveIfMatchHeaderValue(ifMatch);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
                 new() { Headers = GetHeadersWithIfMatch(ifMatch) }
@@ -1639,9 +1640,59 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the ETag is in the response header")]
         public void ThenTheEtagIsInTheResponseHeader()
         {
-            _etag = _apiResponse.Headers["etag"];
+            _etag = StripEtagQuotes(_apiResponse.Headers["etag"]);
             _etag.Should().NotBeNullOrEmpty();
         }
+
+        [Then("the quoted ETag is in the response header")]
+        public void ThenTheQuotedEtagIsInTheResponseHeader()
+        {
+            _rawEtag = _apiResponse.Headers["etag"];
+            _rawEtag.Should().NotBeNullOrEmpty();
+            _rawEtag.Should().StartWith("\"").And.EndWith("\""); // RFC 7232 §2.3 quoted strong validator
+        }
+
+        // Asserts the opaque ETag value (quotes stripped) conforms to the DMS-1252 format:
+        // "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}". This locks in the
+        // served shape at the API boundary rather than only asserting that some ETag exists.
+        [Then("the ETag value matches the pattern {string}")]
+        public void ThenTheEtagValueMatchesThePattern(string pattern)
+        {
+            string opaque = StripEtagQuotes(_apiResponse.Headers["etag"]);
+            opaque.Should().MatchRegex(pattern);
+        }
+
+        // Captures the most recently served ETag (quotes stripped) under a scenario variable so a later
+        // step can assert the ETag advanced. Use the resulting variable as "{name}" in an If-Match header.
+        [Then("the ETag is stored in request variable {string}")]
+        public void ThenTheEtagIsStoredInRequestVariable(string variableName)
+        {
+            _etag = StripEtagQuotes(_apiResponse.Headers["etag"]);
+            _etag.Should().NotBeNullOrEmpty();
+            _scenarioVariables.Add(variableName, _etag);
+        }
+
+        [Then("the ETag differs from request variable {string}")]
+        public void ThenTheEtagDiffersFromRequestVariable(string variableName)
+        {
+            string current = StripEtagQuotes(_apiResponse.Headers["etag"]);
+            current.Should().NotBeNullOrEmpty();
+            current.Should().NotBe(_scenarioVariables.GetValueByName(variableName));
+        }
+
+        // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
+        // surrounding quotes so the captured value matches the unquoted _etag in the response body and
+        // round-trips as an If-Match request header (the API accepts both quoted and unquoted forms).
+        private static string StripEtagQuotes(string? etag) =>
+            etag is { Length: >= 2 } && etag[0] == '"' && etag[^1] == '"'
+                ? etag[1..^1]
+                : etag ?? string.Empty;
+
+        private string ResolveIfMatchHeaderValue(string ifMatch) =>
+            ifMatch
+                .Replace("{IfMatch}", _etag)
+                .Replace("{IfMatchQuoted}", _rawEtag)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
         [Then("the lastModifiedDate has not changed")]
         public async Task ThenTheLastModifiedDateHasNotChanged()

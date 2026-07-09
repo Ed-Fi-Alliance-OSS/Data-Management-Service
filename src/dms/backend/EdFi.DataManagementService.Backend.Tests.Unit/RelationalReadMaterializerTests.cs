@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -37,20 +38,23 @@ public class Given_RelationalReadMaterializer
                 [],
                 RelationalGetRequestReadMode.ExternalResponse
             )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
+            }
         );
 
         result.Should().BeOfType<JsonObject>();
         result["name"]!.GetValue<string>().Should().Be("Lincoln High");
         result["id"]!.GetValue<string>().Should().Be(_documentUuid.ToString());
-        result["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(RelationalApiMetadataFormatter.FormatEtag(JsonNode.Parse("""{"name":"Lincoln High"}""")!));
+        // ContentVersion 91; schemaEpoch = first 8 hex of BuildMappingSet()'s EffectiveSchemaHash
+        // ("01234567"); format j (JSON); no profile ("_"); links enabled by default ("l").
+        result["_etag"]!.GetValue<string>().Should().Be("91-01234567.j._.l");
         result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-03T14:10:11Z");
     }
 
     [Test]
-    public void It_does_not_derive_the_external_etag_or_a_public_change_version_from_content_version()
+    public void It_derives_the_external_etag_from_content_version_and_leaves_change_version_absent()
     {
         var sut = CreateMaterializer();
         var readPlan = CreateReadPlan();
@@ -66,6 +70,10 @@ public class Given_RelationalReadMaterializer
                 [],
                 RelationalGetRequestReadMode.ExternalResponse
             )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
+            }
         );
         var secondResult = sut.Materialize(
             new RelationalReadMaterializationRequest(
@@ -78,9 +86,22 @@ public class Given_RelationalReadMaterializer
                 [],
                 RelationalGetRequestReadMode.ExternalResponse
             )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
+            }
         );
 
-        firstResult["_etag"]!.GetValue<string>().Should().Be(secondResult["_etag"]!.GetValue<string>());
+        // The composed etag embeds ContentVersion (see RelationalReadMaterializer.ComposeEtag), so
+        // distinct content versions must yield distinct etags — the inverse of the pre-ContentVersion
+        // content-hash contract this test used to pin.
+        firstResult["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(
+                secondResult["_etag"]!.GetValue<string>(),
+                "the composed etag embeds ContentVersion, so distinct content versions must yield distinct etags"
+            );
         firstResult["ChangeVersion"].Should().BeNull();
         secondResult["ChangeVersion"].Should().BeNull();
     }
@@ -165,6 +186,10 @@ public class Given_RelationalReadMaterializer
                 ),
                 RelationalGetRequestReadMode.ExternalResponse
             )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
+            }
         );
 
         result.Should().HaveCount(2);
@@ -236,8 +261,52 @@ public class Given_RelationalReadMaterializer
     private static RelationalReadMaterializer CreateMaterializer(ResourceLinksOptions? linksOptions = null) =>
         new(
             new NoLinkSlugResolver(),
-            Microsoft.Extensions.Options.Options.Create(linksOptions ?? new ResourceLinksOptions())
+            Microsoft.Extensions.Options.Options.Create(linksOptions ?? new ResourceLinksOptions()),
+            new ServedEtagComposer()
         );
+
+    // ExternalResponse materialization now requires both EtagVariant and MappingSet to compose the
+    // _etag (see RelationalReadMaterializer.ComposeEtag). The read plans in this fixture have no
+    // DocumentReferenceBindings, so supplying a MappingSet never routes through slug resolution —
+    // NoLinkSlugResolver above is safe to keep as the resolver stand-in.
+    private static MappingSet BuildMappingSet()
+    {
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "rmv-test",
+            EffectiveSchemaHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: Enumerable.Range(1, 32).Select(i => (byte)i).ToArray(),
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey(
+                effectiveSchema.EffectiveSchemaHash,
+                SqlDialect.Pgsql,
+                effectiveSchema.RelationalMappingVersion
+            ),
+            Model: new DerivedRelationalModelSet(
+                EffectiveSchema: effectiveSchema,
+                Dialect: SqlDialect.Pgsql,
+                ProjectSchemasInEndpointOrder: [],
+                ConcreteResourcesInNameOrder: [],
+                AbstractIdentityTablesInNameOrder: [],
+                AbstractUnionViewsInNameOrder: [],
+                IndexesInCreateOrder: [],
+                TriggersInCreateOrder: []
+            ),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
 
     /// <summary>
     /// Stand-in resolver for tests that never exercise link emission: the existing
@@ -470,15 +539,17 @@ public class Given_RelationalReadMaterializer
 }
 
 /// <summary>
-/// Verifies link emission and etag self-consistency at the materializer boundary: the
-/// reconstituted intermediate is always link-bearing (caller-agnostic) and the <c>_etag</c>
-/// on the response equals <c>FormatEtag(servedBody)</c>. The canonical formatter strips
-/// <c>{id, link, _etag, _lastModifiedDate}</c> recursively before hashing, so the etag value
-/// is link-decoration-independent (see <c>design-docs/link-injection.md</c> §Cache and Etag,
-/// clarified by DMS-1005). The <see cref="ResourceLinksOptions.Enabled"/> flag-off strip pass
-/// is exercised separately via <see cref="IRelationalReadMaterializer.StripReferenceLinks"/>
-/// because the materializer no longer applies it as part of <c>Materialize</c> — the
-/// repository wrapper drives the strip after readable-profile projection.
+/// Verifies link emission at the materializer boundary: the reconstituted intermediate is
+/// always link-bearing (caller-agnostic) regardless of <see cref="ResourceLinksOptions.Enabled"/>.
+/// The served <c>_etag</c> is composed as <c>"{ContentVersion}-{variantKey}"</c> (see
+/// <see cref="RelationalReadMaterializer"/>'s <c>ComposeEtag</c>), where the variant key's link
+/// flag reflects <see cref="ResourceLinksOptions.Enabled"/> — so unlike the legacy content-hash
+/// etag, the composed etag is deliberately link-mode-sensitive, not link-decoration-independent
+/// (see <c>design-docs/link-injection.md</c> §Cache and Etag, clarified by DMS-1005). The
+/// <see cref="ResourceLinksOptions.Enabled"/> flag-off strip pass is exercised separately via
+/// <see cref="IRelationalReadMaterializer.StripReferenceLinks"/> because the materializer no
+/// longer applies it as part of <c>Materialize</c> — the repository wrapper drives the strip
+/// after readable-profile projection.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -532,16 +603,12 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             .NotBeNull("materializer must emit link-bearing intermediate");
         result["schoolReference"]!["link"]!["rel"]!.GetValue<string>().Should().Be("School");
 
-        // _etag is the canonical SHA-256 produced by FormatEtag, which strips
-        // {id, link, _etag, _lastModifiedDate} recursively before hashing. Passing the served
-        // document back into FormatEtag must reproduce the same value — etag self-consistency.
-        result["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(
-                RelationalApiMetadataFormatter.FormatEtag(result),
-                "etag must be self-consistent with FormatEtag against the served body (canonical/link-stripped hash)"
-            );
+        // _etag is composed as "{ContentVersion}-{variantKey}". MaterializeSingleExternalResponse
+        // uses ContentVersion 1; schemaEpoch = first 8 hex of BuildMappingSet()'s
+        // EffectiveSchemaHash ("01234567"); format j (JSON); no profile ("_"); links enabled ("l").
+        // The link-bearing intermediate does not change this — the etag is representation-variant
+        // based, not a hash of the served body.
+        result["_etag"]!.GetValue<string>().Should().Be("1-01234567.j._.l");
     }
 
     [Test]
@@ -661,15 +728,21 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     /// <c>linksOptions.Enabled</c> first (or any condition other than
     /// <c>request.MappingSet is { }</c>) — such a change would invoke the slug resolver on a
     /// stored-document-mode caller (e.g. <c>DefaultRelationalWriteExecutor.cs:184-191</c>) that
-    /// deliberately omits <c>MappingSet</c>. The throwing resolver below converts that silent
-    /// routing slip into a loud test failure.
+    /// deliberately omits <c>MappingSet</c>. ExternalResponse materialization now also requires
+    /// <c>MappingSet</c> (and <c>EtagVariant</c>) to compose the <c>_etag</c> (see
+    /// <c>RelationalReadMaterializer.ComposeEtag</c>), so this request throws — but the failure
+    /// must come from that etag wiring-bug guard, never from the slug resolver. The throwing
+    /// resolver below converts a routing regression into a distinguishable failure: if the
+    /// no-link overload were bypassed, the exception message would come from
+    /// <see cref="ThrowingSlugResolver"/> instead.
     /// </summary>
     [Test]
-    public void It_does_not_invoke_slug_resolver_when_mappingset_is_null_even_if_links_enabled()
+    public void It_throws_the_etag_wiring_guard_rather_than_invoking_the_slug_resolver_when_mappingset_is_null()
     {
         var sut = new RelationalReadMaterializer(
             new ThrowingSlugResolver(),
-            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true })
+            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true }),
+            new ServedEtagComposer()
         );
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
         object?[] row = [1L, (object?)SchoolDocumentId, 255901];
@@ -693,8 +766,9 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ]),
         };
 
-        // No MappingSet on the request — must take the no-link path. The throwing resolver
-        // guarantees that any deviation from that contract surfaces as a test failure here.
+        // No MappingSet (or EtagVariant) on the request — reconstitution must still take the
+        // no-link path first (never invoke the slug resolver), then fail loudly in the etag
+        // wiring-bug guard because ExternalResponse materialization requires both inputs.
         Action act = () =>
             sut.MaterializePage(
                 new RelationalReadPageMaterializationRequest(
@@ -704,20 +778,14 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
                 )
             );
 
-        act.Should().NotThrow("MappingSet=null must route to the no-link overload regardless of flag state");
-
-        var materialized = sut.MaterializePage(
-            new RelationalReadPageMaterializationRequest(
-                readPlan,
-                hydratedPage,
-                RelationalGetRequestReadMode.ExternalResponse
-            )
-        );
-        materialized.Should().ContainSingle();
-        materialized[0].Document["schoolReference"]!
-            .AsObject()
-            .Should()
-            .NotContainKey("link", "no-link overload must omit the link property entirely");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*EtagVariant*MappingSet*to compose the _etag*")
+            .Which.Message.Should()
+            .NotContain(
+                "ThrowingSlugResolver",
+                "MappingSet=null must still route to the no-link overload, not slug resolution"
+            );
     }
 
     /// <summary>
@@ -734,7 +802,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     {
         var sut = new RelationalReadMaterializer(
             new ThrowingSlugResolver(),
-            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true })
+            Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions { Enabled = true }),
+            new ServedEtagComposer()
         );
         var readPlan = BuildReadPlanWithDocumentReferenceBinding();
         object?[] row = [1L, (object?)SchoolDocumentId, 255901];
@@ -839,6 +908,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             {
                 MappingSet = BuildMappingSet(),
                 DocumentReferenceLookup = lookup,
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
             }
         );
 
@@ -885,6 +955,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             )
             {
                 MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
             }
         );
 
@@ -898,7 +969,11 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
     }
 
     private static RelationalReadMaterializer CreateMaterializer(ResourceLinksOptions linksOptions) =>
-        new(new StubSlugResolver(_schoolSlug), Microsoft.Extensions.Options.Options.Create(linksOptions));
+        new(
+            new StubSlugResolver(_schoolSlug),
+            Microsoft.Extensions.Options.Options.Create(linksOptions),
+            new ServedEtagComposer()
+        );
 
     /// <summary>
     /// Drives <see cref="IRelationalReadMaterializer.MaterializePage"/> directly with a
@@ -944,11 +1019,59 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             )
             {
                 MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
             }
         );
 
         materialized.Should().ContainSingle();
         return materialized[0].Document;
+    }
+
+    [Test]
+    public void It_composes_external_response_etag_from_content_version_and_variant_key()
+    {
+        var sut = CreateMaterializer(new ResourceLinksOptions { Enabled = true });
+        var readPlan = BuildReadPlanWithDocumentReferenceBinding();
+        object?[] row = [1L, (object?)SchoolDocumentId, 255901];
+        var metadata = new DocumentMetadataRow(
+            DocumentId: 1L,
+            DocumentUuid: AcademicWeekDocumentUuid,
+            ContentVersion: 7L,
+            IdentityVersion: 1L,
+            ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+        );
+        var hydratedPage = new HydratedPage(
+            TotalCount: null,
+            DocumentMetadata: [metadata],
+            TableRowsInDependencyOrder: [new HydratedTableRows(readPlan.Model.Root, [row])],
+            DescriptorRowsInPlanOrder: []
+        )
+        {
+            DocumentReferenceLookup = new HydratedDocumentReferenceLookup([
+                new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
+            ]),
+        };
+
+        var materialized = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json),
+            }
+        );
+
+        materialized.Should().ContainSingle();
+        // ContentVersion 7; schemaEpoch = first 8 hex of BuildMappingSet()'s EffectiveSchemaHash
+        // ("01234567"); format j (JSON); no profile ("_"); links enabled ("l").
+        materialized[0].Document["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be("7-01234567.j._.l");
     }
 
     private static ResourceReadPlan BuildReadPlanWithDocumentReferenceBinding()

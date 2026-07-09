@@ -129,11 +129,21 @@ internal static class ProfileRootOnlyMergeProfileScenario
         string locationPath = seedResponse.Headers.Location!.IsAbsoluteUri
             ? seedResponse.Headers.Location!.AbsolutePath
             : seedResponse.Headers.Location!.OriginalString;
-        seedResponse
-            .TryReadRawEtag(out string seedEtag)
-            .Should()
-            .BeTrue("the unprofiled seed POST must emit an ETag so the profiled PUT can If-Match against it");
         string resourceId = locationPath.Split('/')[^1];
+
+        // As of the 2026-07-04 ADR amendment, profileCode is no longer state-significant for If-Match
+        // (EtagMatchProjection compares only ContentVersion + schemaEpoch), so using an etag from a
+        // profiled GET here is incidental rather than required - the unprofiled seed POST's etag would
+        // also match. GET never sets an ETag response header (GetByIdHandler always returns Headers: []),
+        // so the etag must be read from the "_etag" body field instead.
+        using HttpResponseMessage profiledGetResponse = await GetProfiledAsync(
+            harness,
+            locationPath,
+            VisibleReadableContentType
+        );
+        string profiledGetBody = await profiledGetResponse.Content.ReadAsStringAsync();
+        profiledGetResponse.StatusCode.Should().Be(HttpStatusCode.OK, profiledGetBody);
+        string profiledEtag = JsonNode.Parse(profiledGetBody)!.AsObject()["_etag"]!.GetValue<string>();
 
         var putPayload = new JsonObject
         {
@@ -148,7 +158,7 @@ internal static class ProfileRootOnlyMergeProfileScenario
             VisibleWritableContentType
         );
         using var putRequest = new HttpRequestMessage(HttpMethod.Put, locationPath) { Content = putContent };
-        putRequest.Headers.TryAddWithoutValidation("If-Match", seedEtag);
+        putRequest.Headers.TryAddWithoutValidation("If-Match", profiledEtag);
 
         using HttpResponseMessage putResponse = await harness.HttpClient.SendAsync(putRequest);
         string putBody = await putResponse.Content.ReadAsStringAsync();

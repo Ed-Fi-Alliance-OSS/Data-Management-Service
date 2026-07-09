@@ -72,7 +72,10 @@ public abstract record DeleteResult
     /// <summary>
     /// A failure because the Etag mismatch
     /// </summary>
-    public record DeleteFailureETagMisMatch() : DeleteResult();
+    /// <param name="Reason">Machine-readable reason for the precondition failure</param>
+    public record DeleteFailureETagMisMatch(
+        ETagPreconditionFailureReason Reason = ETagPreconditionFailureReason.Concurrency
+    ) : DeleteResult();
 
     private DeleteResult() { }
 }

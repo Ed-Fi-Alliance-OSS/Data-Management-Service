@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -267,6 +268,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.Authorized()
         );
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
         var result = await sut.HandlePostAsync(
@@ -421,6 +423,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         // Persisted row has a different shortDescription so the no-op check doesn't kick in.
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRowWithEdFiNamespace()]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.Authorized()
         );
@@ -544,6 +547,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         // Persisted has Description set; the request body sends no description so IsUnchanged is false
         // and the handler issues an UPDATE rather than a no-op rollback.
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRowWithEdFiNamespace()]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.Authorized()
         );
@@ -1191,6 +1195,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
+            new ServedEtagComposer(),
+            new IfMatchEvaluator(),
             providerFailureExtractor
         );
 
@@ -1238,6 +1244,11 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                 ["ResourceKeyId"] = 1,
                 ["ContentVersion"] = 44L,
             }
+        );
+
+    private static InMemoryRelationalResultSet CreateContentVersionRow(long contentVersion = 44L) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
         );
 
     private static InMemoryRelationalResultSet CreatePersistedDescriptorRow() =>

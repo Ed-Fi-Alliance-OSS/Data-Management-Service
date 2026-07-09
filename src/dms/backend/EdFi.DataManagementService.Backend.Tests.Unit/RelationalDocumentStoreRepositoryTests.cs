@@ -45,6 +45,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
+
+    // A deterministic composed-shaped write-result etag. These tests verify that the repository passes
+    // the write handler's/executor's etag through unchanged (and that it is neither the client's stale
+    // request etag nor a stamp-style validator), not the etag format, so any stable opaque value that is
+    // produced without the etag formatter suffices.
+    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),
@@ -5184,7 +5190,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_requests_through_the_executor_with_reference_resolution_inputs()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Lincoln High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -5265,7 +5271,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_as_update_requests_through_the_executor_with_a_read_plan()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Post As Update High");
+        var committedEtag = ComposedWriteResultEtag;
         var traceId = new TraceId("post-update-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Post As Update High");
@@ -5325,7 +5331,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_put_requests_through_the_executor_with_reference_resolution_inputs()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Roosevelt High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -5540,7 +5546,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.InsertSuccess(documentUuid, CreateCommittedReadbackEtag("Mixed"))
+                        new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -5597,7 +5603,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(documentUuid, CreateCommittedReadbackEtag("Mixed"))
+                        new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -5640,7 +5646,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_forwards_authorized_post_relationship_plans_to_the_write_executor_after_target_lookup()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Authorized High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5711,7 +5717,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_forwards_authorized_post_as_update_relationship_plans_to_the_write_executor_after_target_lookup()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Authorized Existing High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         _targetLookupService.PostResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
@@ -5785,7 +5791,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_forwards_authorized_people_post_relationship_plans_to_the_write_executor_after_target_lookup()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Authorized People");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5867,7 +5873,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_builds_create_new_people_post_plan_with_self_person_subjects_ineligible()
     {
-        var committedEtag = CreateCommittedReadbackEtag("Self People");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5939,7 +5945,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_treats_no_further_authorization_required_as_a_post_preflight_no_op()
     {
-        var committedEtag = CreateCommittedReadbackEtag("No Further High");
+        var committedEtag = ComposedWriteResultEtag;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -5998,10 +6004,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.InsertSuccess(
-                            documentUuid,
-                            CreateCommittedReadbackEtag("Namespaced")
-                        )
+                        new UpsertResult.InsertSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -6224,10 +6227,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(
-                            documentUuid,
-                            CreateCommittedReadbackEtag("Namespaced")
-                        )
+                        new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
                     )
                 )
             );
@@ -6357,10 +6357,49 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_etag_mismatch_for_a_missing_put_target_when_if_match_is_a_wildcard()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        _targetLookupService.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Missing wildcard"));
+        A.CallTo(() => updateRequest.WritePrecondition)
+            .Returns(new WritePrecondition.IfMatch("*", IsWildcard: true));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        // The PUT target does not exist at all, so the reason is TargetDoesNotExist rather than a
+        // Concurrency mismatch.
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_forwards_authorized_put_relationship_plans_to_the_write_executor_after_target_lookup()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var committedEtag = CreateCommittedReadbackEtag("Authorized PUT High");
+        var committedEtag = ComposedWriteResultEtag;
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -6683,6 +6722,70 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_retries_stale_put_guarded_no_op_attempts_once_when_if_match_is_a_wildcard()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        // A wildcard If-Match (*) is an existence precondition, not a concurrency check, so a stale
+        // guarded no-op against a still-existing row follows the no-precondition retry path rather
+        // than short-circuiting to a 412 (unlike the specific-tag case above).
+        var writePrecondition = new WritePrecondition.IfMatch("*", IsWildcard: true);
+        var executorCallCount = 0;
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
+                            RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Wildcard retry"));
+        A.CallTo(() => updateRequest.WritePrecondition).Returns(writePrecondition);
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
+        _capturedExecutorRequests.Should().HaveCount(2);
+        _capturedExecutorRequests
+            .Select(request => request.WritePrecondition)
+            .Should()
+            .OnlyContain(precondition => precondition == writePrecondition);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedTwiceExactly();
     }
 
     [Test]
@@ -7010,7 +7113,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateDescriptorRequestBody();
-        var descriptorResponseEtag = CreateDescriptorResponseEtag(requestBody);
+        var descriptorResponseEtag = ComposedWriteResultEtag;
         A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .Returns(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
 
@@ -7107,7 +7210,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateDescriptorRequestBody("Updated Charter");
-        var descriptorResponseEtag = CreateDescriptorResponseEtag(requestBody);
+        var descriptorResponseEtag = ComposedWriteResultEtag;
         A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
             .Returns(new UpdateResult.UpdateSuccess(documentUuid, descriptorResponseEtag));
 
@@ -8791,9 +8894,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _currentEtagPreconditionChecker.CallCount.Should().Be(1);
         _currentEtagPreconditionChecker.CapturedRequest.Should().NotBeNull();
         _currentEtagPreconditionChecker.CapturedRequest!.MappingSet.Should().BeSameAs(mappingSet);
-        _currentEtagPreconditionChecker
-            .CapturedRequest.ReadPlan.Should()
-            .BeSameAs(mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")]);
         _currentEtagPreconditionChecker.CapturedRequest.TargetContext.DocumentId.Should().Be(123L);
         _currentEtagPreconditionChecker.CapturedRequest.TargetContext.DocumentUuid.Should().Be(documentUuid);
         _currentEtagPreconditionChecker.CapturedRequest.Precondition.Should().Be(writePrecondition);
@@ -8825,7 +8925,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
         _currentEtagPreconditionChecker.CallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -8833,17 +8939,76 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public async Task It_returns_relational_delete_failure_not_exists_when_if_match_precondition_recheck_cannot_relock_the_target(
+    public async Task It_returns_relational_delete_failure_etag_mismatch_when_a_wildcard_if_match_document_uuid_is_not_resolvable(
         SqlDialect dialect
     )
     {
+        // RFC 7232 If-Match: * requires the target to exist; against an unresolvable DELETE target
+        // the wildcard yields 412 rather than 404. Default fake returns null from the UUID lookup.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            writePrecondition,
+            documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        // The DELETE target is entirely unresolvable, so there is no current representation and the
+        // reason is TargetDoesNotExist rather than Concurrency.
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_relational_delete_failure_etag_mismatch_when_a_wildcard_if_match_target_vanishes_before_locking(
+        SqlDialect dialect
+    )
+    {
+        // RFC 7232 If-Match: * requires the target to exist; the initial lookup resolves a document,
+        // but the target vanishes (a concurrent delete) before the DELETE lock can be acquired. The
+        // wildcard still yields 412 rather than 404, with reason TargetDoesNotExist since there is no
+        // current representation left to compare against.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
+        ConfigureResolvedDocument(documentId: 123L, documentUuid);
+        A.CallTo(_commandExecutor).WithReturnType<Task<long?>>().Returns(Task.FromResult<long?>(null));
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect),
+            writePrecondition,
+            documentUuid
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_relational_delete_failure_not_exists_when_a_non_wildcard_if_match_document_uuid_is_not_resolvable(
+        SqlDialect dialect
+    )
+    {
+        // Regression guard: a non-wildcard If-Match against an unresolvable DELETE target still
+        // returns 404.
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
-        ConfigureResolvedDocument(documentId: 123L, documentUuid);
-        ConfigureDeleteThrows(
-            new InvalidOperationException("DELETE should not execute when the target disappears.")
-        );
-        _currentEtagPreconditionChecker.ResultToReturn = null;
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(
             CreateSupportedMappingSet(_schoolResourceInfo, dialect),
@@ -8854,7 +9019,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
-        _currentEtagPreconditionChecker.CallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -8893,27 +9057,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
         _currentEtagPreconditionChecker.CallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_the_missing_read_plan_guard_rail_for_relational_delete_if_match_precondition_requests()
-    {
-        var writePrecondition = new WritePrecondition.IfMatch("\"current-etag\"");
-        const string expectedFailureMessage =
-            "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
-            + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
-            + "but no entry was found. This indicates an internal compilation/selection bug.";
-
-        var deleteRequest = CreateNonDescriptorDeleteRequest(
-            CreateMissingReadPlanMappingSet(_schoolResourceInfo),
-            writePrecondition
-        );
-
-        var result = await _sut.DeleteDocumentById(deleteRequest);
-
-        result.Should().BeEquivalentTo(new DeleteResult.UnknownFailure(expectedFailureMessage));
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
     }
 
     [Test]
@@ -9221,7 +9364,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private sealed record CapturedDeleteEtagPreconditionRequest(
         MappingSet MappingSet,
-        ResourceReadPlan ReadPlan,
         RelationalWriteTargetContext.ExistingDocument TargetContext,
         WritePrecondition.IfMatch Precondition
     );
@@ -9239,32 +9381,28 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         public Action? OnCheck { get; set; }
 
-        public Task<RelationalDeleteEtagPreconditionCheckResult?> CheckAsync(
+        public RelationalDeleteEtagPreconditionCheckResult Evaluate(
             MappingSet mappingSet,
-            ResourceReadPlan readPlan,
-            RelationalWriteTargetContext.ExistingDocument targetContext,
-            WritePrecondition.IfMatch precondition,
-            IRelationalWriteSession writeSession,
-            CancellationToken cancellationToken = default
+            RelationalWriteTargetContext.ExistingDocument lockedTargetContext,
+            WritePrecondition.IfMatch precondition
         )
         {
-            cancellationToken.ThrowIfCancellationRequested();
             ArgumentNullException.ThrowIfNull(mappingSet);
-            ArgumentNullException.ThrowIfNull(readPlan);
-            ArgumentNullException.ThrowIfNull(targetContext);
+            ArgumentNullException.ThrowIfNull(lockedTargetContext);
             ArgumentNullException.ThrowIfNull(precondition);
-            ArgumentNullException.ThrowIfNull(writeSession);
 
             CallCount++;
             OnCheck?.Invoke();
             CapturedRequest = new CapturedDeleteEtagPreconditionRequest(
                 mappingSet,
-                readPlan,
-                targetContext,
+                lockedTargetContext,
                 precondition
             );
 
-            return Task.FromResult(ResultToReturn);
+            return ResultToReturn
+                ?? throw new InvalidOperationException(
+                    "ResultToReturn must be configured before the delete precondition is evaluated."
+                );
         }
     }
 
@@ -9567,23 +9705,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             }
             """
         )!;
-    }
-
-    private static string CreateCommittedReadbackEtag(string name, int schoolId = 255901)
-    {
-        return RelationalApiMetadataFormatter.FormatEtag(
-            JsonNode.Parse($$"""{"schoolId":{{schoolId}},"name":"{{name}}"}""")!
-        );
-    }
-
-    private static string CreateDescriptorResponseEtag(JsonNode requestBody)
-    {
-        return RelationalApiMetadataFormatter.FormatEtag(
-            DescriptorWriteBodyExtractor.Extract(
-                requestBody,
-                new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
-            )
-        );
     }
 
     private static DocumentReference CreateDocumentReference(BaseResourceInfo targetResource, string path)

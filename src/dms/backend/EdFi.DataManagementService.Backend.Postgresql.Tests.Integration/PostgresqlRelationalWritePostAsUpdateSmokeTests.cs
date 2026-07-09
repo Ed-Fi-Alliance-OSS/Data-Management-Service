@@ -2874,18 +2874,9 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     [Test]
     public void It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits()
     {
-        _createWinnerResult
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.InsertSuccess(
-                    CreateWinnerDocumentUuid,
-                    RelationalGetIntegrationTestHelper.CreateExpectedEtag(
-                        CreateWinnerRequestBodyJson,
-                        SchoolResourceInfo,
-                        _mappingSet
-                    )
-                )
-            );
+        var createWinnerSuccess = _createWinnerResult.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
+        createWinnerSuccess.NewDocumentUuid.Should().Be(CreateWinnerDocumentUuid);
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(createWinnerSuccess.ETag);
         _staleCreateCandidateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
         _staleCreateCandidateResult
             .As<UpsertResult.UpdateSuccess>()

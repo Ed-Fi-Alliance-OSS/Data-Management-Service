@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -23,6 +24,8 @@ internal sealed class DescriptorWriteHandler(
     IRelationalDeleteConstraintResolver deleteConstraintResolver,
     IRelationalWriteSessionFactory writeSessionFactory,
     ILogger<DescriptorWriteHandler> logger,
+    IServedEtagComposer servedEtagComposer,
+    IIfMatchEvaluator ifMatchEvaluator,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null
 ) : IDescriptorWriteHandler
@@ -37,6 +40,10 @@ internal sealed class DescriptorWriteHandler(
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IServedEtagComposer _servedEtagComposer =
+        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
+    private readonly IIfMatchEvaluator _ifMatchEvaluator =
+        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
@@ -164,6 +171,7 @@ internal sealed class DescriptorWriteHandler(
                     ifMatch,
                     writeSession,
                     cancellationToken,
+                    request.ProfileName,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
                     body.Namespace
@@ -174,7 +182,9 @@ internal sealed class DescriptorWriteHandler(
             {
                 case DescriptorLockedPreconditionResult.CreateNew:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureETagMisMatch();
+                    return new UpsertResult.UpsertFailureETagMisMatch(
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    );
 
                 case DescriptorLockedPreconditionResult.MissingDocument:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -344,6 +354,7 @@ internal sealed class DescriptorWriteHandler(
                         ifMatch,
                         writeSession,
                         cancellationToken,
+                        request.ProfileName,
                         storedNamespaceAuthorization,
                         proposedNamespaceAuthorization,
                         body.Namespace
@@ -355,7 +366,14 @@ internal sealed class DescriptorWriteHandler(
                     case DescriptorLockedPreconditionResult.NotFound:
                     case DescriptorLockedPreconditionResult.MissingDocument:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return new UpdateResult.UpdateFailureNotExists();
+                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // missing PUT target yields the precondition-failed (412) result rather than
+                        // not-exists (404).
+                        return ifMatch.IsWildcard
+                            ? new UpdateResult.UpdateFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
+                            : new UpdateResult.UpdateFailureNotExists();
 
                     case DescriptorLockedPreconditionResult.MissingDescriptor(
                         var missingDescriptorDocumentId
@@ -604,13 +622,15 @@ internal sealed class DescriptorWriteHandler(
                             outcome = new DeleteResult.DeleteFailureNotExists();
                         }
                         else if (
-                            !await TryLockDocumentAsync(
+                            await RelationalWriteTargetLocking
+                                .TryLockExistingTargetAsync(
                                     request.MappingSet.Key.Dialect,
                                     resolvedDeleteTarget.DocumentId,
                                     writeSession,
                                     cancellationToken
                                 )
                                 .ConfigureAwait(false)
+                            is null
                         )
                         {
                             outcome = new DeleteResult.DeleteFailureNotExists();
@@ -662,16 +682,23 @@ internal sealed class DescriptorWriteHandler(
                             ifMatch,
                             writeSession,
                             cancellationToken,
-                            storedNamespaceAuthorization
+                            // DELETE has no profile lens, so the current etag is unprofiled.
+                            profileName: null,
+                            storedNamespaceAuthorization: storedNamespaceAuthorization
                         )
                         .ConfigureAwait(false);
 
                     outcome = preconditionResult switch
                     {
-                        DescriptorLockedPreconditionResult.NotFound =>
-                            new DeleteResult.DeleteFailureNotExists(),
-                        DescriptorLockedPreconditionResult.MissingDocument =>
-                            new DeleteResult.DeleteFailureNotExists(),
+                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // missing DELETE target yields the precondition-failed (412) result rather
+                        // than not-exists (404).
+                        DescriptorLockedPreconditionResult.NotFound
+                        or DescriptorLockedPreconditionResult.MissingDocument => ifMatch.IsWildcard
+                            ? new DeleteResult.DeleteFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
+                            : new DeleteResult.DeleteFailureNotExists(),
                         DescriptorLockedPreconditionResult.MissingDescriptor(var documentId) =>
                             new DeleteResult.UnknownFailure(
                                 BuildMissingDescriptorMessage(request.Resource, documentId)
@@ -777,6 +804,7 @@ internal sealed class DescriptorWriteHandler(
         WritePrecondition.IfMatch ifMatch,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken,
+        string? profileName = null,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
         string? proposedNamespace = null
@@ -894,7 +922,8 @@ internal sealed class DescriptorWriteHandler(
 
         var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
                 mappingSet.Key.Dialect,
-                resource,
+                mappingSet.Key.EffectiveSchemaHash,
+                profileName,
                 existingTargetContext.DocumentId,
                 writeSession,
                 cancellationToken
@@ -944,6 +973,28 @@ internal sealed class DescriptorWriteHandler(
             }
         }
 
+        if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag))
+        {
+            var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
+
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug(
+                    "Descriptor If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
+                        + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
+                    existingTargetContext.DocumentId,
+                    ifMatch.IsWildcard,
+                    LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
+                    currentEtag,
+                    evaluation.IsMatch
+                );
+            }
+
+            return evaluation.IsMatch
+                ? new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag)
+                : DescriptorLockedPreconditionResult.Mismatch.Instance;
+        }
+
         return lockedCurrentState switch
         {
             DescriptorCurrentStateLoadResult.MissingDocument => DescriptorLockedPreconditionResult
@@ -951,11 +1002,6 @@ internal sealed class DescriptorWriteHandler(
                 .Instance,
             DescriptorCurrentStateLoadResult.MissingDescriptor =>
                 new DescriptorLockedPreconditionResult.MissingDescriptor(existingTargetContext.DocumentId),
-            DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
-                when !string.Equals(ifMatch.Value, currentEtag, StringComparison.Ordinal) =>
-                DescriptorLockedPreconditionResult.Mismatch.Instance,
-            DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag) =>
-                new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag),
             _ => throw new InvalidOperationException(
                 $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
             ),
@@ -1366,9 +1412,25 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await ExecuteWriteCommandAsync(commandExecutor, command, cancellationToken).ConfigureAwait(false);
+        var persistedContentVersion = await ExecuteWriteReturningContentVersionAsync(
+                commandExecutor,
+                command,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        return new UpsertResult.InsertSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
+        return new UpsertResult.InsertSuccess(
+            documentUuid,
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    ResponseFormat.Json,
+                    request.ProfileName,
+                    LinksEnabled: false,
+                    persistedContentVersion
+                )
+            )
+        );
     }
 
     private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
@@ -1407,11 +1469,24 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await ExecuteWriteCommandAsync(commandExecutor, command, cancellationToken).ConfigureAwait(false);
+        var persistedContentVersion = await ExecuteWriteReturningContentVersionAsync(
+                commandExecutor,
+                command,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         return new UpsertResult.UpdateSuccess(
             existingDocumentUuid,
-            RelationalApiMetadataFormatter.FormatEtag(body)
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    ResponseFormat.Json,
+                    request.ProfileName,
+                    LinksEnabled: false,
+                    persistedContentVersion
+                )
+            )
         );
     }
 
@@ -1504,11 +1579,27 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await ExecuteWriteCommandAsync(writeSession.CreateCommandExecutor(), command, cancellationToken)
+        var persistedContentVersion = await ExecuteWriteReturningContentVersionAsync(
+                writeSession.CreateCommandExecutor(),
+                command,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return new UpdateResult.UpdateSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
+
+        return new UpdateResult.UpdateSuccess(
+            documentUuid,
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    ResponseFormat.Json,
+                    request.ProfileName,
+                    LinksEnabled: false,
+                    persistedContentVersion
+                )
+            )
+        );
     }
 
     private Task<UpsertResult> ApplyDescriptorPostUpsertWithLockedCurrentStateAsync(
@@ -1617,7 +1708,8 @@ internal sealed class DescriptorWriteHandler(
         {
             var lockedCurrentState = await LoadLockedDescriptorCurrentStateAsync(
                     request.MappingSet.Key.Dialect,
-                    request.Resource,
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    request.ProfileName,
                     documentId,
                     writeSession,
                     cancellationToken
@@ -1837,24 +1929,42 @@ internal sealed class DescriptorWriteHandler(
         );
     }
 
-    private static async Task ExecuteWriteCommandAsync(
+    /// <summary>
+    /// Executes a descriptor write whose final statement surfaces the owning document's
+    /// <c>ContentVersion</c> and returns that value for etag composition. Every descriptor write whose
+    /// success result carries an etag (INSERT plus both UPDATE variants) surfaces ContentVersion:
+    /// the INSERT returns the insert-time value (the stamp trigger only mirrors it on descriptor
+    /// insert), and each UPDATE re-selects the post-trigger bumped value that a later GET reads.
+    /// </summary>
+    private static Task<long> ExecuteWriteReturningContentVersionAsync(
         IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,
         CancellationToken cancellationToken
-    )
-    {
-        _ = await commandExecutor
-            .ExecuteReaderAsync(
-                command,
-                static (_, ct) =>
+    ) =>
+        commandExecutor.ExecuteReaderAsync(
+            command,
+            static async (reader, ct) =>
+            {
+                // Every descriptor write batch ends with the row-producing SELECT "ContentVersion".
+                // Neither Npgsql nor SqlClient surfaces the preceding UPDATE/INSERT/MERGE as a
+                // row-bearing result set, so in practice the trailing SELECT is the first exposed
+                // result set. Scan defensively anyway rather than depending on that ordering:
+                // advance past any leading result set a driver might expose and stop at the first
+                // row, which is the ContentVersion the trailing SELECT produces.
+                do
                 {
-                    ct.ThrowIfCancellationRequested();
-                    return Task.FromResult(0);
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
+                    if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return reader.GetRequiredFieldValue<long>("ContentVersion");
+                    }
+                } while (await reader.NextResultAsync(ct).ConfigureAwait(false));
+
+                throw new InvalidOperationException(
+                    "Descriptor write did not surface a ContentVersion value for etag composition."
+                );
+            },
+            cancellationToken
+        );
 
     // ── PostgreSQL SQL builders ──────────────────────────────────────────
 
@@ -1865,11 +1975,15 @@ internal sealed class DescriptorWriteHandler(
         ReferentialId referentialId
     )
     {
+        // The Document CTE surfaces the insert-time ContentVersion (the descriptor stamp trigger only
+        // mirrors that value on INSERT and does not bump it), so the final SELECT returns exactly what
+        // a later GET reads. The ReferentialIdentity insert is wrapped in its own data-modifying CTE so
+        // it still executes even though the primary query reads only ContentVersion.
         const string Sql = """
             WITH new_doc AS (
                 INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
                 VALUES (@documentUuid, @resourceKeyId)
-                RETURNING "DocumentId"
+                RETURNING "DocumentId", "ContentVersion"
             )
             , new_descriptor AS (
                 INSERT INTO dms."Descriptor" (
@@ -1883,9 +1997,12 @@ internal sealed class DescriptorWriteHandler(
                     @discriminator, @uri
                 FROM new_doc
             )
-            INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            SELECT @referentialId, "DocumentId", @resourceKeyId
-            FROM new_doc;
+            , new_referential AS (
+                INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+                SELECT @referentialId, "DocumentId", @resourceKeyId
+                FROM new_doc
+            )
+            SELECT "ContentVersion" FROM new_doc;
             """;
 
         return new RelationalCommand(
@@ -1901,10 +2018,19 @@ internal sealed class DescriptorWriteHandler(
         ReferentialId referentialId
     )
     {
+        // Capture the insert-time ContentVersion into a table variable via OUTPUT ... INTO, run every
+        // insert, then return it with a trailing SELECT so the row-producing statement is the final
+        // one (matching the PG insert CTE and every UPDATE builder). This keeps the reader's single
+        // result set unambiguous rather than relying on the batch fully executing after the first
+        // statement's OUTPUT is read. [dms].[Document] carries no trigger, so OUTPUT is legal there,
+        // and the descriptor stamp trigger only mirrors (never bumps) ContentVersion on descriptor
+        // INSERT, so the captured value is exactly what a later GET reads.
         const string Sql = """
             DECLARE @newDocumentId BIGINT;
+            DECLARE @insertedContentVersion TABLE ([ContentVersion] BIGINT);
 
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            OUTPUT INSERTED.[ContentVersion] INTO @insertedContentVersion ([ContentVersion])
             VALUES (@documentUuid, @resourceKeyId);
 
             SET @newDocumentId = SCOPE_IDENTITY();
@@ -1923,6 +2049,7 @@ internal sealed class DescriptorWriteHandler(
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @newDocumentId, @resourceKeyId);
 
+            SELECT [ContentVersion] FROM @insertedContentVersion;
             """;
 
         return new RelationalCommand(
@@ -1938,6 +2065,8 @@ internal sealed class DescriptorWriteHandler(
         long documentId
     )
     {
+        // The descriptor stamp trigger bumps dms."Document"."ContentVersion" in an AFTER UPDATE trigger,
+        // so it is not visible to a RETURNING on the descriptor UPDATE; re-select the post-trigger value.
         const string Sql = """
             UPDATE dms."Descriptor"
             SET "Namespace" = @namespace,
@@ -1949,6 +2078,7 @@ internal sealed class DescriptorWriteHandler(
                 "Uri" = @uri
             WHERE "DocumentId" = @documentId;
 
+            SELECT "ContentVersion" FROM dms."Document" WHERE "DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -1956,6 +2086,9 @@ internal sealed class DescriptorWriteHandler(
 
     private static RelationalCommand BuildMssqlUpdateCommand(ExtractedDescriptorBody body, long documentId)
     {
+        // The descriptor stamp trigger bumps [dms].[Document].[ContentVersion] in an AFTER UPDATE
+        // trigger, so OUTPUT on the descriptor UPDATE would return the pre-trigger value (and MSSQL
+        // disallows a plain OUTPUT on a trigger-bearing table); re-select the post-trigger value.
         const string Sql = """
             UPDATE [dms].[Descriptor]
             SET [Namespace] = @namespace,
@@ -1967,6 +2100,7 @@ internal sealed class DescriptorWriteHandler(
                 [Uri] = @uri
             WHERE [DocumentId] = @documentId;
 
+            SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -1981,6 +2115,8 @@ internal sealed class DescriptorWriteHandler(
         ReferentialId referentialId
     )
     {
+        // The descriptor stamp trigger bumps dms."Document"."ContentVersion" in an AFTER UPDATE trigger,
+        // so it is not visible to a RETURNING on the descriptor UPDATE; re-select the post-trigger value.
         const string Sql = """
             UPDATE dms."Descriptor"
             SET "Namespace" = @namespace,
@@ -1998,6 +2134,7 @@ internal sealed class DescriptorWriteHandler(
             SET "DocumentId" = EXCLUDED."DocumentId",
                 "ResourceKeyId" = EXCLUDED."ResourceKeyId";
 
+            SELECT "ContentVersion" FROM dms."Document" WHERE "DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(
@@ -2013,6 +2150,9 @@ internal sealed class DescriptorWriteHandler(
         ReferentialId referentialId
     )
     {
+        // The descriptor stamp trigger bumps [dms].[Document].[ContentVersion] in an AFTER UPDATE
+        // trigger, so OUTPUT on the descriptor UPDATE would return the pre-trigger value (and MSSQL
+        // disallows a plain OUTPUT on a trigger-bearing table); re-select the post-trigger value.
         const string Sql = """
             UPDATE [dms].[Descriptor]
             SET [Namespace] = @namespace,
@@ -2035,6 +2175,7 @@ internal sealed class DescriptorWriteHandler(
                 INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
                 VALUES (source.[ReferentialId], source.[DocumentId], source.[ResourceKeyId]);
 
+            SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;
             """;
 
         return new RelationalCommand(
@@ -2141,20 +2282,7 @@ internal sealed class DescriptorWriteHandler(
         string? Description,
         DateOnly? EffectiveBeginDate,
         DateOnly? EffectiveEndDate
-    )
-    {
-        public ExtractedDescriptorBody ToExtractedDescriptorBody(QualifiedResourceName resource) =>
-            new(
-                Namespace,
-                CodeValue,
-                ShortDescription,
-                Description,
-                EffectiveBeginDate,
-                EffectiveEndDate,
-                Uri,
-                resource.ResourceName
-            );
-    }
+    );
 
     private enum DescriptorPreconditionTargetKind
     {
@@ -2234,18 +2362,20 @@ internal sealed class DescriptorWriteHandler(
             : DescriptorCurrentStateLoadResult;
     }
 
-    private static async Task<DescriptorCurrentStateLoadResult> LoadLockedDescriptorCurrentStateAsync(
+    private async Task<DescriptorCurrentStateLoadResult> LoadLockedDescriptorCurrentStateAsync(
         SqlDialect dialect,
-        QualifiedResourceName resource,
+        string effectiveSchemaHash,
+        string? profileName,
         long documentId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
-        if (
-            !await TryLockDocumentAsync(dialect, documentId, writeSession, cancellationToken)
-                .ConfigureAwait(false)
-        )
+        var lockedContentVersion = await RelationalWriteTargetLocking
+            .TryLockExistingTargetAsync(dialect, documentId, writeSession, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (lockedContentVersion is null)
         {
             return DescriptorCurrentStateLoadResult.MissingDocument.Instance;
         }
@@ -2262,25 +2392,22 @@ internal sealed class DescriptorWriteHandler(
             return DescriptorCurrentStateLoadResult.MissingDescriptor.Instance;
         }
 
+        // The current etag is composed from the locked ContentVersion and the active profile so a
+        // no-op write returns the same profile-sensitive etag a GET of that representation would.
+        // If-Match comparison stays profile-insensitive because EtagMatchProjection projects the
+        // profileCode out, retaining only ContentVersion and schemaEpoch.
         return new DescriptorCurrentStateLoadResult.Loaded(
             persistedDescriptor,
-            RelationalApiMetadataFormatter.FormatEtag(persistedDescriptor.ToExtractedDescriptorBody(resource))
+            _servedEtagComposer.Compose(
+                new ServedEtagContext(
+                    effectiveSchemaHash,
+                    ResponseFormat.Json,
+                    profileName,
+                    LinksEnabled: false,
+                    lockedContentVersion.Value
+                )
+            )
         );
-    }
-
-    private static async Task<bool> TryLockDocumentAsync(
-        SqlDialect dialect,
-        long documentId,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var command = writeSession.CreateCommand(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, documentId)
-        );
-
-        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return scalarResult is not null and not DBNull;
     }
 
     private static string BuildMissingDescriptorMessage(QualifiedResourceName resource, long documentId) =>

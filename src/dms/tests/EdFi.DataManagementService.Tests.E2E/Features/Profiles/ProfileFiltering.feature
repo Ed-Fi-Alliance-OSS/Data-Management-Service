@@ -173,7 +173,7 @@ Feature: Profile Response Filtering
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution"
 
-    Rule: Profile filtering preserves full-resource etags
+    Rule: Profile filtering serves a profile-sensitive etag distinct from the full-resource etag
 
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
@@ -202,7 +202,7 @@ Feature: Profile Response Filtering
                   """
 
         @e2e-ci-shard-2
-        Scenario: 07 Profiled GET and query preserve the full-resource etag
+        Scenario: 07 Profiled GET and query serve a profile-sensitive etag distinct from the full-resource etag
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}"
             Then it should respond with 200
@@ -213,15 +213,16 @@ Feature: Profile Response Filtering
             Then the profile response status is 200
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
-             And the response body path "_etag" should equal variable "fullSchoolEtag"
+             And the response body path "_etag" is stored as variable "profiledSchoolEtag"
+             And the response body path "_etag" should not equal variable "fullSchoolEtag"
             When a GET request is made to "/ed-fi/schools?schoolId=99000106" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
              And the response body should not contain fields "shortNameOfInstitution, educationOrganizationCategories, gradeLevels"
-             And the response body path "0._etag" should equal variable "fullSchoolEtag"
+             And the response body path "0._etag" should equal variable "profiledSchoolEtag"
 
         @e2e-ci-shard-2
-        Scenario: 08 Profiled PUT succeeds with a profiled If-Match and returns the full-resource etag
+        Scenario: 08 Profiled PUT succeeds with a profiled If-Match and returns a profile-sensitive etag distinct from the full-resource etag
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 200
              And the response body path "_etag" is stored as variable "profiledSchoolEtag"
@@ -250,7 +251,7 @@ Feature: Profile Response Filtering
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}"
             Then it should respond with 200
-             And the response body path "_etag" should equal variable "profiledWriteEtag"
+             And the response body path "_etag" should not equal variable "profiledWriteEtag"
              And the response body path "shortNameOfInstitution" should have value "PETS-UPD"
 
         @e2e-ci-shard-2
@@ -311,3 +312,32 @@ Feature: Profile Response Filtering
             Then the profile response status is 412
              And the response body should have error type "urn:ed-fi:api:optimistic-lock-failed"
              And the response body should have error message "etag value does not match"
+
+        @e2e-ci-shard-2
+        Scenario: 10 An unprofiled If-Match etag is accepted by a profiled PUT (legacy parity)
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/schools/{id}"
+            Then it should respond with 200
+             And the response body path "_etag" is stored as variable "fullSchoolEtag"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School" and if-match variable "fullSchoolEtag" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99000106,
+                      "nameOfInstitution": "Profile ETag Parity Updated",
+                      "shortNameOfInstitution": "PETS-PARITY",
+                      "webSite": "https://profile-etag-parity.example.com",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 204

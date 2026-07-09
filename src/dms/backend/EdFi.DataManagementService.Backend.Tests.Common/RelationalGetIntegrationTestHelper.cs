@@ -6,10 +6,8 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
@@ -43,28 +41,10 @@ public static class RelationalGetIntegrationTestHelper
             JsonNode.Parse(requestBodyJson)?.AsObject()
             ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
 
-        expectedDocument["_etag"] = CreateExpectedEtag(requestBodyJson, resourceInfo, mappingSet);
         expectedDocument["id"] = documentUuid.ToString();
         expectedDocument["_lastModifiedDate"] = FormatExternalLastModifiedDate(lastModifiedAt);
 
         return expectedDocument;
-    }
-
-    public static string CreateExpectedEtag(
-        string requestBodyJson,
-        BaseResourceInfo resourceInfo,
-        MappingSet mappingSet
-    )
-    {
-        var expectedDocument =
-            JsonNode.Parse(requestBodyJson)
-            ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
-        var readPlan = mappingSet.GetReadPlanOrThrow(
-            new QualifiedResourceName(resourceInfo.ProjectName.Value, resourceInfo.ResourceName.Value)
-        );
-        var canonicalDocument = DocumentReconstituter.ReorderToReadPlanOrder(expectedDocument, readPlan);
-
-        return ResourceEtagFormatter.FormatEtag(canonicalDocument);
     }
 
     public static string FormatExternalLastModifiedDate(DateTimeOffset lastModifiedAt) =>
@@ -87,10 +67,7 @@ public static class RelationalGetIntegrationTestHelper
         success.LastModifiedTraceId.Should().BeNull();
         success.LastModifiedDate.Should().Be(expectedLastModifiedAt.UtcDateTime);
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(expectedDocumentUuid.Value.ToString());
-        success.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(expectedDocument["_etag"]!.GetValue<string>());
+        AssertComposedEtag(success.EdfiDoc["_etag"]!.GetValue<string>());
         success.EdfiDoc["_lastModifiedDate"]!
             .GetValue<string>()
             .Should()
@@ -110,6 +87,20 @@ public static class RelationalGetIntegrationTestHelper
         CanonicalizeJson(success.EdfiDoc).Should().Be(CanonicalizeJson(expectedDocument));
     }
 
+    /// <summary>
+    /// The composed strong-validator etag wire shape: "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}".
+    /// ContentVersion is digits; schemaEpoch is up to 8 lowercase hex; format is a single lowercase letter (j today);
+    /// profileCode is "_" (no profile) or an 8-hex SHA-256 prefix; linkFlag is l/n. The exact ContentVersion is not
+    /// asserted here because it is not derivable from the request body — callers assert monotonicity/parity separately.
+    /// </summary>
+    private const string ComposedEtagPattern = @"^\d+-[0-9a-f]{1,8}\.[a-z]\.(_|[0-9a-f]{8})\.[ln]$";
+
+    public static void AssertComposedEtag(string? etag)
+    {
+        etag.Should().NotBeNullOrEmpty();
+        etag.Should().MatchRegex(ComposedEtagPattern);
+    }
+
     public static void AssertWriteResultEtagParity(UpsertResult writeResult, GetResult getResult) =>
         GetWriteResultEtag(writeResult).Should().Be(GetReadResultEtag(getResult));
 
@@ -117,6 +108,9 @@ public static class RelationalGetIntegrationTestHelper
         GetWriteResultEtag(writeResult).Should().Be(GetReadResultEtag(getResult));
 
     public static string CanonicalizeJson(JsonNode node) => NormalizeJsonNode(node)?.ToJsonString() ?? "null";
+
+    /// <summary>Exposes the served <c>_etag</c> of a GET success for direct comparison in tests.</summary>
+    public static string ReadResultEtag(GetResult getResult) => GetReadResultEtag(getResult);
 
     private static string GetWriteResultEtag(UpsertResult writeResult) =>
         writeResult switch
@@ -175,7 +169,14 @@ public static class RelationalGetIntegrationTestHelper
     {
         JsonObject normalized = [];
 
-        foreach (var property in jsonObject.OrderBy(static property => property.Key, StringComparer.Ordinal))
+        // Body comparisons are etag-agnostic: the composed _etag derives from ContentVersion (not the
+        // body), so it cannot be reconstructed from an expected request body. Drop it here so callers
+        // compare the resource state and assert the _etag shape separately via AssertComposedEtag.
+        foreach (
+            var property in jsonObject
+                .Where(static property => !string.Equals(property.Key, "_etag", StringComparison.Ordinal))
+                .OrderBy(static property => property.Key, StringComparer.Ordinal)
+        )
         {
             normalized[property.Key] = NormalizeJsonNode(property.Value);
         }

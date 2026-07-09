@@ -321,6 +321,12 @@ internal sealed record MssqlStudentSchoolAssociationDocumentMetadata(
 [Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture
 {
+    // The readable profile name in effect for the projected read. Threaded into the served _etag's
+    // profileCode so the projected representation carries a distinct strong validator (profile is
+    // state-significant per adr-etag-from-content-version.md). Backend-direct integration tests must
+    // set ProfileName explicitly; Core populates it in production.
+    private const string ReadableProfileName = "sample-readable-profile";
+
     private static readonly ContentTypeDefinition ReadableProfileContentType = new(
         MemberSelection.IncludeOnly,
         [],
@@ -557,16 +563,17 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
 
         var currentResponse = ((GetResult.GetSuccess)_getResultAfterCreate).EdfiDoc;
         var currentEtag = currentResponse["_etag"]!.GetValue<string>();
-        var linkBearingResponse = CreateLinkBearingResponse(currentResponse);
-        var linkBearingEtag = RelationalApiMetadataFormatter.FormatEtag(linkBearingResponse);
 
-        linkBearingEtag.Should().Be(currentEtag);
+        // The served etag encodes link mode in its variantKey, but If-Match compares the
+        // state-significant projection, which ignores linkFlag. An etag captured under the opposite
+        // link mode is a different opaque string yet still satisfies the precondition.
+        var oppositeLinkModeEtag = FlipLinkFlag(currentEtag);
+        oppositeLinkModeEtag.Should().NotBe(currentEtag);
 
-        var result = await CheckIfMatchAsync(linkBearingEtag);
+        var result = await CheckIfMatchAsync(oppositeLinkModeEtag);
 
         result.Should().NotBeNull();
         result!.IsMatch.Should().BeTrue();
-        result.CurrentEtag.Should().Be(currentEtag);
     }
 
     [Test]
@@ -623,14 +630,18 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             )
             .Should()
             .Equal((long?)null, null);
+        RelationalGetIntegrationTestHelper.AssertComposedEtag(success.EdfiDoc["_etag"]!.GetValue<string>());
+        // The served _etag is a strong validator of the projected representation. A readable-profile
+        // projection changes the served bytes, so its _etag MUST differ from the unprojected read's —
+        // profile is state-significant per adr-etag-from-content-version.md (a deliberate reversal of
+        // the earlier profile-insensitive contract). They differ only in the profileCode component.
         success.EdfiDoc["_etag"]!
             .GetValue<string>()
             .Should()
-            .Be(expectedDocument["_etag"]!.GetValue<string>());
-        success.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be(unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>());
+            .NotBe(
+                unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>(),
+                "a readable-profile projection yields a distinct strong-validator etag (profile is state-significant)"
+            );
         RelationalGetIntegrationTestHelper
             .CanonicalizeJson(success.EdfiDoc)
             .Should()
@@ -729,72 +740,29 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         }
     }
 
-    private static JsonNode CreateLinkBearingResponse(JsonNode responseDocument)
+    private static string FlipLinkFlag(string etag)
     {
-        var linkedResponse = responseDocument.DeepClone();
-
-        if (linkedResponse is not JsonObject responseObject)
+        if (etag.EndsWith(".l", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Expected GET success document to be a JSON object.");
+            return string.Concat(etag.AsSpan(0, etag.Length - 1), "n");
         }
 
-        responseObject["link"] = new JsonObject
+        if (etag.EndsWith(".n", StringComparison.Ordinal))
         {
-            ["rel"] = "StudentSchoolAssociation",
-            ["href"] = $"/ed-fi/studentSchoolAssociations/{responseObject["id"]!.GetValue<string>()}",
-        };
-
-        AddReferenceLink(responseObject, "schoolReference", "/ed-fi/schools/100");
-        AddReferenceLink(responseObject, "calendarReference", "/ed-fi/calendars/100-MAIN-2024");
-        AddReferenceLink(responseObject, "schoolYearTypeReference", "/ed-fi/schoolYearTypes/2024");
-        AddReferenceLink(responseObject, "studentReference", "/ed-fi/students/10001");
-
-        var alternativeGraduationPlans =
-            responseObject["alternativeGraduationPlans"] as JsonArray
-            ?? throw new InvalidOperationException(
-                "Expected StudentSchoolAssociation response to include alternativeGraduationPlans."
-            );
-
-        foreach (var plan in alternativeGraduationPlans)
-        {
-            var planObject =
-                plan as JsonObject
-                ?? throw new InvalidOperationException(
-                    "Expected alternativeGraduationPlans items to be JSON objects."
-                );
-            var referenceObject =
-                planObject["alternativeGraduationPlanReference"] as JsonObject
-                ?? throw new InvalidOperationException(
-                    "Expected alternativeGraduationPlanReference to be a JSON object."
-                );
-
-            referenceObject["link"] = new JsonObject
-            {
-                ["rel"] = "GraduationPlan",
-                ["href"] =
-                    $"/ed-fi/graduationPlans/{referenceObject["graduationSchoolYear"]!.GetValue<int>()}",
-            };
+            return string.Concat(etag.AsSpan(0, etag.Length - 1), "l");
         }
 
-        return linkedResponse;
-    }
-
-    private static void AddReferenceLink(JsonObject responseObject, string propertyName, string href)
-    {
-        var referenceObject =
-            responseObject[propertyName] as JsonObject
-            ?? throw new InvalidOperationException(
-                $"Expected StudentSchoolAssociation response to include '{propertyName}'."
-            );
-
-        referenceObject["link"] = new JsonObject { ["rel"] = propertyName, ["href"] = href };
+        throw new InvalidOperationException($"Unexpected etag link flag in '{etag}'.");
     }
 
     private ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>
         new(
             ReadableProfileContentType,
             IReadableProfileProjector.ExtractIdentityPropertyNames(_resourceSchema.IdentityJsonPaths)
-        );
+        )
+        {
+            ProfileName = ReadableProfileName,
+        };
 
     private JsonObject CreateExpectedReadableProfileExternalResponse(
         string requestBodyJson,

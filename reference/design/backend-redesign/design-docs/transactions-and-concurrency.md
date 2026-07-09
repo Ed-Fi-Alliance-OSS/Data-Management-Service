@@ -326,16 +326,36 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
   - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
-  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the full resource-state document those stamps track, before readable profile projection and excluding response decorations such as `link`.
+  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`. `_etag`
+    is composed as `"{ContentVersion}-{variantKey}"` (see `update-tracking.md`, "Serving API
+    metadata") — a strong validator that is representation-sensitive, composed with no document
+    hashing or representation readback (the write path does read the final scalar `ContentVersion` in
+    the persistence layer; see `update-tracking.md`).
   - Because identity propagation is materialized as row updates, the same per-table stamping triggers cover indirect changes (no read-time dependency derivation).
 
 ### Concurrency (optimistic `If-Match`)
 
 With stored representation stamps:
-- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical full resource-state JSON representation, before readable profile projection and excluding response decorations such as `link`.
-- PUT/DELETE `If-Match` validation is row-local:
-  - compare the request `_etag` to the current deterministic hash for that `DocumentId`;
-  - if mismatched, return `412 Precondition Failed`.
+- GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the served representation (see
+  `update-tracking.md`). It is an RFC 7232 strong validator: quoted in `ETag`, never `W/`.
+- PUT/DELETE `If-Match` validation is row-local and uses strong comparison over the tag's
+  **state-significant projection**:
+  - read the current `ContentVersion` for that `DocumentId` and compose the expected tag from the
+    inbound request's representation context;
+  - compare it to the request `_etag`, **excluding** the `format`, `profileCode`, and `linkFlag`
+    components (representation encoding/filtering only) and **retaining** `ContentVersion` and
+    `schemaEpoch` (amended 2026-07-04: `profileCode` is excluded, so a cross-profile `If-Match` no
+    longer yields `412` on profile alone);
+  - if mismatched on any retained component, return `412 Precondition Failed`.
+- A bare, unquoted `If-Match: *` is an RFC 7232 §3.1 wildcard existence precondition, not an opaque
+  tag (amended 2026-07-05): it is satisfied whenever a current representation of the target
+  `DocumentId` exists (any `ContentVersion`, no projection comparison) and returns `412` when it
+  does not. For PUT and DELETE this is the one case where a missing target returns `412` instead of
+  `404`; a POST upsert that resolves to an insert (no current representation) likewise returns
+  `412`. A quoted `"*"` is treated as an ordinary opaque tag.
+- On input the server accepts an unquoted `If-Match` value as equivalent to the same value quoted
+  (amended 2026-07-05, for legacy ODS/API compatibility); emitted `ETag`/`If-Match` headers stay
+  quoted and `W/` weak tags remain rejected.
 - A no-op decision made before the write batch is only provisional. Before short-circuiting, the backend MUST verify
   that the `ContentVersion` observed during comparison is still current for that `DocumentId`.
   - If the observed `ContentVersion` is still current, the backend may commit a successful no-op without DML.
@@ -354,7 +374,12 @@ Collection-write note:
   exactly one scope-local `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order. Collection
   semantic-identity UNIQUE constraints are derived from that compiled identity, and any supported model that still
   cannot produce it must fail before runtime merge execution.
-- Correctness for accepted profile writes still relies on the same full-resource `If-Match` / `ContentVersion` guard described above; profile projection does not create a separate ETag surface, and no new API surface is required.
+- Correctness for accepted profile writes relies on the `If-Match` / `ContentVersion` guard
+  described above. Different readable profiles yield different *served* `_etag` values (for
+  conditional-GET cache correctness), but profile is **not** an input to that guard (amended
+  2026-07-04): the `If-Match` comparison uses only `ContentVersion` and `schemaEpoch`, so a
+  cross-profile `If-Match` matches when those agree. (`format`, `profileCode`, and `linkFlag` are all
+  excluded from the `If-Match` comparison.) No new API surface is required.
 
 ### Deadlock + retry policy
 
@@ -487,7 +512,7 @@ Correctness must not depend on this table:
 ### Freshness contract (recommended)
 
 When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare the cached representation stamp (for example, cached `ContentVersion` plus the cached materialized `_etag`) to the current `dms.Document` stamp,
+- compare the cached `ContentVersion` to the current `dms.Document.ContentVersion`,
 - if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
 
 ### Rebuild/invalidation triggers (eventual consistency)
@@ -498,7 +523,9 @@ A minimal projector approach:
 
 1. Consume `dms.Document` in `ContentVersion` order.
 2. Rebuild `dms.DocumentCache` for `(DocumentId, ContentVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, the applied `ContentVersion` plus the derived materialized `_etag`) to enforce the freshness contract above.
+3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the freshness
+   contract above; `_etag` is composed per request from `ContentVersion` + `variantKey` and is not
+   stored in the cache.
 
 ---
 

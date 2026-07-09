@@ -113,7 +113,8 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
         recorder ?? throw new ArgumentNullException(nameof(recorder));
     private readonly RelationalReadMaterializer _inner = new(
         new IntegrationFixtureSlugResolver(),
-        Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions())
+        Microsoft.Extensions.Options.Options.Create(new ResourceLinksOptions()),
+        new EdFi.DataManagementService.Backend.Etag.ServedEtagComposer()
     );
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)

@@ -79,7 +79,7 @@ public class DeadlockRetryPolicyTests
                 await Task.CompletedTask;
                 return _callCount < 3
                     ? (object)new UpsertResult.UpsertFailureWriteConflict()
-                    : new UpsertResult.InsertSuccess(new DocumentUuid(Guid.NewGuid()));
+                    : new UpsertResult.InsertSuccess(new DocumentUuid(Guid.NewGuid()), "\"test-etag\"");
             });
         }
 
@@ -245,7 +245,7 @@ public class DeadlockRetryPolicyTests
                 await Task.CompletedTask;
                 return _callCount < 3
                     ? (object)new UpdateResult.UpdateFailureWriteConflict()
-                    : new UpdateResult.UpdateSuccess(new DocumentUuid(Guid.NewGuid()));
+                    : new UpdateResult.UpdateSuccess(new DocumentUuid(Guid.NewGuid()), "\"test-etag\"");
             });
         }
 

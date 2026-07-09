@@ -74,25 +74,15 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
             UpdateSuccess updateSuccess => new FrontendResponse(
                 StatusCode: 204,
                 Body: null,
-                Headers: new()
-                {
-                    ["etag"] = updateSuccess.ETag ?? requestInfo.ParsedBody["_etag"]?.ToString() ?? "",
-                },
+                Headers: new() { ["etag"] = updateSuccess.ETag },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     requestInfo.PathComponents,
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
-            UpdateFailureETagMisMatch => new FrontendResponse(
+            UpdateFailureETagMisMatch mismatch => new FrontendResponse(
                 StatusCode: 412,
-                Body: FailureResponse.ForETagMisMatch(
-                    "The item has been modified by another user.",
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: new[]
-                    {
-                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
-                    }
-                ),
+                Body: FailureResponse.ForETagMisMatch(mismatch.Reason, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             UpdateFailureNotExists => new FrontendResponse(

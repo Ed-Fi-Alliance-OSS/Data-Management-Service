@@ -94,7 +94,9 @@ public class UpdateByIdHandlerTests
         {
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateSuccess(updateRequest.DocumentUuid));
+                return Task.FromResult<UpdateResult>(
+                    new UpdateSuccess(updateRequest.DocumentUuid, "\"test-etag\"")
+                );
             }
         }
 
@@ -135,7 +137,6 @@ public class UpdateByIdHandlerTests
         {
             var (updateByIdHandler, serviceProvider) = Handler(new Repository());
             requestInfo.ScopedServiceProvider = serviceProvider;
-            requestInfo.ParsedBody = JsonNode.Parse("""{"_etag":"\"stale\""}""")!;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -144,10 +145,6 @@ public class UpdateByIdHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(204);
             requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"72\"");
-            requestInfo
-                .FrontendResponse.Headers["etag"]
-                .Should()
-                .NotBe(requestInfo.ParsedBody["_etag"]!.GetValue<string>());
         }
     }
 
@@ -185,6 +182,94 @@ public class UpdateByIdHandlerTests
                     {"detail":"Resource to update was not found","type":"urn:ed-fi:api:not-found","title":"Not Found","status":404,"correlationId":"","validationErrors":{},"errors":[]}
                     """"
                 );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Etag_Mismatch : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(new UpdateFailureETagMisMatch());
+            }
+        }
+
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(412);
+            JsonNode
+                .DeepEquals(
+                    requestInfo.FrontendResponse.Body,
+                    FailureResponse.ForETagMisMatch(
+                        "The item has been modified by another user.",
+                        new TraceId("trace-id"),
+                        [
+                            "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
+                        ]
+                    )
+                )
+                .Should()
+                .BeTrue();
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Etag_Mismatch_Target_Does_Not_Exist
+        : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureETagMisMatch(ETagPreconditionFailureReason.TargetDoesNotExist)
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(412);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The If-Match precondition failed because the resource does not exist.");
+            body["errors"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "The 'If-Match' request header requires a current representation of the resource, but none exists. Do not retry with If-Match; create the resource first, or omit If-Match."
+                );
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
         }
     }
 

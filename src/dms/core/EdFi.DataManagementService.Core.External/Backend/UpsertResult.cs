@@ -25,15 +25,33 @@ public record UpsertResult
     /// A successful upsert request that took the form of an insert
     /// </summary>
     /// <param name="NewDocumentUuid">The DocumentUuid of the new document</param>
-    /// <param name="ETag">The response ETag to emit for the committed representation, when available.</param>
-    public record InsertSuccess(DocumentUuid NewDocumentUuid, string? ETag = null) : UpsertResult();
+    /// <param name="ETag">The required response ETag to emit for the committed representation.</param>
+    public record InsertSuccess(DocumentUuid NewDocumentUuid, string ETag) : UpsertResult()
+    {
+        private string _etag = RequireEtag(ETag);
+
+        public string ETag
+        {
+            get => _etag;
+            init => _etag = RequireEtag(value);
+        }
+    }
 
     /// <summary>
     /// A successful upsert request that took the form of an update
     /// </summary>
     /// <param name="ExistingDocumentUuid">The DocumentUuid of the existing document</param>
-    /// <param name="ETag">The response ETag to emit for the committed representation, when available.</param>
-    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid, string? ETag = null) : UpsertResult();
+    /// <param name="ETag">The required response ETag to emit for the committed representation.</param>
+    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid, string ETag) : UpsertResult()
+    {
+        private string _etag = RequireEtag(ETag);
+
+        public string ETag
+        {
+            get => _etag;
+            init => _etag = RequireEtag(value);
+        }
+    }
 
     /// <summary>
     /// A failure because referenced documents and/or descriptors in the upserted document are invalid
@@ -72,7 +90,10 @@ public record UpsertResult
     /// <summary>
     /// A failure because the current ETag does not exactly match the request's If-Match precondition
     /// </summary>
-    public record UpsertFailureETagMisMatch() : UpsertResult();
+    /// <param name="Reason">Machine-readable reason for the precondition failure</param>
+    public record UpsertFailureETagMisMatch(
+        ETagPreconditionFailureReason Reason = ETagPreconditionFailureReason.Concurrency
+    ) : UpsertResult();
 
     /// <summary>
     /// A failure because the client is not authorized to upsert the document
@@ -132,6 +153,12 @@ public record UpsertResult
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>
     public record UnknownFailure(string FailureMessage) : UpsertResult();
+
+    private static string RequireEtag(string etag)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(etag);
+        return etag;
+    }
 
     private UpsertResult() { }
 }

@@ -6,6 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
@@ -23,6 +24,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Descriptor_Write_Preconditions
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
+    private static readonly IServedEtagComposer _servedEtagComposer = new ServedEtagComposer();
 
     [Test]
     public async Task It_re_resolves_descriptor_post_creates_inside_the_write_session_before_returning_precondition_failed()
@@ -41,7 +43,13 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        // The advisory target re-resolves as CreateNew, so there is no current representation to
+        // satisfy If-Match against, and the reason is TargetDoesNotExist rather than Concurrency.
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -63,13 +71,13 @@ public class Given_Descriptor_Write_Preconditions
             PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody(description: "Current Charter");
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -84,7 +92,9 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -109,6 +119,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
@@ -117,12 +128,57 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+            );
+        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_for_descriptor_put_when_if_match_mismatches()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Current Charter"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
@@ -142,8 +198,7 @@ public class Given_Descriptor_Write_Preconditions
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -178,7 +233,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(CreatePersistedDescriptorBody());
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
 
         var result = await sut.HandlePostAsync(request);
 
@@ -206,7 +261,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(CreatePersistedDescriptorBody());
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
 
         var result = await sut.HandlePutAsync(request);
 
@@ -234,6 +289,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Changed Elsewhere"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(46L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -241,7 +297,9 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(46L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -263,6 +321,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Changed Elsewhere"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(46L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -270,7 +329,9 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(46L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -334,6 +395,61 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_returns_precondition_failed_for_descriptor_put_when_the_target_is_missing_under_a_wildcard_if_match()
+    {
+        // RFC 7232 If-Match: * requires the target to exist; against a missing PUT target the
+        // wildcard yields 412 (ETag mismatch) rather than 404 (not exists). The scoped PUT lookup
+        // misses (no enqueued rows), so ResolveLockedDescriptorForIfMatchAsync returns NotFound.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        // The PUT target does not exist, so the reason is TargetDoesNotExist rather than Concurrency.
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_descriptor_put_when_the_target_is_missing_under_a_non_wildcard_if_match()
+    {
+        // Regression guard: a non-wildcard If-Match against a missing PUT target still returns 404.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Description"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"current-etag\""),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_rolls_back_descriptor_put_update_transactions_when_if_match_is_absent_and_the_write_fails()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
@@ -377,13 +493,13 @@ public class Given_Descriptor_Write_Preconditions
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody(description: "Current Charter");
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
             CreatePersistedDescriptorRow(description: "Current Charter"),
         ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -398,7 +514,106 @@ public class Given_Descriptor_Write_Preconditions
 
         result
             .Should()
-            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+    }
+
+    [Test]
+    public async Task It_updates_descriptor_put_when_if_match_uses_an_etag_obtained_under_a_readable_profile()
+    {
+        // The served descriptor _etag is now profile-sensitive on GET (DescriptorReadHandler composes
+        // it with the active readable profile's name, per IServedEtagComposer). If-Match, however,
+        // remains profile-insensitive (EtagMatchProjection.Of drops profileCode): a client that read a
+        // descriptor through a profile lens, then PUTs unprofiled using that same etag, must still
+        // succeed as long as ContentVersion/schemaEpoch agree.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        var profileObtainedEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: "Some-Readable-Profile",
+                LinksEnabled: false,
+                ContentVersion: 44L
+            )
+        );
+        var unprofiledEtag = ExpectedComposedDescriptorEtag(44L);
+        profileObtainedEtag.Should().NotBe(unprofiledEtag);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Current Charter"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePutRequest(mappingSet, documentUuid, description: "Updated Charter") with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(profileObtainedEtag),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().NotBeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
+    }
+
+    [Test]
+    public async Task It_updates_descriptor_put_when_if_match_is_a_wildcard_against_an_existing_descriptor()
+    {
+        // RFC 7232 If-Match: * succeeds against any existing target, even when the supplied opaque
+        // value would not match the current etag.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorRow(description: "Current Charter"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = CreatePutRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            documentUuid,
+            description: "Updated Charter"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        result.Should().NotBeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+            );
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -416,8 +631,7 @@ public class Given_Descriptor_Write_Preconditions
             PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -475,7 +689,13 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandleDeleteAsync(request);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        // The target exists but its current etag does not match the specific-tag If-Match precondition,
+        // so the reason is Concurrency rather than TargetDoesNotExist.
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -494,8 +714,7 @@ public class Given_Descriptor_Write_Preconditions
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -506,6 +725,49 @@ public class Given_Descriptor_Write_Preconditions
         var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
         {
             WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        sessionFactory
+            .Session.Executor.Commands[2]
+            .CommandText.Should()
+            .Contain("DELETE FROM dms.\"Document\"");
+    }
+
+    [Test]
+    public async Task It_deletes_the_descriptor_when_delete_if_match_uses_an_etag_obtained_under_a_readable_profile()
+    {
+        // Mirrors the PUT invariant test above: a descriptor DELETE using an If-Match value obtained
+        // from a profiled GET must still succeed against the (always profile-insensitive) write path.
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        var profileObtainedEtag = _servedEtagComposer.Compose(
+            new ServedEtagContext(
+                mappingSet.Key.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: "Some-Readable-Profile",
+                LinksEnabled: false,
+                ContentVersion: 44L
+            )
+        );
+        profileObtainedEtag.Should().NotBe(ExpectedComposedDescriptorEtag(44L));
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
+        ]);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreateDeleteRequest(mappingSet, documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch(profileObtainedEtag),
         };
 
         var result = await sut.HandleDeleteAsync(request);
@@ -542,8 +804,7 @@ public class Given_Descriptor_Write_Preconditions
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var sessionFactory = new RecordingRelationalWriteSessionFactory(dialect);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -601,6 +862,34 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_returns_precondition_failed_for_descriptor_delete_when_the_scoped_lookup_misses_under_a_wildcard_if_match()
+    {
+        // RFC 7232 If-Match: * requires the target to exist; against a missing DELETE target the
+        // wildcard yields 412 (ETag mismatch) rather than 404 (not exists).
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
+        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        // The DELETE target does not exist, so the reason is TargetDoesNotExist rather than Concurrency.
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
+        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_preserves_descriptor_delete_fk_conflict_mapping_after_an_exact_if_match()
     {
         const string constraintName = "FK_School_SchoolTypeDescriptor";
@@ -618,8 +907,7 @@ public class Given_Descriptor_Write_Preconditions
             .Returns(referencingResource);
 
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var currentState = CreatePersistedDescriptorBody();
-        var currentEtag = RelationalApiMetadataFormatter.FormatEtag(currentState);
+        var currentEtag = ExpectedComposedDescriptorEtag(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
@@ -651,24 +939,18 @@ public class Given_Descriptor_Write_Preconditions
             .MustHaveHappenedOnceExactly();
     }
 
-    private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>
-        RelationalApiMetadataFormatter.FormatEtag(
-            DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource)
+    private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
+        EtagComposer.Compose(
+            contentVersion,
+            DescriptorEtagTestSupport.NoProfileNoLinksJsonVariantKey(
+                CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
+            )
         );
 
-    private static ExtractedDescriptorBody CreatePersistedDescriptorBody(string description = "Charter")
-    {
-        return new ExtractedDescriptorBody(
-            "uri://ed-fi.org/SchoolTypeDescriptor",
-            "Charter",
-            "Charter",
-            description,
-            new DateOnly(2024, 1, 1),
-            null,
-            "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
-            _descriptorResource.ResourceName
+    private static InMemoryRelationalResultSet CreateContentVersionRow(long contentVersion) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
         );
-    }
 
     private static InMemoryRelationalResultSet CreateResolvedExistingDocumentRow(DocumentUuid documentUuid)
     {
@@ -711,7 +993,9 @@ public class Given_Descriptor_Write_Preconditions
             classifier ?? new NoOpRelationalWriteExceptionClassifier(),
             deleteConstraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             sessionFactory,
-            NullLogger<DescriptorWriteHandler>.Instance
+            NullLogger<DescriptorWriteHandler>.Instance,
+            new ServedEtagComposer(),
+            new IfMatchEvaluator()
         );
     }
 
