@@ -71,7 +71,6 @@ internal interface IRelationalCurrentEtagPreconditionChecker
 internal sealed class RelationalCurrentEtagPreconditionChecker(
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IServedEtagComposer servedEtagComposer,
-    IIfMatchEvaluator ifMatchEvaluator,
     ILogger<RelationalCurrentEtagPreconditionChecker> logger
 ) : IRelationalCurrentEtagPreconditionChecker, IRelationalDeleteEtagPreconditionChecker
 {
@@ -80,9 +79,6 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
 
     private readonly IServedEtagComposer _servedEtagComposer =
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
-
-    private readonly IIfMatchEvaluator _ifMatchEvaluator =
-        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
 
     private readonly ILogger<RelationalCurrentEtagPreconditionChecker> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
@@ -113,7 +109,11 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             )
         );
 
-        var evaluation = _ifMatchEvaluator.Evaluate(precondition, currentEtag);
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
+            precondition,
+            targetExists: true,
+            currentEtag
+        );
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {
@@ -122,13 +122,13 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
                     + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
                 lockedTargetContext.DocumentId,
                 precondition.IsWildcard,
-                LoggingSanitizer.SanitizeForLogging(precondition.Value),
+                LoggingSanitizer.SanitizeForLogging(precondition.IsWildcard ? "*" : precondition.Value),
                 currentEtag,
-                evaluation.IsMatch
+                isSatisfied
             );
         }
 
-        return new RelationalDeleteEtagPreconditionCheckResult(lockedTargetContext, evaluation.IsMatch);
+        return new RelationalDeleteEtagPreconditionCheckResult(lockedTargetContext, isSatisfied);
     }
 
     public async Task<RelationalCurrentEtagPreconditionCheckResult?> CheckAsync(

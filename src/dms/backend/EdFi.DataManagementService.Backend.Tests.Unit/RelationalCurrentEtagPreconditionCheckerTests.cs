@@ -40,7 +40,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _sut = new RelationalCurrentEtagPreconditionChecker(
             _currentStateLoader,
             new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
         );
 
