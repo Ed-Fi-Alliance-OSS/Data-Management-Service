@@ -14,7 +14,7 @@ This supports:
 - CI diagnostics,
 - and harness workflows that want to compare decoded semantics rather than raw bytes.
 
-Aligns with the suggested `dms-schema pack manifest` deliverable in `reference/design/backend-redesign/design-docs/ddl-generation.md` and the manifest guidance in `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
+Aligns with the suggested `api-schema-tools pack manifest` deliverable in `reference/design/backend-redesign/design-docs/ddl-generation.md` and the manifest guidance in `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Acceptance Criteria
 

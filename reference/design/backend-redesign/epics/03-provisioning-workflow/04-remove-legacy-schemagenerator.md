@@ -19,7 +19,7 @@ Authorization objects remain out of scope.
 
 - The legacy schema generator projects/scripts are removed from the repository (or clearly deprecated with no remaining callers).
 - Build/test/CI workflows do not invoke the legacy generator.
-- Documentation references are updated to point to the new DDL generator commands (`dms-schema ddl emit` / `dms-schema ddl provision`) and the new verification harness.
+- Documentation references are updated to point to the new DDL generator commands (`api-schema-tools ddl emit` / `api-schema-tools ddl provision`) and the new verification harness.
 - Any remaining “schema generation” tests are migrated or removed in favor of the new harness fixtures and goldens.
 
 ## Tasks

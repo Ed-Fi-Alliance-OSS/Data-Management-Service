@@ -350,7 +350,7 @@ A CLI utility (can be a new executable or a mode of the DDL generator) that:
 Suggested CLI:
 
 ```
-dms-schema pack build \
+api-schema-tools pack build \
   --dialect pgsql \
   --apiSchemaPath ./ApiSchema \
   --out ./mapping-packs/pgsql \
@@ -359,7 +359,7 @@ dms-schema pack build \
 
 Notes:
 - A single CLI with subcommands is recommended because DDL generation and pack building share the same compilation pipeline (schema load/merge, hashing, derived model, dialect SQL compilation).
-- Alternate layout (equivalent): split `dms-schema` into separate executables (DDL/provisioning vs packs), but require they reference the same underlying compilation libraries and constants.
+- Alternate layout (equivalent): split `api-schema-tools` into separate executables (DDL/provisioning vs packs), but require they reference the same underlying compilation libraries and constants.
 
 ### 10.2 Example producer code (sketch)
 

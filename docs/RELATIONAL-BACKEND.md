@@ -8,7 +8,7 @@ write/read paths and update tracking, and how to run the relevant tests locally.
 It is a hub: the deep design rationale lives under
 [`reference/design/backend-redesign/design-docs/`](../reference/design/backend-redesign/design-docs/overview.md),
 and command/option details live in the
-[`dms-schema` CLI README](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md).
+[`api-schema-tools` CLI README](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md).
 This guide ties those together for day-to-day work and links to them rather than
 restating them.
 
@@ -36,7 +36,7 @@ For the design rationale, start with these:
 
 ## 2. Provisioning a database for an effective schema
 
-Provisioning is done with the **`dms-schema`** CLI
+Provisioning is done with the **`api-schema-tools`** CLI
 ([project](../src/dms/clis/EdFi.DataManagementService.SchemaTools),
 [README](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md)). The CLI is
 deterministic and does not require a database for artifact generation — only `ddl provision`
@@ -48,7 +48,7 @@ A provisioned database is keyed to one effective schema, identified by its hash.
 that hash for a set of inputs:
 
 ```bash
-dms-schema hash core/ApiSchema.json [extensions/.../ApiSchema.json ...]
+api-schema-tools hash core/ApiSchema.json [extensions/.../ApiSchema.json ...]
 ```
 
 The first path is the core schema; any additional paths are extensions.
@@ -59,7 +59,7 @@ The first path is the core schema; any additional paths are extensions.
 useful for review, diffing, and golden-file testing:
 
 ```bash
-dms-schema ddl emit --schema core/ApiSchema.json --output ./ddl-output --dialect both
+api-schema-tools ddl emit --schema core/ApiSchema.json --output ./ddl-output --dialect both
 ```
 
 | Output file | When | Contents |
@@ -79,13 +79,13 @@ database in a single transaction:
 
 ```bash
 # PostgreSQL (create the database if it does not exist)
-dms-schema ddl provision \
+api-schema-tools ddl provision \
   --schema core/ApiSchema.json \
   --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" \
   --dialect pgsql --create-database
 
 # SQL Server (targets an existing database; --create-database works for either dialect)
-dms-schema ddl provision \
+api-schema-tools ddl provision \
   --schema core/ApiSchema.json \
   --connection-string "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" \
   --dialect mssql
@@ -287,7 +287,7 @@ tests). Run them with the standard `dotnet test` against the project.
 
 ### Integration tests (real databases, in-process)
 
-- **`dms-schema` CLI integration** —
+- **`api-schema-tools` CLI integration** —
   [`EdFi.DataManagementService.SchemaTools.Tests.Integration`](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#integration-tests).
   PostgreSQL is **required** (tests fail if it is unreachable, by design). SQL Server tests
   also **run by default**: the test project's committed `appsettings.json` supplies an
@@ -331,7 +331,7 @@ fingerprint check and return **HTTP 503** (see [§3](#3-schema-fingerprint-valid
 
 So, after **any** schema change, the developer loop is:
 
-1. **Re-provision a fresh database** for the new effective schema (`dms-schema ddl provision`
+1. **Re-provision a fresh database** for the new effective schema (`api-schema-tools ddl provision`
    against a clean database, or the scripted helper).
 2. **Restart the DMS process** so it reloads the schema and clears the cached fingerprint
    validation state.

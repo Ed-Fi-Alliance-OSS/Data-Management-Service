@@ -479,10 +479,10 @@ DMS runtime should remain “validate-only”:
 ## Deliverables
 
 - A single CLI that supports both DDL and packs via subcommands:
-  - `dms-schema ddl emit` (emit normalized SQL to stdout/files)
-  - `dms-schema ddl provision` (provision a database; includes preflight hash mismatch check)
-  - `dms-schema pack build` (emit `.mpack` keyed by `EffectiveSchemaHash`)
-  - `dms-schema pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
+  - `api-schema-tools ddl emit` (emit normalized SQL to stdout/files)
+  - `api-schema-tools ddl provision` (provision a database; includes preflight hash mismatch check)
+  - `api-schema-tools pack build` (emit `.mpack` keyed by `EffectiveSchemaHash`)
+  - `api-schema-tools pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
 - A shared “artifact emitter” library used by both CLI and tests to produce normalized SQL + manifests for fixture comparisons (see `ddl-generator-testing.md`).
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:
   - stable naming,

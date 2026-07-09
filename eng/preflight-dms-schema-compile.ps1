@@ -43,7 +43,7 @@ if (-not (Test-Path $environmentFilePath)) {
 
 $preflightRoot =
     if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-        Join-Path ([System.IO.Path]::GetTempPath()) "dms-schema-preflight-$([Guid]::NewGuid().ToString('N'))"
+        Join-Path ([System.IO.Path]::GetTempPath()) "api-schema-preflight-$([Guid]::NewGuid().ToString('N'))"
     }
     else {
         Resolve-RepoPath $OutputDirectory

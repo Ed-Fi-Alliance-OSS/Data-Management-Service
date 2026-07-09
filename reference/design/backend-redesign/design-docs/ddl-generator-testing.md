@@ -399,8 +399,8 @@ Authoritative fixtures (real schemas):
 - Default PR job: unit + snapshot tests only (fast, deterministic).
   - `dotnet test ... --filter "TestCategory!=Authoritative&TestCategory!=DbApply"`
 - Separate CI jobs (or scheduled builds):
-  - `Authoritative` (runs on `dms-schema` changes and nightly)
-  - `DbApply` (runs on `dms-schema` changes and nightly; requires docker availability)
+  - `Authoritative` (runs on `api-schema-tools` changes and nightly)
+  - `DbApply` (runs on `api-schema-tools` changes and nightly; requires docker availability)
 
 ## Developer workflow
 
