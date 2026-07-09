@@ -20,7 +20,7 @@ public class Given_EtagPreconditionEvaluator
 
     [TestCase(true)]
     [TestCase(false)]
-    public void None_is_always_satisfied(bool targetExists)
+    public void It_always_satisfies_when_no_precondition_regardless_of_target_existence(bool targetExists)
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.None(), targetExists, CurrentEtag)
@@ -29,7 +29,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfMatch_with_matching_projection_and_existing_target_is_satisfied()
+    public void It_satisfies_IfMatch_when_projection_matches_and_target_exists()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfMatch(MatchingClientTag), true, CurrentEtag)
@@ -38,7 +38,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfMatch_with_differing_projection_is_not_satisfied()
+    public void It_does_not_satisfy_IfMatch_when_projection_differs()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfMatch(DifferingClientTag), true, CurrentEtag)
@@ -47,7 +47,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfMatch_when_target_does_not_exist_is_not_satisfied()
+    public void It_does_not_satisfy_IfMatch_when_target_does_not_exist()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfMatch(MatchingClientTag), false, CurrentEtag)
@@ -56,7 +56,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfMatch_wildcard_with_existing_target_is_satisfied()
+    public void It_satisfies_IfMatch_wildcard_when_target_exists()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfMatch("*", IsWildcard: true), true, CurrentEtag)
@@ -65,7 +65,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfMatch_wildcard_when_target_does_not_exist_is_not_satisfied()
+    public void It_does_not_satisfy_IfMatch_wildcard_when_target_does_not_exist()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfMatch("*", IsWildcard: true), false, CurrentEtag)
@@ -74,7 +74,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_with_matching_projection_and_existing_target_is_not_satisfied()
+    public void It_does_not_satisfy_IfNoneMatch_when_projection_matches_and_target_exists()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfNoneMatch(MatchingClientTag), true, CurrentEtag)
@@ -83,7 +83,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_with_differing_projection_and_existing_target_is_satisfied()
+    public void It_satisfies_IfNoneMatch_when_projection_differs_and_target_exists()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfNoneMatch(DifferingClientTag), true, CurrentEtag)
@@ -92,7 +92,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_with_a_matching_projection_in_a_list_and_existing_target_is_not_satisfied()
+    public void It_does_not_satisfy_IfNoneMatch_when_any_list_tag_projection_matches_and_target_exists()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(
@@ -105,7 +105,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_with_no_matching_projection_in_a_list_and_existing_target_is_satisfied()
+    public void It_satisfies_IfNoneMatch_when_no_list_tag_projection_matches_and_target_exists()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(
@@ -118,7 +118,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_when_target_does_not_exist_is_satisfied()
+    public void It_satisfies_IfNoneMatch_when_target_does_not_exist()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfNoneMatch(MatchingClientTag), false, CurrentEtag)
@@ -127,7 +127,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_wildcard_with_existing_target_is_not_satisfied()
+    public void It_does_not_satisfy_IfNoneMatch_wildcard_when_target_exists()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfNoneMatch("*", IsWildcard: true), true, CurrentEtag)
@@ -136,7 +136,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_wildcard_when_target_does_not_exist_is_satisfied()
+    public void It_satisfies_IfNoneMatch_wildcard_when_target_does_not_exist()
     {
         EtagPreconditionEvaluator
             .IsSatisfied(new WritePrecondition.IfNoneMatch("*", IsWildcard: true), false, CurrentEtag)
@@ -145,7 +145,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfMatch_with_a_missing_target_and_null_current_etag_is_not_satisfied()
+    public void It_does_not_satisfy_IfMatch_when_target_is_missing_and_current_etag_is_null()
     {
         // The missing-target path now routes through the evaluator with a null current etag; If-Match
         // against a non-existent target must not be satisfied.
@@ -156,7 +156,7 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
-    public void IfNoneMatch_with_a_missing_target_and_null_current_etag_is_satisfied()
+    public void It_satisfies_IfNoneMatch_when_target_is_missing_and_current_etag_is_null()
     {
         // If-None-Match against a non-existent target is the create-only success case, even with no
         // current etag to compare.
