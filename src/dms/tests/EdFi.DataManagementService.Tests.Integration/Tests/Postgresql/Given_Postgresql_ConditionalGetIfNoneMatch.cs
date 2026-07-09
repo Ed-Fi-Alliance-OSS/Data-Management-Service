@@ -32,4 +32,16 @@ public sealed class Given_Postgresql_ConditionalGetIfNoneMatch : PostgresqlApiIn
     [Test]
     public Task It_returns_200_when_only_the_variant_key_differs() =>
         ConditionalGetIfNoneMatchScenario.It_returns_200_when_only_the_variant_key_differs(Harness);
+
+    [Test]
+    public Task It_returns_304_when_a_matching_tag_is_in_a_list() =>
+        ConditionalGetIfNoneMatchScenario.It_returns_304_when_a_matching_tag_is_in_a_list(Harness);
+
+    [Test]
+    public Task It_returns_304_for_a_weak_tag_in_a_list() =>
+        ConditionalGetIfNoneMatchScenario.It_returns_304_for_a_weak_tag_in_a_list(Harness);
+
+    [Test]
+    public Task It_returns_200_when_no_tag_in_a_list_matches() =>
+        ConditionalGetIfNoneMatchScenario.It_returns_200_when_no_tag_in_a_list_matches(Harness);
 }

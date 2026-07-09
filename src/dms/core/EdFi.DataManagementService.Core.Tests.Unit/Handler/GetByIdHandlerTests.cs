@@ -376,6 +376,101 @@ public class GetByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_A_Matching_If_None_Match_Tag_List
+        : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly JsonObject ResponseBody = new()
+            {
+                ["value"] = "expected",
+                ["_etag"] = "5-a1b2c3d4.j._.l",
+            };
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+            {
+                Headers = new Dictionary<string, string>
+                {
+                    ["If-None-Match"] = "\"4-does-not-match\", W/\"5-a1b2c3d4.j._.l\"",
+                },
+            };
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await getByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_a_304_with_no_body_and_the_served_etag()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(304);
+            requestInfo.FrontendResponse.Body.Should().BeNull();
+            requestInfo.FrontendResponse.Headers.Should().ContainKey("etag");
+            requestInfo.FrontendResponse.Headers["etag"].Should().Be("5-a1b2c3d4.j._.l");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_A_Non_Matching_If_None_Match_Tag_List
+        : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly JsonObject ResponseBody = new()
+            {
+                ["value"] = "expected",
+                ["_etag"] = "5-a1b2c3d4.j._.l",
+            };
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+            {
+                Headers = new Dictionary<string, string>
+                {
+                    ["If-None-Match"] = "\"4-does-not-match\", W/\"6-also-does-not-match\"",
+                },
+            };
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await getByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_normal_200_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+            requestInfo.FrontendResponse.Headers["etag"].Should().Be("5-a1b2c3d4.j._.l");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Success_With_A_Non_Matching_If_None_Match_Tag
         : GetByIdHandlerTests
     {

@@ -2053,7 +2053,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        ComposedWriteResultEtag
+                        ComposedWriteResultEtag(77L)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )

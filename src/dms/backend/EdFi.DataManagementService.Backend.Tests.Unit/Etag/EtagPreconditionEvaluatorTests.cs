@@ -92,6 +92,32 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
+    public void IfNoneMatch_with_a_matching_projection_in_a_list_and_existing_target_is_not_satisfied()
+    {
+        EtagPreconditionEvaluator
+            .IsSatisfied(
+                new WritePrecondition.IfNoneMatch([DifferingClientTag, MatchingClientTag]),
+                true,
+                CurrentEtag
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void IfNoneMatch_with_no_matching_projection_in_a_list_and_existing_target_is_satisfied()
+    {
+        EtagPreconditionEvaluator
+            .IsSatisfied(
+                new WritePrecondition.IfNoneMatch([DifferingClientTag, "7-other.j._.l"]),
+                true,
+                CurrentEtag
+            )
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
     public void IfNoneMatch_when_target_does_not_exist_is_satisfied()
     {
         EtagPreconditionEvaluator

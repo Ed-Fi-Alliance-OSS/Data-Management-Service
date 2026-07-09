@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend.Etag;
@@ -21,7 +22,7 @@ internal static class EtagPreconditionEvaluator
             WritePrecondition.IfMatch m => targetExists
                 && (m.IsWildcard || ProjectionEquals(m.Value, currentEtag)),
             WritePrecondition.IfNoneMatch n => !targetExists
-                || (!n.IsWildcard && !ProjectionEquals(n.Value, currentEtag)),
+                || (!n.IsWildcard && !n.Values.Any(v => ProjectionEquals(v, currentEtag))),
             _ => true, // None (and any future arm) imposes no precondition here.
         };
 

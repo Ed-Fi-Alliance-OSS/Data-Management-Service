@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
+
 namespace EdFi.DataManagementService.Core.Utilities;
 
 /// <summary>
@@ -111,5 +113,42 @@ public static class EtagValue
 
         value = candidate;
         return true;
+    }
+
+    /// <summary>
+    /// Parses an If-None-Match header value that may contain a comma-separated entity-tag list into the
+    /// ordered opaque tag values, applying the same weak-tag, quote-stripping, and unquoted tolerance as
+    /// <see cref="TryParseConditionalTag"/> to each non-empty list element. Returns an empty list for a
+    /// null or empty header value. The bare <c>*</c> wildcard is not special-cased here; callers that need
+    /// wildcard semantics must detect a raw, sole <c>*</c> before parsing.
+    /// </summary>
+    /// <remarks>
+    /// This parser intentionally uses a simple comma split because DMS opaque tags are generated from
+    /// digits plus <c>[a-z0-9_.]</c> variant components and therefore contain no commas or quotes; <c>W/</c>
+    /// weak prefixes add neither.
+    /// </remarks>
+    public static IReadOnlyList<string> ParseConditionalTagList(string? headerValue)
+    {
+        if (string.IsNullOrEmpty(headerValue))
+        {
+            return [];
+        }
+
+        List<string> values = [];
+        foreach (var part in headerValue.Split(','))
+        {
+            var trimmed = part.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (TryParseConditionalTag(trimmed, out var value))
+            {
+                values.Add(value);
+            }
+        }
+
+        return values;
     }
 }

@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
@@ -165,8 +167,10 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
         // strips quotes and would otherwise turn a quoted "*" (an ordinary opaque tag) into the wildcard.
         bool isWildcard = string.Equals(rawHeaderValue, "*", StringComparison.Ordinal);
 
-        string clientTag = string.Empty;
-        if (!isWildcard && !EtagValue.TryParseConditionalTag(rawHeaderValue, out clientTag))
+        IReadOnlyList<string> clientTags = isWildcard
+            ? []
+            : EtagValue.ParseConditionalTagList(rawHeaderValue);
+        if (!isWildcard && clientTags.Count == 0)
         {
             return false;
         }
@@ -175,7 +179,8 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
         // projection: If-None-Match is representation-sensitive, so a client tag that differs only in
         // the variantKey tail (format/profile/links) must not match. EtagMatchProjection is a write-side
         // (If-Match) concern and does not apply here.
-        bool matches = isWildcard || string.Equals(clientTag, servedEtag, StringComparison.Ordinal);
+        bool matches =
+            isWildcard || clientTags.Any(t => string.Equals(t, servedEtag, StringComparison.Ordinal));
 
         if (!matches)
         {

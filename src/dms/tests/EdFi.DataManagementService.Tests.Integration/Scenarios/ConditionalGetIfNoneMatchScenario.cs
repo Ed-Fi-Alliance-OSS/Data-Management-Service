@@ -110,6 +110,69 @@ internal static class ConditionalGetIfNoneMatchScenario
         returned["studentUniqueId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
     }
 
+    public static async Task It_returns_304_when_a_matching_tag_is_in_a_list(ApiIntegrationHarness harness)
+    {
+        (string locationPath, string etag) = await CreateStudentAsync(harness, "cgm-list-hit-001");
+
+        // RFC 9110 §13.1.2: If-None-Match may carry a comma-separated list; the precondition is
+        // satisfied (304) when ANY member matches the current representation. The matching tag is
+        // placed among non-matching (stale) tags to prove list iteration, not just first-element match.
+        using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        request.Headers.TryAddWithoutValidation(
+            IfNoneMatchHeaderName,
+            $"\"1-00000000.j._.n\", \"{etag}\", \"2-11111111.j._.n\""
+        );
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
+
+        getResponse
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.NotModified,
+                "a list containing the current tag must 304, even when other list members are stale"
+            );
+        getResponse.TryReadRawEtag(out _).Should().BeTrue("a 304 response must still carry the ETag header");
+    }
+
+    public static async Task It_returns_304_for_a_weak_tag_in_a_list(ApiIntegrationHarness harness)
+    {
+        (string locationPath, string etag) = await CreateStudentAsync(harness, "cgm-list-weak-001");
+
+        // Weak comparison (RFC 9110 §2.1): a W/-prefixed member is compared by opaque value only, so
+        // W/"<etag>" matches the strong served "<etag>". Combined with the list form here.
+        using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n\", W/\"{etag}\"");
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
+
+        getResponse
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NotModified, "a weak tag in the list whose value matches must 304");
+    }
+
+    public static async Task It_returns_200_when_no_tag_in_a_list_matches(ApiIntegrationHarness harness)
+    {
+        (string locationPath, _) = await CreateStudentAsync(harness, "cgm-list-miss-001");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        request.Headers.TryAddWithoutValidation(
+            IfNoneMatchHeaderName,
+            "\"1-00000000.j._.n\", \"2-11111111.j._.n\""
+        );
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
+        string getBody = await getResponse.Content.ReadAsStringAsync();
+
+        getResponse
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.OK,
+                $"a list in which no member matches must return the full 200 body. {getBody}"
+            );
+        JsonObject returned = JsonNode.Parse(getBody)!.AsObject();
+        returned["studentUniqueId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+    }
+
     private static async Task<(string locationPath, string etag)> CreateStudentAsync(
         ApiIntegrationHarness harness,
         string studentUniqueId

@@ -107,4 +107,53 @@ public class Given_EtagValue
         EtagValue.TryParseConditionalTag(null, out _).Should().BeFalse();
         EtagValue.TryParseConditionalTag(string.Empty, out _).Should().BeFalse();
     }
+
+    [Test]
+    public void It_parses_a_single_conditional_tag_list_value()
+    {
+        EtagValue.ParseConditionalTagList("\"5-a1b2c3d4.j._.l\"").Should().Equal("5-a1b2c3d4.j._.l");
+    }
+
+    [Test]
+    public void It_parses_multiple_conditional_tag_list_values_in_order()
+    {
+        EtagValue
+            .ParseConditionalTagList("\"4-does-not-match\", \"5-a1b2c3d4.j._.l\", \"6-other\"")
+            .Should()
+            .Equal("4-does-not-match", "5-a1b2c3d4.j._.l", "6-other");
+    }
+
+    [Test]
+    public void It_accepts_a_weak_conditional_tag_within_a_list()
+    {
+        EtagValue
+            .ParseConditionalTagList("\"4-does-not-match\", W/\"5-a1b2c3d4.j._.l\"")
+            .Should()
+            .Equal("4-does-not-match", "5-a1b2c3d4.j._.l");
+    }
+
+    [Test]
+    public void It_accepts_quoted_and_unquoted_conditional_tag_list_values()
+    {
+        EtagValue
+            .ParseConditionalTagList("\"4-does-not-match\", 5-a1b2c3d4.j._.l")
+            .Should()
+            .Equal("4-does-not-match", "5-a1b2c3d4.j._.l");
+    }
+
+    [Test]
+    public void It_trims_whitespace_and_skips_empty_conditional_tag_list_values()
+    {
+        EtagValue
+            .ParseConditionalTagList("  \"4-does-not-match\"  , ,  W/\"5-a1b2c3d4.j._.l\"  , ")
+            .Should()
+            .Equal("4-does-not-match", "5-a1b2c3d4.j._.l");
+    }
+
+    [Test]
+    public void It_returns_empty_for_null_or_empty_conditional_tag_list_values()
+    {
+        EtagValue.ParseConditionalTagList(null).Should().BeEmpty();
+        EtagValue.ParseConditionalTagList(string.Empty).Should().BeEmpty();
+    }
 }

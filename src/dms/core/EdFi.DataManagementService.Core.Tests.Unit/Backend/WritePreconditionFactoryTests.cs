@@ -107,6 +107,21 @@ public class WritePreconditionFactoryTests
     }
 
     [Test]
+    public void It_produces_an_if_none_match_with_multiple_opaque_tags()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = "\"4-does-not-match\", W/\"5-a1b2c3d4.j._.l\", 6-other",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result
+            .Should()
+            .Be(new WritePrecondition.IfNoneMatch(["4-does-not-match", "5-a1b2c3d4.j._.l", "6-other"]));
+    }
+
+    [Test]
     public void It_prefers_if_match_when_both_if_match_and_if_none_match_are_present()
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

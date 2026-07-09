@@ -152,7 +152,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeFalse();
+        result!.IsSatisfied.Should().BeFalse();
     }
 
     [Test]

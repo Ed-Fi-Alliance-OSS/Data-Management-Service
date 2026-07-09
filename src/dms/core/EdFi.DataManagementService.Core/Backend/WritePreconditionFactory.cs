@@ -45,9 +45,10 @@ internal static class WritePreconditionFactory
                 return new WritePrecondition.IfNoneMatch("*", IsWildcard: true);
             }
 
-            // Weak comparison: accept W/ (unlike If-Match) and tolerate unquoted.
-            return EtagValue.TryParseConditionalTag(ifNoneMatchValue, out var opaqueTag)
-                ? new WritePrecondition.IfNoneMatch(opaqueTag)
+            // Weak comparison: accept W/ (unlike If-Match) and tolerate unquoted for each list element.
+            var tags = EtagValue.ParseConditionalTagList(ifNoneMatchValue);
+            return tags.Count > 0
+                ? new WritePrecondition.IfNoneMatch(tags)
                 : new WritePrecondition.IfNoneMatch(ifNoneMatchValue ?? string.Empty);
         }
 

@@ -45,6 +45,16 @@ public sealed class Given_Postgresql_WriteCreateGuardIfNoneMatch : PostgresqlApi
     [Test]
     public Task It_prefers_if_match_when_both_headers_are_present() =>
         WriteCreateGuardIfNoneMatchScenario.It_prefers_if_match_when_both_headers_are_present(Harness);
+
+    [Test]
+    public Task It_rejects_an_existing_put_when_a_matching_tag_is_in_a_list() =>
+        WriteCreateGuardIfNoneMatchScenario.It_rejects_an_existing_put_when_a_matching_tag_is_in_a_list(
+            Harness
+        );
+
+    [Test]
+    public Task It_permits_an_existing_put_when_no_tag_in_a_list_matches() =>
+        WriteCreateGuardIfNoneMatchScenario.It_permits_an_existing_put_when_no_tag_in_a_list_matches(Harness);
 }
 
 /// <summary>

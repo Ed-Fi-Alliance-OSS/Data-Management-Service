@@ -240,6 +240,62 @@ internal static class WriteCreateGuardIfNoneMatchScenario
             );
     }
 
+    public static async Task It_rejects_an_existing_put_when_a_matching_tag_is_in_a_list(
+        ApiIntegrationHarness harness
+    )
+    {
+        string studentUniqueId = UniqueStudentId("pws-list");
+        (string locationPath, string etag) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
+        string resourceId = GetResourceId(locationPath);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
+        {
+            Content = CreateStudentContent(studentUniqueId, "Ada-renamed", resourceId),
+        };
+        // RFC 9110 §13.1.2: a list precondition fails the write (412) when ANY member matches the
+        // current representation. The matching tag is placed among stale tags to prove list iteration.
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n\", \"{etag}\"");
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.PreconditionFailed,
+                $"a list containing the current tag must 412, even when other list members are stale. Body: {body}"
+            );
+    }
+
+    public static async Task It_permits_an_existing_put_when_no_tag_in_a_list_matches(
+        ApiIntegrationHarness harness
+    )
+    {
+        string studentUniqueId = UniqueStudentId("pwm-list");
+        (string locationPath, _) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
+        string resourceId = GetResourceId(locationPath);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
+        {
+            Content = CreateStudentContent(studentUniqueId, "Ada-renamed", resourceId),
+        };
+        // All members are stale, so If-None-Match is satisfied and the write proceeds normally.
+        request.Headers.TryAddWithoutValidation(
+            IfNoneMatchHeaderName,
+            "\"1-00000000.j._.n\", \"2-11111111.j._.n\""
+        );
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.NoContent,
+                $"a list in which no member matches must be satisfied and let the PUT succeed. Body: {body}"
+            );
+    }
+
     private static async Task<(string locationPath, string etag)> CreateStudentAsync(
         ApiIntegrationHarness harness,
         string studentUniqueId,
