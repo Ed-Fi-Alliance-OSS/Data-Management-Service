@@ -1,12 +1,13 @@
 <Project>
     <PropertyGroup>
-        <_DmsInlineTaskAssemblyDirectory Condition="'$(MSBuildRuntimeType)' == 'Core'"
-            >$(MSBuildToolsPath)/Sdks/Microsoft.NET.Sdk/tools/net472</_DmsInlineTaskAssemblyDirectory
-        >
-        <_DmsInlineTaskAssemblyDirectory Condition="'$(MSBuildRuntimeType)' != 'Core'"
-            >$(MSBuildToolsPath)</_DmsInlineTaskAssemblyDirectory
-        >
+        <_DmsInlineTaskSystemTextJsonVersion>10.0.1</_DmsInlineTaskSystemTextJsonVersion>
+        <_DmsInlineTaskSystemMemoryVersion>4.6.3</_DmsInlineTaskSystemMemoryVersion>
     </PropertyGroup>
+
+    <ItemGroup>
+        <PackageDownload Include="System.Text.Json" Version="[$(_DmsInlineTaskSystemTextJsonVersion)]" />
+        <PackageDownload Include="System.Memory" Version="[$(_DmsInlineTaskSystemMemoryVersion)]" />
+    </ItemGroup>
 
     <UsingTask
         TaskName="MaterializeBundledApiSchemaBootstrapManifestTask"
@@ -18,8 +19,8 @@
             <ManifestPath ParameterType="System.String" Required="true" />
         </ParameterGroup>
         <Task>
-            <Reference Include="$(_DmsInlineTaskAssemblyDirectory)/System.Text.Json.dll" />
-            <Reference Include="$(_DmsInlineTaskAssemblyDirectory)/System.Memory.dll" />
+            <Reference Include="$(NuGetPackageRoot)/system.text.json/$(_DmsInlineTaskSystemTextJsonVersion)/lib/netstandard2.0/System.Text.Json.dll" />
+            <Reference Include="$(NuGetPackageRoot)/system.memory/$(_DmsInlineTaskSystemMemoryVersion)/lib/netstandard2.0/System.Memory.dll" />
             <Using Namespace="System" />
             <Using Namespace="System.Collections.Generic" />
             <Using Namespace="System.IO" />
