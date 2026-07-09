@@ -270,6 +270,13 @@ jobs:
           $toolPath = Join-Path $env:RUNNER_TEMP "api-schema-tools"
           New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
 
+          # Redirect the NuGet global-packages folder to a throwaway location so the install
+          # cannot resolve a stale, already-extracted EdFi.Api.SchemaTools of the same
+          # (MinVer height-based, collision-prone) version from the restored ~/.nuget/packages
+          # cache: --source governs only download; the global-packages folder is consulted
+          # first, so a cache hit would otherwise silently validate old bits.
+          $env:NUGET_PACKAGES = Join-Path $env:RUNNER_TEMP "nuget-verify"
+
           # --source (not --add-source) keeps the install hermetic: it resolves ONLY from the
           # locally packed .nupkg and never falls back to nuget.org. .NET tool packages bundle
           # their full dependency closure, so no other feed is required, and this closes the
