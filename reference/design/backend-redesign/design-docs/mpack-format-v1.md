@@ -32,7 +32,7 @@ Mapping packs are selected strictly by this 4-tuple:
 
 1. `EffectiveSchemaHash` (lowercase hex, 64 chars) — see `reference/design/backend-redesign/design-docs/data-model.md`
 2. `SqlDialect` (`PGSQL` or `MSSQL`)
-3. `RelationalMappingVersion` (DMS-controlled string constant; bump when mapping rules change)
+3. `RelationalMappingVersion` (DMS-controlled string constant; the pre-production v1 design is finalized in place)
 4. `PackFormatVersion` (integer protocol/version gate; bump only for breaking serialization/envelope changes)
 
 Logical identity is therefore:
@@ -84,6 +84,10 @@ Stored in payload (authoritative):
 - SQL text and deterministic parameter/binding metadata
 - deterministic indices/ordinals and ordering-sensitive lists
 - deterministic batching metadata
+
+Not stored (derivation/DDL/manifest diagnostics only):
+- SQL Server `MssqlForeignKeyDecision`, `MssqlPropagationMode`, and `CoverageCertificate` values. The payload stores the
+  finalized `ForeignKeyConstraint.on_update` action instead.
 
 Derived at pack load/reconstruction time:
 - `KeysetTableContract` values from `SqlDialect` (`page` for PGSQL, `#page` for MSSQL; `DocumentId` column)
@@ -270,6 +274,14 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
        - any `UnifiedAlias` storage references only stored columns on the same table (canonical + optional presence)
        - any `DbTableModel.key_unification_classes` entries reference only columns on the same table and the member list is ordered and distinct
        - any `WriteValueSource.precomputed` bindings are populated either by exactly one `TableWritePlan.key_unification_plans` entry or by deterministic collection-id reservation associated with `TableWritePlan.collection_merge_plan`
+     - finalized foreign-key invariants:
+       - the payload contains finalized constraints only, not pre-action physical FK candidates
+       - duplicate physical FK identities on one table are rejected even when their `on_update` values differ; action is
+         not part of physical identity
+       - every FK associated with a `DocumentReferenceBinding` is full-composite (identity storage columns first,
+         `DocumentId` last)
+       - `on_update` is the final dialect action produced after shared value-flow analysis and dialect action evaluation
+         (joint value-flow/1785 selection on SQL Server)
 7. Reconstruct executor-facing contracts deterministically from normalized payload values:
    - resolve table identities by `(schema, name)` and columns by `DbColumnName.value` (within each resolved table)
    - compile canonical JsonPath strings into `JsonPathExpression` runtime objects
@@ -538,7 +550,7 @@ message ForeignKeyConstraint {
   DbTableName target_table = 2;
   repeated DbColumnName target_columns = 3;
   ReferentialAction on_delete = 4;
-  ReferentialAction on_update = 5;
+  ReferentialAction on_update = 5; // final emitted action; derivation-only MSSQL mode/certificates are not packed
 }
 
 message AllOrNoneNullabilityConstraint {
@@ -762,17 +774,16 @@ Bump it only for breaking changes to:
 
 ### 9.2 `RelationalMappingVersion`
 
-`RelationalMappingVersion` is bumped when mapping rules change, even if `ApiSchema.json` content is unchanged.
+`RelationalMappingVersion` remains part of `EffectiveSchemaHash` and the envelope selection key (see
+`reference/design/backend-redesign/design-docs/data-model.md`). It is reserved for evolution after the first supported
+production mapping contract is established.
 
-It is expected to be included in `EffectiveSchemaHash` computation (see `reference/design/backend-redesign/design-docs/data-model.md`), and is also present in the envelope key for defense-in-depth.
+The backend redesign, key unification, and DMS-1129 cascade rules are all being finalized before DMS has a production
+deployment. They therefore define the v1 baseline in place: no `RelationalMappingVersion` bump or database migration is
+part of this design. Producers and consumers implement the same complete v1 schema.
 
-Key unification is gated by `RelationalMappingVersion` (not `PackFormatVersion`):
-
-- Producers MUST bump `RelationalMappingVersion` when key-unification semantics are first enabled in emitted artifacts.
-- Consumers MUST reject packs whose `relational_mapping_version` does not match the expected value, including older packs that omit key-unification metadata.
-- Consumers MAY interpret missing `DbColumnModel.storage` as `Stored` and missing `DbTableModel.key_unification_classes` as empty only when explicitly operating in an older `RelationalMappingVersion` mode.
-
-Repository status note (non-normative): this story updates the mapping-pack contract documentation only; this repo is
-not introducing a `RelationalMappingVersion` bump in the same change.
+SQL Server `MssqlPropagationMode` and `CoverageCertificate` values are intentionally absent from the pack. They are
+derivation/DDL/manifest diagnostics, while runtime consumers need only the finalized `ForeignKeyConstraint.on_update`
+value. A failed value-flow or 1785 analysis produces no mapping pack.
 
 ---

@@ -44,7 +44,10 @@ Authorization is addressed separately in [auth.md](auth.md). Extension-specific 
 
 - **Schema-driven, no codegen**: derive extension tables/columns from effective `ApiSchema.json` (`jsonSchemaForInsert` + `documentPathsMapping`) and compile plans at startup.
 - **Low coupling to document shape**: treat `_ext` as a generic “project-scoped subtree” discovered via JSON schema traversal (no hard-coded paths).
-- **Cross-engine**: extension tables/columns must be supported on both PostgreSQL and SQL Server — shared behavior where practical, explicit engine-specific behavior where the engines diverge (e.g. SQL-Server-only cascade pruning/fail-fast; PostgreSQL left as-is — see [mssql-cascading.md](mssql-cascading.md)).
+- **Cross-engine**: extension tables/columns must be supported on both PostgreSQL and SQL Server. Cross-engine
+  `ValueFlowAnalysis` derives proof obligations for extension FK candidates. PostgreSQL evaluates its fixed actions; SQL
+  Server jointly selects modes for value-flow safety and error 1785. Only SQL Server physically prunes cascades. See
+  [mssql-cascading.md](mssql-cascading.md).
 - **No core-table widening**: avoid merging extension columns into core resource tables; keep extension projects’ data in their own table hierarchies.
 
 ## Table naming patterns (borrowed from the old flattening design)
@@ -163,6 +166,13 @@ The mapping for references/descriptors inside `_ext` is identical to core:
 
 - document references become `..._DocumentId` FK columns (resolved via `dms.ReferentialIdentity`)
 - descriptor references become `..._DescriptorId` FK columns to `dms.Descriptor` (resolved via `dms.ReferentialIdentity`, validated via `dms.Descriptor`)
+
+Document-reference sites in extension tables follow the same physical-FK contract as core sites: map bindings through
+canonical storage and deduplicate identical full-composite candidates. `ValueFlowAnalysis` derives statement-scoped proof
+obligations across row presence, component lineage, origin-row correlation, and trigger boundaries. PostgreSQL evaluates
+its fixed action assignment against them. SQL Server jointly selects `NativeCascade` / `NoPropagation` modes satisfying
+the obligations and error 1785, and requires coverage from the final assignment for any full-composite `NO ACTION` edge.
+An uncertifiable assignment fails derivation on either engine. There is no reduced-FK or propagation-trigger fallback.
 
 `documentPathsMapping` remains the authoritative source for “this is a reference/descriptor” and for identity mapping.
 

@@ -263,7 +263,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
      - `Discriminator` (NOT NULL; last).
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
-   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level. On SQL Server these abstract-target edges are classified like any other eligible edge — native `ON UPDATE CASCADE`, with a covered reconverging edge pruned to full-composite `ON UPDATE NO ACTION` only at a diamond, and cycles/SCC or diamonds that cannot be jointly broken (incl. globally infeasible overlapping) failing derivation (see [mssql-cascading.md](mssql-cascading.md)).
+   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites to propagate identity changes and enforce membership/type at the DB level. After canonical storage mapping and physical-candidate deduplication, `ValueFlowAnalysis` records the separate statement in which the maintenance trigger updates the identity table and derives the corresponding proof obligations. PostgreSQL evaluates its fixed action with those obligations. SQL Server includes them while jointly selecting modes for value-flow safety and error 1785; full-composite `NO ACTION` is permitted only when coverage is certified from the final assignment (see [mssql-cascading.md](mssql-cascading.md)).
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
 ### 4.2 Recommended child-table keys (stable internal collection identity)
@@ -559,7 +559,7 @@ Within a single transaction:
    - collection/common-type extension scope rows keyed by the owning base row identity
    - extension child collections using the same merge strategy as core collections
 6. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); use `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`; otherwise `ON UPDATE NO ACTION`) — on SQL Server, foreign-key pruning prunes a covered edge to `NO ACTION` only at a diamond (native `CASCADE` on eligible edges otherwise; see [mssql-cascading.md](mssql-cascading.md)), and
+   - referential-id impacts propagate through deduplicated full-composite physical FKs anchored on canonical storage columns (binding/path columns may be generated aliases). Cross-engine `ValueFlowAnalysis` derives proof obligations; PostgreSQL certifies its fixed actions, while SQL Server jointly selects modes satisfying value flow and error 1785 and certifies coverage from the final assignment (see [mssql-cascading.md](mssql-cascading.md)), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
@@ -755,7 +755,8 @@ In this redesign, identity fields inside reference objects are persisted as loca
 
 - `..._DocumentId` (stable FK), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
-  kept consistent via composite FKs (`ON UPDATE CASCADE` only when the target's identity can change transitively — `IsAbstract || TransitivelyAllowIdentityUpdates`; otherwise `ON UPDATE NO ACTION`; on SQL Server, foreign-key pruning prunes a covered edge to `NO ACTION` only at a diamond, native `CASCADE` on eligible edges otherwise, see [mssql-cascading.md](mssql-cascading.md)).
+  kept consistent by the certified dialect assignment over full-composite physical FKs (PostgreSQL fixed actions; SQL
+  Server jointly selected value-flow / error-1785 modes; see [mssql-cascading.md](mssql-cascading.md)).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
 
@@ -899,7 +900,12 @@ Under key unification, these binding columns may be persisted generated `Unified
 - composite reference FKs and cascades target canonical storage columns (binding columns are read-only when unified), and
 - reference expansion during JSON writing reads the binding columns so optional reference sites remain absent when absent.
 
-Composite FKs keep the values consistent (`ON UPDATE CASCADE` only when the target's identity can change transitively — `IsAbstract || TransitivelyAllowIdentityUpdates`; otherwise `ON UPDATE NO ACTION`; on SQL Server, foreign-key pruning prunes a covered edge to `NO ACTION` only at a diamond, native `CASCADE` on eligible edges otherwise, see [mssql-cascading.md](mssql-cascading.md)).
+Full-composite physical FK candidates are deduplicated after canonical storage mapping. Cross-engine, statement-scoped
+`ValueFlowAnalysis` then derives component-lineage, origin-row-correlation, reference-co-presence, and trigger-boundary
+proof obligations parameterized by the propagation modes. PostgreSQL evaluates its fixed action assignment. SQL Server
+jointly selects `NativeCascade` / `NoPropagation` modes satisfying those obligations and error 1785, then certifies any
+full-composite `NO ACTION` coverage from the final assignment. Derivation fails when the applicable assignment cannot be
+certified; there is no reduced-FK or propagation-trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
 
 For polymorphic/abstract targets, referrers store the abstract identity fields (e.g., `EducationOrganizationId`) and enforce membership via a composite FK to `{schema}.{AbstractResource}Identity`.
 
@@ -2117,8 +2123,8 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
-    // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE when the
-    // target's identity can change transitively — IsAbstract || TransitivelyAllowIdentityUpdates).
+    // (row-local referential-id recompute + version stamping). Identity propagation uses the certified dialect
+    // physical FK assignment; SQL Server modes jointly satisfy value-flow obligations and error 1785.
 
     await tx.CommitAsync(ct);
 }

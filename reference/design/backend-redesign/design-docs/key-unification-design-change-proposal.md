@@ -2,19 +2,15 @@
 
 ## Status
 
-Draft (proposal).
+Deferred proposal; non-normative and **not part of DMS-1129**.
 
-> **SQL Server mechanism superseded (DMS-1129).** References below to SQL Server
-> `MssqlIdentityPropagationTrigger` triggers (including the "extend the trigger to non-root reference
-> sites" work item) are **historical and non-normative**. SQL Server identity-value propagation is
-> now native `ON UPDATE CASCADE` on eligible edges, with **SQL-Server-only** pruning (a covered edge
-> only at a diamond) and fail-fast (a cascade cycle/SCC, or diamonds that cannot be jointly broken,
-> including globally infeasible overlapping diamonds); PostgreSQL is never pruned or failed by DMS
-> (MetaEd is the cross-engine authoring guard) — see [mssql-cascading.md](mssql-cascading.md). Native cascade already
-> follows composite reference FKs on child/extension binding tables, so no trigger change is needed
-> to reach non-root reference sites. This proposal's **cross-scope key-unification** subject (root ↔
-> child duplicated key parts that are *not* linked by a reference edge) is independent of the
-> propagation mechanism and remains the open question.
+> DMS-1129 derives statement-scoped identity value-flow obligations over final, storage-mapped
+> physical FK candidates, evaluates PostgreSQL's fixed actions, and jointly selects SQL Server
+> actions that satisfy value-flow safety and error 1785; see
+> [mssql-cascading.md](mssql-cascading.md). It does not derive propagation from cross-table
+> `equalityConstraints`. This proposal remains separate future work. Its equality paths cannot be
+> treated as row-lineage, changed-column-lineage, or presence evidence in a DMS-1129
+> `CoverageCertificate`.
 
 ## Background
 
@@ -33,8 +29,8 @@ The redesign’s relational model also differs structurally from legacy ODS/API:
 
 - Child collection tables are keyed by **parent `DocumentId` + `Ordinal`** (see “Child tables for collections” in
   `reference/design/backend-redesign/design-docs/data-model.md`), not by parent natural keys.
-- Identity propagation is defined over **reference edges** (composite reference FKs / SQL Server `MssqlIdentityPropagationTrigger` triggers),
-  not over `equalityConstraints`.
+- Identity propagation is defined over **full-composite physical reference FK edges**, not over
+  `equalityConstraints`.
 
 These choices are intentional, but they introduce a parity gap described in `key-unification-children-problem.md`: after an
 upstream identity/key change propagates into a document’s root row, the same logical key parts duplicated into child rows
@@ -88,8 +84,7 @@ The parity target summary above is grounded in these ODS/API implementation poin
 We need parity for a specific class of document-level equality constraints:
 
 - A key part value is duplicated across **root scope** and one or more **child collection scopes**.
-- An upstream identity/key update propagates into the root row (via composite FK cascades or SQL Server
-  `MssqlIdentityPropagationTrigger`).
+- An upstream identity/key update propagates into the root row via a validated composite FK cascade.
 - The duplicated child values must update to preserve document-level `equalityConstraints`, even when the child table does
   not reference the upstream updated entity directly.
 
@@ -130,11 +125,9 @@ unified key parts.
 2. **Reference-site retargeting when required**: if the dependent endpoint is inside a composite reference FK
    (`<identity parts…>, ..._DocumentId` — identity storage columns first, `DocumentId` last), propagate the entire reference site (not just the unified key part) so the FK
    remains valid and the reference is effectively “retargeted” as ODS/API would do.
-3. ~~**SQL Server baseline parity fix**: include non-root reference sites when deriving
-   `MssqlIdentityPropagationTrigger` triggers~~ — **superseded (DMS-1129), non-actionable:** SQL Server
-   identity propagation is now native `ON UPDATE CASCADE`, which already reaches non-root reference
-   sites via composite FKs on child/extension tables; there is no propagation trigger and no
-   “only root-table bindings” restriction to relax (see [mssql-cascading.md](mssql-cascading.md)).
+3. Direct non-root reference sites require no extra parity mechanism: they contribute physical FK candidates and are
+   handled by the reference-FK value-flow/classification design. This proposal concerns only endpoints with no such
+   reference edge.
 
 ## Detailed Design
 
@@ -197,7 +190,7 @@ and bidirectional convergence; that is explicitly out-of-scope for the initial i
 
 DLEP runs inside the database transaction as part of derived maintenance, similar to:
 
-- identity propagation (PostgreSQL `ON UPDATE CASCADE`; SQL Server `MssqlIdentityPropagationTrigger` triggers), and
+- identity propagation by validated full-composite FK cascades, and
 - `dms.ReferentialIdentity` maintenance triggers.
 
 Recommended execution strategy:
@@ -282,7 +275,7 @@ This is the key mechanism that makes DLEP equivalent to ODS/API’s “shared co
 DLEP must run when source-of-truth storage values change due to:
 
 - direct writes to the source table, and
-- indirect writes caused by identity propagation (cascades/`MssqlIdentityPropagationTrigger` triggers) into the source table.
+- indirect writes caused by identity-propagation cascades into the source table.
 
 The reliable hook is the existing per-table derived triggers that already run for indirect updates:
 
@@ -311,37 +304,22 @@ Add new derived intent to the DerivedRelationalModelSet:
 - new `TriggerKindParameters` subtype (if we choose the “new trigger kind” option), and/or
 - a new serialized “equality propagation groups” section if runtime needs it (DDL generator definitely does).
 
-Versioning requirements:
+Because this is deferred and DMS has no production deployment, this proposal defines no
+`RelationalMappingVersion` bump or database migration. Artifact/version decisions belong to the future accepted DLEP
+design. Equality-propagation groups belong in a mapping pack only if runtime execution actually consumes them;
+derivation-only DDL diagnostics must not be duplicated into the runtime payload.
 
-- This is a semantic change to derived maintenance and must be gated by `RelationalMappingVersion` (consistent with the
-  key unification design’s versioning rules).
-- Producers must bump `RelationalMappingVersion` when DLEP is enabled in emitted artifacts; consumers must fail fast on
-  mismatched versions.
+### 6) Direct non-root reference sites
 
-### 6) SQL Server baseline parity fix (non-root reverse references)
+A child or extension table that directly references a changed target already contributes a physical FK candidate. It is
+covered by dialect-neutral statement-scoped value-flow analysis and final dialect action evaluation (jointly with error
+1785 for SQL Server). DLEP is not a prerequisite for that behavior. Its only proposed role is to create maintenance flow
+where no reference FK edge exists.
 
-> **Superseded (DMS-1129), non-actionable.** This subsection predates the switch to native
-> `ON UPDATE CASCADE` on SQL Server. Native cascade follows composite reference FKs on child/extension
-> binding tables directly, so there is no `MssqlIdentityPropagationTrigger` and no root-only filter to
-> relax; the "non-root reverse reference" parity concern is moot for the propagation mechanism (see
-> [mssql-cascading.md](mssql-cascading.md)). Retained for historical context only.
-
-Independently of DLEP, SQL Server `MssqlIdentityPropagationTrigger` triggers must include non-root referrers, per the design
-intent in `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (“fan out to all impacted
-referrer tables (root and non-root reference sites)”).
-
-Current gap:
-
-- `DeriveTriggerInventoryPass.BuildReverseReferenceIndex(...)` filters to root-table reference bindings only
-  (`// Only consider root-table bindings ...`), so child/extension tables are not updated by `MssqlIdentityPropagationTrigger`.
-
-Change:
-
-- Remove or relax the filter so reverse reference indexing includes reference bindings in child and extension tables.
-- Ensure propagation updates target **canonical/storage** columns (never computed aliases) and that affected documents are
-  stamped correctly (child table updates should bump representation stamps as they already do).
-
-This fix is a prerequisite for correctness on SQL Server even without DLEP.
+If DLEP is later accepted, each DLEP trigger/routine statement becomes an explicit mutation origin and statement
+boundary in the value-flow model. It must prove exact component lineage, owning-document row correlation, optional-path
+presence implications, and FK validity at each intermediate boundary. A later DLEP statement cannot be assumed to rescue
+an FK violation in the initiating cascade statement.
 
 ## Operational Considerations
 
@@ -362,7 +340,9 @@ This fix is a prerequisite for correctness on SQL Server even without DLEP.
   - produce a document `X` with the root ↔ child equality constraint shape,
   - perform an identity update that changes the root value via propagation,
   - assert child collection rows are updated and reconstituted JSON remains consistent.
-- ~~Add a SQL Server-focused test verifying non-root `MssqlIdentityPropagationTrigger` updates child/extension referrers.~~ (Superseded by DMS-1129 — no propagation trigger exists; native cascade covers non-root reference sites.)
+- Add direct-reference regression coverage to the shared DMS/MetaEd physical-FK conformance corpus; this is separate
+  from DLEP fixtures because a direct FK edge and a cross-scope equality edge have different timing and presence
+  semantics.
 
 ## Open Questions
 
@@ -374,3 +354,7 @@ This fix is a prerequisite for correctness on SQL Server even without DLEP.
 2. Are we willing to accept potentially large collection fan-out updates as part of identity propagation parity?
 3. Should DLEP be modeled as an extension of “key unification”, or as a separate derived-maintenance feature that happens
    to be driven by `equalityConstraints`?
+
+The DMS/MetaEd corpus required by METAED-1667 remains authoritative for physical reference-FK value flow and SQL Server
+representability. A future DLEP design requires an additional versioned corpus for cross-scope writes; passing the
+physical-FK corpus does not establish DLEP correctness.

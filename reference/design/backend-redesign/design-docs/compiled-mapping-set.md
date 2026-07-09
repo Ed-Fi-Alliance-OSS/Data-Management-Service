@@ -331,25 +331,11 @@ public abstract record TriggerKindParameters
         string DiscriminatorValue
     ) : TriggerKindParameters;
 
-    // RETIRED by the DMS-1129 revision (see design-docs/mssql-cascading.md): SQL Server
-    // identity-value propagation is now native `ON UPDATE CASCADE` on eligible edges (pruned to a
-    // surviving path only at a diamond), not an AFTER trigger. DMS-1258 removes this trigger kind and
-    // its emission. The abstract-identity and referential-identity *maintenance* triggers above are unaffected.
-    public sealed record MssqlIdentityPropagationTrigger(
-        IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates
-    ) : TriggerKindParameters;
-
     public sealed record AuthHierarchyMaintenance(
         AuthEdOrgEntity Entity,
         AuthHierarchyTriggerEvent TriggerEvent
     ) : TriggerKindParameters;
 }
-
-public sealed record PropagationReferrerTarget(
-    DbTableName ReferrerTable,
-    DbColumnName ReferrerFkColumn,
-    IReadOnlyList<TriggerColumnMapping> ColumnMappings
-);
 
 public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnName TargetColumn);
 
@@ -377,38 +363,147 @@ public sealed record DerivedRelationalModelSet(
     IReadOnlyList<DbIndexInfo> IndexesInCreateOrder,
     IReadOnlyList<DbTriggerInfo> TriggersInCreateOrder
 );
+
+public readonly record struct PhysicalForeignKeyId(string Value);
+
+public readonly record struct MutationOriginId(string Value);
+
+public readonly record struct StatementBoundaryId(string Value);
+
+public sealed record IdentityComponentRef(DbTableName Table, DbColumnName Column);
+
+public sealed record RowLineageProof(IReadOnlyList<TriggerColumnMapping> CorrelatedKeyColumns);
+
+public sealed record PresenceImplicationProof(
+    DbColumnName PrunedReferenceDocumentId,
+    DbColumnName CarrierReferenceDocumentId,
+    bool CarrierIsRequired
+);
+
+public enum MssqlPropagationMode
+{
+    NativeCascade,
+    NoPropagation,
+    ImmutableNoAction,
+}
+
+public sealed record CoverageCertificate(
+    PhysicalForeignKeyId PrunedForeignKey,
+    MutationOriginId MutationOrigin,
+    IdentityComponentRef ChangedComponent,
+    StatementBoundaryId StatementBoundary,
+    IReadOnlyList<PhysicalForeignKeyId> RetainedPath,
+    IReadOnlyList<PhysicalForeignKeyId> PrunedPath,
+    RowLineageProof RowLineage,
+    IReadOnlyList<TriggerColumnMapping> ChangedColumnLineage,
+    PresenceImplicationProof PresenceImplication
+);
+
+public sealed record MssqlForeignKeyDecision(
+    PhysicalForeignKeyId ForeignKeyId,
+    string FinalConstraintName,
+    MssqlPropagationMode Mode,
+    IReadOnlyList<CoverageCertificate> CoverageCertificates
+);
+
+public sealed record RelationalModelDerivationDiagnostics(
+    IReadOnlyList<MssqlForeignKeyDecision> MssqlForeignKeyDecisionsInPhysicalIdOrder
+);
+
+public enum RelationalModelDerivationErrorKind
+{
+    PhysicalForeignKeyCandidateConflict,
+    UnprovedComponentLineage,
+    UnprovedOriginRowCorrelation,
+    UnprovedReferencePresenceImplication,
+    IncompatibleStatementBoundary,
+    ConflictingCanonicalColumnWrites,
+    ForeignKeyInvalidAfterReceiverWrite,
+    UnsafePostgresqlActionAssignment,
+    NoSafeSqlServerAssignment,
+    CascadeClassificationComplexityExceeded,
+}
+
+public sealed record RelationalModelDerivationError(
+    RelationalModelDerivationErrorKind Kind,
+    string Message,
+    IReadOnlyList<PhysicalForeignKeyId> ForeignKeys,
+    IReadOnlyList<MutationOriginId> MutationOrigins,
+    IReadOnlyList<StatementBoundaryId> StatementBoundaries,
+    IReadOnlyList<DbTableName> Tables,
+    IReadOnlyList<DbColumnName> Columns
+);
+
+// BuildResult is the public boundary for derivation. A model and its success manifest exist only
+// on Success; validation/classification errors are returned on Failure instead of being embedded
+// in a partially valid model or in relational-model.manifest.json.
+public abstract record DerivedRelationalModelBuildResult
+{
+    public sealed record Success(
+        DerivedRelationalModelSet Model,
+        RelationalModelDerivationDiagnostics Diagnostics
+    ) : DerivedRelationalModelBuildResult;
+
+    public sealed record Failure(IReadOnlyList<RelationalModelDerivationError> Errors)
+        : DerivedRelationalModelBuildResult;
+}
 ```
 
 Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
-- **SQL Server cascade classification (derived, to be added by DMS-1258).** The `ReferentialAction OnUpdate` on each
-  `TableConstraint.ForeignKey` records the *result* of pruning, but the derived model must also carry the classification
-  so DDL generation, runtime, and manifest verification agree. DMS-1258 must add to the shared derived contract (concrete
-  C# shape deferred to DMS-1258; the required contract is fixed here — see `design-docs/mssql-cascading.md`):
-  - a per-edge `MssqlPropagationMode` on every SQL Server reference FK, with exactly three values (a *total*
-    classification, so consumers never infer intent from `OnUpdate`): `NativeCascade` (a cascade-eligible edge that is
-    not pruned — an independent edge, a diamond's surviving edge, or the sole edge into a receiver;
-    `ON UPDATE CASCADE`), `NoPropagation` (cascade-eligible pruned edge covered by the surviving cascade,
-    `ON UPDATE NO ACTION`), and `ImmutableNoAction` (reference to a genuinely immutable target — not in the cascade
-    graph — `ON UPDATE NO ACTION`). `NO ACTION` therefore does **not** imply `NoPropagation`: it is either
-    `NoPropagation` or `ImmutableNoAction`, which is why the mode is carried explicitly rather than derived from
-    `OnUpdate`. There is no `TriggerFallback` value and no `MssqlFkShape` axis: every SQL Server reference FK keeps the
-    full composite key, so shape is not a variable.
-  - coverage / carrier diagnostics **for `NoPropagation` edges only** — enough to reconstruct the diamond that justified
-    the prune: the originating root, the receiver, the ordered surviving path and the ordered pruned path (as FK-constraint
-    sequences), and the shared canonical columns the survivor maintains — emitted into `relational-model.manifest.json` so
-    pruning is auditable and reproducible. `NativeCascade` and `ImmutableNoAction` edges carry no carrier diagnostics —
-    there is nothing to attribute.
-  - hard derivation errors for the two fail-fast conditions, each carrying the full diagnostic detail (not just tables/FK
-    names): a cascade cycle/SCC error names the SCC tables and the FK edges forming the cycle; and a
-    diamonds-cannot-be-jointly-broken error covers both flavors — for a single uncovered diamond (a receiver reached twice
-    from one origin with no coverable prune) it names the origin/root, the receiver, the two (or more) distinct cascade
-    paths, the candidate/pruned edges, and the coverage columns; and for globally infeasible overlapping diamonds (no
-    global assignment satisfies the retained-`NativeCascade` invariant) it names the involved diamonds, the shared edge(s)
-    whose single final mode is over-constrained, and the invariant clause (acyclic / multitree / coverage) that failed.
-  This classification replaces the retired `MssqlIdentityPropagationTrigger` inventory for identity-value propagation;
-  PostgreSQL model sets keep `ON UPDATE CASCADE` on every eligible edge and do not use `MssqlPropagationMode`.
+- `RelationalModelDerivationDiagnostics` is success-only and owns
+  `MssqlForeignKeyDecisionsInPhysicalIdOrder`. The list is empty for PostgreSQL and contains exactly one decision per
+  finalized SQL Server physical reference FK. `RelationalModelDerivationError` is the separate structured failure contract;
+  neither type is part of the runtime mapping-pack payload.
+- **Reference-FK derivation contract (DMS-1258).** Reference constraint derivation has four ordered phases; see
+  `design-docs/mssql-cascading.md` for the normative algorithm.
+  1. Map every logical reference through final canonical storage columns and form a
+     `PhysicalForeignKeyCandidate`. Its stable identity is the semantic FK kind, referencing table, ordered local storage
+     columns, referenced table, ordered target storage columns, and `OnDelete`. Logical references with the same identity
+     collapse to one candidate. `OnUpdate`, `MssqlPropagationMode`, logical reference path, and generated constraint name
+     are deliberately excluded, so update-action choice cannot prevent physical de-duplication. Each candidate retains all contributing logical-reference provenance and semantic roles,
+     component-level source-to-receiver column lineage, reference-presence predicates, target mutability, and the statement
+     boundary that can write its target. Incompatible non-action metadata on contributors to one physical identity is a
+     derivation error, not a reason to emit duplicate FKs. `PhysicalForeignKeyId` is derived from the canonical
+     serialization of this update-action-independent semantic identity before identifier shortening (with collision detection if
+     compacted); later naming/shortening does not change the id, and the success decision also records the final constraint
+     name for manifest-to-DDL correlation.
+  2. Run dialect-neutral, statement-scoped **`ValueFlowAnalysis`**. The supported mutation origins are
+     DMS-authorized identity writes and DMS-owned maintenance-trigger writes. For every changed key component, analysis
+     derives obligations for exact value lineage to every receiving canonical column, correlation to the same origin row,
+     equality of any competing writes to one receiver, the required co-presence implication for optional reference sites,
+     and FK validity at every engine constraint-check boundary. Abstract-identity AFTER-trigger maintenance is a later statement boundary, not part of the initiating
+     cascade. Table reachability, a shared column name, or a common ancestor alone does not discharge an obligation.
+  3. Evaluate actions against those obligations. PostgreSQL evaluates its fixed eligible-`CASCADE`/immutable-`NO ACTION`
+     assignment. SQL Server jointly selects actions that both discharge every value-flow obligation and make the retained
+     `NativeCascade` graph legal under error 1785. Every final SQL Server reference FK has exactly one success diagnostic
+     decision whose `MssqlPropagationMode` is `NativeCascade` (`ON UPDATE CASCADE`), `NoPropagation` (certified
+     `ON UPDATE NO ACTION`), or `ImmutableNoAction` (genuinely immutable target, `ON UPDATE NO ACTION`). An independent parent edge may be legal
+     under error 1785 yet still make the assignment fail when it shares a receiver column with another FK; the same is true
+     of an `ImmutableNoAction` FK reading that column. An undischarged obligation is a hard failure on both engines.
+  4. Finalize `TableConstraint.ForeignKey` objects from the classified candidates. The runtime constraint carries the
+     final `OnUpdate` action, while the success-only diagnostics carry `MssqlForeignKeyDecision` entries keyed by stable
+     `PhysicalForeignKeyId`. Every FK remains full-composite; there is no `TriggerFallback`, `DocumentId`-only FK shape,
+     or identity-value propagation trigger.
+- A SQL Server `MssqlForeignKeyDecision` with mode `NoPropagation` carries an ordered, non-empty
+  `CoverageCertificates` list, not one table-level carrier. There is one certificate for every mutation origin and
+  changed-component case the pruned edge must survive. A certificate records the stable physical FK id, mutation origin
+  and statement boundary, ordered retained and pruned physical-FK paths, correlated origin/receiver row lineage, exact
+  changed-source-to-receiver column lineage, and the reference-presence implication used by the proof. Certificates are
+  sorted by origin, changed component, then path ids. They are success
+  diagnostics for DDL review and the relational-model manifest; `NativeCascade` and `ImmutableNoAction` have an empty list.
+- Derivation returns either `DerivedRelationalModelBuildResult.Success` or `.Failure`. SQL Server action-selection
+  infeasibility and any unproved value-flow case are failures, with structured errors.
+  `NoSafeSqlServerAssignment` (the bounded solver proved
+  infeasibility) and `CascadeClassificationComplexityExceeded` (the solver stopped before proving it) are distinct error
+  kinds. A failure does not produce a partial
+  `DerivedRelationalModelSet` and is never serialized as a warning/error inside a successful relational-model manifest.
+  A CLI may render the failure result as a separate diagnostic report.
+- `MssqlPropagationMode` and `CoverageCertificates` are success-only derivation/DDL/manifest diagnostics, separate from
+  `TableConstraint.ForeignKey`. DDL emission consumes the finalized `OnUpdate` from `Model`; diagnostics audit that
+  result but do not drive runtime behavior. Mapping packs therefore serialize only final FK `on_update` and reconstruct
+  no modes or certificates.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
   - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a Change Queries key-change row should be emitted.

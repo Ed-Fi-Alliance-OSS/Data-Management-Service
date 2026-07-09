@@ -110,25 +110,23 @@ DDL generator requirements (derived from ApiSchema):
   - `{RefBaseName}_DocumentId`, and
   - the per-site identity-part binding columns (aliases when unified).
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
-- Enforce a composite FK anchored on canonical/storage identity-part columns:
-  - PostgreSQL:
-    - concrete target: `{schema}.{TargetResource}(<CanonicalIdentityParts...>, DocumentId)` using `ON UPDATE CASCADE`
-      only when the target's identity can change (otherwise `ON UPDATE NO ACTION`).
-    - abstract target: `{schema}.{AbstractResource}Identity(<CanonicalIdentityParts...>, DocumentId)` using
-      `ON UPDATE CASCADE`.
-  - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
-    - eligible edges (including independent parents into a shared receiver): full composite FK with `ON UPDATE CASCADE`.
-    - pruning happens only at a **diamond** (one update would otherwise reach a table by two cascade paths): the
-      surviving path stays `ON UPDATE CASCADE` and one reconverging edge is pruned to full-composite `ON UPDATE NO ACTION`,
-      allowed only when covered by the survivor (its identity columns are maintained by that cascade under key
-      unification). Independent parents are never pruned; there is no `DocumentId`-only trigger fallback — every SQL Server
-      reference FK keeps the full composite key.
-    - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds.
+- Map each logical reference through canonical/storage identity-part columns, then canonicalize and deduplicate the
+  result into a full-composite physical FK candidate.
+- From that inventory, derive cross-engine, statement-scoped `ValueFlowAnalysis` facts and proof obligations for any mode
+  assignment that writes a canonical column read by another candidate. Obligations include exact component lineage,
+  same-origin-row correlation, reference co-presence, and compatible statement timing. Abstract-identity maintenance
+  triggers introduce a distinct statement boundary and must be modeled as such.
+- Evaluate PostgreSQL's fixed assignment (`ON UPDATE CASCADE` when the target can change, `NO ACTION` otherwise) against
+  all proof obligations and fail derivation if it cannot be certified.
+- For SQL Server, jointly select `NativeCascade` / `NoPropagation` modes so the final assignment satisfies both error
+  1785 and every value-flow obligation. A `NoPropagation` candidate emits full-composite `ON UPDATE NO ACTION` only when
+  coverage in that final assignment proves that the same row and component values are maintained in the relevant
+  statement. Fail derivation when no certifiable assignment exists.
+- Every physical FK remains full composite. There is no `DocumentId`-only or identity-value propagation-trigger fallback.
 
-When a referenced document’s identity changes, the database propagates updated identity values into all direct
-referrers’ **canonical/storage columns** (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible
-edges, pruned to a surviving path only at a diamond). Any per-site binding aliases recompute automatically while preserving optional-reference
-presence semantics.
+When a referenced document’s identity changes, the database propagates updated identity values through the safe physical
+FK actions into direct referrers’ **canonical/storage columns**. Any per-site binding aliases recompute automatically while
+preserving optional-reference presence semantics.
 
 #### Descriptor references (`..._DescriptorId`)
 
@@ -148,9 +146,10 @@ The pieces fit together like this:
 3. **Persist `..._DocumentId` plus abstract identity columns**:
    - The referencing row stores both the resolved `DocumentId` and the abstract identity column values provided in the payload.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
-   - The composite FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses `ON UPDATE CASCADE`, SQL Server uses
-     foreign-key pruning — native `ON UPDATE CASCADE` on eligible edges, pruning a covered edge to `ON UPDATE NO ACTION`
-     only at a diamond (see [mssql-cascading.md](mssql-cascading.md)). This ensures:
+   - The composite FK targets `{schema}.{AbstractResource}Identity` and participates in the cross-engine value-flow
+     analysis, including the statement boundary between a concrete-row write and the abstract-identity maintenance
+     trigger. PostgreSQL evaluates its fixed action against that obligation; SQL Server includes it in joint mode
+     selection for value-flow safety and error 1785 (see [mssql-cascading.md](mssql-cascading.md)). This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored abstract identity columns are kept correct automatically.
 5. **Read-time reference identity projection is local**
@@ -234,10 +233,10 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      missing inputs.
    - `dms.Descriptor` upsert if the resource is a descriptor.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
-   - Composite FK propagation is dialect-specific: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges; SQL Server
-     uses foreign-key pruning — native `ON UPDATE CASCADE` on eligible edges, pruning a covered edge to
-     `ON UPDATE NO ACTION` only at a diamond (see [mssql-cascading.md](mssql-cascading.md)). Both paths update
-     canonical/storage columns (binding aliases recompute).
+   - Composite FK propagation uses the certified dialect assignment over the physical FK candidates. PostgreSQL's fixed
+     actions must discharge the `ValueFlowAnalysis` obligations. SQL Server's jointly selected modes must satisfy those
+     obligations and error 1785; full-composite `NO ACTION` is certified only from final-assignment coverage (see
+     [mssql-cascading.md](mssql-cascading.md)). Both paths update canonical/storage columns (binding aliases recompute).
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
    - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
@@ -257,12 +256,13 @@ Integration points:
 ### Identity propagation and derived maintenance (DB-driven)
 
 This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key
-fields alongside every document reference. Composite-FK update behavior is dialect-specific:
-- PostgreSQL: `ON UPDATE CASCADE` for abstract targets and concrete targets whose identity can change transitively
-  (`ON UPDATE NO ACTION` otherwise).
-- SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on eligible edges (including independent parents into a shared
-  receiver), pruning a covered edge to `ON UPDATE NO ACTION` (full composite) only where one update would otherwise reach
-  a table by two cascade paths (a diamond), and fail-fast when no safe pruning exists (a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds). There is no `DocumentId`-only trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
+fields alongside every document reference. Logical sites become deduplicated full-composite physical FK candidates only
+after storage mapping and key unification. Cross-engine, statement-scoped `ValueFlowAnalysis` derives component-lineage,
+origin-row-correlation, reference-co-presence, and statement-boundary proof obligations parameterized by the propagation
+modes. PostgreSQL evaluates its fixed action assignment against them. SQL Server jointly selects `NativeCascade` /
+`NoPropagation` modes satisfying both the obligations and error 1785, then certifies coverage from the final assignment.
+Derivation fails when the applicable assignment cannot be certified. There is no `DocumentId`-only or identity-value
+propagation-trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
@@ -271,14 +271,14 @@ Key effects:
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL has no SQL Server 1785 DDL restriction on multiple cascade paths or cycles, so it keeps `ON UPDATE CASCADE` on every eligible edge and DMS never physically prunes PostgreSQL FKs. The pruning classification and fail-fast are SQL-Server-specific; PostgreSQL derivation is left as-is (MetaEd is the cross-engine authoring guard; see [mssql-cascading.md](mssql-cascading.md)).
-- SQL Server rejects a table reached by multiple cascade paths, and cascade cycles (error 1785), so it uses
-  **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child): `ON UPDATE CASCADE` on
-  eligible edges (including independent parents into a shared receiver), pruning a covered edge to `ON UPDATE NO ACTION`
-  (full composite) only at a diamond (where one update would otherwise reach a table by two cascade paths),
-  failing fast when no safe pruning exists (a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds).
-  Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
-  propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
+- PostgreSQL has no SQL Server 1785 DDL restriction and never physically prunes a FK candidate, but its fixed action
+  assignment must still satisfy every cross-engine `ValueFlowAnalysis` obligation.
+- SQL Server rejects a table reached by multiple cascade paths and cascade cycles (error 1785), so it jointly searches
+  for modes that satisfy both its propagation-direction action-graph restriction and all value-flow obligations. Any
+  `NoPropagation` edge requires coverage in the final assignment; no independent-parent or shared-column shortcut is
+  valid.
+- Every physical FK keeps the full composite key. There is no `DocumentId`-only shape and no identity-value propagation
+  trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
 
 ### Insert vs update detection
 
@@ -318,7 +318,7 @@ Operational guidance:
 
 Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change,
 because relationships are stored as stable `DocumentId` FKs. Identity propagation still exists for
-**canonical/storage identity-part columns** (FK cascades on PostgreSQL; native `ON UPDATE CASCADE` on eligible edges on SQL Server) and for
+**canonical/storage identity-part columns** (through the certified dialect physical FK actions) and for
 **derived artifacts** (referential ids and stamps), and is handled in the database:
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)

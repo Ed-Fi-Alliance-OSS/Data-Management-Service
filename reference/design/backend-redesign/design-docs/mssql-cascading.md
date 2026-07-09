@@ -1,792 +1,509 @@
-# SQL Server Identity-Update Cascade Handling and Foreign-Key Pruning
+# SQL Server Identity-Update Cascades and Foreign-Key Pruning
 
 ## Status
 
-Design note produced by the DMS-1129 spike ("Design foreign key pruning") and revised to resolve
-implementation-readiness review findings before DMS-1258 begins. It defines the target strategy for
-SQL Server identity-update propagation and **supersedes** the earlier "every SQL Server reference
-composite FK uses `ON UPDATE NO ACTION` plus a `MssqlIdentityPropagationTrigger`" rule described in
-`overview.md`, `strengths-risks.md`, `transactions-and-concurrency.md`, `key-unification.md`,
-`data-model.md`, and `ddl-generation.md`. Those documents now point here for the SQL Server cascade
-rules.
+Rewritten by DMS-1129 after implementation-readiness review. This document is the authoritative design for identity-value
+propagation through document-reference foreign keys. It supersedes the earlier designs based on blanket SQL Server
+`ON UPDATE NO ACTION`, `DocumentId`-only FKs, `MssqlIdentityPropagationTrigger`, table-level "coverage", and
+per-diamond first-fit pruning.
 
-The SQL Server behaviors this design depends on were confirmed empirically against
-`mcr.microsoft.com/mssql/server:2022-latest` (SQL Server 2022, RTM-CU25); see
-[SQL Server behavior (empirically confirmed)](#sql-server-behavior-empirically-confirmed).
+Implementation is tracked by DMS-1258. This document defines the target contract; it does not contain the production
+implementation.
 
-Implementation is tracked separately (see [Follow-up work](#follow-up-work)); this note is the
-design only.
+The redesign is still establishing its first production mapping contract. DMS has not been deployed to production, so
+these rules finalize `RelationalMappingVersion = v1` in place. There is no version bump, old-pack compatibility mode,
+database migration, or legacy-schema interpretation in scope.
 
-> **What changed in this revision (for reviewers).** Relative to the first spike draft this note:
-> models the cascade graph in **propagation direction** (referenced/parent → referrer/child) and
-> analyzes SQL Server error 1785 as **duplicate reachability within a single update's cascade action
-> tree** (a diamond, or a cycle), not at the referenced parent; adds explicit **cycle / SCC**
-> handling (fail fast); **removes `TriggerFallback`** (the `DocumentId`-only + trigger outcome)
-> entirely, so every emitted SQL Server reference FK keeps the full composite key and a pruned
-> live/uncovered edge is a fail-fast error; scopes foreign-key pruning, detection, and fail-fast to
-> **SQL Server only** (engine-specific — PostgreSQL keeps full-composite `ON UPDATE CASCADE`, is not
-> pruned or failed by DMS, and cross-engine authoring safety is handled by MetaEd); and uses **transitive**
-> identity mutability consistently. A later review round added a third `MssqlPropagationMode` value,
-> **`ImmutableNoAction`**, so genuinely immutable full-composite `NO ACTION` FKs are classified
-> explicitly instead of being conflated with pruned/covered edges. A further round **corrected the
-> 1785 test from raw cascade in-degree > 1 to per-origin duplicate reachability** (a multitree
-> violation): *independent* parents into one receiver are legal and are never pruned — pruning an
-> independent live edge would only reintroduce error 547. See
-> [Resolved design decisions](#resolved-design-decisions).
+## Decisions
 
-## The problem
+1. Every emitted document-reference FK is full composite: identity storage columns first and `DocumentId` last.
+2. Identity values are propagated by native FK cascades. There is no identity-value propagation trigger and no
+   `DocumentId`-only fallback.
+3. DMS supports identity changes issued through DMS-authorized writes and DMS-owned maintenance triggers. Arbitrary
+   direct SQL identity changes are outside the success contract; full FKs may reject them but must prevent corruption.
+4. DDL legality and runtime value safety are different questions:
+   - SQL Server error 1785 is evaluated with a physical cascade-action multigraph.
+   - Statement-scoped identity value flow is analyzed from component, row, presence, and timing facts.
+5. Value-flow obligations apply on PostgreSQL and SQL Server. SQL Server alone performs error-1785 pruning.
+6. PostgreSQL evaluates its fixed FK action assignment. SQL Server jointly selects FK actions that satisfy both the
+   value-flow obligations and error 1785.
+7. A shared canonical column, a common ancestor table, or a legal SQL Server action graph is evidence only. None is a
+   sufficient safety proof.
+8. When safety cannot be proved, derivation fails. DMS does not weaken referential integrity to make the model install.
+9. DMS owns the authoritative physical-model classifier. MetaEd provides earlier authoring feedback against the same
+   versioned conformance corpus.
 
-When a resource's identifying values change, the new values must reach every row that stores a
-copy of them — the propagated identity-part columns on each direct referrer's storage table.
-The two supported engines diverge:
+## Problem
 
-- **PostgreSQL** has no SQL Server 1785 DDL restriction on multiple cascade paths or cycles, so DMS
-  uses composite FKs `(…identity parts…, DocumentId)` with `ON UPDATE CASCADE` on every eligible edge
-  (abstract targets, and concrete targets whose identity can change transitively); the engine
-  propagates identity changes natively across multiple cascade paths. DMS does **not** physically
-  prune PostgreSQL FKs. This remains correct and unchanged.
+Reference sites store stable `..._DocumentId` values plus copies of the target identity fields. If a target identity
+changes, those local identity values must change without breaking any FK that reads the same physical columns.
 
-- **SQL Server** rejects the same graph at DDL time whenever a table would be **reached by more
-  than one cascade path**, or whenever the cascade edges form a cycle (error **1785**). To get a
-  schema that even *creates*, DMS previously stripped every SQL Server reference composite FK down
-  to `ON UPDATE NO ACTION` and propagated identity changes with AFTER-style
-  `MssqlIdentityPropagationTrigger` triggers.
+PostgreSQL can create multiple `ON UPDATE CASCADE` paths to one table. SQL Server rejects a cascade action graph when a
+table can occur more than once in one statement's cascade tree or a cascade cycle remains (error 1785). The previous SQL
+Server workaround made every propagation-managed FK `DocumentId`-only and copied values with AFTER triggers. That made
+the DDL creatable, but it stopped SQL Server from enforcing identity-value referential integrity and allowed a concurrent
+write to retain stale identity values.
 
-That trigger-only strategy then hit a second wall. SQL Server enforces a `NO ACTION` FK check as
-part of the UPDATE statement — **before** any AFTER trigger on the same table runs — and its FK
-checks cannot be deferred to end-of-transaction. So a composite FK that still contains the
-identity columns will reject a parent identity update for any already-referenced row (error
-**547**) before the propagation trigger can fix the children. DMS-1002 worked around *that* by
-removing the identity columns from SQL Server propagation-managed FKs entirely and keeping only
-`…_DocumentId` (see `ReferenceConstraintPass`). The cost: SQL Server no longer enforces
-referential integrity on the identity *values*. A concurrent identity update racing an insert
-that references the old identity can leave a referrer holding stale identity values, and nothing
-in the database rejects it.
+Restoring full-composite FKs closes that integrity gap, but pruning cannot be decided from table reachability alone. Key
+unification may cause several FKs to read one writable canonical receiver column. Updating through one FK can then
+invalidate another FK even when the parents are independent and the SQL Server DDL is legal. Conversely, a SQL Server
+diamond can be safely pruned only when the retained writes are proved to reach the same receiver row with the same new
+component value at the same constraint-check boundary.
 
-**DMS-1129 asks whether DMS should instead adopt ODS-style FK pruning** — keep the composite FK
-(identity parts included, restoring value-level RI) and remove `ON UPDATE CASCADE` only from the
-*redundant* edges — and, critically, how to do so without ODS's silent-mis-prune failure mode.
+## Confirmed Database Behavior
 
-## Resolved design decisions
+The following behaviors are requirements for executable provider tests, not prose-only assumptions:
 
-These are the load-bearing decisions this note settles; the sections below elaborate each. They
-also drive the corrections applied to the other design docs by DMS-1129.
+| Behavior | SQL Server result | Consequence |
+|---|---|---|
+| One table is reached twice from one update origin, or a retained cascade cycle exists | DDL fails with 1785 | SQL Server action selection must produce an acyclic multitree. |
+| Two independent parent tables cascade to distinct receiver columns | DDL succeeds; each update can succeed | Raw in-degree greater than one is not an error-1785 test. |
+| Two independent parents cascade to one shared receiver column | DDL succeeds; updating one parent can fail 547 against the unchanged other FK | Error-1785 legality is not value-flow safety. |
+| A full-composite `NO ACTION` FK references a changing key | Parent update fails 547 before an AFTER trigger can repair the receiver | A trigger cannot be a full-RI fallback. |
+| A retained full-composite cascade has no competing FK obligation | The receiver identity values update | Native cascade is the normal propagation mechanism. |
+| A purported carrier reference is absent while the pruned reference is present | The parent update fails 547 | Coverage requires a row-presence implication. |
+| A concrete identity change is mirrored to an abstract identity table by an AFTER trigger | The abstract-table write is a later statement | That later trigger statement cannot cover an FK check in the initiating statement. |
 
-1. **The 1785 test is per-origin duplicate reachability, not raw in-degree.** The cascade graph is
-   directed **referenced/parent table → referrer/child (receiver) table** — the direction an identity
-   update actually propagates. SQL Server 1785 forbids a table from appearing more than once in the
-   cascade action tree of a *single* `UPDATE`/`DELETE`: the legal graph is a **multitree** (at most
-   one cascade path between any two tables). A receiver is an actual conflict only when two of its
-   incoming cascade edges have source tables that **share a common cascade ancestor** — i.e. some
-   origin reaches the receiver by two distinct paths (a *diamond*), or a cycle revisits it. **Direct
-   cascade in-degree > 1 is only a cheap candidate signal**, not proof: *independent* parents (with
-   disjoint ancestor sets) into one receiver are legal and require no pruning. (See the Microsoft
-   reference: [MSSQLSERVER_1785](https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1785-database-engine-error).)
+## Scope and Terminology
 
-2. **Cascade cycles fail fast.** Any nontrivial strongly-connected component (SCC) or self-loop
-   among cascade edges in the propagation graph makes the action tree revisit a table (the "cycles"
-   half of 1785) and is a hard derivation error, with a diagnostic that names the SCC's tables and
-   the FK edges that form the cycle. No pruning rule is claimed safe for cycles.
+### Physical FK candidate
 
-3. **`TriggerFallback` is removed.** There is no `DocumentId`-only + trigger outcome. Every emitted
-   SQL Server reference FK keeps the **full composite** key (identity columns restored), so
-   value-level RI is always enforced. To break a diamond, one reconverging edge is pruned to
-   `NO ACTION` **only if it is covered** by the surviving path for the *same originating update and
-   the same canonical columns*; an uncovered reconvergence is a **fail-fast** error. An independent
-   live edge is **never** pruned (no surviving cascade would carry its own origin's value — that is
-   exactly the 547 trap). This also removes the DMS-1002 stale-identity race, which the
-   `DocumentId`-only shape reintroduced.
+A `PhysicalForeignKeyCandidate` is the canonical document-reference FK intent after all logical bindings have been mapped
+to writable storage columns but before `ON UPDATE` is selected. Its identity is:
 
-4. **Coverage / immutability use transitive identity mutability.** Cascade-eligibility *and*
-   liveness are both defined as `IsAbstract || TransitivelyAllowIdentityUpdates`, matching
-   `TransitiveIdentityMutabilityPass` and the branch in `ReferenceConstraintPass`. Directly-immutable
-   references (`allowIdentityUpdates = false`) can still be *transitively* mutable and must be
-   treated as live.
-
-5. **Foreign-key pruning, unsafe-graph detection, and fail-fast are SQL Server–specific; PostgreSQL is
-   left as-is.** They exist only because of SQL Server's 1785 DDL restriction. PostgreSQL has no such
-   restriction: it keeps full-composite `ON UPDATE CASCADE` on every eligible edge, is **never**
-   physically pruned, and DMS does **not** impose the SQL Server fail-fast on it. This follows the
-   team's engine-specific policy — where the two engines cannot behave identically, each does what
-   works for it rather than being forced into parity. Cross-engine safety for *authors* is handled at
-   authoring time by MetaEd (METAED-1667), which flags a model whose cascade graph SQL Server cannot
-   represent (a cascade cycle/SCC, or diamonds that cannot be jointly broken). No claim is made about
-   PostgreSQL's runtime behavior for a cascade cycle; such models are expected to be caught at
-   authoring. See the *Dialect scope decision* section.
-
-6. **Canonical FK/RefKey column order is identity parts first, `DocumentId` last.** This matches
-   `ReferenceConstraintPass` and the `*_RefKey` ordering rationale in
-   [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes". Docs that showed
-   `(DocumentId, <identity parts…>)` are corrected; no code change is required.
-
-7. **DMS-1258 has been aligned with this design.** The Jira ticket previously said pruning was decided
-   "per referenced table" (the wrong orientation); it has been restated in
-   receiver / referrer / path-convergence terms per decision 1, and now also scopes fail-fast to
-   SQL Server (decision 5) and adds the global retained-graph invariant. See
-   [DMS-1258 alignment](#dms-1258-alignment).
-
-## Diagrams
-
-These diagrams are the visual companion to the algorithm below; they are deliberately compact and
-implementation-oriented so DMS-1258 can read the object contract, the graph orientation, and each
-decision point directly. `overview.md` and `summary.md` cross-reference this section rather than
-duplicating it.
-
-### A. Database objects and what maintains them
-
-Shows the objects a reference site involves and — critically — separates **identity-value
-propagation** (a database FK cascade, solid arrows) from the **maintenance triggers** (dashed
-arrows) that are *not* the propagation mechanism. Arrows here point in the FK **references**
-direction (child → parent); the propagation graph in B reverses this.
-
-```mermaid
-flowchart LR
-  subgraph core["Core (dms.*)"]
-    DOC["dms.Document (PK DocumentId)"]
-    RI["dms.ReferentialIdentity (ReferentialId to DocumentId)"]
-  end
-  subgraph parent["Referenced parent (e.g. edfi.School)"]
-    SCH["edfi.School / PK DocumentId / SchoolId = identity storage col / UNIQUE UX_School_RefKey (SchoolId, DocumentId)"]
-    AID["edfi.EducationOrganizationIdentity (abstract target, when polymorphic) / identity parts..., DocumentId"]
-  end
-  subgraph ref["Referrer (root + child / _ext binding tables)"]
-    SSA["edfi.StudentSchoolAssociation root / PK DocumentId / School_SchoolId, School_DocumentId = binding cols"]
-    CH["child / _ext binding table (composite reference FK can live here too)"]
-  end
-
-  SCH -->|"FK DocumentId to dms.Document, ON DELETE CASCADE"| DOC
-  SSA -->|"FK DocumentId to dms.Document, ON DELETE CASCADE"| DOC
-  AID -->|"FK DocumentId to dms.Document"| DOC
-  SSA -->|"composite reference FK: School_SchoolId, School_DocumentId to School SchoolId, DocumentId; ON UPDATE per MssqlPropagationMode"| SCH
-  CH -->|"composite reference FK: identity parts..., _DocumentId"| SCH
-
-  STAMP(["*_Stamp trigger"]) -.->|"stamps ContentVersion etc. after any row change"| DOC
-  RIT(["ReferentialIdentity maintenance trigger"]) -.->|"recompute ReferentialId"| RI
-  ABT(["AbstractIdentity maintenance trigger"]) -.->|"upsert abstract identity row"| AID
+```text
+(semantic FK kind,
+ local table,
+ ordered local storage columns,
+ target table,
+ ordered target storage columns,
+ ON DELETE action)
 ```
 
-*For DMS-1258:* the composite reference FK (identity parts first, `DocumentId` last) is the object
-that carries `MssqlPropagationMode`; the dashed triggers are the unaffected maintenance triggers,
-not the retired identity-value propagation trigger.
+`OnUpdate`, `MssqlPropagationMode`, a logical reference path, and a generated constraint name are not part of this
+identity. Logical sites that resolve to the same identity collapse to one physical candidate. The candidate retains all
+contributing logical-site provenance and presence predicates.
 
-### B. Direct in-degree > 1 is NOT proof — legal independent parents
+`PhysicalForeignKeyId` is a deterministic identifier derived from that semantic identity before dialect shortening or
+constraint-name hashing. Later passes carry the id unchanged. Distinct physical FKs between the same two tables remain
+distinct edges in the action multigraph.
 
-Edges point in **propagation direction** (referenced/parent → referrer/child). A receiver can have
-two incoming cascade edges and still be legal when the parents are **independent origins**.
+### Mutation origin and statement boundary
+
+A `MutationOrigin` is a DMS-supported operation that can write an identity component:
+
+- a direct resource identity update accepted because `AllowIdentityUpdates = true`, or
+- a DMS-owned maintenance-trigger statement, including an abstract-identity-table upsert/update.
+
+Each origin has a `StatementBoundaryId`. Native cascades caused by one SQL statement share its boundary. An AFTER trigger
+starts a later boundary. A write in a later boundary cannot satisfy an FK obligation checked in an earlier boundary.
+
+`TransitivelyAllowIdentityUpdates` remains the coarse eligibility signal used to discover targets whose keys can change,
+but it is not a coverage proof and does not make every intermediate table a direct mutation origin.
+
+### Symbolic component value
+
+Value-flow analysis labels each possibly changed identity component with a symbolic value:
+
+```text
+(mutation origin, origin-row identity, identity-component ordinal, statement boundary)
+```
+
+Two paths carry the same value only when their component lineage and origin-row correlation prove that their labels are
+identical. Merely writing the same receiver column does not make two values equal.
+
+### Reference presence
+
+For a document reference site, the row-presence predicate is normally
+`{ReferenceBaseName}_DocumentId IS NOT NULL`. Required references have predicate `true`. Presence-gated aliases preserve
+API-path absence but do not imply that another optional reference site is present.
+
+## Architecture
 
 ```mermaid
 flowchart TD
-  P1["Parent P1 (origin O1)"]
-  P2["Parent P2 (origin O2, unrelated to O1)"]
-  R["Receiver R (cascade in-degree 2)"]
-  P1 -->|"CASCADE (NativeCascade)"| R
-  P2 -->|"CASCADE (NativeCascade)"| R
+  L[Logical reference bindings] --> S[Map to canonical storage columns]
+  S --> P[Deduplicate PhysicalForeignKeyCandidates]
+  P --> V[Derive statement-scoped ValueFlowAnalysis facts and proof obligations]
+  V --> PG[PostgreSQL: evaluate fixed actions]
+  V --> MS[SQL Server: jointly select modes for value safety and error 1785]
+  PG --> F[Finalize full-composite FKs]
+  MS --> F
+  F --> O[DDL plus success diagnostics]
+  V -->|unproved facts| X[Structured derivation failure]
+  PG -->|unsafe assignment| X
+  MS -->|no assignment or bounded-search limit| X
 ```
 
-*For DMS-1258:* O1's update action tree reaches R once (O1→R) and O2's reaches R once — **no origin
-reaches R twice**, so this is a legal multitree. Both edges stay `CASCADE`; nothing is pruned.
-In-degree > 1 is a cheap candidate signal only; confirm a real conflict by shared ancestry.
+The derivation has four phases. The value-flow phase derives facts and obligations before dialect actions are known; it
+does not claim that SQL Server is already safe. PostgreSQL evaluates those obligations against its fixed actions. SQL
+Server chooses actions and proves the obligations together.
 
-### C. Illegal — duplicate reachability under one origin (diamond)
+## Phase 1: Materialize Physical FK Candidates
+
+Candidate derivation runs after reference binding, key unification, abstract-identity-table derivation, and transitive
+identity mutability are known.
+
+For every logical document-reference site:
+
+1. Resolve the binding table and target identity table.
+2. Map every local and target identity binding through `DbColumnModel.Storage`.
+3. Positionally align identity components in target identity order.
+4. Append local `..._DocumentId` and target `DocumentId` last.
+5. Build the physical identity without an update action.
+6. Deduplicate identical physical candidates and retain every contributing logical site's provenance.
+
+The candidate records:
+
+- stable `PhysicalForeignKeyId`;
+- ordered local-to-target component mappings;
+- logical reference sites and their presence predicates;
+- whether the target is abstract, directly mutable, transitively mutable, or immutable;
+- identity-component source paths needed to derive value lineage;
+- abstract-identity concrete-member mappings needed to model maintenance-trigger statements; and
+- the deterministic final constraint-name seed.
+
+All-or-none constraints remain per logical reference site. Physical FK deduplication does not merge API presence
+semantics.
+
+## Phase 2: Derive Value-Flow Facts and Obligations
+
+`ValueFlowAnalysis` is dialect-neutral. It derives the facts needed to evaluate an action assignment but does not choose
+that assignment.
+
+### Mutation event templates
+
+For each supported mutation origin, derive event templates for every identity component that the operation can change.
+A direct DMS identity update is conservatively allowed to change any directly mutable component independently. A
+transitively mutable component changes only through its proven upstream lineage. Abstract-identity maintenance produces
+a later trigger-statement event from its concrete-member column mapping.
+
+Arbitrary direct SQL statements are not event templates. If such a statement is inconsistent with the declared DMS
+write contract, the full FK may reject it.
+
+### Required proofs
+
+For every action assignment, every event template, and every relevant receiver row, all of these obligations must hold:
+
+1. **Changed-target obligation.** If a candidate's referenced key changes and that reference is present, the local
+   corresponding columns must receive the identical symbolic values in the same constraint-check boundary. A selected
+   native cascade may perform the write; a `NO ACTION` edge requires another proved carrier.
+2. **Receiver-write obligation.** If any selected cascade writes a canonical receiver column, every other present FK
+   that reads that column must still match its referenced target at the end of that statement. This includes independent
+   parents and `ImmutableNoAction` FKs.
+3. **Single-value obligation.** Two writes that can reach the same receiver row and column in one statement must carry
+   the same symbolic value. A common table ancestor or equality of old values does not prove this.
+4. **Row-correlation obligation.** A carrier and the edge it covers must be proved to refer to the same origin row and
+   receiver row. Proof may use the same stable `DocumentId` or equality of a complete declared unique identity; equality
+   of only one component of a composite identity is insufficient.
+5. **Presence obligation.** Whenever a pruned or competing reference is present, at least one selected carrier that
+   supplies each changing component must also be present. For a single carrier this is
+   `pruned-present => carrier-present`. Independently optional sites provide no such implication.
+6. **Statement-boundary obligation.** A carrier write must occur before the engine checks the dependent FK. An AFTER
+   trigger or other later statement cannot cover the initiating statement.
+
+These obligations are universal schema proofs. Success on one populated example is not sufficient.
+
+### Why independent edges are still analyzed
 
 ```mermaid
 flowchart TD
-  A["A (single origin)"]
-  B["B"]
-  C["C"]
-  R["Receiver R (reached twice from A)"]
-  A -->|"cascade"| B
-  A -->|"cascade"| C
-  B -->|"cascade"| R
-  C -->|"cascade"| R
+  B[Mutable parent B, K=old] -->|CASCADE writes R.K=new| R[Receiver R, shared canonical K]
+  C[Independent parent C, K=old] -->|FK also reads R.K| R
 ```
 
-*For DMS-1258:* A's update action tree reaches R by **A→B→R and A→C→R**, so R appears twice → 1785.
-This diamond (two of R's incoming edges share the ancestor A) is what needs classification — prune a
-covered reconverging edge, or fail fast.
+The graph has no duplicate path and SQL Server accepts both cascade declarations. Nevertheless, updating only B makes
+`R.K` disagree with C. This topology fails the receiver-write obligation unless schema facts prove a coordinated same-row,
+same-value update. The same rule applies on PostgreSQL.
 
-### D. Safe covered pruning tied to the same origin (restores identity-value RI)
+### Why a table-level diamond is insufficient
 
-The two reconverging edges bind the **same key-unified canonical column** `K` on R, and the surviving
-path from A maintains `K`, so the pruned `NO ACTION` edge never observes a mismatch (probe 6).
+For `A -> B`, `A -> C`, `B -> R`, and `C -> R`, the action graph proves only that A can reach R twice. Safe pruning also
+requires all of the following for each changed component:
 
-```mermaid
-flowchart TD
-  A["A (origin); its identity is stored as canonical column K on R"]
-  B["B"]
-  C["C"]
-  R["Receiver R: single key-unified column K; full composite FK on BOTH reconverging edges"]
-  A -->|"cascade"| B
-  A -->|"cascade"| C
-  B -->|"ON UPDATE CASCADE - survivor path, maintains K"| R
-  C -->|"ON UPDATE NO ACTION - pruned + COVERED (NoPropagation): K kept current by the survivor path from A"| R
+- B and C receive the value from the same A row and component;
+- the retained reference is present whenever the pruned reference is present;
+- the retained path reaches the same R row; and
+- every write occurs within the same statement boundary.
+
+If any fact is unavailable, that prune is inadmissible.
+
+## Phase 3A: PostgreSQL Fixed Assignment
+
+PostgreSQL does not perform error-1785 pruning. Its action assignment is fixed:
+
+- abstract targets and concrete targets with `TransitivelyAllowIdentityUpdates = true` use full-composite
+  `ON UPDATE CASCADE`;
+- genuinely immutable concrete targets use full-composite `ON UPDATE NO ACTION`.
+
+Evaluate all value-flow obligations against that assignment. PostgreSQL derivation fails when independent/shared-column
+writes, conflicting component lineages, optional-site presence, row correlation, trigger timing, or another obligation
+cannot be proved safe. This is a data-integrity rule, not SQL Server portability enforcement.
+
+PostgreSQL never receives `MssqlPropagationMode` and is never physically pruned.
+
+## Phase 3B: SQL Server Joint Action Selection
+
+### Action multigraph
+
+The SQL Server action multigraph has one vertex per physical table and one directed edge per mutable physical FK
+candidate, oriented from referenced target to referencing receiver. Parallel candidates remain parallel edges.
+
+For a proposed mode assignment, the retained graph contains only `NativeCascade` edges. SQL Server requires it to be an
+acyclic multitree: for every ordered table pair there is at most one retained directed path. Direct in-degree greater
+than one is only a conflict candidate; independent sources with disjoint ancestry do not violate 1785.
+
+Cycles and duplicate-reachability diamonds create action-choice constraints. They are not, by themselves, coverage
+proofs. Selection may prune an edge only when the final assignment satisfies every value-flow obligation.
+
+### Modes
+
+Every SQL Server physical document-reference FK receives exactly one mode:
+
+| Mode | Target mutability | FK action | Meaning |
+|---|---|---|---|
+| `NativeCascade` | mutable | `ON UPDATE CASCADE` | This physical edge performs native propagation. |
+| `NoPropagation` | mutable | `ON UPDATE NO ACTION` | The edge is pruned for 1785; every relevant target change is carried by other selected writes with complete coverage certificates. |
+| `ImmutableNoAction` | immutable | `ON UPDATE NO ACTION` | The target has no DMS-supported identity-change event. Competing writes to its local columns must still pass value-flow validation. |
+
+There is no `TriggerFallback` and no variable FK shape.
+
+### Joint acceptance predicate
+
+A complete SQL Server assignment is valid only when:
+
+1. every candidate has exactly one compatible mode;
+2. the retained `NativeCascade` multigraph is acyclic and has at most one path between every ordered vertex pair;
+3. every value-flow obligation is satisfied against the final modes;
+4. every `NoPropagation` candidate has a complete, non-empty set of coverage certificates;
+5. every certificate refers to retained physical paths in the final assignment; and
+6. final constraint names and actions are deterministic.
+
+An independent edge may stay `NativeCascade` when these conditions hold, but independence is not a safety shortcut. A
+cycle edge may be pruned only if the same conditions prove its target changes are carried safely; otherwise no solution
+exists.
+
+### Deterministic bounded search
+
+The implementation must solve the joint predicate globally. It must not commit a local per-diamond winner.
+
+Required solver behavior:
+
+1. Build conflict constraints from SCC/cycle detection and duplicate reachability without materializing every path pair.
+2. Restrict decision variables to mutable candidates that participate in an error-1785 conflict or a value-flow choice.
+3. Order variables and modes by stable `PhysicalForeignKeyId` and a documented mode order.
+4. Reject a partial assignment immediately when it cannot satisfy a graph constraint or value-flow obligation.
+5. Memoize equivalent partial states, including the retained reachability summary and outstanding obligations.
+6. Accept the first complete assignment in the documented stable order.
+7. Enforce fixed, deterministic conflict-count and explored-state limits. The concrete limits must be selected and locked
+   by DMS-1258 using the stock Ed-Fi model, representative extensions, and adversarial fixtures.
+
+Search exhaustion means `NoSafeSqlServerAssignment`. Reaching a work limit means
+`CascadeClassificationComplexityExceeded`; it must not be reported as proof that no assignment exists. Both are hard
+derivation failures, but they carry different diagnostics.
+
+## Phase 4: Finalize Constraints and Diagnostics
+
+After a dialect assignment is certified, finalize `TableConstraint.ForeignKey` with the full ordered columns and final
+`ReferentialAction OnUpdate`. The DDL emitter consumes this finalized model and does not rerun classification.
+
+### Coverage certificates
+
+Each SQL Server `NoPropagation` decision has an ordered, non-empty `CoverageCertificates` collection. There is one
+certificate for every mutation-origin and changed-component case the pruned edge must survive. A certificate records:
+
+- `PhysicalForeignKeyId` for the pruned edge;
+- mutation origin, changed component, and statement boundary;
+- ordered retained and pruned physical-FK paths;
+- exact source-to-target-to-receiver component lineage;
+- origin-row and receiver-row correlation proof;
+- reference-presence implication; and
+- the constraint-check boundary at which the proof holds.
+
+Certificates are ordered by mutation origin, changed-component ordinal, retained path ids, then pruned path ids. One
+certificate tuple cannot stand in for several incomparable origins or paths.
+
+`NativeCascade` and `ImmutableNoAction` do not have coverage certificates. Their safety is covered by the successful
+global value-flow evaluation.
+
+### Build result and artifacts
+
+Derivation returns one of:
+
+```text
+Success(DerivedRelationalModelSet Model, RelationalModelDerivationDiagnostics Diagnostics)
+Failure(IReadOnlyList<RelationalModelDerivationError> Errors)
 ```
 
-*For DMS-1258:* both edges keep the **full composite** FK, so identity values are enforced by the DB
-— no `DocumentId`-only shape, no stale-identity window. The pruned edge's carrier diagnostics record
-the **origin A, receiver R, both paths, and the shared column K**.
+Successful SQL Server diagnostics contain `MssqlForeignKeyDecision` entries keyed by `PhysicalForeignKeyId`, including
+mode and certificates. They are emitted in `relational-model.mssql.manifest.json` for audit and golden testing.
 
-### E. Do NOT prune an independent live edge — it reintroduces 547
+Failures are structured build results, not warnings inside a successful manifest. A CLI may render a separate failure
+report, but no relational-model manifest, mapping pack, or DDL is produced from a failed derivation.
 
-```mermaid
-flowchart TD
-  P1["Parent P1 (origin O1)"]
-  P2["Parent P2 (origin O2, independent)"]
-  R["Receiver R"]
-  P1 -->|"CASCADE"| R
-  P2 -.->|"WRONG: prune to NO ACTION. When O2's identity changes, no surviving cascade updates R, so the composite FK blocks it (error 547)"| R
+`MssqlPropagationMode` and coverage certificates are derivation/DDL/manifest diagnostics. Runtime plans and mapping packs
+do not consume them. Mapping packs serialize the finalized FK `on_update` action already present in the normalized
+relational model.
+
+## Pass Ordering and Ownership
+
+The canonical set-level order becomes:
+
+```text
+ReferenceBindingPass
+-> KeyUnificationPass
+-> AbstractIdentityTableAndUnionViewDerivationPass
+-> ValidateUnifiedAliasMetadataPass
+-> RootIdentityConstraintPass
+-> TransitiveIdentityMutabilityPass
+-> physical reference-FK candidate derivation and deduplication
+-> ValueFlowAnalysis derivation
+-> PostgreSQL fixed-assignment evaluation OR SQL Server joint action selection
+-> ReferenceConstraintPass finalization
+-> remaining constraint, inventory, shortening, and ordering passes
 ```
 
-*For DMS-1258:* pruning an independent parent is never allowed — there is no surviving cascade from
-O2 to carry O2's new value into R. Independent parents are legal exactly as in diagram B and stay
-`CASCADE`. "Covered" is therefore defined **per originating tree**: an edge is prunable only if a
-survivor carries the *same* value into the *same* canonical columns for **every** origin that reaches
-R through it.
-
-### F. Uncovered diamond — fail fast (no DocumentId-only fallback)
-
-A genuine diamond (origin A reaches R twice) whose reconverging paths carry **different, non-unified**
-values, so no survivor covers the other.
-
-```mermaid
-flowchart TD
-  A["A (origin)"]
-  B["B carries value X into R"]
-  C["C carries value Y into R (X and Y are distinct, non-unified columns)"]
-  R["Receiver R: X and Y in separate columns"]
-  A -->|"cascade"| B
-  A -->|"cascade"| C
-  B -->|"survivor: CASCADE maintains X"| R
-  C -.->|"reconverging edge carries Y, NOT covered by the survivor; NO ACTION would block A's update (547)"| FAIL(["FAIL FAST - uncovered diamond; diagnostic names origin A, receiver R, both paths, and the uncovered columns"])
-```
-
-*For DMS-1258:* this is the case ODS prunes silently and wrongly. DMS raises a hard derivation error;
-MetaEd (METAED-1667) should reject it at authoring time.
-
-### G. Cascade cycle / SCC — fail fast
-
-```mermaid
-flowchart LR
-  A -->|"cascade"| B
-  B -->|"cascade"| C
-  C -->|"cascade"| A
-```
-
-*For DMS-1258:* a nontrivial SCC (or a self-loop) makes the action tree revisit a table (the "cycles"
-half of error 1785). Pruning one edge does not leave a cascade that still propagates every identity,
-so no pruning rule is claimed safe → fail fast, naming the SCC tables and the FK edges in the cycle.
-
-### H. Before (DMS-1002 workaround) vs after (DMS-1129 pruning)
-
-```mermaid
-flowchart TB
-  subgraph before["BEFORE - DMS-1002 workaround"]
-    direction TB
-    BP["Referenced parent"]
-    BR["Referrer: DocumentId-only FK, identity columns stripped"]
-    BT(["MssqlIdentityPropagationTrigger (AFTER)"])
-    BR -->|"FK on _DocumentId only"| BP
-    BT -.->|"copies new identity into referrer"| BR
-    BN["identity VALUES not enforced by DB; a concurrent insert/update can persist STALE identity"]
-  end
-  subgraph after["AFTER - DMS-1129 FK pruning"]
-    direction TB
-    AP["Referenced parent"]
-    AR["Referrer: full composite FK, identity parts..., DocumentId"]
-    AR -->|"NativeCascade CASCADE (survivor) / NoPropagation NO ACTION (covered) / ImmutableNoAction NO ACTION"| AP
-    AN["identity-value RI enforced by the DB; unsafe graphs fail fast - no stale identity"]
-  end
-```
-
-*For DMS-1258:* the migration is "restore the full composite FK everywhere + classify each edge",
-not "add another trigger". The before-column mechanism (`DocumentId`-only + trigger) is removed
-entirely.
-
-## SQL Server behavior (empirically confirmed)
-
-Six probes were run against a throwaway SQL Server 2022 container. Each result is the load-bearing
-fact for one part of the design. The minimal reproduction DDL is inlined so this note is
-self-contained.
-
-| # | Probe | Result | Design consequence |
-|---|-------|--------|--------------------|
-| 1 | Two `ON UPDATE CASCADE` paths reach one table (diamond) | **Msg 1785** at `CREATE` | SQL Server forbids a table reachable by multiple cascade paths — pruning is *required* on SQL Server. The rejected table is the **receiver** at the bottom of the diamond, not the referenced parent at the top. |
-| 2 | Same diamond, redundant edge set to `ON UPDATE NO ACTION` | DDL succeeds | Converting a redundant cascade edge into the receiver to `NO ACTION` (pruning) makes the graph legal. |
-| 3 | `NO ACTION` composite FK that **includes identity columns**; update parent identity of a referenced row | **Msg 547**, and an AFTER UPDATE trigger that fixes the referrer does **not** rescue it | A `NO ACTION` composite FK blocks the update before the trigger runs. You cannot keep identity columns in a `NO ACTION` FK *and* rely on a trigger — this is why `TriggerFallback` cannot preserve value-level RI. |
-| 4 | Kept `ON UPDATE CASCADE` composite FK (identity parts + DocumentId); update parent identity | Succeeds; referrer auto-updated | A kept cascade edge preserves full value-level RI and propagates natively. |
-| 5 | `INSTEAD OF UPDATE` trigger on a table that has a cascading FK | **Msg 2113** | The "reorder children-first via `INSTEAD OF`" alternative is unavailable on any table participating in a kept cascade. |
-| 6 | Diamond where the pruned `NO ACTION` edge shares a **key-unified** column with a surviving cascade path; update the shared key | Succeeds; shared column propagated | Pruning is *safe* exactly when the pruned edge's stored column is maintained by the surviving cascade, because `NO ACTION` never observes an inconsistent value. |
-
-**Scope of these probes.** Probe 1 exercises a **diamond** — one origin (`A`) reaching one receiver
-(`C`) by two distinct cascade paths, i.e. *duplicate reachability within a single update's action
-tree*. That is the actual 1785 condition (with cycles), per the Microsoft reference
-([MSSQLSERVER_1785](https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1785-database-engine-error):
-"a table cannot appear more than one time in the list of all the cascading referential actions … The
-tree of cascading referential actions must only have one path to a particular table"). It is **not**
-the case that any table with cascade in-degree > 1 is illegal: two `ON UPDATE CASCADE` FKs into one
-table from **independent** parents (no shared cascade ancestor) are legal, because no single
-`UPDATE`/`DELETE` reaches the table twice. The design below treats in-degree > 1 only as a candidate
-signal and confirms a real conflict by shared ancestry.
-
-Minimal reproductions:
-
-```sql
--- Probe 1: multiple cascade paths reach one receiver, rejected (Msg 1785).
--- Propagation direction is A -> {B, C} and B -> C; the receiver C is reached by
--- two cascade paths (A->C and A->B->C), which is what SQL Server rejects.
-CREATE TABLE dbo.A (Id int NOT NULL PRIMARY KEY);
-CREATE TABLE dbo.B (Id int NOT NULL PRIMARY KEY, A_Id int NOT NULL,
-    CONSTRAINT FK_B_A FOREIGN KEY (A_Id) REFERENCES dbo.A(Id) ON UPDATE CASCADE);
-CREATE TABLE dbo.C (Id int NOT NULL PRIMARY KEY, A_Id int NOT NULL, B_Id int NOT NULL,
-    CONSTRAINT FK_C_B FOREIGN KEY (B_Id) REFERENCES dbo.B(Id) ON UPDATE CASCADE,
-    CONSTRAINT FK_C_A FOREIGN KEY (A_Id) REFERENCES dbo.A(Id) ON UPDATE CASCADE); -- 1785 here
-
--- Probe 3: NO ACTION composite FK incl. identity columns blocks the parent update (Msg 547),
--- and an AFTER trigger cannot rescue it because the FK check precedes the trigger.
--- Column order is identity parts first, DocumentId last (the canonical DMS order).
-CREATE TABLE dbo.Target (DocumentId int NOT NULL PRIMARY KEY, IdVal nvarchar(50) NOT NULL,
-    CONSTRAINT UQ_Target_RefKey UNIQUE (IdVal, DocumentId));
-CREATE TABLE dbo.Referrer (DocumentId int NOT NULL PRIMARY KEY,
-    Target_IdVal nvarchar(50) NOT NULL, Target_DocumentId int NOT NULL,
-    CONSTRAINT FK_Referrer_Target FOREIGN KEY (Target_IdVal, Target_DocumentId)
-        REFERENCES dbo.Target (IdVal, DocumentId) ON UPDATE NO ACTION);
-INSERT dbo.Target VALUES (1, 'old'); INSERT dbo.Referrer VALUES (10, 'old', 1);
-UPDATE dbo.Target SET IdVal = 'new' WHERE DocumentId = 1; -- 547, even with an AFTER trigger present
-```
-
-### Validation on a populated database
-
-The mechanics above were re-confirmed against a real, populated Ed-Fi ODS/API database
-(`EdFi_Ods_Populated_Template`, SQL Server 2022) — the reference implementation this design
-mirrors — using transactions that were rolled back, so the database was left untouched:
-
-- **Cascade at scale on real composite keys.** Renaming one `edfi.Session` row (the 3-part natural
-  key `SchoolId, SchoolYear, SessionName`) cascaded transitively — `Session → CourseOffering → Section` — rewriting 237 CourseOfferings and 237 Sections (plus their own cascade descendants)
-  from a single `UPDATE`, in ~1.2 s. This is a concrete, real-data confirmation of the
-  identity-update *fan-out* risk in [strengths-risks.md](strengths-risks.md): one identity change on
-  a hub row synchronously rewrites hundreds-to-thousands of rows.
-- **1785 on a real hub.** Adding a second `ON UPDATE CASCADE` path that reaches `edfi.Section`
-  through `edfi.Session` (a diamond) failed with the verbatim
-  `Msg 1785 … may cause cycles or multiple cascade paths`; pruning that one redundant edge into the
-  receiver to `ON UPDATE NO ACTION` made the identical schema legal.
-- **Base-model observation.** In the stock Ed-Fi data model the cascade cluster (Section, Session,
-  CourseOffering, ClassPeriod, …; 41 `CASCADE` FKs vs 1628 `NO ACTION`) is already an acyclic graph
-  with no convergent diamond, so ODS pruned nothing in that schema. Pruning is exercised by specific
-  key-unification topologies (the `KeyUnifiedResource`-style extension in DMS-1129), not the base
-  model — so the safe-vs-unsafe classification and fail-fast matter chiefly for extensions and
-  heavily key-unified resources.
-
-## Design: pruning with a safety classification
-
-The strategy is **hybrid, deterministic, and fail-fast**. On SQL Server, DMS keeps
-`ON UPDATE CASCADE` (with the full composite FK, identity columns included) on every cascade edge
-that is not part of a diamond — including **independent** parents into a shared receiver — and, only
-where one origin reaches a receiver by two distinct paths (a *diamond*), prunes **one covered
-reconverging edge** to `NO ACTION` (still full composite). It refuses to emit DDL for any graph where
-no safe pruning exists — a cascade cycle/SCC/self-loop, or diamonds that cannot be jointly broken (a
-single uncovered diamond, or globally infeasible overlapping diamonds where no global survivor
-assignment satisfies the retained-`NativeCascade` invariant).
-This replaces the current "strip identity columns everywhere + trigger" default. **No pruned edge is
-ever reduced to a `DocumentId`-only FK, and an independent live edge is never pruned** (that would
-only reintroduce error 547).
-
-### 1. Build the cascade graph in propagation direction
-
-Vertices are storage tables (concrete resource roots, child/collection and `_ext` binding
-tables, and abstract identity tables). A directed **cascade edge** runs **from the referenced
-target table to the referrer binding table** — the direction an identity update propagates — when
-the reference is identity-propagating, i.e. the target is abstract or the concrete target has
-`TransitivelyAllowIdentityUpdates = true` (decision 4). This is the transitive-mutability set:
-directly-immutable references that are nonetheless transitively mutable are included; genuinely
-immutable references (`IsAbstract = false` and `TransitivelyAllowIdentityUpdates = false`) are
-**excluded** from the graph and always get a plain full-composite `NO ACTION` FK — classified
-`ImmutableNoAction` in the [derived-model contract](#derived-model-contract-for-dms-1258) — so they
-never participate in convergence and are not pruning candidates.
-
-This is the same underlying edge set that `ReferenceConstraintPass` and
-`DeriveTriggerInventoryPass.BuildReverseReferenceIndex` already enumerate — only the **orientation**
-of analysis is stated explicitly here (parent → child). The classification is a new pass over that
-graph, not a new graph. Ordering for determinism follows the existing convention (edges keyed by
-source/referrer table identifier, then constraint name), mirroring ODS's `sortBy(odsTableId)` so
-pruning is reproducible.
-
-### 2. Detect cycles / SCCs — fail fast
-
-Compute strongly-connected components over the propagation-direction graph (e.g. Tarjan's
-algorithm) and detect self-loops. Any nontrivial SCC (two or more mutually reachable tables) or
-self-loop among cascade edges is the "cycles" half of SQL Server error 1785 and has **no safe
-pruning rule** — pruning any single edge of a cycle does not make the remaining cascade acyclic in a
-way that still propagates every identity. DMS **fails derivation** with a diagnostic that names the
-SCC's tables and the exact FK edges (constraint names) forming the cycle.
-
-### 3. Detect duplicate reachability (diamonds) — not raw in-degree
-
-**What "origin" means.** Throughout this analysis an *origin* is **any cascade-graph ancestor** — any
-table from which cascade edges can reach the receiver — **not** only the resources at which DMS
-permits a *direct* identity update. This is deliberate. SQL Server 1785 is a **static, DDL-time**
-check over the entire cascade FK graph (when it builds the tree of cascading actions it treats every
-table as a potential update source), so the multitree property must hold from every ancestor for the
-schema to even `CREATE`; restricting origins to update-permitted roots would let non-creatable DDL
-through. Coverage (step 4) quantifies over the **same** origin set for a runtime reason: a pruned
-`NO ACTION` composite FK trips error 547 whenever its *referenced* key changes for **any** reason —
-including a cascade arriving from a transitively-mutable ancestor — so an edge is prunable only if a
-survivor maintains its columns for every ancestor that can reach it, regardless of where the update
-was first issued. The runtime `AllowIdentityUpdates` gate (`RelationalWriteIdentityStability`) governs
-only whether a *statement-level direct* identity write is accepted at a root resource; it does **not**
-bound which tables' keys change under propagation, so it never narrows the origin set for 1785 or 547.
-The graph is therefore built over the full transitive-mutability edge set (decision 4), and
-reachability/coverage quantify over all cascade ancestors.
-
-A table is legal on SQL Server iff it appears at most once in the cascade action tree of any single
-`UPDATE`/`DELETE` — equivalently, the cascade graph is a **multitree**: at most one directed cascade
-path between any ordered pair of tables. So the unit of analysis is **duplicate reachability**, not
-raw in-degree:
-
-- **Candidate signal (cheap prefilter).** A receiver with cascade in-degree > 1 is a *candidate* to
-  investigate — nothing more. Most such receivers are legal.
-- **Confirmed conflict (a diamond).** A candidate receiver `R` is an actual 1785 conflict only when
-  two of its incoming cascade edges have source tables that **share a common cascade ancestor** — i.e.
-  there is an origin `O` with two distinct `O → R` cascade paths. Compute this with ancestor sets
-  (`ancestor(v)` = `v` plus everything that reaches `v` via cascade edges): `R` conflicts iff two
-  incoming edges' sources have intersecting ancestor sets.
-- **Independent parents are legal.** If `R`'s incoming edges come from sources with **disjoint**
-  ancestor sets, no single update reaches `R` twice; every such edge stays `ON UPDATE CASCADE` and
-  **nothing is pruned** (diagram B). Pruning one of them would strand that parent's own identity
-  updates with no surviving cascade — the error-547 trap (diagram E).
-
-(This corrects the earlier "reduce every receiver to at most one incoming cascade edge" rule, which
-over-approximated 1785 by treating a multitree as if it had to be a forest.)
-
-### 4. Classify coverage using transitive mutability
-
-Every cascade edge is *live* by construction (an immutable reference would not be in the graph —
-decision 4). Only edges that participate in a **diamond** (step 3) are pruning candidates; the two
-(or more) paths from the shared origin `O` to the receiver `R` reconverge, and one reconverging edge
-must be pruned so `R` appears once in `O`'s action tree. The surviving path keeps `ON UPDATE CASCADE`;
-a reconverging edge `E` chosen for pruning is:
-
-- **Covered** — for **every** origin that reaches `R` through `E`, the surviving path from that origin
-  maintains the *same canonical storage columns* on `R` that `E` constrains (under key unification).
-  Pruning `E` to a full-composite `NO ACTION` FK is then safe: a survivor always keeps the shared
-  column consistent, so the pruned FK never observes a mismatch (probe 6). `E` becomes `NoPropagation`
-  and keeps the **full composite** FK — RI is preserved without a second cascade path.
-
-- **Uncovered (relative to the chosen survivor)** — under that survivor, some origin reaches `R`
-  through `E` with no surviving path maintaining `E`'s columns. Pruning `E` here is unsafe: a
-  full-composite `NO ACTION` on those columns would block that origin's real identity updates
-  (probe 3), and neither a trigger (probe 3) nor an `INSTEAD OF` reorder (probe 5) can rescue it while
-  the identity columns remain in the FK. Coverage is therefore a property of the *(edge, chosen
-  survivor)* pair: an uncovered edge makes **that candidate break inadmissible**, so step 5 tries
-  another survivor (or backtracks) rather than failing outright. Fail-fast (step 6) is reached only
-  when **no** admissible break exists under any survivor — e.g. `E` carries a different/non-unified
-  value regardless of survivor, or `E` is the *sole* path from an independent origin, so no survivor
-  can ever cover it.
-
-**Independent edges are never candidates.** An incoming edge whose source shares no ancestor with the
-receiver's other retained edges is not part of any diamond; it stays `NativeCascade`. Coverage is
-therefore evaluated *per originating tree* — never "does some other edge into `R` happen to touch the
-same column", which would wrongly green-light pruning an independent parent.
-
-### 5. Choose survivors globally and emit outcomes
-
-Independent edges (and every edge into an in-degree-≤-1 receiver) are emitted as `NativeCascade` — no
-pruning. Immutable references are outside the cascade graph entirely and are emitted as
-`ImmutableNoAction` (step 1). The remaining work is to break every **diamond** so that the final
-retained `NativeCascade` graph is a legal multitree while every pruned edge stays covered. Because
-overlapping diamonds can share edges, this is decided **globally** — not one diamond at a time — so a
-locally-valid choice is never committed on its own.
-
-**Per-diamond candidate breaks.** For a diamond (a receiver `R` reachable twice from a common origin),
-a *candidate break* keeps one reconverging edge as the survivor (`NativeCascade`) and prunes the other
-reconverging edge(s) into `R` to `NoPropagation`. A candidate break is *admissible* only when every
-edge it prunes is **covered** (step 4) for **every** origin that reaches `R` through it under key
-unification. A diamond's admissible candidate breaks are enumerated in a **stable order** — by
-survivor edge (source/referrer table identifier, then constraint name). A diamond with **no**
-admissible break (e.g. a reconverging edge that is also the sole path from an independent origin, or a
-different/non-unified value) has no local solution at all and forces fail-fast (step 6).
-
-**Global deterministic selection (backtracking search).** A single edge can be a reconverging edge of
-more than one diamond, so the break chosen for one diamond constrains the others — an edge has exactly
-one final mode. DMS-1258 therefore does **not** commit a per-diamond first-fit and then fail if the
-global invariant breaks; it selects the whole classification by a deterministic depth-first search:
-
-1. Order the diamonds stably (by receiver table identifier, then origin identifier).
-2. Visit diamonds in that order. At each diamond, try its admissible candidate breaks in the stable
-   order above, skipping any candidate whose per-edge mode assignment **conflicts** with a mode
-   already fixed by an earlier diamond on a shared edge.
-3. After tentatively fixing a diamond's break, advance to the next diamond. If a later diamond has no
-   admissible, non-conflicting candidate remaining, **backtrack** to the most recent diamond that
-   still has an untried candidate and advance it.
-4. Accept the **first complete assignment** (in this DFS order) whose final retained graph satisfies
-   the global invariant below. Because both the diamond order and the per-diamond candidate order are
-   stable, the accepted assignment is unique and reproducible.
-5. **Fail fast** (step 6) only when the search exhausts every candidate combination without any
-   assignment satisfying the invariant — i.e. the graph is genuinely unrepresentable, not merely
-   unrepresentable under one arbitrary local choice.
-
-**Global invariant (the acceptance predicate).** A complete assignment is valid iff:
-
-1. Every SQL Server reference FK has **exactly one** final `MssqlPropagationMode`.
-2. The retained `NativeCascade` subgraph (all kept `CASCADE` edges) is **acyclic**.
-3. The retained `NativeCascade` subgraph is a **multitree**: at most one directed cascade path between
-   any ordered pair of tables (no receiver is reachable twice from any origin over kept edges).
-4. Every `NoPropagation` edge is **covered by the final retained graph** — the surviving path that
-   justifies the prune exists and still maintains the shared canonical columns in the *final*
-   assignment, not merely within an isolated diamond.
-
-This is the load-bearing correction for **overlapping diamonds**: a candidate that is locally valid
-but globally invalid is a signal to try the next candidate (or backtrack), and the graph is rejected
-only when **no** deterministic global assignment satisfies (1)–(4). The search space is finite
-(finitely many diamonds, each with finitely many admissible breaks) and the traversal is fully
-ordered, so the outcome is deterministic and independent of diamond-visitation timing; DMS-1258 must
-implement it as such.
-
-| Final per-edge outcome (`MssqlPropagationMode`) | FK shape | `ON UPDATE` | Propagation mechanism | Carrier diagnostics |
-|------------------------|----------|-------------|-----------------------|---------------------|
-| `NativeCascade` (cascade-eligible; an independent edge, the surviving path of a diamond, or the sole edge into a receiver) | full composite (identity parts + DocumentId) | `CASCADE` | engine cascade (probe 4) | none |
-| `NoPropagation` (cascade-eligible; a covered reconverging edge of a diamond) | full composite | `NO ACTION` | none needed — covered by the surviving path for the same origin (probe 6) | **yes** — records the origin, receiver, both paths, and shared columns |
-| `ImmutableNoAction` (not cascade-eligible; immutable target, not in the cascade graph) | full composite | `NO ACTION` | none — the referenced identity cannot change | none |
-| **derivation fails** (cascade cycle/SCC; or diamonds that cannot be jointly broken — a single uncovered diamond, or globally-infeasible overlapping diamonds) | — | — | **fail fast** with a diagnostic | n/a |
-
-There is **no** `TriggerFallback` / `DocumentId`-only outcome. Every emitted SQL Server reference FK
-keeps the full composite key, so value-level RI is always enforced and the DMS-1002 stale-identity
-race does not reappear. Note that `ON UPDATE NO ACTION` is emitted for *two distinct* reasons —
-`NoPropagation` (a pruned but covered cascade-eligible edge) and `ImmutableNoAction` (a reference
-whose target identity cannot change) — so the mode is **not** derivable from the `OnUpdate` action
-alone; that is exactly why it is carried explicitly (see the contract).
-
-### 6. Fail fast when no safe pruning exists
-
-Derivation fails, with a diagnostic, in **two** conditions — the SQL Server graph cannot be made into
-a covered `NativeCascade` multitree. This fail-fast is **SQL Server–specific** (part of SQL Server
-model derivation); PostgreSQL is not pruned or failed by DMS — it keeps full-composite
-`ON UPDATE CASCADE` (see the *Dialect scope decision*). The two conditions are:
-
-1. **Cascade cycle / SCC** (step 2): the propagation graph has a nontrivial SCC or self-loop, so the
-   action tree revisits a table. Detected before survivor selection begins. Diagnostic names the SCC
-   tables and the FK edges forming the cycle.
-2. **Diamonds that cannot be jointly broken** (step 5): the global search finds no assignment that
-   breaks every diamond into a covered multitree. Same root cause — no safe prune exists — surfacing
-   two ways:
-   - a **single diamond with no admissible break** — an origin reaches the receiver by two distinct
-     cascade paths and no survivor choice covers the reconverging edge (a different/non-unified value
-     regardless of survivor, or a reconverging edge that is also the sole path from an independent
-     origin); or
-   - **globally infeasible overlapping diamonds** — each diamond has an admissible break in isolation,
-     but because overlapping diamonds share edges (an edge has exactly one final mode) no combination
-     satisfies the invariant. This is the case a per-diamond-local first-fit would have mis-handled.
-
-   There is no legal SQL Server DDL that preserves identity RI in either — SQL Server allows at most
-   one cascade path from an origin to a table (probe 1), a `NO ACTION` composite FK cannot be
-   trigger-rescued (probe 3), and `INSTEAD OF` is unavailable (probe 5). The diagnostic names the
-   origin/root, the receiver, the distinct cascade paths, the candidate/pruned edges, and the coverage
-   columns — and, for the overlapping case, the specific diamonds and the shared edge whose final mode
-   is over-constrained.
-
-These are precisely the cases ODS prunes silently and incorrectly. Failing here is safe because the
-schema that produces it should have been rejected at authoring time (see the MetaEd follow-up), so
-the DMS check is a defense-in-depth backstop. Because `TriggerFallback` is gone, this fail-fast is
-now the *only* backstop for an uncovered live edge — which makes the MetaEd authoring guard
-load-bearing rather than merely nice-to-have.
-
-## Dialect scope decision (AC: "MSSQL only, or both?")
-
-**Decision (team-ratified): foreign-key pruning, unsafe-graph detection, and fail-fast are emitted for
-SQL Server only. PostgreSQL keeps full-composite `ON UPDATE CASCADE` on every eligible edge and is left
-as-is — never pruned, never failed by DMS.** This follows the team's engine-specific policy: where the
-two engines cannot behave identically (as here — SQL Server's 1785 DDL restriction has no PostgreSQL
-equivalent), each engine does what works for it rather than being forced into parity. ODS prunes for
-both engines, but its motivation is uniform DDL generation, not a PostgreSQL need.
-
-- **SQL Server:** run the classification (§§ 1–5), emit pruning (`CASCADE` → `NO ACTION` rewrites at
-  covered diamonds), and **fail derivation** when no safe classification exists (§ 6).
-- **PostgreSQL:** emit full-composite `ON UPDATE CASCADE` on every eligible edge, unchanged. DMS does
-  **not** run the pruning classification or the fail-fast on PostgreSQL. PostgreSQL has no 1785 DDL
-  restriction, so it accepts the DDL at create time; no claim is made about PostgreSQL's runtime
-  behavior for a cascade *cycle*.
-- **Authoring (both engines):** MetaEd (METAED-1667) is the cross-engine authoring guard. It flags a
-  configuration whose cascade graph SQL Server cannot represent — a cascade cycle/SCC, or diamonds
-  that cannot be jointly broken — so authors do not ship a model that will fail to install on SQL
-  Server. This is where cross-engine safety lives, rather than forcing PostgreSQL derivation to reject
-  graphs it can represent.
-
-Rationale for keeping the *authoring* guard cross-engine even though DMS PostgreSQL derivation does not
-fail: an Ed-Fi model or extension is typically authored once and deployed to a mix of SQL Server and
-PostgreSQL sites, so a SQL-Server-incompatible model is best caught when it is authored, not when a SQL
-Server site tries to install it.
-
-## Derived-model contract for DMS-1258
-
-The classification produces per-edge metadata plus diagnostics that DDL generation, runtime, and
-manifest verification all consume. The **concrete C# shape is deferred to DMS-1258**, but this
-design fixes the contract that ticket must add. Today's shared model
-(`EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs`) only carries the FK's
-`ReferentialAction OnUpdate` and, in the compiled-mapping-set inventory, a trigger inventory
-(`compiled-mapping-set.md`); neither expresses cascade classification.
-
-DMS-1258 must add:
-
-- **Per-edge `MssqlPropagationMode`** on every SQL Server reference FK, with exactly three values —
-  a *total* classification, so a consumer never has to infer intent from `OnUpdate`:
-  - `NativeCascade` — a cascade-eligible edge that is **not** pruned: an independent edge (its source
-    shares no ancestor with the receiver's other retained edges), the surviving path of a diamond, or
-    the sole edge into a receiver; `ON UPDATE CASCADE`.
-  - `NoPropagation` — a cascade-eligible edge that was pruned but is covered by the surviving
-    cascade; `ON UPDATE NO ACTION`.
-  - `ImmutableNoAction` — a reference to a genuinely immutable target
-    (`IsAbstract = false` and `TransitivelyAllowIdentityUpdates = false`), which is not part of the
-    cascade graph and not a pruning candidate; `ON UPDATE NO ACTION`.
-
-  The `OnUpdate` action does **not** determine the mode: `CASCADE` ⇒ `NativeCascade`, but
-  `NO ACTION` is either `NoPropagation` or `ImmutableNoAction`. The mode is therefore carried
-  explicitly (it distinguishes "pruned but covered" from "immutable"), not derived. (The earlier
-  draft's `TriggerFallback` value is removed, and the `MssqlFkShape`
-  (`FullComposite` / `DocumentIdOnly`) axis is dropped entirely — every SQL Server reference FK is
-  full composite, so shape is no longer a variable.)
-- **Coverage / carrier diagnostics — only for `NoPropagation` edges**: enough to reconstruct the
-  diamond that justified the prune — the **originating root, the receiver, the surviving path and the
-  pruned path** (as ordered FK-constraint sequences), and the **shared canonical columns** the
-  survivor maintains — emitted into the relational-model manifest so pruning decisions are auditable
-  and reproducible. `NativeCascade` and `ImmutableNoAction` edges carry **no** carrier diagnostics —
-  there is nothing to attribute (a survivor is self-carrying; an immutable target never changes).
-- **Fail-fast derivation errors** for the two conditions in step 6, surfaced as hard derivation
-  errors (not manifest warnings): a **cycle/SCC** error carrying the SCC tables and the FK edges in
-  the cycle; and a **diamonds-cannot-be-jointly-broken** error covering both flavors of the second
-  condition — for a **single uncovered diamond**, the origin/root, the receiver, the two (or more)
-  distinct cascade paths, the candidate/pruned edges, and the coverage columns; and for **globally
-  infeasible overlapping diamonds** (no global assignment satisfies the retained-`NativeCascade`
-  invariant), the set of involved diamonds (their origins/roots and receivers), the shared edge(s)
-  whose single final mode is over-constrained, and the invariant clause (acyclic / multitree /
-  coverage) that could not be satisfied.
-
-PostgreSQL emission and its `OnUpdate` values are unchanged; `MssqlPropagationMode` is meaningful
-only for SQL Server model sets (it is absent / not applicable on PostgreSQL FKs).
-
-### Where the classification runs and lives (pass ordering, for DMS-1258)
-
-The classification is a new set-level pass with a fixed position in
-`RelationalModelSetPasses.CreatePasses`. Today that list runs, in order,
-`… ReferenceBindingPass → KeyUnificationPass → AbstractIdentityTableAndUnionViewDerivationPass →
-RootIdentityConstraintPass → TransitiveIdentityMutabilityPass → ReferenceConstraintPass → …`. The
-pruning classification MUST run:
-
-- **after `TransitiveIdentityMutabilityPass`**, because cascade-eligibility and liveness are defined
-  by `IsAbstract || TransitivelyAllowIdentityUpdates` (decision 4), which that pass computes;
-- **after `ReferenceBindingPass` / `KeyUnificationPass`**, so the reference-FK edge set and the
-  canonical (key-unified) columns each edge binds are known; and
-- **before the reference FK's `ON UPDATE` action is finalized** — i.e. it runs immediately before
-  `ReferenceConstraintPass` and feeds `ResolveOnUpdate`, or `ReferenceConstraintPass` is split so a
-  classification step precedes its `OnUpdate` finalization. Either way `ResolveOnUpdate` becomes a
-  **consumer** of `MssqlPropagationMode`, not the source of the `NO ACTION` / `CASCADE` decision.
-
-Storage: `MssqlPropagationMode` is carried **per reference FK** on the derived constraint model
-(alongside `ReferentialAction OnUpdate`) in the shared derived contract; the coverage/carrier
-diagnostics and the fail-fast errors are emitted into `relational-model.manifest.json`. The concrete
-C# shape is deferred to DMS-1258 (see the contract above); this note fixes only the ordering and the
-home of the metadata.
-
-## FK / RefKey column order (canonical)
-
-The canonical physical order for both the referenced-key UNIQUE (`*_RefKey`) and the composite
-reference FK is **identity storage columns first, `DocumentId` last**:
-`(<identity storage columns…>, DocumentId)`. This matches `ReferenceConstraintPass` today and the
-`/deletes` recreated-resource seek-path rationale in
-[change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes": leading with the
-identity values gives the anti-join a useful seek path, which a leading `DocumentId` would not.
-
-DMS-1258 requires **no change** to `ReferenceConstraintPass` column ordering. Design docs that
-previously illustrated `(DocumentId, <identity parts…>)` are corrected to this order for
-consistency (data-model.md, transactions-and-concurrency.md, key-unification.md, summary.md,
-ddl-generation.md).
-
-## Comparison to the ODS implementation
-
-ODS (`UpdateCascadeTopLevelEntityEnhancer.ts`) builds a graph from entities with
-`allowPrimaryKeyUpdates`, follows identity / identity-rename references, finds vertices whose
-`inEdges(...).length > 1`, sorts incoming edges by `odsTableId`, keeps the first, and marks the
-rest `odsCausesCyclicUpdateCascade = true` (rendered as `NO ACTION`). It has **no handling** for
-the case where a pruned edge is a live, uncovered identity source — it prunes by sort order
-regardless, which can silently drop a cascade that was actually required (the failure mode called
-out in DMS-1129).
-
-DMS keeps the deterministic graph/sort skeleton but makes three refinements. First, it **narrows the
-detection from `inEdges > 1` (raw in-degree) to per-origin duplicate reachability** (step 3): ODS's
-in-degree test over-approximates 1785 and would prune legal *independent* parents, whereas DMS leaves
-them as `CASCADE`. Second, it adds explicit **cycle/SCC detection** (step 2). Third, it adds the
-**coverage classification** (step 4) and **fail-fast** (step 6): a covered reconverging edge is pruned
-safely; a cascade cycle/SCC, or diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible overlapping diamonds), is a hard error, never a silent prune.
-
-## Migration from the current code
-
-- `ReferenceConstraintPass.ResolveOnUpdate` — currently returns `NoAction` for **all** SQL Server
-  reference FK updates. Under this design it returns `Cascade` for `NativeCascade` edges (independent
-  edges, diamond survivors, and sole edges into a receiver) and `NoAction` for `NoPropagation`
-  (covered reconverging) and `ImmutableNoAction` edges, driven by the new classification.
-- `ReferenceConstraintPass` `mssqlTriggerHandlesPropagation` branch — currently drops identity
-  columns from the FK (the `DocumentId`-only shape) for every abstract / transitively-mutable
-  target on SQL Server. Under this design that branch is **removed**: SQL Server reference FKs are
-  always emitted with the full composite key (identity parts first, `DocumentId` last), exactly like
-  PostgreSQL; only the `OnUpdate` action differs by classification. Column ordering is unchanged.
-- `DeriveTriggerInventoryPass.EmitMssqlIdentityPropagationTriggers` — currently emits a
-  propagation trigger for every eligible target. Under this design **no identity-value propagation
-  triggers are emitted**: native cascade on the kept edges (which naturally follow FKs on child
-  and extension binding tables) replaces the trigger fan-out, and covered pruned edges need no
-  propagation. The `MssqlIdentityPropagationTrigger` trigger kind is retired for identity-value
-  propagation. (The UUIDv5 referential-identity and abstract-identity *maintenance* triggers are
-  unaffected — see Non-goals.)
-- New derivation pass and output: the classification detects diamonds by **per-origin reachability**
-  (ancestor sets), not raw in-degree, so independent parents keep `CASCADE`. It emits per-edge
-  `MssqlPropagationMode` (`NativeCascade` / `NoPropagation` / `ImmutableNoAction`), coverage/carrier
-  diagnostics for `NoPropagation` edges only, and hard derivation errors for a cascade cycle/SCC/self-loop
-  or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible
-  overlapping diamonds where no global survivor assignment satisfies the retained-`NativeCascade`
-  invariant (see the contract above). Immutable references — which `ResolveOnUpdate` already
-  emits as `NO ACTION` — become `ImmutableNoAction` rather than being conflated with pruned/covered
-  edges.
-
-PostgreSQL emission is unchanged.
-
-## DMS-1258 alignment
-
-DMS-1258 has been updated to match this design (it previously described pruning as choosing a survivor
-"per referenced table", the wrong orientation per decision 1). The aligned ticket now states:
-
-- The survivor/prune decision is made **per diamond** — a receiver reached by two distinct cascade
-  paths from a common origin — analyzed in **propagation direction** using **per-origin duplicate
-  reachability** (a multitree violation). Raw cascade in-degree > 1 is only a candidate signal, and it
-  is **not** decided "per referenced/parent table"; independent parents into one receiver are legal
-  and are never pruned.
-- The per-edge outcomes are `NativeCascade`, `NoPropagation`, `ImmutableNoAction`, or fail-fast, and
-  every emitted SQL Server FK is full composite — no `TriggerFallback` / `DocumentId`-only shape.
-- Explicit **cycle/SCC fail-fast** is in scope, scoped to **SQL Server** (PostgreSQL is left as-is;
-  MetaEd is the cross-engine authoring guard — decision 5).
-- The classification runs after `TransitiveIdentityMutabilityPass` and feeds
-  `ReferenceConstraintPass.ResolveOnUpdate` (a consumer of `MssqlPropagationMode`), and the retained
-  graph must satisfy the global invariant above.
-
-## Follow-up work
-
-- **MetaEd** (authoring guard — the cross-engine catch): disallow `allow primary key updates`
-  configurations that yield a cascade graph SQL Server cannot represent — a cascade cycle/SCC, or
-  diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible
-  overlapping diamonds where no global survivor assignment satisfies the retained-`NativeCascade`
-  invariant) — so unsafe schemas are rejected at authoring, before they reach a SQL Server deployment.
-  Because DMS PostgreSQL derivation is left as-is (no fail-fast) and `TriggerFallback` is gone, this
-  authoring guard is the primary place such schemas are caught; the SQL Server DMS fail-fast is the backstop. Tracked as
-  METAED-1667.
-- **DMS-1258** (implementation): implement the propagation-direction graph, cycle/SCC detection, the
-  coverage classification, deterministic survivor selection with full-composite restoration on
-  kept/covered edges, removal of the `DocumentId`-only branch and the identity-propagation trigger,
-  the `MssqlPropagationMode` contract, and fail-fast derivation. (The ticket wording has been aligned
-  with this design — see the DMS-1258 alignment section above.)
-- **DMS-1128**: superseded by DMS-1258; reconcile with this design.
-
-## Non-goals
-
-- No production implementation is part of the DMS-1129 spike; only this design, the empirical
-  confirmation, and the follow-up tickets.
-- No change to PostgreSQL cascade behavior (full-composite `ON UPDATE CASCADE` on every eligible
-  edge).
-- No change to the UUIDv5 referential-identity or abstract-identity *maintenance* triggers; only the
-  identity-*value* propagation mechanism for SQL Server is in scope (native cascade replaces the
-  retired `MssqlIdentityPropagationTrigger`).
+The candidate/value-flow phases may be implemented as new set-level passes or as explicit internal phases of a
+refactored `ReferenceConstraintPass`, but there must be one shared candidate builder. Classification and FK emission must
+not independently reconstruct physical edge identity.
+
+Value-flow derivation uses abstract-identity column mappings already produced by abstract-identity derivation. It does not
+wait for the later trigger-inventory pass or parse rendered trigger SQL. The trigger inventory consumes the same mapping
+facts.
+
+Constraint hashing and identifier shortening occur after decisions are recorded. Those passes update final constraint
+names but retain `PhysicalForeignKeyId` and all diagnostic references.
+
+## Errors
+
+Required structured failure categories include:
+
+- `PhysicalForeignKeyCandidateConflict`;
+- `UnprovedComponentLineage`;
+- `UnprovedOriginRowCorrelation`;
+- `UnprovedReferencePresenceImplication`;
+- `IncompatibleStatementBoundary`;
+- `ConflictingCanonicalColumnWrites`;
+- `ForeignKeyInvalidAfterReceiverWrite`;
+- `UnsafePostgresqlActionAssignment`;
+- `NoSafeSqlServerAssignment`; and
+- `CascadeClassificationComplexityExceeded`.
+
+Errors identify mutation origins, statement boundaries, physical FK ids, tables, final or proposed constraint names,
+columns, reference sites, and the failed proof obligation. Diagnostics must be deterministic and bounded; long path sets
+use stable truncation plus total counts.
+
+## Verification Matrix
+
+DMS-1258 must add checked-in, executable unit and provider fixtures. Prose probes are not sufficient.
+
+### Physical candidate derivation
+
+- two logical sites that collapse to one physical FK;
+- two distinct parallel physical FKs between the same tables;
+- storage aliases mapped to one canonical column;
+- deterministic ids before and after identifier shortening; and
+- full-composite column order and final constraint deduplication.
+
+### Cross-engine value flow
+
+- one mutable parent and one receiver, succeeds;
+- independent mutable parents writing distinct receiver columns, succeeds;
+- independent mutable parents sharing a receiver column, fails on PostgreSQL and SQL Server;
+- mutable and immutable parent FKs sharing a receiver column, fails;
+- common-origin paths with full same-row and same-component lineage, succeeds when presence is proved;
+- same ancestor table but different origin rows, fails;
+- same origin row but different identity components/new values, fails;
+- required carrier with optional pruned reference, succeeds when implication is proved;
+- optional carrier absent while pruned reference is present, fails;
+- abstract/concrete shared-column paths separated by an AFTER-trigger boundary, fails unless another same-boundary proof
+  exists;
+- multi-row updates and transitive chains; and
+- child, collection, and `_ext` receiver tables.
+
+### SQL Server action selection
+
+- sole cascade edge;
+- legal independent multi-parent graph with value-disjoint columns;
+- covered diamond;
+- uncovered diamond;
+- parallel-edge conflict;
+- safely breakable and unbreakable cycle fixtures;
+- overlapping conflicts requiring backtracking;
+- no-solution assignment;
+- deterministic output under reversed input order; and
+- deterministic complexity-limit failure distinct from no solution.
+
+### Integration behavior
+
+- generated DDL creates on the latest supported PostgreSQL and SQL Server releases;
+- identity updates retain full value-level RI;
+- concurrent old-identity inserts are rejected;
+- cascaded child and extension updates fire stamping, referential-identity, and change-query maintenance correctly; and
+- successful manifests contain stable decisions/certificates while failed derivations produce no success artifacts.
+
+## Relationship to ODS
+
+ODS identifies tables with multiple incoming cascade edges, sorts by table id, retains one edge, and marks the others
+`NO ACTION`. DMS reuses neither raw in-degree nor name-order pruning as a safety rule.
+
+DMS differs in four material ways:
+
+1. It classifies deduplicated physical FKs after key unification, not logical entity edges.
+2. It separates SQL Server action-graph legality from cross-engine statement-scoped value safety.
+3. It jointly selects SQL Server actions using row, component, presence, and timing obligations.
+4. It fails when no proof exists instead of weakening the FK or silently dropping propagation.
+
+## Migration from Current Code
+
+DMS-1258 must:
+
+1. refactor `ReferenceConstraintPass` so storage-mapped physical candidates are built and deduplicated before `OnUpdate`;
+2. ensure candidate identity excludes `OnUpdate` so action choice cannot create duplicate physical constraints;
+3. derive value-flow facts and proof obligations from DMS write semantics and abstract-identity mappings;
+4. evaluate PostgreSQL's fixed assignment and implement SQL Server's joint bounded selector;
+5. restore identity columns to every SQL Server reference FK;
+6. remove `mssqlTriggerHandlesPropagation`, `EmitMssqlIdentityPropagationTriggers`,
+   `MssqlIdentityPropagationTrigger`, and `PropagationReferrerTarget`;
+7. emit structured Success/Failure results and success-only SQL Server decision diagnostics; and
+8. add the executable conformance matrix above.
+
+No `RelationalMappingVersion` bump or compatibility migration accompanies this work because it is part of the initial,
+pre-production v1 contract.
+
+## MetaEd Alignment
+
+METAED-1667 remains the authoring-time guard. It must not approximate this design as raw table in-degree or common
+ancestry. DMS is authoritative because it owns canonical storage mapping, physical FK deduplication, abstract-identity
+statement mappings, and the emitted dialect model.
+
+DMS and MetaEd must share a versioned, repository-neutral conformance corpus containing the positive and negative graph,
+component-lineage, row-correlation, optional-presence, and statement-boundary fixtures above. For every fixture, MetaEd
+and DMS must agree on accept/reject and the stable error category. SQL Server-only action decisions remain DMS physical
+diagnostics; MetaEd needs only enough detail to reject an authoring model that has no supported DMS realization.
+
+Release sequencing: the MetaEd guard should ship before or with SQL Server support that accepts authored extensions. DMS
+still runs its own derivation checks as the final backstop on both dialects.
+
+## Follow-Up Work
+
+- **DMS-1258:** implement physical candidate derivation, `ValueFlowAnalysis`, PostgreSQL fixed-assignment evaluation,
+  SQL Server joint bounded selection, final full-composite FK emission, diagnostics, and the verification matrix.
+- **METAED-1667:** replace table-reachability pruning validation with authoring-time checks backed by the shared
+  conformance corpus.
+- **DMS-1127:** verify that native cascade updates on root, child, and extension tables fire stamping,
+  referential-identity, and change-query maintenance correctly.
+- **DMS-1128:** remains superseded; its historical hybrid trigger/fallback design must not be implemented.
+- **Cross-scope key unification:** remains separate future work as documented in
+  `key-unification-children-problem.md`.
+
+## Non-Goals
+
+- Arbitrary direct SQL identity-update success.
+- A reduced-FK or trigger-based propagation fallback.
+- In-place database migration or compatibility with pre-production packs/databases.
+- General cross-table or root-to-child equality propagation. Row-local key unification remains the supported database
+  scope; `key-unification-children-problem.md` tracks the separate gap.
+- Changing abstract-identity maintenance from its current DMS-owned AFTER-trigger mechanism. This design models that
+  boundary and rejects incompatible topologies.
+- Application-managed closure traversal for identity propagation.

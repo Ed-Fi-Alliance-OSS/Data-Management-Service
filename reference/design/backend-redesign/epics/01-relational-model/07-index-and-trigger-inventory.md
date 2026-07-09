@@ -23,9 +23,10 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
 - Set-level (`DMS-1033`) uses two whole-schema passes over the complete derived table/constraint inventory:
   - `DeriveIndexInventoryPass`: applies FK index policy deterministically.
   - `DeriveTriggerInventoryPass`: derives trigger intent inventory (stamping, referential-identity, and abstract-identity
-    maintenance triggers). SQL Server identity-value propagation is **not** a trigger — it is native `ON UPDATE CASCADE`
-    on eligible edges, with foreign-key pruning removing cascade from a covered reconverging edge only at a diamond (see `design-docs/mssql-cascading.md`); the retired
-    `MssqlIdentityPropagationTrigger` fan-out is not emitted.
+    maintenance triggers). SQL Server identity-value propagation is **not** a trigger. Before these inventory passes run,
+    reference derivation storage-maps and de-duplicates physical FK candidates, derives dialect-neutral value-flow proof
+    obligations, and selects actions that satisfy those obligations (jointly with error 1785 on SQL Server); see
+    `design-docs/mssql-cascading.md`.
 
 ## Scope (What This Story Is Talking About)
 
@@ -98,12 +99,16 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 - Trigger contracts interpret `IdentityProjectionColumns` as null-safe old/new value-diff compare sets, not
   `UPDATE(column)` gates.
 - SQL Server identity-value propagation is **not** a trigger and produces no trigger intents. It is handled by
-  foreign-key pruning in `ReferenceConstraintPass` / DDL generation (see `design-docs/mssql-cascading.md`):
-  - SQL Server reference composite FKs use `ON UPDATE CASCADE` on eligible edges (including independent parents into a
-    shared receiver); only at a diamond (a receiver reached by two distinct cascade paths from one origin) is one covered
-    reconverging edge pruned to `ON UPDATE NO ACTION` (full composite); every FK keeps the full composite key.
-  - a cascade cycle/SCC, or diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible overlapping diamonds), fails derivation.
-  - the retired `MssqlIdentityPropagationTrigger` fan-out is **not** part of the trigger inventory.
+  final physical FK actions in reference-constraint derivation (see `design-docs/mssql-cascading.md`):
+  - physical FK identity and de-duplication exclude `OnUpdate` and `MssqlPropagationMode`,
+  - dialect-neutral value-flow analysis derives exact changed-column, row-correlation, presence, and statement-timing
+    obligations; PostgreSQL evaluates its fixed actions, while the SQL Server selector jointly satisfies those obligations
+    and error 1785,
+  - every `NoPropagation` decision has an ordered `CoverageCertificates` list with one certificate per mutation-origin
+    and changed-component case; decisions are success-only diagnostics keyed by physical FK id,
+  - every FK remains full-composite; no identity-value propagation trigger is part of the inventory,
+  - failure returns a structured derivation failure, so index/trigger inventory and a success manifest are not emitted for
+    a partial model.
 - Trigger names follow `data-model.md` rules and are collision-checked after dialect shortening.
   - Trigger naming should use `TR_{TableName}_{Purpose}` with purpose tokens aligned to `data-model.md`:
     - `Stamp`, `ReferentialIdentity`, `AbstractIdentity`.
@@ -124,13 +129,14 @@ Out of scope for this story:
 
 1. Implement deterministic index derivation from:
    - table keys + unique constraints (implied indexes),
-   - FK constraints (FK-support indexes per policy),
+   - finalized, storage-mapped, physically de-duplicated FK constraints (FK-support indexes per policy),
    - any explicit index intents required by the design.
 2. Implement deterministic trigger intent derivation per `ddl-generation.md`:
    - table stamping triggers,
    - referential identity maintenance triggers,
    - abstract identity maintenance triggers.
-   - (SQL Server identity-value propagation is native `ON UPDATE CASCADE` via foreign-key pruning, not a trigger — see `design-docs/mssql-cascading.md`; no propagation trigger is derived here.)
+   - identity-value propagation is represented by finalized FK actions, not a trigger (see
+     `design-docs/mssql-cascading.md`).
 3. Ensure both the DDL emitter and the manifest emitter consume the same derived inventories.
 4. Add unit tests for ordering, suppression, and naming determinism.
 5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.

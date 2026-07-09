@@ -405,7 +405,10 @@ Canonical JSON contract (normative for `canonicalizeJson(...)`):
 
 - `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v1`).
 - The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
-- Changing mapping rules requires bumping `RelationalMappingVersion` (or, if the hash algorithm itself changes, bump the hash header/version).
+- DMS-1129 finalizes the initial `v1` mapping contract before any supported production deployment. It does not require a
+  version bump, database migration, or legacy mapping-pack handling.
+- After the first supported production baseline is declared, changing mapping rules requires bumping
+  `RelationalMappingVersion` (or, if the hash algorithm itself changes, bumping the hash header/version).
 
 Algorithm (suggested):
 
@@ -589,17 +592,25 @@ Typical structure:
     - `..._DocumentId BIGINT` (stable FK key part), and
     - one **binding/path** column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`).
       - Under key unification, these per-site columns remain in the table shape but may be generated/persisted `UnifiedAlias` columns of canonical storage columns; see `key-unification.md`.
-  - Enforce a composite reference FK using only stored/writable **storage** columns:
+  - Derive a composite reference FK candidate using only stored/writable **storage** columns:
     - `FOREIGN KEY (<StorageIdentityParts...>, ..._DocumentId) REFERENCES <TargetRefKey>(<TargetStorageIdentityParts...>, DocumentId)` (identity storage columns first, `DocumentId` last)
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
-      - PostgreSQL:
-        - concrete targets: `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`; `ON UPDATE NO ACTION` otherwise)
-        - abstract targets: `ON UPDATE CASCADE`
-      - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
-        - eligible edges (including independent parents into a shared receiver): full composite FK with `ON UPDATE CASCADE`
-        - pruning happens only at a **diamond** (where one update would otherwise reach a table by two cascade paths): keep the surviving path as `ON UPDATE CASCADE` and prune one reconverging edge to full-composite `ON UPDATE NO ACTION`, allowed only when it is covered by the survivor (its identity columns are maintained by that cascade under key unification) — there is no `DocumentId`-only trigger fallback, and independent parents are never pruned
-        - derivation fails fast when no safe pruning exists: a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds
+  - After every logical reference site has been mapped through storage, canonicalize and deduplicate identical candidates
+    by their physical source/target tables and ordered column pairs. Assign update actions only to this physical inventory.
+  - Derive cross-engine, statement-scoped `ValueFlowAnalysis` facts and proof obligations from the physical inventory.
+    For any mode assignment that writes a canonical column read by another FK, the obligations cover exact component
+    lineage, origin-row correlation, reference co-presence, and compatible statement timing. Shared columns and table
+    reachability are not sufficient.
+  - PostgreSQL evaluates its fixed assignment (`ON UPDATE CASCADE` when the target identity can change transitively via
+    `IsAbstract || TransitivelyAllowIdentityUpdates`, `ON UPDATE NO ACTION` otherwise) against every obligation. Fail
+    derivation if that assignment cannot be certified.
+  - SQL Server jointly selects `NativeCascade` / `NoPropagation` modes so the final assignment satisfies both error 1785
+    and every value-flow obligation. A `NoPropagation` candidate uses full-composite `ON UPDATE NO ACTION` only when its
+    final-assignment coverage certificate proves that another retained action maintains the same row and component
+    values in the relevant statement. Fail derivation when no certifiable assignment exists.
+  - Every physical FK remains full composite. There is no `DocumentId`-only or identity-value propagation-trigger
+    fallback; see [mssql-cascading.md](mssql-cascading.md).
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
@@ -655,8 +666,13 @@ This redesign provisions an **identity table per abstract resource**:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)` (identity fields first, `DocumentId` last).
-    - PostgreSQL: `ON UPDATE CASCADE`.
-    - SQL Server: foreign-key pruning — `ON UPDATE CASCADE` on eligible edges, pruning a covered edge to `ON UPDATE NO ACTION` (full composite) only at a diamond, and fail-fast on cycles/SCC or diamonds that cannot be jointly broken, incl. globally infeasible overlapping; see [mssql-cascading.md](mssql-cascading.md). Abstract identity tables are themselves trigger-maintained (abstract-identity *maintenance* triggers, distinct from identity-value propagation); `allowIdentityUpdates` applies to concrete targets.
+    - These become physical FK candidates after storage mapping and deduplication. `ValueFlowAnalysis` models
+      abstract-identity *maintenance* triggers as a separate statement boundary from the concrete-row update and derives
+      the corresponding proof obligations.
+    - PostgreSQL evaluates its fixed action with those obligations. SQL Server includes them while jointly selecting
+      modes for value-flow safety and error 1785, and permits full-composite `NO ACTION` only when coverage is certified
+      against the final assignment; see [mssql-cascading.md](mssql-cascading.md). `allowIdentityUpdates` applies to
+      concrete targets.
 
 Required: `{schema}.{AbstractResource}_View` union view
 
@@ -669,7 +685,9 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 Usage:
 
 - Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
-- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges — see [mssql-cascading.md](mssql-cascading.md)).
+- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer
+  and kept consistent through the certified dialect physical FK assignment; see
+  [mssql-cascading.md](mssql-cascading.md)).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
 DDL generation requirement:

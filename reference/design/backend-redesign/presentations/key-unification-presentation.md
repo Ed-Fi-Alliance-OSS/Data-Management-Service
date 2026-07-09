@@ -144,8 +144,22 @@ StudentSchoolAssociation_StudentUniqueId AS (
 
 ## Cascade Safety
 
-- **PostgreSQL**: Multiple cascade paths reaching the same canonical column are safe — only one writable column exists, so no mid-cascade check failure can occur.
-- **SQL Server**: Rejects a table reached twice in one update's cascade action tree — two paths from a common origin (a diamond), or a cycle (error 1785). Independent parents into one receiver are legal. Foreign-key pruning keeps native `ON UPDATE CASCADE` on eligible edges and, only at a diamond, prunes one covered reconverging edge to `ON UPDATE NO ACTION` (full composite); a cascade cycle/SCC, or diamonds that cannot be jointly broken (a single uncovered diamond, or globally infeasible overlapping diamonds), fails derivation. Pruning/fail-fast are SQL-Server-only; PostgreSQL is never pruned or failed by DMS. No propagation trigger (see `design-docs/mssql-cascading.md`).
+- A shared canonical receiver column removes duplicate storage; it does **not** prove update safety. Independent mutable
+  parents, or a mutable parent plus an immutable FK, can read the same receiver column and invalidate one another.
+- Logical references are storage-mapped and physically de-duplicated before actions are assigned. Physical identity is
+  `(semantic FK kind, local table, ordered local columns, target table, ordered target columns, ON DELETE)` and excludes
+  update action/mode, logical path, and generated name; incompatible contributor metadata is an error, not a duplicate
+  FK.
+- Dialect-neutral `ValueFlowAnalysis` derives statement-scoped obligations for exact changed-column lineage, equality of
+  competing receiver writes, correlated rows, optional-site presence, and constraint timing. Abstract-identity
+  AFTER-trigger writes are later statement boundaries.
+- **PostgreSQL** evaluates its fixed eligible-`CASCADE`/immutable-`NO ACTION` assignment against those obligations.
+- **SQL Server** jointly selects `NativeCascade`, `NoPropagation`, or `ImmutableNoAction` to satisfy the obligations and
+  error 1785. Every success-only `NoPropagation` decision is keyed by physical FK id and has an ordered
+  `CoverageCertificates` list, one per mutation-origin/changed-component case, with row-lineage, column-lineage,
+  presence, and timing proof.
+- An undischarged obligation or infeasible SQL Server assignment is a structured derivation failure, not a success
+  manifest. Every FK stays full-composite; no identity-value propagation trigger exists.
 
 ## Triggers Under Unification
 
@@ -189,7 +203,7 @@ All members of a class must share the exact same physical signature:
 
 ## Pass Ordering
 
-`KeyUnificationPass` runs as step 5 in the set-level compilation pipeline:
+`KeyUnificationPass` runs before physical reference-FK derivation:
 
 1. BaseTraversalAndDescriptorBindingPass
 2. DescriptorResourceMappingPass
@@ -197,21 +211,31 @@ All members of a class must share the exact same physical signature:
 4. ReferenceBindingPass
 5. **KeyUnificationPass** ← new
 6. AbstractIdentityTableAndUnionViewDerivationPass
-7. RootIdentityConstraintPass
-8. ReferenceConstraintPass
-9. ArrayUniquenessConstraintPass
-10. ApplyConstraintDialectHashingPass
-11. IndexAndTriggerInventoryPass
-12. ApplyDialectIdentifierShorteningPass
-13. CanonicalizeOrderingPass
+7. ValidateUnifiedAliasMetadataPass
+8. RootIdentityConstraintPass
+9. TransitiveIdentityMutabilityPass
+10. ReferenceConstraintPass internal phases:
+    - storage-map + physical de-duplication
+    - dialect-neutral value-flow obligation analysis
+    - PostgreSQL fixed-action evaluation / SQL Server joint value-flow + 1785 selection
+    - final FK emission
+11. Remaining constraint, naming, inventory, shortening, and canonical-ordering passes
 
 **After** ReferenceBindingPass (so propagated identity-part columns exist) and **before** constraint derivation passes (so they see the unified model).
 
 ## Manifest + Mapping Pack
 
-- Relational-model manifests must include per-column `storage` metadata, per-table `key_unification_classes`, per-resource equality-constraint diagnostics (`applied`/`redundant`/`ignored`), and descriptor FK de-duplication reports.
-- Mapping-pack payloads (`.mpack`) carry the same metadata for AOT mode. `RelationalMappingVersion` must be bumped when key unification semantics are enabled.
+- Success manifests include per-column `storage`, per-table `key_unification_classes`, equality-constraint diagnostics,
+  descriptor FK de-duplication, and success-only SQL Server decisions with ordered `CoverageCertificates` for
+  `NoPropagation` modes.
+- Failures are separate structured derivation results; a partial model is never serialized as a success manifest.
+- Mapping packs carry runtime-required unification metadata and final FK `on_update`, but not derivation-only SQL Server
+  modes/certificates.
+- This is the pre-production v1 baseline; no `RelationalMappingVersion` bump or migration is required.
 - All metadata is represented structurally — no SQL text, no naming-convention inference.
+
+MetaEd (METAED-1667) and DMS consume the same versioned conformance corpus. Cross-table/root-to-child equality
+propagation remains separate future work and cannot serve as FK coverage evidence.
 
 ## Worked Example: Synthetic Presence Flags
 

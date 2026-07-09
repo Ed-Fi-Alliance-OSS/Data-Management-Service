@@ -80,6 +80,8 @@ Explicitly out of scope for this redesign phase:
   - `relational-model.{dialect}.manifest.json` (per-dialect derived model inventory used to generate DDL and compile plans)
   - `ddl.manifest.json` (per-dialect normalized DDL hashes and statement counts)
   - File naming and minimum required fields are defined in `ddl-generator-testing.md` (“Artifacts and fixtures (normative)”).
+- A relational-model derivation failure may be rendered as a separate structured failure report, but it produces no SQL,
+  mapping pack, or successful manifest artifact.
 
 ## SQL Text Canonicalization (Determinism Contract)
 
@@ -223,14 +225,28 @@ The DDL generator must emit document-reference columns and constraints that enab
   - All-or-none constraints are defined over:
     - the reference group’s `..._DocumentId`, and
     - the per-site identity-part binding columns (even when those columns are generated aliases).
-- Enforce a composite FK over **storage columns only**. Column order is **identity storage columns first, then the reference `..._DocumentId` / `DocumentId` last**, and the local and target lists MUST be **positionally aligned** (FK pairing is positional: local column *i* pairs with target column *i*):
+- Derive a full-composite physical FK candidate over **storage columns only**. Column order is **identity storage columns first, then the reference `..._DocumentId` / `DocumentId` last**, and the local and target lists MUST be **positionally aligned** (FK pairing is positional: local column *i* pairs with target column *i*):
   - Local FK columns (in this order):
     - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`, then
     - the reference group’s `..._DocumentId`.
   - Target columns (in the matching order):
     - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, then
     - `DocumentId`.
-  - Use `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`; otherwise `ON UPDATE NO ACTION`), and use `ON DELETE NO ACTION`. On SQL Server, foreign-key pruning further constrains `ON UPDATE CASCADE`: it stays on eligible edges (including independent parents into a shared receiver), and only at a **diamond** (a receiver reached by two distinct cascade paths from one origin) is one reconverging edge pruned to `ON UPDATE NO ACTION` (still full composite), allowed only when covered by the surviving path, with fail-fast when no safe pruning exists (a cascade cycle/SCC, or diamonds that cannot be jointly broken — a single uncovered diamond, or globally infeasible overlapping diamonds). There is no `DocumentId`-only trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
+- After storage mapping, canonicalize and deduplicate candidates by physical source/target tables and ordered column pairs.
+  Update actions MUST be assigned only after this physical inventory is final.
+- Derive cross-engine, statement-scoped `ValueFlowAnalysis` facts and proof obligations. For any mode assignment that
+  writes a canonical column read by another FK, require exact component lineage, origin-row correlation, reference
+  co-presence, and compatible statement timing (including the separate statement used by abstract-identity maintenance
+  triggers). Shared columns or table reachability alone do not prove coverage.
+- Evaluate PostgreSQL's fixed assignment (`ON UPDATE CASCADE` when the referenced target's identity can change
+  transitively via `IsAbstract || TransitivelyAllowIdentityUpdates`, `ON UPDATE NO ACTION` otherwise) against all proof
+  obligations. Fail derivation if the assignment cannot be certified.
+- For SQL Server, jointly select `NativeCascade` / `NoPropagation` modes so the final assignment satisfies both error
+  1785 and every value-flow obligation. A `NoPropagation` candidate uses full-composite `ON UPDATE NO ACTION` only with a
+  coverage certificate derived from the final assignment and proving that a retained action maintains the same row and
+  component values in the relevant statement. Fail derivation when no certifiable assignment exists.
+- Use `ON DELETE NO ACTION` for reference FKs. There is no `DocumentId`-only or identity-value propagation-trigger
+  fallback; see [mssql-cascading.md](mssql-cascading.md).
 - Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(<IdentityParts...>, DocumentId)` because `DocumentId` is already unique; identity storage columns first, `DocumentId` last — see [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes").
   - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).
 
@@ -486,6 +502,11 @@ DMS runtime should remain “validate-only”:
 - A shared “artifact emitter” library used by both CLI and tests to produce normalized SQL + manifests for fixture comparisons (see `ddl-generator-testing.md`).
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:
   - stable naming,
+  - stable physical FK candidate canonicalization and deduplication,
+  - positive and negative canonical-column `ValueFlowAnalysis` fixtures on both engines (including optional-site presence,
+    independent parents, component lineage, origin-row correlation, and abstract-trigger statement boundaries),
+  - PostgreSQL fixed-action certification,
+  - SQL Server joint value-flow / error-1785 mode selection and final-assignment coverage certificates,
   - DDL success,
   - `EffectiveSchemaHash` recording,
   - basic introspection/diff correctness.

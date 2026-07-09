@@ -23,7 +23,12 @@ The backend redesign needs resource-state-sensitive metadata:
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
 
 - persisting referenced identity values as local columns alongside every `..._DocumentId` reference, and
-- using `ON UPDATE CASCADE` only when the referenced target's identity can change transitively (`IsAbstract || TransitivelyAllowIdentityUpdates`); otherwise `ON UPDATE NO ACTION`. On SQL Server, foreign-key pruning limits `ON UPDATE CASCADE` only at a diamond (where one update would otherwise reach a table by two cascade paths, one covered reconverging edge becomes `NO ACTION`); independent parents into a shared receiver keep `CASCADE` (native cascade, no propagation trigger); see [mssql-cascading.md](mssql-cascading.md).
+- deriving deduplicated full-composite physical FK candidates after canonical storage mapping, then deriving cross-engine,
+  statement-scoped `ValueFlowAnalysis` proof obligations over component lineage, origin-row correlation, reference
+  co-presence, and statement boundaries. PostgreSQL evaluates its fixed action assignment against those obligations. SQL
+  Server jointly selects `NativeCascade` / `NoPropagation` modes satisfying both value flow and error 1785, then
+  certifies any full-composite `NO ACTION` coverage from the final assignment. Uncertifiable cases fail derivation, with
+  no `DocumentId`-only or propagation-trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
 
 Those referrer updates naturally trigger the same stamping rules as “direct” writes.
 
