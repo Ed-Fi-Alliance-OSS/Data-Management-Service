@@ -1000,15 +1000,55 @@ internal sealed class DescriptorWriteHandler(
                 .Instance,
             DescriptorCurrentStateLoadResult.MissingDescriptor =>
                 new DescriptorLockedPreconditionResult.MissingDescriptor(existingTargetContext.DocumentId),
-            DescriptorCurrentStateLoadResult.Loaded(_, var currentEtag)
-                when !EtagPreconditionEvaluator.IsSatisfied(precondition, targetExists: true, currentEtag) =>
-                DescriptorLockedPreconditionResult.Mismatch.Instance,
             DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag) =>
-                new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag),
+                EvaluateDescriptorPreconditionWithLogging(
+                    precondition,
+                    existingTargetContext,
+                    persisted,
+                    currentEtag,
+                    _logger
+                ),
             _ => throw new InvalidOperationException(
                 $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
             ),
         };
+    }
+
+    private static DescriptorLockedPreconditionResult EvaluateDescriptorPreconditionWithLogging(
+        WritePrecondition precondition,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        PersistedDescriptorState persisted,
+        string currentEtag,
+        ILogger logger
+    )
+    {
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
+            precondition,
+            targetExists: true,
+            currentEtag
+        );
+
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            var clientTag = precondition switch
+            {
+                WritePrecondition.IfMatch m => m.IsWildcard ? "*" : m.Value,
+                WritePrecondition.IfNoneMatch n => n.IsWildcard ? "*" : string.Join(", ", n.Values),
+                _ => "(none)",
+            };
+            logger.LogDebug(
+                "Descriptor etag precondition for document {DocumentId}: "
+                    + "clientTag={ClientTag}, currentTag={CurrentTag}, satisfied={IsSatisfied}",
+                targetContext.DocumentId,
+                clientTag,
+                currentEtag,
+                isSatisfied
+            );
+        }
+
+        return isSatisfied
+            ? new DescriptorLockedPreconditionResult.Loaded(targetContext, persisted, currentEtag)
+            : DescriptorLockedPreconditionResult.Mismatch.Instance;
     }
 
     private static RelationalWriteTargetContext TranslateDescriptorTargetContext(
