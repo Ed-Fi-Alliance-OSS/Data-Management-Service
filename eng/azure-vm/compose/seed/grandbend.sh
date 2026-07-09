@@ -6,12 +6,13 @@
 # (fastest seeding, and it avoids the bulk-load rate-limiter tuning entirely).
 #
 # ⚠️ RELATIONAL BACKEND REQUIRED. This stack runs the DMS *relational* backend
-# (per-resource edfi.* tables + a dms.EffectiveSchema fingerprint). You MUST use a
-# RELATIONAL build of EdFi.Api.Populated.Template.PostgreSql.5.2.0 — i.e. a package built
-# after the DS52 relational cutover (DMS-1159, 2026-06-09). The older builds (e.g. 0.7.x)
-# are the LEGACY DOCUMENT-STORE format (only dms.Document/Reference/Alias; no edfi.* tables,
-# no dms.EffectiveSchema) and are INCOMPATIBLE — restoring one into a relational DB fails
-# the EffectiveSchema check. This script GUARDS against that and refuses a document-store dump.
+# (per-resource edfi.* tables + a dms.EffectiveSchema fingerprint). Every
+# EdFi.Api.Populated.Template.* build postdates the DS52 relational cutover (DMS-1159,
+# 2026-06-09) and is relational; the LEGACY DOCUMENT-STORE dumps shipped under the retired
+# EdFi.Dms.Populated.Template.* package ids (only dms.Document/Reference/Alias; no edfi.*
+# tables, no dms.EffectiveSchema) and are INCOMPATIBLE — restoring one into a relational DB
+# fails the EffectiveSchema check. This script GUARDS against that and refuses a
+# document-store dump regardless of the package id it came from.
 #
 # The template's EffectiveSchema must also match the running image's ApiSchema surface
 # (Data Standard + extensions); a mismatch makes DMS reject the database at startup.
@@ -70,8 +71,9 @@ if ! grep -qiE 'create schema edfi|create table edfi\.|effectiveschema' "$sql"; 
   cat >&2 <<EOF
 ERROR: '$PKG_ID' $PKG_VER looks like the LEGACY DOCUMENT-STORE template (no edfi.* tables
        and no dms.EffectiveSchema). This stack runs the RELATIONAL backend, which rejects
-       it. Use a relational build (post DMS-1159, 2026-06-09) or seed via API bulk-load +
-       seed/clone-data.sh. See docs/infrastructure.md.
+       it. Use an EdFi.Api.Populated.Template.* build (the document-store dumps shipped
+       under the retired EdFi.Dms.* ids) or seed via API bulk-load + seed/clone-data.sh.
+       See docs/infrastructure.md.
 EOF
   exit 2
 fi

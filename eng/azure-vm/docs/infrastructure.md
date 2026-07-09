@@ -206,10 +206,11 @@ Order used to stand the environment up (and that a re-deploy should follow):
    .NET 10 SDK on the host. The VM hosts install no .NET, so build it self-contained in a
    container instead: `dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools
    -r linux-x64 --self-contained` (see `provision/REDEPLOY.md` Part C).
-6. **Populated template must be RELATIONAL.** `seed/grandbend.sh` requires a relational build
-   of `EdFi.Api.Populated.Template.PostgreSql.5.2.0` (post `DMS-1159`, 2026-06-09); the older
-   `0.7.x` builds are the legacy document-store format and are rejected by the relational
-   backend (the script guards against them).
+6. **Populated template must be RELATIONAL.** `seed/grandbend.sh` restores
+   `EdFi.Api.Populated.Template.PostgreSql.5.2.0`; every build under that id postdates the
+   relational cutover (`DMS-1159`, 2026-06-09). The legacy document-store dumps shipped under
+   the retired `EdFi.Dms.Populated.Template.*` ids and are rejected by the relational backend
+   (the script guards against them regardless of the package id).
 7. **Keycloak issuer behind the proxy.** Tokens are issued with `iss =
    https://<PUBLIC_HOST>/auth/realms/edfi`; if DMS rejects valid tokens, re-check
    `KC_HOSTNAME`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`, and that the metadata `issuer` matches
