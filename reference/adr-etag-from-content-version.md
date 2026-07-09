@@ -353,10 +353,12 @@ The ADR's original analysis and every prior amendment addressed only `If-Match`.
 
 **Two behaviors.**
 
-- **Conditional read** (GET-by-id; HEAD when/if supported). When the precondition is *false* — the client's tag matches the current representation — the server responds **`304 Not Modified`** with the current `ETag` header and no body. When *true*, it responds `200` with the full representation as usual.
+- **Conditional read** (GET-by-id; HEAD when/if supported). When the precondition is *false* — **any** of the client's tags matches the current representation — the server responds **`304 Not Modified`** with the current `ETag` header and no body. When *true* (none match), it responds `200` with the full representation as usual.
 - **Write create-guard** (POST upsert, PUT update-by-id). When the precondition is *false*, the server responds **`412`**. The dominant, RFC-canonical form is `If-None-Match: *` = "proceed only if no current representation exists" (insert-only):
   - POST upsert resolving to an **existing** document → `412`; resolving to an **insert** → proceeds.
   - PUT (update-by-id) against an **existing** target → `412`; the PUT missing-target case is unchanged (`404`).
+
+**Entity-tag list support (RFC 9110 §13.1.2).** `If-None-Match` accepts a **comma-separated list** of entity-tags (e.g., `If-None-Match: "tag1", "tag2", W/"tag3"`). The precondition is evaluated against each tag in the list: if **any** tag matches (using the weak comparison function — see below), the precondition is *false* (triggering `304` on reads or `412` on writes). A single tag is the degenerate case of a one-element list. The bare `*` wildcard cannot appear in a list — per RFC 9110 it is only valid as the sole value.
 
 **Comparison basis — the read/write asymmetry (the crux of this amendment).**
 
@@ -380,13 +382,13 @@ This is the exact inverse of the `If-Match: *` wildcard ([Amendment 2026-07-05, 
 
 ### Per-operation summary
 
-| Operation | `If-None-Match: *` | `If-None-Match: "<tag>"` |
+| Operation | `If-None-Match: *` | `If-None-Match: "<tag>"` or `"<tag1>", "<tag2>", ...` |
 |---|---|---|
-| GET-by-id, resource exists | `304` | `304` if the **full served tag** matches; else `200` |
+| GET-by-id, resource exists | `304` | `304` if **any** tag in the list matches the **full served tag**; else `200` |
 | GET-by-id, resource absent | `404` (normal) | `404` (normal) |
-| POST upsert → existing document | `412` | `412` if the **projection** matches; else proceeds (update) |
+| POST upsert → existing document | `412` | `412` if **any** tag's **projection** matches; else proceeds (update) |
 | POST upsert → insert | proceeds (create) | proceeds (create) |
-| PUT, target exists | `412` | `412` if the **projection** matches; else proceeds (update) |
+| PUT, target exists | `412` | `412` if **any** tag's **projection** matches; else proceeds (update) |
 | PUT, target absent | `404` (unchanged) | `404` (unchanged) |
 
 ### Why
@@ -400,18 +402,19 @@ This is the exact inverse of the `If-Match: *` wildcard ([Amendment 2026-07-05, 
 ### Decisions
 
 1. **Reads compare the full served tag; writes compare the state-significant projection.** Reads are about representation/cache correctness (all `variantKey` components significant); writes are about resource state (`format`/`profileCode`/`linkFlag` projected out, exactly as for `If-Match`).
-2. **`If-None-Match` uses weak comparison and accepts `W/` tags on input;** `If-Match` remains strong-only. Emission is unchanged — the server still emits only strong tags.
-3. **Only the bare `*` is the wildcard, and it is inverted from `If-Match: *`** — it asserts *non-existence*. A quoted `"*"` is an ordinary (mismatching) opaque tag.
-4. **`If-Match` takes precedence over `If-None-Match`** when both are present (RFC 9110 §13.2.2).
-5. **Additive, non-breaking enhancement.** No existing DMS client can depend on the current non-behavior (the header is ignored today). Legacy conditional-GET behavior has now been reviewed: legacy `304`s only on an **unquoted** `If-None-Match` (ODS-6853). The DMS's design — accept quoted *and* unquoted input, emit quoted output — is a strict superset of the working legacy behavior, so a legacy client that receives `304` today continues to receive it against the DMS. This removes the last open uncertainty flagged when the amendment was first drafted.
+2. **`If-None-Match` uses weak comparison and accepts `W/` tags on input;** `If-Match` remains strong-only. Emission is unchanged — the server still emits only strong tags. In practice this means `W/"1-abc"` on `If-None-Match` is compared as if it were `"1-abc"` — only the opaque-tag portion matters.
+3. **`If-None-Match` accepts a comma-separated list of entity-tags** per RFC 9110 §13.1.2. The precondition triggers (`304` or `412`) if **any** tag in the list matches. Each tag in the list is independently subject to weak comparison, `W/` stripping, and quoted/unquoted tolerance.
+4. **Only the bare `*` is the wildcard, and it is inverted from `If-Match: *`** — it asserts *non-existence*. A quoted `"*"` is an ordinary (mismatching) opaque tag.
+5. **`If-Match` takes precedence over `If-None-Match`** when both are present (RFC 9110 §13.2.2).
+6. **Additive, non-breaking enhancement.** No existing DMS client can depend on the current non-behavior (the header is ignored today). Legacy conditional-GET behavior has now been reviewed: legacy `304`s only on an **unquoted** `If-None-Match` (ODS-6853). The DMS's design — accept quoted *and* unquoted input, emit quoted output — is a strict superset of the working legacy behavior, so a legacy client that receives `304` today continues to receive it against the DMS. This removes the last open uncertainty flagged when the amendment was first drafted.
 
 ### Scope of the code change
 
 Like the 2026-07-05 wildcard amendment, this is **new work**, and it is the first amendment to add a **read-path** precondition.
 
-- **Parse.** `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`) recognizes `If-None-Match` (only when `If-Match` is absent — precedence) and produces a new `WritePrecondition.IfNoneMatch(Value, IsWildcard)` arm, mirroring the `IfMatch` flag shape: it detects the bare `*` before quote-stripping and routes specific tags through a **weak-tolerant parse** that strips surrounding quotes, tolerates an unquoted value (ODS-6853 compatibility), **and accepts `W/` weak tags** — distinct from `EtagValue.TryParseHeaderValue`, which rejects `W/` for `If-Match`.
-- **Write checkers.** `RelationalCurrentEtagPreconditionChecker`, `RelationalWriteExecutionStateResolver`, and `DescriptorWriteHandler` honor the new arm: a wildcard `IfNoneMatch` fails (`412`) when the target row is present and passes when absent; a specific-tag `IfNoneMatch` fails when the projection matches and passes otherwise — the logical inverse of the `If-Match` check, reusing `EtagMatchProjection`. Because these are decided at several layers, all sites (including the deferred post-authorization path) must be covered and proven by PostgreSQL and SQL Server integration tests.
-- **Read path (new).** A conditional-GET hook in the GET-by-id handler compares the client's `If-None-Match` (weak comparison) against the full served tag and short-circuits to `304 Not Modified` — with the `ETag` header and no body — on a match. As implemented, the handler echoes the already-composed `_etag` from the materialized response body (which `RelationalReadMaterializer` composed via `EtagComposer` with all `variantKey` components) rather than recomposing it independently; this is functionally identical and cannot drift from read materialization. `If-Match` has no read-side equivalent today, so this is a genuinely new surface.
+- **Parse.** `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`) recognizes `If-None-Match` (only when `If-Match` is absent — precedence) and produces a new `WritePrecondition.IfNoneMatch(Values, IsWildcard)` arm. It first detects the bare `*` wildcard; otherwise it splits the header value on commas (per RFC 9110 entity-tag list grammar) and parses each element through a **weak-tolerant parse** that strips `W/` prefixes, strips surrounding quotes, and tolerates an unquoted value (ODS-6853 compatibility) — distinct from `EtagValue.TryParseHeaderValue`, which rejects `W/` for `If-Match`. A single-tag header is the degenerate one-element case.
+- **Write checkers.** `RelationalCurrentEtagPreconditionChecker`, `RelationalWriteExecutionStateResolver`, and `DescriptorWriteHandler` honor the new arm: a wildcard `IfNoneMatch` fails (`412`) when the target row is present and passes when absent; a specific-tag list `IfNoneMatch` fails when **any** tag's projection matches and passes otherwise — the logical inverse of the `If-Match` check, iterated over the list, reusing `EtagMatchProjection`. Because these are decided at several layers, all sites (including the deferred post-authorization path) must be covered and proven by PostgreSQL and SQL Server integration tests.
+- **Read path (new).** A conditional-GET hook in the GET-by-id handler parses the client's `If-None-Match` list (weak comparison, `W/` stripping) and compares each tag against the full served tag; if **any** tag matches, it short-circuits to `304 Not Modified` — with the `ETag` header and no body. As implemented, the handler echoes the already-composed `_etag` from the materialized response body (which `RelationalReadMaterializer` composed via `EtagComposer` with all `variantKey` components) rather than recomposing it independently; this is functionally identical and cannot drift from read materialization. `If-Match` has no read-side equivalent today, so this is a genuinely new surface.
 - **Emission unchanged.** `EtagValue.ToHeaderValue` / `EtagComposer` continue to emit fully quoted strong tags. The `304` response carries the current `ETag` and no `_etag` body field (there is no body).
 - **DELETE is out of scope.** `If-None-Match` on DELETE is not a meaningful idiom (`*` would `412` whenever there is anything to delete); a DELETE carrying `If-None-Match` is ignored. It may be revisited if a concrete need arises.
 
