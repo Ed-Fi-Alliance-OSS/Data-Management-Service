@@ -45,7 +45,11 @@ DBS=("$@"); [ ${#DBS[@]} -eq 0 ] && DBS=(edfi_st)
 idlower="$(echo "$PKG_ID" | tr '[:upper:]' '[:lower:]')"
 
 if [ "$PKG_VER" = "latest" ]; then
-  PKG_VER="$(curl -fsSL "$FEED/flat2/$idlower/index.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["versions"][-1])')"
+  # The flat2 index's versions array is NOT reliably sorted (observed newest-first on Azure
+  # Artifacts), so pick the highest by version sort instead of trusting element order.
+  PKG_VER="$(curl -fsSL "$FEED/flat2/$idlower/index.json" \
+    | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)["versions"]))' \
+    | sort -V | tail -1)"
 fi
 
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
