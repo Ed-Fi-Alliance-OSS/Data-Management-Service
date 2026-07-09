@@ -22,20 +22,14 @@ on:
       # must still trigger this workflow's DMS + DS 6.1 validation.
       - "src/config/**"
 
+  # No paths filter here (unlike push above): the merge queue requires an aggregate status
+  # check (dms-ci-gate) that must report on every pull request, so this workflow runs for all
+  # PRs regardless of which files changed. detect-fresh-build-changes computes dms_relevant and
+  # the heavy jobs skip when no DMS-relevant file changed, so idle PRs stay cheap and the gate
+  # still reports (a skipped dependency counts as a pass).
   pull_request:
     branches:
       - main
-    paths:
-      - ".github/workflows/**"
-      - "build-dms.ps1"
-      - "eng/**"
-      - "src/Directory.Packages.props"
-      - "src/nuget.config"
-      - "src/dms/**"
-      # The DMS E2E lanes (incl. the DS 6.1 version-coupled lane) bring up the Config Service built from
-      # src/config, so config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim seeding)
-      # must still trigger this workflow's DMS + DS 6.1 validation.
-      - "src/config/**"
 
   merge_group:
     types:
@@ -75,6 +69,10 @@ jobs:
       contents: read
     outputs:
       fresh_build_required: ${{ steps.detect.outputs.fresh_build_required }}
+      # True when the pull request changed a file relevant to DMS validation. The heavy jobs
+      # gate on this so that a PR touching only unrelated areas (e.g. config-only) skips the
+      # DMS suite while this workflow still runs and reports dms-ci-gate.
+      dms_relevant: ${{ steps.detect.outputs.dms_relevant }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -85,8 +83,16 @@ jobs:
         id: detect
         shell: bash
         run: |
+          # emit <fresh_build_required> <dms_relevant>
+          emit() {
+            echo "fresh_build_required=$1" >> "$GITHUB_OUTPUT"
+            echo "dms_relevant=$2" >> "$GITHUB_OUTPUT"
+          }
+
+          # Non-pull_request events (push, merge_group, workflow_dispatch) always run the full
+          # suite, so dms_relevant is reported true and only fresh_build_required is meaningful.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "fresh_build_required=true" >> "$GITHUB_OUTPUT"
+            emit true true
             exit 0
           fi
 
@@ -97,7 +103,7 @@ jobs:
             base_sha="${{ github.event.merge_group.base_sha }}"
 
             if [[ -z "$base_sha" ]] || ! changed_files="$(git diff --name-only "$base_sha" "${{ github.sha }}")"; then
-              echo "fresh_build_required=true" >> "$GITHUB_OUTPUT"
+              emit true true
               exit 0
             fi
           else
@@ -111,26 +117,45 @@ jobs:
           fi
 
           fresh_build_required=false
+          # For merge_group and push, force dms_relevant true so nothing is skipped when
+          # validating the merged result; only pull_request narrows to the changed area.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            dms_relevant=false
+          else
+            dms_relevant=true
+          fi
 
           while IFS= read -r file; do
             case "$file" in
               src/Directory.Packages.props|src/nuget.config|src/dms/Dockerfile|src/config/Dockerfile|eng/docker-compose/*)
                 fresh_build_required=true
-                break
+                ;;
+            esac
+            case "$file" in
+              .github/workflows/*|build-dms.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/dms/*|src/config/*)
+                dms_relevant=true
                 ;;
             esac
           done <<< "$changed_files"
 
-          echo "fresh_build_required=$fresh_build_required" >> "$GITHUB_OUTPUT"
+          emit "$fresh_build_required" "$dms_relevant"
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/repository-scanner.yml@main
     with:
       config-file-path: ./.github/workflows/bidi-config.json
 
   run-bootstrap-pester-tests:
     name: Run Bootstrap Pester Tests
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -185,6 +210,10 @@ jobs:
 
   verify-lock-files:
     name: Verify DMS Lock Files
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -213,6 +242,10 @@ jobs:
 
   verify-schematools-package:
     name: Verify SchemaTools Package
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -294,6 +327,10 @@ jobs:
 
   run-unit-tests:
     name: Run Unit Tests
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -351,6 +388,10 @@ jobs:
 
   build-integration-test-assemblies:
     name: Build Integration Test Assemblies
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -493,6 +534,10 @@ jobs:
 
   build-ci-docker-images:
     name: Build CI Docker Images
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -922,6 +967,10 @@ jobs:
 
   run-cli-integration-tests:
     name: Run CLI Integration Tests (${{ matrix.cli }})
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1547,11 +1596,11 @@ jobs:
       - name: Check DMS E2E matrix result
         shell: pwsh
         run: |
-          if ("${{ needs.run-e2e-tests.result }}" -ne "success") {
+          if ("${{ needs.run-e2e-tests.result }}" -ne "success" -and "${{ needs.run-e2e-tests.result }}" -ne "skipped") {
             throw "One or more DMS E2E (DS 5.2) matrix jobs failed."
           }
 
-          if ("${{ needs.run-e2e-tests-ds61.result }}" -ne "success") {
+          if ("${{ needs.run-e2e-tests-ds61.result }}" -ne "success" -and "${{ needs.run-e2e-tests-ds61.result }}" -ne "skipped") {
             throw "The DMS E2E (DS 6.1, version-coupled) job failed."
           }
 
@@ -2062,13 +2111,17 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       [
+        detect-fresh-build-changes,
         run-e2e-tests,
         run-e2e-tests-ds61,
         run-instance-management-e2e-tests,
         run-backend-mssql-integration-tests,
         run-dms-api-mssql-integration-tests,
       ]
-    if: always()
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true')
     permissions:
       contents: read
     defaults:
@@ -2137,3 +2190,67 @@ jobs:
         with:
           name: Event File
           path: ${{ github.event_path }}
+
+  # Single aggregate status check for this workflow. The merge queue merges an entry the
+  # moment every required status check passes on the merge-group ref, so without one check
+  # that depends on the whole pipeline the queue would satisfy its other required checks and
+  # merge while these jobs were still running, cancelling them. Making this the required check
+  # forces the queue (and PR merges) to wait for the full pipeline. It runs even when upstream
+  # jobs fail, are cancelled, or are skipped, then fails unless every dependency succeeded or
+  # was intentionally skipped (a failed prerequisite surfaces directly, so a skipped dependent
+  # is safe to treat as a pass). Keep this needs list aligned with the validation and build
+  # jobs above; test-timing-summary and event_file are deliberately omitted so informational
+  # tasks can never block a merge.
+  dms-ci-gate:
+    name: DMS CI Gate
+    needs:
+      - detect-fresh-build-changes
+      - scan-actions-bidi
+      - run-bootstrap-pester-tests
+      - verify-lock-files
+      - verify-schematools-package
+      - run-unit-tests
+      - build-integration-test-assemblies
+      - build-ci-docker-images
+      - run-backend-mssql-integration-tests
+      - run-dms-api-mssql-integration-tests
+      - run-backend-postgresql-integration-tests
+      - run-dms-api-postgresql-integration-tests
+      - run-cli-integration-tests
+      - run-schematools-cli-integration-tests
+      - run-schematools-postgresql-integration-tests
+      - run-schematools-mssql-integration-tests
+      - run-e2e-tests
+      - run-e2e-tests-ds61
+      - e2e-summary
+      - run-instance-management-e2e-tests
+      - build-and-start-dms
+      - validate-resources-spec
+      - validate-descriptors-spec
+      - validate-discovery-spec
+      - fresh-rebuild-docker-images
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Verify all required jobs succeeded
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          $needs = $env:NEEDS_JSON | ConvertFrom-Json
+          $failed = [System.Collections.Generic.List[string]]::new()
+          foreach ($job in $needs.PSObject.Properties) {
+            $result = $job.Value.result
+            Write-Host "$($job.Name): $result"
+            if ($result -ne 'success' -and $result -ne 'skipped') {
+              $failed.Add("$($job.Name) ($result)")
+            }
+          }
+          if ($failed.Count -gt 0) {
+            throw "DMS CI Gate failed. Required job(s) did not succeed: $($failed -join ', ')."
+          }
+          Write-Host "All required DMS CI jobs succeeded or were skipped."
