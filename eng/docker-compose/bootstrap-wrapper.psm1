@@ -137,6 +137,218 @@ function Test-WrapperManifestClaimsStaged {
     }
 }
 
+function Get-WrapperManifestSchemaIdentity {
+    <#
+    .SYNOPSIS
+    Reads the staged bootstrap manifest's schema.selectionMode and schema.selectedExtensions - the
+    two schema-section fields that together identify which package set (if any) drove a Standard-mode
+    staged workspace. Returns $null when the manifest is missing, empty, malformed, unreadable, or
+    lacks schema.selectionMode.
+
+    Bare JSON parse keeps this independent of bootstrap-manifest.psm1 in sandboxed Pester invocations
+    (mirrors Test-WrapperManifestClaimsStaged). Property presence is tested via PSObject.Properties so
+    the check is safe regardless of Set-StrictMode.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ManifestPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $rawManifestContent = Get-Content -LiteralPath $ManifestPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($rawManifestContent)) {
+            return $null
+        }
+
+        $parsedManifest = $rawManifestContent | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $parsedManifest) {
+            return $null
+        }
+
+        $schemaProperty = $parsedManifest.PSObject.Properties['schema']
+        if ($null -eq $schemaProperty -or $null -eq $schemaProperty.Value) {
+            return $null
+        }
+
+        $selectionModeProperty = $schemaProperty.Value.PSObject.Properties['selectionMode']
+        if ($null -eq $selectionModeProperty -or [string]::IsNullOrWhiteSpace([string]$selectionModeProperty.Value)) {
+            return $null
+        }
+
+        # $null here (rather than an empty array) means the property is absent entirely, so
+        # Test-WrapperManifestSchemaPackagesCurrent can tell "no extensions recorded, nothing to
+        # compare" apart from "recorded as an explicit empty set". The assignment is split into
+        # its own statement (rather than the branch value of an if/else expression) because
+        # PowerShell flattens an empty-array branch value of a captured if/else expression to
+        # $null; a plain `$selectedExtensions = @(...)` assignment does not.
+        $selectedExtensionsProperty = $schemaProperty.Value.PSObject.Properties['selectedExtensions']
+        $selectedExtensions = $null
+        if ($null -ne $selectedExtensionsProperty -and $null -ne $selectedExtensionsProperty.Value) {
+            $selectedExtensions = @($selectedExtensionsProperty.Value | ForEach-Object { [string]$_ })
+        }
+
+        return [pscustomobject]@{
+            SelectionMode      = [string]$selectionModeProperty.Value
+            SelectedExtensions = $selectedExtensions
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-WrapperEffectiveSchemaExtension {
+    <#
+    .SYNOPSIS
+    Derives the extension identity set (lowercased project-endpoint tokens) implied by the effective
+    env file's SCHEMA_PACKAGES value, using the same core-vs-extension naming convention
+    prepare-dms-schema.ps1's SCHEMA_PACKAGES-driven staging (Invoke-SchemaPackagesModeSchemaStaging)
+    already relies on: EdFi.DataStandard<NN>.ApiSchema identifies the core package; every other
+    EdFi.DataStandard<NN>.<Extension>.ApiSchema entry is an extension whose endpoint token is the
+    <Extension> segment, lowercased - the same token prepare-dms-schema.ps1 records (from the staged
+    package's own declared projectEndpointName) into schema.selectedExtensions, so the two sides are
+    directly comparable without downloading or hashing anything.
+
+    A bare regex extraction (mirroring schema-package-utility.psm1's Get-QuotedEnvJson) keeps this
+    independent of that sibling module in sandboxed Pester invocations. An env file with no
+    SCHEMA_PACKAGES key, or an unparsable value, implies the catalog-pinned core-only default that
+    prepare-dms-schema.ps1 itself falls back to, so it returns an empty set rather than throwing.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile
+    )
+
+    $expectedExtensions = [System.Collections.Generic.List[string]]::new()
+
+    if (-not (Test-Path -LiteralPath $EnvironmentFile -PathType Leaf)) {
+        return $expectedExtensions.ToArray()
+    }
+
+    $environmentFileContent = Get-Content -LiteralPath $EnvironmentFile -Raw
+    $schemaPackagesMatch = [System.Text.RegularExpressions.Regex]::Match(
+        $environmentFileContent,
+        "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
+    )
+    if (-not $schemaPackagesMatch.Success) {
+        return $expectedExtensions.ToArray()
+    }
+
+    try {
+        $schemaPackages = @($schemaPackagesMatch.Groups["value"].Value | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        return $expectedExtensions.ToArray()
+    }
+
+    $corePackageIdPattern = '^EdFi\.DataStandard\d+\.ApiSchema$'
+    $extensionPackageIdPattern = '^EdFi\.DataStandard\d+\.(?<extension>.+)\.ApiSchema$'
+
+    foreach ($schemaPackage in $schemaPackages) {
+        $packageName = [string]$schemaPackage.name
+        if ([string]::IsNullOrWhiteSpace($packageName) -or $packageName -match $corePackageIdPattern) {
+            continue
+        }
+
+        $extensionMatch = [System.Text.RegularExpressions.Regex]::Match($packageName, $extensionPackageIdPattern)
+        if ($extensionMatch.Success) {
+            $null = $expectedExtensions.Add($extensionMatch.Groups["extension"].Value.ToLowerInvariant())
+        }
+    }
+
+    return $expectedExtensions.ToArray()
+}
+
+function Test-WrapperManifestSchemaPackagesCurrent {
+    <#
+    .SYNOPSIS
+    Returns $true when the staged bootstrap manifest's recorded schema-package identity still
+    matches the effective env file's SCHEMA_PACKAGES value, so the wrapper can safely reuse the
+    staged schema workspace instead of re-running prepare-dms-schema.ps1.
+
+    The wrapper uses this to close a staging-reuse gap: a workspace staged for one package set (e.g.
+    a DS 6.1 core-only SCHEMA_PACKAGES value) could otherwise be silently served under a later
+    invocation whose effective env now selects a different set (e.g. DS 5.2 core + TPDM), with no
+    error, until something downstream (e.g. a populated template with zero rows) surfaces the
+    mismatch. Comparing schema.selectedExtensions - the project-endpoint tokens prepare-dms-schema.ps1
+    itself records for every staged extension - against the extension identity implied by the
+    effective SCHEMA_PACKAGES value closes that gap without re-downloading or re-hashing anything.
+
+    Only schema.selectionMode "Standard" (package-backed) manifests are compared: "ApiSchemaPath"
+    (expert filesystem) manifests are not driven by SCHEMA_PACKAGES at all, so forcing a comparison
+    against it would treat an intentional manual/expert override as a mismatch and discard a
+    hand-staged workspace that may carry custom extensions. Those are always reported as matching
+    (reuse as-is), consistent with the staging block's existing "reuse an already-staged workspace
+    as-is" contract. A Standard-mode manifest that has no schema.selectedExtensions recorded at all
+    (rather than an explicit, possibly-empty array) has nothing to compare either, and is likewise
+    reported as matching.
+
+    A missing, empty, malformed, or unreadable manifest, or one missing schema.selectionMode, is
+    reported as "not matching" so the staging phase re-runs prepare-dms-schema.ps1, which then owns
+    the authoritative re-stage (and surfaces its own error, if any) - mirroring how
+    Test-WrapperManifestClaimsStaged treats a malformed manifest as "claims not staged".
+
+    .PARAMETER ManifestPath
+    Path to the staged bootstrap-manifest.json.
+
+    .PARAMETER EnvironmentFile
+    Path to the effective env file whose SCHEMA_PACKAGES value is the comparison target.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ManifestPath,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile
+    )
+
+    $manifestSchemaIdentity = Get-WrapperManifestSchemaIdentity -ManifestPath $ManifestPath
+    if ($null -eq $manifestSchemaIdentity) {
+        return $false
+    }
+
+    if ($manifestSchemaIdentity.SelectionMode -ne "Standard") {
+        return $true
+    }
+
+    if ($null -eq $manifestSchemaIdentity.SelectedExtensions) {
+        return $true
+    }
+
+    try {
+        $stagedExtensions = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+        foreach ($stagedExtension in $manifestSchemaIdentity.SelectedExtensions) {
+            $null = $stagedExtensions.Add($stagedExtension)
+        }
+
+        $expectedExtensions = @(Get-WrapperEffectiveSchemaExtension -EnvironmentFile $EnvironmentFile)
+        if ($stagedExtensions.Count -ne $expectedExtensions.Count) {
+            return $false
+        }
+
+        foreach ($expectedExtension in $expectedExtensions) {
+            if (-not $stagedExtensions.Contains($expectedExtension)) {
+                return $false
+            }
+        }
+
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Resolve-WrapperEnvironmentFilePath {
     <#
     .SYNOPSIS
@@ -253,6 +465,113 @@ function Resolve-WrapperSelectedDataStoreIds {
     throw "configure-local-data-store.ps1 result is missing SelectedDataStoreIds (and the DataStoreIds alias)."
 }
 
+function Get-WrapperConfigServiceContainerName {
+    <#
+    .SYNOPSIS
+    Reads the config service container_name out of a config compose file (local-config.yml or
+    published-config.yml), so the restore-branch freshness check targets the exact name Docker
+    reports rather than a hard-coded value that could drift from the compose file.
+
+    Returns $null when the compose file is absent (isolated wrapper Pester sandboxes copy the
+    wrapper without the compose files) or carries no container_name entry, mirroring the other
+    Test-Path guards in this module.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$ComposeFilePath
+    )
+
+    if (-not (Test-Path -LiteralPath $ComposeFilePath -PathType Leaf)) {
+        return $null
+    }
+
+    $composeContent = Get-Content -LiteralPath $ComposeFilePath -Raw
+    $containerNameMatch = [System.Text.RegularExpressions.Regex]::Match(
+        $composeContent,
+        "(?m)^[ \t]*container_name:[ \t]*(?<name>\S+)[ \t]*$"
+    )
+    if (-not $containerNameMatch.Success) {
+        return $null
+    }
+
+    return $containerNameMatch.Groups["name"].Value.Trim("'", '"')
+}
+
+function Get-WrapperRunningConfigServiceContainerName {
+    <#
+    .SYNOPSIS
+    Returns the target compose project's config service container name when it is currently
+    running, or $null when it is not running (or when the target compose file/container_name is
+    absent - isolated wrapper Pester sandboxes copy the wrapper without its compose-file siblings).
+
+    Shared building block for every preflight that must not proceed against an already-running
+    stack: the restore-branch freshness guard (Assert-WrapperRestoreTargetEnvironmentFresh) and the
+    schema re-stage divergence guard both resolve "is it running" through this one function so they
+    agree on what "already running" means for a given -StartScriptName target.
+
+    Detection uses an exact docker ps name filter (^/name$, matching Wait-ForPostgresql's idiom in
+    provision-e2e-database.ps1) so a container whose name merely contains the config container name
+    as a substring is not mistaken for a match.
+
+    .PARAMETER StartScriptName
+    Which start script the wrapper is sequencing; selects the compose project's config compose file.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("start-local-dms.ps1", "start-published-dms.ps1")]
+        [string]$StartScriptName
+    )
+
+    $isLocalTarget = $StartScriptName -eq "start-local-dms.ps1"
+    $configComposeFileName = if ($isLocalTarget) { "local-config.yml" } else { "published-config.yml" }
+    $configComposeFilePath = Join-Path $PSScriptRoot $configComposeFileName
+
+    $configContainerName = Get-WrapperConfigServiceContainerName -ComposeFilePath $configComposeFilePath
+    if ([string]::IsNullOrWhiteSpace($configContainerName)) {
+        return $null
+    }
+
+    $runningContainerName = docker ps --filter "name=^/${configContainerName}$" --format "{{.Names}}" 2>$null
+    if ([string]::IsNullOrWhiteSpace($runningContainerName)) {
+        return $null
+    }
+
+    return $configContainerName
+}
+
+function Assert-WrapperRestoreTargetEnvironmentFresh {
+    <#
+    .SYNOPSIS
+    Fails fast, before any Docker side effect, when the target compose project's config service
+    container is already running. Bootstrap wrappers are fresh-environment entry points: restoring
+    a database template into a stack that is already up can overwrite a datastore another running
+    DMS/CMS process depends on.
+
+    Degrades to a no-op when the target compose file is absent, matching
+    Assert-WrapperStagedSchemaWorkspace's sandbox guard (via Get-WrapperRunningConfigServiceContainerName).
+
+    .PARAMETER StartScriptName
+    Which start script the wrapper is sequencing; selects the compose project name and the
+    teardown command quoted in the failure message.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("start-local-dms.ps1", "start-published-dms.ps1")]
+        [string]$StartScriptName
+    )
+
+    $runningContainerName = Get-WrapperRunningConfigServiceContainerName -StartScriptName $StartScriptName
+    if ([string]::IsNullOrWhiteSpace($runningContainerName)) {
+        return
+    }
+
+    $isLocalTarget = $StartScriptName -eq "start-local-dms.ps1"
+    $projectName = if ($isLocalTarget) { "dms-local" } else { "dms-published" }
+    $teardownCommand = if ($isLocalTarget) { "start-local-dms.ps1 -d" } else { "start-published-dms.ps1 -d" }
+
+    throw "The '$projectName' compose project's config service container ('$runningContainerName') is already running. Bootstrap wrappers are fresh-environment entry points and will not restore a database template into an already-running stack. Tear down the existing environment first: $teardownCommand"
+}
+
 function Invoke-BootstrapWrapper {
     <#
     .SYNOPSIS
@@ -281,6 +600,11 @@ function Invoke-BootstrapWrapper {
         # Minimal|Populated segment is swapped to match this value.
         [ValidateSet("Minimal", "Populated")]
         [string]$RestoreTemplate,
+
+        # Local directory containing the template nupkg to restore, for pre-publish package
+        # validation. Requires -RestoreTemplate; when omitted the package is resolved from the
+        # configured NuGet feed. Forwarded to Restore-DatabaseTemplate only when supplied.
+        [string]$PackageDirectory,
 
         [string[]]$AdditionalNamespacePrefix = @(),
 
@@ -378,6 +702,7 @@ function Invoke-BootstrapWrapper {
     $seedTemplateSupplied = $PSBoundParameters.ContainsKey('SeedTemplate') -and -not [string]::IsNullOrWhiteSpace($SeedTemplate)
     $seedDataPathSupplied = $PSBoundParameters.ContainsKey('SeedDataPath') -and -not [string]::IsNullOrWhiteSpace($SeedDataPath)
     $restoreTemplateSupplied = $PSBoundParameters.ContainsKey('RestoreTemplate') -and -not [string]::IsNullOrWhiteSpace($RestoreTemplate)
+    $packageDirectorySupplied = $PSBoundParameters.ContainsKey('PackageDirectory') -and -not [string]::IsNullOrWhiteSpace($PackageDirectory)
 
     # -RestoreTemplate restores a pre-built database template instead of running schema
     # provisioning and the API-based seed phase, so it cannot be combined with any seed-source
@@ -393,6 +718,13 @@ function Invoke-BootstrapWrapper {
         if ($seedDataPathSupplied) {
             throw "-RestoreTemplate and -SeedDataPath are mutually exclusive. -SeedDataPath selects a custom seed source for the API-based seed phase, which -RestoreTemplate bypasses entirely."
         }
+    }
+
+    # -PackageDirectory selects a local unpublished package for the restore phase; there is
+    # nothing to restore without -RestoreTemplate. Checked here, before any Docker/CMS side
+    # effects, alongside the other -RestoreTemplate preflights above.
+    if ($packageDirectorySupplied -and -not $restoreTemplateSupplied) {
+        throw "-PackageDirectory requires -RestoreTemplate. -PackageDirectory selects a local unpublished package for pre-publish restore validation; without -RestoreTemplate there is nothing to restore."
     }
 
     # Pre-start seed preflights: catch mutually-exclusive seed-source flags and ApiSchemaPath combos
@@ -530,11 +862,12 @@ function Invoke-BootstrapWrapper {
         # Schema/claims staging phase. The standard happy path needs no manual pre-staging
         # (bootstrap-design.md Section 9.4.1): when no workspace is staged yet, stage core-only standard
         # mode so a clean checkout runs `bootstrap-local-dms.ps1` with no preceding prepare step. When a
-        # schema workspace is already staged (a manual/expert prepare flow, or a prior run), reuse it
-        # as-is rather than rewriting a workspace that may still be bind-mounted into a running stack.
-        # There is no -Extensions parameter; extension/custom schema sets are staged via expert
-        # -ApiSchemaPath before invoking the wrapper. prepare-dms-schema.ps1 owns all validation and the
-        # rerun contract.
+        # schema workspace is already staged (a manual/expert prepare flow, or a prior run), it is reused
+        # as-is ONLY when it is still current for the effective env's SCHEMA_PACKAGES (see
+        # Test-WrapperManifestSchemaPackagesCurrent below) rather than unconditionally trusting a
+        # workspace that may still be bind-mounted into a running stack. There is no -Extensions
+        # parameter; extension/custom schema sets are staged via expert -ApiSchemaPath before invoking
+        # the wrapper. prepare-dms-schema.ps1 owns all validation and the rerun contract.
         #
         # Claims completion is staged whenever the manifest lacks the claims/seed sections: both after a
         # fresh schema stage above, and when a pre-existing manifest carries schema but not claims/seed
@@ -550,20 +883,66 @@ function Invoke-BootstrapWrapper {
         $stagedManifestPath = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
         $stagedManifestPresent = Test-Path -LiteralPath $stagedManifestPath -PathType Leaf
 
+        # A present manifest is reused only when its recorded schema-package identity still matches
+        # the effective env's SCHEMA_PACKAGES value (Test-WrapperManifestSchemaPackagesCurrent).
+        # Without this, a workspace staged for one Data Standard / package set could be silently
+        # served under a later invocation whose effective env selects a different one - the DS 6.1
+        # workspace served under a DS 5.2 label live incident that motivated this check - with no
+        # error until something downstream (e.g. a populated template with zero rows) surfaces it.
+        $stagedManifestCurrent = $stagedManifestPresent -and
+            (Test-WrapperManifestSchemaPackagesCurrent -ManifestPath $stagedManifestPath -EnvironmentFile $effectiveEnvFile)
+
+        if ($stagedManifestPresent -and -not $stagedManifestCurrent) {
+            $staleSchemaIdentity = Get-WrapperManifestSchemaIdentity -ManifestPath $stagedManifestPath
+            # Split into its own statement (rather than an if/else expression branch value): PowerShell
+            # flattens an empty-array branch value of a captured if/else expression to $null.
+            $staleExtensions = @()
+            if ($null -ne $staleSchemaIdentity -and $null -ne $staleSchemaIdentity.SelectedExtensions) {
+                $staleExtensions = @($staleSchemaIdentity.SelectedExtensions)
+            }
+            $effectiveExtensions = @(Get-WrapperEffectiveSchemaExtension -EnvironmentFile $effectiveEnvFile)
+            Write-Information "Staged bootstrap schema workspace does not match the effective environment: staged extensions [$($staleExtensions -join ', ')] vs effective SCHEMA_PACKAGES extensions [$($effectiveExtensions -join ', ')]. Re-running prepare-dms-schema.ps1 -EnvironmentFile $effectiveEnvFile to re-stage." -InformationAction Continue
+        }
+
         # Reset the native exit-code sentinel before each prepare invocation (same pattern as the
         # start/configure/provision phases below). prepare-dms-*.ps1 signal failure by throwing and may
         # run no native command, so a stale nonzero $LASTEXITCODE left by an earlier command in the
         # session would otherwise make a successful staging step throw a false "failed with exit code"
         # before infrastructure starts.
-        if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
-            $global:LASTEXITCODE = 0
-            # Forward the same effective env file used by the other phases so standard-mode staging
-            # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
-            # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
-            # hash in sync with what the DMS container entrypoint resolves from the same env file.
-            & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
-            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+        if (Test-Path -LiteralPath $prepareSchemaScript) {
+            if (-not $stagedManifestPresent) {
+                # No manifest staged yet: a plain fresh stage, with no existing workspace to diverge
+                # from.
+                $global:LASTEXITCODE = 0
+                # Forward the same effective env file used by the other phases so standard-mode staging
+                # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
+                # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
+                # hash in sync with what the DMS container entrypoint resolves from the same env file.
+                & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+                }
+            }
+            elseif (-not $stagedManifestCurrent) {
+                # Re-staging over a workspace that already exists but no longer matches the effective
+                # SCHEMA_PACKAGES value: without -ReplaceDivergentWorkspace, prepare-dms-schema.ps1's own
+                # divergence check throws on the differing effective schema hash instead of re-staging.
+                # Force-replacing that workspace is only safe when the target stack is not bind-mounting
+                # it right now, so check freshness first and fail fast with the same manual-teardown
+                # guidance prepare-dms-schema.ps1 gives on an unreplaced mismatch, rather than forcing the
+                # replacement underneath a live stack.
+                $runningConfigContainerName = Get-WrapperRunningConfigServiceContainerName -StartScriptName $StartScriptName
+                if (-not [string]::IsNullOrWhiteSpace($runningConfigContainerName)) {
+                    $isLocalTarget = $StartScriptName -eq "start-local-dms.ps1"
+                    $projectName = if ($isLocalTarget) { "dms-local" } else { "dms-published" }
+                    throw "Staged bootstrap schema workspace does not match the effective environment, and the '$projectName' compose project's config service container ('$runningConfigContainerName') is already running, so the staged workspace cannot be safely replaced. Stop the local stack and remove eng/docker-compose/.bootstrap before retrying: pwsh eng/docker-compose/$StartScriptName -d -v -RemoveBootstrap. E2E teardown wrappers also remove the bootstrap workspace."
+                }
+
+                $global:LASTEXITCODE = 0
+                & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile -ReplaceDivergentWorkspace
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+                }
             }
         }
 
@@ -577,6 +956,47 @@ function Invoke-BootstrapWrapper {
         }
 
         Assert-WrapperStagedSchemaWorkspace
+
+        if ($restoreTemplateSupplied) {
+            # Restore-branch ordering: fail fast on an already-running target environment, bring up
+            # only the database container, and restore the template directly into it, all before
+            # infrastructure, configure, or DMS startup run. This keeps the restore ahead of every
+            # other Docker/CMS side effect instead of running it wedged between configure and DMS
+            # startup: schema/claims staging above already guarantees the effective schema hash DMS
+            # will validate against, so the restore has nothing else to wait on. Provisioning stays
+            # skipped on this path entirely (see the provisioning branch below); the infrastructure,
+            # configure, and DMS-only phases that follow are unchanged from the non-restore path.
+            Assert-WrapperRestoreTargetEnvironmentFresh -StartScriptName $StartScriptName
+
+            $dbOnlyArgs = @{
+                IdentityProvider = $resolvedIdentityProvider
+                EnvironmentFile = $effectiveEnvFile
+                DatabaseEngine = $DatabaseEngine
+                DbOnly = $true
+            }
+
+            # Reset the native exit-code sentinel so the check below reflects only this invocation,
+            # matching the pattern used by every other phase invocation in this function.
+            $global:LASTEXITCODE = 0
+            & "$PSScriptRoot/$StartScriptName" @dbOnlyArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "$StartScriptName -DbOnly failed with exit code $LASTEXITCODE."
+            }
+
+            # The composed environment file already carries the engine-correct
+            # DATABASE_TEMPLATE_PACKAGE (the -DatabaseEngine overlay above rewrote its engine
+            # segment); Restore-DatabaseTemplate additionally swaps its Minimal|Populated segment to
+            # -RestoreTemplate and restores the resulting package directly into the target database,
+            # so there is no per-data-store selector to forward here (unlike provisioning, restore
+            # operates on the physical database, not CMS instances).
+            Import-Module (Join-Path $PSScriptRoot "setup-database-template.psm1") -Force
+            $restoreArgs = @{
+                EnvironmentFile = $effectiveEnvFile
+                RestoreTemplate = $RestoreTemplate
+            }
+            if ($packageDirectorySupplied) { $restoreArgs.PackageDirectory = $PackageDirectory }
+            Restore-DatabaseTemplate @restoreArgs
+        }
 
         # Infrastructure phase
         $startArgs = @{
@@ -646,19 +1066,11 @@ function Invoke-BootstrapWrapper {
         $configured = $configurationResults[0]
         $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
 
-        if ($restoreTemplateSupplied) {
-            # Restore phase: replaces schema provisioning entirely. The composed environment
-            # file already carries the engine-correct DATABASE_TEMPLATE_PACKAGE (the -DatabaseEngine
-            # overlay above rewrote its engine segment); Restore-DatabaseTemplate additionally swaps
-            # its Minimal|Populated segment to -RestoreTemplate and restores the resulting package
-            # directly into the target database, so there is no per-data-store selector to forward
-            # here (unlike provisioning, restore operates on the physical database, not CMS
-            # instances). DMS startup validates the restored database against the effective schema
-            # hash staged above, so no redundant DDL work happens after this point.
-            Import-Module (Join-Path $PSScriptRoot "setup-database-template.psm1") -Force
-            Restore-DatabaseTemplate -EnvironmentFile $effectiveEnvFile -RestoreTemplate $RestoreTemplate
-        }
-        else {
+        if (-not $restoreTemplateSupplied) {
+            # Schema provisioning. Skipped entirely on the restore path: the restore phase above
+            # already put the effective schema into the database, and DMS startup validates the
+            # restored database against the effective schema hash staged above, so no redundant DDL
+            # work happens after this point.
             $provisionArgs = @{
                 EnvironmentFile = $effectiveEnvFile
                 DataStoreId = $configuredDataStoreIds

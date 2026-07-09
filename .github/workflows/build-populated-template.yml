@@ -303,6 +303,42 @@ jobs:
                   -DatabaseEngine '${{ inputs.database_engine }}'
         working-directory: eng/DatabaseTemplates/
 
+      # A loader that exits 0 does not guarantee it wrote anything: gate on populated content
+      # here, before the package is uploaded or published, so an empty bulk load cannot slip
+      # through as a "populated" template. This runs unconditionally (unlike the opt-in
+      # verify-restore step below, which validates the restored package instead).
+      - name: Gate on populated content before packaging
+        env:
+          DATABASE_ENGINE: ${{ inputs.database_engine }}
+          ENVIRONMENT_FILE: ${{ inputs.environment_file }}
+        run: |
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile $env:ENVIRONMENT_FILE
+
+          if ($env:DATABASE_ENGINE -eq "mssql") {
+            $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+            $query = "SET NOCOUNT ON; SELECT COUNT(*) FROM [edfi].[School];"
+            $rawOutput = & docker exec dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $mssqlPassword -d $env:TEMPLATE_DB_NAME -C -b -h -1 -W -Q $query
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to query edfi.School row count from database '$($env:TEMPLATE_DB_NAME)'."
+            }
+            $schoolCount = [long](@($rawOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+          }
+          else {
+            $rawOutput = & docker exec dms-postgresql psql -U postgres -d $env:TEMPLATE_DB_NAME -tA -c 'SELECT COUNT(*) FROM edfi."School";'
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to query edfi.School row count from database '$($env:TEMPLATE_DB_NAME)'."
+            }
+            $schoolCount = [long](@($rawOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+          }
+
+          if ($schoolCount -lt 1) {
+            throw "Populated content gate failed: edfi.School has $schoolCount row(s) in database '$($env:TEMPLATE_DB_NAME)'; the bulk load did not populate sample data."
+          }
+
+          Write-Host "Populated content gate passed: edfi.School has $schoolCount row(s)." -ForegroundColor Green
+        working-directory: eng/docker-compose/
+
       - name: Verify template package restore
         if: ${{ inputs.verify_restore }}
         run: |

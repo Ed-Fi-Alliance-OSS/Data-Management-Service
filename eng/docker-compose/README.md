@@ -185,11 +185,15 @@ A few things are specific to the MSSQL path:
     the BulkLoadClient — the same path used for PostgreSQL.
   * **Published-package template restore** (`-RestoreTemplate Minimal|Populated`) restores a
     pre-built database-template NuGet package instead of provisioning schema and loading data
-    through the API: the wrapper sequences infra -> configure -> restore -> DMS start, replacing
+    through the API: the wrapper starts only the database container, restores the template
+    directly into it, and only then runs infra -> configure -> DMS start, replacing
     `provision-dms-schema.ps1` for that run. The restored database already carries the effective
     schema, so DMS startup validates it against the effective schema hash exactly as it would
     after DDL provisioning. Mutually exclusive with `-LoadSeedData`, `-SeedTemplate`, and
-    `-SeedDataPath`.
+    `-SeedDataPath`. Because the restore replaces the database outright, it requires a fresh
+    environment: the wrapper fails fast if the target stack's Configuration Service container is
+    already running, so tear down first (`./start-local-dms.ps1 -d` or
+    `./start-published-dms.ps1 -d`) if a stack from a previous run is still up.
 
     ```pwsh
     ./bootstrap-local-dms.ps1 -RestoreTemplate Populated -DatabaseEngine mssql

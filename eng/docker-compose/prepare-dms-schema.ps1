@@ -54,6 +54,18 @@
     workspace's effective schema hash matches what the DMS container entrypoint (run.sh) computes
     from the same SCHEMA_PACKAGES value at startup. Ignored in expert (-ApiSchemaPath) mode.
 
+.PARAMETER ReplaceDivergentWorkspace
+    Opt-in. When a final ApiSchema workspace already exists and diverges from what this run would
+    stage (missing/malformed manifest schema section, effective schema hash mismatch, workspace
+    fingerprint mismatch, or staged content drift), replace the staged workspace with the freshly
+    staged content instead of throwing the "stop the local stack and remove .bootstrap" guidance.
+    The replacement content still passes through every validation this script performs (package
+    identity assertions, schema-tool hashing, fingerprinting) before it is swapped in - only the
+    final throw-vs-replace decision changes. Has no effect when the workspace does not exist yet, or
+    when it exists and matches (both of those keep their existing behavior unchanged). Callers that
+    force-replace a workspace bind-mounted into a running stack can corrupt what the running stack
+    reads; only pass this switch when the target stack is not running.
+
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
     Standard mode, core only. Resolves EdFi.DataStandard52.ApiSchema from the Ed-Fi package feed
@@ -92,7 +104,12 @@ param(
     # hash in sync with what the DMS container entrypoint resolves from the same env file at startup.
     # When omitted, standard mode falls back to the catalog-pinned core-only default.
     [string]
-    $EnvironmentFile
+    $EnvironmentFile,
+
+    # Opt-in. Replaces an existing, divergent final ApiSchema workspace with the freshly staged
+    # content instead of throwing. See the .PARAMETER ReplaceDivergentWorkspace help above.
+    [switch]
+    $ReplaceDivergentWorkspace
 )
 
 Set-StrictMode -Version Latest
@@ -617,7 +634,13 @@ function Invoke-SchemaWorkspaceStaging {
         # from the manifest-declared (contract-validated) asset paths instead of sibling
         # rediscovery; expert mode omits it, skipping the assertion and using sibling discovery.
         [hashtable]
-        $ExpectedIdentities
+        $ExpectedIdentities,
+
+        # Opt-in. When a final workspace already exists and diverges from the content staged in this
+        # run, replace it instead of throwing. Has no effect when the workspace does not exist yet or
+        # matches; see Get-BootstrapWorkspaceMismatchMessage callers below for the divergence checks.
+        [switch]
+        $ReplaceDivergentWorkspace
     )
 
     $schemaProjects = @($SchemaSourceFiles | ForEach-Object { Read-ApiSchemaIdentity -Path $_ })
@@ -794,25 +817,40 @@ function Invoke-SchemaWorkspaceStaging {
             $rootManifest = New-BootstrapManifest
         }
         if (Test-Path -LiteralPath $finalWorkspace) {
+            $existingWorkspaceDivergenceReason = $null
+
             if (-not $rootManifest.ContainsKey("schema")) {
-                throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest schema section missing")
+                $existingWorkspaceDivergenceReason = "manifest schema section missing"
+            } else {
+                $existingSchemaSection = $rootManifest["schema"]
+                if ($existingSchemaSection -isnot [System.Collections.IDictionary]) {
+                    $existingWorkspaceDivergenceReason = "manifest schema section malformed"
+                } elseif ($existingSchemaSection["effectiveSchemaHash"] -ne $effectiveSchemaHash) {
+                    $existingWorkspaceDivergenceReason = "effective schema hash mismatch"
+                } elseif ($existingSchemaSection["workspaceFingerprint"] -ne $workspaceFingerprint) {
+                    $existingWorkspaceDivergenceReason = "workspace fingerprint mismatch"
+                } else {
+                    $existingFingerprint = Get-BootstrapWorkspaceFingerprint -Path $finalWorkspace
+                    if ($existingFingerprint -ne $workspaceFingerprint) {
+                        $existingWorkspaceDivergenceReason = "staged content drift"
+                    }
+                }
             }
 
-            $existingSchemaSection = $rootManifest["schema"]
-            if ($existingSchemaSection -isnot [System.Collections.IDictionary]) {
-                throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest schema section malformed")
-            }
-            if ($existingSchemaSection["effectiveSchemaHash"] -ne $effectiveSchemaHash) {
-                throw (Get-BootstrapWorkspaceMismatchMessage -Reason "effective schema hash mismatch")
-            }
+            if ($null -ne $existingWorkspaceDivergenceReason) {
+                if (-not $ReplaceDivergentWorkspace) {
+                    throw (Get-BootstrapWorkspaceMismatchMessage -Reason $existingWorkspaceDivergenceReason)
+                }
 
-            if ($existingSchemaSection["workspaceFingerprint"] -ne $workspaceFingerprint) {
-                throw (Get-BootstrapWorkspaceMismatchMessage -Reason "workspace fingerprint mismatch")
-            }
-
-            $existingFingerprint = Get-BootstrapWorkspaceFingerprint -Path $finalWorkspace
-            if ($existingFingerprint -ne $workspaceFingerprint) {
-                throw (Get-BootstrapWorkspaceMismatchMessage -Reason "staged content drift")
+                # -ReplaceDivergentWorkspace: the freshly staged temporary workspace above already
+                # passed every validation this function performs (package identity assertions,
+                # schema-tool hashing, fingerprinting). Swap it in for the stale final workspace
+                # instead of throwing, through the same move-into-place this function uses for a
+                # first-ever stage below, so the replacement gets no less validation than a fresh
+                # stage would.
+                Remove-Item -LiteralPath $finalWorkspace -Recurse -Force
+                Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace -ErrorAction Stop
+                $temporaryMoved = $true
             }
         } else {
             if ($rootManifest.ContainsKey("claims") -or $rootManifest.ContainsKey("seed")) {
@@ -876,7 +914,10 @@ function Assert-RequestedPackageIdentity {
 function Invoke-StandardModeSchemaStaging {
     param(
         [string]
-        $FeedUrl
+        $FeedUrl,
+
+        [switch]
+        $ReplaceDivergentWorkspace
     )
 
     Import-Module (Join-Path $PSScriptRoot "bootstrap-package-resolver.psm1") -Force -Global
@@ -926,7 +967,8 @@ function Invoke-StandardModeSchemaStaging {
         Invoke-SchemaWorkspaceStaging `
             -SchemaSourceFiles $schemaSourceFiles.ToArray() `
             -SelectionMode "Standard" `
-            -ExpectedIdentities $expectedIdentities
+            -ExpectedIdentities $expectedIdentities `
+            -ReplaceDivergentWorkspace:$ReplaceDivergentWorkspace
     } finally {
         if (Test-Path -LiteralPath $extractionRoot) {
             Remove-Item -LiteralPath $extractionRoot -Recurse -Force
@@ -952,7 +994,10 @@ function Invoke-SchemaPackagesModeSchemaStaging {
     param(
         [Parameter(Mandatory)]
         [string]
-        $EnvironmentFilePath
+        $EnvironmentFilePath,
+
+        [switch]
+        $ReplaceDivergentWorkspace
     )
 
     Import-Module (Join-Path $PSScriptRoot "bootstrap-package-resolver.psm1") -Force -Global
@@ -1026,7 +1071,8 @@ function Invoke-SchemaPackagesModeSchemaStaging {
         Invoke-SchemaWorkspaceStaging `
             -SchemaSourceFiles $schemaSourceFiles.ToArray() `
             -SelectionMode "Standard" `
-            -ExpectedIdentities $expectedIdentities
+            -ExpectedIdentities $expectedIdentities `
+            -ReplaceDivergentWorkspace:$ReplaceDivergentWorkspace
     } finally {
         if (Test-Path -LiteralPath $extractionRoot) {
             Remove-Item -LiteralPath $extractionRoot -Recurse -Force
@@ -1039,7 +1085,8 @@ if ($hasApiSchemaPath) {
     # Expert mode: use the shared staging function with ApiSchemaPath selection mode.
     Invoke-SchemaWorkspaceStaging `
         -SchemaSourceFiles (Find-ApiSchemaFile -Path $ApiSchemaPath) `
-        -SelectionMode "ApiSchemaPath"
+        -SelectionMode "ApiSchemaPath" `
+        -ReplaceDivergentWorkspace:$ReplaceDivergentWorkspace
 } else {
     # Standard mode. When -EnvironmentFile is supplied and its SCHEMA_PACKAGES value lists one or
     # more packages, drive staging from that full set (core plus any extensions) so the staged
@@ -1061,9 +1108,12 @@ if ($hasApiSchemaPath) {
     }
 
     if ($null -ne $schemaPackagesEnvironmentFile) {
-        Invoke-SchemaPackagesModeSchemaStaging -EnvironmentFilePath $schemaPackagesEnvironmentFile
+        Invoke-SchemaPackagesModeSchemaStaging `
+            -EnvironmentFilePath $schemaPackagesEnvironmentFile `
+            -ReplaceDivergentWorkspace:$ReplaceDivergentWorkspace
     } else {
         Invoke-StandardModeSchemaStaging `
-            -FeedUrl $PackageFeedUrl
+            -FeedUrl $PackageFeedUrl `
+            -ReplaceDivergentWorkspace:$ReplaceDivergentWorkspace
     }
 }

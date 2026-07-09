@@ -91,6 +91,26 @@ jobs:
       hash-code: ${{ steps.hash-code.outputs.hash-code }}
       dms-version: ${{ steps.versions.outputs.dms-v }}
     steps:
+      - name: Validate workflow inputs
+        env:
+          DATABASE_ENGINE: ${{ inputs.database_engine }}
+          PACKAGE_NAME: ${{ inputs.package_name }}
+        run: |
+          $databaseEngine = $env:DATABASE_ENGINE
+          $packageName = $env:PACKAGE_NAME
+
+          $databaseEngines = @('postgresql', 'mssql')
+          if ($databaseEngine -notin $databaseEngines) {
+            throw "database_engine must be one of: $($databaseEngines -join ', '); got '$databaseEngine'."
+          }
+
+          # Minimal template package names are engine-dependent so a build cannot silently
+          # publish an MSSQL dump under the PostgreSQL product name, or vice versa.
+          $expectedPackagePrefix = if ($databaseEngine -eq 'mssql') { 'EdFi.Api.Minimal.Template.MsSql' } else { 'EdFi.Api.Minimal.Template.PostgreSql' }
+          if ($packageName -notlike "$expectedPackagePrefix*") {
+            throw "database_engine '$databaseEngine' requires a package_name with prefix '$expectedPackagePrefix'; got '$packageName'."
+          }
+
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -246,6 +266,42 @@ jobs:
                   -DumpAllUserSchemas `
                   -DatabaseEngine '${{ inputs.database_engine }}'
         working-directory: eng/DatabaseTemplates/
+
+      # A loader that exits 0 does not guarantee it wrote anything: gate on descriptor content
+      # here, before the package is uploaded or published, so an empty bulk load cannot slip
+      # through as a "minimal" template. Minimal templates load only descriptor sample data
+      # (no sample entities), so dms.Descriptor is the content this template type owns.
+      - name: Gate on descriptor content before packaging
+        env:
+          DATABASE_ENGINE: ${{ inputs.database_engine }}
+          ENVIRONMENT_FILE: ${{ inputs.environment_file }}
+        run: |
+          Import-Module ./env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile $env:ENVIRONMENT_FILE
+
+          if ($env:DATABASE_ENGINE -eq "mssql") {
+            $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+            $query = "SET NOCOUNT ON; SELECT COUNT(*) FROM [dms].[Descriptor];"
+            $rawOutput = & docker exec dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $mssqlPassword -d $env:RELATIONAL_DB_NAME -C -b -h -1 -W -Q $query
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to query dms.Descriptor row count from database '$($env:RELATIONAL_DB_NAME)'."
+            }
+            $descriptorCount = [long](@($rawOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+          }
+          else {
+            $rawOutput = & docker exec dms-postgresql psql -U postgres -d $env:RELATIONAL_DB_NAME -tA -c 'SELECT COUNT(*) FROM dms."Descriptor";'
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to query dms.Descriptor row count from database '$($env:RELATIONAL_DB_NAME)'."
+            }
+            $descriptorCount = [long](@($rawOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+          }
+
+          if ($descriptorCount -lt 1) {
+            throw "Descriptor content gate failed: dms.Descriptor has $descriptorCount row(s) in database '$($env:RELATIONAL_DB_NAME)'; the bulk load did not populate descriptor data."
+          }
+
+          Write-Host "Descriptor content gate passed: dms.Descriptor has $descriptorCount row(s)." -ForegroundColor Green
+        working-directory: eng/docker-compose/
 
       - name: Verify template package restore
         run: |

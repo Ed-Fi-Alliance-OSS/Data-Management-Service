@@ -139,9 +139,10 @@ param(
     [string]
     $TestFilter,
 
-    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). Forwarded to the start scripts, which
-    # compose the matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
+    # Optional Ed-Fi Data Standard version. Forwarded to the start scripts, which compose the
+    # matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
     [string]
+    [ValidateSet("5.2", "6.1")]
     $DataStandardVersion
 )
 

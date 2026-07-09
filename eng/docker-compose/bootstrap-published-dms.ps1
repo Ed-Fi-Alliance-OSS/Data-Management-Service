@@ -48,6 +48,11 @@
     effective schema hash without any additional DDL work. Mutually exclusive with
     `-LoadSeedData`, `-SeedTemplate`, and `-SeedDataPath`.
 
+.PARAMETER PackageDirectory
+    Local directory containing the template nupkg to restore, for pre-publish package
+    validation. Requires `-RestoreTemplate`. When omitted, the package is resolved from the
+    configured NuGet feed.
+
 .PARAMETER AdditionalNamespacePrefix
     Additional namespace prefixes for SeedLoader vendor authorization. Forwarded to the
     seed phase.
@@ -117,6 +122,10 @@ param(
     # -SeedTemplate, and -SeedDataPath. See .PARAMETER RestoreTemplate above.
     [ValidateSet("Minimal", "Populated")]
     [string]$RestoreTemplate,
+
+    # Local directory containing the template nupkg to restore, for pre-publish package
+    # validation. Requires -RestoreTemplate. See .PARAMETER PackageDirectory above.
+    [string]$PackageDirectory,
 
     [string[]]$AdditionalNamespacePrefix = @(),
 

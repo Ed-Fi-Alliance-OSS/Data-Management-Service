@@ -13,9 +13,12 @@
     a provisioned database already exist.
 
     Direct invocation is supported for diagnostics and partial-phase orchestration
-    (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
-    script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
+    (-InfraOnly, -DmsOnly, -DbOnly). When invoked directly without a .bootstrap/ manifest
+    the script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
     schema provisioning will NOT happen here.
+
+    -DbOnly: database container + readiness only; used by the bootstrap wrappers'
+    template-restore phase.
 
     See command-boundaries.md Section 3 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -78,6 +81,12 @@ param (
     # Start only the DMS service after external schema provisioning
     [Switch]
     $DmsOnly,
+
+    # Start only the database container and wait for readiness, then stop. Used by the
+    # bootstrap wrappers' template-restore phase. Mutually exclusive with -InfraOnly and
+    # -DmsOnly, and with -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials.
+    [Switch]
+    $DbOnly,
 
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
@@ -167,8 +176,16 @@ if (-not $d) {
         throw "Parameters -InfraOnly and -DmsOnly are mutually exclusive."
     }
 
+    if ($DbOnly -and ($InfraOnly -or $DmsOnly)) {
+        throw "Parameter -DbOnly is mutually exclusive with -InfraOnly and -DmsOnly."
+    }
+
     if ($DmsOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
         throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DmsOnly."
+    }
+
+    if ($DbOnly -and ($NoDataStore -or -not [string]::IsNullOrWhiteSpace($SchoolYearRange) -or $AddSmokeTestCredentials)) {
+        throw "Parameters -NoDataStore, -SchoolYearRange, and -AddSmokeTestCredentials cannot be used with -DbOnly."
     }
 
     if ($NoDataStore -and -not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
@@ -343,6 +360,32 @@ else {
         throw "SQL Server ($(Format-LogSafeText $ContainerName)) did not become ready within the timeout period."
     }
 
+    function Wait-PostgresqlReady {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $ContainerName,
+
+            [int]
+            $MaxAttempts = 40
+        )
+
+        # PostgreSQL can take a few seconds to accept connections on a cold start. Poll
+        # pg_isready inside the container so the schema provision phase that follows
+        # always finds a reachable server.
+        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            docker exec $ContainerName pg_isready -U postgres *> $null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Output "PostgreSQL is ready."
+                return
+            }
+
+            Start-Sleep -Seconds 3
+        }
+
+        throw "PostgreSQL ($(Format-LogSafeText $ContainerName)) did not become ready within the timeout period."
+    }
+
     if ($DmsOnly) {
         Write-Output "Starting published DMS service only..."
         $dmsServices = @("dms")
@@ -358,6 +401,32 @@ else {
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
 
+        return
+    }
+
+    if ($DbOnly) {
+        $databaseDisplayName = if ($DatabaseEngine -eq "mssql") { "SQL Server" } else { "Postgresql" }
+        Write-Output "Starting $databaseDisplayName only..."
+        docker compose $files --env-file $EnvironmentFile -p dms-published up $upArgs db
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start $databaseDisplayName. Exit code $LASTEXITCODE"
+        }
+
+        if ($DatabaseEngine -eq "mssql") {
+            $mssqlSaPassword =
+                if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
+                    "abcdefgh1!"
+                }
+                else {
+                    $envValues.MSSQL_SA_PASSWORD
+                }
+            Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+        }
+        else {
+            Wait-PostgresqlReady -ContainerName "dms-postgresql"
+        }
+
+        Write-Output "Database phase complete. Only the database container was started."
         return
     }
 

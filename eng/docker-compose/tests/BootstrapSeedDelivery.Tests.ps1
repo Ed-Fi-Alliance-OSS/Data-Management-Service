@@ -755,6 +755,25 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
         }
     }
 
+    Context "Data Standard ref tag resolution" {
+        It "maps Data Standard 5.2 to the v5.2.0 seed ref tag" {
+            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "5.2" }
+
+            Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v5.2.0"
+        }
+
+        It "maps Data Standard 6.1 to the v6.1.0 seed ref tag" {
+            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "6.1" }
+
+            Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v6.1.0"
+        }
+
+        It "falls back to v5.2.0 when the Data Standard version is absent or unrecognized" {
+            Resolve-SeedDataStandardRefTag -EnvValues @{} | Should -Be "v5.2.0"
+            Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = "9.9" } | Should -Be "v5.2.0"
+        }
+    }
+
     Context "seed workspace materialization" {
         It "derives known interchange names from Bulk XSD filenames" {
             $xsdDir = New-TestDirectory
@@ -3131,6 +3150,57 @@ DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};Use
 
                 # The source file must be untouched.
                 (Get-Content -LiteralPath $staleBasePath -Raw) | Should -Be $staleContent
+            }
+        }
+
+        Context "Resolve-RestoreTemplatePackageId engine-token forcing" {
+            BeforeAll {
+                # Other spec files (e.g. BootstrapEntryPointWorkflow.Tests.ps1) stub a fixture module
+                # also named setup-database-template from a different path so InModuleScope stays
+                # unambiguous, any stale copy is removed before the real module is imported.
+                Get-Module -Name setup-database-template -All | Remove-Module -Force -ErrorAction SilentlyContinue
+                Import-Module (Join-Path $script:sourceDockerComposeRoot "setup-database-template.psm1") -Force
+            }
+
+            It "forces a stale PostgreSql DATABASE_TEMPLATE_PACKAGE to MsSql when the resolved engine is mssql" {
+                # Models a hand-crafted env file that sets DMS_DATASTORE=mssql directly (bypassing
+                # Resolve-DatabaseEngineEnvironmentFile's overlay composition, which is what
+                # normally keeps the engine segment correct) alongside a stale PostgreSql package id.
+                InModuleScope setup-database-template {
+                    $envValues = @{ DATABASE_TEMPLATE_PACKAGE = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" }
+
+                    $resolved = Resolve-RestoreTemplatePackageId -EnvValues $envValues -DatabaseEngine "mssql" -RestoreTemplate "Populated"
+
+                    $resolved | Should -Be "EdFi.Api.Populated.Template.MsSql.5.2.0" -Because "the resolved engine must win over a stale engine token so the restore does not later fail looking for a .bak under a PostgreSql package"
+                }
+            }
+
+            It "leaves an already engine-consistent MsSql DATABASE_TEMPLATE_PACKAGE unchanged apart from the Minimal|Populated template swap" {
+                InModuleScope setup-database-template {
+                    $envValues = @{ DATABASE_TEMPLATE_PACKAGE = "EdFi.Api.Populated.Template.MsSql.6.1.0" }
+
+                    $resolved = Resolve-RestoreTemplatePackageId -EnvValues $envValues -DatabaseEngine "mssql" -RestoreTemplate "Minimal"
+
+                    $resolved | Should -Be "EdFi.Api.Minimal.Template.MsSql.6.1.0"
+                }
+            }
+
+            It "leaves an already engine-consistent PostgreSql DATABASE_TEMPLATE_PACKAGE unchanged apart from the Minimal|Populated template swap" {
+                InModuleScope setup-database-template {
+                    $envValues = @{ DATABASE_TEMPLATE_PACKAGE = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" }
+
+                    $resolved = Resolve-RestoreTemplatePackageId -EnvValues $envValues -DatabaseEngine "postgresql" -RestoreTemplate "Populated"
+
+                    $resolved | Should -Be "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+                }
+            }
+
+            It "rewrites the historical default package's engine segment to MsSql when DATABASE_TEMPLATE_PACKAGE is not set" {
+                InModuleScope setup-database-template {
+                    $resolved = Resolve-RestoreTemplatePackageId -EnvValues @{} -DatabaseEngine "mssql" -RestoreTemplate "Minimal"
+
+                    $resolved | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+                }
             }
         }
     }

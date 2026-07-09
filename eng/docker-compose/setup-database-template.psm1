@@ -127,12 +127,15 @@ function Resolve-RestoreTemplatePackageId {
     segment swapped to match -RestoreTemplate.
 
     .DESCRIPTION
-    DATABASE_TEMPLATE_PACKAGE is already engine-correct for the composed environment file
-    (Resolve-DatabaseEngineEnvironmentFile rewrites its engine segment when composing the MSSQL
-    overlay), so only the template segment is swapped here via Convert-TemplatePackageToken.
-    When the env file does not set DATABASE_TEMPLATE_PACKAGE, falls back to the historical
-    PostgreSQL Minimal default and rewrites both its engine and template segments to match the
-    resolved engine and the requested template.
+    DATABASE_TEMPLATE_PACKAGE is normally already engine-correct for the composed environment
+    file (Resolve-DatabaseEngineEnvironmentFile rewrites its engine segment when composing the
+    MSSQL overlay), but a hand-crafted env file can set DMS_DATASTORE=mssql alongside a stale
+    PostgreSql package id without going through that composition. Convert-TemplatePackageToken
+    is idempotent, so the engine segment is also passed here to force it to match the resolved
+    engine on every caller, in addition to the Minimal|Populated template swap. When the env
+    file does not set DATABASE_TEMPLATE_PACKAGE, falls back to the historical PostgreSQL Minimal
+    default and rewrites both its engine and template segments to match the resolved engine and
+    the requested template.
     #>
     param(
         [hashtable]$EnvValues,
@@ -145,15 +148,16 @@ function Resolve-RestoreTemplatePackageId {
         [string]$RestoreTemplate
     )
 
+    $engineToken = if ($DatabaseEngine -eq "mssql") { "MsSql" } else { "PostgreSql" }
+
     $packageId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DATABASE_TEMPLATE_PACKAGE"
     if ([string]::IsNullOrWhiteSpace($packageId)) {
         $defaultPackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
         Write-Information "Environment variable DATABASE_TEMPLATE_PACKAGE is not set. Falling back to default package: $(Format-LogSafeText $defaultPackageId)." -InformationAction Continue
-        $engineToken = if ($DatabaseEngine -eq "mssql") { "MsSql" } else { "PostgreSql" }
         return Convert-TemplatePackageToken -PackageId $defaultPackageId -Engine $engineToken -Template $RestoreTemplate
     }
 
-    return Convert-TemplatePackageToken -PackageId $packageId -Template $RestoreTemplate
+    return Convert-TemplatePackageToken -PackageId $packageId -Engine $engineToken -Template $RestoreTemplate
 }
 
 function Restore-DatabaseTemplate {

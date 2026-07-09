@@ -2763,4 +2763,268 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $content | Should -Not -Match 'SkipConnectorSetup'
         }
     }
+
+    Context "wrapper revalidates the staged workspace against the effective SCHEMA_PACKAGES" {
+        BeforeAll {
+            function script:New-WrapperRevalidationFixture {
+                <#
+                .SYNOPSIS
+                Isolated repo carrying only what Invoke-BootstrapWrapper needs to reach its schema/claims
+                staging phase and then return early: the wrapper module + entry script, env-utility.psm1
+                plus the DS 5.2/6.1 bootstrap overlays (composed unconditionally for start-local-dms.ps1),
+                a base .env.example, and no-op stubs for prepare-dms-schema.ps1, prepare-dms-claims.ps1, and
+                start-local-dms.ps1. configure-local-data-store.ps1 / provision-dms-schema.ps1 are
+                deliberately absent so the wrapper takes its documented "isolated Pester fixture" early
+                return right after the infrastructure phase (mirrors BootstrapSeedDelivery.Tests.ps1's
+                "wrapper opt-in" fixtures).
+                #>
+                $repoRoot = script:New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    "bootstrap-local-dms.ps1",
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                # The stub mirrors prepare-dms-schema.ps1's own divergence contract: it throws the
+                # "differs from requested inputs" guidance unless -ReplaceDivergentWorkspace is bound,
+                # so the specs below can prove the wrapper both passes that switch on a safe re-stage
+                # and withholds the call entirely when the config service container is running.
+                $prepareSchemaCallLog = Join-Path $repoRoot "prepare-schema-calls.txt"
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [switch] `$ReplaceDivergentWorkspace,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$EnvironmentFile"
+Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "ReplaceDivergentWorkspace=`$ReplaceDivergentWorkspace"
+if (-not `$ReplaceDivergentWorkspace) {
+    throw "Existing staged bootstrap workspace differs from requested inputs, manifest state is incomplete, or files were manually edited (partial prior state). Stop the local stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/start-local-dms.ps1 -d -v -RemoveBootstrap. E2E teardown wrappers also remove the bootstrap workspace."
+}
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "prepare-dms-schema.ps1") -Encoding utf8
+
+                "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)" |
+                    Set-Content -LiteralPath (Join-Path $dockerComposeRoot "prepare-dms-claims.ps1") -Encoding utf8
+
+                "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)" |
+                    Set-Content -LiteralPath (Join-Path $dockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot             = $repoRoot
+                    DockerComposeRoot    = $dockerComposeRoot
+                    EnvFile              = $envFile
+                    WrapperScript        = Join-Path $dockerComposeRoot "bootstrap-local-dms.ps1"
+                    PrepareSchemaCallLog = $prepareSchemaCallLog
+                }
+            }
+
+            function script:New-WrapperRevalidationFixtureWithConfigCompose {
+                <#
+                .SYNOPSIS
+                Same shape as New-WrapperRevalidationFixture, plus the target wrapper's config compose
+                file (local-config.yml) so Get-WrapperConfigServiceContainerName can read its
+                container_name - letting a test stub `docker ps` to simulate the config service
+                container already running, mirroring BootstrapEntryPointWorkflow.Tests.ps1's restore-
+                freshness-guard fixture.
+                #>
+                $fixture = script:New-WrapperRevalidationFixture
+                Copy-DockerComposeFile -FileName "local-config.yml" -Destination $fixture.DockerComposeRoot
+
+                $configComposeContent = Get-Content -LiteralPath (Join-Path $fixture.DockerComposeRoot "local-config.yml") -Raw
+                $containerNameMatch = [regex]::Match(
+                    $configComposeContent,
+                    "(?m)^[ \t]*container_name:[ \t]*(?<name>\S+)[ \t]*$"
+                )
+
+                return [pscustomobject]@{
+                    RepoRoot             = $fixture.RepoRoot
+                    DockerComposeRoot    = $fixture.DockerComposeRoot
+                    EnvFile              = $fixture.EnvFile
+                    WrapperScript        = $fixture.WrapperScript
+                    PrepareSchemaCallLog = $fixture.PrepareSchemaCallLog
+                    ConfigContainerName  = $containerNameMatch.Groups["name"].Value
+                }
+            }
+
+            function script:New-StandardModeManifestFile {
+                <#
+                .SYNOPSIS
+                Writes a Standard-mode (package-backed) .bootstrap/bootstrap-manifest.json carrying the
+                supplied schema.selectedExtensions, plus complete claims/seed sections so
+                Test-WrapperManifestClaimsStaged reports claims already staged - isolating the
+                schema-package revalidation as the only variable under test. -Malformed writes
+                unparsable JSON instead, to exercise the "cannot confirm current, re-stage" path.
+                #>
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$DockerComposeRoot,
+
+                    [string[]]$SelectedExtensions = @(),
+
+                    [switch]$Malformed
+                )
+
+                $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+                $manifestPath = Join-Path $bootstrapRoot "bootstrap-manifest.json"
+
+                if ($Malformed) {
+                    "{ not valid json" | Set-Content -LiteralPath $manifestPath -Encoding utf8
+                    return $manifestPath
+                }
+
+                $manifest = [ordered]@{
+                    version = 1
+                    schema  = [ordered]@{
+                        selectionMode         = "Standard"
+                        selectedExtensions    = @($SelectedExtensions)
+                        effectiveSchemaHash   = "abc123"
+                        workspaceFingerprint  = "0000000000000000000000000000000000000000000000000000000000000000"
+                        apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                    }
+                    claims  = [ordered]@{
+                        mode                       = "Embedded"
+                        directory                  = "claims"
+                        fingerprint                = "def456"
+                        expectedVerificationChecks = @()
+                    }
+                    seed    = [ordered]@{
+                        extensionNamespacePrefixes = @()
+                    }
+                }
+                $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+                return $manifestPath
+            }
+        }
+
+        It "reuses the staged workspace when selectedExtensions already match the effective SCHEMA_PACKAGES" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                # The DS 5.2 default bootstrap overlay (.env.bootstrap.ds52) composes to
+                # core + TPDM, so a manifest already recording "tpdm" is current.
+                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -SelectedExtensions @("tpdm") |
+                    Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeFalse -Because "a manifest whose selectedExtensions already match the effective SCHEMA_PACKAGES must be reused as-is"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "re-stages via prepare-dms-schema.ps1 -EnvironmentFile when selectedExtensions no longer match the effective SCHEMA_PACKAGES" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                # DS 5.2 default composes to core + TPDM; a core-only staged manifest (e.g. left over
+                # from a DS 6.1 run) no longer matches and must be re-staged.
+                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -SelectedExtensions @() |
+                    Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeTrue -Because "a staged core-only workspace no longer matches the effective SCHEMA_PACKAGES (core + TPDM)"
+
+                $capturedCall = @(Get-Content -LiteralPath $fixture.PrepareSchemaCallLog) | Select-Object -First 1
+                $capturedCall | Should -Match '^EnvironmentFile=' -Because "prepare-dms-schema.ps1 must be re-invoked with -EnvironmentFile"
+
+                $capturedEnvironmentFile = $capturedCall.Substring("EnvironmentFile=".Length)
+                Test-Path -LiteralPath $capturedEnvironmentFile |
+                    Should -BeTrue -Because "the -EnvironmentFile argument must be the effective (composed) env file"
+                (Get-Content -LiteralPath $capturedEnvironmentFile -Raw) |
+                    Should -Match "TPDM" -Because "the effective env file must be the DS 5.2 composition (core + TPDM)"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "re-stages via prepare-dms-schema.ps1 when the staged bootstrap manifest is malformed" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -Malformed | Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeTrue -Because "a malformed staged manifest cannot be confirmed current, so it must be re-staged"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "passes -ReplaceDivergentWorkspace to prepare-dms-schema.ps1 and proceeds when the mismatch has no running config service container" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                # DS 5.2 default composes to core + TPDM; a core-only staged manifest no longer
+                # matches, and the fixture's config compose file is absent, so the freshness check
+                # degrades to "not running" and the wrapper must opt in to replacing the workspace
+                # instead of letting prepare-dms-schema.ps1 throw on the divergence it detects.
+                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -SelectedExtensions @() |
+                    Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } | Should -Not -Throw
+
+                $capturedCalls = @(Get-Content -LiteralPath $fixture.PrepareSchemaCallLog)
+                $capturedCalls | Should -Contain "ReplaceDivergentWorkspace=True" -Because "the wrapper must pass -ReplaceDivergentWorkspace so prepare-dms-schema.ps1 replaces the stale workspace instead of throwing"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "throws manual teardown guidance and never invokes prepare-dms-schema.ps1 when the mismatch has a running config service container" {
+            $fixture = script:New-WrapperRevalidationFixtureWithConfigCompose
+            try {
+                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -SelectedExtensions @() |
+                    Out-Null
+
+                $runningContainerName = $fixture.ConfigContainerName
+                # Stub docker so `docker ps --filter name=...` reports the config container as
+                # running, matching the exact-name filter Get-WrapperRunningConfigServiceContainerName
+                # uses (shared with Assert-WrapperRestoreTargetEnvironmentFresh).
+                function global:docker {
+                    if ($args[0] -eq "ps") {
+                        return $runningContainerName
+                    }
+                    return $null
+                }
+
+                {
+                    & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+                } | Should -Throw "*already running*remove eng/docker-compose/.bootstrap*-RemoveBootstrap*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeFalse -Because "the wrapper must fail fast with manual guidance instead of replacing a workspace that may be bind-mounted into the running stack"
+            }
+            finally {
+                if (Test-Path -LiteralPath Function:\docker) {
+                    Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
+                }
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }

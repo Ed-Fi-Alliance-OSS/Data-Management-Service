@@ -1114,7 +1114,91 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
         }
     }
 
-    Context "Bootstrap -RestoreTemplate ordering: restore replaces provisioning" {
+    Context "Bootstrap -DbOnly parameter surface and mutual exclusivity" {
+        BeforeAll {
+            # Isolated fixture carrying only what the target start script needs to reach its own
+            # -DbOnly/-InfraOnly/-DmsOnly mutual-exclusion guard: the real start script plus its
+            # bootstrap-manifest.psm1/bootstrap-claims-gate.psm1/env-utility.psm1 dependencies and a
+            # minimal env file, so the guard throws without any Docker or CMS side effect and without
+            # depending on the real repo's ambient .bootstrap/.env state.
+            function script:New-StartScriptGuardRepo {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("start-local-dms.ps1", "start-published-dms.ps1")]
+                    [string]$StartScriptName
+                )
+
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    $StartScriptName,
+                    "bootstrap-manifest.psm1",
+                    "bootstrap-claims-gate.psm1",
+                    "env-utility.psm1"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.guard"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot    = $repoRoot
+                    StartScript = Join-Path $dockerComposeRoot $StartScriptName
+                    EnvFile     = $envFile
+                }
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both declare -DbOnly" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $params = Get-DeclaredScriptParameters -Path (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                )
+                $params | Should -Contain "DbOnly"
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both reject -DbOnly with -InfraOnly at the param-parse level" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $guardRepo = New-StartScriptGuardRepo -StartScriptName $name
+                try {
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -InfraOnly
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+                }
+                finally {
+                    Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                }
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both reject -DbOnly with -DmsOnly at the param-parse level" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $guardRepo = New-StartScriptGuardRepo -StartScriptName $name
+                try {
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -DmsOnly
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+                }
+                finally {
+                    Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                }
+            }
+        }
+    }
+
+    Context "Bootstrap -RestoreTemplate ordering: restore precedes infrastructure, replaces provisioning" {
         BeforeAll {
             # Builds an isolated repo carrying one of the two wrapper entry scripts plus recording
             # stubs for every downstream phase command, so a wrapper invocation's call sequence can
@@ -1164,17 +1248,20 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 param(
     [switch] `$InfraOnly,
     [switch] `$DmsOnly,
+    [switch] `$DbOnly,
     [switch] `$EnableConfig,
     [string] `$EnvironmentFile,
     [string] `$IdentityProvider,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
-`$label = if (`$DmsOnly) { "start-dms" } else { "start-infra" }
+`$label = if (`$DbOnly) { "start-dbonly" } elseif (`$DmsOnly) { "start-dms" } else { "start-infra" }
 Add-Content -LiteralPath '$callLog' -Value `$label
 "@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
 
                 # Stub restore module: records the call and its -RestoreTemplate value instead of
-                # performing a real database-template restore (no NuGet download, no Docker).
+                # performing a real database-template restore (no NuGet download, no Docker). The
+                # -PackageDirectory value is logged only when the caller actually bound it, so tests
+                # can assert both "forwarded when supplied" and "absent when not supplied".
                 @"
 function Restore-DatabaseTemplate {
     param(
@@ -1183,6 +1270,9 @@ function Restore-DatabaseTemplate {
         [string] `$PackageDirectory
     )
     Add-Content -LiteralPath '$callLog' -Value "restore RestoreTemplate=`$RestoreTemplate"
+    if (`$PSBoundParameters.ContainsKey('PackageDirectory')) {
+        Add-Content -LiteralPath '$callLog' -Value "restore PackageDirectory=`$PackageDirectory"
+    }
 }
 Export-ModuleMember -Function Restore-DatabaseTemplate
 "@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "setup-database-template.psm1") -Encoding utf8
@@ -1203,7 +1293,7 @@ Export-ModuleMember -Function Restore-DatabaseTemplate
             $script:restoreOrderingRepo = $null
         }
 
-        It "bootstrap-local-dms.ps1 -RestoreTemplate invokes the restore phase after configure, skips schema provisioning, then starts DMS" {
+        It "bootstrap-local-dms.ps1 -RestoreTemplate invokes -DbOnly then restore before infrastructure, skips schema provisioning, then configures and starts DMS" {
             $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
 
             & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Populated
@@ -1213,16 +1303,20 @@ Export-ModuleMember -Function Restore-DatabaseTemplate
             $log | Should -Not -Contain "provision" -Because "the restore-template branch must skip schema provisioning"
             $log | Should -Contain "restore RestoreTemplate=Populated" -Because "the restore phase must run with the requested template"
 
-            $configureIndex = [array]::IndexOf($log, ($log | Where-Object { $_ -like "configure*" } | Select-Object -First 1))
+            $dbOnlyIndex    = [array]::IndexOf($log, "start-dbonly")
             $restoreIndex   = [array]::IndexOf($log, "restore RestoreTemplate=Populated")
+            $infraIndex     = [array]::IndexOf($log, "start-infra")
+            $configureIndex = [array]::IndexOf($log, ($log | Where-Object { $_ -like "configure*" } | Select-Object -First 1))
             $dmsStartIndex  = [array]::IndexOf($log, "start-dms")
 
-            $configureIndex | Should -BeGreaterOrEqual 0
-            $restoreIndex   | Should -BeGreaterThan $configureIndex -Because "restore must run after configure"
-            $dmsStartIndex  | Should -BeGreaterThan $restoreIndex -Because "DMS startup must follow the restore phase"
+            $dbOnlyIndex    | Should -BeGreaterOrEqual 0 -Because "the restore branch must start the database container only, before restoring"
+            $restoreIndex   | Should -BeGreaterThan $dbOnlyIndex -Because "restore must run after the -DbOnly database-only startup"
+            $infraIndex     | Should -BeGreaterThan $restoreIndex -Because "infrastructure must start only after the restore completes"
+            $configureIndex | Should -BeGreaterThan $infraIndex -Because "configure must run after infrastructure starts"
+            $dmsStartIndex  | Should -BeGreaterThan $configureIndex -Because "DMS startup must follow configure"
         }
 
-        It "bootstrap-published-dms.ps1 -RestoreTemplate invokes the restore phase after configure, skips schema provisioning, then starts DMS" {
+        It "bootstrap-published-dms.ps1 -RestoreTemplate invokes -DbOnly then restore before infrastructure, skips schema provisioning, then configures and starts DMS" {
             $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
 
             & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Minimal
@@ -1232,13 +1326,17 @@ Export-ModuleMember -Function Restore-DatabaseTemplate
             $log | Should -Not -Contain "provision" -Because "the restore-template branch must skip schema provisioning"
             $log | Should -Contain "restore RestoreTemplate=Minimal" -Because "the restore phase must run with the requested template"
 
-            $configureIndex = [array]::IndexOf($log, ($log | Where-Object { $_ -like "configure*" } | Select-Object -First 1))
+            $dbOnlyIndex    = [array]::IndexOf($log, "start-dbonly")
             $restoreIndex   = [array]::IndexOf($log, "restore RestoreTemplate=Minimal")
+            $infraIndex     = [array]::IndexOf($log, "start-infra")
+            $configureIndex = [array]::IndexOf($log, ($log | Where-Object { $_ -like "configure*" } | Select-Object -First 1))
             $dmsStartIndex  = [array]::IndexOf($log, "start-dms")
 
-            $configureIndex | Should -BeGreaterOrEqual 0
-            $restoreIndex   | Should -BeGreaterThan $configureIndex -Because "restore must run after configure"
-            $dmsStartIndex  | Should -BeGreaterThan $restoreIndex -Because "DMS startup must follow the restore phase"
+            $dbOnlyIndex    | Should -BeGreaterOrEqual 0 -Because "the restore branch must start the database container only, before restoring"
+            $restoreIndex   | Should -BeGreaterThan $dbOnlyIndex -Because "restore must run after the -DbOnly database-only startup"
+            $infraIndex     | Should -BeGreaterThan $restoreIndex -Because "infrastructure must start only after the restore completes"
+            $configureIndex | Should -BeGreaterThan $infraIndex -Because "configure must run after infrastructure starts"
+            $dmsStartIndex  | Should -BeGreaterThan $configureIndex -Because "DMS startup must follow configure"
         }
 
         It "bootstrap-local-dms.ps1 without -RestoreTemplate still provisions the schema" {
@@ -1250,6 +1348,7 @@ Export-ModuleMember -Function Restore-DatabaseTemplate
 
             $log | Should -Contain "provision" -Because "the default branch must still run schema provisioning"
             $log | Where-Object { $_ -like "restore*" } | Should -BeNullOrEmpty -Because "the restore phase must not run without -RestoreTemplate"
+            $log | Where-Object { $_ -like "start-dbonly*" } | Should -BeNullOrEmpty -Because "non-restore paths must never invoke the start script with -DbOnly"
         }
 
         It "bootstrap-published-dms.ps1 without -RestoreTemplate still provisions the schema" {
@@ -1261,6 +1360,207 @@ Export-ModuleMember -Function Restore-DatabaseTemplate
 
             $log | Should -Contain "provision" -Because "the default branch must still run schema provisioning"
             $log | Where-Object { $_ -like "restore*" } | Should -BeNullOrEmpty -Because "the restore phase must not run without -RestoreTemplate"
+            $log | Where-Object { $_ -like "start-dbonly*" } | Should -BeNullOrEmpty -Because "non-restore paths must never invoke the start script with -DbOnly"
+        }
+    }
+
+    Context "Bootstrap -PackageDirectory passthrough (pre-publish restore validation)" {
+        AfterEach {
+            if ($null -ne $script:restoreOrderingRepo -and (Test-Path -LiteralPath $script:restoreOrderingRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:restoreOrderingRepo.RepoRoot -Recurse -Force
+            }
+            $script:restoreOrderingRepo = $null
+        }
+
+        It "bootstrap-local-dms.ps1 forwards the supplied -PackageDirectory to Restore-DatabaseTemplate" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+            $packageDirectory = Join-Path $script:restoreOrderingRepo.RepoRoot "local-package"
+            New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
+
+            & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Populated -PackageDirectory $packageDirectory
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+            $log | Should -Contain "restore PackageDirectory=$packageDirectory" -Because "the wrapper must forward the supplied -PackageDirectory value to Restore-DatabaseTemplate"
+        }
+
+        It "bootstrap-published-dms.ps1 forwards the supplied -PackageDirectory to Restore-DatabaseTemplate" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+            $packageDirectory = Join-Path $script:restoreOrderingRepo.RepoRoot "local-package"
+            New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
+
+            & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Minimal -PackageDirectory $packageDirectory
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+            $log | Should -Contain "restore PackageDirectory=$packageDirectory" -Because "the wrapper must forward the supplied -PackageDirectory value to Restore-DatabaseTemplate"
+        }
+
+        It "bootstrap-local-dms.ps1 forwards no -PackageDirectory to Restore-DatabaseTemplate when not supplied" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+
+            & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Populated
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+            $log | Where-Object { $_ -like "restore PackageDirectory=*" } | Should -BeNullOrEmpty -Because "the restore call must receive no -PackageDirectory argument when the wrapper was not supplied one"
+        }
+
+        It "bootstrap-published-dms.ps1 forwards no -PackageDirectory to Restore-DatabaseTemplate when not supplied" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+
+            & $script:restoreOrderingRepo.WrapperScript -RestoreTemplate Minimal
+
+            $log = @(Get-Content -LiteralPath $script:restoreOrderingRepo.CallLog)
+            $log | Where-Object { $_ -like "restore PackageDirectory=*" } | Should -BeNullOrEmpty -Because "the restore call must receive no -PackageDirectory argument when the wrapper was not supplied one"
+        }
+
+        It "bootstrap-local-dms.ps1 throws when -PackageDirectory is supplied without -RestoreTemplate, before any phase invocation" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+
+            {
+                & $script:restoreOrderingRepo.WrapperScript -PackageDirectory $script:restoreOrderingRepo.RepoRoot
+            } | Should -Throw "*-PackageDirectory requires -RestoreTemplate*"
+
+            Test-Path -LiteralPath $script:restoreOrderingRepo.CallLog | Should -BeFalse -Because "the wrapper must fail fast before any phase invocation"
+        }
+
+        It "bootstrap-published-dms.ps1 throws when -PackageDirectory is supplied without -RestoreTemplate, before any phase invocation" {
+            $script:restoreOrderingRepo = New-RestoreOrderingRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+
+            {
+                & $script:restoreOrderingRepo.WrapperScript -PackageDirectory $script:restoreOrderingRepo.RepoRoot
+            } | Should -Throw "*-PackageDirectory requires -RestoreTemplate*"
+
+            Test-Path -LiteralPath $script:restoreOrderingRepo.CallLog | Should -BeFalse -Because "the wrapper must fail fast before any phase invocation"
+        }
+    }
+
+    Context "Bootstrap -RestoreTemplate fresh-environment guard" {
+        BeforeAll {
+            # Reuses the isolated-repo shape from the restore-ordering fixture above, plus the
+            # target wrapper's config compose file (so Get-WrapperConfigServiceContainerName can
+            # read its container_name), so a test can prove the wrapper fails fast - before any
+            # phase invocation - when the target compose project's config service container
+            # already appears to be running.
+            function script:New-RestoreFreshnessGuardRepo {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScriptName
+                )
+
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                $configComposeFileName = if ($WrapperEntryScriptName -eq "bootstrap-local-dms.ps1") {
+                    "local-config.yml"
+                }
+                else {
+                    "published-config.yml"
+                }
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    $WrapperEntryScriptName,
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61",
+                    $configComposeFileName
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                New-BootstrapManifestFile -DockerComposeRoot $dockerComposeRoot | Out-Null
+
+                $callLog = Join-Path $repoRoot "call-log.txt"
+                $startScriptName = $WrapperEntryScriptName -replace '^bootstrap-', 'start-'
+                @"
+param(
+    [switch] `$InfraOnly,
+    [switch] `$DmsOnly,
+    [switch] `$DbOnly,
+    [switch] `$EnableConfig,
+    [string] `$EnvironmentFile,
+    [string] `$IdentityProvider,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+`$label = if (`$DbOnly) { "start-dbonly" } elseif (`$DmsOnly) { "start-dms" } else { "start-infra" }
+Add-Content -LiteralPath '$callLog' -Value `$label
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
+
+                $configComposeContent = Get-Content -LiteralPath (Join-Path $dockerComposeRoot $configComposeFileName) -Raw
+                $containerNameMatch = [regex]::Match(
+                    $configComposeContent,
+                    "(?m)^[ \t]*container_name:[ \t]*(?<name>\S+)[ \t]*$"
+                )
+
+                return [pscustomobject]@{
+                    RepoRoot            = $repoRoot
+                    DockerComposeRoot   = $dockerComposeRoot
+                    WrapperScript       = Join-Path $dockerComposeRoot $WrapperEntryScriptName
+                    EnvFile             = $envFile
+                    CallLog             = $callLog
+                    ConfigContainerName = $containerNameMatch.Groups["name"].Value
+                }
+            }
+        }
+
+        AfterEach {
+            if (Test-Path -LiteralPath Function:\docker) {
+                Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
+            }
+            if ($null -ne $script:restoreFreshnessGuardRepo -and (Test-Path -LiteralPath $script:restoreFreshnessGuardRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:restoreFreshnessGuardRepo.RepoRoot -Recurse -Force
+            }
+            $script:restoreFreshnessGuardRepo = $null
+        }
+
+        It "bootstrap-local-dms.ps1 -RestoreTemplate throws teardown guidance when the config container already appears to be running, before any phase invocation" {
+            $script:restoreFreshnessGuardRepo = New-RestoreFreshnessGuardRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+            $runningContainerName = $script:restoreFreshnessGuardRepo.ConfigContainerName
+
+            # Stub docker so `docker ps --filter name=...` reports the config container as running,
+            # matching the exact-name filter Assert-WrapperRestoreTargetEnvironmentFresh uses.
+            function global:docker {
+                if ($args[0] -eq "ps") {
+                    return $runningContainerName
+                }
+                return $null
+            }
+
+            {
+                & $script:restoreFreshnessGuardRepo.WrapperScript -RestoreTemplate Minimal
+            } | Should -Throw "*already running*Tear down the existing environment first: start-local-dms.ps1 -d*"
+
+            Test-Path -LiteralPath $script:restoreFreshnessGuardRepo.CallLog | Should -BeFalse -Because "the wrapper must fail fast before any phase invocation"
+        }
+
+        It "bootstrap-published-dms.ps1 -RestoreTemplate throws teardown guidance when the config container already appears to be running, before any phase invocation" {
+            $script:restoreFreshnessGuardRepo = New-RestoreFreshnessGuardRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+            $runningContainerName = $script:restoreFreshnessGuardRepo.ConfigContainerName
+
+            function global:docker {
+                if ($args[0] -eq "ps") {
+                    return $runningContainerName
+                }
+                return $null
+            }
+
+            {
+                & $script:restoreFreshnessGuardRepo.WrapperScript -RestoreTemplate Minimal
+            } | Should -Throw "*already running*Tear down the existing environment first: start-published-dms.ps1 -d*"
+
+            Test-Path -LiteralPath $script:restoreFreshnessGuardRepo.CallLog | Should -BeFalse -Because "the wrapper must fail fast before any phase invocation"
         }
     }
 }

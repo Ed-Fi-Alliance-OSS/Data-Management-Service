@@ -706,14 +706,15 @@ function Get-UserSchemaNames {
     artifact inside the running database container. Returns the name of the
     restored package file.
 
-    For PostgreSQL, extracts the package's .sql dump, drops and recreates the
-    target database, and restores the dump into it.
+    For PostgreSQL, extracts the package's .sql dump, terminates any lingering
+    connections to the target database, drops and recreates it, and restores
+    the dump into it.
 
     For MSSQL, extracts the package's .bak backup, copies it into the container,
     puts any pre-existing target database into single-user mode and drops it,
-    reads the backup's logical data/log file names via `RESTORE FILELISTONLY`,
-    and runs `RESTORE DATABASE ... WITH MOVE, REPLACE` to relocate those files
-    under the target database's own name.
+    reads every logical data/log file name via `RESTORE FILELISTONLY`, and runs
+    `RESTORE DATABASE ... WITH MOVE, REPLACE` with one MOVE clause per file to
+    relocate all of them under the target database's own name.
 
 .PARAMETER PackageDirectory
     Directory containing the template .nupkg (default: current directory).
@@ -797,26 +798,63 @@ function Restore-TemplatePackage {
             $fileListOutput = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -h -1 -W -s "|" -Q $fileListQuery
             if ($LASTEXITCODE -ne 0) { throw "Failed to read the file list from backup '$($bakFile.Name)'." }
 
-            $dataLogicalName = $null
-            $logLogicalName = $null
+            # Collect every data (D) and log (L) row, not just the first of each: a multi-file backup
+            # (secondary data file, extra filegroup, additional log) must relocate every file it lists,
+            # or RESTORE DATABASE fails because some file is left pointing at its original in-container
+            # path. Today's DMS templates are single data + single log, but this keeps a multi-file
+            # .bak restorable too.
+            $dataLogicalNames = [System.Collections.Generic.List[string]]::new()
+            $logLogicalNames = [System.Collections.Generic.List[string]]::new()
             foreach ($line in $fileListOutput) {
                 if ([string]::IsNullOrWhiteSpace($line)) { continue }
                 $fields = $line -split '\|'
                 if ($fields.Count -lt 3) { continue }
                 $logicalName = $fields[0].Trim()
                 $fileType = $fields[2].Trim()
-                if ($fileType -eq "D" -and $null -eq $dataLogicalName) { $dataLogicalName = $logicalName }
-                elseif ($fileType -eq "L" -and $null -eq $logLogicalName) { $logLogicalName = $logicalName }
+                if ($fileType -eq "D") { $dataLogicalNames.Add($logicalName) }
+                elseif ($fileType -eq "L") { $logLogicalNames.Add($logicalName) }
             }
 
-            if ([string]::IsNullOrWhiteSpace($dataLogicalName) -or [string]::IsNullOrWhiteSpace($logLogicalName)) {
+            if ($dataLogicalNames.Count -eq 0 -or $logLogicalNames.Count -eq 0) {
                 throw "Could not determine the data and log logical file names from backup '$($bakFile.Name)'."
             }
 
-            $escapedDataLogicalName = $dataLogicalName.Replace("'", "''")
-            $escapedLogLogicalName = $logLogicalName.Replace("'", "''")
+            # Emit one MOVE clause per file. The primary data file and first log keep today's plain
+            # $DatabaseName-derived names, so a single-file .bak still produces the exact same RESTORE
+            # command as before; every additional file gets a name suffixed with its own logical name,
+            # so each lands at its own deterministic path under the same target data directory. Unlike
+            # the MOVE...FROM side (which only needs single-quote escaping inside its N'' literal), an
+            # extra logical name is interpolated into a new physical path here, so it is validated
+            # against the same safe-character allow-list already used for $DatabaseName before use.
+            $moveClauses = [System.Collections.Generic.List[string]]::new()
+            for ($i = 0; $i -lt $dataLogicalNames.Count; $i++) {
+                $logicalName = $dataLogicalNames[$i]
+                if ($i -eq 0) {
+                    $physicalName = "$DatabaseName.mdf"
+                }
+                else {
+                    if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
+                        throw "Data file logical name '$logicalName' from backup '$($bakFile.Name)' contains unsupported characters and cannot be used to derive a restore path."
+                    }
+                    $physicalName = "${DatabaseName}_${logicalName}.ndf"
+                }
+                $moveClauses.Add("MOVE N'$($logicalName.Replace("'", "''"))' TO N'/var/opt/mssql/data/$physicalName'")
+            }
+            for ($i = 0; $i -lt $logLogicalNames.Count; $i++) {
+                $logicalName = $logLogicalNames[$i]
+                if ($i -eq 0) {
+                    $physicalName = "${DatabaseName}_log.ldf"
+                }
+                else {
+                    if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
+                        throw "Log file logical name '$logicalName' from backup '$($bakFile.Name)' contains unsupported characters and cannot be used to derive a restore path."
+                    }
+                    $physicalName = "${DatabaseName}_${logicalName}.ldf"
+                }
+                $moveClauses.Add("MOVE N'$($logicalName.Replace("'", "''"))' TO N'/var/opt/mssql/data/$physicalName'")
+            }
 
-            $restoreSql = "RESTORE DATABASE [$DatabaseName] FROM DISK = N'$containerBakPath' WITH MOVE N'$escapedDataLogicalName' TO N'/var/opt/mssql/data/$DatabaseName.mdf', MOVE N'$escapedLogLogicalName' TO N'/var/opt/mssql/data/${DatabaseName}_log.ldf', REPLACE;"
+            $restoreSql = "RESTORE DATABASE [$DatabaseName] FROM DISK = N'$containerBakPath' WITH $($moveClauses -join ', '), REPLACE;"
             & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -Q $restoreSql | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Restore of '$($bakFile.Name)' into '$DatabaseName' failed." }
 
@@ -831,6 +869,11 @@ function Restore-TemplatePackage {
         if ($null -eq $sqlFile) {
             throw "No .sql dump found inside package '$($package.Name)'."
         }
+
+        # A connected session blocks DROP DATABASE; terminate any lingering ones as defense in
+        # depth (the restore-first bootstrap ordering means nothing should be connected here).
+        & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DatabaseName' AND pid <> pg_backend_pid();" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to terminate existing connections to database '$DatabaseName'." }
 
         & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DatabaseName;" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Failed to drop existing database '$DatabaseName'." }

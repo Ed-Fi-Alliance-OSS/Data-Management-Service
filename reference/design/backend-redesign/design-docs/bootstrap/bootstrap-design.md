@@ -1271,6 +1271,16 @@ Rationale: the direct-SQL path bypasses DMS API validation and serialization, wh
 > source row counts. After a wrapper restores a package into a developer's database, DMS startup runs its
 > normal effective-schema-hash validation against it, the same check that follows DDL provisioning, so a
 > restored database is not exempt from that safeguard either.
+>
+> **Ordering: restore-first.** The wrapper's restore branch brings up only the database container, restores
+> the template directly into it, and only then starts the rest of infrastructure (identity setup, Config
+> Service, and CMS's own schema deployment), followed by configure and DMS start. Restoring first, before any
+> CMS state exists, makes the restore's destructive database replacement safe by construction on a stack
+> where CMS shares the DMS physical database: there is no already-provisioned CMS schema, application record,
+> or identity-store data for the restore to overwrite. Because the restore always precedes infrastructure
+> startup, a restored environment never carries build-time identity keys, client secrets, or data-store
+> records from a prior run, and `configure-local-data-store.ps1`'s data-store registrations always land after
+> the restore, so they always target the restored database instead of being wiped out by it.
 
 **Removal checklist (for implementation slice):**
 

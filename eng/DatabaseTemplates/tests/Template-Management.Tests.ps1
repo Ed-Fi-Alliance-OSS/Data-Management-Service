@@ -577,6 +577,62 @@ Describe "Restore-TemplatePackage" {
             ($calls[3] -join ' ') | Should -Match 'RESTORE DATABASE \[testdb\]'
             ($calls[4] -join ' ') | Should -Match '^exec dms-mssql rm -f /var/opt/mssql/data/template-restore-.*\.bak$'
         }
+
+        It "emits one MOVE clause per file for a multi-file backup (secondary data file, extra filegroup, multiple logs)" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @(
+                        'MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY',
+                        'MyDb2|/var/opt/mssql/data/MyDb2.ndf|D|SECONDARY',
+                        'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL',
+                        'MyDb_log2|/var/opt/mssql/data/MyDb_log2.ldf|L|NULL'
+                    )
+                }
+                if ($joined -match 'DB_ID') {
+                    return '0'
+                }
+            }
+
+            Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" | Out-Null
+
+            $containerBakPath = ($calls[0][2] -split ':', 2)[1]
+
+            # The primary data file and first log keep the plain $DatabaseName-derived names (matching
+            # the single-file case); the secondary data file and second log get names suffixed with
+            # their own logical name so every file lands at its own deterministic path.
+            ($calls[3] -join '|') | Should -Be (@(
+                    'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-d', 'master', '-C', '-b', '-Q',
+                    "RESTORE DATABASE [testdb] FROM DISK = N'$containerBakPath' WITH MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf', MOVE N'MyDb2' TO N'/var/opt/mssql/data/testdb_MyDb2.ndf', MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf', MOVE N'MyDb_log2' TO N'/var/opt/mssql/data/testdb_MyDb_log2.ldf', REPLACE;"
+                ) -join '|')
+        }
+
+        It "throws when an additional file's logical name contains characters unsafe for a physical path" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            Mock docker -ModuleName Template-Management {
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @(
+                        'MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY',
+                        "MyDb'; DROP TABLE x --|/var/opt/mssql/data/MyDb2.ndf|D|SECONDARY",
+                        'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL'
+                    )
+                }
+                if ($joined -match 'DB_ID') {
+                    return '0'
+                }
+            }
+
+            { Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" } |
+                Should -Throw "*contains unsupported characters*"
+        }
     }
 
     Context "when -DatabaseEngine is postgresql (the default)" {
@@ -592,11 +648,12 @@ Describe "Restore-TemplatePackage" {
             $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine postgresql -ContainerName "dms-postgresql"
 
             $result | Should -Be "MyPgTemplate.nupkg"
-            $calls.Count | Should -Be 4
-            ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'DROP DATABASE IF EXISTS testdb;') -join '|')
-            ($calls[1] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE DATABASE testdb;') -join '|')
-            $calls[2][0] | Should -Be 'cp'
-            ($calls[3] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-v', 'ON_ERROR_STOP=1', '-f', '/tmp/template-restore.sql') -join '|')
+            $calls.Count | Should -Be 5
+            ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'testdb' AND pid <> pg_backend_pid();") -join '|')
+            ($calls[1] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'DROP DATABASE IF EXISTS testdb;') -join '|')
+            ($calls[2] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE DATABASE testdb;') -join '|')
+            $calls[3][0] | Should -Be 'cp'
+            ($calls[4] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-v', 'ON_ERROR_STOP=1', '-f', '/tmp/template-restore.sql') -join '|')
         }
 
         It "produces byte-identical restore arguments whether or not -DatabaseEngine is supplied" {
