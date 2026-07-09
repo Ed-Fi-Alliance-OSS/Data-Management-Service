@@ -8,7 +8,7 @@ updated to match. \
 compatibility — see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison). \
 **Amended 2026-07-05:** unquoted `If-Match` values accepted as equivalent to quoted ones for legacy
 compatibility — see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted). \
-**Amended 2026-07-05:** bare `If-Match: *` honored as an existence precondition per RFC 9110 §3.1 —
+**Amended 2026-07-05:** bare `If-Match: *` honored as an existence precondition per RFC 9110 §13.1 —
 see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching). \
 **Amended 2026-07-06:** `If-None-Match` support added — conditional-GET `304` plus a write create-guard —
 see [Amendment (2026-07-06)](#amendment-2026-07-06-if-none-match-support). \
