@@ -101,18 +101,19 @@ public static class EtagValue
             return false;
         }
 
+        value = ParseNonEmptyTag(headerValue);
+        return true;
+    }
+
+    private static string ParseNonEmptyTag(string headerValue)
+    {
         var candidate = headerValue.StartsWith("W/", StringComparison.Ordinal)
             ? headerValue[2..]
             : headerValue;
 
-        if (candidate.Length >= 2 && candidate[0] == '"' && candidate[^1] == '"')
-        {
-            value = candidate[1..^1];
-            return true;
-        }
-
-        value = candidate;
-        return true;
+        return candidate.Length >= 2 && candidate[0] == '"' && candidate[^1] == '"'
+            ? candidate[1..^1]
+            : candidate;
     }
 
     /// <summary>
@@ -143,10 +144,7 @@ public static class EtagValue
                 continue;
             }
 
-            if (TryParseConditionalTag(trimmed, out var value))
-            {
-                values.Add(value);
-            }
+            values.Add(ParseNonEmptyTag(trimmed));
         }
 
         return values;
