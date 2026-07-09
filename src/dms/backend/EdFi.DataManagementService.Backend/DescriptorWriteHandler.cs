@@ -388,7 +388,9 @@ internal sealed class DescriptorWriteHandler(
                         // not-exists (404). A wildcard If-None-Match against a missing target is the
                         // success case, so it falls through to the normal not-exists (404) result.
                         return request.WritePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
-                            ? new UpdateResult.UpdateFailureETagMisMatch()
+                            ? new UpdateResult.UpdateFailureETagMisMatch(
+                                ETagPreconditionFailureReason.TargetDoesNotExist
+                            )
                             : new UpdateResult.UpdateFailureNotExists();
 
                     case DescriptorLockedPreconditionResult.MissingDescriptor(

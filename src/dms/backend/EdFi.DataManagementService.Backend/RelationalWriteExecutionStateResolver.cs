@@ -131,7 +131,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
             // If-Match on an insert fails (no current representation to match). If-None-Match on an
             // insert is the create-only success case, so it proceeds.
             return request.WritePrecondition is WritePrecondition.IfMatch
-                ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                    request.OperationKind,
+                    ETagPreconditionFailureReason.TargetDoesNotExist
+                )
                 : null;
         }
 
