@@ -21,6 +21,7 @@
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   },
   "Serilog": {
+    // Warning: adding a Serilog:WriteTo:*:Args:outputTemplate here silently defeats the JSON console formatter (arrays merge by index; Serilog prefers the string overload). See docs/LOGGING.md.
     "MinimumLevel": {
       "Default": "Debug"
     }

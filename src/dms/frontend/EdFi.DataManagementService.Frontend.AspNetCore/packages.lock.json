@@ -13,15 +13,15 @@
       },
       "EdFi.DataStandard52.ApiSchema": {
         "type": "Direct",
-        "requested": "[1.0.332, )",
-        "resolved": "1.0.332",
-        "contentHash": "VEWAwwkrSOEIUshme5JMnDishkrXZVP85v84UV9nHToaFcGXOD4WGOGHRwF0WJ1mIRD9bxiDhiAJFKUDU+W6vA=="
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "eSjrOzKptV1YYqoda/E7iUqzuEwbP2UsdUHNKpfJclY+e+Q2/SvGCJVBYhirSVxQA06Y03T3ssNr9PYeAWWqEA=="
       },
       "EdFi.DataStandard52.TPDM.ApiSchema": {
         "type": "Direct",
-        "requested": "[1.0.332, )",
-        "resolved": "1.0.332",
-        "contentHash": "TgBkJeErCsHHjy56kI7EhZd1Bp6sBfPxI9aXftIi41pRYGRhplMYKvx9V8pTMAr/+jZaXiHpKjKUAAc7Tr05iQ=="
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "XzHgxRKPtynsubpNW3qyiMK9M1E1FqTJXRhNVLqRzfgLvjm//TB+x3rCoyVn61qRNSm1u7ydVYWQ8iPtaGxHUg=="
       },
       "Microsoft.CodeAnalysis": {
         "type": "Direct",

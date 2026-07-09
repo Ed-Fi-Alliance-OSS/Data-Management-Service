@@ -77,6 +77,13 @@ internal class RequestInfo(
     public IFrontendResponse FrontendResponse { get; set; } = No.FrontendResponse;
 
     /// <summary>
+    /// The exception the pipeline caught and converted into an error response, captured
+    /// so the outer request logging middleware can attach it to the structured
+    /// request-failure event in the live pipeline order.
+    /// </summary>
+    public Exception? CaughtException { get; set; }
+
+    /// <summary>
     /// Body in Json format
     /// </summary>
     public JsonNode ParsedBody { get; set; } = No.JsonNode;

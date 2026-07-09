@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -70,16 +71,24 @@ RunBootstrapPhase(
             });
         }
 
-        // Configure request size limits for schema upload
-        builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+        // Configure request size limits for schema upload using the configured request-body limit.
+        int maxRequestBodySizeMegabytes = int.TryParse(
+            builder.Configuration["AppSettings:MaxRequestBodySizeMegabytes"],
+            out int configuredMaxRequestBodySizeMegabytes
+        )
+            ? configuredMaxRequestBodySizeMegabytes
+            : AppSettings.DefaultMaxRequestBodySizeMegabytes;
+        int maxRequestBodySizeBytes = maxRequestBodySizeMegabytes * AppSettings.BytesPerMegabyte;
+
+        builder.Services.Configure<FormOptions>(options =>
         {
-            options.ValueLengthLimit = 10 * 1024 * 1024; // 10MB
-            options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10MB
+            options.ValueLengthLimit = maxRequestBodySizeBytes;
+            options.MultipartBodyLengthLimit = maxRequestBodySizeBytes;
         });
 
         builder.Services.Configure<KestrelServerOptions>(options =>
         {
-            options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+            options.Limits.MaxRequestBodySize = maxRequestBodySizeBytes;
         });
 
         var reverseProxySettings =

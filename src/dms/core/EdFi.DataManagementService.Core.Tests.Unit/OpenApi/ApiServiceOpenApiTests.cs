@@ -64,6 +64,7 @@ public class ApiServiceOpenApiTests
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
+            NullLoggerFactory.Instance,
             Options.Create(
                 new AppSettings { AllowIdentityUpdateOverrides = "", AuthenticationService = TokenUrl }
             ),

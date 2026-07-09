@@ -666,8 +666,8 @@
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "EdFi.DataStandard52.ApiSchema": "[1.0.332, )",
-          "EdFi.DataStandard52.TPDM.ApiSchema": "[1.0.332, )",
+          "EdFi.DataStandard52.ApiSchema": "[1.0.333, )",
+          "EdFi.DataStandard52.TPDM.ApiSchema": "[1.0.333, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
           "Polly.Core": "[8.4.2, )",
           "Polly.Extensions": "[8.4.2, )",
@@ -696,15 +696,15 @@
       },
       "EdFi.DataStandard52.ApiSchema": {
         "type": "CentralTransitive",
-        "requested": "[1.0.332, )",
-        "resolved": "1.0.332",
-        "contentHash": "VEWAwwkrSOEIUshme5JMnDishkrXZVP85v84UV9nHToaFcGXOD4WGOGHRwF0WJ1mIRD9bxiDhiAJFKUDU+W6vA=="
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "eSjrOzKptV1YYqoda/E7iUqzuEwbP2UsdUHNKpfJclY+e+Q2/SvGCJVBYhirSVxQA06Y03T3ssNr9PYeAWWqEA=="
       },
       "EdFi.DataStandard52.TPDM.ApiSchema": {
         "type": "CentralTransitive",
-        "requested": "[1.0.332, )",
-        "resolved": "1.0.332",
-        "contentHash": "TgBkJeErCsHHjy56kI7EhZd1Bp6sBfPxI9aXftIi41pRYGRhplMYKvx9V8pTMAr/+jZaXiHpKjKUAAc7Tr05iQ=="
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "XzHgxRKPtynsubpNW3qyiMK9M1E1FqTJXRhNVLqRzfgLvjm//TB+x3rCoyVn61qRNSm1u7ydVYWQ8iPtaGxHUg=="
       },
       "FastGuid": {
         "type": "CentralTransitive",

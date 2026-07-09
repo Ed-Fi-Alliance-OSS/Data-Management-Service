@@ -22,6 +22,11 @@ public static class LogSanitizer
             return string.Empty;
         }
 
+        // Behaviorally redundant with the whitelist below, which also rejects every
+        // line-ending character. Kept because static log-injection analysis (CodeQL)
+        // models ReplaceLineEndings as a sanitizer but not the custom whitelist loop.
+        input = input.ReplaceLineEndings(string.Empty);
+
         // First pass: check if sanitization is needed and count safe characters
         int safeCount = 0;
         bool needsSanitization = false;

@@ -146,7 +146,7 @@ public class ApiSchemaDownloaderTests
         public async Task ShouldReturnWhenPackageVersionFound()
         {
             string packageId = "EdFi.DataStandard52.ApiSchema";
-            string packageVersion = "1.0.332";
+            string packageVersion = "1.0.333";
             string feedUrl =
                 "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
@@ -188,7 +188,7 @@ public class ApiSchemaDownloaderTests
         public async Task Should_Extract_ApiSchema_Content_Files_Correctly()
         {
             string packageId = "EdFi.DataStandard52.ApiSchema";
-            string packageVersion = "1.0.332";
+            string packageVersion = "1.0.333";
             string feedUrl =
                 "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 

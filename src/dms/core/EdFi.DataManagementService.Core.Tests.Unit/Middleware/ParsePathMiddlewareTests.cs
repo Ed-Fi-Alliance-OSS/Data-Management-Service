@@ -168,6 +168,7 @@ public class ParsePathMiddlewareTests
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
+            NullLoggerFactory.Instance,
             appSettingsOptions,
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),

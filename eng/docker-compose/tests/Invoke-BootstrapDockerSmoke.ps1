@@ -75,7 +75,7 @@
 
 .PARAMETER SchemaPackageVersion
     NuGet package version to download when -ApiSchemaPath is not supplied.
-    Defaults to 1.0.332.
+    Defaults to 1.0.333.
 
 .PARAMETER SchemaPackageFeedUrl
     NuGet v3 feed index URL used to resolve the package download URL.
@@ -109,7 +109,7 @@ param(
 
     [string]$SchemaPackageId = "EdFi.DataStandard52.ApiSchema",
 
-    [string]$SchemaPackageVersion = "1.0.332",
+    [string]$SchemaPackageVersion = "1.0.333",
 
     [string]$SchemaPackageFeedUrl = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
 
