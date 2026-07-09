@@ -77,7 +77,9 @@ Explicitly out of scope for this redesign phase:
   - Indexes explicitly called out in the design docs plus supporting indexes for all foreign keys (no query indexes)
 - Optional deterministic **diagnostic/test artifacts** (non-SQL) used by the verification harness:
   - `effective-schema.manifest.json` (schema fingerprint inputs + schema components + resource-key seed summary)
-  - `relational-model.{dialect}.manifest.json` (per-dialect derived model inventory used to generate DDL and compile plans)
+  - `relational-model.{dialect}.manifest.json` (deterministic semantic view of
+    `DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)`; DDL consumes `Model`, while plan
+    compilation consumes the complete artifact)
   - `ddl.manifest.json` (per-dialect normalized DDL hashes and statement counts)
   - File naming and minimum required fields are defined in `ddl-generator-testing.md` (“Artifacts and fixtures (normative)”).
 - A relational-model derivation failure may be rendered as a separate structured failure report, but it produces no SQL,
@@ -114,7 +116,7 @@ Determinism requirements differ by artifact:
 - **`EffectiveSchemaHash`**: byte-for-byte stable lowercase hex output for a fixed effective schema set and relational mapping version (see [data-model.md](data-model.md)).
 - **DDL scripts**: byte-for-byte stable SQL text output for a fixed `(ApiSchema.json set, dialect, relational mapping version)` (see “SQL Text Canonicalization” above).
 - **AOT mapping packs (`.mpack`)**: semantic equivalence is required (not byte-for-byte file identity).
-  - Definition: two packs are equivalent if their keying fields match (effective schema hash, dialect, relational mapping version, pack format version) and their decoded payloads (models/plans/resource keys) are semantically identical after decompression and protobuf parse.
+  - Definition: two packs are equivalent if their keying fields match (effective schema hash, dialect, relational mapping version, pack format version) and their decoded payloads (models/plans/resource keys) are semantically identical after decompression and protobuf parse. Plan equivalence includes each reference-resolution policy and every exact same-statement plan key, retained route, future-vector source, correlation/post-verification SQL hash, and result ordinal.
   - Rationale: pack envelopes may include producer metadata and compression may not be byte-for-byte stable even when payload semantics are unchanged.
 
 ## Generated SQL is the source of truth
@@ -198,7 +200,21 @@ Authorization is enforced at the SQL layer using companion tables/views in the `
 - Dialect-specific helper constructs used by batched authorization checks (e.g., a PostgreSQL `throw_error` function) are provisioned as part of schema setup.
 
 **SQL Server user-defined table types (TVPs)**
-The authorization design relies on filtering by caller-provided lists (EdOrgIds, namespace prefixes, referential ids, etc.). To avoid SQL Server parameter-count limits, the DDL generator provisions user-defined table types used by authorization queries (see `auth.md` for the rules/thresholds).
+Provision these shared core table types before any runtime plan can execute:
+
+```sql
+CREATE TYPE dms.BigIntTable AS TABLE (
+    Id bigint NOT NULL PRIMARY KEY
+);
+
+CREATE TYPE dms.UniqueIdentifierTable AS TABLE (
+    Id uniqueidentifier NOT NULL PRIMARY KEY
+);
+```
+
+`dms.BigIntTable(Id)` is the mandatory input contract for every SQL Server `LineageAnchorResolutionPlan`; the compiled
+plan records `TypeName = "dms.BigIntTable"` and joins the TVP's `Id` to the target `DocumentId`. Authorization queries may
+reuse both types under the thresholds in [auth.md](auth.md). The DDL generator emits each type once as a core object.
 
 ### 3) Project objects (per project schema)
 
@@ -224,30 +240,51 @@ The DDL generator must emit document-reference columns and constraints that enab
 - Enforce “all-or-none” for the reference group via a CHECK constraint (to avoid null-bypassing of composite FKs).
   - All-or-none constraints are defined over:
     - the reference group’s `..._DocumentId`, and
-    - the per-site identity-part binding columns (even when those columns are generated aliases).
-- Derive a full-composite physical FK candidate over **storage columns only**. Column order is **identity storage columns first, then the reference `..._DocumentId` / `DocumentId` last**, and the local and target lists MUST be **positionally aligned** (FK pairing is positional: local column *i* pairs with target column *i*):
+    - the per-site identity-part binding columns (even when those columns are generated aliases), and
+    - any internal lineage-anchor columns dedicated to that reference site.
+- Compute the minimal fixed-point identity-lineage anchor closure. Derive each target table's intrinsic inventory of
+  independently replaceable reference-backed lineages, with one stable `IdentityLineageId` and addressable stored
+  `BIGINT` `DocumentId` per lineage. Initialize every incoming reference site's demanded set to empty. Seed a demand only
+  when that site's write to a receiver storage column must carry the corresponding target-lineage row id to keep another
+  present full FK on the receiver valid and row-correlated. Reuse a local `..._DocumentId` only when complete identity
+  equivalence and co-presence are proved; otherwise add an internal anchor populated from reference resolution.
+- Propagate site demands only through downstream references whose receiver identity or full-FK obligations consume them,
+  iterating in canonical order to a fixed point. Deduplicate demands by lineage id and derive one stable minimal
+  `AnchorSetId` for each distinct demanded subset. Every logical reference selects exactly one propagation-vector variant,
+  and the target emits one UNIQUE propagation key per distinct variant. Do not force an incoming reference to carry the
+  target's table-wide intrinsic inventory. Omission is legal only when no receiver-validity or row-correlation obligation
+  requires the anchor.
+- Derive a full-composite physical FK candidate over **storage columns only**. Column order is **identity storage columns
+  first, required lineage anchors next, then the reference `..._DocumentId` / `DocumentId` last**, and the local and
+  target lists MUST be **positionally aligned** (FK pairing is positional: local column *i* pairs with target column *i*):
   - Local FK columns (in this order):
     - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`, then
+    - the anchor columns for the reference's selected `AnchorSetId` in stable lineage order, then
     - the reference group’s `..._DocumentId`.
   - Target columns (in the matching order):
     - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, then
+    - the target anchor columns carrying the same lineage ids, then
     - `DocumentId`.
 - After storage mapping, canonicalize and deduplicate candidates by physical source/target tables and ordered column pairs.
   Update actions MUST be assigned only after this physical inventory is final.
-- Derive cross-engine, statement-scoped `ValueFlowAnalysis` facts and proof obligations. For any mode assignment that
-  writes a canonical column read by another FK, require exact component lineage, origin-row correlation, reference
-  co-presence, and compatible statement timing (including the separate statement used by abstract-identity maintenance
-  triggers). Shared columns or table reachability alone do not prove coverage.
-- Evaluate PostgreSQL's fixed assignment (`ON UPDATE CASCADE` when the referenced target's identity can change
-  transitively via `IsAbstract || TransitivelyAllowIdentityUpdates`, `ON UPDATE NO ACTION` otherwise) against all proof
-  obligations. Fail derivation if the assignment cannot be certified.
+- PostgreSQL directly assigns `ON UPDATE CASCADE` when the referenced target's identity can change transitively via
+  `IsAbstract || TransitivelyAllowIdentityUpdates`, and `ON UPDATE NO ACTION` otherwise. DMS performs no PostgreSQL
+  classifier, pruning, unsafe-graph detection, or cascade-topology failure.
 - For SQL Server, jointly select `NativeCascade` / `NoPropagation` modes so the final assignment satisfies both error
-  1785 and every value-flow obligation. A `NoPropagation` candidate uses full-composite `ON UPDATE NO ACTION` only with a
-  coverage certificate derived from the final assignment and proving that a retained action maintains the same row and
-  component values in the relevant statement. Fail derivation when no certifiable assignment exists.
+  1785 and every value-flow obligation. A `NoPropagation` candidate uses expanded full-composite `ON UPDATE NO ACTION`
+  only with final-assignment certificates proving that a retained action or initiating receiver write maintains the same
+  row and full value/anchor vector before the constraint check. Covered edges may be pruned to break diamonds or cycles;
+  fail SQL Server derivation when no certifiable assignment exists.
+- After provider actions are finalized, derive `SameStatementReferenceResolutionRequirement` values for every direct API
+  mutation origin and existing request binding whose target changes along any retained same-boundary route. This is
+  independent of that binding FK's final action, cycle membership, or SQL Server certificate. PostgreSQL constructs the
+  inventory from fixed routes without topology classification; SQL Server accepts only an assignment whose complete
+  requirement inventory is representable.
 - Use `ON DELETE NO ACTION` for reference FKs. There is no `DocumentId`-only or identity-value propagation-trigger
   fallback; see [mssql-cascading.md](mssql-cascading.md).
-- Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(<IdentityParts...>, DocumentId)` because `DocumentId` is already unique; identity storage columns first, `DocumentId` last — see [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes").
+- Emit the required referenced-key UNIQUE constraint for every distinct target `AnchorSetId` so each expanded composite FK
+  is legal (typically redundant because `DocumentId` is already unique; identity storage columns first, lineage anchors
+  next, `DocumentId` last — see [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes").
   - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).
 
 **Link injection and DDL (V1 note)**
@@ -327,8 +364,16 @@ This policy applies to:
 
 1. Load the configured core + extension `ApiSchema.json` set.
 2. Compute `EffectiveSchemaHash` (as defined in [data-model.md](data-model.md)).
-3. Derive the relational model set (`DerivedRelationalModelSet`) and naming (as defined in [flattening-reconstitution.md](flattening-reconstitution.md), [compiled-mapping-set.md](compiled-mapping-set.md), and [data-model.md](data-model.md)).
-4. Generate “desired state” DDL for all required objects (schemas, tables, sequences, FKs, unique constraints, indexes, views, triggers).
+3. Build one full-schema `DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)` and naming inventory (as defined in
+   [flattening-reconstitution.md](flattening-reconstitution.md),
+   [compiled-mapping-set.md](compiled-mapping-set.md), and [data-model.md](data-model.md)). A typed
+   `RelationalModelDerivationException` produces no partial model or success artifacts.
+4. Generate “desired state” DDL from `artifact.Model` for all required objects (schemas, tables, sequences, FKs, unique constraints, indexes, views, triggers). Manifest emission uses provider-neutral anchor-omission proofs from
+   `artifact.Diagnostics` for both dialects and SQL Server decision/certificate diagnostics only for SQL Server; DDL
+   shape never depends on diagnostics.
+   - The relational-model manifest also emits the ordered semantic requirements from `artifact.ExecutorRequirements`.
+     Runtime and AOT plan compilation consume the complete artifact; neither infers requirements from diagnostics nor
+     compiles from `artifact.Model` alone.
    - Derive the `dms.ResourceKey` seed set from the effective schema and emit deterministic `INSERT` statements with explicit `ResourceKeyId` values.
 5. Generate the schema-fingerprint recording statements (`dms.EffectiveSchema` singleton row and `dms.SchemaComponent` keyed by `EffectiveSchemaHash`).
 6. Emit SQL and (optionally) provision it.
@@ -503,10 +548,14 @@ DMS runtime should remain “validate-only”:
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:
   - stable naming,
   - stable physical FK candidate canonicalization and deduplication,
-  - positive and negative canonical-column `ValueFlowAnalysis` fixtures on both engines (including optional-site presence,
-    independent parents, component lineage, origin-row correlation, and abstract-trigger statement boundaries),
-  - PostgreSQL fixed-action certification,
-  - SQL Server joint value-flow / error-1785 mode selection and final-assignment coverage certificates,
+  - expanded propagation-vector and minimal `AnchorSetId` variant fixtures, including provider key-width limits,
+  - PostgreSQL fixed actions with no DMS classifier, pruning, or unsafe-topology failures,
+  - SQL Server joint value-flow / error-1785 mode selection, safe diamond/cycle breaking, and final-assignment coverage
+    certificates (including optional-site presence, component lineage, row correlation, and abstract-trigger boundaries),
+  - certified-cycle plan equivalence for runtime and pack compilation on both providers, including exact policies, keys,
+    routes, future-vector sources, correlation/post-verification SQL hashes, and result ordinals,
+  - a retained acyclic `R -> T -> RChild` future-reference fixture in which multiple child bindings require batched plans
+    on both providers even though the child FK remains `CASCADE`,
   - DDL success,
   - `EffectiveSchemaHash` recording,
   - basic introspection/diff correctness.

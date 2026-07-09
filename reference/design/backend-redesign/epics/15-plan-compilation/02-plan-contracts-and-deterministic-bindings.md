@@ -37,6 +37,9 @@ Design references:
  - Plan contract types exist for:
   - write plans:
     - `ResourceWritePlan` with per-table `TableWritePlan`,
+    - ordered `SameStatementReferenceResolutionPlan` values keyed by binding/site, PUT direct origin, and complete
+      mutation case, including stored target-id source, retained route/correlation, canonical pre/post commands, and the
+      complete future propagation vector,
     - `TableWritePlan.InsertSql` plus optional `UpdateSql` for any 1:1 table (no `Ordinal` key column),
     - `TableWritePlan.DeleteByParentSql` for child/collection/extension replace semantics,
     - `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` for deterministic, dialect-aware bulk insert chunking,
@@ -44,6 +47,8 @@ Design references:
     - `WriteColumnBinding.ParameterName` so runtime execution never depends on parsing SQL text to infer bindings,
     - `WriteValueSource` coverage for: `DocumentId`, `ParentKeyPart(i)`, `Ordinal`, `Scalar(...)`, `DocumentReference(...)`, `DescriptorReference(...)`, and `Precomputed`,
     - key-unification inventory (`KeyUnificationWritePlan[]`) sufficient to populate all `Precomputed` bindings deterministically.
+    - explicit `DocumentReferenceResolutionPolicy` on each binding so a decoder cannot silently omit a required certified
+      plan.
   - read/hydration plans:
     - `ResourceReadPlan` with per-table `TableReadPlan`,
     - `TableReadPlan.SelectByKeysetSql` compiled against a keyset table that exposes a single `BIGINT DocumentId` column (temp table / table variable; materialized by the executor).
@@ -58,6 +63,8 @@ Design references:
 - All ordering-sensitive collections are explicit and stable:
   - `ColumnBindings` ordering is the authoritative write-time parameter/value ordering.
   - Read-plan select-list ordering is stable and derived from the table model (so readers can consume by ordinal without name-based mapping).
+  - Same-statement plans sort by `(binding index, MutationOriginId, MutationCaseId)`; changed items and future values
+    preserve propagation-vector order, and typed result ordinals are explicit.
 - Projection metadata ordering is explicit and stable (no dictionary iteration order dependence).
 - Parameter naming is deterministic and derived from bindings/model elements (no GUIDs, no unordered-map iteration), with a deterministic de-duplication scheme.
 - Bulk insert batching metadata is deterministic and dialect-aware (e.g., SQL Server parameter limits) and is carried in the plan contract so executors do not “guess” batch sizes.
@@ -72,6 +79,8 @@ Design references:
   - compile the same contract twice and assert identical outputs,
   - permute input ordering and assert identical outputs,
   - validate parameter-name de-duplication is stable.
+  - round-trip certified same-statement policy/plans and reject missing, ambiguous, recursive, or incomplete-vector
+    contracts.
 - When fixtures emit `mappingset.manifest.json` / `pack.manifest.json`, manifests can represent these contracts deterministically (stable ordering + normalized SQL hashes), enabling golden comparisons per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Tasks

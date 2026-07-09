@@ -65,6 +65,13 @@ This story updates the derived model to the new collection-key strategy:
   - preserve matched row identity across write-time merges,
   - distinguish physical row identity from sibling ordering, and
   - derive read/write plans without reconstructing parent-ordinal keys.
+- Each table exposes one ordered `PersistedOccurrenceIdentity` containing complete ancestor-context and API
+  semantic-identity match parts, their physical storage columns, typed materialization/reference-target source roles, and
+  stable row-locator columns. A document-reference source retains its `ReferenceSiteId` plus terminal
+  target-`DocumentId` role; reference-backed semantic identity always binds the stable `..._DocumentId` FK.
+- This inventory is finalized before dialect action/requirement evaluation. E01 maps a deferred same-site target member
+  to `CorrelatedChangedTargetDocumentId`; E15 projects the same inventory into collection merge bindings. Neither consumer
+  reconstructs it from UNIQUE constraints, JSON paths, or column naming conventions.
 - The shared/default relational-model pipeline remains permissive: it compiles semantic-identity metadata and downstream stable-identity constraints when metadata exists, but it does not universally reject generic or out-of-bound fixtures solely because a persisted multi-item scope lacks compiled semantic identity.
 - Supported-model/runtime-boundary callers that opt into the strict pipeline fail validation/compilation when neither scope-resolved `arrayUniquenessConstraints` nor the reference-backed `referenceJsonPaths` rule yields a non-empty semantic identity.
 - The supported-model boundary is explicit: valid MetaEd-generated models with the relevant validator set applied are expected to supply collection identity semantics up front; this story introduces the strict validation capability for those boundaries without introducing a fallback identity contract for out-of-bound models or re-globalizing validation into every shared compile path.
@@ -79,6 +86,7 @@ This story updates the derived model to the new collection-key strategy:
 1. Update collection/common-type key derivation in the relational-model builder to model stable `CollectionItemId` and `ParentCollectionItemId`.
 2. Update extension table derivation so collection/common-type extension scopes align to base-row stable identity instead of ancestor ordinals.
 3. Derive the new PK/UK/FK inventories for stable collection identity, sibling ordering, and parent/root consistency.
-4. Expose stable-identity metadata needed by downstream DDL, plan-compilation, and read-path consumers.
+4. Expose the typed ordered `PersistedOccurrenceIdentity` metadata needed by downstream DDL, executor-requirement,
+   plan-compilation, and read-path consumers, including reference-target source roles and stable locator order.
 5. Add or align strict validation so supported-model/runtime-boundary compilation fails when neither the applicable `arrayUniquenessConstraints` metadata nor the reference-backed `referenceJsonPaths` rule compiles a non-empty semantic identity, rather than falling back to ordinals or parent-only locators; keep the shared/default pipeline permissive for generic compile paths.
 6. Update unit tests, manifests, and authoritative goldens for representative nested-collection and `_ext` fixtures.

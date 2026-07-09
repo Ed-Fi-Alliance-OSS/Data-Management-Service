@@ -73,6 +73,9 @@ The slice fence remains in place for any profiled write involving:
 - Visible-absent inlined scopes may clear only bindings classified as clearable.
 - Hidden-governed bindings must never be cleared by visible-absent behavior.
 - Hidden FK/descriptor bindings must preserve stored values when any governing profile-hidden member requires preservation.
+- A reference binding's demanded lineage anchors inherit that reference instance's visibility. Hidden preserves the whole
+  stored tuple; visible-absent clears the optional target/public/anchor group; visible-present writes the resolved group
+  atomically. An internal anchor cannot be classified independently from its owning reference.
 - Key-unification canonical source selection must preserve hidden-governed stored state correctly and continue to follow the normative `key-unification.md` contract, including full `KeyUnificationWritePlan.MembersInOrder` evaluation and fail-closed disagreement handling.
 - Synthetic presence flags governed by hidden members must preserve stored values.
 - No unsupported non-root shape may silently fall through; those cases remain fenced.
@@ -140,6 +143,8 @@ A conservative first implementation is acceptable: if there is doubt whether a s
 - Existing root-row updates preserve hidden root-row values.
 - Visible-absent inlined scopes clear only visible/clearable bindings and preserve hidden-governed bindings.
 - Hidden FK/descriptor bindings on the root row preserve stored values correctly.
+- Root-hosted demanded lineage anchors follow owning-reference visibility and the post-overlay tuple satisfies all-or-none
+  and full-composite FK constraints.
 - Key-unification canonical storage on the root row preserves hidden-governed stored state correctly.
 - Synthetic presence values governed by hidden members preserve stored state correctly.
 - Unsupported non-root profiled shapes remain fenced.
@@ -152,6 +157,8 @@ A conservative first implementation is acceptable: if there is doubt whether a s
 - Visible-absent inlined scope clears only clearable bindings
 - Hidden inlined bindings remain preserved
 - Hidden FK/descriptor bindings are preserved on matched root-row update
+- Hidden, visible-absent, and visible-retargeted reference groups preserve/clear/replace demanded lineage anchors with the
+  owning target/public values
 - Root-row key-unification canonical storage is preserved correctly in mixed hidden/visible cases
 - Root-row synthetic presence flags preserve hidden-governed stored state
 - Unsupported non-root profiled shapes still return slice fence
@@ -164,6 +171,8 @@ A conservative first implementation is acceptable: if there is doubt whether a s
 - Root-table-only inlined `ProfileVisibleButAbsentNonCollectionScope`
 - Root-table-only `ProfileHiddenInlinedColumnPreservation`
 - Root-table-only hidden FK/descriptor preservation case
+- Root-table-only demanded-anchor reference case covering hidden preservation, visible-absent clearing, and visible
+  retarget replacement on PostgreSQL and SQL Server once DMS-1258 lands
 - Root-table-only key-unification / synthetic presence preservation case
 - PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 

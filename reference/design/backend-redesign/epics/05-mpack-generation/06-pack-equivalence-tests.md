@@ -33,6 +33,15 @@ This is required to catch:
 2. Add at least one small fixture that enables pack build and exercises:
    - nested collections,
    - polymorphic abstract view usage,
-   - `_ext` mapping.
+  - `_ext` mapping,
+  - abstract-target propagation-key validation records, and
+  - concrete and abstract non-empty anchor variants with their exact global `LineageAnchorResolutionPlan` set-input,
+    batching, SQL hash, target-id ordinal, and ordered lineage result metadata, and
+  - a direct-`CycleB` certified same-statement binding policy with every PUT mutation-case plan, retained route,
+     complete future vector, and canonical pre/post command/result metadata on PostgreSQL and SQL Server.
 3. Add NUnit tests that compare manifests exactly for both dialects.
-4. Add a negative test that intentionally drops/changes a payload field and asserts the equivalence test fails (guardrail).
+4. Add negative tests that intentionally drop/change the abstract target-key record, certified resolution policy, one
+   mutation-case plan, a future anchor/terminal item, a route hop/action, or a pre/post command ordinal and assert pack
+   validation or exact equivalence fails. Also mutate a persisted occurrence source/locator and one global lineage-plan
+   target/`AnchorSetId`, set-input kind, batch limit, SQL hash, target-id ordinal, or lineage result binding and require
+   failure.

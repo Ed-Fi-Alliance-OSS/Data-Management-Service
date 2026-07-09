@@ -809,6 +809,17 @@ How `HiddenMemberPaths` maps to compiled bindings:
 - `HiddenMemberPaths` is emitted by Core in the canonical scope-relative vocabulary published by the shared compiled-scope adapter, not in physical column names. Backend resolves those paths through compiled write-plan metadata before classifying bindings.
 - A direct scalar/member binding is governed by its own scope-relative path.
 - A document-reference FK binding and any propagated/reference-identity storage bindings derived from that reference are governed by the reference member paths that produced them. Hidden reference members therefore preserve both the FK column and any derived storage bindings.
+- `WriteValueSource.IdentityLineageAnchor(bindingIndex, identityLineageId)` has no independent profile path. It inherits
+  the visibility of its owning `DocumentReferenceBinding` instance:
+  - `Hidden`: preserve the current stored target `..._DocumentId`, public identity storage, and every demanded lineage
+    anchor as one group; do not re-resolve or clear an anchor independently,
+  - `VisibleAbsent`: clear the optional reference's `..._DocumentId` and dedicated demanded anchors together (or delete
+    the containing visible scope row); presence-gated public aliases become null through that site gate, while shared
+    canonical storage is preserved when another visible/hidden consumer still governs it, and
+  - `VisiblePresent`: resolve the selected target and write its target `DocumentId`, public values, and demanded anchors
+    atomically from `ResolvedReferenceSet`.
+  Reused/co-present anchor columns follow the same owning-reference accounting and are never double-written. The merged
+  row must satisfy the site's all-or-none check before DML.
 - A descriptor FK binding is governed by the descriptor member path that produced the resolved `..._DescriptorId`.
 - A key-unification canonical storage binding is governed by the full member set in the corresponding `KeyUnificationWritePlan`. Hidden aliases are never written directly; they are preserved indirectly through the canonical storage binding and its presence gates.
 - A synthetic `..._Present` binding is governed by the optional member path whose presence it tracks: visible/present writes recompute it, hidden members preserve it, and visible-absent clears it when no preserved hidden member path still governs the same storage state.
@@ -839,9 +850,10 @@ Related redesign discussion:
    - reject invalid submitted collection items instead of silently pruning them,
    - produce `ProfileAppliedWriteRequest`, including `WritableRequestBody`, `RootResourceCreatable`, `RequestScopeStates`, and `VisibleRequestCollectionItems`.
 
-3. **Backend resolves references and authorization inputs**
-   - resolve references/descriptors to `DocumentId`,
-   - perform authorization as defined in [auth.md](auth.md) using the full stored/request state required there.
+3. **Backend resolves target context and authorizes stored values**
+   - observe only the minimal existing-target authorization inputs and complete stored-value authorization before full
+     current-state/profile loading or request-dependent reference/correlation work,
+   - on denial, expose no submitted-reference or certified-correlation result; creates have no stored gate.
 
 4. **Backend loads current state**
    - for update/upsert-to-existing flows, load the current stored JSON and current relational rows needed for merge/no-op detection.
@@ -851,26 +863,40 @@ Related redesign discussion:
    - apply writable profile semantics to the current stored JSON,
    - assemble `ProfileAppliedWriteContext` containing `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
 
-6. **Backend extracts request candidates**
+6. **Backend resolves visible request references**
+   - resolve visible-present references/descriptors normally and project every demanded lineage anchor using the selected
+     global `LineageAnchorResolutionPlan`; hidden references reuse stored tuples and visible-absent references require no
+     new resolution,
+   - for PUT only, an eligible normal lookup miss may use one exact certified same-statement plan after the stored/profile
+     state proves the reference is an existing visible-present stable target; other misses fail closed.
+
+7. **Backend extracts request candidates**
    - flatten the `WritableRequestBody` into logical row candidates,
    - compute semantic identities for persisted multi-item collection scopes.
 
-7. **Backend binds candidates against current state**
+8. **Backend binds candidates against current state**
    - for visible collection rows, match by compiled semantic identity,
    - for hidden collection rows, preserve them untouched,
    - for non-collection scopes, use Core visibility information to distinguish hidden-from-profile vs visible-and-absent, and
    - for matched rows/scopes, overlay visible request-derived values onto current stored row values while preserving bindings identified by `HiddenMemberPaths`, and
+   - apply each reference binding's visibility to its complete physical group (`..._DocumentId`, public identity storage,
+     dedicated demanded anchors, and any reused anchor storage), and
    - classify every affected compiled binding as visible-and-writable, hidden-and-preserved, clear-on-visible-absent, or storage-managed, failing fast if any binding cannot be accounted for deterministically.
 
-8. **Backend executes merge DML**
+9. **Backend authorizes proposed values**
+   - authorize the finalized profile-aware merged write set, including preserved hidden stored values and completed
+     ordinary/certified reference ids, before DML.
+
+10. **Backend performs no-op/concurrency checks**
+   - compare post-merge storage-space rowsets to current rowsets,
+   - enforce `If-Match` / `ContentVersion` rules before committing a no-op success.
+
+11. **Backend executes merge DML**
    - update matched rows in place,
    - delete omitted visible rows/scopes,
    - insert only new visible rows/scopes that Core marks as creatable,
    - preserve hidden rows/scopes/columns.
-
-9. **Backend performs no-op/concurrency checks**
-   - compare post-merge storage-space rowsets to current rowsets,
-   - enforce `If-Match` / `ContentVersion` rules before committing a no-op success.
+   - verify any certified future referential id/anchor vector before commit.
 
 This remains full-document `PUT` semantics. Profile support does not introduce API-surface partial updates.
 
@@ -1051,6 +1077,9 @@ Related redesign discussion:
   - hidden columns on matched rows,
   - hidden non-collection scopes that are preserved,
   - extension rows under the same rules,
+  - every demanded identity-lineage anchor and reused anchor column in the effective merged reference tuple,
+- anchor columns participate in the comparable rowset even though they have no `SourceJsonPath`; an anchor-only mismatch
+  prevents guarded no-op success and follows the normal persist/concurrency path,
 - a no-op decision is provisional until backend verifies that the observed `ContentVersion` is still current,
 - if the observed `ContentVersion` is stale:
   - with `If-Match`, return `412 Precondition Failed`,

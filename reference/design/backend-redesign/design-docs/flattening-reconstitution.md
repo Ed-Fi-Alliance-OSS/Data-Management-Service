@@ -261,10 +261,41 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - For each abstract resource `A`, create a physical identity table `{schema}.{A}Identity` with:
      - `DocumentId` (PK; FK → `dms.Document(DocumentId)` ON DELETE CASCADE),
      - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
+     - the full representable intrinsic inventory of reference-backed identity-lineage `DocumentId` anchors in stable
+       lineage order, regardless of current incoming demand, and
      - `Discriminator` (NOT NULL; last).
-   - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
-   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites to propagate identity changes and enforce membership/type at the DB level. After canonical storage mapping and physical-candidate deduplication, `ValueFlowAnalysis` records the separate statement in which the maintenance trigger updates the identity table and derives the corresponding proof obligations. PostgreSQL evaluates its fixed action with those obligations. SQL Server includes them while jointly selecting modes for value-flow safety and error 1785; full-composite `NO ACTION` is permitted only when coverage is certified from the final assignment (see [mssql-cascading.md](mssql-cascading.md)).
+   - Produce one shared `AbstractIdentityMemberMapping` per participating concrete member. It records table-qualified
+     effective storage expressions in abstract-identity order, concrete/abstract `DocumentId` correlation, discriminator,
+     and the maintenance trigger's actual later `StatementBoundaryId`.
+   - Maintain `{schema}.{A}Identity` via triggers that consume those mappings (upsert on insert/update of identity columns
+     and lineage anchors). SQL Server value-flow analysis consumes the same mappings and does not reconstruct them.
+   - Use `{schema}.{A}Identity` as the expanded composite-FK target for abstract reference sites to propagate identity
+     changes and enforce membership/type at the DB level. Each site still selects a propagation key containing only its
+     demanded intrinsic-anchor subset. PostgreSQL assigns its fixed action directly. SQL Server models
+     the separate abstract-maintenance statement boundary while globally selecting modes; full-composite `NO ACTION` is
+     permitted only when coverage is certified from the final assignment (see
+     [mssql-cascading.md](mssql-cascading.md)).
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
+
+8. At the full effective-schema-set boundary, derive and finalize document-reference FKs:
+   - Derive each target's intrinsic inventory of independently replaceable reference-backed identity lineages, assigning
+     each a stable `IdentityLineageId` and addressable stored `DocumentId`. Initialize every incoming reference site's
+     demanded anchor set to empty.
+   - Seed a site-specific demand only when that site's write to receiver storage must carry a target-lineage row id to keep
+     another present full FK on the receiver valid and row-correlated. Reuse a local reference `..._DocumentId` only when
+     complete identity equivalence and co-presence are proved; otherwise add an internal stored anchor populated from the
+     resolved target lineage.
+   - Propagate demands only through downstream reference sites whose receiver identity or full-FK obligations consume
+     them, iterating to a deterministic fixed point. Deduplicate demands by stable semantic `IdentityLineageId`, then
+     assign a stable minimal `AnchorSetId` to every distinct demanded subset. Each logical reference selects exactly one
+     propagation-vector variant; the target emits one UNIQUE propagation key per distinct variant. Do not force every
+     incoming reference to carry the target's table-wide intrinsic inventory.
+   - Map identity values and anchors through canonical storage, then deduplicate physical FK candidates. Every propagation
+     vector is ordered as `(<IdentityValues...>, <RequiredLineageAnchors...>, DocumentId)`.
+   - PostgreSQL directly assigns `CASCADE` for mutable/abstract targets and `NO ACTION` for immutable targets. It performs
+     no pruning, value-flow classifier, unsafe-graph detection, or cascade-topology failure.
+   - SQL Server alone performs global value-flow/error-1785 selection. A covered edge may be pruned to break a diamond or
+     cycle; an uncovered topology fails derivation. Plan compilation begins only after this set-level finalization.
 
 ### 4.2 Recommended child-table keys (stable internal collection identity)
 
@@ -346,11 +377,105 @@ For a given request, backend already has:
 Before writing resource tables:
 
 - Resolve all **document references**:
-  - resolve to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via superclass alias rows)
+  - normally resolve to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities
+    (self-contained, reference-bearing, and polymorphic/abstract via superclass alias rows); an eligible update-only miss
+    may use only the certified same-statement stable-target contract below
+  - from the selected write plan, collect every distinct `(referenced DocumentId, IdentityLineageId)` demanded by those
+    reference instances and project the corresponding intrinsic lineage `DocumentId` from the finalized target model
+  - execute those projections set-wise, grouped by target table/propagation-key variant and batched into the same database
+    roundtrip where practical; never issue one query per reference instance or collection row
 - Resolve all **descriptor references**:
   - `dms.ReferentialIdentity`: `ReferentialId → DocumentId` (descriptor referential ids are computed by Core from descriptor resource name + normalized URI)
 
 Cache these lookups aggressively (L1/L2 optional), but only populate caches after commit.
+
+Lineage projection is not generated at request time. Global plan compilation emits one dialect-specific
+`LineageAnchorResolutionPlan` for every non-empty `(target resource, AnchorSetId)` used by the finalized model. The plan
+contains canonical set-input SQL, batching metadata, target-`DocumentId` result shape, and ordered
+`IdentityLineageId` result bindings. Pack production serializes these plans. Runtime groups resolved target ids by plan,
+executes the required plan statements in a bounded batched roundtrip, and requires exactly one non-null result for each
+requested target/lineage pair. A missing, duplicate, or null demanded anchor is a fail-closed mapping/storage invariant
+error before row materialization. Empty-anchor variants require no projection plan.
+
+#### Certified same-statement stable-target resolution
+
+A safely broken cycle can make the submitted identity of an unchanged reference resolvable only after the initiating
+update cascades. For example, a `CycleB` update submits its still-present `CycleB -> CycleA` reference with A's future
+key values; A receives those values through the retained `CycleB -> CycleA` cascade in that same root UPDATE. The future
+referential id does not exist during the normal pre-statement lookup.
+
+This case uses only a compiled `SameStatementReferenceResolutionPlan`; a generic "lookup missed, reuse the old id"
+fallback is forbidden. Each plan is scoped to one binding, direct mutation origin, complete `MutationCaseId`, retained
+changed-target route, and complete selected propagation vector. It identifies the current row's stored target
+`DocumentId`, a canonical dialect-specific correlation query, and the future origin-write binding for every public value
+or demanded anchor that is proved changed. An unchanged vector item may instead come from its typed locked target-column
+result. The terminal target `DocumentId` always comes from the stored reference and never from input.
+
+Runtime applies this order inside the write transaction:
+
+1. Resolve the subject resource's `DocumentId` without DML. For an existing target, complete the minimal stored-value
+   authorization gate first; only then load its persisted rows/concurrency token and build any profile overlay before
+   resolving submitted references. The current-row result exposes stable root/collection/semantic row locators plus
+   stored reference target ids.
+2. Resolve every submitted reference normally in bulk. A successful `ReferentialId -> DocumentId` lookup always wins,
+   including a real retarget to a different row. Project its ordinary current lineage anchors.
+3. Defer only unresolved instances whose binding policy is `PrestatementLookupOrCertifiedSameStatement`. Hidden profile
+   references preserve their stored tuple without using this path; absent/cleared or newly present references are
+   ineligible.
+4. Stage the direct origin's proposed stored values and every receiver-row write binding that is materializable after
+   ordinary reference/descriptor resolution and key unification but does not depend on the deferred reference or one of
+   its deferred anchors. The complete occurrence matcher may consume any such typed binding, including a scalar,
+   descriptor, already-resolved reference, ancestor/root locator, or precomputed value; it never uses request ordinal as
+   persisted identity. When the receiver semantic identity contains the deferred reference's own `..._DocumentId`, the
+   plan instead marks that term `CorrelatedChangedTargetDocumentId`: the locking query derives the target internally from
+   the retained route and compares the receiver's stored FK with that target's current stable `DocumentId`. Reference-
+   backed collection semantic identity always uses the stable `..._DocumentId`, including identities sourced from AUC
+   metadata; propagated public components are not collection match keys. Determine the exact complete changed-item subset
+   and require one
+   matching plan. A changed future item comes from a proved origin-write binding; such a binding may consume the
+   unresolved reference's submitted public scalar only when value-lineage proof shows that exact item reaches the target
+   in this boundary. An unchanged target item may come from a typed locked-query result. Deferred target-id/anchor
+   dependencies remain forbidden.
+5. Group eligible instances by exact plan key and execute the canonical correlation query in bounded batches. V1 binds
+   one typed JSON recordset input per batch (`jsonb_to_recordset` on PostgreSQL; `OPENJSON ... WITH` on SQL Server). Each
+   input row contains a unique request correlation key, origin id, every materialized occurrence-match value, and every
+   submitted public identity component in selected-vector order. The last values are explicitly mapped to the public
+   `SameStatementFutureValueBinding`s; they let the query disambiguate fan-out routes and compare the submitted future
+   identity with origin-derived changed items and locked unchanged items. The query joins the retained route to the exact
+   changed target, applies materialized semantic-identity terms, substitutes the correlated target's stable `DocumentId`
+   for each `CorrelatedChangedTargetDocumentId` term, and associates the occurrence with exactly one current receiver row.
+6. The correlation query takes the provider's update lock (`FOR UPDATE` on PostgreSQL; `UPDLOCK, HOLDLOCK` on SQL Server)
+   and returns exactly one result per input key: the stable receiver-row locator, non-null stored target id, and every
+   declared unchanged target value at distinct typed ordinals. Every retained route hop has final `ON UPDATE CASCADE` and
+   the initiating boundary. Root/1:1 sites use their fixed locator; collection sites correlate by complete occurrence
+   identity and return the stable `CollectionItemId` locator. Missing, duplicate, extra, or ambiguous keys fail closed.
+   After reading that result, construct the complete
+   predicted vector and require every submitted public component, after normal storage conversion, to equal its predicted
+   future value and every demanded anchor to be non-null.
+7. Add an instance-scoped resolution override containing the exact site/origin/case plan key, submitted future
+   `ReferentialId`, stable target id, the typed receiver-row locator returned by correlation, and the typed predicted full
+   vector (public values, demanded anchors, terminal `DocumentId`). Candidate/merge binding must select and reassert that
+   exact persisted receiver row; it may not independently rematch the request occurrence to another row. Do not add the
+   not-yet-existing referential id or its future anchors to shared/global resolution maps or caches.
+8. After the initiating UPDATE, group used overrides by plan and execute each cache-bypassing
+   `PostWriteVerificationCommand` with the same bounded JSON-recordset pattern. Its typed result must contain exactly one
+   row per correlation key, show that the submitted referential id resolves to that same target id, and return every
+   demanded lineage anchor at its declared ordinal; compare those values with the override's predicted full vector. The
+   submitted referential id proves the public identity vector, the returned id proves the terminal item, and the typed
+   anchor results prove the internal lineage portion. Missing/duplicate/extra keys or any mismatch rolls back. Populate
+   no cache entry until commit; v1 does not cache entries synthesized by this fallback.
+
+The operation fails closed without DML for create/new receiver rows, newly present sites, null stored ids, no or ambiguous
+case plans, unavailable/null/recursive future sources, public-value disagreement, missing anchors, correlation returning
+zero/multiple/different rows, stale current state, or any plan/model mismatch. A normal unresolved client reference that
+does not satisfy a plan retains the existing reference-validation response.
+
+The executor projection is supported on both providers. PostgreSQL derives it constructively from its fixed full-cascade
+actions and never prunes, classifies, or rejects topology. For SQL Server, every existing request binding whose target
+changes on a retained same-boundary route must have a representable executor plan for every corresponding DMS API case,
+regardless of that binding FK's mode or certificate. Otherwise the global selector must try another assignment or fail
+with the SQL Server-only typed API-reference-resolution obligation. The zero-hop cycle is one case, not the derivation
+rule.
 
 ### 5.2.1 Document references inside nested collections
 
@@ -406,12 +531,16 @@ During row materialization, the flattener already knows the current row’s `Ord
 Authorization is enforced before any write statements that would materialize unauthorized state. The authorization design (strategies, SQL patterns, batching, and required `auth.*` companion objects) is defined in [auth.md](auth.md).
 
 Write-path ordering (high level):
-1. Resolve references/descriptors to `DocumentId`s (this section), so authorization checks can use surrogate keys (especially for people-based checks and custom view-based strategies).
-2. Execute authorization checks:
-   - For POST-create, authorize request-body values before inserting `dms.Document` + resource tables.
-   - For PUT/DELETE, authorize against stored values early (before reconstitution) and, when identifying values change, also authorize the requested new values.
-   - For POST-upsert that resolves to an existing document, treat it as an inline PUT (authorize stored + requested values).
-3. Proceed with write materialization and execution.
+1. Resolve the subject target context without issuing resource DML. For an existing PUT/DELETE or POST-upsert target,
+   load only the minimal stored authorization projection and execute stored-value authorization before full
+   reconstitution/current-row loading, profile projection, request reference validation, or any certified correlation
+   query. A stored authorization denial therefore takes precedence and reveals no submitted-reference/correlation result.
+2. After stored authorization succeeds (or for a create with no stored target), resolve request references/descriptors to
+   `DocumentId`s. Certified same-statement resolution is PUT-only and runs here, after the stored gate.
+3. Materialize the final profile-aware merged write set, including hidden preserved values and resolved surrogate keys,
+   then execute proposed/request-value authorization against that exact state. POST-create is authorized before inserting
+   `dms.Document` or resource rows; PUT and POST-as-update require both stored and proposed authorization.
+4. Proceed with execution.
 
 Ownership-based authorization integration:
 - On create, stamp `dms.Document.CreatedByOwnershipTokenId` from the authenticated client context (not from request JSON) as described in `auth.md`.
@@ -559,7 +688,11 @@ Within a single transaction:
    - collection/common-type extension scope rows keyed by the owning base row identity
    - extension child collections using the same merge strategy as core collections
 6. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate through deduplicated full-composite physical FKs anchored on canonical storage columns (binding/path columns may be generated aliases). Cross-engine `ValueFlowAnalysis` derives proof obligations; PostgreSQL certifies its fixed actions, while SQL Server jointly selects modes satisfying value flow and error 1785 and certifies coverage from the final assignment (see [mssql-cascading.md](mssql-cascading.md)), and
+   - referential-id impacts propagate through deduplicated full-composite physical FKs over canonical storage columns and
+     required identity-lineage `DocumentId` anchors (binding/path columns may be generated aliases). PostgreSQL uses fixed
+     actions without classification; SQL Server jointly selects modes satisfying value flow and error 1785 and certifies
+     any pruned diamond or cycle edge from the final assignment (see
+     [mssql-cascading.md](mssql-cascading.md)), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
@@ -755,8 +888,9 @@ In this redesign, identity fields inside reference objects are persisted as loca
 
 - `..._DocumentId` (stable FK), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
-  kept consistent by the certified dialect assignment over full-composite physical FKs (PostgreSQL fixed actions; SQL
-  Server jointly selected value-flow / error-1785 modes; see [mssql-cascading.md](mssql-cascading.md)).
+  kept consistent by expanded full-composite physical FKs, including any internal lineage anchors (PostgreSQL fixed
+  actions; SQL Server jointly selected value-flow / error-1785 modes; see
+  [mssql-cascading.md](mssql-cascading.md)).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
 
@@ -900,12 +1034,13 @@ Under key unification, these binding columns may be persisted generated `Unified
 - composite reference FKs and cascades target canonical storage columns (binding columns are read-only when unified), and
 - reference expansion during JSON writing reads the binding columns so optional reference sites remain absent when absent.
 
-Full-composite physical FK candidates are deduplicated after canonical storage mapping. Cross-engine, statement-scoped
-`ValueFlowAnalysis` then derives component-lineage, origin-row-correlation, reference-co-presence, and trigger-boundary
-proof obligations parameterized by the propagation modes. PostgreSQL evaluates its fixed action assignment. SQL Server
-jointly selects `NativeCascade` / `NoPropagation` modes satisfying those obligations and error 1785, then certifies any
-full-composite `NO ACTION` coverage from the final assignment. Derivation fails when the applicable assignment cannot be
-certified; there is no reduced-FK or propagation-trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
+Full-composite physical FK candidates are deduplicated after lineage-anchor closure and canonical storage mapping. The
+ordered local/target vector contains identity values, required lineage `DocumentId` anchors, and target `DocumentId`.
+PostgreSQL assigns fixed actions without running the classifier. SQL Server derives statement-scoped component-lineage,
+origin/receiver-row-correlation, reference-co-presence, and trigger-boundary obligations, then globally selects
+`NativeCascade` / `NoPropagation` modes satisfying those obligations and error 1785. A covered diamond or cycle edge may
+use full-composite `NO ACTION`; an uncovered SQL Server topology fails derivation. There is no reduced-FK or
+propagation-trigger fallback (see [mssql-cascading.md](mssql-cascading.md)).
 
 For polymorphic/abstract targets, referrers store the abstract identity fields (e.g., `EducationOrganizationId`) and enforce membership via a composite FK to `{schema}.{AbstractResource}Identity`.
 
@@ -1007,6 +1142,13 @@ public enum ColumnKind
     DocumentFk,
 
     /// <summary>
+    /// An internal stored BIGINT carrying the DocumentId of an independently replaceable
+    /// reference-backed identity lineage. It is populated during reference resolution and may be
+    /// propagated through expanded composite FKs. It is not an API binding column.
+    /// </summary>
+    IdentityLineageAnchor,
+
+    /// <summary>
     /// A foreign key to a descriptor document row (stored as BIGINT DocumentId).
     /// The referenced DocumentId is resolved from a descriptor URI via dms.ReferentialIdentity.
     /// Column naming convention: ..._DescriptorId
@@ -1057,6 +1199,7 @@ public enum ScalarKind
     Boolean,
     Date,
     DateTime,
+    Guid,
     Time
 }
 
@@ -1086,6 +1229,9 @@ Rules:
     - Descriptor URI strings, including descriptor collections and descriptor identity parts inside scalar references, are not stored as strings (e.g., `$.gradeLevelDescriptor`, `$.programDescriptors[*]`, `$.courseOfferingReference.termDescriptor`).
 - `ScalarKind.Decimal` requires a matching entry in `decimalPropertyValidationInfos` (`totalDigits`, `decimalPlaces`); missing info is a schema compilation error.
 - `ScalarKind.DateTime` uses SQL Server `datetime2(7)` (no timezone) to align with Ed-Fi ODS SQL Server conventions; any incoming offsets are normalized to a UTC instant at write time.
+- `ScalarKind.Guid` is the typed internal/system value used for UUID columns and same-statement
+  `SUBMITTED_REFERENTIAL_ID` recordset inputs. It is not inferred for an ordinary ApiSchema string unless that schema
+  explicitly adopts a supported UUID format contract.
 
 | `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server type |
 | --- | --- | --- | --- |
@@ -1096,6 +1242,7 @@ Rules:
 | `Boolean` | `type: "boolean"` | `boolean` | `bit` |
 | `Date` | `type: "string", format: "date"` | `date` | `date` |
 | `DateTime` | `type: "string", format: "date-time"` | `timestamp with time zone` | `datetime2(7)` |
+| `Guid` | internal UUID / referential-id plan input | `uuid` | `uniqueidentifier` |
 | `Time` | `type: "string", format: "time"` | `time` | `time(7)` |
 
 ### 7.2 JSON path compilation (avoid parsing JSONPath per value)
@@ -1202,6 +1349,7 @@ public sealed record RelationalResourceModel(
 /// - Ordinal
 /// - scalar columns (typed)
 /// - document reference FK columns (..._DocumentId)
+/// - internal identity-lineage DocumentId anchor columns required by propagation keys
 /// - descriptor FK columns (..._DescriptorId)
 /// - key-unification canonical storage columns and synthetic presence-flag columns (when present)
 /// Column order is significant: plan compilation uses it to define parameter ordering and row buffers.
@@ -1218,11 +1366,68 @@ public sealed record RelationalResourceModel(
 public sealed record DbTableModel(
     DbTableName Table,
     JsonPathExpression JsonScope,                 // "$" for root, "$.addresses[*]" for child, etc.
+    bool IsJsonArrayScopeRequired,
     TableKey Key,
     IReadOnlyList<DbColumnModel> Columns,
     IReadOnlyList<TableConstraint> Constraints,
-    IReadOnlyList<KeyUnificationClass> KeyUnificationClasses
+    IReadOnlyList<KeyUnificationClass> KeyUnificationClasses,
+    PersistedOccurrenceIdentity PersistedOccurrenceIdentity
 );
+
+public enum PersistedOccurrenceMatchRole
+{
+    AncestorContext,
+    SemanticIdentityMember,
+}
+
+public abstract record PersistedOccurrenceMatchSource
+{
+    /// <summary>A normal table write binding materializes this value before certified fallback.</summary>
+    public sealed record MaterializedWriteColumn(PhysicalColumnRef Column)
+        : PersistedOccurrenceMatchSource;
+
+    /// <summary>The stable DocumentId projected from one document-reference target.</summary>
+    public sealed record DocumentReferenceTargetDocumentId(ReferenceSiteId ReferenceSite)
+        : PersistedOccurrenceMatchSource;
+}
+
+/// <summary>
+/// One ordered stored value needed to associate a request occurrence with an existing physical row. RelativeJsonPath is
+/// present exactly for API semantic-identity members and absent for root/ancestor context.
+/// </summary>
+public sealed record PersistedOccurrenceMatchPart(
+    PersistedOccurrenceMatchRole Role,
+    JsonPathExpression? RelativeJsonPath,
+    PhysicalColumnRef StoredColumn,
+    PersistedOccurrenceMatchSource Source
+);
+
+/// <summary>
+/// Model-level source of truth shared by same-statement requirement derivation and collection merge-plan compilation.
+/// Request ordinal is never a match part or stable locator.
+/// </summary>
+public sealed record PersistedOccurrenceIdentity(
+    IReadOnlyList<PersistedOccurrenceMatchPart> CompleteMatchInOrder,
+    IReadOnlyList<DbColumnName> StableRowLocatorColumnsInOrder
+);
+
+```
+
+`PersistedOccurrenceIdentity` is finalized after reference binding/key unification/stable collection identity derivation
+and before dialect action selection. Root and 1:1 tables carry their complete fixed ancestor context; collection tables
+carry ancestor context followed by the exact compiled API semantic identity. Stable locators name the physical columns
+returned by a locking correlation query (`DocumentId` for root/1:1 where applicable, `CollectionItemId` for collections).
+For a document-reference-backed semantic member, the source records the reference site and stable target `DocumentId`
+role; all reference-backed collection identity maps to `..._DocumentId`, not mutable propagated public columns.
+
+When deriving a same-statement requirement for that same deferred reference site, E01 maps such a source to
+`CorrelatedChangedTargetDocumentId`. For another reference site, or for a normal
+materialized source, E15 maps it to the exact pre-fallback `TableWritePlan.ColumnBindings` entry and proves that binding
+does not depend on the deferred override. E15 also derives `CollectionMergePlan.SemanticIdentityBindings` directly from
+the `SemanticIdentityMember` entries and their relative paths. No consumer re-parses UNIQUE constraints, JSON paths, or
+column names to reconstruct occurrence identity.
+
+```csharp
 
 /// <summary>
 /// A per-table inventory entry describing how equality-constrained member endpoints unify into a single canonical storage column.
@@ -1258,7 +1463,7 @@ public abstract record ColumnStorage
 /// A table column description used for both DDL and runtime binding.
 /// </summary>
 /// <param name="ColumnName">Physical column name.</param>
-/// <param name="Kind">Semantic kind (Scalar, CollectionKey, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart, MirroredContentVersion, MirroredContentLastModifiedAt).</param>
+/// <param name="Kind">Semantic kind (Scalar, CollectionKey, DocumentFk, IdentityLineageAnchor, DescriptorFk, Ordinal, ParentKeyPart, MirroredContentVersion, MirroredContentLastModifiedAt).</param>
 /// <param name="ScalarType">Scalar type definition for Kind=Scalar; otherwise null.</param>
 /// <param name="IsNullable">Whether the column can be null (DDL + parameter binding).</param>
 /// <param name="SourceJsonPath">
@@ -1268,8 +1473,13 @@ public abstract record ColumnStorage
 /// </param>
 /// <param name="TargetResource">
 /// For Kind=DocumentFk: the referenced resource type.
+/// For Kind=IdentityLineageAnchor: the resource whose stable DocumentId identifies the lineage.
 /// For Kind=DescriptorFk: the descriptor resource type (used to compute/validate descriptor referential identity).
 /// Null for scalar/ordinal/parent-key columns.
+/// </param>
+/// <param name="IdentityLineage">
+/// Stable semantic lineage id for Kind=IdentityLineageAnchor and for an identity-contributing DocumentFk that supplies
+/// intrinsic lineage storage. Null for unrelated columns.
 /// </param>
 /// <param name="Storage">
 /// Storage/writable semantics for this column. See: key-unification.md.
@@ -1280,8 +1490,15 @@ public sealed record DbColumnModel(
     RelationalScalarType? ScalarType,
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal/MirroredContentVersion/MirroredContentLastModifiedAt)
-    QualifiedResourceName? TargetResource,         // for DocumentFk / DescriptorFk
+    QualifiedResourceName? TargetResource,         // for DocumentFk / IdentityLineageAnchor / DescriptorFk
+    IdentityLineageId? IdentityLineage,            // for IdentityLineageAnchor and identity-contributing DocumentFk; null otherwise
     ColumnStorage Storage
+);
+
+public sealed record ForeignKeyLineageAnchorMapping(
+    IdentityLineageId IdentityLineage,
+    DbColumnName LocalColumn,
+    DbColumnName TargetColumn
 );
 
 /// <summary>
@@ -1292,11 +1509,30 @@ public abstract record TableConstraint
 {
     public sealed record Unique(string Name, IReadOnlyList<DbColumnName> Columns) : TableConstraint;
     public sealed record ForeignKey(
+        PhysicalForeignKeyId PhysicalForeignKeyId,
+        AnchorSetId? AnchorSetId,
         string Name,
         IReadOnlyList<DbColumnName> Columns,
         DbTableName TargetTable,
-        IReadOnlyList<DbColumnName> TargetColumns
+        IReadOnlyList<DbColumnName> TargetColumns,
+        IReadOnlyList<ForeignKeyLineageAnchorMapping> LineageAnchorsInOrder,
+        ReferentialAction OnDelete,
+        ReferentialAction OnUpdate
     ) : TableConstraint;
+
+    public sealed record AllOrNoneNullability(
+        string Name,
+        DbColumnName FkColumn,
+        IReadOnlyList<DbColumnName> DependentColumns
+    ) : TableConstraint;
+
+    public sealed record NullOrTrue(string Name, DbColumnName Column) : TableConstraint;
+}
+
+public enum ReferentialAction
+{
+    NoAction,
+    Cascade,
 }
 
 /// <summary>
@@ -1325,13 +1561,25 @@ public abstract record TableConstraint
 /// <param name="IsIdentityComponent">
 /// True when this reference contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
 /// </param>
+/// <param name="AnchorSetId">The one minimal lineage-anchor subset selected for this logical site.</param>
+/// <param name="PhysicalForeignKeyId">The finalized deduplicated physical FK selected for this logical site.</param>
+public enum DocumentReferenceResolutionPolicy
+{
+    PrestatementLookupOnly,
+    PrestatementLookupOrCertifiedSameStatement,
+}
+
 public sealed record DocumentReferenceBinding(
+    ReferenceSiteId ReferenceSiteId,
     bool IsIdentityComponent,
     JsonPathExpression ReferenceObjectPath,        // e.g. "$.schoolReference" or "$.students[*].studentReference"
     DbTableName Table,
     DbColumnName FkColumn,                         // e.g. "School_DocumentId"
     QualifiedResourceName TargetResource,
-    IReadOnlyList<ReferenceIdentityBinding> IdentityBindings
+    IReadOnlyList<ReferenceIdentityBinding> IdentityBindings,
+    AnchorSetId AnchorSetId,
+    PhysicalForeignKeyId PhysicalForeignKeyId,
+    DocumentReferenceResolutionPolicy ResolutionPolicy
 );
 
 /// <summary>
@@ -1410,7 +1658,200 @@ This is required to support golden-file tests for compiled SQL, stable AOT pack 
 /// </summary>
 public sealed record ResourceWritePlan(
     RelationalResourceModel Model,
-    IReadOnlyList<TableWritePlan> TablePlansInDependencyOrder
+    IReadOnlyList<TableWritePlan> TablePlansInDependencyOrder,
+    IReadOnlyList<SameStatementReferenceResolutionPlan> SameStatementReferenceResolutionPlansInBindingAndCaseOrder
+);
+
+/// <summary>
+/// Dialect-specific set input used by a globally compiled lineage-anchor projection.
+/// </summary>
+public abstract record DocumentIdSetParameter
+{
+    public sealed record PgsqlArray(string ParameterName) : DocumentIdSetParameter;
+
+    // V1 always uses the provisioned dms.BigIntTable(Id bigint primary key) contract so SQL text
+    // and pack semantics do not vary with request cardinality.
+    public sealed record MssqlTableValuedParameter(string ParameterName, string TypeName)
+        : DocumentIdSetParameter;
+}
+
+public sealed record LineageAnchorResultBinding(
+    IdentityLineageId IdentityLineage,
+    int ResultOrdinal
+);
+
+/// <summary>
+/// One globally compiled, dialect-specific projection for a non-empty target propagation-key variant.
+/// SQL returns one row per requested target DocumentId, with that id plus every demanded lineage anchor.
+/// Abstract targets project from the finalized abstract identity table; runtime never reconstructs this SQL.
+/// </summary>
+public sealed record LineageAnchorResolutionPlan(
+    QualifiedResourceName TargetResource,
+    DbTableName TargetTable,
+    AnchorSetId AnchorSetId,
+    DocumentIdSetParameter DocumentIds,
+    string SelectByDocumentIdsSql,
+    int ReferencedDocumentIdResultOrdinal,
+    IReadOnlyList<LineageAnchorResultBinding> LineageAnchorsInIdOrder,
+    int MaxDocumentIdsPerBatch
+);
+
+public enum PersistedReferenceRowLocatorKind
+{
+    RootDocumentId,
+    CollectionItemId,
+    CompleteSemanticIdentity,
+}
+
+public sealed record StoredTargetDocumentIdSource(
+    DbTableName Table,
+    DbColumnName TargetDocumentIdColumn,
+    PersistedReferenceRowLocatorKind RowLocatorKind,
+    IReadOnlyList<DbColumnName> RowLocatorColumnsInOrder
+);
+
+public abstract record SameStatementOccurrenceMatchValueSource
+{
+    /// <summary>
+    /// Any compiled receiver-row write binding whose value is available after ordinary resolution and before the
+    /// certified fallback. The binding may be a scalar, descriptor, ordinary reference, parent/root locator, or
+    /// precomputed key-unification value, but cannot depend on the deferred reference or its deferred anchors.
+    /// </summary>
+    public sealed record MaterializedWriteBinding(
+        DbTableName Table,
+        int BindingIndex,
+        string InputColumnName,
+        RelationalScalarType Type
+    )
+        : SameStatementOccurrenceMatchValueSource;
+
+    /// <summary>
+    /// The persisted semantic-identity member is the deferred reference's stable target DocumentId. The correlation query
+    /// obtains the target through the retained route and compares its current DocumentId with the receiver's stored FK;
+    /// it never accepts that match value as request input.
+    /// </summary>
+    public sealed record CorrelatedChangedTargetDocumentId(
+        PhysicalColumnRef CurrentTargetDocumentIdColumn
+    )
+        : SameStatementOccurrenceMatchValueSource;
+}
+
+public sealed record SameStatementOccurrenceMatchBinding(
+    SameStatementOccurrenceMatchValueSource Source,
+    PhysicalColumnRef StoredReceiverColumn
+);
+
+public sealed record SameStatementStoredRowLocatorResultBinding(
+    DbColumnName StoredRowLocatorColumn,
+    int ResultOrdinal
+);
+
+public sealed record SameStatementOccurrenceToStoredRowCorrelation(
+    IReadOnlyList<SameStatementOccurrenceMatchBinding> CompleteSemanticIdentityInOrder,
+    IReadOnlyList<SameStatementStoredRowLocatorResultBinding> StoredRowLocatorResultsInOrder
+);
+
+public sealed record SameStatementDirectOrigin(
+    MutationOriginId MutationOrigin,
+    DmsWriteOperation WriteOperation,
+    QualifiedResourceName Resource,
+    DbTableName RootTable,
+    StatementBoundaryId StatementBoundary
+);
+
+public enum SameStatementSetInputColumnRole
+{
+    CorrelationKey,
+    OriginDocumentId,
+    StoredTargetDocumentId,
+    SubmittedReferentialId,
+    SubmittedIdentityValue,
+    OccurrenceMatchValue,
+}
+
+public sealed record SameStatementSetInputColumn(
+    string Name,
+    SameStatementSetInputColumnRole Role,
+    RelationalScalarType Type
+);
+
+/// <summary>
+/// V1 binds one canonical JSON recordset parameter per batch. PostgreSQL parses it with
+/// jsonb_to_recordset; SQL Server uses OPENJSON ... WITH. Runtime serializes rows from this typed
+/// column inventory and never constructs SQL or JSON property names ad hoc.
+/// </summary>
+public sealed record SameStatementReferenceSetInput(
+    string ParameterName,
+    IReadOnlyList<SameStatementSetInputColumn> ColumnsInOrder,
+    int MaxInstancesPerBatch
+);
+
+// Built-in role types are fixed: correlation keys and origin/stored/expected DocumentIds are Int64; submitted
+// referential ids are Guid (uuid on PostgreSQL, uniqueidentifier on SQL Server). Occurrence/submitted identity values
+// retain their compiled binding types; SQL writers do not substitute strings plus casts.
+
+public sealed record SameStatementCorrelationCommand(
+    SameStatementReferenceSetInput Input,
+    string SelectCorrelatedTargetDocumentIdsSql,
+    int CorrelationKeyResultOrdinal,
+    int TargetDocumentIdResultOrdinal,
+    IReadOnlyList<SameStatementCorrelationResultBinding> StoredTargetValuesInVectorOrder
+);
+
+public sealed record SameStatementCorrelationResultBinding(
+    PropagationItemRef Item,
+    PhysicalColumnRef StoredTargetColumn,
+    int ResultOrdinal
+);
+
+public sealed record SameStatementPostWriteVerificationCommand(
+    SameStatementReferenceSetInput Input,
+    string SelectResolvedTargetsAndAnchorsSql,
+    int CorrelationKeyResultOrdinal,
+    int TargetDocumentIdResultOrdinal,
+    IReadOnlyList<LineageAnchorResultBinding> LineageAnchorsInIdOrder
+);
+
+public abstract record SameStatementFutureValueSource
+{
+    public sealed record OriginWriteBinding(DbTableName Table, int BindingIndex)
+        : SameStatementFutureValueSource;
+
+    public sealed record StoredTargetColumn(
+        PhysicalColumnRef Column,
+        int CorrelationResultOrdinal
+    ) : SameStatementFutureValueSource;
+
+    public sealed record StoredTargetDocumentId() : SameStatementFutureValueSource;
+}
+
+public sealed record SameStatementFutureValueBinding(
+    PropagationItemRef Item,
+    int? SubmittedIdentityBindingIndex,
+    string? SubmittedIdentityInputColumnName,
+    PhysicalColumnRef FutureTargetColumn,
+    SameStatementFutureValueSource Source,
+    ValueLineageId? ChangedValueLineage
+);
+
+/// <summary>
+/// Executor projection of a proved same-statement stable-target route. This is not a general
+/// unresolved-reference fallback and does not contain the full SQL Server coverage certificate.
+/// </summary>
+public sealed record SameStatementReferenceResolutionPlan(
+    int DocumentReferenceBindingIndex,
+    ReferenceSiteId ReferenceSite,
+    PhysicalForeignKeyId ReferenceForeignKeyId,
+    SameStatementDirectOrigin AllowedDirectOrigin,
+    MutationCaseId MutationCase,
+    IReadOnlyList<PropagationItemRef> ChangedItemsInVectorOrder,
+    StoredTargetDocumentIdSource StoredTargetDocumentId,
+    SameStatementOccurrenceToStoredRowCorrelation OccurrenceToStoredRow,
+    PropagationRoute RetainedChangedTargetRoute,
+    RowCorrelationProof ChangedTargetToStoredTargetCorrelation,
+    SameStatementCorrelationCommand CorrelationCommand,
+    SameStatementPostWriteVerificationCommand PostWriteVerificationCommand,
+    IReadOnlyList<SameStatementFutureValueBinding> FutureValuesInVectorOrder
 );
 
 /// <summary>
@@ -1557,6 +1998,14 @@ public abstract record WriteValueSource
     public sealed record DocumentReference(int BindingIndex) : WriteValueSource;
 
     /// <summary>
+    /// A stored identity-lineage anchor resolved from the same concrete reference instance as
+    /// <see cref="DocumentReference" />. Reused reference DocumentId columns do not need a second
+    /// binding; this source is emitted only for an added internal anchor column.
+    /// </summary>
+    public sealed record IdentityLineageAnchor(int BindingIndex, IdentityLineageId IdentityLineage)
+        : WriteValueSource;
+
+    /// <summary>
     /// A descriptor FK value resolved from descriptor metadata + a scope-relative path.
     /// </summary>
     public sealed record DescriptorReference(
@@ -1692,6 +2141,8 @@ When `DbTableModel.KeyUnificationClasses` is non-empty:
 
 - `TableWritePlan.ColumnBindings` (and emitted `INSERT`/`UPDATE` column lists) MUST include only stored/writable columns. Any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` MUST be excluded. Columns whose `Kind` is `MirroredContentVersion` or `MirroredContentLastModifiedAt` MUST also be excluded — they are server-stamped by the resource's `*_Stamp` trigger and rely on their DDL defaults for INSERT, never on a client-supplied value.
 - Canonical storage columns and synthetic `..._Present` presence-flag columns MUST be bound as `WriteValueSource.Precomputed`.
+- Added internal lineage-anchor columns MUST be bound as `WriteValueSource.IdentityLineageAnchor`; an existing
+  `..._DocumentId` reused as an anchor keeps its existing `WriteValueSource.DocumentReference` binding.
 - `TableWritePlan.KeyUnificationPlans` MUST be emitted for every `KeyUnificationClass` to compute canonical values and synthetic presence flags during row materialization.
 - Fail fast: the plan compiler MUST reject any plan that attempts to write a `UnifiedAlias` column, or that leaves a `Precomputed` binding without exactly one corresponding `KeyUnificationWritePlan`.
 
@@ -1717,15 +2168,15 @@ Arbitrary duplicate reference-field emission remains invalid.
 These are the runtime services that use the compiled plans.
 
 ```csharp
-public interface IRelationalModelCache
+public interface IMappingSetProvider
 {
-    RelationalResourceModel GetOrAdd(string effectiveSchemaHash, QualifiedResourceName resource, Func<RelationalResourceModel> build);
+    MappingSet Get(MappingSetKey key);
 }
 
 public interface IResourcePlanProvider
 {
-    ResourceWritePlan GetWritePlan(string effectiveSchemaHash, QualifiedResourceName resource);
-    ResourceReadPlan GetReadPlan(string effectiveSchemaHash, QualifiedResourceName resource);
+    ResourceWritePlan GetWritePlan(MappingSetKey mappingSetKey, QualifiedResourceName resource);
+    ResourceReadPlan GetReadPlan(MappingSetKey mappingSetKey, QualifiedResourceName resource);
 }
 
 public interface IResourceFlattener
@@ -1750,9 +2201,62 @@ public interface IResourceFlattener
 /// This is a convenience map derived from Core-extracted descriptor references after referential-id resolution.
 /// Used to populate descriptor FK columns without per-row referential-id hashing.
 /// </param>
+/// <param name="LineageAnchorDocumentIdByTargetAndLineage">
+/// Maps a resolved target row plus one demanded semantic lineage to the intrinsic lineage DocumentId projected from that
+/// row. The resolver builds this map set-wise from the finalized model after target resolution; collection occurrences
+/// reuse the same entry when they resolve to the same target DocumentId.
+/// </param>
+/// <param name="SameStatementReferenceOverrides">
+/// Instance-scoped certified future-target results. These never populate the referential-id or target/lineage maps because
+/// the same target DocumentId may still have different pre-statement anchor values.
+/// </param>
 public sealed record ResolvedReferenceSet(
     IReadOnlyDictionary<Guid, long> DocumentIdByReferentialId,
-    IReadOnlyDictionary<DescriptorKey, long> DescriptorIdByKey);
+    IReadOnlyDictionary<DescriptorKey, long> DescriptorIdByKey,
+    IReadOnlyDictionary<ResolvedLineageAnchorKey, long> LineageAnchorDocumentIdByTargetAndLineage,
+    IReadOnlyList<SameStatementReferenceOverride> SameStatementReferenceOverrides
+);
+
+public enum DocumentReferenceResolutionKind
+{
+    PrestatementLookup,
+    CertifiedSameStatementStableTarget,
+}
+
+/// <summary>
+/// A normal result has an empty matched-locator list. A certified result has exactly the plan's ordered locator columns
+/// and typed values; candidate/merge binding must select and reassert that row before using the resolution.
+/// </summary>
+public sealed record ResolvedDocumentReferenceInstance(
+    long TargetDocumentId,
+    DocumentReferenceResolutionKind Kind,
+    IReadOnlyDictionary<IdentityLineageId, long> LineageAnchorDocumentIds,
+    IReadOnlyList<MatchedStoredReceiverRowLocatorValue>
+        CertifiedMatchedStoredReceiverRowLocatorInOrder
+);
+
+public sealed record MatchedStoredReceiverRowLocatorValue(
+    DbColumnName Column,
+    object Value
+);
+
+public sealed record PredictedPropagationValue(PropagationItemRef Item, object Value);
+
+public sealed record SameStatementReferenceOverride(
+    int BindingIndex,
+    ReferenceSiteId ReferenceSite,
+    IReadOnlyList<int> OrdinalPath,
+    MutationOriginId MutationOrigin,
+    MutationCaseId MutationCase,
+    Guid SubmittedReferentialId,
+    IReadOnlyList<PredictedPropagationValue> PredictedFullVectorInOrder,
+    ResolvedDocumentReferenceInstance Resolution
+);
+
+public readonly record struct ResolvedLineageAnchorKey(
+    long ReferencedDocumentId,
+    IdentityLineageId IdentityLineage
+);
 
 /// <summary>
 /// Key used for resolving descriptor URI strings to descriptor DocumentIds without per-row referential-id hashing.
@@ -1765,8 +2269,8 @@ public readonly record struct DescriptorKey(string NormalizedUri, QualifiedResou
 ///
 /// Key idea:
 /// - Core extraction emits each reference instance with a concrete JSONPath including indices.
-/// - Backend resolves ReferentialId → DocumentId in bulk once.
-/// - This index maps the current row's OrdinalPath to the referenced DocumentId without per-row hashing or DB I/O.
+/// - Backend resolves normal ReferentialId → DocumentId values in bulk and adds only certified instance overrides.
+/// - This index maps the current row's OrdinalPath to the complete target/anchor resolution without per-row DB I/O.
 ///
 /// OrdinalPath definition:
 /// - The sequence of array indices from the root to the current table scope.
@@ -1777,10 +2281,13 @@ public readonly record struct DescriptorKey(string NormalizedUri, QualifiedResou
 public interface IDocumentReferenceInstanceIndex
 {
     /// <summary>
-    /// Returns the referenced DocumentId for the given reference binding at the given ordinal path, or null if the reference
-    /// object is not present at that location (optional reference).
+    /// Returns the complete normal or certified same-statement resolution for the given binding instance, or null if the
+    /// optional reference object is absent at that location.
     /// </summary>
-    long? GetReferencedDocumentId(DocumentReferenceBinding binding, ReadOnlySpan<int> ordinalPath);
+    ResolvedDocumentReferenceInstance? GetResolvedReference(
+        DocumentReferenceBinding binding,
+        ReadOnlySpan<int> ordinalPath
+    );
 }
 
 /// <summary>
@@ -1795,30 +2302,39 @@ public interface IDocumentReferenceInstanceIndex
 /// </summary>
 public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceIndex
 {
-    private readonly IReadOnlyDictionary<DocumentReferenceBinding, OrdinalPathMap<long>> _mapByBinding;
+    private readonly IReadOnlyDictionary<
+        DocumentReferenceBinding,
+        OrdinalPathMap<ResolvedDocumentReferenceInstance>
+    > _mapByBinding;
 
     private DocumentReferenceInstanceIndex(
-        IReadOnlyDictionary<DocumentReferenceBinding, OrdinalPathMap<long>> mapByBinding
+        IReadOnlyDictionary<
+            DocumentReferenceBinding,
+            OrdinalPathMap<ResolvedDocumentReferenceInstance>
+        > mapByBinding
     )
     {
         _mapByBinding = mapByBinding;
     }
 
-    public long? GetReferencedDocumentId(DocumentReferenceBinding binding, ReadOnlySpan<int> ordinalPath)
+    public ResolvedDocumentReferenceInstance? GetResolvedReference(
+        DocumentReferenceBinding binding,
+        ReadOnlySpan<int> ordinalPath
+    )
     {
         if (!_mapByBinding.TryGetValue(binding, out var map))
         {
             return null;
         }
 
-        return map.TryGet(ordinalPath, out var documentId) ? documentId : null;
+        return map.TryGet(ordinalPath, out var resolution) ? resolution : null;
     }
 
     /// <summary>
     /// Builds the per-request index by combining:
     /// - the resource model bindings (to know which FK columns exist)
     /// - the Core-extracted reference instances (to know which reference occurs at which location)
-    /// - the bulk-resolved mapping ReferentialId → DocumentId (to avoid any DB work here)
+    /// - the complete normal target/lineage maps plus exact certified same-statement overrides
     ///
     /// Required Core enhancement:
     /// - each <c>DocumentReference</c> must carry a concrete JSONPath to the reference object instance (including indices),
@@ -1827,17 +2343,41 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
     public static DocumentReferenceInstanceIndex Build(
         IReadOnlyList<DocumentReferenceBinding> bindings,
         EdFi.DataManagementService.Core.External.Model.DocumentReferenceArray[] extractedReferenceArrays,
-        IReadOnlyDictionary<Guid, long> documentIdByReferentialId)
+        ResolvedReferenceSet resolved)
     {
         // Map wildcard reference-object path → binding for fast association.
         // The wildcard path is the DocumentReferenceBinding.ReferenceObjectPath (e.g. "$.addresses[*].periods[*].calendarReference").
-        var bindingByPath = bindings.ToDictionary(s => s.ReferenceObjectPath.Canonical, s => s);
+        var bindingByPath = bindings
+            .Select((binding, index) => (binding, index))
+            .ToDictionary(x => x.binding.ReferenceObjectPath.Canonical, x => x);
 
-        var mapsByBinding = new Dictionary<DocumentReferenceBinding, OrdinalPathMap<long>>();
+        var mapsByBinding = new Dictionary<
+            DocumentReferenceBinding,
+            OrdinalPathMap<ResolvedDocumentReferenceInstance>
+        >();
+        var overrideMaps = new Dictionary<int, OrdinalPathMap<SameStatementReferenceOverride>>();
+
+        foreach (var item in resolved.SameStatementReferenceOverrides)
+        {
+            if ((uint)item.BindingIndex >= (uint)bindings.Count)
+            {
+                throw new InvalidOperationException("Same-statement override binding index is out of range");
+            }
+
+            if (!overrideMaps.TryGetValue(item.BindingIndex, out var overrideMap))
+            {
+                overrideMap = new OrdinalPathMap<SameStatementReferenceOverride>();
+                overrideMaps.Add(item.BindingIndex, overrideMap);
+            }
+
+            overrideMap.Add(item.OrdinalPath.ToArray(), item);
+        }
+
+        var usedOverrides = new HashSet<SameStatementReferenceOverride>();
 
         foreach (var array in extractedReferenceArrays)
         {
-            if (!bindingByPath.TryGetValue(array.arrayPath.Value, out var binding))
+            if (!bindingByPath.TryGetValue(array.arrayPath.Value, out var entry))
             {
                 // If this happens, ApiSchema and extraction disagree. Treat as a startup/schema error.
                 throw new InvalidOperationException(
@@ -1845,18 +2385,64 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
                 );
             }
 
+            var (binding, bindingIndex) = entry;
+
             if (!mapsByBinding.TryGetValue(binding, out var map))
             {
-                map = new OrdinalPathMap<long>();
+                map = new OrdinalPathMap<ResolvedDocumentReferenceInstance>();
                 mapsByBinding.Add(binding, map);
             }
 
             foreach (var reference in array.DocumentReferences)
             {
                 var ordinalPath = OrdinalPathParser.Parse(reference.Path.Value);
-                var documentId = documentIdByReferentialId[reference.ReferentialId.Value];
-                map.Add(ordinalPath, documentId);
+                if (
+                    resolved.DocumentIdByReferentialId.TryGetValue(
+                        reference.ReferentialId.Value,
+                        out long documentId
+                    )
+                )
+                {
+                    var anchors = resolved.LineageAnchorDocumentIdByTargetAndLineage
+                        .Where(x => x.Key.ReferencedDocumentId == documentId)
+                        .ToDictionary(x => x.Key.IdentityLineage, x => x.Value);
+                    map.Add(
+                        ordinalPath,
+                        new(
+                            documentId,
+                            DocumentReferenceResolutionKind.PrestatementLookup,
+                            anchors,
+                            []
+                        )
+                    );
+                    continue;
+                }
+
+                if (
+                    overrideMaps.TryGetValue(bindingIndex, out var overrides)
+                    && overrides.TryGet(ordinalPath, out var sameStatement)
+                    && sameStatement.SubmittedReferentialId == reference.ReferentialId.Value
+                )
+                {
+                    if (sameStatement.Resolution.CertifiedMatchedStoredReceiverRowLocatorInOrder.Count == 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Certified same-statement resolution is missing its matched receiver-row locator"
+                        );
+                    }
+
+                    map.Add(ordinalPath, sameStatement.Resolution);
+                    usedOverrides.Add(sameStatement);
+                    continue;
+                }
+
+                throw new InvalidOperationException("Document reference remains unresolved after certified fallback");
             }
+        }
+
+        if (usedOverrides.Count != resolved.SameStatementReferenceOverrides.Count)
+        {
+            throw new InvalidOperationException("Unused or conflicting same-statement reference override");
         }
 
         return new(mapsByBinding);
@@ -2009,48 +2595,38 @@ Dapper is optional:
 
 ### 7.7 Example: Plan compilation and caching (runtime)
 
-This shows how the shape model and plans are compiled and cached for runtime use when DMS is not loading ahead-of-time mapping packs. In AOT mode, the same compilation work is performed by the pack builder and DMS deserializes the resulting models/plans (see [aot-compilation.md](aot-compilation.md)).
+This shows how runtime code selects plans from the globally finalized mapping set. In runtime-compilation mode,
+`IMappingSetProvider` builds one complete `DerivedRelationalModelArtifact` for the effective schema and compiles every
+resource plan only after anchor closure and dialect action finalization. In AOT mode it validates and deserializes the
+equivalent mapping pack (see [aot-compilation.md](aot-compilation.md)).
 
 ```csharp
 public sealed class RelationalPlanProvider(
-    IRelationalModelCache modelCache,
-    ISqlDialect dialect,
-    IApiSchemaProvider apiSchemaProvider)
+    IMappingSetProvider mappingSetProvider)
     : IResourcePlanProvider
 {
-    public ResourceWritePlan GetWritePlan(string effectiveSchemaHash, QualifiedResourceName resource)
+    public ResourceWritePlan GetWritePlan(MappingSetKey mappingSetKey, QualifiedResourceName resource)
     {
-        var model = modelCache.GetOrAdd(
-            effectiveSchemaHash,
-            resource,
-            build: () =>
-            {
-                var resourceSchema = apiSchemaProvider.GetResourceSchema(resource.ProjectName, resource.ResourceName);
-                return RelationalResourceModelBuilder.Build(resourceSchema);
-            });
-
-        return RelationalPlanCompiler.CompileWritePlan(model, dialect);
+        var mappingSet = mappingSetProvider.Get(mappingSetKey);
+        return mappingSet.WritePlansByResource[resource];
     }
 
-    public ResourceReadPlan GetReadPlan(string effectiveSchemaHash, QualifiedResourceName resource)
+    public ResourceReadPlan GetReadPlan(MappingSetKey mappingSetKey, QualifiedResourceName resource)
     {
-        var model = modelCache.GetOrAdd(
-            effectiveSchemaHash,
-            resource,
-            build: () =>
-            {
-                var resourceSchema = apiSchemaProvider.GetResourceSchema(resource.ProjectName, resource.ResourceName);
-                return RelationalResourceModelBuilder.Build(resourceSchema);
-            });
-
-        return RelationalPlanCompiler.CompileReadPlan(model, dialect, apiSchemaProvider);
+        var mappingSet = mappingSetProvider.Get(mappingSetKey);
+        return mappingSet.ReadPlansByResource[resource];
     }
 }
 ```
 
 Key points:
-- `RelationalResourceModelBuilder.Build(...)` is where `jsonSchemaForInsert` + `documentPathsMapping` + `identityJsonPaths` are turned into explicit tables/columns/keys.
-- `RelationalPlanCompiler` is where physical names are quoted, parameter styles are applied, batching limits are chosen, and read/write SQL plans are compiled from the derived model.
+- `MappingSetKey` includes `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`; the selected `MappingSet` therefore
+  contains exactly the provider-specific model used to provision the database.
+- `IMappingSetProvider` may load a validated pack or run full-schema derivation and plan compilation. It never invokes a
+  per-resource relational-model builder.
+- Physical names and ordinary plans compile from `DerivedRelationalModelArtifact.Model`; certified same-statement plans
+  additionally consume `DerivedRelationalModelArtifact.ExecutorRequirements`. Compilation starts only after all global
+  passes have finalized propagation keys, actions, and provider-specific executor requirements.
 
 ### 7.8 Example: POST/PUT execution (flatten + write)
 
@@ -2068,21 +2644,25 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
     await using var tx = await connection.BeginTransactionAsync(ct);
 
-    // 2) Resolve identity (insert vs update) and obtain DocumentId.
-    //    (dms.ReferentialIdentity and dms.Document writes are not shown here.)
-    var documentId = await _documentIdAllocator.GetOrCreateDocumentIdAsync(request, connection, tx, ct);
+    // 2) Resolve identity (insert vs update) and obtain the target DocumentId without resource DML.
+    var documentId = await _documentTargetResolver.ResolveOrReserveDocumentIdAsync(
+        request,
+        connection,
+        tx,
+        ct);
 
-    // 3) Resolve all FK ids in bulk.
-    var resolved = await _referenceResolver.ResolveAsync(request.DocumentInfo, connection, tx, ct);
+    // 2b) For an existing target, observe only stored authorization inputs and authorize them
+    //     before loading full state, projecting profiles, or validating/correlating request refs.
+    var targetObservation = await _writeTargetObserver.ObserveForAuthorizationAsync(
+        writePlan,
+        documentId,
+        connection,
+        tx,
+        ct);
+    await _authorization.AuthorizeStoredAsync(request, targetObservation, connection, tx, ct);
 
-    // 3b) Build a per-request index that maps (binding + ordinalPath) → referenced DocumentId.
-    //     This depends on Core emitting concrete JSON paths (including indices) for reference instances.
-    var documentReferences = DocumentReferenceInstanceIndex.Build(
-        writePlan.Model.DocumentReferenceBindings,
-        request.DocumentInfo.DocumentReferenceArrays,
-        resolved.DocumentIdByReferentialId);
-
-    // 4) Load the current persisted rows needed for auth/reconstitution/merge on update flows.
+    // 3) Load current persisted rows before reference resolution. Certified same-statement
+    //    resolution is update-only and must read a locked, stable target DocumentId.
     var currentState = await _currentDocumentLoader.LoadForWriteAsync(
         writePlan,
         documentId,
@@ -2090,7 +2670,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         tx,
         ct);
 
-    // 4b) Core may provide profile-shaped write input for profile-constrained writes.
+    // 3b) Core may provide profile-shaped write input for profile-constrained writes.
     var profileRequest = request.ProfileAppliedWriteRequest;
     var profileContext = profileRequest is null
         ? null
@@ -2098,6 +2678,45 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
             currentState.StoredJson,
             profileRequest);
     var writableBody = profileRequest?.WritableRequestBody ?? request.EdfiDoc;
+
+    // 4) Resolve ordinary references/descriptors first. Normal resolution always wins.
+    var ordinaryResolution = await _referenceResolver.ResolveOrdinaryAsync(
+        writePlan,
+        request.DocumentInfo,
+        writableBody,
+        connection,
+        tx,
+        ct);
+
+    // 4b) Stage all candidate write bindings that are available without a deferred reference.
+    //     This includes ordinary resolved references/descriptors and key-unification outputs.
+    var stagedCandidates = _flattener.StageResolutionIndependentBindings(
+        writePlan,
+        documentId,
+        writableBody,
+        ordinaryResolution,
+        currentState,
+        profileContext);
+
+    // 4c) Apply only exact compiled same-statement plans to eligible ordinary misses. The
+    //     locking query returns each matched receiver-row locator with its stable target id.
+    var resolved = await _sameStatementReferenceResolver.ResolveEligibleMissesAsync(
+        writePlan,
+        request.WriteOperation,
+        request.DocumentInfo,
+        ordinaryResolution,
+        stagedCandidates,
+        currentState,
+        connection,
+        tx,
+        ct);
+
+    // 4d) Build a per-request index that maps (binding + ordinalPath) to a complete normal
+    //     or certified same-statement resolution.
+    var documentReferences = DocumentReferenceInstanceIndex.Build(
+        writePlan.Model.DocumentReferenceBindings,
+        request.DocumentInfo.DocumentReferenceArrays,
+        resolved);
 
     // 5) Extract logical candidates from the writable request body.
     var candidateSet = _flattener.ExtractCandidates(
@@ -2107,8 +2726,9 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         documentReferences,
         resolved);
 
-    // 6) Bind candidates against current sibling sets, reserve any needed CollectionItemIds,
-    //    and produce the post-merge write set.
+    // 6) Bind candidates against current sibling sets, requiring any certified candidate to
+    //    select its correlation-returned row locator. Reserve CollectionItemIds and produce
+    //    the post-merge write set.
     var writeSet = _mergeBinder.Bind(
         writePlan,
         documentId,
@@ -2119,19 +2739,52 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         tx,
         ct);
 
+    // 6b) Authorize the finalized profile-aware merged rowset, including hidden preserved
+    //     values and all ordinary/certified resolved surrogate ids, before any DML.
+    await _authorization.AuthorizeProposedAsync(
+        request,
+        writeSet,
+        resolved,
+        connection,
+        tx,
+        ct);
+
     // 7) Execute root + child table writes in plan order (set-based).
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
+    // 7b) Before commit, verify every used future referential id and full target vector now
+    //     resolve to the same stable target DocumentId predicted by its compiled plan.
+    await _sameStatementReferenceVerifier.VerifyAsync(
+        writePlan,
+        resolved.SameStatementReferenceOverrides,
+        connection,
+        tx,
+        ct);
+
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
-    // (row-local referential-id recompute + version stamping). Identity propagation uses the certified dialect
-    // physical FK assignment; SQL Server modes jointly satisfy value-flow obligations and error 1785.
+    // (row-local referential-id recompute + version stamping). Identity propagation uses expanded finalized FKs:
+    // fixed actions on PostgreSQL and globally selected/certified actions on SQL Server.
 
     await tx.CommitAsync(ct);
 }
 ```
 
 Notes:
-- `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
+- `_documentTargetResolver.ResolveOrReserveDocumentIdAsync(...)` may resolve an existing target or reserve an in-memory/
+  sequence value for a possible create; it does not insert `dms.Document` or resource rows before proposed authorization.
+- `_referenceResolver.ResolveOrdinaryAsync(...)` resolves document and descriptor references to `DocumentId` via
+  `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and
+  polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
+  `_sameStatementReferenceResolver.ResolveEligibleMissesAsync(...)` may handle an ordinary miss only with an exact
+  `SameStatementReferenceResolutionPlan`; create/new/absent/uncorrelated cases fail closed. Its pre-correlation input is
+  built from `StageResolutionIndependentBindings`, and merge binding reasserts its returned receiver-row locator.
+  The typed `DmsWriteOperation` is part of plan selection and certified same-statement resolution is limited to
+  `PutByDocumentUuid`, whose stable subject locator can load the existing row before the future identity exists. POST
+  continues to use normal identity-based upsert/create resolution.
+- Reference resolution also returns every required `(referenced DocumentId, IdentityLineageId) -> lineage DocumentId`
+  value. The reference binding plus concrete ordinal path first resolves the target `DocumentId`; that stable pair then
+  addresses `ResolvedReferenceSet.LineageAnchorDocumentIdByTargetAndLineage`. The resolver obtains all values through
+  compiled set-based target projections, not per-instance queries or inference from equal public values.
 - `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, table-local `CollectionKeyPreallocationPlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
 - The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
 - For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.
@@ -2169,6 +2822,15 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.DocumentReference(var bindingIndex)
                 => ResolveReferencedDocumentId(resourcePlan, bindingIndex, ordinalPath, documentReferences),
 
+            WriteValueSource.IdentityLineageAnchor(var bindingIndex, var identityLineage)
+                => ResolveIdentityLineageAnchor(
+                    resourcePlan,
+                    bindingIndex,
+                    identityLineage,
+                    ordinalPath,
+                    documentReferences
+                ),
+
             _ => throw new InvalidOperationException("Unsupported write value source")
         };
     }
@@ -2195,6 +2857,26 @@ private static long? ResolveDescriptorId(
 
     var normalizedUri = uri.ToLowerInvariant();
     return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, descriptorResource)];
+}
+
+private static long? ResolveIdentityLineageAnchor(
+    ResourceWritePlan resourcePlan,
+    int bindingIndex,
+    IdentityLineageId identityLineage,
+    ReadOnlySpan<int> ordinalPath,
+    IDocumentReferenceInstanceIndex documentReferences)
+{
+    var binding = resourcePlan.Model.DocumentReferenceBindings[bindingIndex];
+    var reference = documentReferences.GetResolvedReference(binding, ordinalPath);
+
+    if (reference is null)
+    {
+        return null;
+    }
+
+    return reference.LineageAnchorDocumentIds.TryGetValue(identityLineage, out long anchorDocumentId)
+        ? anchorDocumentId
+        : throw new InvalidOperationException("Resolved reference is missing a required identity-lineage anchor");
 }
 
 private static void ApplyKeyUnificationPlans(
@@ -2285,7 +2967,7 @@ private static long? ResolveReferencedDocumentId(
     }
 
     var binding = resourcePlan.Model.DocumentReferenceBindings[bindingIndex];
-    return documentReferences.GetReferencedDocumentId(binding, ordinalPath);
+    return documentReferences.GetResolvedReference(binding, ordinalPath)?.TargetDocumentId;
 }
 ```
 

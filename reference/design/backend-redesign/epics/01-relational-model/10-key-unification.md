@@ -33,6 +33,10 @@ This story introduces (and/or aligns existing implementation with) the key-unifi
 - Expose explicit model metadata so downstream consumers can deterministically answer:
   - “bind by API JsonPath” (binding/path column), vs
   - “write/FK/cascade against physical storage” (canonical/storage column).
+- Treat a public identity value and its row-functional identity-lineage `DocumentId` as one propagation obligation.
+  When complete target-identity equivalence and compatible presence prove two reference paths identify the same source
+  row, the later lineage-anchor closure reuses/unifies their explicit `..._DocumentId` storage. Partial value equality is
+  never enough to unify anchors.
 
 Scope note: key unification is **row-local** and applies only when both constraint endpoints resolve to supported
 endpoint kinds (`Scalar`, `DescriptorFk`) on the **same physical table**. Cross-table equality constraints remain
@@ -50,8 +54,10 @@ enough that all downstream consumers see a unified model:
 Downstream consumers must follow the bind-vs-storage interpretation rules in `key-unification.md`:
 
 - Constraint derivation:
-  - composite reference FKs use canonical storage columns for unified identity parts,
-  - all-or-none constraints remain on per-site binding columns (aliases) + `..._DocumentId`.
+  - composite reference FKs use canonical storage columns for unified identity parts and the minimal required set of
+    identity-lineage anchors,
+  - all-or-none constraints remain on the complete per-site vector: binding columns (aliases), every dedicated local
+    anchor selected by that site's `AnchorSetId`, and `..._DocumentId`.
 - Descriptor FK derivation:
   - anchor FK constraints on the storage column (canonical when unified), and
   - de-duplicate when multiple binding columns map to the same storage column.
@@ -77,6 +83,12 @@ Downstream consumers must follow the bind-vs-storage interpretation rules in `ke
   - no `TableConstraint.ForeignKey` references `UnifiedAlias` columns (local or target),
   - descriptor FK constraints are emitted once per `(table, storage_column)` pair (de-duplicated when unified),
   - FK-supporting referenced-key UNIQUE constraints use canonical storage columns after mapping and de-duplication.
+- Identity-lineage anchor invariants hold:
+  - anchors are stored internal columns with no API `SourceJsonPath`,
+  - an explicit local `..._DocumentId` is reused only after complete identity equivalence, same-source-row correlation,
+    and presence implication are proved,
+  - otherwise the global closure materializes a distinct hidden anchor, and
+  - anchor derivation is deterministic and reaches a fixed point before physical FK candidates are finalized.
 - Equality-constraint endpoint resolution and diagnostics:
   - endpoints resolve strictly by exact `DbColumnModel.SourceJsonPath` match (no naming heuristics),
   - unresolved/ambiguous endpoints and unsupported endpoint kinds fail fast with actionable diagnostics,
@@ -116,6 +128,9 @@ Downstream consumers must follow the bind-vs-storage interpretation rules in `ke
 3. Update downstream passes to use storage mapping where required:
    - Ensure composite reference FK derivation maps both local and target identity-part columns to storage columns and
      de-duplicates repeated canonical columns after mapping while preserving identity-path order.
+   - Add the post-unification minimal identity-lineage anchor closure. It traces shared-column/FK obligations to their
+     row-functional source `DocumentId`, reuses proved-equivalent explicit columns, propagates required anchors through
+     intermediate reference keys until stable, and reports provider key-column/key-width overflow before DDL emission.
    - Update descriptor FK derivation to:
      - map descriptor binding columns to storage columns,
      - emit exactly one FK per `(table, storage_column)` pair, and
@@ -142,4 +157,3 @@ Downstream consumers must follow the bind-vs-storage interpretation rules in `ke
      - column ordering dependency invariant.
    - Add/update golden/snapshot fixtures to validate manifest output includes key-unification metadata and
      diagnostics deterministically.
-

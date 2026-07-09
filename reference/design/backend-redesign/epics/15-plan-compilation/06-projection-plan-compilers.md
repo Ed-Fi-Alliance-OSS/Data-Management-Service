@@ -3,7 +3,7 @@ jira: DMS-1047
 jira_url: https://edfi.atlassian.net/browse/DMS-1047
 ---
 
-# Story: Compile Projection Plans (Reference Identity + Descriptor URI)
+# Story: Compile Projection Plans (Reference Identity + Descriptor URI + Lineage Anchors)
 
 ## Description
 
@@ -11,8 +11,13 @@ Compile the additional plan metadata (and SQL where needed) required for project
 
 - **Reference identity projection (no joins)**: metadata that maps reference-object identity fields to local propagated binding/path columns on the referencing table row (driven by `DocumentReferenceBindings`).
 - **Descriptor URI projection (batched)**: deterministic page-batched lookup `(DescriptorId, Uri)` for all descriptor ids referenced by a page.
+- **Demanded lineage-anchor projection (batched)**: one dialect-specific `LineageAnchorResolutionPlan` for every non-empty
+  finalized `(target resource, AnchorSetId)` variant, projecting ordered intrinsic lineage `DocumentId` values from a set
+  of stable target `DocumentId`s.
 
-This story is about producing deterministic, executor-ready projection inputs. The runtime projection execution and JSON reconstitution are covered by the relational read-path epic.
+This story produces deterministic, executor-ready projection inputs. The relational read-path epic executes reference
+identity/descriptor projection and JSON reconstitution; E07-S01 executes demanded lineage-anchor plans during write
+reference resolution.
 
 Design references:
 
@@ -43,16 +48,32 @@ Design references:
   - avoids N+1 joins (does not left-join `dms.Descriptor` once per descriptor FK column into every hydration `SELECT`).
 - Projection SQL is canonicalized and stable for a fixed selection key (pgsql + mssql).
 
+### Demanded lineage-anchor projection plans (write-batched)
+
+- Plan compilation consumes the complete finalized artifact and emits exactly one global plan for every used non-empty
+  `(target resource, AnchorSetId)` variant, and no plan for empty or unused variants.
+- Each plan names the concrete or abstract target table, canonical provider set-input kind/parameter, deterministic batch
+  limit, target-`DocumentId` result ordinal, and demanded lineage result bindings in `IdentityLineageId` order.
+- PostgreSQL and SQL Server SQL is canonical, set-wise, and returns exactly one non-null result per requested target id;
+  plan compilation does not infer lineages from equal public values or issue per-reference SQL.
+
 ### Testing
 
 - Unit tests validate deterministic output and model reference integrity:
   - descriptor projection plans reference only embedded model elements and `dms.Descriptor`,
   - reference identity projection validation fails deterministically for missing columns/bindings.
-- When fixture-based artifacts are emitted, `mappingset.manifest.json` includes stable, normalized SQL hashes for the descriptor projection plan (and stable projection metadata where applicable), enabling golden comparisons per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
+  - lineage-anchor plans exactly cover finalized used variants, including concrete and abstract targets, and fail on a
+    missing/duplicate/null or mismatched target/lineage result shape.
+- When fixture-based artifacts are emitted, `mappingset.manifest.json` includes stable descriptor SQL hashes plus every
+  lineage plan's target/`AnchorSetId`, set-input kind/name, batch limit, normalized SQL hash, target-id ordinal, and
+  ordered lineage result ids/ordinals, enabling golden comparisons per `ddl-generator-testing.md`.
 
 ## Tasks
 
 1. Compile descriptor projection plans from `RelationalResourceModel.DescriptorEdgeSources`, producing stable, canonicalized SQL (page-batched and deterministically ordered).
 2. Compile and/or validate reference identity projection metadata from `RelationalResourceModel.DocumentReferenceBindings` and ensure required columns are present in `TableReadPlan` select lists.
-3. Add unit tests for deterministic output and model reference integrity (pgsql + mssql).
-4. Add (or extend) a small fixture that exercises descriptor projection + reference identity projection and validates output via `mappingset.manifest.json` golden comparisons.
+3. Compile global `LineageAnchorResolutionPlan` values from the complete artifact, with deterministic provider set-input,
+   batching, SQL, and result-ordinal metadata.
+4. Add unit tests for deterministic output and model reference integrity (pgsql + mssql).
+5. Add (or extend) a small fixture that exercises descriptor projection, reference identity projection, and concrete plus
+   abstract demanded-lineage projection and validates output via `mappingset.manifest.json` golden comparisons.

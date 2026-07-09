@@ -14,8 +14,9 @@ Augment the base derived model with `documentPathsMapping`, `identityJsonPaths`,
 - `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` (unified `DerivedRelationalModelSet` output)
 
 Key rules:
-- Document reference objects are represented by one `..._DocumentId` FK column at the owning scope, plus propagated
-  identity natural-key columns for the referenced resource.
+- Document reference objects are represented by one `..._DocumentId` FK column at the owning scope, propagated identity
+  natural-key columns, and any internal identity-lineage `DocumentId` anchors required to propagate a complete reference
+  identity tuple. Anchors identify the source rows of reference-backed identity components; they are not API properties.
 - Root natural key unique constraint is derived from `identityJsonPaths`, using the `..._DocumentId` FK column for
   identity components sourced from references.
 - Persisted multi-item collection scopes compile semantic identity from exactly one of two schema sources:
@@ -63,19 +64,28 @@ implementation code rather than spelled out in the design docs:
 
 ## Integration (ordered passes)
 
-- Per-resource: derive reference columns and constraints for a single resource using its `documentPathsMapping`,
-  `identityJsonPaths`, and `arrayUniquenessConstraints`.
+- Per-resource: derive reference binding columns and semantic identity-lineage provenance for a single resource using its
+  `documentPathsMapping`, `identityJsonPaths`, and `arrayUniquenessConstraints`.
 - Set-level (`DMS-1033`): run as a whole-schema pass after base tables/columns (and after extension tables exist, if extension sites participate). This pass is allowed to scan/consult other resources/projects to:
   - validate document-reference targets exist in the effective schema set,
   - determine target identity projection contracts (including abstract targets),
-  - and infer descriptor identity parts inside reference objects when needed.
+  - infer descriptor identity parts inside reference objects when needed, and
+  - expose the row-functional source `DocumentId` for every reference-backed identity component so the later global
+    lineage-anchor closure can reuse or materialize the required physical anchor columns.
+
+Final document-reference FKs are produced only after `KeyUnificationPass`, transitive mutability, the global minimal
+identity-lineage anchor closure, physical-candidate de-duplication, and dialect action selection. DMS-930 supplies the
+binding/provenance facts; DMS-1258 owns that later global finalization.
 
 ## Acceptance Criteria
 
 - For each reference object in `documentPathsMapping.referenceJsonPaths`, the model creates:
   - a `..._DocumentId` column at the correct table scope,
   - `{RefBaseName}_{IdentityPart}` propagated identity columns at the same scope,
-  - a `DocumentReferenceBinding` with correct `IsIdentityComponent` classification and column bindings.
+  - internal stored lineage-anchor columns when the global closure cannot reuse an equivalent explicit
+    `..._DocumentId`, and
+  - a `DocumentReferenceBinding` with correct `IsIdentityComponent`, column bindings, and stable identity-lineage
+    provenance.
 - Root-table natural key UNIQUE constraint matches `identityJsonPaths` semantics.
   - For identity components sourced from references, the UNIQUE constraint uses the `..._DocumentId` column.
 - Child-table API-semantic UNIQUE constraints are created from compiled semantic identity with deterministic column
@@ -90,12 +100,14 @@ implementation code rather than spelled out in the design docs:
 1. Implement binding of document references to:
    - `..._DocumentId` FK columns,
    - propagated identity columns, and
-   - `DocumentReferenceBinding` metadata (including `IsIdentityComponent` and local column bindings).
+   - `DocumentReferenceBinding` metadata (including `IsIdentityComponent`, local column bindings, and the row-functional
+     source-reference lineage needed to derive hidden anchors).
 2. Implement constraint derivation:
    - root natural key unique,
    - child uniqueness from compiled semantic identity (`arrayUniquenessConstraints` for non-reference scopes, or a
      single scope-local `referenceJsonPaths` binding for supported reference-backed scopes).
-   - per-reference “all-or-none” CHECK constraints and composite FKs (for propagated identity columns).
+   - per-reference “all-or-none” CHECK constraints and propagation-complete composite FKs over identity values, required
+     lineage anchors, and the referenced resource `DocumentId`.
 3. Add unit tests covering:
    1. references inside nested collections (scope selection),
    2. identity-component classification,

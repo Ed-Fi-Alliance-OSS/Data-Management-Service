@@ -96,7 +96,10 @@ Every fixture’s `expected/` directory uses consistent filenames. Some outputs 
 Always required:
 
 - `effective-schema.manifest.json`: schema fingerprint + schema components + deterministic `dms.ResourceKey` seed mapping summary (and optionally the full seed list).
-- `relational-model.{dialect}.manifest.json`: per-dialect derived relational model summary (schemas/tables/columns/constraints/indexes/views/triggers) used to generate DDL and compile plans. The manifest is per-dialect because the derived model is dialect-dependent (identifier shortening, type mapping, and naming rules differ between engines).
+- `relational-model.{dialect}.manifest.json`: deterministic semantic view of
+  `DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)`. It includes the per-dialect model used for
+  DDL, success diagnostics, and provider-finalized executor requirements used for plan compilation. The manifest is
+  per-dialect because identifier shortening, type mapping, actions, and executor routes differ between engines.
 - `{dialect}.sql`: normalized DDL text, where `{dialect}` is `pgsql` or `mssql` (one file per dialect listed in `fixture.json.dialects`).
 
 Optional (recommended for diagnostics and fast diffs):
@@ -139,6 +142,13 @@ Minimum required fields:
     - per-table `key_unification_classes[]` (canonical column + ordered `member_path_columns[]`)
     - per-table `descriptor_fk_deduplications[]` diagnostics (when two or more descriptor binding columns map to the same storage column)
     - per-resource `key_unification_equality_constraints` diagnostics (`applied`/`redundant`/`ignored` with ignore-reason taxonomy and deterministic ordering)
+  - `diagnostics`: provider-neutral anchor-omission proofs on both dialects and SQL Server-only physical-FK
+    decisions/certificates; PostgreSQL contains no topology-classifier decisions.
+  - `executor_requirements[]` in resource/site/origin/case order. Each requirement includes its exact binding/site/FK,
+    direct PUT origin and complete mutation-case key, stored-target-id source, complete occurrence/target correlation,
+    retained same-boundary route, and complete ordered future vector with typed origin-write, locked-stored-target-column,
+    or stored-target-`DocumentId` sources. PostgreSQL derives this inventory constructively from fixed actions without
+    topology classification; SQL Server emits it only for an accepted representable assignment.
 - `pack.manifest.json`
   - `effective_schema_hash`, `dialect`, `relational_mapping_version`, `pack_format_version`
   - `payload_sha256`
@@ -146,10 +156,17 @@ Minimum required fields:
   - `resources[]` plan summaries:
     - per plan: `normalized_sql_sha256` (store SQL hashes, not the raw SQL text for large fixtures)
     - binding order metadata required for correctness (parameter order, keyset ordering, etc.)
+    - each document-reference binding's exact `DocumentReferenceResolutionPolicy`
+    - each same-statement plan's exact owning-resource/binding/site/direct-PUT-origin/complete-mutation-case key, stored
+      target-id source, occurrence-to-stored-row semantic match and locator result ordinals, retained route with ordered
+      FK hops/actions, target-row correlation, and complete ordered future vector with every typed value source
+    - correlation and post-write-verification command input/batching contracts, normalized SQL SHA-256 values, and every
+      result ordinal
   - Must include the same key-unification model surface required by `relational-model.{dialect}.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
 - `mappingset.manifest.json`
   - Same semantic shape as `pack.manifest.json` for the runtime mapping-set object graph
   - MUST match pack-derived mapping sets exactly (after normalization)
+  - MUST preserve exact resolution-policy/plan cardinality; the emitter must not hide a missing or extra certified plan
   - Must include the same key-unification model surface required by `relational-model.{dialect}.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
 - `ddl.manifest.json` (when emitted)
   - `effective_schema_hash`, `relational_mapping_version`
@@ -306,6 +323,7 @@ Test workflow:
    - provision a DB for effective hash `A`,
    - attempt to provision a different effective hash `B` to the same DB,
    - assert the tool fails fast with a clear “hash mismatch” error (no in-place upgrade semantics).
+
 ## AOT pack testing (avoid brittle byte-for-byte checks)
 
 Unless we explicitly guarantee deterministic protobuf + zstd output bytes, avoid comparing `.mpack` files directly.
@@ -317,7 +335,9 @@ Instead:
   - uncompressed payload SHA-256,
   - resource key list summary (`count`, `seed_hash`),
   - per-resource plan summaries (e.g., counts + SHA-256 of normalized SQL strings),
-  - and the key-unification model/diagnostic surface required for golden comparisons (per `key-unification.md`).
+  - reference-resolution policies and every exact same-statement plan key, retained route, typed future-vector source,
+    occurrence/target correlation contract, and correlation/post-write-verification SQL hash/result ordinal, and
+  - the key-unification model/diagnostic surface required for golden comparisons (per `key-unification.md`).
 - Snapshot and/or golden-compare the manifest, not the raw bytes.
 
 ## AOT pack object-graph tests (build → decode → expected graph)
@@ -342,16 +362,26 @@ Pack format guidance (so tests are not brittle and comparisons are meaningful):
 Introduce two “semantic manifests” that are deterministic and comparable:
 
 - **`pack.manifest.json`**: derived from *decoded protobuf payload*, containing only stable semantics (not raw bytes).
-- **`mappingset.manifest.json`**: derived from the in-memory mapping set used at runtime (the result of `MappingSet.FromPayload(...)`), excluding runtime-only caches and delegates.
+- **`mappingset.manifest.json`**: derived from the in-memory mapping set used at runtime (the result of
+  `MappingSet.FromPayload(key, payload)`), excluding runtime-only caches and delegates.
 
 Manifests should include:
 - envelope key fields (`effective_schema_hash`, `dialect`, `relational_mapping_version`, `pack_format_version`),
 - `resource_keys` list + derived `(count, seed_hash)`,
-- per-resource derived model shape (tables/columns/constraints/views as applicable),
+- the `RuntimeRelationalModelSet` projection: final per-resource tables, columns, constraints, storage kinds, stable
+  physical FK/anchor mappings, each table's ordered persisted occurrence match/source/locator inventory, and no DDL-only
+  views/index/trigger/derivation inventories,
+- global `LineageAnchorResolutionPlan` target table, provider set-input kind/name, batch limit, normalized SQL hash,
+  target-id ordinal, and ordered lineage-id/result-ordinal contracts in target/`AnchorSetId` order,
 - key-unification model/diagnostic surface required by `key-unification.md` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics),
 - per-resource plan summaries:
   - either normalized SQL strings, or stable hashes (preferred if SQL is large),
-  - plus binding/parameter ordering metadata needed to guarantee correctness.
+  - plus binding/parameter ordering metadata needed to guarantee correctness,
+  - every document-reference binding's `DocumentReferenceResolutionPolicy`, and
+  - every same-statement plan's exact owning-resource/binding/site/direct-PUT-origin/complete-mutation-case key, stored
+    target-id source, occurrence-to-stored-row match and locator ordinals, retained route and target-row correlation,
+    complete future vector with typed source and any changed-value lineage, plus canonical correlation and post-write-
+    verification input/batching contracts, normalized SQL SHA-256 values, and result ordinals.
 
 ### 3) Golden comparison tests (authoritative expected graphs)
 
@@ -367,10 +397,13 @@ For each fixture set that exercises AOT packs:
 For each fixture set that exercises AOT packs, run both compilation paths and require semantic equivalence:
 
 - Path A: `ApiSchema.json` → runtime compilation → `mappingset.manifest.json`
-- Path B: `ApiSchema.json` → pack build → decode → `MappingSet.FromPayload(...)` → `mappingset.manifest.json`
+- Path B: `ApiSchema.json` → pack build → decode → `MappingSet.FromPayload(key, payload)` → `mappingset.manifest.json`
 
 Requirement:
 - The manifests from Path A and Path B must match exactly (after normalization).
+- The equivalence corpus MUST include a certified-cycle fixture for PostgreSQL and SQL Server. The comparison covers
+  binding resolution policy and every exact plan key, route, future-value source, correlation/post-verification SQL hash,
+  and result ordinal; comparing only ordinary CRUD SQL is insufficient.
 
 This equivalence test is required because it catches:
 - missing/forgotten fields in pack serialization,
@@ -382,6 +415,16 @@ This equivalence test is required because it catches:
 Small fixtures (used by unit + snapshot tests):
 - `minimal`: 1 resource + 1 reference + 1 descriptor
 - `key-unification-ref`: reference-site identity-part unification (presence gating via `..._DocumentId`)
+- `identity-lineage-anchor`: a reference-backed identity repoint whose carrier FK includes and cascades the source
+  reference `DocumentId`; include the DS 5.2 Session/School/CourseOffering demanded-anchor shape, an unrelated Session
+  referrer on the empty variant, and the packed global lineage-anchor resolution plan
+- `mssql-breakable-cycle`: a safe SQL Server cycle cut covered by a same-row zero-hop origin write, paired with an
+  unbreakable-cycle classification failure; PostgreSQL emits its fixed full-composite actions without classifying either
+  input. Both successful provider artifacts compile exact certified same-statement plans for the API mutation cases.
+- `retained-acyclic-future-reference`: `R -> T -> RChild` with no pruned edge. A direct R identity update cascades to T
+  while multiple existing R child bindings submit T's future identity. T's vector combines a changed R-derived item and a
+  locked unchanged primitive/anchor; both providers emit batched correlation/post-verification plans while the child FK
+  remains `CASCADE`, and an incorrect unchanged submitted component fails before DML.
 - `key-unification-optional-scalar`: optional non-reference scalar unification (synthetic `..._Present` gating)
 - `nested`: nested collections + reference inside nested collection (ordinal-path binding)
 - `polymorphic`: abstract + subclasses (union view)

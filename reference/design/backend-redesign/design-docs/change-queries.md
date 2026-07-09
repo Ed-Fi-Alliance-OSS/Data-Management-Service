@@ -1762,7 +1762,15 @@ The live-table join used by `/deletes` intentionally does not specify the live r
 
 This makes the physical order of the `UX_<Table>_RefKey` key columns important. If the reference-key uniqueness remains ordered as `(DocumentId, <identity storage columns...>)`, the recreated-resource probe cannot use the index efficiently because the leading `DocumentId` value is not part of the predicate. The index is still valid for uniqueness and FK enforcement, but it is poorly shaped for queries whose predicate starts with the identity values.
 
-For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>, DocumentId)`. The composite reference FKs that target `*_RefKey` must use the same target-column ordering. This preserves the uniqueness contract while giving `/deletes` a useful seek path for the anti-join against the live table.
+For DMS, emit `*_RefKey` with the public identity storage columns first, any internal identity-lineage anchors next, and
+the referenced resource `DocumentId` last:
+`(<identity storage columns...>, <lineage anchor DocumentIds...>, DocumentId)`. The composite reference FKs that target
+`*_RefKey` use the same target-column ordering. `/deletes` predicates still begin with the complete public identity
+prefix, so the anchors do not weaken the recreated-resource anti-join seek shape.
+
+When incoming sites select different demanded anchor sets, emit one deterministic
+`UX_<Table>_RefKey_<AnchorSetId>` variant per distinct set. Every variant preserves the same public identity left prefix;
+the `/deletes` anti-join may use any applicable variant and does not predicate on internal anchors.
 
 Descriptor `/deletes` uses the same conceptual anti-join, but it probes `dms.Descriptor` by `(Discriminator, CodeValue, Namespace)`. DMS v1 will not add a separate descriptor identity lookup index for this path because descriptor deletes and recreations are expected to be rare.
 

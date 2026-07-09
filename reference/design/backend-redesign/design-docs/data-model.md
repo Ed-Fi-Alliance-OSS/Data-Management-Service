@@ -407,6 +407,8 @@ Canonical JSON contract (normative for `canonicalizeJson(...)`):
 - The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
 - DMS-1129 finalizes the initial `v1` mapping contract before any supported production deployment. It does not require a
   version bump, database migration, or legacy mapping-pack handling.
+- No additional physical-model hash or dialect-specific schema discriminator is introduced. Pre-production databases and
+  packs are regenerated from the complete v1 model rather than interpreted as an older v1 shape.
 - After the first supported production baseline is declared, changing mapping rules requires bumping
   `RelationalMappingVersion` (or, if the hash algorithm itself changes, bumping the hash header/version).
 
@@ -584,36 +586,58 @@ Typical structure:
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
   - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
-- Reference key columns → **FK-supporting** unique constraint over `(<StorageIdentityParts...>, DocumentId)` (the referenced key used by composite reference FKs; identity storage columns first, `DocumentId` last — see [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes").
-  - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
+- Reference propagation keys → **FK-supporting** unique constraints over
+  `(<StorageIdentityParts...>, <RequiredLineageDocumentIdAnchors...>, DocumentId)` (the referenced keys used by expanded
+  composite reference FKs; `DocumentId` remains last — see [change-queries.md](change-queries.md) § "*_RefKey index
+  ordering for /deletes").
+  - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias`
+    binding columns); lineage anchors are stored/writable `BIGINT` columns.
+  - Derive a stable minimal `AnchorSetId` for every distinct required anchor subset. Each logical reference selects
+    exactly one propagation-vector variant, and the target emits one UNIQUE propagation key per distinct variant. Do not
+    force a table-wide anchor union that can exceed a provider key limit.
 - Scalar columns for top-level non-collection properties
 - Reference columns (document references):
   - For each reference site, store:
     - `..._DocumentId BIGINT` (stable FK key part), and
     - one **binding/path** column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`).
       - Under key unification, these per-site columns remain in the table shape but may be generated/persisted `UnifiedAlias` columns of canonical storage columns; see `key-unification.md`.
+    - any added internal `BIGINT` anchors in that site's demanded anchor set. These have no API JSON binding and are
+      populated from reference-resolution results.
+  - Compute a minimal fixed-point lineage-anchor closure before FK candidates:
+    - derive the target table's intrinsic inventory by assigning a stable semantic `IdentityLineageId` and addressable
+      stored `DocumentId` to each independently replaceable reference-backed identity lineage;
+    - initialize each incoming reference site's demanded set to empty, then seed a target-lineage anchor only when that
+      site's write to receiver storage must keep another present full FK on the same receiver valid and row-correlated;
+    - reuse a local `..._DocumentId` only when complete identity equivalence and co-presence are proved; otherwise add a
+      stored internal anchor populated from the resolved target lineage;
+    - propagate demands only through downstream reference sites whose receiver identity or full-FK obligations consume
+      them, iterating to a deterministic fixed point; and
+    - deduplicate equivalent demands by lineage id, then key each distinct minimal demanded subset by stable
+      `AnchorSetId`. A site omits an intrinsic target anchor only when no receiver-validity or row-correlation obligation
+      requires it.
   - Derive a composite reference FK candidate using only stored/writable **storage** columns:
-    - `FOREIGN KEY (<StorageIdentityParts...>, ..._DocumentId) REFERENCES <TargetRefKey>(<TargetStorageIdentityParts...>, DocumentId)` (identity storage columns first, `DocumentId` last)
+    - `FOREIGN KEY (<StorageIdentityParts...>, <RequiredLineageAnchors...>, ..._DocumentId) REFERENCES <TargetRefKey>(<TargetStorageIdentityParts...>, <RequiredLineageAnchors...>, DocumentId)` (identity storage columns first, anchors in stable lineage order, `DocumentId` last)
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
+      - Positionally pair every local lineage anchor with the target column carrying the same `IdentityLineageId`.
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
   - After every logical reference site has been mapped through storage, canonicalize and deduplicate identical candidates
     by their physical source/target tables and ordered column pairs. Assign update actions only to this physical inventory.
-  - Derive cross-engine, statement-scoped `ValueFlowAnalysis` facts and proof obligations from the physical inventory.
-    For any mode assignment that writes a canonical column read by another FK, the obligations cover exact component
-    lineage, origin-row correlation, reference co-presence, and compatible statement timing. Shared columns and table
-    reachability are not sufficient.
-  - PostgreSQL evaluates its fixed assignment (`ON UPDATE CASCADE` when the target identity can change transitively via
-    `IsAbstract || TransitivelyAllowIdentityUpdates`, `ON UPDATE NO ACTION` otherwise) against every obligation. Fail
-    derivation if that assignment cannot be certified.
-  - SQL Server jointly selects `NativeCascade` / `NoPropagation` modes so the final assignment satisfies both error 1785
-    and every value-flow obligation. A `NoPropagation` candidate uses full-composite `ON UPDATE NO ACTION` only when its
-    final-assignment coverage certificate proves that another retained action maintains the same row and component
-    values in the relevant statement. Fail derivation when no certifiable assignment exists.
+  - PostgreSQL directly assigns `ON UPDATE CASCADE` when the target identity can change transitively via
+    `IsAbstract || TransitivelyAllowIdentityUpdates`, and `ON UPDATE NO ACTION` otherwise. DMS does not classify, prune,
+    reject, or fail fast on PostgreSQL cascade topology.
+  - SQL Server alone derives statement-scoped `ValueFlowAnalysis` obligations and globally selects
+    `NativeCascade` / `NoPropagation` modes so the final assignment satisfies both error 1785 and exact value/anchor flow.
+    A `NoPropagation` candidate uses expanded full-composite `ON UPDATE NO ACTION` only when final-assignment certificates
+    prove that another retained action or the initiating write maintains the same receiver row and full propagation vector
+    before the constraint check. This permits safe diamond and cycle breaking; fail SQL Server derivation when no
+    certifiable assignment exists.
   - Every physical FK remains full composite. There is no `DocumentId`-only or identity-value propagation-trigger
     fallback; see [mssql-cascading.md](mssql-cascading.md).
   - Add an all-or-none CHECK constraint per reference site:
-    - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
-    - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
+    - if `..._DocumentId` is `NULL`, all identity-part binding columns and internal anchors dedicated to that reference
+      site are `NULL`
+    - if `..._DocumentId` is not `NULL`, all identity-part binding columns and required dedicated anchors for that
+      reference site are not `NULL`
     - Note: this is intentionally defined over the per-site binding/alias columns (not canonical storage columns) to preserve optional-reference presence semantics.
   - Descriptor references remain `..._DescriptorId BIGINT` FKs to `dms.Descriptor(DocumentId)`. Descriptor identity is immutable, so descriptor metadata updates require no reference propagation.
 
@@ -661,18 +685,25 @@ This redesign provisions an **identity table per abstract resource**:
 - Columns:
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE)
   - abstract identity fields in `abstractResources[A].identityJsonPaths` order
+  - the full representable intrinsic inventory of reference-backed identity-lineage `DocumentId` anchors, in stable
+    lineage order and independent of current incoming demand; each propagation-key variant uses only its selected
+    `AnchorSetId` subset
   - `Discriminator` (NOT NULL; last; concrete member discriminator literal in `ProjectName:ResourceName` format; useful for diagnostics)
 - Maintenance:
-  - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
+  - abstract-identity derivation emits one shared `AbstractIdentityMemberMapping` per concrete member containing
+    table-qualified effective storage expressions, concrete/abstract `DocumentId` correlation, discriminator, and the
+    actual later maintenance-statement boundary.
+  - triggers consume that inventory to upsert the corresponding `{AbstractResource}Identity` row on insert/update of the
+    concrete identity fields and lineage anchors (including every supported identity change). SQL Server analysis consumes
+    the same inventory rather than reconstructing member mappings in a later pass.
 - FKs for abstract reference sites:
-  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)` (identity fields first, `DocumentId` last).
-    - These become physical FK candidates after storage mapping and deduplication. `ValueFlowAnalysis` models
-      abstract-identity *maintenance* triggers as a separate statement boundary from the concrete-row update and derives
-      the corresponding proof obligations.
-    - PostgreSQL evaluates its fixed action with those obligations. SQL Server includes them while jointly selecting
-      modes for value-flow safety and error 1785, and permits full-composite `NO ACTION` only when coverage is certified
-      against the final assignment; see [mssql-cascading.md](mssql-cascading.md). `allowIdentityUpdates` applies to
-      concrete targets.
+  - referencing tables use composite FKs to
+    `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, <RequiredLineageAnchors...>, DocumentId)` (identity
+    fields first, lineage anchors next, `DocumentId` last).
+    - PostgreSQL uses its fixed action without classification. SQL Server models abstract-identity maintenance as a
+      separate statement boundary while globally selecting modes for value-flow safety and error 1785, and permits
+      expanded full-composite `NO ACTION` only when coverage is certified against the final assignment; see
+      [mssql-cascading.md](mssql-cascading.md). `allowIdentityUpdates` applies to concrete targets.
 
 Required: `{schema}.{AbstractResource}_View` union view
 
@@ -686,7 +717,7 @@ Usage:
 
 - Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
 - Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer
-  and kept consistent through the certified dialect physical FK assignment; see
+  and kept consistent through the finalized provider FK actions; see
   [mssql-cascading.md](mssql-cascading.md)).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
@@ -761,7 +792,7 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
     BirthDate        date         NULL,
 
     CONSTRAINT UX_Student_NK UNIQUE (StudentUniqueId),
-    CONSTRAINT UX_Student_RefKey UNIQUE (StudentUniqueId, DocumentId) -- identity parts first, DocumentId last
+    CONSTRAINT UX_Student_RefKey_None UNIQUE (StudentUniqueId, DocumentId) -- empty demanded-anchor variant
 );
 
 -- Descriptor references are stored as FKs directly to dms.Descriptor.
@@ -778,7 +809,7 @@ CREATE TABLE IF NOT EXISTS edfi.School (
                            REFERENCES dms.Descriptor(DocumentId),
 
     CONSTRAINT UX_School_NK UNIQUE (SchoolId),
-    CONSTRAINT UX_School_RefKey UNIQUE (SchoolId, DocumentId) -- identity parts first, DocumentId last
+    CONSTRAINT UX_School_RefKey_None UNIQUE (SchoolId, DocumentId) -- empty demanded-anchor variant
 );
 
 -- Example collection table: School has a collection of GradeLevelDescriptor values
@@ -848,14 +879,14 @@ CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     EntryDate          date   NOT NULL,
     ExitWithdrawDate   date   NULL,
 
-    -- Composite reference FKs: identity storage columns first, the reference _DocumentId last
-    -- (positional pairing with the target *_RefKey, which is identity parts first, DocumentId last).
-    CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey FOREIGN KEY (Student_StudentUniqueId, Student_DocumentId)
+    -- Empty-anchor composite reference variants: public identity storage first, target DocumentId last.
+    -- A non-empty variant inserts its demanded lineage-anchor columns between those groups.
+    CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey_None FOREIGN KEY (Student_StudentUniqueId, Student_DocumentId)
         REFERENCES edfi.Student (StudentUniqueId, DocumentId),
-    CONSTRAINT FK_StudentSchoolAssociation_School_RefKey FOREIGN KEY (School_SchoolId, School_DocumentId)
+    CONSTRAINT FK_StudentSchoolAssociation_School_RefKey_None FOREIGN KEY (School_SchoolId, School_DocumentId)
         REFERENCES edfi.School (SchoolId, DocumentId),
     CONSTRAINT UX_StudentSchoolAssociation_NK UNIQUE (Student_DocumentId, School_DocumentId, EntryDate),
-    CONSTRAINT UX_StudentSchoolAssociation_RefKey UNIQUE (Student_StudentUniqueId, School_SchoolId, EntryDate, DocumentId)
+    CONSTRAINT UX_StudentSchoolAssociation_RefKey_None UNIQUE (Student_StudentUniqueId, School_SchoolId, EntryDate, DocumentId)
 );
 
 CREATE INDEX IF NOT EXISTS IX_SSA_StudentDocumentId ON edfi.StudentSchoolAssociation(Student_DocumentId);
@@ -989,19 +1020,24 @@ Object names are deterministic and derived from the owning table plus purpose to
 - Primary key constraints: `PK_{TableName}`
 - Unique constraints:
   - Natural key (API semantics; binding/path columns from `identityJsonPaths`): `UX_{TableName}_NK`
-  - Reference key (FK target; storage identity columns first, `DocumentId` last, using canonical columns under key unification): `UX_{TableName}_RefKey`
+  - Reference propagation-key variant (FK target; public storage identity columns first, demanded lineage anchors next,
+    and `DocumentId` last): `UX_{TableName}_RefKey_{AnchorSetId}`
+    - The placeholder uses a deterministic leading token from the full semantic `AnchorSetId` defined in
+      [mssql-cascading.md](mssql-cascading.md). Render the empty demanded set as `None`; its full target-specific
+      `AnchorSetId` remains in model/pack metadata. Non-empty sets use a deterministic leading digest token. Full-id/token
+      collisions are checked before normal dialect identifier shortening.
   - Array uniqueness: `UX_{TableName}_{Tokens}` where tokens are the constrained column names with shared
     prefixes collapsed (e.g., `Assessment_DocumentId_AssessmentIdentifier_Namespace`)
 - Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
   - `Document` for FKs to `dms.Document`
   - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
-  - `{ReferenceBaseName}` for single-column reference FKs
-  - `{ReferenceBaseName}_RefKey` for composite reference FKs (storage identity columns first, `DocumentId` last; canonicalized under key unification)
+  - `{ReferenceBaseName}_RefKey_{AnchorSetId}` for full-composite document-reference FKs (public storage identity columns
+    first, demanded lineage anchors next, and `DocumentId` last; canonicalized under key unification)
   - `{ParentTableName}` for parent/extension table links
 - All-or-none checks: `CK_{TableName}_{ReferenceBaseName}_AllNone`
 - Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)
 - Triggers: `TR_{TableName}_{Purpose}`
-  - `Purpose` is a small stable token such as `Stamp`, `Journal`, `ReferentialIdentity`, `AbstractIdentity`, `PropagateIdentity`
+  - `Purpose` is a small stable token such as `Stamp`, `Journal`, `ReferentialIdentity`, or `AbstractIdentity`.
   - PostgreSQL trigger functions (when used): `TF_{TableName}_{Purpose}`
 
 Uniqueness scope (dialect-specific):

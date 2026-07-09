@@ -13,13 +13,18 @@ The `/deletes` endpoint suppresses tombstones for resources that were deleted an
 
 ## Acceptance Criteria
 
-- Generated `*_RefKey` unique indexes order key columns as identity storage columns first and `DocumentId` last.
+- Generated `*_RefKey` unique indexes order public identity storage columns first, then the minimal required internal
+  identity-lineage anchors, and the referenced resource `DocumentId` last. Keeping anchors after the public identity
+  prefix preserves the recreated-resource seek shape.
 - Composite foreign keys that target `*_RefKey` use the same target-column order.
+- When incoming reference sites need different minimal anchor sets, emit deterministic `*_RefKey_{AnchorSetId}` variants;
+  each site targets exactly one variant, and the public identity columns remain the leftmost prefix of every variant.
 - The uniqueness contract for resource reference keys is unchanged.
 - DDL fixture coverage proves the ordering for:
   - a simple resource,
   - a resource with descriptor identity values,
   - a resource using key-unification storage columns,
+  - a reference-backed identity whose propagation key includes a reused or hidden lineage anchor,
   - an extension-project resource.
 - Existing reference and descriptor resolution tests continue to pass.
 - The change is reflected consistently in PostgreSQL and SQL Server DDL.

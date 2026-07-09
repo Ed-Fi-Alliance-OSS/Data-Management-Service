@@ -30,7 +30,9 @@ The key idea is to centralize “what was derived/compiled” into a single shap
    - Stories: E01 (`epics/01-relational-model/*`)
 
 3. **Mapping set** (dialect-specific)
-   - A derived relational model set **plus** compiled SQL plans for one dialect.
+   - A runtime projection of the finalized derived relational model **plus** compiled SQL plans for one dialect.
+   - The projection contains effective-schema metadata and final per-resource table/column/constraint models, but omits
+     derivation proofs and DDL-only global inventories such as abstract-member mappings, indexes, and triggers.
    - Selected at runtime per database by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`.
    - Produced by:
      - runtime compilation fallback, or
@@ -131,9 +133,133 @@ public sealed record ConcreteResourceModel(
     RelationalResourceModel RelationalModel
 );
 
+public readonly record struct PhysicalForeignKeyId(string Value);
+
+public readonly record struct ReferenceSiteId(string Value);
+
+public readonly record struct IdentityLineageId(string Value);
+
+public readonly record struct AnchorSetId(string Value);
+
+public readonly record struct MutationOriginId(string Value);
+
+public readonly record struct MutationCaseId(string Value);
+
+public readonly record struct StatementBoundaryId(string Value);
+
+public readonly record struct ValueLineageId(string Value);
+
+public readonly record struct DbConstraintName(string Value);
+
+// All semantic-id wrappers above use the canonical framed tuples defined in mssql-cascading.md.
+// They never depend on input order, rendered physical names, OnUpdate selection, or a
+// dialect-specific physical-model hash.
+
 public sealed record AbstractIdentityTableInfo(
     ResourceKeyEntry AbstractResourceKey,
     DbTableModel TableModel
+);
+
+// The effective stored expression after key unification. Required expressions use presence
+// predicate `true`; optional expressions retain their normalized site predicate explicitly.
+public sealed record EffectiveStorageExpression(
+    DbTableName Table,
+    DbColumnName ValueColumn,
+    DbColumnName? PresenceColumn,
+    bool IsNullable,
+    NormalizedPresencePredicate PresencePredicate
+);
+
+public sealed record AbstractIdentityComponentMapping(
+    int IdentityOrdinal,
+    EffectiveStorageExpression ConcreteMemberSource,
+    EffectiveStorageExpression AbstractIdentityTarget
+);
+
+public sealed record AbstractIdentityLineageAnchorMapping(
+    IdentityLineageId IdentityLineage,
+    EffectiveStorageExpression ConcreteMemberSource,
+    EffectiveStorageExpression AbstractIdentityTarget
+);
+
+public enum DmsOwnedMaintenanceStatementKind
+{
+    AbstractIdentityAfterTriggerUpsert,
+}
+
+public enum StatementBoundaryRelationshipKind
+{
+    LaterAfterTriggerStatement,
+}
+
+public sealed record AbstractIdentityRowCorrelation(
+    RowCorrelationKind Kind,
+    IReadOnlyList<(PhysicalColumnRef ConcreteMember, PhysicalColumnRef AbstractIdentity)> CompleteKeyPairs
+);
+
+// Produced with the abstract identity table, before trigger and SQL Server action derivation.
+// Anchor closure, SQL Server analysis, and trigger derivation use this exact inventory; none
+// reconstructs it from bindings or rendered trigger SQL.
+public sealed record AbstractIdentityMemberMapping(
+    ResourceKeyEntry AbstractResourceKey,
+    ResourceKeyEntry ConcreteMemberResourceKey,
+    DbTableName ConcreteMemberTable,
+    DbColumnName ConcreteMemberDocumentIdColumn,
+    DbTableName AbstractIdentityTable,
+    DbColumnName AbstractIdentityDocumentIdColumn,
+    IReadOnlyList<AbstractIdentityComponentMapping> ComponentsInAbstractIdentityOrder,
+    IReadOnlyList<AbstractIdentityLineageAnchorMapping> LineageAnchorsInIdOrder,
+    AbstractIdentityRowCorrelation RowCorrelation,
+    string DiscriminatorValue,
+    DmsOwnedMaintenanceStatementKind MaintenanceStatementKind,
+    StatementBoundaryId InitiatingWriteBoundary,
+    StatementBoundaryId MaintenanceStatementBoundary,
+    StatementBoundaryRelationshipKind BoundaryRelationship
+);
+
+public abstract record IdentityLineageMaintenanceSource
+{
+    public sealed record ReferenceBinding(
+        ReferenceSiteId SourceReferenceSite,
+        PhysicalColumnRef SourceDocumentId,
+        NormalizedPresencePredicate PresencePredicate
+    ) : IdentityLineageMaintenanceSource;
+
+    public sealed record AbstractMemberMaintenance(
+        ResourceKeyEntry ConcreteMemberResourceKey,
+        PhysicalColumnRef ConcreteMemberSource,
+        StatementBoundaryId MaintenanceStatementBoundary
+    ) : IdentityLineageMaintenanceSource;
+}
+
+public sealed record IdentityLineageAnchorInfo(
+    IdentityLineageId IdentityLineage,
+    DbTableName Table,
+    DbColumnName AnchorColumn,
+    DbTableName IdentityOwnerTable,
+    DbColumnName IdentityOwnerDocumentIdColumn,
+    IReadOnlyList<int> CorrelatedIdentityOrdinalsInOrder,
+    bool IsNullable,
+    NormalizedPresencePredicate PresencePredicate,
+    IReadOnlyList<IdentityLineageMaintenanceSource> MaintenanceSourcesInStableOrder,
+    bool ReusesReferenceDocumentId,
+    // Sites whose identity contribution defines this lineage (one concrete source, or the
+    // normalized concrete-member sources of an abstract lineage). These are not incoming sites
+    // that happen to demand the anchor.
+    IReadOnlyList<ReferenceSiteId> DefiningReferenceSitesInIdOrder
+);
+
+// DerivedRelationalModelSet.IdentityLineageAnchorsInIdOrder is the target-table intrinsic lineage inventory. A propagation
+// key contains only the site-demanded subset needed to keep receiver-side full FKs correlated.
+// Each distinct minimal demanded subset has one deterministic variant and matching UNIQUE constraint;
+// derivation never forces every incoming reference to carry the table-wide inventory.
+public sealed record PropagationKeyInfo(
+    AnchorSetId AnchorSetId,
+    DbTableName Table,
+    string UniqueConstraintName,
+    IReadOnlyList<DbColumnName> IdentityValueColumnsInOrder,
+    IReadOnlyList<IdentityLineageAnchorInfo> LineageAnchorsInIdOrder,
+    DbColumnName DocumentIdColumn
 );
 
 public sealed record AbstractUnionViewInfo(
@@ -325,11 +451,8 @@ public abstract record TriggerKindParameters
         SuperclassAliasInfo? SuperclassAlias = null
     ) : TriggerKindParameters;
 
-    public sealed record AbstractIdentityMaintenance(
-        DbTableName TargetTable,
-        IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
-        string DiscriminatorValue
-    ) : TriggerKindParameters;
+    public sealed record AbstractIdentityMaintenance(AbstractIdentityMemberMapping MemberMapping)
+        : TriggerKindParameters;
 
     public sealed record AuthHierarchyMaintenance(
         AuthEdOrgEntity Entity,
@@ -358,26 +481,104 @@ public sealed record DerivedRelationalModelSet(
     IReadOnlyList<ProjectSchemaInfo> ProjectSchemasInEndpointOrder,
     IReadOnlyList<ConcreteResourceModel> ConcreteResourcesInNameOrder,
     IReadOnlyList<AbstractIdentityTableInfo> AbstractIdentityTablesInNameOrder,
+    IReadOnlyList<AbstractIdentityMemberMapping> AbstractIdentityMemberMappingsInNameOrder,
+    IReadOnlyList<IdentityLineageAnchorInfo> IdentityLineageAnchorsInIdOrder,
+    IReadOnlyList<PropagationKeyInfo> PropagationKeysInTableAndConstraintOrder,
     IReadOnlyList<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder,
     IReadOnlyList<TrackedChangeTableInfo> TrackedChangeTablesInNameOrder,
     IReadOnlyList<DbIndexInfo> IndexesInCreateOrder,
     IReadOnlyList<DbTriggerInfo> TriggersInCreateOrder
 );
 
-public readonly record struct PhysicalForeignKeyId(string Value);
+public enum PropagationItemKind
+{
+    PublicIdentityComponent,
+    IdentityLineageAnchor,
+    DocumentId,
+}
 
-public readonly record struct MutationOriginId(string Value);
+public sealed record PropagationItemRef(
+    PropagationItemKind Kind,
+    int? IdentityOrdinal,
+    IdentityLineageId? IdentityLineage
+);
 
-public readonly record struct StatementBoundaryId(string Value);
+public sealed record PhysicalColumnRef(DbTableName Table, DbColumnName Column);
 
-public sealed record IdentityComponentRef(DbTableName Table, DbColumnName Column);
+public abstract record RouteStart
+{
+    public sealed record MutationRow(DbTableName Table) : RouteStart;
+    public sealed record OriginWrite(DbTableName ReceiverTable) : RouteStart;
+}
 
-public sealed record RowLineageProof(IReadOnlyList<TriggerColumnMapping> CorrelatedKeyColumns);
+public sealed record PropagationRoute(
+    MutationOriginId Origin,
+    StatementBoundaryId Boundary,
+    RouteStart Start,
+    IReadOnlyList<PhysicalForeignKeyId> NativeCascadeHops,
+    DbTableName EndTable
+);
+
+public sealed record ComponentEqualityProof(
+    PropagationItemRef Item,
+    PhysicalColumnRef ChangedTargetColumn,
+    PhysicalColumnRef ReceiverColumn,
+    ValueLineageId ValueLineage
+);
+
+public enum RowCorrelationKind
+{
+    DocumentId,
+    CollectionItemId,
+    CompleteUniqueKey,
+}
+
+public sealed record RowCorrelationProof(
+    RowCorrelationKind Kind,
+    IReadOnlyList<(PhysicalColumnRef Left, PhysicalColumnRef Right)> CompleteKeyPairs
+);
+
+public readonly record struct NormalizedPresencePredicate(string Value);
+
+public enum PresenceProofKind
+{
+    CarrierIsRequired,
+    SameReferenceSite,
+    EnforcedSchemaImplication,
+}
 
 public sealed record PresenceImplicationProof(
-    DbColumnName PrunedReferenceDocumentId,
-    DbColumnName CarrierReferenceDocumentId,
-    bool CarrierIsRequired
+    NormalizedPresencePredicate CoveredReference,
+    IReadOnlyList<NormalizedPresencePredicate> CarrierReferences,
+    PresenceProofKind Kind,
+    IReadOnlyList<ReferenceSiteId> EvidenceSites
+);
+
+public enum ConstraintTimingKind
+{
+    NativeCascadeBeforeCheck,
+    OriginWriteBeforeCheck,
+}
+
+public sealed record ConstraintTimingProof(
+    StatementBoundaryId ChangedTargetBoundary,
+    StatementBoundaryId ReceiverWriteBoundary,
+    StatementBoundaryId ConstraintCheckBoundary,
+    ConstraintTimingKind Kind
+);
+
+public enum SubsetCompositionKind
+{
+    SingleItem,
+    SharedProofFacts,
+    ExplicitCombinedCase,
+}
+
+public sealed record SubsetCompositionProof(
+    SubsetCompositionKind Kind,
+    AnchorSetId AnchorSetId,
+    IReadOnlyList<PropagationItemRef> ItemsInVectorOrder,
+    IReadOnlyList<MutationCaseId> SupportingCasesInIdOrder
 );
 
 public enum MssqlPropagationMode
@@ -388,77 +589,252 @@ public enum MssqlPropagationMode
 }
 
 public sealed record CoverageCertificate(
-    PhysicalForeignKeyId PrunedForeignKey,
+    PhysicalForeignKeyId PrunedForeignKeyId,
     MutationOriginId MutationOrigin,
-    IdentityComponentRef ChangedComponent,
-    StatementBoundaryId StatementBoundary,
-    IReadOnlyList<PhysicalForeignKeyId> RetainedPath,
-    IReadOnlyList<PhysicalForeignKeyId> PrunedPath,
-    RowLineageProof RowLineage,
-    IReadOnlyList<TriggerColumnMapping> ChangedColumnLineage,
-    PresenceImplicationProof PresenceImplication
+    MutationCaseId MutationCase,
+    PropagationRoute ChangedTargetRoute,
+    PropagationRoute ReceiverCarrierRoute,
+    IReadOnlyList<ComponentEqualityProof> ItemEqualityProofs,
+    RowCorrelationProof OriginRowCorrelation,
+    RowCorrelationProof ReceiverRowCorrelation,
+    PresenceImplicationProof PresenceImplication,
+    ConstraintTimingProof Timing,
+    SubsetCompositionProof Composition
 );
 
 public sealed record MssqlForeignKeyDecision(
-    PhysicalForeignKeyId ForeignKeyId,
-    string FinalConstraintName,
+    PhysicalForeignKeyId PhysicalForeignKeyId,
     MssqlPropagationMode Mode,
     IReadOnlyList<CoverageCertificate> CoverageCertificates
 );
 
+public enum AnchorOmissionConsumerKind
+{
+    FullForeignKeyValidity,
+    RequiredRowCorrelation,
+    DownstreamIdentityMaintenance,
+}
+
+public enum AnchorOmissionFinding
+{
+    ConsumerDoesNotReadChangedLineage,
+    ExistingVectorAlreadyCarriesSameLineage,
+    SchemaProvenMutualExclusion,
+    NoAuthorizedMutationReachesConsumer,
+}
+
+public sealed record AnchorOmissionConsumerCheck(
+    AnchorOmissionConsumerKind Kind,
+    ReferenceSiteId? ConsumerReferenceSite,
+    DbTableName ReceiverTable,
+    IReadOnlyList<PhysicalColumnRef> ConsumedColumnsInOrder,
+    NormalizedPresencePredicate ConsumerPresence,
+    AnchorOmissionFinding Finding
+);
+
+public sealed record AnchorOmissionMutationCoverage(
+    MutationOriginId MutationOrigin,
+    IReadOnlyList<MutationCaseId> ExplicitCasesInIdOrder,
+    SubsetCompositionProof Composition
+);
+
+public sealed record AnchorOmissionProof(
+    ReferenceSiteId ReferenceSite,
+    IdentityLineageId OmittedIdentityLineage,
+    AnchorSetId SelectedAnchorSet,
+    bool TargetHasNoAuthorizedMutationOrigins,
+    IReadOnlyList<AnchorOmissionConsumerCheck> ConsumerChecksInStableOrder,
+    IReadOnlyList<AnchorOmissionMutationCoverage> MutationCoverageInOriginOrder
+);
+
+public sealed record SameStatementFutureValueRequirement(
+    PropagationItemRef Item,
+    PhysicalColumnRef FutureTargetColumn,
+    PhysicalColumnRef? OriginWriteColumn,
+    PhysicalColumnRef? StoredTargetColumn,
+    bool UsesStoredTargetDocumentId,
+    ValueLineageId? ChangedValueLineage
+);
+
+public abstract record SameStatementOccurrenceMatchSourceRequirement
+{
+    /// <summary>
+    /// A receiver-row write value that plan compilation can bind before certified resolution. This includes ordinary
+    /// scalars, descriptors, already-resolved references, parent/root locators, and key-unification outputs, but excludes
+    /// any binding whose value depends on the deferred reference or one of its deferred lineage anchors.
+    /// </summary>
+    public sealed record MaterializedWriteColumn(PhysicalColumnRef Column)
+        : SameStatementOccurrenceMatchSourceRequirement;
+
+    /// <summary>
+    /// The semantic-identity member is the deferred reference's stable target DocumentId. It is not request input: the
+    /// locking query derives the changed target through the retained route and compares the receiver's stored FK with the
+    /// target's current DocumentId.
+    /// </summary>
+    public sealed record CorrelatedChangedTargetDocumentId(
+        PhysicalColumnRef CurrentTargetDocumentIdColumn
+    )
+        : SameStatementOccurrenceMatchSourceRequirement;
+}
+
+public sealed record SameStatementOccurrenceMatchRequirement(
+    PhysicalColumnRef StoredReceiverColumn,
+    SameStatementOccurrenceMatchSourceRequirement Source
+);
+
+/// <summary>
+/// Shared model-layer operation discriminator. Runtime request types map to this value; model derivation does not depend
+/// on executor-plan assemblies.
+/// </summary>
+public enum DmsWriteOperation
+{
+    PutByDocumentUuid,
+}
+
+/// <summary>
+/// Provider-finalized semantic input to plan compilation. It contains no rendered SQL or runtime binding indexes.
+/// Exactly one of OriginWriteColumn, StoredTargetColumn, and UsesStoredTargetDocumentId supplies each future item.
+/// </summary>
+public sealed record SameStatementReferenceResolutionRequirement(
+    QualifiedResourceName OwningResource,
+    ReferenceSiteId ReferenceSite,
+    PhysicalForeignKeyId ReferenceForeignKeyId,
+    MutationOriginId AllowedDirectMutationOrigin,
+    DmsWriteOperation WriteOperation,
+    StatementBoundaryId StatementBoundary,
+    MutationCaseId MutationCase,
+    IReadOnlyList<PropagationItemRef> ChangedItemsInVectorOrder,
+    PhysicalColumnRef StoredTargetDocumentId,
+    IReadOnlyList<PhysicalColumnRef> StoredReceiverRowLocatorColumnsInOrder,
+    IReadOnlyList<SameStatementOccurrenceMatchRequirement> CompleteOccurrenceMatchInOrder,
+    PropagationRoute RetainedChangedTargetRoute,
+    RowCorrelationProof ChangedTargetToStoredTargetCorrelation,
+    IReadOnlyList<SameStatementFutureValueRequirement> FutureValuesInVectorOrder
+);
+
+public sealed record RelationalExecutorRequirements(
+    IReadOnlyList<SameStatementReferenceResolutionRequirement>
+        SameStatementReferencesInResourceSiteOriginAndCaseOrder
+);
+
 public sealed record RelationalModelDerivationDiagnostics(
+    IReadOnlyList<AnchorOmissionProof> AnchorOmissionProofsInSiteAndLineageOrder,
     IReadOnlyList<MssqlForeignKeyDecision> MssqlForeignKeyDecisionsInPhysicalIdOrder
 );
 
 public enum RelationalModelDerivationErrorKind
 {
+    IdentityLineageAnchorConflict,
+    UnrepresentablePropagationVector,
     PhysicalForeignKeyCandidateConflict,
-    UnprovedComponentLineage,
+    UnprovedComponentOrAnchorLineage,
     UnprovedOriginRowCorrelation,
+    UnprovedReceiverRowCorrelation,
     UnprovedReferencePresenceImplication,
     IncompatibleStatementBoundary,
+    UnprovedSubsetComposition,
     ConflictingCanonicalColumnWrites,
     ForeignKeyInvalidAfterReceiverWrite,
-    UnsafePostgresqlActionAssignment,
+    UnrepresentableSameStatementReferenceResolution,
     NoSafeSqlServerAssignment,
     CascadeClassificationComplexityExceeded,
 }
 
-public sealed record RelationalModelDerivationError(
-    RelationalModelDerivationErrorKind Kind,
-    string Message,
-    IReadOnlyList<PhysicalForeignKeyId> ForeignKeys,
-    IReadOnlyList<MutationOriginId> MutationOrigins,
+public enum ProofObligationKind
+{
+    ChangedTargetCoverage,
+    CompleteVectorCoverage,
+    ReceiverValidity,
+    SingleValueCoherence,
+    OriginRowCorrelation,
+    ReceiverRowCorrelation,
+    PresenceImplication,
+    StatementAndConstraintTiming,
+    SubsetComposition,
+    ApiReferenceResolution,
+}
+
+public sealed record DerivationFailureWitness(
+    string StableSortKey,
+    IReadOnlyList<PhysicalForeignKeyId> PhysicalForeignKeyPath,
+    IReadOnlyList<PropagationItemRef> PropagationItems,
+    IReadOnlyList<PhysicalColumnRef> Columns,
     IReadOnlyList<StatementBoundaryId> StatementBoundaries,
-    IReadOnlyList<DbTableName> Tables,
-    IReadOnlyList<DbColumnName> Columns
+    IReadOnlyList<NormalizedPresencePredicate> PresencePredicates
 );
 
-// BuildResult is the public boundary for derivation. A model and its success manifest exist only
-// on Success; validation/classification errors are returned on Failure instead of being embedded
-// in a partially valid model or in relational-model.manifest.json.
-public abstract record DerivedRelationalModelBuildResult
-{
-    public sealed record Success(
-        DerivedRelationalModelSet Model,
-        RelationalModelDerivationDiagnostics Diagnostics
-    ) : DerivedRelationalModelBuildResult;
+public sealed record RelationalModelDerivationError(
+    RelationalModelDerivationErrorKind Kind,
+    ProofObligationKind? FailedObligation,
+    SqlDialect Dialect,
+    MutationOriginId? MutationOrigin,
+    MutationCaseId? MutationCase,
+    IReadOnlyList<StatementBoundaryId> StatementBoundaries,
+    IReadOnlyList<StatementBoundaryId> ConstraintCheckBoundaries,
+    IReadOnlyList<PhysicalForeignKeyId> PhysicalForeignKeyIds,
+    IReadOnlyList<DbConstraintName> ConstraintNames,
+    IReadOnlyList<ReferenceSiteId> ReferenceSites,
+    IReadOnlyList<PhysicalColumnRef> Columns,
+    IReadOnlyList<NormalizedPresencePredicate> PresencePredicates,
+    int TotalWitnessCount,
+    IReadOnlyList<DerivationFailureWitness> TruncatedWitnesses,
+    string Message
+);
 
-    public sealed record Failure(IReadOnlyList<RelationalModelDerivationError> Errors)
-        : DerivedRelationalModelBuildResult;
+public sealed record DerivedRelationalModelArtifact(
+    DerivedRelationalModelSet Model,
+    RelationalModelDerivationDiagnostics Diagnostics,
+    RelationalExecutorRequirements ExecutorRequirements
+);
+
+// The public builder either returns one complete artifact or throws this typed exception. It never
+// returns or serializes a partially finalized model.
+public sealed class RelationalModelDerivationException(
+    string message,
+    IReadOnlyList<RelationalModelDerivationError> errors
+) : Exception(message)
+{
+    public IReadOnlyList<RelationalModelDerivationError> Errors { get; } = errors;
 }
 ```
 
 Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
-- `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
-- `RelationalModelDerivationDiagnostics` is success-only and owns
-  `MssqlForeignKeyDecisionsInPhysicalIdOrder`. The list is empty for PostgreSQL and contains exactly one decision per
-  finalized SQL Server physical reference FK. `RelationalModelDerivationError` is the separate structured failure contract;
-  neither type is part of the runtime mapping-pack payload.
-- **Reference-FK derivation contract (DMS-1258).** Reference constraint derivation has four ordered phases; see
+- `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. Mapping packs serialize the
+  finalized foreign-key subset, including `PhysicalForeignKeyId`, the expanded ordered propagation vector, and final
+  actions.
+- `RelationalModelDerivationDiagnostics` is success-only. Both dialects carry exactly one
+  `AnchorOmissionProof` for every omitted `(ReferenceSiteId, IdentityLineageId)` pair. The SQL decision list is empty for
+  PostgreSQL and contains exactly one decision per finalized SQL Server physical reference FK.
+  `RelationalModelDerivationError` is carried only by the typed exception; neither diagnostics nor errors are part of the
+  runtime mapping-pack payload.
+- `RelationalExecutorRequirements` is also success-only but is an executable compiler input, not an audit diagnostic.
+  PostgreSQL constructs requirements from fixed full-cascade routes without topology classification. SQL Server emits
+  them only for the selected assignment and only after API-plan representability succeeds. Requirements are unique and
+  ordered by `(owning resource, ReferenceSiteId, MutationOriginId, MutationCaseId)`; future items preserve the selected
+  propagation vector. Runtime/AOT compilers turn them into `ResourceWritePlan` plans, and packs store those compiled plans
+  rather than the derivation requirements.
+- `AbstractIdentityMemberMappingsInNameOrder` is produced by abstract-identity derivation and is the sole source for both
+  `AbstractIdentityMaintenance` trigger inventory and SQL Server value-flow facts. Each entry contains table-qualified
+  effective storage expressions, concrete/abstract `DocumentId` correlation, discriminator, and the actual later
+  maintenance-statement boundary. Neither consumer reconstructs those facts independently.
+- **Reference-FK derivation contract (DMS-1258).** Reference constraint derivation has provider-specific ordered phases;
+  see
   `design-docs/mssql-cascading.md` for the normative algorithm.
-  1. Map every logical reference through final canonical storage columns and form a
+  1. Compute the minimal fixed-point identity-lineage anchor closure. First derive each target table's intrinsic inventory:
+     every independently replaceable reference-backed identity lineage has a stable `IdentityLineageId` and an addressable
+     stored `DocumentId` anchor. Then initialize every incoming logical reference site's demanded anchor set to empty.
+     Seed a site-specific demand only when that site's write to a receiver storage column must also carry the target
+     lineage row id to keep another present full FK on the receiver valid and row-correlated. Reuse a local
+     `..._DocumentId` only when complete identity equivalence and co-presence are proved; otherwise add an internal stored
+     anchor populated from the resolved target lineage. Propagate demands only through downstream reference sites whose
+     receiver identity or full-FK obligations consume them, iterating in canonical order to a fixed point and deduplicating
+     by lineage id. Derive a stable minimal `AnchorSetId` for each distinct demanded subset. Every logical reference selects
+     exactly one propagation-vector variant, and its target emits one UNIQUE propagation key per distinct `AnchorSetId`;
+     no incoming reference is widened with unused members of the target's intrinsic inventory. Omitting an anchor is valid
+     only when no receiver-validity or row-correlation obligation requires it; SQL Server still universally proves every
+     authorized mutation subset after closure.
+  2. Map every logical reference through final canonical storage columns and form a
      `PhysicalForeignKeyCandidate`. Its stable identity is the semantic FK kind, referencing table, ordered local storage
      columns, referenced table, ordered target storage columns, and `OnDelete`. Logical references with the same identity
      collapse to one candidate. `OnUpdate`, `MssqlPropagationMode`, logical reference path, and generated constraint name
@@ -467,43 +843,56 @@ Notes:
      boundary that can write its target. Incompatible non-action metadata on contributors to one physical identity is a
      derivation error, not a reason to emit duplicate FKs. `PhysicalForeignKeyId` is derived from the canonical
      serialization of this update-action-independent semantic identity before identifier shortening (with collision detection if
-     compacted); later naming/shortening does not change the id, and the success decision also records the final constraint
-     name for manifest-to-DDL correlation.
-  2. Run dialect-neutral, statement-scoped **`ValueFlowAnalysis`**. The supported mutation origins are
-     DMS-authorized identity writes and DMS-owned maintenance-trigger writes. For every changed key component, analysis
-     derives obligations for exact value lineage to every receiving canonical column, correlation to the same origin row,
-     equality of any competing writes to one receiver, the required co-presence implication for optional reference sites,
-     and FK validity at every engine constraint-check boundary. Abstract-identity AFTER-trigger maintenance is a later statement boundary, not part of the initiating
-     cascade. Table reachability, a shared column name, or a common ancestor alone does not discharge an obligation.
-  3. Evaluate actions against those obligations. PostgreSQL evaluates its fixed eligible-`CASCADE`/immutable-`NO ACTION`
-     assignment. SQL Server jointly selects actions that both discharge every value-flow obligation and make the retained
+     compacted); later naming/shortening does not change the id, and the finalized constraint retains its name for
+     manifest-to-DDL correlation. The ordered vector is always public identity values, required lineage anchors,
+     then target `DocumentId`.
+  3. For PostgreSQL, directly finalize mutable/abstract targets as `ON UPDATE CASCADE` and immutable targets as
+     `ON UPDATE NO ACTION`. PostgreSQL does not invoke value-flow classification, pruning, unsafe-graph detection, or
+     cascade-topology fail-fast behavior.
+  4. For SQL Server only, derive statement-scoped **`ValueFlowAnalysis`** facts and globally select actions that both
+     discharge every value-flow obligation and make the retained
      `NativeCascade` graph legal under error 1785. Every final SQL Server reference FK has exactly one success diagnostic
      decision whose `MssqlPropagationMode` is `NativeCascade` (`ON UPDATE CASCADE`), `NoPropagation` (certified
      `ON UPDATE NO ACTION`), or `ImmutableNoAction` (genuinely immutable target, `ON UPDATE NO ACTION`). An independent parent edge may be legal
      under error 1785 yet still make the assignment fail when it shares a receiver column with another FK; the same is true
-     of an `ImmutableNoAction` FK reading that column. An undischarged obligation is a hard failure on both engines.
-  4. Finalize `TableConstraint.ForeignKey` objects from the classified candidates. The runtime constraint carries the
+     of an `ImmutableNoAction` FK reading that column. Mutation cases cover every non-empty combination of independently
+     changeable public components and lineage anchors, including all-components-at-once changes and reference target
+     replacement. Abstract-identity AFTER-trigger maintenance is a later statement boundary, not part of the initiating
+     cascade.
+  5. Finalize `TableConstraint.ForeignKey` objects. The runtime constraint carries its stable id, expanded columns, and
      final `OnUpdate` action, while the success-only diagnostics carry `MssqlForeignKeyDecision` entries keyed by stable
      `PhysicalForeignKeyId`. Every FK remains full-composite; there is no `TriggerFallback`, `DocumentId`-only FK shape,
      or identity-value propagation trigger.
 - A SQL Server `MssqlForeignKeyDecision` with mode `NoPropagation` carries an ordered, non-empty
   `CoverageCertificates` list, not one table-level carrier. There is one certificate for every mutation origin and
-  changed-component case the pruned edge must survive. A certificate records the stable physical FK id, mutation origin
-  and statement boundary, ordered retained and pruned physical-FK paths, correlated origin/receiver row lineage, exact
-  changed-source-to-receiver column lineage, and the reference-presence implication used by the proof. Certificates are
-  sorted by origin, changed component, then path ids. They are success
+  mutation case the pruned edge must survive. A certificate separately records the route by which the target changes and
+  the route carrying the same full value/anchor vector to the receiver. `RouteStart.MutationRow` identifies a route that
+  starts at the mutation row; `RouteStart.OriginWrite` with no hops is the explicit zero-hop receiver carrier and is never
+  represented as an invented FK edge. Each certificate also records item equality, origin and receiver row correlation,
+  reference-presence implication, target/carrier/check boundaries, and `SubsetCompositionProof` for simultaneous changes.
+  Certificates are sorted by pruned FK id, mutation origin, mutation-case item vector, carrier kind, then hop ids. They are success
   diagnostics for DDL review and the relational-model manifest; `NativeCascade` and `ImmutableNoAction` have an empty list.
-- Derivation returns either `DerivedRelationalModelBuildResult.Success` or `.Failure`. SQL Server action-selection
-  infeasibility and any unproved value-flow case are failures, with structured errors.
+- Cycles and diamonds are action-choice constraints, not automatic errors. The SQL Server solver may break a cycle by
+  selecting `NoPropagation` for a covered edge. It minimizes the number of `NoPropagation` edges, then lexicographically
+  prefers `NativeCascade` in `PhysicalForeignKeyId` order. Its fixed bounds count explored states and proof work, never
+  elapsed time.
+- The public builder returns one `DerivedRelationalModelArtifact` or throws
+  `RelationalModelDerivationException`. Provider-neutral DMS-1129 anchor/vector/candidate errors may fail either dialect;
+  SQL Server action-selection infeasibility and unproved SQL Server value-flow cases use the SQL-only error kinds.
+  PostgreSQL never emits SQL value-flow, timing, composition, receiver-validity, no-assignment, or complexity errors.
+  Every error carries dialect, nullable failed obligation/origin/case, ordered statement and check
+  boundaries, stable FK ids, typed constraint names and reference sites, qualified columns, normalized presence predicates,
+  total witness count, and deterministically truncated witnesses. Non-applicable scalar ids are null and non-applicable
+  collections are empty; `Message` is presentation only. The exception collection follows the canonical structural sort
+  tuple in `mssql-cascading.md` and deduplicates identical tuples before presentation.
   `NoSafeSqlServerAssignment` (the bounded solver proved
   infeasibility) and `CascadeClassificationComplexityExceeded` (the solver stopped before proving it) are distinct error
-  kinds. A failure does not produce a partial
-  `DerivedRelationalModelSet` and is never serialized as a warning/error inside a successful relational-model manifest.
-  A CLI may render the failure result as a separate diagnostic report.
+  kinds. An exception does not expose a partial `DerivedRelationalModelSet` and is never serialized as a warning/error
+  inside a successful relational-model manifest. A CLI may render its errors as a separate diagnostic report.
 - `MssqlPropagationMode` and `CoverageCertificates` are success-only derivation/DDL/manifest diagnostics, separate from
-  `TableConstraint.ForeignKey`. DDL emission consumes the finalized `OnUpdate` from `Model`; diagnostics audit that
-  result but do not drive runtime behavior. Mapping packs therefore serialize only final FK `on_update` and reconstruct
-  no modes or certificates.
+  `TableConstraint.ForeignKey`. DDL emission consumes the finalized actions from `Model`; diagnostics audit that result but
+  do not drive runtime behavior. Mapping packs therefore serialize the expanded finalized FK and reconstruct no modes or
+  certificates.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
   - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a Change Queries key-change row should be emitted.
@@ -538,9 +927,40 @@ Notes:
 The mapping set is what runtime code uses after selection. It is also the semantic target of mapping pack decode.
 
 ```csharp
+public sealed record AbstractTargetPropagationKeyLineage(
+    IdentityLineageId IdentityLineage,
+    DbColumnName TargetColumn
+);
+
+/// <summary>
+/// Minimal finalized projection used to validate FKs and lineage plans that target an abstract identity table.
+/// This is not the full propagation-key or intrinsic-lineage derivation inventory.
+/// </summary>
+public sealed record AbstractTargetPropagationKey(
+    QualifiedResourceName TargetResource,
+    DbTableName TargetTable,
+    AnchorSetId AnchorSetId,
+    DbConstraintName UniqueConstraintName,
+    IReadOnlyList<DbColumnName> TargetColumnsInOrder,
+    IReadOnlyList<AbstractTargetPropagationKeyLineage> LineageAnchorsInIdOrder,
+    DbColumnName DocumentIdColumn
+);
+
+public sealed record RuntimeRelationalModelSet(
+    EffectiveSchemaInfo EffectiveSchema,
+    SqlDialect Dialect,
+    IReadOnlyList<ConcreteResourceModel> ConcreteResourcesInNameOrder
+)
+{
+    public static RuntimeRelationalModelSet FromDerived(DerivedRelationalModelSet model) =>
+        new(model.EffectiveSchema, model.Dialect, model.ConcreteResourcesInNameOrder);
+}
+
 public sealed record MappingSet(
     MappingSetKey Key,
-    DerivedRelationalModelSet Model,
+    RuntimeRelationalModelSet Model,
+    IReadOnlyList<AbstractTargetPropagationKey> AbstractTargetPropagationKeysInResourceAndAnchorSetOrder,
+    IReadOnlyList<LineageAnchorResolutionPlan> LineageAnchorResolutionPlansInTargetAndAnchorSetOrder,
     IReadOnlyDictionary<QualifiedResourceName, ResourceWritePlan> WritePlansByResource,
     IReadOnlyDictionary<QualifiedResourceName, ResourceReadPlan> ReadPlansByResource,
     IReadOnlyDictionary<QualifiedResourceName, short> ResourceKeyIdByResource,
@@ -548,22 +968,43 @@ public sealed record MappingSet(
 )
 {
     // Required for AOT mode. Must validate payload invariants before returning.
-    public static MappingSet FromPayload(MappingPackPayload payload) => throw new NotImplementedException();
+    public static MappingSet FromPayload(MappingSetKey key, MappingPackPayload payload) =>
+        throw new NotImplementedException();
 }
 ```
 
 Design invariants:
-- All ordering-sensitive collections in `DerivedRelationalModelSet` are stored in canonical order (ordinal string ordering), and any lookup dictionaries are derived from those lists.
+- `RuntimeRelationalModelSet` is a strict projection of the globally finalized `DerivedRelationalModelSet`. Runtime
+  compilation creates it only after every anchor/action pass succeeds; pack decode reconstructs it from normalized final
+  per-resource models and never reruns derivation.
+- DDL emission and the relational-model manifest consume `DerivedRelationalModelArtifact`, not `MappingSet.Model`.
+  Runtime code must not depend on omitted abstract-member, intrinsic-anchor-inventory, full propagation-key-inventory,
+  index/trigger, tracked-change, or SQL Server proof collections. `AbstractTargetPropagationKeysInResourceAndAnchorSetOrder`
+  is only the minimal finalized key projection needed to validate abstract FK targets and their global lineage plans.
+- All ordering-sensitive collections are stored in canonical order (ordinal string ordering), and any lookup dictionaries are derived from those lists.
 - A runtime implementation must not depend on dictionary iteration order for determinism.
 - For `ConcreteResourcesInNameOrder`, “name order” means ordinal sort by `(project_name, resource_name)`.
+- Finalization sets a `DocumentReferenceBinding` to
+  `PrestatementLookupOrCertifiedSameStatement` if and only if `artifact.ExecutorRequirements` has one or more entries for
+  that site; all other bindings are `PrestatementLookupOnly`. `RelationalMappingSetCompiler` must emit exactly one plan
+  per requirement, no extras, and enforce the same policy/plan/vector/route invariants as pack decode before returning any
+  runtime-compiled `MappingSet`.
 
 ---
 
 ## 3. Producer/consumer responsibilities
 
-- **Model derivation** (E01) produces `DerivedRelationalModelSet` from the effective schema set.
-- **DDL emission** (E02/E03) consumes `DerivedRelationalModelSet` and a dialect to emit deterministic SQL and manifests.
-- **Plan compilation** (E15) consumes `DerivedRelationalModelSet` and a dialect to produce the `WritePlansByResource`/`ReadPlansByResource` dictionaries used by `MappingSet`.
+- **Model derivation** (E01) produces one complete `DerivedRelationalModelArtifact` from the effective schema set or
+  throws `RelationalModelDerivationException`; it never publishes a partial bare model.
+- **DDL emission** (E02/E03) consumes `DerivedRelationalModelArtifact.Model` after successful derivation. Manifest
+  emission consumes the complete artifact: finalized model, diagnostics, and provider-finalized
+  `ExecutorRequirements`, so SQL Server decisions/certificates and both-provider executable cycle requirements remain
+  auditable.
+- **Plan compilation** (E15) consumes the complete `DerivedRelationalModelArtifact`: `.Model` supplies finalized physical
+  shape and `.ExecutorRequirements` supplies provider-finalized same-statement route/case/value facts. It produces the
+  `RuntimeRelationalModelSet` projection, minimal abstract-target propagation-key validation records, global
+  dialect-specific `LineageAnchorResolutionPlan` values, and the `WritePlansByResource`/`ReadPlansByResource`
+  dictionaries used by `MappingSet`.
 - **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution).
 - **Pack load** (E05-S05) and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
 
@@ -580,10 +1021,12 @@ At runtime, schema-dependent work starts only after selecting a `MappingSet`:
 1. Determine the target database instance (connection string) for the request.
 2. Resolve the database’s `EffectiveSchemaHash` (from `dms.EffectiveSchema`, cached per connection string).
 3. Construct `MappingSetKey(EffectiveSchemaHash, Dialect, RelationalMappingVersion)` and fetch the `MappingSet` from an in-process cache:
-   - AOT mode: load + validate a matching `.mpack` payload, then `MappingSet.FromPayload(...)`.
-   - Runtime compilation fallback: derive `DerivedRelationalModelSet`, compile plans, then construct `MappingSet`.
+   - AOT mode: load + validate a matching `.mpack` payload, then `MappingSet.FromPayload(key, payload)`.
+   - Runtime compilation fallback: derive one `DerivedRelationalModelArtifact`, project its finalized model, compile
+     plans, then construct `MappingSet`.
 
-After this point, the request handler uses `MappingSet.WritePlansByResource` / `MappingSet.ReadPlansByResource` plus `MappingSet.Model` metadata to do the work without re-deriving schema information.
+After this point, the request handler uses `MappingSet.WritePlansByResource` / `MappingSet.ReadPlansByResource`, the
+global lineage-anchor resolution plans, and `MappingSet.Model` metadata without re-deriving schema information.
 
 ### 4.2 Write path usage (POST/PUT)
 
@@ -598,9 +1041,23 @@ For a write request targeting resource `R`:
 
 2. **Document identity and `DocumentId`**
    - Core computes referential ids and extracts reference instances with concrete JSON locations.
-   - Backend resolves insert vs update and allocates/loads the root `DocumentId` (details in `flattening-reconstitution.md`).
+   - Backend resolves insert vs update and loads an existing root `DocumentId` or reserves a possible-create value without
+     resource DML (details in `flattening-reconstitution.md`).
 
-3. **Bulk reference + descriptor resolution**
+3. **Stored-value authorization gate**
+   - For an existing PUT or POST-upsert target, load only the minimal stored authorization projection and execute
+     stored-value authorization before full current-state/profile loading, request-reference validation, or any certified
+     correlation query. A denial therefore reveals no submitted-reference or correlation result.
+   - A create has no stored-value gate. No `dms.Document` or resource row is inserted at this stage.
+
+4. **Load current write state**
+   - For an existing `DocumentId`, load the persisted root/scoped rows and `ContentVersion` before reference resolution.
+     This is already required for authorization/profile merge/no-op behavior and supplies stable row locators plus stored
+     target ids for certified same-statement plans.
+   - Build the effective request/profile overlay. Hidden references preserve their complete stored tuple;
+     visible-absent/newly-present references cannot use a same-statement fallback.
+
+5. **Bulk reference, descriptor, and demanded-lineage resolution**
    - Compute the full set of referential ids needed for this request:
      - document references (target resource key + extracted identity values), and
      - descriptor references (descriptor resource key + normalized URI).
@@ -608,20 +1065,41 @@ For a write request targeting resource `R`:
    - Split the resolved rows into the request-scoped maps needed by the flattener:
      - `ResolvedReferenceSet.DocumentIdByReferentialId` for document references, and
      - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(normalizedUri, descriptorResource)`).
+   - From the selected resource's `DocumentReferenceBinding.AnchorSetId` values, group resolved target `DocumentId`s by
+     the matching global `(TargetResource, AnchorSetId)` `LineageAnchorResolutionPlan`. Empty-anchor variants do no work.
+   - Execute all required projection plans set-wise in deterministic target/anchor-set order, respecting their fixed
+     batching contracts. Populate
+     `ResolvedReferenceSet.LineageAnchorDocumentIdByTargetAndLineage[(targetDocumentId, identityLineageId)]` from the
+     declared result ordinals. Missing, duplicate, or null demanded values fail closed before flattening. This is one
+     bounded projection command/roundtrip per batch group, never one query per reference instance or collection row.
+   - Stage every candidate/write binding that can be materialized from request scalars, root/parent locators,
+     descriptors, ordinary resolved references, and key-unification without consuming a deferred reference or its
+     deferred anchors. These values supply complete persisted-occurrence matching for eligible misses.
+   - A normal document-reference lookup always wins. For an eligible miss, consult only
+     `ResourceWritePlan.SameStatementReferenceResolutionPlansInBindingAndCaseOrder`: require one exact binding/direct-
+     origin/complete-mutation-case plan, then execute its bounded locking correlation command. That command consumes the
+     staged occurrence values plus every submitted public identity component, derives any deferred reference-backed
+     semantic-identity member internally from the retained changed-target route, and returns the exact persisted row
+     locator, stored target id, and locked unchanged future values. Compare every submitted public value plus predicted
+     demanded anchor with the plan's complete future vector.
+     Add the result only to `ResolvedReferenceSet.SameStatementReferenceOverrides`; never add a future referential id or
+     future anchor to a global map/cache before the initiating statement.
    - Materialize `ResolvedReferenceSet` for this request.
    - Note: under key unification, this same `ResolvedReferenceSet.DescriptorIdByKey` map is also consumed by `KeyUnificationWritePlan`
      when coalescing unified descriptor endpoints into canonical storage columns (see `key-unification.md`).
 
-4. **Build the per-request reference index**
+6. **Build the per-request reference index**
    - Build an `IDocumentReferenceInstanceIndex` for this request using:
      - `ResourceWritePlan.Model.DocumentReferenceBindings` (the “reference sites”: wildcard reference-object path + FK column + target resource), and
      - Core’s extracted `DocumentReferenceArrays` (reference instances with concrete JSON locations that include array indices), and
-     - `ResolvedReferenceSet.DocumentIdByReferentialId` (to convert each instance’s referential id → referenced `DocumentId`).
-   - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath` (array indices along the wildcard reference path), what referenced `DocumentId` should be written to the FK column?”
+     - the complete `ResolvedReferenceSet`, including ordinary target/lineage maps and instance-scoped certified future
+       overrides.
+   - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath`, what complete ordinary or
+     certified same-statement target/anchor resolution should be written?”
      - `ordinalPath` examples: root reference `[]`; `$.students[*].studentReference` → `[studentOrdinal]`; `$.addresses[*].periods[*].calendarReference` → `[addressOrdinal, periodOrdinal]`.
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.
 
-5. **Flatten to row buffers using `TableWritePlan.ColumnBindings`**
+7. **Flatten to row buffers using `TableWritePlan.ColumnBindings`**
    - For each `TableWritePlan` in `ResourceWritePlan.TablePlansInDependencyOrder`, enumerate JSON scope instances (`JsonScope`) for `TableWritePlan.TableModel` and materialize `RowBuffer` objects.
    - Each `TableWritePlan` contains:
      - `BulkInsertBatching: BulkInsertBatchingInfo` (`MaxRowsPerBatch`, `ParametersPerRow`, `MaxParametersPerCommand`),
@@ -632,7 +1110,9 @@ For a write request targeting resource `R`:
    - Runtime produces `RowBuffer.Values[]` by iterating `ColumnBindings` *in order* and sourcing each value from the associated `WriteValueSource`:
      - `DocumentId`, `ParentKeyPart(i)`, `Ordinal`
      - `Scalar(relativeJsonPath, scalarType)`
-     - `DocumentReference(binding)` resolved via the per-request `(binding, ordinalPath) → DocumentId` index
+     - `DocumentReference(binding)` resolved via the per-request `(binding, ordinalPath) -> complete resolution` index
+     - `IdentityLineageAnchor(binding, lineage)` obtained from that same instance result, so a certified future anchor
+       cannot collide with the target row's current pre-statement anchor map
      - `DescriptorReference(...)` resolved via `ResolvedReferenceSet`
      - `WriteValueSource.Precomputed` populated by executing `KeyUnificationWritePlan` (canonical storage columns + any synthetic `..._Present` presence flags) or by `CollectionKeyPreallocationPlan` for reserved collection-row identities
 
@@ -645,7 +1125,16 @@ For a write request targeting resource `R`:
    - The compiled `InsertSql` for the table is emitted such that its parameter placeholders correspond to `ColumnBindings[0..N)` in that same order and use `WriteColumnBinding.ParameterName`.
    - Runtime binds parameters from `WriteColumnBinding.ParameterName` (not by “guessing” from SQL text), so it always knows which extracted value goes in which SQL parameter position.
 
-6. **Whole-document no-op detection for existing documents**
+8. **Finalize merge and authorize proposed values**
+   - Bind logical candidates to the current row graph, preserve hidden profile values, reserve stable collection ids as
+     needed, and synthesize the exact post-merge rowset that execution would persist.
+   - A certified override carries its correlation-returned receiver-row locator. Candidate/merge binding must select and
+     reassert that exact persisted row rather than independently matching the occurrence to another row.
+   - Execute proposed/request-value authorization against this complete merged rowset, including preserved values and all
+     ordinary or certified resolved surrogate ids. This precedes no-op success and every write statement. Existing PUT
+     and POST-upsert targets require both stored and proposed authorization; creates require proposed authorization.
+
+9. **Whole-document no-op detection for existing documents**
    - Applies to `PUT` and to `POST` requests that resolved to an existing `DocumentId`.
    - Use the current-document rows already materialized earlier in the request (for auth/reconstitution) and project
      them into comparable rowsets using the same table ordering and stored/writable column ordering as
@@ -657,7 +1146,7 @@ For a write request targeting resource `R`:
      - ordered stored/writable values (resolved FK ids, canonical storage columns, synthetic presence flags, etc.).
    - If all comparable rowsets are equal, mark the request as a **no-op candidate** and proceed to guarded execution.
 
-7. **Execute (single transaction, merge semantics for scoped child data)**
+10. **Execute (single transaction, merge semantics for scoped child data)**
    - If the request is a no-op candidate, the write batch must first verify that the observed `ContentVersion` is still
      current for that `DocumentId`. If it is still current, commit without issuing DML for the resource tables or
      `dms.Document`.
@@ -679,6 +1168,9 @@ For a write request targeting resource `R`:
      - delete omitted visible rows via `CollectionMergePlan.DeleteByStableRowIdentitySql`, and
      - bulk insert only the newly created rows when the corresponding `ProfileAppliedWriteRequest.VisibleRequestCollectionItems` entry is creatable, then recompute `Ordinal` using the deterministic post-merge sibling-order rule described in `flattening-reconstitution.md`.
    - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` to respect dialect parameter limits.
+   - After the initiating update and before commit, every used same-statement override must resolve through
+     `dms.ReferentialIdentity` to the same stored target id and its projected full selected vector must match the predicted
+     vector. Any mismatch or stale `ContentVersion` rolls back; synthesized future ids are not cached in v1.
 
 ### 4.3 Read path usage (GET by id / query)
 

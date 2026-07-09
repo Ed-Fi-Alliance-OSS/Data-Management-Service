@@ -49,6 +49,14 @@ These tests detect cases where the `DocumentId` is correct but the `ReferentialI
 - **Unicode/encoding test**: non-ASCII identity values produce the same UUIDv5 between Core and the database (guards UTF-8/UTF-16 and normalization differences).
 - **SQL Server collation edge cases**: case-only and trailing-space-only changes to string identity parts trigger the expected recompute and match Core-computed UUIDv5 (guards “comparison says no change but stored value changed”).
 - **Per-identity-part coverage**: for a resource, update each identity column independently and assert the `ReferentialId` changes; update only non-identity columns and assert it does not (guards missing columns in change detection and missing trigger firing).
+- **Reference-backed identity repoint coverage**: for DS 5.2, repoint Session from School A to School B while an existing
+  CourseOffering (and downstream Section) references it; assert the complete `(SchoolId, School_DocumentId)` lineage atom
+  cascades, every full FK remains valid, and all impacted `ReferentialId` rows converge to the new identities.
+- **All-components-at-once coverage**: change scalar and reference-backed identity components in one supported write and
+  assert value columns, lineage anchors, stamps, and referential identities describe one coherent final tuple rather than
+  a mixture of old and new components.
+- **Mismatched lineage fail-closed test**: attempt to persist a public identity value with the wrong source-row anchor
+  `DocumentId`; assert the full FK rejects the row and no stale `ReferentialId` is committed.
 - **Identity update test**: update identity values for an existing document; assert:
   - the new `ReferentialId` resolves to the document,
   - the old `ReferentialId` no longer resolves,

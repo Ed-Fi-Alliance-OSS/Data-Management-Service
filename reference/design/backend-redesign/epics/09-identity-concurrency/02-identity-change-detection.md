@@ -12,14 +12,17 @@ Detect whether a write changes the document’s identity projection values, so t
 - `dms.ReferentialIdentity` is updated only when necessary,
 - and `IdentityVersion/IdentityLastModifiedAt` are stamped only on actual identity projection changes.
 
-Identity projection includes scalar identity parts and identity components sourced from references (via propagated identity columns maintained by FK cascades/triggers).
+Identity projection includes scalar identity parts and identity components sourced from references. Reference-backed
+components have a propagation-complete physical tuple: the public identity values plus the internal lineage-anchor
+`DocumentId` of the source reference. Native FK cascades maintain both; identity-change detection continues to compare
+the public identity projection, while anchor changes participate in referential-integrity and propagation validation.
 
 ## Acceptance Criteria
 
 - No-op updates that do not change identity projection values do not update `dms.ReferentialIdentity` or bump identity stamps (best effort).
 - Identity changes are detected when:
   - scalar identity values change, or
-  - identity-component reference targets change.
+  - identity-component reference targets change, including a repoint whose lineage-anchor `DocumentId` changes.
 - Tests cover both false positives (avoid) and false negatives (disallowed).
 
 ## Tasks

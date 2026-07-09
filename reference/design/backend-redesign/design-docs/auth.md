@@ -401,33 +401,45 @@ ODS executes an additional DB roundtrip for single-record authorizations, presum
 #### PUT
 
 - Roundtrip #1
-  - Retrieve the DocumentId and etag by its Uuid (to abort if not found, and for reconstitution) (etag to enforce `If-Match`, if applicable)
+  - Retrieve the `DocumentId`, etag, and minimal stored authorization projection by UUID (to abort if not found and
+    enforce `If-Match`, if applicable).
 - Roundtrip #2
-  - Run authorization check using the already-stored values (throw if unauthorized)
-  - Run authorization check using the values from the request body (throw if unauthorized) (only if identifying values changed)
-  - Retrieve the referenced resources' DocumentIds (using `dms.ReferentialIdentity`)
-  - Reconstitute the record and/or materialize comparable current rowsets for no-op detection
+  - Run authorization using the observed stored values and stop on denial. No full reconstitution, submitted-reference
+    validation, certified correlation query, or proposed-value error is executed/exposed before this gate succeeds.
 - Roundtrip #3
-  - Execute guarded no-op or update (only if it actually changed)
+  - Load the authorized current/profile row state needed for merge and stable row locators.
+  - Resolve request references normally; for an eligible PUT future-identity miss, execute only the exact certified
+    same-statement locking/correlation plan.
+  - Materialize the proposed merged state, run proposed-value authorization with its resolved surrogate ids, and produce
+    comparable rowsets for no-op detection.
+- Roundtrip #4
+  - Execute the guarded no-op or update. When a certified future-identity override was used, append its cache-bypassing
+    post-update referential-id/anchor verification before commit.
 
-ODS requires at least 4 roundtrips for the same operation, and more if the resource has child tables.
+Correct authorization precedence requires these ordered phases. Implementations may combine roundtrips only with a
+database-side conditional batch that provably stops before request-dependent statements on stored denial and preserves
+the same response precedence; simple client-side batching of all statements is not equivalent.
 
 #### POST
 
 - Roundtrip #1
-  - Retrieve the referenced resources' DocumentIds (using `dms.ReferentialIdentity`).
-- Roundtrip #2
-  - Retrieve the DocumentId and etag by its identifying values (to check if already exists, and for reconstitution) (etag to enforce `If-Match`, if applicable)
-- Roundtrip #3
-  - If a record with the same identifying values already exists:
-    - Inline PUT Roundtrip #2 steps (excluding steps already executed)
-  - Otherwise:
-    - Run authorization check using the values from the request body (throw if unauthorized)
-    - Insert into `dms.Document` and return its generated ID
-- Roundtrip #4
-  - Insert the resource tables, or inline PUT Roundtrip #3 steps
+  - Use only the POST subject's request `ReferentialId` to detect an existing target and retrieve its minimal etag/stored
+    authorization projection. Do not validate other submitted references yet.
+- Existing-target branch, Roundtrip #2
+  - Run stored-value authorization and stop on denial before full current-state loading or request-reference errors.
+- Existing-target branch, Roundtrip #3
+  - Load authorized current/profile state, resolve submitted references normally, materialize the final merged rowset,
+    and run proposed-value authorization. POST never uses certified future-identity resolution because its subject was
+    located by the current request identity.
+- Existing-target branch, Roundtrip #4
+  - Execute guarded no-op or update.
+- Create branch, Roundtrip #2
+  - Resolve submitted references normally, materialize the proposed create, and run proposed-value authorization.
+- Create branch, Roundtrip #3
+  - Insert `dms.Document` and resource tables only after authorization.
 
-ODS requires 4 roundtrips for the same operation, and more if the resource has child tables.
+Roundtrips may be conditionally combined only when stored-denial precedence and no-request-dependent-work-before-stored-
+authorization are preserved.
 
 #### DELETE
 
@@ -1089,6 +1101,7 @@ There are a few SQL queries that must filter based on a list:
 3. In the GET-many scenario, filter the page by the authorized DocumentIds
 4. When retrieving the referenced resources DocumentIds using the `dms.ReferentialIdentity` table, we need to filter by a list of ReferentialIds
 5. Filter the resource's `CreatedByOwnershipTokenId` by the ownership tokens configured in the token
+6. Project demanded identity-lineage anchors for a resolved set of target DocumentIds
 
 PostgreSQL allows sending arrays as parameters (as shown in the POC above); the equivalent in SQL Server is Table-Valued Parameters (TVPs). Note that TVPs seem to degrade performance as reported [here](https://dba.stackexchange.com/a/344923).
 
@@ -1098,16 +1111,16 @@ DMS should follow a similar approach for SQL Server: when any of the lists menti
 
 This means that the DDL generator has to create the following User-Defined Table Types:
 
-- Table of bigint (covers point 1. and 3. from the list above)
+- Table of bigint (covers points 1, 3, and 6 from the list above)
 - Table of uniqueidentifier (covers point 4.)
 
 ```sql
 CREATE TYPE dms.BigIntTable AS TABLE(
-  Id BIGINT NOT NULL
+  Id BIGINT NOT NULL PRIMARY KEY
 );
 
 CREATE TYPE dms.UniqueIdentifierTable AS TABLE(
- Id uniqueidentifier NOT NULL
+ Id uniqueidentifier NOT NULL PRIMARY KEY
 );
 ```
 

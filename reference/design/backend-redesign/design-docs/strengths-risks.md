@@ -34,9 +34,10 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Full natural-key propagation for document references
 
-- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts through the certified dialect
-  FK action assignment into referrers’ canonical stored identity-part columns, with per-site binding columns available
-  for query compilation and reconstitution.
+- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts through finalized FK actions
+  into referrers' canonical stored identity-part columns. Targets inventory intrinsic reference-backed lineages, while
+  least-fixed-point demand adds an anchor to an incoming site only when receiver validity/correlation needs it. Anchors
+  remain invisible to query/reconstitution bindings.
 - Improves query compilation for reference-identity query parameters by enabling local predicates on per-site binding identity columns (no referenced-table subqueries).
 
 ### Key unification for equality-constrained identity parts (single source of truth)
@@ -66,9 +67,9 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into direct referrers through the certified full-composite physical FK assignment;
-  PostgreSQL evaluates fixed actions, while SQL Server jointly selects modes for value-flow safety and error 1785 (see
-  [mssql-cascading.md](mssql-cascading.md)), and
+- public identity values and each site's demanded identity-lineage anchors are propagated into direct referrers through the finalized
+  full-composite physical FK assignment; PostgreSQL uses fixed actions, while SQL Server globally selects modes for
+  value-flow safety and error 1785 (see [mssql-cascading.md](mssql-cascading.md)), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -77,34 +78,53 @@ Failure modes:
 - large log/WAL volume and replication lag.
 
 Mitigations / guidance:
-- Keep identity updates operationally rare; consider restricting `AllowIdentityUpdates` and/or running identity updates under controlled operational conditions.
+- Preserve support for every identity component and simultaneous component changes. Use operational scheduling and
+  observability for unusually high-fan-out identities rather than narrowing `AllowIdentityUpdates` semantics.
 - Implement deadlock retry for write transactions (see [transactions-and-concurrency.md](transactions-and-concurrency.md)).
 - Add telemetry for cascaded row counts and stamp / `tracked_changes_*` write rates to detect “hub” fan-in scenarios early.
 
-### Cross-engine value flow and SQL Server cascade paths (Feasibility + Complexity Risk)
+### Identity-lineage closure and SQL Server cascade paths (Feasibility + Complexity Risk)
 
-Key unification can cause several logical references and parent identities to converge on one canonical receiver column. DDL legality does not establish runtime safety: an update through one FK can invalidate another FK that reads that column, including an FK from an independent parent. The DDL generator must:
-- map logical references through canonical storage and deduplicate them into full-composite physical FK candidates,
-- derive cross-engine, statement-scoped `ValueFlowAnalysis` facts and proof obligations over exact changed components and
-  every FK that may read a cascade-written canonical column,
-- include component lineage, same-origin-row correlation, reference co-presence, and statement-boundary compatibility
-  (including abstract-identity maintenance triggers) in those obligations,
-- evaluate PostgreSQL's fixed action assignment against all obligations, and
-- on SQL Server, jointly select `NativeCascade` / `NoPropagation` modes satisfying both the obligations and error 1785,
-  then certify coverage against the final assignment.
+Key unification can cause several logical references and parent identities to converge on one canonical receiver column.
+Targets therefore inventory/store intrinsic reference-backed identity lineages, but an incoming site needs a lineage
+`DocumentId` only when changing its public value would otherwise violate or decorrelate another receiver-side full FK.
+The DDL generator must:
+- initialize each incoming site's anchor demand set empty, add demands from receiver validity/correlation obligations,
+  and propagate them only through downstream identity/constraint consumers to a deterministic least fixed point,
+- reuse an existing reference `..._DocumentId` only when complete identity equivalence and presence are proved,
+- map public bindings and storage-only anchors through canonical storage and deduplicate full-composite physical FK
+  candidates,
+- assign PostgreSQL's fixed eligible-`CASCADE`/immutable-`NO ACTION` actions without DMS topology classification or
+  fail-fast, and
+- on SQL Server, derive statement-scoped `ValueFlowAnalysis` facts and globally select `NativeCascade` /
+  `NoPropagation` modes satisfying both error 1785 and exact public-component/anchor equality, same-origin-row
+  correlation, reference co-presence, and constraint timing.
 
-Shared columns and table reachability alone are not coverage. Every physical FK remains full composite, and there is no `DocumentId`-only shape or identity-value propagation trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
+SQL Server cycles are action-choice constraints, not automatic failures. A pruned cycle or diamond edge requires a
+changed-target route plus a receiver-carrier route to the same row and full propagation vector; the carrier may be the
+zero-hop initiating write. Shared columns and table reachability alone are not coverage. Every physical FK remains full
+composite, and there is no `DocumentId`-only shape or identity-value propagation trigger fallback. See
+[mssql-cascading.md](mssql-cascading.md).
+
+The demand analysis is not permission to narrow mutation semantics. Omitting a target's intrinsic anchor from one site is
+valid only when no receiver-side validity/correlation obligation needs it, and the resulting vector must still prove every
+valid identity-mutation subset and simultaneous combination. DS 5.2 `CourseOffering -> Session` demands the School anchor
+because its unified receiver is also constrained by `CourseOffering -> School`; an unrelated Session referrer need not.
 
 Risks:
-- extra derivation complexity (physical-FK canonicalization, labeled value-flow obligations, and deterministic joint SQL
-  Server mode selection),
+- extra derivation complexity (least-fixed-point anchor-demand closure, physical-FK canonicalization, typed proof structures, and
+  deterministic global SQL Server mode selection),
 - higher likelihood of engine-specific behavior and performance differences.
 - key unification can increase the chance of “multiple cascade paths”: shared canonical columns can participate in multiple composite FKs, creating multi-edge cascades.
 
 Mitigations:
-- Include cross-engine `ValueFlowAnalysis` fixtures, PostgreSQL fixed-assignment certification, and SQL Server joint-mode
-  selection plus full-composite RI checks in DDL generation verification; see
-  [mssql-cascading.md](mssql-cascading.md).
+- Include PostgreSQL fixed-action DDL/runtime fixtures and SQL Server joint-mode selection plus full-composite RI checks,
+  including safely breakable cycles, zero-hop carrier coverage, reference retargeting, simultaneous component changes,
+  and anchor-width limits; see [mssql-cascading.md](mssql-cascading.md).
+- Require complete-case certificates or typed `SubsetCompositionProof` when primitive proofs are reused; treat missing
+  composition as `UnprovedSubsetComposition`.
+- Keep deterministic solver work limits distinct from elapsed time. A typed complexity exception must remain
+  distinguishable from proof that no safe SQL Server assignment exists.
 - Benchmark representative “hub” resources on both engines.
 
 ### Key unification complexity (Generated aliases + synthetic presence flags)
@@ -117,7 +137,9 @@ Key unification introduces generated/computed, persisted alias columns (often pr
 
 ### Schema width and index pressure (Storage + Write Amplification Risk)
 
-Persisting per-site binding identity columns for every document reference site (plus canonical + optional synthetic presence columns under key unification) increases:
+Persisting per-site binding identity columns for every document reference site (plus target-intrinsic lineage storage,
+site-demanded anchor mappings, canonical columns, and optional synthetic presence columns under key unification)
+increases:
 - table width (more columns),
 - composite FK count,
 - supporting index count (per FK), and
@@ -131,23 +153,23 @@ Mitigations:
 ### Trigger correctness for stamping and identity maintenance (Correctness Risk)
 
 Correctness depends on generated triggers to:
-- stamp `dms.Document` on all representation changes, including referrer-row updates produced by the certified FK action
+- stamp `dms.Document` on all representation changes, including referrer-row updates produced by the finalized FK action
   assignment. The ordinary `*_Stamp` and identity-maintenance triggers then fire on those row updates exactly as they do
   for direct writes, and
 - maintain `dms.ReferentialIdentity` and abstract identity tables transactionally.
 
-These abstract-identity and referential-identity *maintenance* triggers remain. Their statement boundaries are inputs to
-`ValueFlowAnalysis` and the resulting dialect certification. The retired SQL Server identity-*value* propagation trigger
-(`MssqlIdentityPropagationTrigger`) is not a fallback; safe propagation uses the certified physical FK actions (see
-[mssql-cascading.md](mssql-cascading.md)).
+These abstract-identity and referential-identity *maintenance* triggers remain. Their table-qualified concrete-member
+mappings and statement boundaries are inputs to SQL Server `ValueFlowAnalysis`. Identity-value propagation contributes no
+trigger intent; it uses finalized physical FK actions (see [mssql-cascading.md](mssql-cascading.md)).
 
 Failure mode: missing or incorrect triggers can cause stale `_etag/_lastModifiedDate/ChangeVersion` or incorrect identity resolution.
 
 Mitigations:
 - Make DB-apply smoke tests include stamping and `tracked_changes_*` population behavior (see [ddl-generator-testing.md](ddl-generator-testing.md)).
 - Add fixture-based tests covering identity propagation scenarios (identity-component and non-identity references),
-  optional-site presence combinations, independent parents, component-lineage mismatches, and abstract-trigger statement
-  boundaries on both PostgreSQL and SQL Server.
+  identity-lineage anchors, all-components-at-once updates, optional-site presence combinations, safely breakable cycles,
+  and abstract-trigger statement boundaries on both PostgreSQL and SQL Server. SQL Server-only expectations include
+  classification outcomes and certificates; PostgreSQL expectations cover fixed-action DDL and runtime behavior.
 
 ### ReferentialIdentity incorrect mapping (High Correctness/Security Risk)
 

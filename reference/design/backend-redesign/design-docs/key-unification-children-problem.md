@@ -4,13 +4,14 @@
 
 Deferred problem statement. This is **not part of DMS-1129**.
 
-> DMS-1129 derives statement-scoped identity value-flow obligations over final physical reference
-> FK candidates, evaluates PostgreSQL's fixed actions, and jointly selects SQL Server actions that
-> satisfy value-flow safety and error 1785; see
+> DMS-1129 inventories intrinsic target lineages and derives least-fixed-point, receiver-demanded anchors for all engines, assigns PostgreSQL's
+> fixed actions without DMS classification, and derives statement-scoped identity value-flow proofs
+> only while globally selecting SQL Server actions that satisfy value-flow safety and error 1785; see
 > [mssql-cascading.md](mssql-cascading.md). That analysis does not invent propagation edges from
 > `equalityConstraints`. Root-to-child, child-to-child, and base-to-extension equality propagation
 > remain a separate, unresolved feature. A cross-scope equality path MUST NOT be used as a
-> `CoverageCertificate` row-lineage, changed-column-lineage, or presence proof for a pruned FK.
+> `CoverageCertificate` changed-target route, receiver-carrier route, component/anchor equality, row
+> correlation, or presence proof for a pruned FK.
 
 ## Purpose
 
@@ -29,10 +30,11 @@ The backend redesign relies on:
 - **Stored identity parts at each reference site**: referenced natural-key components are duplicated into the referrer’s
   row as stored “identity-part” columns to support query/reconstitution.
 - **DB-driven identity propagation**:
-  - both engines share exact, statement-scoped value-flow analysis over storage-mapped and de-duplicated physical FKs;
-  - PostgreSQL evaluates its fixed eligible-`CASCADE`/immutable-`NO ACTION` assignment;
-  - SQL Server jointly assigns actions that satisfy the value-flow obligations and error 1785, with certified
-    `NO ACTION` only where safe.
+  - both engines share intrinsic target-lineage inventory, site-specific receiver-demand closure, and storage-mapped,
+    de-duplicated physical FKs;
+  - PostgreSQL directly uses its fixed eligible-`CASCADE`/immutable-`NO ACTION` assignment;
+  - SQL Server globally assigns actions that satisfy its value-flow obligations and error 1785, with certified
+    `NO ACTION` only where a same-row carrier, including a zero-hop origin write, covers the full propagation vector.
 - **Key unification**: uses `equalityConstraints` to unify duplicated stored scalar/descriptor columns into a single
   canonical stored column *within one physical table row* (aliases remain available for API-path semantics).
 
@@ -103,10 +105,11 @@ So the root value changes but the child values do not.
 ### 3) Direct non-root reference sites are already FK edges
 
 A child or extension table that directly references the changed target contributes its own physical FK candidate. Native
-cascade can therefore reach it when the final dialect assignment discharges the value-flow obligations (and, on SQL
-Server, error 1785). The retired root-only propagation-trigger limitation is not part of the current design. This does
-not help a child table that does **not** reference the changed target; an equality constraint alone is not a propagation
-edge.
+cascade can therefore reach it through PostgreSQL's fixed action or the finalized SQL Server assignment. The site starts
+with no anchor demand and carries only lineages needed by its receiver-side full-FK validity/correlation proof; omission
+still proves every target identity update and reference-backed component retargeting case. The retired root-only
+propagation-trigger limitation is not part of the current design. This does not help a child
+table that does **not** reference the changed target; an equality constraint alone is not a propagation edge.
 
 ## Why This Matters
 
@@ -208,7 +211,7 @@ This is not preferred if the goal is full parity with document-level `equalityCo
 
 1. **Reference-site vs scalar propagation**
    - If a dependent endpoint is a *reference identity-part column* that participates in a composite FK (e.g., a child
-     table stores `SchoolId` plus `School_DocumentId` under a `FOREIGN KEY (SchoolId, School_DocumentId) ...` (identity parts first, `DocumentId` last)), then
+     table stores `SchoolId`, any site-demanded lineage anchors, and `School_DocumentId` under a full propagation-vector FK), then
      “propagate `SchoolId` only” may violate the composite FK unless the `..._DocumentId` already points to the same
      target row.
    - Supporting this scenario may therefore require one of:
@@ -247,5 +250,6 @@ This is not preferred if the goal is full parity with document-level `equalityCo
    feature?
 
 Any future answer requires its own cross-engine conformance fixtures. The DMS/MetaEd cascade conformance corpus from
-METAED-1667 covers physical reference-FK value flow and SQL Server representability only; passing it does not claim
-support for the cross-scope scenario in this document.
+METAED-1667 has separate `metaEd`, `dmsPostgresql`, and `dmsSqlServer` expected outcomes: MetaEd owns authoring
+representability, PostgreSQL always receives fixed DMS actions, and SQL Server owns physical selection/certificates.
+Passing that corpus does not claim support for the cross-scope scenario in this document.

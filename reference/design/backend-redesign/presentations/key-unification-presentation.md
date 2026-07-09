@@ -34,6 +34,17 @@ Aliases evaluate to `NULL` when their binding site is absent, preventing values 
 | Optional non-reference path | Synthetic `{PathColumnName}_Present` (boolean, `NULL` vs `TRUE`) | `NULL` when presence flag is `NULL`, else canonical |
 | Required non-reference path | *(none — ungated)* | Always canonical |
 
+### Identity-Lineage Anchor
+
+- Every target intrinsically inventories/stores a `DocumentId` for each reference-backed identity lineage.
+- Every incoming reference site's anchor demand starts empty.
+- Receiver-side full-FK validity/correlation adds only the anchors that site needs; demand propagates only through
+  downstream identity/constraint consumers to a least fixed point.
+- A demanded local anchor reuses an existing `..._DocumentId` only when complete identity equivalence and co-presence are
+  proved; otherwise it gets dedicated storage.
+- Omission is permitted only with proof that no receiver obligation needs the intrinsic anchor across every mutation
+  subset/simultaneous combination.
+
 ## Derived Model Metadata
 
 ### Column-Level: `ColumnStorage`
@@ -68,28 +79,35 @@ This tells writers how to populate the canonical column from an API document whe
 - **Never** write `UnifiedAlias` columns.
 - **Always** write the canonical column, even though it has no `SourceJsonPath`.
 - Composite reference FKs target canonical storage columns for unified identity parts.
+- Full propagation vectors append only the site's demanded lineage anchors and stable target `DocumentId`.
+- Equal demand sets use deterministic propagation-key/`RefKey` variants keyed by `AnchorSetId`; intrinsic target anchors are
+  not blanket-copied, and each reference still has exactly one full FK.
 - Descriptor FKs target canonical storage columns (de-duplicated per `(table, StorageColumn)`).
-- All-or-none constraints remain on alias columns (preserving "absent reference site → all parts NULL").
+- All-or-none constraints cover the site `..._DocumentId`, per-site aliases, and every dedicated demanded local anchor
+  (preserving "absent reference site → every selected vector item NULL").
 
 ### API-Semantic vs FK-Supporting Constraints
 
 | Constraint type | Column set |
 |---|---|
 | Root natural-key UNIQUE, collection-element UNIQUE | Binding/alias columns |
-| FK-supporting referenced-key UNIQUE | Canonical storage columns |
-| Composite reference FK (local + target) | Canonical storage columns |
-| All-or-none CHECK | Alias columns + `..._DocumentId` |
+| FK-supporting referenced-key UNIQUE | Canonical public identity storage + site-demanded lineage anchors + target `DocumentId` |
+| Composite reference FK (local + target) | Same full propagation vector |
+| All-or-none CHECK | Site `..._DocumentId` + alias columns + every dedicated demanded local anchor |
 | Presence-flag hardening CHECK | Synthetic `..._Present` columns (`NULL OR TRUE`) |
 
 ## Write-Time Behavior
 
 ### Canonical Value Coalescing (Per Row)
 
-1. Evaluate each member path against the current row's JSON scope → zero-or-one candidate values per member.
+1. Evaluate each member path against the request row's JSON scope → zero-or-one candidate values per member.
 2. JSON `null` = absent. Resolve descriptors to `DocumentId`.
 3. **Conflict detection**: if 2+ members are present with different non-null values → fail closed.
-4. **Canonical value** = first present member in `MemberPathColumns` order. No members present → `NULL`.
-5. Write canonical to `CanonicalColumn`.
+4. **Proposed canonical value** = first present member in `MemberPathColumns` order. No members present → `NULL`.
+5. Baseline unprofiled writes use that value directly. Profiled matched writes first overlay Core's member/scope states:
+   hidden preserves stored canonical value/presence, visible-absent clears only when no hidden owner remains, and
+   visible-present applies the proposed value.
+6. Run conflict/guardrail checks on the effective merged value, then write `CanonicalColumn`.
 
 ### Write-Time Guardrails (Fail-Fast)
 
@@ -146,20 +164,27 @@ StudentSchoolAssociation_StudentUniqueId AS (
 
 - A shared canonical receiver column removes duplicate storage; it does **not** prove update safety. Independent mutable
   parents, or a mutable parent plus an immutable FK, can read the same receiver column and invalidate one another.
+- Least-fixed-point demand starts every incoming site empty and adds a target-intrinsic lineage `DocumentId` only when
+  receiver validity/correlation requires it. DS 5.2 `CourseOffering -> Session` demands the School anchor because
+  `SchoolId_Unified` is also read by `CourseOffering -> School`; an unrelated Session referrer does not.
+- Demand propagates only through downstream identity/constraint consumers. Omission still proves every reference
+  retargeting and simultaneous component-change case.
 - Logical references are storage-mapped and physically de-duplicated before actions are assigned. Physical identity is
   `(semantic FK kind, local table, ordered local columns, target table, ordered target columns, ON DELETE)` and excludes
   update action/mode, logical path, and generated name; incompatible contributor metadata is an error, not a duplicate
   FK.
-- Dialect-neutral `ValueFlowAnalysis` derives statement-scoped obligations for exact changed-column lineage, equality of
-  competing receiver writes, correlated rows, optional-site presence, and constraint timing. Abstract-identity
-  AFTER-trigger writes are later statement boundaries.
-- **PostgreSQL** evaluates its fixed eligible-`CASCADE`/immutable-`NO ACTION` assignment against those obligations.
-- **SQL Server** jointly selects `NativeCascade`, `NoPropagation`, or `ImmutableNoAction` to satisfy the obligations and
-  error 1785. Every success-only `NoPropagation` decision is keyed by physical FK id and has an ordered
-  `CoverageCertificates` list, one per mutation-origin/changed-component case, with row-lineage, column-lineage,
-  presence, and timing proof.
-- An undischarged obligation or infeasible SQL Server assignment is a structured derivation failure, not a success
-  manifest. Every FK stays full-composite; no identity-value propagation trigger exists.
+- **PostgreSQL** directly uses fixed eligible-`CASCADE`/immutable-`NO ACTION` actions. DMS does not prune, classify,
+  certify, or fail PostgreSQL cascade topology.
+- **SQL Server** alone derives `ValueFlowAnalysis` obligations and globally selects `NativeCascade`, `NoPropagation`, or
+  `ImmutableNoAction` to satisfy them and error 1785. Cycles are breakable action-choice constraints, not hard failures.
+- Every success-only `NoPropagation` decision is keyed by `PhysicalForeignKeyId`; its certificates identify the selected
+  `AnchorSetId` and complete `MutationCaseId` and contain typed
+  changed-target and receiver-carrier routes, complete selected-vector equality, separate origin/receiver row
+  correlation, presence, and constraint timing. A carrier may be zero-hop `OriginWrite`.
+- Certificates cover complete mutation cases. Primitive proofs may be reused only with typed
+  `SubsetCompositionProof`; missing composition is `UnprovedSubsetComposition`.
+- An undischarged SQL Server obligation throws `RelationalModelDerivationException`, not a partial success artifact.
+  Every FK stays full-composite; no identity-value propagation trigger exists.
 
 ## Triggers Under Unification
 
@@ -210,32 +235,40 @@ All members of a class must share the exact same physical signature:
 3. ExtensionTableDerivationPass
 4. ReferenceBindingPass
 5. **KeyUnificationPass** ← new
-6. AbstractIdentityTableAndUnionViewDerivationPass
+6. AbstractIdentityTableAndUnionViewDerivationPass + shared `AbstractIdentityMemberMapping` inventory
 7. ValidateUnifiedAliasMetadataPass
 8. RootIdentityConstraintPass
 9. TransitiveIdentityMutabilityPass
-10. ReferenceConstraintPass internal phases:
-    - storage-map + physical de-duplication
-    - dialect-neutral value-flow obligation analysis
-    - PostgreSQL fixed-action evaluation / SQL Server joint value-flow + 1785 selection
+10. IdentityLineageAnchorClosurePass
+    - intrinsic target lineage inventory + empty initial site demands
+    - receiver validity/correlation demand to a least fixed point
+    - equal demand sets become `AnchorSetId` propagation-key/`RefKey` variants
+11. ReferenceConstraintPass internal phases:
+    - storage-map public values + site-demanded anchors, then physical de-duplication
+    - PostgreSQL fixed assignment, or SQL Server-only value-flow + global 1785 selection
     - final FK emission
-11. Remaining constraint, naming, inventory, shortening, and canonical-ordering passes
+12. Remaining constraint, naming, inventory, shortening, and canonical-ordering passes
 
 **After** ReferenceBindingPass (so propagated identity-part columns exist) and **before** constraint derivation passes (so they see the unified model).
 
 ## Manifest + Mapping Pack
 
 - Success manifests include per-column `storage`, per-table `key_unification_classes`, equality-constraint diagnostics,
-  descriptor FK de-duplication, and success-only SQL Server decisions with ordered `CoverageCertificates` for
-  `NoPropagation` modes.
-- Failures are separate structured derivation results; a partial model is never serialized as a success manifest.
-- Mapping packs carry runtime-required unification metadata and final FK `on_update`, but not derivation-only SQL Server
-  modes/certificates.
-- This is the pre-production v1 baseline; no `RelationalMappingVersion` bump or migration is required.
+  descriptor FK de-duplication, provider-neutral typed anchor-omission proofs for both dialects, and success-only SQL
+  Server decisions with ordered `CoverageCertificates` for `NoPropagation` modes.
+- Successful compilation returns `DerivedRelationalModelArtifact(Model, Diagnostics, ExecutorRequirements)`. SQL Server classification failures
+  throw `RelationalModelDerivationException`; a partial model is never serialized as a success manifest.
+- Mapping packs carry runtime-required unification metadata plus each expanded local/target vector, stable
+  `PhysicalForeignKeyId`, selected `AnchorSetId`, and both final referential actions. They omit derivation-only SQL Server
+  modes/certificates/composition proofs; consumers do not rerun demand closure.
+- This is the pre-production v1 baseline; no `RelationalMappingVersion` bump, migration, compatibility discriminator, or
+  physical-model hash is required.
 - All metadata is represented structurally — no SQL text, no naming-convention inference.
 
-MetaEd (METAED-1667) and DMS consume the same versioned conformance corpus. Cross-table/root-to-child equality
-propagation remains separate future work and cannot serve as FK coverage evidence.
+MetaEd (METAED-1667) and DMS consume the same versioned conformance corpus with separate `metaEd`, `dmsPostgresql`, and
+`dmsSqlServer` outcomes. PostgreSQL outcomes never contain classifier rejection; SQL Server owns decisions and
+certificates. Cross-table/root-to-child equality propagation remains separate future work and cannot serve as FK
+coverage evidence.
 
 ## Worked Example: Synthetic Presence Flags
 

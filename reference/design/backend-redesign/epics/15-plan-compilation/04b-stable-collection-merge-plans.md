@@ -38,6 +38,9 @@ Implemented contract summary:
 - Persisted collection tables populate `CollectionMergePlan` instead of relying on `DeleteByParentSql`.
 - `CollectionMergePlan` is binding-index-first and carries ordered `SemanticIdentityBindings` as `(RelativePath, BindingIndex)` entries back into `TableWritePlan.ColumnBindings`, plus `StableRowIdentityBindingIndex`, `UpdateByStableRowIdentitySql`, `DeleteByStableRowIdentitySql`, `OrdinalBindingIndex`, and `CompareBindingIndexesInOrder`.
 - `CollectionKeyPreallocationPlan` remains separate table-local metadata for reserving and binding new `CollectionItemId` values before insert DML executes.
+- This stage consumes the complete `DerivedRelationalModelArtifact`, including `ExecutorRequirements`, and compiles every
+  collection-backed `SameStatementReferenceResolutionPlan`. Together with E15-S04's root/1:1 plans, the resulting
+  resource plan has exactly one plan per requirement and no extras.
 
 ## Acceptance Criteria
 
@@ -56,10 +59,29 @@ Implemented contract summary:
 
 - Write-plan compilation consumes the `CollectionItemId`-based relational model shape from `DMS-1103`.
 - Runtime mapping/write-plan compilation explicitly opts into the strict relational-model pass set (`CreateStrict()` or equivalent) rather than assuming `CreateDefault()` is globally validating.
-- `CollectionMergePlan.SemanticIdentityBindings` compile directly from the non-empty semantic identity already derived for the scope from the allowed upstream schema source: scope-resolved `arrayUniquenessConstraints` for non-reference-backed scopes, or exactly one qualifying scope-local `documentPathsMapping.referenceJsonPaths` binding set for reference-backed scopes; plan compilation does not invent a runtime fallback key.
+- `CollectionMergePlan.SemanticIdentityBindings` and collection same-statement occurrence matchers compile directly from
+  the same ordered model-level `PersistedOccurrenceIdentity`; plan compilation does not invent a runtime fallback key or
+  reconstruct either projection from a UNIQUE constraint.
 - Collection/common-type extension scope plans align to base-row stable identity rather than ancestor ordinals.
 - Plan metadata is sufficient for runtime code to compare current rows and post-merge rows without SQL parsing.
 - If the upstream relational model for a persisted multi-item collection scope does not expose a non-empty semantic identity, strict runtime plan compilation fails deterministically instead of emitting a merge plan with ambiguous matching semantics; default/shared compilation remains permissive unless a caller deliberately opts into strict mode.
+
+### Collection same-statement resolution plans
+
+- Each collection-backed executor requirement compiles to one bounded, typed JSON-recordset correlation command and one
+  post-write verification command for both providers. Correlation inputs contain the request key, origin id,
+  pre-fallback materialized occurrence values, and submitted public identity values in canonical order.
+- A match part may use any write binding materialized after ordinary reference/descriptor resolution and key unification,
+  provided it does not depend on the deferred target id/anchors. A match part propagated from that same deferred site
+  compiles as `CorrelatedChangedTargetDocumentId`; the locking query compares the receiver's stored reference FK with the
+  stable target `DocumentId` after selecting that target from the retained route and submitted future vector. Propagated
+  public components are not collection match keys.
+- The correlation result returns the exact stable receiver-row locator, target `DocumentId`, and locked unchanged target
+  values at canonical distinct ordinals. The instance override carries that locator, and collection merge binding must
+  select/reassert the same persisted row rather than rematching by request ordinal or changed future values.
+- Changed future items may use only lineage-proved origin write bindings; unchanged items may use locked target columns;
+  terminal `DocumentId` uses the stored target id. Deferred target-id/anchor dependencies remain forbidden. Post-write
+  verification bypasses cache and proves the submitted referential id, same target id, and demanded anchors.
 
 ### Compare-order and guarded no-op metadata
 
@@ -85,12 +107,20 @@ Implemented contract summary:
   - compare-order / no-op candidate projection cases,
   - normalized contract round-tripping, and
   - compare-order metadata used by guarded no-op detection.
+  - the retained acyclic `R -> T -> RChild` case with multiple existing child occurrences, a reference-backed stable
+    target-`DocumentId` semantic member, a changed origin-derived item, and a locked unchanged target item, proving plan generation is neither
+    cycle/certificate-dependent nor one-query-per-child.
+  - ordinary scalar, descriptor, already-resolved reference, ancestor-locator, and key-unification occurrence terms;
+    fan-out target disambiguation from submitted public identity inputs; and fail-closed deferred/ambiguous sources.
 - Fixture/golden outputs are updated to reflect the stable-identity collection write-plan contract.
 
 ## Tasks
 
 1. Extend the write-plan contract types to distinguish collection merge operations from non-root 1:1 delete-by-parent behavior, including the deterministic compare/no-op metadata required for stable-identity collection scopes.
 2. Update runtime/write-plan compilation to opt into the strict relational-model pipeline and emit deterministic stable-identity collection DML/metadata from the `CollectionItemId`-based relational model, including the metadata needed to project hydrated current rows into write-plan compare order and the non-empty semantic identity bindings already derived from the allowed upstream schema source.
-3. Preserve the existing non-root 1:1 scope contract while removing replace-semantics assumptions for collections and keeping non-collection presence/absence behavior intact.
-4. Update manifest emission, normalized DTO/codecs, and any pack-facing serialization for the revised contract and compare/no-op metadata.
-5. Add unit tests and golden fixtures that lock down stable-identity collection plan compilation, compare-order invariants, and no-op candidate projection behavior for both dialects.
+3. Compile every collection-backed executor requirement from the complete artifact into canonical correlation and
+   post-verification commands, full future vectors, and stable-locator result bindings; validate exact combined
+   requirement coverage with E15-S04 root/1:1 plans.
+4. Preserve the existing non-root 1:1 scope contract while removing replace-semantics assumptions for collections and keeping non-collection presence/absence behavior intact.
+5. Update manifest emission, normalized DTO/codecs, and any pack-facing serialization for the revised contract and compare/no-op metadata.
+6. Add unit tests and golden fixtures that lock down stable-identity collection plan compilation, compare-order invariants, certified correlation, and no-op candidate projection behavior for both dialects.

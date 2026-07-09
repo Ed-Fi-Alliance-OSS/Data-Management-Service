@@ -4,12 +4,14 @@
 
 Deferred proposal; non-normative and **not part of DMS-1129**.
 
-> DMS-1129 derives statement-scoped identity value-flow obligations over final, storage-mapped
-> physical FK candidates, evaluates PostgreSQL's fixed actions, and jointly selects SQL Server
-> actions that satisfy value-flow safety and error 1785; see
+> DMS-1129 inventories intrinsic target lineages, derives least-fixed-point receiver-demanded anchors, and forms final storage-mapped physical FK
+> candidates for both engines. PostgreSQL receives fixed actions without DMS classification; SQL
+> Server alone derives statement-scoped value-flow proofs while globally selecting actions that
+> satisfy value-flow safety and error 1785; see
 > [mssql-cascading.md](mssql-cascading.md). It does not derive propagation from cross-table
 > `equalityConstraints`. This proposal remains separate future work. Its equality paths cannot be
-> treated as row-lineage, changed-column-lineage, or presence evidence in a DMS-1129
+> treated as changed-target route, receiver-carrier route, component/anchor equality, row-correlation,
+> or presence evidence in a DMS-1129
 > `CoverageCertificate`.
 
 ## Background
@@ -123,8 +125,10 @@ unified key parts.
 1. **Cross-table propagation for equality constraints that cross root ↔ child scopes**, updating dependent child
    **storage/canonical** columns set-based by owning root `DocumentId`.
 2. **Reference-site retargeting when required**: if the dependent endpoint is inside a composite reference FK
-   (`<identity parts…>, ..._DocumentId` — identity storage columns first, `DocumentId` last), propagate the entire reference site (not just the unified key part) so the FK
-   remains valid and the reference is effectively “retargeted” as ODS/API would do.
+   (`<identity parts…>, <site-demanded lineage anchors...>, ..._DocumentId`), propagate the entire selected reference
+   vector atomically (not just the unified key part) so the FK remains valid and the reference is effectively
+   “retargeted” as ODS/API would do. Its all-or-none guard covers the site `..._DocumentId`, per-site aliases, and every
+   dedicated demanded local anchor.
 3. Direct non-root reference sites require no extra parity mechanism: they contribute physical FK candidates and are
    handled by the reference-FK value-flow/classification design. This proposal concerns only endpoints with no such
    reference edge.
@@ -226,7 +230,8 @@ For a dependent endpoint that is a scalar or descriptor FK value stored in a can
 
 #### 3.2 Reference-site retargeting (composite FK endpoints)
 
-If the dependent endpoint sits inside a **composite reference FK** (`..._DocumentId` + identity parts), ODS/API semantics
+If the dependent endpoint sits inside a **composite reference FK** (`..._DocumentId` + identity parts + any site-demanded
+lineage anchors), ODS/API semantics
 are effectively “retarget the reference when the unified key part changes”.
 
 In the redesign, this must be explicit because updating only the identity part storage column can violate the composite FK
@@ -245,7 +250,8 @@ When a propagation rule targets an identity-part column that belongs to a refere
      - (alternative) join via `dms.ReferentialIdentity` if we need polymorphic behavior without per-target joins.
   3. `SET`:
      - the dependent `..._DocumentId` to the resolved DocumentId, and
-     - all dependent identity-part **storage** columns to the computed identity values.
+     - all dependent identity-part **storage** columns to the computed identity values, and
+     - every dedicated demanded local anchor from the resolved target's intrinsic lineage storage.
 - Presence gating:
   - only retarget rows where the dependent reference site is currently present (`..._DocumentId IS NOT NULL`).
   - do not create references where none existed.
@@ -261,7 +267,8 @@ Complexity note:
   scalar”. The maintenance routine must:
   - compute a new referenced-identity tuple (mixing unified and non-unified parts),
   - resolve that tuple → a target `DocumentId` deterministically (and uniquely) across dialects, and then
-  - update `..._DocumentId` and all identity-part **storage** columns atomically and presence-gated.
+  - update `..._DocumentId`, all identity-part **storage** columns, and every site-demanded anchor atomically and
+    presence-gated under the site's all-or-none contract.
 - It is straightforward for simple concrete targets (single-part identities) but becomes significantly more complex for:
   - multi-part natural keys,
   - polymorphic/abstract targets (requiring `{AbstractResource}Identity` or `dms.ReferentialIdentity`-based resolution),
@@ -311,10 +318,11 @@ derivation-only DDL diagnostics must not be duplicated into the runtime payload.
 
 ### 6) Direct non-root reference sites
 
-A child or extension table that directly references a changed target already contributes a physical FK candidate. It is
-covered by dialect-neutral statement-scoped value-flow analysis and final dialect action evaluation (jointly with error
-1785 for SQL Server). DLEP is not a prerequisite for that behavior. Its only proposed role is to create maintenance flow
-where no reference FK edge exists.
+A child or extension table that directly references a changed target already contributes a physical FK candidate. The
+target has intrinsic lineage storage, while this site starts with empty demand and carries only anchors required by its
+receiver validity/correlation obligations. PostgreSQL applies its fixed action; SQL Server includes it in global value-flow
+and error-1785 selection. DLEP is not a prerequisite for that behavior. Its only proposed role is to create maintenance
+flow where no reference FK edge exists.
 
 If DLEP is later accepted, each DLEP trigger/routine statement becomes an explicit mutation origin and statement
 boundary in the value-flow model. It must prove exact component lineage, owning-document row correlation, optional-path
@@ -355,6 +363,6 @@ an FK violation in the initiating cascade statement.
 3. Should DLEP be modeled as an extension of “key unification”, or as a separate derived-maintenance feature that happens
    to be driven by `equalityConstraints`?
 
-The DMS/MetaEd corpus required by METAED-1667 remains authoritative for physical reference-FK value flow and SQL Server
-representability. A future DLEP design requires an additional versioned corpus for cross-scope writes; passing the
-physical-FK corpus does not establish DLEP correctness.
+The DMS/MetaEd corpus required by METAED-1667 remains authoritative for physical reference-FK behavior, with separate
+`metaEd`, `dmsPostgresql`, and `dmsSqlServer` expected outcomes. A future DLEP design requires an additional versioned
+corpus for cross-scope writes; passing the physical-FK corpus does not establish DLEP correctness.
