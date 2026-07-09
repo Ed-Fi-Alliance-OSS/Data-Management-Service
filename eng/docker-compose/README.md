@@ -67,8 +67,9 @@ also append `-v`. Examples:
 The turnkey `bootstrap-local-dms.ps1` entry point accepts the same teardown flags, so the
 documented start command also stops the stack. `bootstrap-local-dms.ps1 -d [-v]` delegates to
 `start-local-dms.ps1 -d [-v -RemoveBootstrap]`; `-d -v` additionally removes the staged
-`.bootstrap/` workspace. Pass the same infrastructure flags you started with (for example
-`-DatabaseEngine`, `-EnableSwaggerUI`) so teardown targets the same services.
+`.bootstrap/` workspace. Pass the same infrastructure flags you started with so teardown targets
+the same compose shape — in particular the same `-DatabaseEngine`, otherwise `-d -v` selects the
+default (PostgreSQL) compose file and will not remove the other engine's named data volume.
 
 ```pwsh
 # Stop the turnkey stack, keeping volumes
@@ -228,8 +229,12 @@ Notes:
   unchanged.
 * **Always tear down before switching Data Standard versions** — the provisioned database and
   staged workspace are version-specific, and DMS refuses to start against a database whose
-  effective schema hash does not match. Use `bootstrap-local-dms.ps1 -d -v` (which delegates to
-  `start-local-dms.ps1 -d -v -RemoveBootstrap`, removing both the volumes and the staged
+  effective schema hash does not match. Tear down with `bootstrap-local-dms.ps1 -d -v` **and the
+  same `-DatabaseEngine` you started with**, so the provisioned database volume is actually
+  removed — teardown selects the compose file (and therefore the named volume) by engine, so a
+  mismatched engine leaves that volume behind. For the MSSQL examples above:
+  `bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v` (it delegates to
+  `start-local-dms.ps1 -d -v -RemoveBootstrap`, removing both the SQL Server volume and the staged
   `.bootstrap/` workspace).
 
 ## Schema Selection
@@ -365,7 +370,10 @@ fingerprint-mismatch teardown-guidance error after a branch switch or input
 change, recover by running `./bootstrap-local-dms.ps1 -d -v` (which removes the
 local `.bootstrap/` workspace by delegating to
 `start-local-dms.ps1 -d -v -RemoveBootstrap`) or the matching E2E
-`teardown-local-dms.ps1` script, then rerun the prepare commands.
+`teardown-local-dms.ps1` script, then rerun the prepare commands. Add the same
+`-DatabaseEngine` you started with (e.g. `-DatabaseEngine mssql`) so teardown
+also removes that engine's data volume; the workspace removal itself is
+engine-independent.
 
 > **Note on `-RemoveBootstrap`:** `./bootstrap-local-dms.ps1 -d -v` removes the
 > `.bootstrap/` workspace for you — it delegates to
