@@ -11,8 +11,8 @@
     database that DMS can serve requests from.
 
 .DESCRIPTION
-    Extracts the .sql dump from the template .nupkg and restores it into a
-    fresh verification database inside the running PostgreSQL container. The
+    Extracts the database dump from the template .nupkg and restores it into a
+    fresh verification database inside the running database container. The
     restored schema set must match the source database's user schemas, and
     core data (dms.EffectiveSchema, dms.Document, dms.Descriptor) must be
     non-empty; extension schemas may be DDL-only. Serveability is then proven
@@ -35,13 +35,21 @@
 .PARAMETER PackageDirectory
     Directory containing the generated .nupkg (default: current directory).
 
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql". Defaults to "postgresql". Selects the engine used
+    to restore and inspect the verification database.
+
+.PARAMETER MssqlPassword
+    The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
+
 .PARAMETER RequirePopulatedData
     Additionally require populated (non-descriptor) sample data to survive the
     restore and be serveable by DMS.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Verification entry script intentionally writes operator progress to the console.')]
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL password is read as plaintext from the environment and handed to psql / a PostgreSQL connection string, where it must be plaintext; SecureString adds no protection across that boundary.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The PostgreSQL and MSSQL passwords are handed to a database connection string / sqlcmd where they must be plaintext; there is no companion username credential and a PSCredential adds no protection across that boundary.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL and MSSQL passwords are read as plaintext from the environment and handed to psql/sqlcmd or a database connection string, where they must be plaintext; SecureString adds no protection across that boundary.')]
 [CmdletBinding()]
 param (
     [Parameter(Mandatory = $true)]
@@ -51,7 +59,10 @@ param (
 
     [string]$VerificationDatabaseName = "template_restore_verification",
 
-    [string]$ContainerName = "dms-postgresql",
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql",
+
+    [string]$ContainerName = $(if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }),
 
     [string]$DmsContainerName = "ed-fi-api",
 
@@ -60,6 +71,8 @@ param (
     [string]$CmsUrl = "http://localhost:8081",
 
     [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!",
+
+    [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
 
     [switch]$RequirePopulatedData
 )
@@ -90,6 +103,21 @@ function Invoke-PsqlScalar {
     return [long](@($value) | Select-Object -First 1)
 }
 
+function Invoke-SqlcmdScalar {
+    param(
+        [string]$DatabaseName,
+        [string]$Query
+    )
+
+    $value = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d $DatabaseName -C -b -h -1 -W -Q $Query
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Query failed against database '$DatabaseName': $Query"
+    }
+
+    return [long](@($value) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+}
+
 Assert-SafeDatabaseName -DatabaseName $SourceDatabaseName
 Assert-SafeDatabaseName -DatabaseName $VerificationDatabaseName
 
@@ -99,14 +127,14 @@ try {
     Import-Module ../Dms-Management.psm1 -Force
 
     # --- Restore the package into a fresh verification database ---
-    $expectedSchemas = @(Get-UserSchemaNames -ContainerName $ContainerName -DatabaseName $SourceDatabaseName)
+    $expectedSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword)
     Write-Host "Expected schemas (from '$SourceDatabaseName'): $($expectedSchemas -join ', ')"
 
-    $packageName = Restore-TemplatePackage -PackageDirectory $PackageDirectory -DatabaseName $VerificationDatabaseName -ContainerName $ContainerName
+    $packageName = Restore-TemplatePackage -PackageDirectory $PackageDirectory -DatabaseName $VerificationDatabaseName -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -MssqlPassword $MssqlPassword
     Write-Host "Verifying template package: $packageName" -ForegroundColor Cyan
 
     # --- Structural and data assertions ---
-    $restoredSchemas = @(Get-UserSchemaNames -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName)
+    $restoredSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword)
     $missingSchemas = @($expectedSchemas | Where-Object { $_ -cnotin $restoredSchemas })
     $unexpectedSchemas = @($restoredSchemas | Where-Object { $_ -cnotin $expectedSchemas })
 
@@ -116,14 +144,26 @@ try {
 
     Write-Host "Restored schemas match: $($restoredSchemas -join ', ')" -ForegroundColor Green
 
-    $effectiveSchemaCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."EffectiveSchema";'
-    if ($effectiveSchemaCount -lt 1) { throw 'Restored dms."EffectiveSchema" is empty.' }
+    if ($DatabaseEngine -eq "mssql") {
+        $effectiveSchemaCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[EffectiveSchema];'
+        if ($effectiveSchemaCount -lt 1) { throw 'Restored [dms].[EffectiveSchema] is empty.' }
 
-    $documentCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."Document";'
-    if ($documentCount -lt 1) { throw 'Restored dms."Document" is empty.' }
+        $documentCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[Document];'
+        if ($documentCount -lt 1) { throw 'Restored [dms].[Document] is empty.' }
 
-    $descriptorCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."Descriptor";'
-    if ($descriptorCount -lt 1) { throw 'Restored dms."Descriptor" is empty.' }
+        $descriptorCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[Descriptor];'
+        if ($descriptorCount -lt 1) { throw 'Restored [dms].[Descriptor] is empty.' }
+    }
+    else {
+        $effectiveSchemaCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."EffectiveSchema";'
+        if ($effectiveSchemaCount -lt 1) { throw 'Restored dms."EffectiveSchema" is empty.' }
+
+        $documentCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."Document";'
+        if ($documentCount -lt 1) { throw 'Restored dms."Document" is empty.' }
+
+        $descriptorCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM dms."Descriptor";'
+        if ($descriptorCount -lt 1) { throw 'Restored dms."Descriptor" is empty.' }
+    }
 
     Write-Host "Data assertions passed: EffectiveSchema=$effectiveSchemaCount, Document=$documentCount, Descriptor=$descriptorCount" -ForegroundColor Green
 
@@ -135,7 +175,41 @@ try {
     $probeSchoolId = $null
 
     if ($RequirePopulatedData) {
-        $populatedDocumentCountQuery = @'
+        if ($DatabaseEngine -eq "mssql") {
+            $populatedDocumentCountQuery = @'
+SELECT COUNT(*)
+FROM [dms].[Document] d
+JOIN [dms].[ResourceKey] rk ON rk.[ResourceKeyId] = d.[ResourceKeyId]
+WHERE rk.[ResourceName] NOT LIKE '%Descriptor'
+  AND rk.[ResourceName] NOT LIKE '%SchoolYear%';
+'@
+
+            $sourcePopulatedDocumentCount = Invoke-SqlcmdScalar -DatabaseName $SourceDatabaseName -Query $populatedDocumentCountQuery
+            if ($sourcePopulatedDocumentCount -lt 1) {
+                throw "Source database '$SourceDatabaseName' contains no populated (non-descriptor) documents; the populated bulk load did not land there."
+            }
+
+            $restoredPopulatedDocumentCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query $populatedDocumentCountQuery
+            if ($restoredPopulatedDocumentCount -ne $sourcePopulatedDocumentCount) {
+                throw "Restored populated document count ($restoredPopulatedDocumentCount) does not match the source ($sourcePopulatedDocumentCount); the dump dropped populated rows."
+            }
+
+            $schoolCountQuery = 'SELECT COUNT(*) FROM [edfi].[School];'
+
+            $sourceSchoolCount = Invoke-SqlcmdScalar -DatabaseName $SourceDatabaseName -Query $schoolCountQuery
+            if ($sourceSchoolCount -lt 1) {
+                throw "Source database '$SourceDatabaseName' contains no schools; populated sample data is incomplete."
+            }
+
+            $restoredSchoolCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query $schoolCountQuery
+            if ($restoredSchoolCount -ne $sourceSchoolCount) {
+                throw "Restored school count ($restoredSchoolCount) does not match the source ($sourceSchoolCount); the dump dropped school rows."
+            }
+
+            $probeSchoolId = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT TOP 1 [SchoolId] FROM [edfi].[School] ORDER BY [SchoolId];'
+        }
+        else {
+            $populatedDocumentCountQuery = @'
 SELECT COUNT(*)
 FROM dms."Document" d
 JOIN dms."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId"
@@ -143,42 +217,58 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
   AND rk."ResourceName" NOT ILIKE '%SchoolYear%';
 '@
 
-        $sourcePopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $populatedDocumentCountQuery
-        if ($sourcePopulatedDocumentCount -lt 1) {
-            throw "Source database '$SourceDatabaseName' contains no populated (non-descriptor) documents; the populated bulk load did not land there."
+            $sourcePopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $populatedDocumentCountQuery
+            if ($sourcePopulatedDocumentCount -lt 1) {
+                throw "Source database '$SourceDatabaseName' contains no populated (non-descriptor) documents; the populated bulk load did not land there."
+            }
+
+            $restoredPopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $populatedDocumentCountQuery
+            if ($restoredPopulatedDocumentCount -ne $sourcePopulatedDocumentCount) {
+                throw "Restored populated document count ($restoredPopulatedDocumentCount) does not match the source ($sourcePopulatedDocumentCount); the dump dropped populated rows."
+            }
+
+            $schoolCountQuery = 'SELECT COUNT(*) FROM edfi."School";'
+
+            $sourceSchoolCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $schoolCountQuery
+            if ($sourceSchoolCount -lt 1) {
+                throw "Source database '$SourceDatabaseName' contains no schools; populated sample data is incomplete."
+            }
+
+            $restoredSchoolCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $schoolCountQuery
+            if ($restoredSchoolCount -ne $sourceSchoolCount) {
+                throw "Restored school count ($restoredSchoolCount) does not match the source ($sourceSchoolCount); the dump dropped school rows."
+            }
+
+            $probeSchoolId = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT "SchoolId" FROM edfi."School" ORDER BY "SchoolId" LIMIT 1;'
         }
-
-        $restoredPopulatedDocumentCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $populatedDocumentCountQuery
-        if ($restoredPopulatedDocumentCount -ne $sourcePopulatedDocumentCount) {
-            throw "Restored populated document count ($restoredPopulatedDocumentCount) does not match the source ($sourcePopulatedDocumentCount); the dump dropped populated rows."
-        }
-
-        $schoolCountQuery = 'SELECT COUNT(*) FROM edfi."School";'
-
-        $sourceSchoolCount = Invoke-PsqlScalar -DatabaseName $SourceDatabaseName -Query $schoolCountQuery
-        if ($sourceSchoolCount -lt 1) {
-            throw "Source database '$SourceDatabaseName' contains no schools; populated sample data is incomplete."
-        }
-
-        $restoredSchoolCount = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query $schoolCountQuery
-        if ($restoredSchoolCount -ne $sourceSchoolCount) {
-            throw "Restored school count ($restoredSchoolCount) does not match the source ($sourceSchoolCount); the dump dropped school rows."
-        }
-
-        $probeSchoolId = Invoke-PsqlScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT "SchoolId" FROM edfi."School" ORDER BY "SchoolId" LIMIT 1;'
 
         Write-Host "Populated data assertions passed: PopulatedDocuments=$restoredPopulatedDocumentCount, Schools=$restoredSchoolCount" -ForegroundColor Green
     }
 
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
+
+    # Add-DataStore requires a PostgresCredential regardless of target engine; for MSSQL it goes
+    # unused because -ConnectionString is supplied verbatim from New-DataStoreConnectionString.
     $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
+
+    $dataStoreConnectionString = ""
+    if ($DatabaseEngine -eq "mssql") {
+        $dataStoreConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine "mssql" `
+            -DbHost $ContainerName `
+            -Port 1433 `
+            -Username "sa" `
+            -Password $MssqlPassword `
+            -DatabaseName $VerificationDatabaseName
+    }
 
     $verificationDataStoreId = Add-DataStore `
         -CmsUrl $CmsUrl `
         -AccessToken $cmsToken `
         -PostgresCredential $postgresCredential `
         -PostgresDbName $VerificationDatabaseName `
+        -ConnectionString $dataStoreConnectionString `
         -Name "Template Restore Verification" `
         -DataStoreType "Verification"
 

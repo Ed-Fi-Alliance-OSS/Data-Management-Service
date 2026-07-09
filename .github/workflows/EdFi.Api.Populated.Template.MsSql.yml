@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Pkg EdFi.Api.Populated.Template.MsSql
+on:
+  release:
+    types:
+      - released
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      publish_package:
+        description: "Publish the built template package to the Azure Artifacts feed"
+        type: boolean
+        default: false
+      standard_version:
+        description: "Build only this Data Standard version (e.g. 5.2.0 or 6.1.0). Leave blank to build every version in the matrix."
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+
+jobs:
+  # Builds the version matrix once so a manual dispatch can narrow the run to a single Data
+  # Standard version (standard_version input) without spending compute on the other legs.
+  # Release/tag runs carry no inputs and build every leg. To add or drop a version, edit the
+  # `legs` array below (and its matching schema artifacts / template env file); see
+  # docs/DATA-STANDARD-VERSIONS.md. DS 5.2 is the default.
+  configure-matrix:
+    name: Configure matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.build-matrix.outputs.include }}
+    steps:
+      - name: Select Data Standard legs
+        id: build-matrix
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.standard_version || '' }}
+        run: |
+          legs='[
+            {"standard_version":"5.2.0","package_name":"EdFi.Api.Populated.Template.MsSql.5.2.0","provenance_file":"populated.template.intoto.jsonl","environment_file":"./.env.template"},
+            {"standard_version":"6.1.0","package_name":"EdFi.Api.Populated.Template.MsSql.6.1.0","provenance_file":"populated.template.6.1.0.intoto.jsonl","environment_file":"./.env.template.ds61"}
+          ]'
+          if [ -n "$REQUESTED_VERSION" ]; then
+            include=$(jq -c --arg v "$REQUESTED_VERSION" '[.[] | select(.standard_version == $v)]' <<< "$legs")
+            if [ "$(jq 'length' <<< "$include")" -eq 0 ]; then
+              echo "::error::standard_version '$REQUESTED_VERSION' is not a known leg." >&2
+              exit 1
+            fi
+          else
+            include=$(jq -c '.' <<< "$legs")
+          fi
+          echo "Selected legs: $include"
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
+  build-populated-template:
+    name: Build Populated Template ${{ matrix.standard_version }}
+    needs: configure-matrix
+    # Each leg invokes the whole reusable build/SBOM/provenance pipeline, so per-version outputs
+    # stay correlated. The matrix is computed by configure-matrix (filterable on dispatch).
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.configure-matrix.outputs.include) }}
+    uses: ./.github/workflows/build-populated-template.yml
+    with:
+      standard_version: ${{ matrix.standard_version }}
+      package_name: ${{ matrix.package_name }}
+      manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
+      provenance_file: ${{ matrix.provenance_file }}
+      publish_package: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
+      environment_file: ${{ matrix.environment_file }}
+      verify_restore: true
+      require_populated_data: true
+      database_engine: mssql
+    secrets:
+      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+      AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

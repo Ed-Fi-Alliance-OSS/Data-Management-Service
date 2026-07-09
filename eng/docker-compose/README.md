@@ -153,15 +153,19 @@ image from source code.
 
 ## Running on the MSSQL backend
 
-The local stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
-`-DatabaseEngine mssql` switch. Pass it to either `bootstrap-local-dms.ps1` (turnkey) or
-`start-local-dms.ps1` (infrastructure) — no `-EnvironmentFile` is required:
+The stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
+`-DatabaseEngine mssql` switch, on both the local-build and published-image workflows. Pass it to
+`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` (turnkey) or `start-local-dms.ps1` /
+`start-published-dms.ps1` (infrastructure) - no `-EnvironmentFile` is required:
 
 ```pwsh
-# Turnkey: stand up SQL Server, provision the relational schema, and (optionally) load seed data
+# Turnkey, local build: stand up SQL Server, provision the relational schema, and (optionally) load seed data
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
 
-# Tear down (delete volumes and remove the .bootstrap workspace)
+# Turnkey, published image: same shape, against the published DMS image
+./bootstrap-published-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
+
+# Tear down the local stack (delete volumes and remove the .bootstrap workspace)
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v
 ```
 
@@ -175,14 +179,21 @@ selection. Everything else (`SCHEMA_PACKAGES`, Kafka, Keycloak, identity-provide
 endpoints, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
 override those base settings, and the overlay still composes on top of it.
 
+> [!NOTE]
+> **Database topology.** Local deployments host the Configuration Service and DMS in one shared
+> physical database on both engines: the CMS `dmscs` schema, and the self-contained (OpenIddict)
+> identity stores, live inside the same database as the DMS datastore (`POSTGRES_DB_NAME` on
+> PostgreSQL, `MSSQL_DB_NAME` on MSSQL) rather than a separate Configuration Service database. An
+> opt-in separate-CMS-database mode is planned (DMS-1270).
+
 A few things are specific to the MSSQL path:
 
 * **It is single-engine.** SQL Server hosts everything: the DMS datastore, the Configuration
   Service (CMS SQL Server backend), and the self-contained (OpenIddict) identity stores.
-  `mssql.yml` swaps in for `postgresql.yml` — both define the same `db` service that
-  `local-config.yml` health-gates on — and no PostgreSQL container runs. The DMS datastore
-  database is created by the provision phase; the CMS database (`edfi_configurationservice`)
-  is created by the identity init / CMS startup deploy.
+  `mssql.yml` swaps in for `postgresql.yml` - both define the same `db` service that
+  `local-config.yml` health-gates on - and no PostgreSQL container runs. The shared database is
+  created by the provision phase; CMS deploys its `dmscs` schema into that same database on
+  startup (see "Database topology" above).
 * **Relational backend only.** MSSQL is supported through the relational backend
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
@@ -191,6 +202,24 @@ A few things are specific to the MSSQL path:
   SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
   it is database-engine agnostic.
+* **CI publishes database-template packages for both engines.** `build-minimal-template.yml` and
+  `build-populated-template.yml` are reusable workflows parameterized by `database_engine`
+  (`postgresql` or `mssql`); the `EdFi.Api.Minimal.Template.MsSql.yml` and
+  `EdFi.Api.Populated.Template.MsSql.yml` caller workflows invoke them with
+  `database_engine: mssql` to build and publish `EdFi.Api.Minimal.Template.MsSql.*` and
+  `EdFi.Api.Populated.Template.MsSql.*` NuGet packages alongside the existing PostgreSQL ones.
+  On MSSQL the package's data dump is a native `BACKUP DATABASE` `.bak` file (restored with
+  `RESTORE DATABASE`); that `.bak` is coupled to the pinned
+  `mcr.microsoft.com/mssql/server:2022-latest` image it was built and verified against, the same
+  way the PostgreSQL `.sql` dump is coupled to the PostgreSQL major version it was built against.
+  Every published package is restore-verified in CI
+  (`eng/DatabaseTemplates/verify-template-restore.ps1`) before publishing. Base environment files'
+  `DATABASE_TEMPLATE_PACKAGE` value (e.g. `EdFi.Api.Populated.Template.PostgreSql.5.2.0`) carries
+  the PostgreSQL package id; composing the `.env.mssql` overlay for `-DatabaseEngine mssql`
+  rewrites only its engine segment to `MsSql` (`Convert-TemplatePackageToken` in
+  `env-utility.psm1`), so the same base `-EnvironmentFile` names the matching package id for
+  either engine. This section documents the CI build/publish/verify pipeline only; no local
+  bootstrap flow currently restores these packages.
 
 After the stack is up, run the smoke tests the same way as for PostgreSQL:
 
@@ -338,9 +367,14 @@ Use the `bootstrap-local-dms.ps1` wrapper as above, or run the phases manually:
 ```
 
 Each of the four commands above accepts `-DatabaseEngine mssql` (default `postgresql`); pass it
-consistently on all four to run this manual flow against the SQL Server datastore — every phase
+consistently on all four to run this manual flow against the SQL Server datastore - every phase
 composes the same `.env.mssql` overlay (see "Running on the MSSQL backend" above), so a
 mismatched flag on any one command leaves that phase reading the wrong engine.
+
+`start-local-dms.ps1` and `start-published-dms.ps1` also accept a narrower `-DbOnly` switch that
+starts only the database container and waits for it to become ready, then stops. It is mutually
+exclusive with `-InfraOnly` and `-DmsOnly` and is not part of this four-command flow; it exists
+for diagnostics and for other tooling to sequence a database-only startup around.
 
 Expert mode (`-ApiSchemaPath`) and standard mode (omit `-ApiSchemaPath`) are the two schema-selection
 paths; there is no `-Extensions` parameter.

@@ -137,6 +137,218 @@ function Test-WrapperManifestClaimsStaged {
     }
 }
 
+function Get-WrapperManifestSchemaIdentity {
+    <#
+    .SYNOPSIS
+    Reads the staged bootstrap manifest's schema.selectionMode and schema.selectedExtensions - the
+    two schema-section fields that together identify which package set (if any) drove a Standard-mode
+    staged workspace. Returns $null when the manifest is missing, empty, malformed, unreadable, or
+    lacks schema.selectionMode.
+
+    Bare JSON parse keeps this independent of bootstrap-manifest.psm1 in sandboxed Pester invocations
+    (mirrors Test-WrapperManifestClaimsStaged). Property presence is tested via PSObject.Properties so
+    the check is safe regardless of Set-StrictMode.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ManifestPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $rawManifestContent = Get-Content -LiteralPath $ManifestPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($rawManifestContent)) {
+            return $null
+        }
+
+        $parsedManifest = $rawManifestContent | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $parsedManifest) {
+            return $null
+        }
+
+        $schemaProperty = $parsedManifest.PSObject.Properties['schema']
+        if ($null -eq $schemaProperty -or $null -eq $schemaProperty.Value) {
+            return $null
+        }
+
+        $selectionModeProperty = $schemaProperty.Value.PSObject.Properties['selectionMode']
+        if ($null -eq $selectionModeProperty -or [string]::IsNullOrWhiteSpace([string]$selectionModeProperty.Value)) {
+            return $null
+        }
+
+        # $null here (rather than an empty array) means the property is absent entirely, so
+        # Test-WrapperManifestSchemaPackagesCurrent can tell "no extensions recorded, nothing to
+        # compare" apart from "recorded as an explicit empty set". The assignment is split into
+        # its own statement (rather than the branch value of an if/else expression) because
+        # PowerShell flattens an empty-array branch value of a captured if/else expression to
+        # $null; a plain `$selectedExtensions = @(...)` assignment does not.
+        $selectedExtensionsProperty = $schemaProperty.Value.PSObject.Properties['selectedExtensions']
+        $selectedExtensions = $null
+        if ($null -ne $selectedExtensionsProperty -and $null -ne $selectedExtensionsProperty.Value) {
+            $selectedExtensions = @($selectedExtensionsProperty.Value | ForEach-Object { [string]$_ })
+        }
+
+        return [pscustomobject]@{
+            SelectionMode      = [string]$selectionModeProperty.Value
+            SelectedExtensions = $selectedExtensions
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-WrapperEffectiveSchemaExtension {
+    <#
+    .SYNOPSIS
+    Derives the extension identity set (lowercased project-endpoint tokens) implied by the effective
+    env file's SCHEMA_PACKAGES value, using the same core-vs-extension naming convention
+    prepare-dms-schema.ps1's SCHEMA_PACKAGES-driven staging (Invoke-SchemaPackagesModeSchemaStaging)
+    already relies on: EdFi.DataStandard<NN>.ApiSchema identifies the core package; every other
+    EdFi.DataStandard<NN>.<Extension>.ApiSchema entry is an extension whose endpoint token is the
+    <Extension> segment, lowercased - the same token prepare-dms-schema.ps1 records (from the staged
+    package's own declared projectEndpointName) into schema.selectedExtensions, so the two sides are
+    directly comparable without downloading or hashing anything.
+
+    A bare regex extraction (mirroring schema-package-utility.psm1's Get-QuotedEnvJson) keeps this
+    independent of that sibling module in sandboxed Pester invocations. An env file with no
+    SCHEMA_PACKAGES key, or an unparsable value, implies the catalog-pinned core-only default that
+    prepare-dms-schema.ps1 itself falls back to, so it returns an empty set rather than throwing.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile
+    )
+
+    $expectedExtensions = [System.Collections.Generic.List[string]]::new()
+
+    if (-not (Test-Path -LiteralPath $EnvironmentFile -PathType Leaf)) {
+        return $expectedExtensions.ToArray()
+    }
+
+    $environmentFileContent = Get-Content -LiteralPath $EnvironmentFile -Raw
+    $schemaPackagesMatch = [System.Text.RegularExpressions.Regex]::Match(
+        $environmentFileContent,
+        "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
+    )
+    if (-not $schemaPackagesMatch.Success) {
+        return $expectedExtensions.ToArray()
+    }
+
+    try {
+        $schemaPackages = @($schemaPackagesMatch.Groups["value"].Value | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        return $expectedExtensions.ToArray()
+    }
+
+    $corePackageIdPattern = '^EdFi\.DataStandard\d+\.ApiSchema$'
+    $extensionPackageIdPattern = '^EdFi\.DataStandard\d+\.(?<extension>.+)\.ApiSchema$'
+
+    foreach ($schemaPackage in $schemaPackages) {
+        $packageName = [string]$schemaPackage.name
+        if ([string]::IsNullOrWhiteSpace($packageName) -or $packageName -match $corePackageIdPattern) {
+            continue
+        }
+
+        $extensionMatch = [System.Text.RegularExpressions.Regex]::Match($packageName, $extensionPackageIdPattern)
+        if ($extensionMatch.Success) {
+            $null = $expectedExtensions.Add($extensionMatch.Groups["extension"].Value.ToLowerInvariant())
+        }
+    }
+
+    return $expectedExtensions.ToArray()
+}
+
+function Test-WrapperManifestSchemaPackagesCurrent {
+    <#
+    .SYNOPSIS
+    Returns $true when the staged bootstrap manifest's recorded schema-package identity still
+    matches the effective env file's SCHEMA_PACKAGES value, so the wrapper can safely reuse the
+    staged schema workspace instead of re-running prepare-dms-schema.ps1.
+
+    The wrapper uses this to close a staging-reuse gap: a workspace staged for one package set (e.g.
+    a DS 6.1 core-only SCHEMA_PACKAGES value) could otherwise be silently served under a later
+    invocation whose effective env now selects a different set (e.g. DS 5.2 core + TPDM), with no
+    error, until something downstream (e.g. a populated template with zero rows) surfaces the
+    mismatch. Comparing schema.selectedExtensions - the project-endpoint tokens prepare-dms-schema.ps1
+    itself records for every staged extension - against the extension identity implied by the
+    effective SCHEMA_PACKAGES value closes that gap without re-downloading or re-hashing anything.
+
+    Only schema.selectionMode "Standard" (package-backed) manifests are compared: "ApiSchemaPath"
+    (expert filesystem) manifests are not driven by SCHEMA_PACKAGES at all, so forcing a comparison
+    against it would treat an intentional manual/expert override as a mismatch and discard a
+    hand-staged workspace that may carry custom extensions. Those are always reported as matching
+    (reuse as-is), consistent with the staging block's existing "reuse an already-staged workspace
+    as-is" contract. A Standard-mode manifest that has no schema.selectedExtensions recorded at all
+    (rather than an explicit, possibly-empty array) has nothing to compare either, and is likewise
+    reported as matching.
+
+    A missing, empty, malformed, or unreadable manifest, or one missing schema.selectionMode, is
+    reported as "not matching" so the staging phase re-runs prepare-dms-schema.ps1, which then owns
+    the authoritative re-stage (and surfaces its own error, if any) - mirroring how
+    Test-WrapperManifestClaimsStaged treats a malformed manifest as "claims not staged".
+
+    .PARAMETER ManifestPath
+    Path to the staged bootstrap-manifest.json.
+
+    .PARAMETER EnvironmentFile
+    Path to the effective env file whose SCHEMA_PACKAGES value is the comparison target.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ManifestPath,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile
+    )
+
+    $manifestSchemaIdentity = Get-WrapperManifestSchemaIdentity -ManifestPath $ManifestPath
+    if ($null -eq $manifestSchemaIdentity) {
+        return $false
+    }
+
+    if ($manifestSchemaIdentity.SelectionMode -ne "Standard") {
+        return $true
+    }
+
+    if ($null -eq $manifestSchemaIdentity.SelectedExtensions) {
+        return $true
+    }
+
+    try {
+        $stagedExtensions = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+        foreach ($stagedExtension in $manifestSchemaIdentity.SelectedExtensions) {
+            $null = $stagedExtensions.Add($stagedExtension)
+        }
+
+        $expectedExtensions = @(Get-WrapperEffectiveSchemaExtension -EnvironmentFile $EnvironmentFile)
+        if ($stagedExtensions.Count -ne $expectedExtensions.Count) {
+            return $false
+        }
+
+        foreach ($expectedExtension in $expectedExtensions) {
+            if (-not $stagedExtensions.Contains($expectedExtension)) {
+                return $false
+            }
+        }
+
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Resolve-WrapperEnvironmentFilePath {
     <#
     .SYNOPSIS
@@ -307,8 +519,8 @@ function Invoke-BootstrapWrapper {
         [string]$DmsBaseUrl,
 
         # Database engine for the DMS datastore ("postgresql" or "mssql"). Forwarded to the
-        # configure phase always, and to the start phases only for start-local-dms.ps1 (mssql.yml
-        # is a local-only tier; start-published-dms.ps1 has no -DatabaseEngine parameter).
+        # configure phase and to the start phase, both of which understand -DatabaseEngine
+        # regardless of whether the target is start-local-dms.ps1 or start-published-dms.ps1.
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
@@ -331,11 +543,6 @@ function Invoke-BootstrapWrapper {
     )
 
     $ErrorActionPreference = "Stop"
-
-    # mssql.yml is a local-only datastore tier. Only start-local-dms.ps1 understands
-    # -DatabaseEngine; start-published-dms.ps1 does not, so the engine is forwarded to the start
-    # phases only for the local start script. The configure phase always accepts it.
-    $startScriptSupportsDatabaseEngine = ($StartScriptName -eq "start-local-dms.ps1")
 
     # Fail fast: IDE workflow shape parameter validation — runs before any phase invocation.
     # -DmsBaseUrl is only valid with -InfraOnly; reject it without -InfraOnly so a misuse
@@ -508,11 +715,12 @@ function Invoke-BootstrapWrapper {
         # Schema/claims staging phase. The standard happy path needs no manual pre-staging
         # (bootstrap-design.md Section 9.4.1): when no workspace is staged yet, stage core-only standard
         # mode so a clean checkout runs `bootstrap-local-dms.ps1` with no preceding prepare step. When a
-        # schema workspace is already staged (a manual/expert prepare flow, or a prior run), reuse it
-        # as-is rather than rewriting a workspace that may still be bind-mounted into a running stack.
-        # There is no -Extensions parameter; extension/custom schema sets are staged via expert
-        # -ApiSchemaPath before invoking the wrapper. prepare-dms-schema.ps1 owns all validation and the
-        # rerun contract.
+        # schema workspace is already staged (a manual/expert prepare flow, or a prior run), it is reused
+        # as-is ONLY when it is still current for the effective env's SCHEMA_PACKAGES (see
+        # Test-WrapperManifestSchemaPackagesCurrent below) rather than unconditionally trusting a
+        # workspace that may still be bind-mounted into a running stack. There is no -Extensions
+        # parameter; extension/custom schema sets are staged via expert -ApiSchemaPath before invoking
+        # the wrapper. prepare-dms-schema.ps1 owns all validation and the rerun contract.
         #
         # Claims completion is staged whenever the manifest lacks the claims/seed sections: both after a
         # fresh schema stage above, and when a pre-existing manifest carries schema but not claims/seed
@@ -528,17 +736,41 @@ function Invoke-BootstrapWrapper {
         $stagedManifestPath = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
         $stagedManifestPresent = Test-Path -LiteralPath $stagedManifestPath -PathType Leaf
 
+        # A present manifest is reused only when its recorded schema-package identity still matches
+        # the effective env's SCHEMA_PACKAGES value (Test-WrapperManifestSchemaPackagesCurrent).
+        # Without this, a workspace staged for one Data Standard / package set could be silently
+        # served under a later invocation whose effective env selects a different one, with no error
+        # until something downstream (e.g. a populated template with zero rows) surfaces it.
+        $stagedManifestCurrent = $stagedManifestPresent -and
+            (Test-WrapperManifestSchemaPackagesCurrent -ManifestPath $stagedManifestPath -EnvironmentFile $effectiveEnvFile)
+
+        if ($stagedManifestPresent -and -not $stagedManifestCurrent) {
+            $staleSchemaIdentity = Get-WrapperManifestSchemaIdentity -ManifestPath $stagedManifestPath
+            # Split into its own statement (rather than an if/else expression branch value): PowerShell
+            # flattens an empty-array branch value of a captured if/else expression to $null.
+            $staleExtensions = @()
+            if ($null -ne $staleSchemaIdentity -and $null -ne $staleSchemaIdentity.SelectedExtensions) {
+                $staleExtensions = @($staleSchemaIdentity.SelectedExtensions)
+            }
+            $effectiveExtensions = @(Get-WrapperEffectiveSchemaExtension -EnvironmentFile $effectiveEnvFile)
+            Write-Information "Staged bootstrap schema workspace does not match the effective environment: staged extensions [$($staleExtensions -join ', ')] vs effective SCHEMA_PACKAGES extensions [$($effectiveExtensions -join ', ')]. Re-running prepare-dms-schema.ps1 -EnvironmentFile $effectiveEnvFile to re-stage (or surface its divergence guidance if the existing workspace must be removed first)." -InformationAction Continue
+        }
+
         # Reset the native exit-code sentinel before each prepare invocation (same pattern as the
         # start/configure/provision phases below). prepare-dms-*.ps1 signal failure by throwing and may
         # run no native command, so a stale nonzero $LASTEXITCODE left by an earlier command in the
         # session would otherwise make a successful staging step throw a false "failed with exit code"
         # before infrastructure starts.
-        if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
+        if ((Test-Path -LiteralPath $prepareSchemaScript) -and (-not $stagedManifestPresent -or -not $stagedManifestCurrent)) {
             $global:LASTEXITCODE = 0
             # Forward the same effective env file used by the other phases so standard-mode staging
             # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
             # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
-            # hash in sync with what the DMS container entrypoint resolves from the same env file.
+            # hash in sync with what the DMS container entrypoint resolves from the same env file. When
+            # the staged manifest is present but stale for the effective SCHEMA_PACKAGES value,
+            # prepare-dms-schema.ps1's own divergence check throws its remove-.bootstrap guidance on a
+            # true mismatch instead of silently re-staging over a workspace that may still be
+            # bind-mounted into a running stack.
             & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                 throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."
@@ -565,7 +797,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
-        if ($startScriptSupportsDatabaseEngine) { $startArgs.DatabaseEngine = $DatabaseEngine }
+        $startArgs.DatabaseEngine = $DatabaseEngine
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -683,7 +915,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableKafkaUI) { $healthWaitArgs.EnableKafkaUI = $true }
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
-            if ($startScriptSupportsDatabaseEngine) { $healthWaitArgs.DatabaseEngine = $DatabaseEngine }
+            $healthWaitArgs.DatabaseEngine = $DatabaseEngine
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -722,7 +954,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableKafkaUI) { $dmsStartArgs.EnableKafkaUI = $true }
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
-        if ($startScriptSupportsDatabaseEngine) { $dmsStartArgs.DatabaseEngine = $DatabaseEngine }
+        $dmsStartArgs.DatabaseEngine = $DatabaseEngine
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

@@ -755,6 +755,25 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
         }
     }
 
+    Context "Data Standard ref tag resolution" {
+        It "maps Data Standard 5.2 to the v5.2.0 seed ref tag" {
+            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "5.2" }
+
+            Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v5.2.0"
+        }
+
+        It "maps Data Standard 6.1 to the v6.1.0 seed ref tag" {
+            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "6.1" }
+
+            Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v6.1.0"
+        }
+
+        It "falls back to v5.2.0 when the Data Standard version is absent or unrecognized" {
+            Resolve-SeedDataStandardRefTag -EnvValues @{} | Should -Be "v5.2.0"
+            Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = "9.9" } | Should -Be "v5.2.0"
+        }
+    }
+
     Context "seed workspace materialization" {
         It "derives known interchange names from Bulk XSD filenames" {
             $xsdDir = New-TestDirectory
@@ -2919,19 +2938,17 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "start-published-dms.ps1 still declares -LoadSeedData pending bootstrap verification gate" {
-            # bootstrap-design.md Section 6.4 gates the removal of -LoadSeedData on
-            # "verifying the repo-pinned BulkLoadClient XML mode against DMS discovery,
-            # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Until that
-            # gate closes, -LoadSeedData stays on start-published-dms.ps1 invoking the
-            # direct-SQL database-template path for direct published-image startup.
+        It "start-published-dms.ps1 no longer declares -LoadSeedData" {
+            # The direct-SQL seed path is removed from start-published-dms.ps1. Use
+            # load-dms-seed-data.ps1 directly, or the bootstrap-published-dms.ps1 wrapper's
+            # -LoadSeedData flag, for the API-based seed path.
             $startScript = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             Test-Path -LiteralPath $startScript | Should -BeTrue
             $content = Get-Content -LiteralPath $startScript -Raw
             $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
             $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
                 ForEach-Object { $_.Groups[1].Value }
-            $declaredParams | Should -Contain "LoadSeedData" -Because "start-published-dms.ps1 must retain -LoadSeedData until the bootstrap-design.md Section 6.4 verification gate closes"
+            $declaredParams | Should -Not -Contain "LoadSeedData" -Because "start-published-dms.ps1 must not declare -LoadSeedData after the direct-SQL seed path is removed"
         }
 
         It "start-local-dms.ps1 no longer declares -LoadSeedData (DMS-1153 de-scope)" {
@@ -2957,6 +2974,103 @@ EdFi.BulkLoadClient.Console fake
                 $content = Get-Content -LiteralPath $startScript -Raw
                 $content | Should -Match 'Resolve-CmsBaseUrl\s+-EnvValues\s+\$envValues' -Because "$name must resolve CMS URL via Resolve-CmsBaseUrl so a custom DMS_CONFIG_ASPNETCORE_HTTP_PORTS is honored"
                 $content | Should -Not -Match '"http://localhost:8081"' -Because "$name must not hard-code the default CMS URL; the resolver fallback already returns http://localhost:8081 when the env override is absent"
+            }
+        }
+    }
+
+    Context "database-template package id engine-token conversion" {
+        BeforeAll {
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+        }
+
+        Context "Convert-TemplatePackageToken" {
+            It "maps the engine segment PostgreSql to MsSql and back, leaving prefix, template, and version untouched" {
+                $postgres = "EdFi.Dms.Minimal.Template.PostgreSql.6.1.0"
+
+                $mssql = Convert-TemplatePackageToken -PackageId $postgres -Engine "MsSql"
+                $mssql | Should -Be "EdFi.Dms.Minimal.Template.MsSql.6.1.0"
+
+                (Convert-TemplatePackageToken -PackageId $mssql -Engine "PostgreSql") | Should -Be $postgres
+            }
+
+            It "leaves the Smoke template segment untouched when rewriting the engine" {
+                $smoke = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
+
+                (Convert-TemplatePackageToken -PackageId $smoke -Engine "MsSql") | Should -Be "EdFi.Api.Smoke.Template.MsSql.5.2.0" -Because "the engine rewrite must never touch the template segment"
+            }
+
+            It "returns a package id unchanged when it does not match the <template>.Template.<engine>.<version> shape, and passes blank input through" {
+                $unrecognized = "Some.Unrelated.Package.Id.1.0.0"
+                (Convert-TemplatePackageToken -PackageId $unrecognized -Engine "MsSql") | Should -Be $unrecognized
+                (Convert-TemplatePackageToken -PackageId "" -Engine "MsSql") | Should -Be ""
+            }
+        }
+
+        Context "Resolve-DatabaseEngineEnvironmentFile DATABASE_TEMPLATE_PACKAGE rewrite" {
+            BeforeEach {
+                $script:engineTokenWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-enginetoken-$([Guid]::NewGuid().ToString('N'))"
+                $script:engineTokenComposeRoot = Join-Path $script:engineTokenWork "compose"
+                New-Item -ItemType Directory -Path $script:engineTokenComposeRoot -Force | Out-Null
+
+                Set-Content -LiteralPath (Join-Path $script:engineTokenComposeRoot ".env.mssql") -Value @"
+MSSQL_SA_PASSWORD=Abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_DATASTORE=mssql
+DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+            }
+
+            AfterEach {
+                if (Test-Path -LiteralPath $script:engineTokenWork) {
+                    Remove-Item -LiteralPath $script:engineTokenWork -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            It "rewrites a PostgreSql DATABASE_TEMPLATE_PACKAGE to MsSql when composing from a plain .env-style base" {
+                $basePath = Join-Path $script:engineTokenWork ".env"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n" -NoNewline
+
+                $derivedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $values = ReadValuesFromEnvFile $derivedPath
+                $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            }
+
+            It "rewrites a PostgreSql DATABASE_TEMPLATE_PACKAGE to MsSql when composing from a data-standard-derived (.env.ds61-style) base" {
+                $basePath = Join-Path $script:engineTokenWork ".env.ds61"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0`n" -NoNewline
+
+                $derivedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $values = ReadValuesFromEnvFile $derivedPath
+                $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Populated.Template.MsSql.6.1.0"
+            }
+
+            It "is idempotent on re-compose: composing an already-corrected derived file returns it unchanged" {
+                $basePath = Join-Path $script:engineTokenWork ".env"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n" -NoNewline
+
+                $firstPass = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+                $secondPass = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $firstPass -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $secondPass | Should -Be $firstPass -Because "re-composing an already-corrected mssql-flagged file must not produce a derived-of-derived file"
+                (ReadValuesFromEnvFile $secondPass)["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            }
+
+            It "corrects a stale PostgreSql DATABASE_TEMPLATE_PACKAGE on an already-composed mssql base without mutating the source file" {
+                # Models a base file that already carries DMS_DATASTORE=mssql (e.g. hand-edited, or
+                # composed by an earlier phase) but whose DATABASE_TEMPLATE_PACKAGE was never rewritten.
+                $staleBasePath = Join-Path $script:engineTokenWork ".env"
+                $staleContent = "DMS_DATASTORE=mssql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n"
+                Set-Content -LiteralPath $staleBasePath -Value $staleContent -NoNewline
+
+                $correctedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $staleBasePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $correctedPath | Should -Not -Be $staleBasePath -Because "the correction must land in a new derived file, not the source"
+                (ReadValuesFromEnvFile $correctedPath)["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+
+                # The source file must be untouched.
+                (Get-Content -LiteralPath $staleBasePath -Raw) | Should -Be $staleContent
             }
         }
     }

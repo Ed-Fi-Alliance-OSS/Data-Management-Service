@@ -118,7 +118,7 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         # whole stack on SQL Server: no PostgreSQL container exists to fall back to.
         $script:overlayValues["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
-            Should -Match "^Server=dms-mssql,1433;Database=edfi_configurationservice;"
+            Should -Match '^Server=dms-mssql,1433;Database=\$\{MSSQL_DB_NAME\};'
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
             Should -Match '\$\{MSSQL_SA_PASSWORD\}'
     }

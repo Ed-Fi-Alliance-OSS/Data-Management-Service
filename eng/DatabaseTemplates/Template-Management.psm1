@@ -364,37 +364,89 @@ function Get-BulkLoadFailureClassification {
 
 <#
 .SYNOPSIS
-    Dumps the specified PostgreSQL database to a file.
+    Dumps the specified database to a file.
 
 .DESCRIPTION
-    Uses Docker to execute `pg_dump` inside a running PostgreSQL container, targeting only the specified schemas.
+    For PostgreSQL, uses Docker to execute `pg_dump` inside a running PostgreSQL container,
+    targeting only the specified schemas.
+
+    For MSSQL, runs a full `BACKUP DATABASE` inside the running SQL Server container via
+    `sqlcmd`, then copies the resulting `.bak` file out with `docker cp` and removes the
+    transient in-container backup file. A `.bak` is always a full-database artifact - SQL
+    Server has no per-schema equivalent to `pg_dump -n` - so `DatabaseSchemas` is ignored
+    on MSSQL.
+
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql". Defaults to "postgresql".
 
 .PARAMETER ContainerName
-    Name of the Docker container running PostgreSQL.
+    Name of the Docker container running the database. Defaults to "dms-postgresql" for
+    PostgreSQL and "dms-mssql" for MSSQL.
 
 .PARAMETER DatabaseName
     Name of the database to dump.
 
 .PARAMETER DatabaseSchemas
-    Array of schemas to include in the dump.
+    Array of schemas to include in the dump. PostgreSQL only; ignored on MSSQL, where a
+    `BACKUP DATABASE` always captures the entire database.
 
 .PARAMETER BackupDirectory
     Directory where the dump file will be saved.
 
 .PARAMETER BackupFileName
     Filename to use for the backup.
+
+.PARAMETER MssqlPassword
+    The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
 #>
 function Invoke-DatabaseDump {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
     param (
-        [string]$ContainerName = "dms-postgresql",
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [string]$ContainerName = $(if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }),
+
         [string]$DatabaseName = "edfi_datamanagementservice",
         [string[]]$DatabaseSchemas,
         [string]$BackupDirectory,
-        [string]$BackupFileName
+        [string]$BackupFileName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
 
     $backupPath = Join-Path $BackupDirectory $BackupFileName
+
+    if ($DatabaseEngine -eq "mssql") {
+        if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
+            throw "Database name '$DatabaseName' contains unsupported characters."
+        }
+
+        if ($BackupFileName -notmatch "^[A-Za-z0-9_.-]+$") {
+            throw "Backup file name '$BackupFileName' contains unsupported characters."
+        }
+
+        $containerBackupPath = "/var/opt/mssql/data/$BackupFileName"
+
+        $backupSql = "BACKUP DATABASE [$DatabaseName] TO DISK = N'$containerBackupPath' WITH INIT;"
+        & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -C -b -Q $backupSql
+        if ($LASTEXITCODE -ne 0) { throw "BACKUP DATABASE of '$DatabaseName' failed in container '$ContainerName'." }
+
+        & docker cp "$($ContainerName):$containerBackupPath" $backupPath
+        if ($LASTEXITCODE -ne 0) { throw "Failed to copy backup '$containerBackupPath' out of container '$ContainerName'." }
+
+        & docker exec $ContainerName rm -f $containerBackupPath
+        if ($LASTEXITCODE -ne 0) { throw "Failed to remove transient backup '$containerBackupPath' from container '$ContainerName' after copying it out." }
+
+        Write-Host
+        Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
+        Write-Host (Resolve-Path $backupPath)
+        Write-Host
+
+        return
+    }
 
     $options = @("exec", $ContainerName, "pg_dump", "-U", "postgres", $DatabaseName)
 
@@ -567,21 +619,67 @@ function Resolve-DataStoreIdForTemplate {
 
 <#
 .SYNOPSIS
-    Discovers the non-system schemas present in a PostgreSQL database.
+    Discovers the non-system schemas present in a database.
 
 .DESCRIPTION
-    Queries pg_namespace inside the running PostgreSQL container, excluding
-    pg_* system schemas, information_schema, and public. Throws when the
-    database has no user schemas, which indicates it was never provisioned.
+    For PostgreSQL, queries pg_namespace inside the running PostgreSQL container, excluding
+    pg_* system schemas, information_schema, and public.
+
+    For MSSQL, queries sys.schemas inside the running SQL Server container, excluding the
+    built-in dbo, guest, sys, and INFORMATION_SCHEMA schemas, plus the db_* fixed-role
+    schemas every database carries (e.g. db_datareader, db_owner).
+
+    Throws when the database has no user schemas, which indicates it was never provisioned.
+
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql". Defaults to "postgresql".
+
+.PARAMETER ContainerName
+    Name of the Docker container running the database. Defaults to "dms-postgresql" for
+    PostgreSQL and "dms-mssql" for MSSQL.
+
+.PARAMETER DatabaseName
+    Name of the database to inspect.
+
+.PARAMETER MssqlPassword
+    The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
 #>
 function Get-UserSchemaNames {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function intentionally returns a collection of discovered database schema names.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
     param (
-        [string]$ContainerName = "dms-postgresql",
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [string]$ContainerName = $(if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }),
 
         [Parameter(Mandatory = $true)]
-        [string]$DatabaseName
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
+
+    if ($DatabaseEngine -eq "mssql") {
+        if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
+            throw "Database name '$DatabaseName' contains unsupported characters."
+        }
+
+        $query = "SET NOCOUNT ON; SELECT name FROM sys.schemas WHERE name NOT IN ('dbo', 'guest', 'sys', 'INFORMATION_SCHEMA') AND name NOT LIKE 'db[_]%' ORDER BY name;"
+        $output = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d $DatabaseName -C -b -h -1 -W -Q $query
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to discover schemas in database '$DatabaseName'."
+        }
+
+        $schemas = @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+
+        if ($schemas.Count -eq 0) {
+            throw "No user schemas found in database '$DatabaseName'; the database does not appear to be provisioned."
+        }
+
+        return $schemas
+    }
 
     $query = "SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ('information_schema', 'public') ORDER BY nspname;"
     $output = & docker exec $ContainerName psql -U postgres -d $DatabaseName -tA -c $query
@@ -604,10 +702,19 @@ function Get-UserSchemaNames {
     Restores a database template package into a freshly created database.
 
 .DESCRIPTION
-    Locates the single .nupkg in the package directory, extracts its .sql dump,
-    drops and recreates the target database inside the running PostgreSQL
-    container, and restores the dump into it. Returns the name of the restored
-    package file.
+    Locates the single .nupkg in the package directory and restores its database
+    artifact inside the running database container. Returns the name of the
+    restored package file.
+
+    For PostgreSQL, extracts the package's .sql dump, terminates any lingering
+    connections to the target database, drops and recreates it, and restores
+    the dump into it.
+
+    For MSSQL, extracts the package's .bak backup, copies it into the container,
+    puts any pre-existing target database into single-user mode and drops it,
+    reads every logical data/log file name via `RESTORE FILELISTONLY`, and runs
+    `RESTORE DATABASE ... WITH MOVE, REPLACE` with one MOVE clause per file to
+    relocate all of them under the target database's own name.
 
 .PARAMETER PackageDirectory
     Directory containing the template .nupkg (default: current directory).
@@ -615,18 +722,32 @@ function Get-UserSchemaNames {
 .PARAMETER DatabaseName
     The database to drop, recreate, and restore the dump into.
 
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql". Defaults to "postgresql".
+
 .PARAMETER ContainerName
-    The running PostgreSQL container hosting the database.
+    The running database container hosting the database. Defaults to
+    "dms-postgresql" for PostgreSQL and "dms-mssql" for MSSQL.
+
+.PARAMETER MssqlPassword
+    The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
 #>
 function Restore-TemplatePackage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
     param (
         [string]$PackageDirectory = ".",
 
         [Parameter(Mandatory = $true)]
         [string]$DatabaseName,
 
-        [string]$ContainerName = "dms-postgresql"
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [string]$ContainerName = $(if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }),
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
 
     if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
@@ -649,11 +770,111 @@ function Restore-TemplatePackage {
         Copy-Item $package.FullName $zipPath
         Expand-Archive -Path $zipPath -DestinationPath (Join-Path $extractDirectory "contents")
 
+        if ($DatabaseEngine -eq "mssql") {
+            $bakFile = Get-ChildItem -Path (Join-Path $extractDirectory "contents") -Filter *.bak -Recurse | Select-Object -First 1
+
+            if ($null -eq $bakFile) {
+                throw "No .bak backup found inside package '$($package.Name)'."
+            }
+
+            $containerBakPath = "/var/opt/mssql/data/template-restore-$([Guid]::NewGuid().ToString('N')).bak"
+
+            & docker cp $bakFile.FullName "$($ContainerName):$containerBakPath" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to copy the backup into container '$ContainerName'." }
+
+            $existsQuery = "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$DatabaseName') IS NOT NULL THEN 1 ELSE 0 END;"
+            $existsOutput = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -h -1 -W -Q $existsQuery
+            if ($LASTEXITCODE -ne 0) { throw "Failed to check whether database '$DatabaseName' already exists." }
+
+            $databaseExists = (@($existsOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1) -eq "1")
+
+            if ($databaseExists) {
+                $dropSql = "ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$DatabaseName];"
+                & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -Q $dropSql | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "Failed to drop existing database '$DatabaseName'." }
+            }
+
+            $fileListQuery = "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerBakPath';"
+            $fileListOutput = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -h -1 -W -s "|" -Q $fileListQuery
+            if ($LASTEXITCODE -ne 0) { throw "Failed to read the file list from backup '$($bakFile.Name)'." }
+
+            # Collect every data (D) and log (L) row, not just the first of each: a multi-file backup
+            # (secondary data file, extra filegroup, additional log) must relocate every file it lists,
+            # or RESTORE DATABASE fails because some file is left pointing at its original in-container
+            # path. Today's DMS templates are single data + single log, but this keeps a multi-file
+            # .bak restorable too.
+            $dataLogicalNames = [System.Collections.Generic.List[string]]::new()
+            $logLogicalNames = [System.Collections.Generic.List[string]]::new()
+            foreach ($line in $fileListOutput) {
+                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                $fields = $line -split '\|'
+                if ($fields.Count -lt 3) { continue }
+                $logicalName = $fields[0].Trim()
+                $fileType = $fields[2].Trim()
+                if ($fileType -eq "D") { $dataLogicalNames.Add($logicalName) }
+                elseif ($fileType -eq "L") { $logLogicalNames.Add($logicalName) }
+            }
+
+            if ($dataLogicalNames.Count -eq 0 -or $logLogicalNames.Count -eq 0) {
+                throw "Could not determine the data and log logical file names from backup '$($bakFile.Name)'."
+            }
+
+            # Emit one MOVE clause per file. The primary data file and first log keep today's plain
+            # $DatabaseName-derived names, so a single-file .bak still produces the exact same RESTORE
+            # command as before; every additional file gets a name suffixed with its own logical name,
+            # so each lands at its own deterministic path under the same target data directory. Unlike
+            # the MOVE...FROM side (which only needs single-quote escaping inside its N'' literal), an
+            # extra logical name is interpolated into a new physical path here, so it is validated
+            # against the same safe-character allow-list already used for $DatabaseName before use.
+            $moveClauses = [System.Collections.Generic.List[string]]::new()
+            for ($i = 0; $i -lt $dataLogicalNames.Count; $i++) {
+                $logicalName = $dataLogicalNames[$i]
+                if ($i -eq 0) {
+                    $physicalName = "$DatabaseName.mdf"
+                }
+                else {
+                    if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
+                        throw "Data file logical name '$logicalName' from backup '$($bakFile.Name)' contains unsupported characters and cannot be used to derive a restore path."
+                    }
+                    $physicalName = "${DatabaseName}_${logicalName}.ndf"
+                }
+                $moveClauses.Add("MOVE N'$($logicalName.Replace("'", "''"))' TO N'/var/opt/mssql/data/$physicalName'")
+            }
+            for ($i = 0; $i -lt $logLogicalNames.Count; $i++) {
+                $logicalName = $logLogicalNames[$i]
+                if ($i -eq 0) {
+                    $physicalName = "${DatabaseName}_log.ldf"
+                }
+                else {
+                    if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
+                        throw "Log file logical name '$logicalName' from backup '$($bakFile.Name)' contains unsupported characters and cannot be used to derive a restore path."
+                    }
+                    $physicalName = "${DatabaseName}_${logicalName}.ldf"
+                }
+                $moveClauses.Add("MOVE N'$($logicalName.Replace("'", "''"))' TO N'/var/opt/mssql/data/$physicalName'")
+            }
+
+            $restoreSql = "RESTORE DATABASE [$DatabaseName] FROM DISK = N'$containerBakPath' WITH $($moveClauses -join ', '), REPLACE;"
+            & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -Q $restoreSql | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Restore of '$($bakFile.Name)' into '$DatabaseName' failed." }
+
+            & docker exec $ContainerName rm -f $containerBakPath
+            if ($LASTEXITCODE -ne 0) { throw "Failed to remove transient backup '$containerBakPath' from container '$ContainerName' after the restore." }
+
+            return $package.Name
+        }
+
         $sqlFile = Get-ChildItem -Path (Join-Path $extractDirectory "contents") -Filter *.sql -Recurse | Select-Object -First 1
 
         if ($null -eq $sqlFile) {
             throw "No .sql dump found inside package '$($package.Name)'."
         }
+
+        # A connected session blocks DROP DATABASE; terminate any lingering ones as defense in
+        # depth (restores target freshly created verification databases, so nothing should be
+        # connected here).
+        & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DatabaseName' AND pid <> pg_backend_pid();" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to terminate existing connections to database '$DatabaseName'." }
 
         & docker exec $ContainerName psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DatabaseName;" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Failed to drop existing database '$DatabaseName'." }
@@ -678,7 +899,12 @@ function Restore-TemplatePackage {
 
 <#
 .SYNOPSIS
-    Builds a NuGet package containing a PostgreSQL database backup.
+    Builds a NuGet package containing a database backup.
+
+.DESCRIPTION
+    Substitutes "{StandardVersion}", "{DatabaseEngine}", and "{ArtifactExtension}" placeholders
+    in the .psd1 configuration, dumps the target database (per -DatabaseEngine), and packages
+    the resulting artifact (.sql for PostgreSQL, .bak for MSSQL) into a NuGet package.
 
 .PARAMETER ConfigFilePath
     The path to the PowerShell data file (.psd1) containing configuration settings for the package.
@@ -695,12 +921,23 @@ function Restore-TemplatePackage {
 
 .PARAMETER DumpAllUserSchemas
     Dump every non-system schema of the target database instead of only the dms schema.
+    PostgreSQL only; MSSQL always backs up the entire database.
+
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql". Defaults to "postgresql". Substitutes the "{DatabaseEngine}"
+    placeholder with "PostgreSql" or "MsSql" and the "{ArtifactExtension}" placeholder with
+    "sql" or "bak" respectively.
+
+.PARAMETER MssqlPassword
+    The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
 
 .EXAMPLE
     Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
 #>
 function Build-TemplateNuGetPackage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
     param (
         [Parameter(Mandatory = $true)]
         [string]$ConfigFilePath,
@@ -713,20 +950,32 @@ function Build-TemplateNuGetPackage {
 
         [string]$DatabaseName = "edfi_datamanagementservice",
 
-        [switch]$DumpAllUserSchemas
+        [switch]$DumpAllUserSchemas,
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
 
     $config = Import-PowerShellDataFile -Path $ConfigFilePath
 
+    # Mirrors PostgreSql/.sql, the literal tokens the .psd1 files carried before these
+    # placeholders were introduced, so PostgreSQL output stays byte-for-byte unchanged.
+    $engineToken = if ($DatabaseEngine -eq "mssql") { "MsSql" } else { "PostgreSql" }
+    $artifactExtension = if ($DatabaseEngine -eq "mssql") { "bak" } else { "sql" }
+
     foreach ($key in @($config.Keys)) {
         if ($null -ne $key -and $config[$key] -is [string]) {
             $config[$key] = $config[$key].Replace("{StandardVersion}", $StandardVersion)
+            $config[$key] = $config[$key].Replace("{DatabaseEngine}", $engineToken)
+            $config[$key] = $config[$key].Replace("{ArtifactExtension}", $artifactExtension)
         }
     }
 
     $databaseSchemas =
         if ($DumpAllUserSchemas) {
-            $discoveredSchemas = @(Get-UserSchemaNames -DatabaseName $DatabaseName)
+            $discoveredSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -MssqlPassword $MssqlPassword)
             Write-Host "Dumping all user schemas from '$DatabaseName': $($discoveredSchemas -join ', ')"
             $discoveredSchemas
         }
@@ -734,7 +983,7 @@ function Build-TemplateNuGetPackage {
             @("dms")
         }
 
-    Invoke-DatabaseDump -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName
+    Invoke-DatabaseDump -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName -MssqlPassword $MssqlPassword
 
     New-DatabaseTemplateCsproj -Config $config -BackupDirectory './'
 
@@ -933,9 +1182,17 @@ enum TemplateType {
 
 .PARAMETER DumpAllUserSchemas
     Dump every non-system schema of the target database instead of only the dms schema.
+    PostgreSQL only; MSSQL always backs up the entire database.
 
 .PARAMETER PostgresPassword
     The PostgreSQL password for database connection. Defaults to environment variable POSTGRES_PASSWORD or "abcdefgh1!".
+
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql". Defaults to "postgresql". Selects the engine used when dumping
+    the data store database into the template package.
+
+.PARAMETER MssqlPassword
+    The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
 
 .EXAMPLE
     Build-Template -TemplateType Minimal `
@@ -950,8 +1207,8 @@ enum TemplateType {
         -PostgresPassword "mypassword"
 #>
 function Build-Template {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; there is no companion username credential and a PSCredential adds no protection across that boundary.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL password is handed to a PostgreSQL connection string where it must be plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The PostgreSQL and MSSQL passwords are handed to a database connection string / sqlcmd where they must be plaintext; there is no companion username credential and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The PostgreSQL and MSSQL passwords are handed to a database connection string / sqlcmd where they must be plaintext; SecureString adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
     param (
 
@@ -989,7 +1246,12 @@ function Build-Template {
 
         [switch]$DumpAllUserSchemas,
 
-        [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
+        [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!",
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
 
     if ($PSBoundParameters.ContainsKey('DataStoreId') -and -not $PSBoundParameters.ContainsKey('DataStoreDatabaseName')) {
@@ -1091,7 +1353,7 @@ function Build-Template {
             -AllowUnresolvedReferences:$educatorPrepFiltered
     }
 
-    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
 }
 
 Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage

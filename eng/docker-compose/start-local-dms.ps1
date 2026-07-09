@@ -15,9 +15,12 @@
     already exist.
 
     Direct invocation is supported for diagnostics and partial-phase orchestration
-    (-InfraOnly, -DmsOnly). When invoked directly without a .bootstrap/ manifest the
-    script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
+    (-InfraOnly, -DmsOnly, -DbOnly). When invoked directly without a .bootstrap/ manifest
+    the script proceeds but Invoke-BootstrapStartupConfiguration emits a warning: bootstrap
     schema provisioning will NOT happen here.
+
+    -DbOnly: database container + readiness only; exists for diagnostics and for
+    other tooling to sequence a database-only startup around.
 
     BREAKING CHANGE (DMS-1153): The following flags have been removed from this script
     and relocated to phase-specific commands:
@@ -127,6 +130,12 @@ param (
     [Switch]
     $DmsOnly,
 
+    # Start only the database container and wait for readiness, then stop. Exists for
+    # diagnostics and for other tooling to sequence a database-only startup around.
+    # Mutually exclusive with -InfraOnly and -DmsOnly.
+    [Switch]
+    $DbOnly,
+
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
     # A failed compose teardown throws before removal, so a still-running stack keeps its
@@ -173,6 +182,9 @@ param (
 if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace($DmsBaseUrl)) {
     if ($DmsOnly) {
         throw "-DmsBaseUrl is not valid with -DmsOnly. Use -InfraOnly -DmsBaseUrl <url> for the IDE health-wait continuation shape."
+    }
+    if ($DbOnly) {
+        throw "-DmsBaseUrl is not valid with -DbOnly."
     }
     if (-not $InfraOnly) {
         throw "-DmsBaseUrl requires -InfraOnly. Use: start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>"
@@ -239,6 +251,10 @@ elseif ($IdentityProvider -eq "self-contained") {
 if (-not $d) {
     if ($InfraOnly -and $DmsOnly) {
         throw "Parameters -InfraOnly and -DmsOnly are mutually exclusive."
+    }
+
+    if ($DbOnly -and ($InfraOnly -or $DmsOnly)) {
+        throw "Parameter -DbOnly is mutually exclusive with -InfraOnly and -DmsOnly."
     }
 }
 $usePostgresqlTmpfs = [string]::Equals(
@@ -433,6 +449,34 @@ else {
         throw "SQL Server ($(Format-LogSafeText $ContainerName)) did not become ready within the timeout period."
     }
 
+    function Wait-PostgresqlReady {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $ContainerName,
+
+            [int]
+            $MaxAttempts = 40
+        )
+
+        # PostgreSQL can take a few seconds to accept connections on a cold start. Poll
+        # pg_isready inside the container so the schema provision phase that follows
+        # always finds a reachable server.
+        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            docker exec $ContainerName pg_isready -U postgres *> $null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Output "PostgreSQL is ready."
+                return
+            }
+
+            if ($attempt -lt $MaxAttempts) {
+                Start-Sleep -Seconds 3
+            }
+        }
+
+        throw "PostgreSQL ($(Format-LogSafeText $ContainerName)) did not become ready within the timeout period."
+    }
+
     if ($DmsOnly) {
         Write-Output "Starting DMS service only..."
         $dmsServices = @("dms")
@@ -448,6 +492,32 @@ else {
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
 
+        return
+    }
+
+    if ($DbOnly) {
+        $databaseDisplayName = if ($DatabaseEngine -eq "mssql") { "SQL Server" } else { "Postgresql" }
+        Write-Output "Starting $databaseDisplayName only..."
+        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs db
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start $databaseDisplayName. Exit code $LASTEXITCODE"
+        }
+
+        if ($DatabaseEngine -eq "mssql") {
+            $mssqlSaPassword =
+                if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
+                    "abcdefgh1!"
+                }
+                else {
+                    $envValues.MSSQL_SA_PASSWORD
+                }
+            Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+        }
+        else {
+            Wait-PostgresqlReady -ContainerName "dms-postgresql"
+        }
+
+        Write-Output "Database phase complete. Only the database container was started."
         return
     }
 
@@ -490,12 +560,14 @@ else {
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below (mirrors
-    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the CMS database —
-    # -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS startup deploy.
-    # On PostgreSQL the script defaults apply unchanged (shared POSTGRES_DB_NAME database).
+    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the shared DMS
+    # datastore database (MSSQL_DB_NAME), which CMS also uses now that the two share one
+    # database; -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS
+    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared
+    # POSTGRES_DB_NAME database).
     $identityDbParams =
         if ($DatabaseEngine -eq "mssql") {
-            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "edfi_configurationservice" }
+            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME" }
         }
         else {
             @{}
