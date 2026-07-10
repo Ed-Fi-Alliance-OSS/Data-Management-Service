@@ -1703,7 +1703,9 @@ pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
 # Infrastructure phase with Keycloak and Swagger UI
 pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -EnableSwaggerUI -IdentityProvider keycloak
 
-# Teardown stack and volumes
+# Teardown stack and volumes — default compose shape. Repeat the compose-shaping flags used
+# at start (e.g. -IdentityProvider keycloak -EnableSwaggerUI above) so `down -v` targets the
+# same compose-file set and its volumes.
 pwsh eng/docker-compose/start-local-dms.ps1 -d -v
 ```
 
@@ -1847,8 +1849,14 @@ pwsh eng/docker-compose/bootstrap-local-dms.ps1 -InfraOnly
 # Wrapper IDE continuation: configure/provision first, then wait for IDE DMS to report healthy
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198"
 
-# Teardown stack and volumes (also removes the .bootstrap workspace)
+# Teardown stack and volumes (also removes the .bootstrap workspace) — default compose shape.
+# Repeat the compose-shaping flags used at start so `down -v` targets the same compose-file
+# set and its volumes; a bare teardown after a non-default start (e.g. the keycloak-backed
+# examples above) leaves that service's containers and named volumes behind.
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v
+
+# Teardown matching the keycloak-backed examples above
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -IdentityProvider keycloak -d -v
 ```
 
 No shell/session preparation is required before invoking the wrapper. Direct phase-command invocation is

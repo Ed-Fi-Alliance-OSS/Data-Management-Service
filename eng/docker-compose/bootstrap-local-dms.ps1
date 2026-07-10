@@ -21,7 +21,9 @@
     TEARDOWN: this entry point stops the local stack as well as starting it. `-d` stops the
     services and keeps volumes (delegating to `start-local-dms.ps1 -d`); `-d -v` also deletes
     data volumes and removes the `.bootstrap/` workspace (delegating to
-    `start-local-dms.ps1 -d -v -RemoveBootstrap`). Teardown short-circuits to that delegation and
+    `start-local-dms.ps1 -d -v -RemoveBootstrap`). When the compose teardown fails, the
+    workspace is preserved (services may still be running against it) and the wrapper raises
+    the failure. Teardown short-circuits to that delegation and
     returns before any staging, configure, provision, DMS-startup, or seed orchestration. Only the
     options that shape the Docker compose set (`-EnvironmentFile`, `-IdentityProvider`,
     `-EnableKafkaUI`, `-EnableSwaggerUI`, `-DatabaseEngine`) are forwarded to teardown; pass the
@@ -69,7 +71,8 @@
 .PARAMETER v
     Teardown volume/workspace deletion modifier. Valid only with `-d`. Delegates to
     `start-local-dms.ps1 -d -v -RemoveBootstrap`, deleting data volumes and removing the
-    `eng/docker-compose/.bootstrap` workspace. Rejected when supplied without `-d`.
+    `eng/docker-compose/.bootstrap` workspace (preserved when the compose teardown fails).
+    Rejected when supplied without `-d`.
 
 .PARAMETER LoadSeedData
     When supplied, invokes `load-dms-seed-data.ps1` after DMS startup completes. When

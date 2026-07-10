@@ -353,6 +353,46 @@ exit $ExitCode
 
             return $log[0]
         }
+
+        function script:Invoke-RealStartScriptTeardown {
+            # Runs a REAL start script's `-d -v -RemoveBootstrap` teardown branch with `docker`
+            # shadowed by a call-recording function. The stub sets $global:LASTEXITCODE the same
+            # way a native docker call would, so the script's post-down workspace-removal gate
+            # sees the configured compose outcome. Returns the final $LASTEXITCODE and the
+            # captured warning stream; the sentinel pre-set proves the stub actually ran.
+            param(
+                [Parameter(Mandatory)]
+                [string]$StartScriptName,
+
+                [Parameter(Mandatory)]
+                [string]$DockerLogPath,
+
+                [int]$DockerExitCode = 0
+            )
+
+            $stub = {
+                Add-Content -LiteralPath $DockerLogPath -Value (@($args | ForEach-Object { $_ }) -join ' ')
+                $global:LASTEXITCODE = $DockerExitCode
+            }.GetNewClosure()
+            Set-Item -Path function:script:docker -Value $stub
+
+            $global:LASTEXITCODE = 111
+            try {
+                & (Join-Path $script:repo.DockerComposeRoot $StartScriptName) `
+                    -EnvironmentFile $script:repo.EnvFile `
+                    -d -v -RemoveBootstrap `
+                    -WarningVariable capturedWarnings -WarningAction SilentlyContinue |
+                    Out-Null
+
+                return [pscustomobject]@{
+                    ExitCode = $global:LASTEXITCODE
+                    Warnings = @($capturedWarnings | ForEach-Object { [string]$_ })
+                }
+            }
+            finally {
+                Remove-Item -Path function:script:docker -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     BeforeEach {
@@ -361,7 +401,7 @@ exit $ExitCode
 
     AfterEach {
         if ($null -ne $script:repo) {
-            Get-Module bootstrap-wrapper |
+            Get-Module bootstrap-wrapper, bootstrap-manifest, bootstrap-claims-gate, env-utility |
                 Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" } |
                 Remove-Module -Force -ErrorAction SilentlyContinue
         }
@@ -1329,6 +1369,74 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             # on binding, leaving the log empty).
             $log | Should -Contain "configure smoke=False"
             $log | Should -Contain "provision"
+        }
+    }
+
+    # =========================================================================
+    # DMS-1272 - start-script teardown workspace-removal gating
+    #   `-d -v -RemoveBootstrap` must remove the .bootstrap workspace only after
+    #   `docker compose down` succeeds: a failed down can leave services running
+    #   against the bind-mounted schema and claims, and the wrapper's teardown
+    #   failure check reads the compose exit code only after the start script
+    #   returns. These tests run the REAL start scripts against a stubbed docker.
+    # =========================================================================
+    Context "start-script teardown workspace-removal gating (DMS-1272)" {
+        BeforeEach {
+            foreach ($fileName in @(
+                "start-local-dms.ps1",
+                "start-published-dms.ps1",
+                "bootstrap-manifest.psm1",
+                "bootstrap-claims-gate.psm1"
+            )) {
+                Copy-DockerComposeFile -FileName $fileName -Destination $script:repo.DockerComposeRoot
+            }
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+        }
+
+        It "start-local-dms.ps1 preserves the workspace and the exit code when compose down fails" {
+            $dockerLog = Join-Path $script:repo.RepoRoot "docker-log-local-fail.txt"
+
+            $result = Invoke-RealStartScriptTeardown -StartScriptName "start-local-dms.ps1" -DockerLogPath $dockerLog -DockerExitCode 7
+
+            $log = @(Get-Content -LiteralPath $dockerLog)
+            $log | Should -HaveCount 1 -Because "teardown must issue exactly one docker compose invocation"
+            $log[0] | Should -Match '-p dms-local down --remove-orphans -v$'
+            Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeTrue -Because "a failed down can leave services running against the bind-mounted workspace"
+            $result.ExitCode | Should -Be 7 -Because "the wrapper's teardown-failure check reads the compose exit code after delegation"
+            ($result.Warnings -join ' ') | Should -Match "Skipping .bootstrap workspace removal"
+        }
+
+        It "start-local-dms.ps1 still removes the workspace when compose down succeeds" {
+            $dockerLog = Join-Path $script:repo.RepoRoot "docker-log-local-ok.txt"
+
+            $result = Invoke-RealStartScriptTeardown -StartScriptName "start-local-dms.ps1" -DockerLogPath $dockerLog -DockerExitCode 0
+
+            @(Get-Content -LiteralPath $dockerLog)[0] | Should -Match '-p dms-local down --remove-orphans -v$'
+            Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeFalse -Because "a clean -d -v -RemoveBootstrap teardown must remove the workspace"
+            $result.ExitCode | Should -Be 0
+        }
+
+        It "start-published-dms.ps1 preserves the workspace and the exit code when compose down fails" {
+            $dockerLog = Join-Path $script:repo.RepoRoot "docker-log-published-fail.txt"
+
+            $result = Invoke-RealStartScriptTeardown -StartScriptName "start-published-dms.ps1" -DockerLogPath $dockerLog -DockerExitCode 7
+
+            $log = @(Get-Content -LiteralPath $dockerLog)
+            $log | Should -HaveCount 1 -Because "teardown must issue exactly one docker compose invocation"
+            $log[0] | Should -Match '-p dms-published down --remove-orphans -v$'
+            Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeTrue -Because "a failed down can leave services running against the bind-mounted workspace"
+            $result.ExitCode | Should -Be 7
+            ($result.Warnings -join ' ') | Should -Match "Skipping .bootstrap workspace removal"
+        }
+
+        It "start-published-dms.ps1 still removes the workspace when compose down succeeds" {
+            $dockerLog = Join-Path $script:repo.RepoRoot "docker-log-published-ok.txt"
+
+            $result = Invoke-RealStartScriptTeardown -StartScriptName "start-published-dms.ps1" -DockerLogPath $dockerLog -DockerExitCode 0
+
+            @(Get-Content -LiteralPath $dockerLog)[0] | Should -Match '-p dms-published down --remove-orphans -v$'
+            Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeFalse -Because "a clean -d -v -RemoveBootstrap teardown must remove the workspace"
+            $result.ExitCode | Should -Be 0
         }
     }
 }

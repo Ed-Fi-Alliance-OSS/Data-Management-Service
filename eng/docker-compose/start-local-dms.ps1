@@ -129,6 +129,8 @@ param (
 
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
+    # Removal is skipped when the compose teardown fails, so a still-running stack keeps its
+    # bind-mounted schema and claims workspace.
     [Switch]
     $RemoveBootstrap,
 
@@ -335,7 +337,16 @@ if ($d) {
         Write-Output "Shutting down with volume delete"
         docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
 
-        Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
+        # Remove the workspace only after a clean teardown: a failed down can leave services
+        # running against the bind-mounted .bootstrap schema and claims, so deleting the
+        # workspace here would pull it out from under a live stack. The non-zero exit code is
+        # left in $LASTEXITCODE for callers (bootstrap-local-dms.ps1 throws on it).
+        if ($LASTEXITCODE -eq 0) {
+            Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
+        }
+        elseif ($RemoveBootstrap) {
+            Write-Warning "Skipping .bootstrap workspace removal: docker compose down exited with code $LASTEXITCODE, so services may still be running against the staged workspace. Resolve the teardown failure and rerun teardown."
+        }
     }
     else {
         Write-Output "Shutting down"

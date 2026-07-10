@@ -381,6 +381,15 @@ directly, `./start-local-dms.ps1 -d -v -RemoveBootstrap` with the same flags
 you started with remains the equivalent direct recovery — including options
 the bootstrap wrapper does not accept, such as `-EnableKafka`.
 
+These recovery commands target the `dms-local` stack. The prepare commands and
+the `.bootstrap/` workspace are shared with the published-image flow
+(`bootstrap-published-dms.ps1`), so if the running stack is `dms-published`,
+recover with `./start-published-dms.ps1 -d -v -RemoveBootstrap` plus the same
+compose-shaping options you started with (e.g. `-IdentityProvider keycloak`,
+`-EnableKafka`, `-EnableSwaggerUI`); the published wrapper itself has no
+teardown flags. Running the `dms-local` recovery instead would leave the
+published stack up while deleting the workspace its containers bind-mount.
+
 > **Note on `-RemoveBootstrap`:** `./bootstrap-local-dms.ps1 -d -v` removes the
 > `.bootstrap/` workspace for you — it delegates to
 > `start-local-dms.ps1 -d -v -RemoveBootstrap`. Invoking the start scripts
