@@ -5,6 +5,14 @@ jira_url: https://edfi.atlassian.net/browse/DMS-999
 
 # Story: Identity Propagation via Cascades/Triggers (No Closure Traversal)
 
+> **Historical delivery boundary.** DMS-999 is complete and owns the original identity-propagation integration and
+> row-local `dms.ReferentialIdentity` maintenance described here. It does not own the revised `v2` complete-vector shape,
+> post-key-unification effective identity-dependency derivation/cycle guard, provider action derivation, or full-schema
+> qualification. DMS-1274 owns effective dependencies, complete vectors, physical candidates, and the effective guard;
+> DMS-1258 owns PostgreSQL fixed actions plus SQL Server physical-cycle
+> legality and diamond selection; DMS-1277 owns full-schema qualification. Current-design references below describe the
+> integration contract for DMS-999's completed maintenance behavior, not additional work attributed to DMS-999.
+
 ## Description
 
 Implement strict identity maintenance for identity updates without application-managed identity closure traversal:
@@ -26,15 +34,15 @@ Align with:
 
 ## Tasks
 
-1. Emit/validate DDL for identity-component propagation:
-   - one complete full-composite FK vector per target; PostgreSQL assigns fixed actions mechanically and is never
-     classified or pruned for multiple paths, and
-   - on SQL Server, deterministic bounded global action selection over physical candidates. Every covered `NO ACTION`
-     diamond edge needs origin-aware same-root-row/same-boundary coverage for every source-update flow;
-     an incomplete all-native topological sort fails as `SqlServerCascadeCycleNotSupported`, and provider-independent
-     validation rejects semantic identity cycles.
-     Every FK keeps the full vector and there is no `DocumentId`-only shape or identity-value propagation trigger (see
-     `design-docs/mssql-cascading.md`).
+1. Integrate identity propagation with the row-local maintenance behavior owned by this completed story. The current
+   `v2` DDL contract is delegated rather than delivered by DMS-999:
+   - DMS-1274 promotes canonical identity overlaps atomically, rejects effective identity cycles, certifies omitted edges
+     as origin-terminal, and derives one complete full-composite FK vector per target plus physical candidates;
+   - DMS-1258 assigns PostgreSQL actions mechanically and owns SQL Server physical-cycle legality plus deterministic
+     bounded diamond selection; and
+   - DMS-1277 qualifies the resulting provider behavior at supported-schema scale.
+   Every FK keeps the full vector and there is no `DocumentId`-only shape or identity-value propagation trigger (see
+   `design-docs/mssql-cascading.md`).
 2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes, recomputing `ReferentialId` using the engine UUIDv5 helper (`E02-S06`).
 3. Integrate identity-stamp behavior (`IdentityVersion/IdentityLastModifiedAt`) with trigger maintenance.
 4. Add integration tests for a small identity dependency chain scenario.

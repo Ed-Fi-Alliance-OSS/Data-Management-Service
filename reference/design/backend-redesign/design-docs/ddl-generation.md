@@ -219,8 +219,8 @@ The DDL generator must emit document-reference columns and constraints that enab
   - `..._DocumentId` (stored/writable), and
   - `{RefBaseName}_{IdentityPart}` per-site identity-part **binding columns** (API-bound path columns).
     - Under key unification, binding columns MAY be persisted/stored generated aliases of canonical storage columns (see “Key unification” below).
-  - the complete transitive lineage-anchor union: for every direct identity-contributing reference `T -> U`, include
-    `U.DocumentId` followed recursively by `U`'s complete lineage anchors. Every incoming site carries the target's same
+  - the complete transitive lineage-anchor union: for every authored or post-key-unification storage-promoted predecessor
+    edge `U -> T`, include `U.DocumentId` followed recursively by `U`'s complete lineage anchors. Every incoming site carries the target's same
     complete vector; exact same-row canonical anchors may be reused, otherwise the site receives dedicated stored columns.
 - Enforce “all-or-none” for the reference group via a CHECK constraint (to avoid null-bypassing of composite FKs).
   - All-or-none constraints are defined over:
@@ -238,19 +238,26 @@ The DDL generator must emit document-reference columns and constraints that enab
     - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, then
     - the target's complete transitive lineage-anchor columns, then
     - `DocumentId`.
+  - Before vector recursion, derive the post-key-unification effective identity graph. Retain authored identity
+    references and atomically promote any document reference whose mapped local canonical public-value storage overlaps
+    receiver public-identity storage; the promoted edge contributes the target `DocumentId` lineage anchor, effective
+    mutability, and origin provenance. A storage-promoted reference must be structurally required; fail an optional
+    overlap as `PropagationVectorNotRepresentable`. Reject effective cycles before recursion. After vectors, propagation keys, and
+    physical candidates are final, reject any omitted physical edge that is not disjoint from receiver propagation-key
+    storage.
   - PostgreSQL assigns the fixed full-vector action mechanically from effective-schema mutability. An abstract target is
     mutable iff at least one concrete member is transitively mutable. Mutable targets cascade; immutable concrete or
-    abstract targets use `NO ACTION`. PostgreSQL is never pruned or classified for multiple paths. Provider-independent
-    validation rejects semantic identity cycles; SQL Server-only physical topology does not fail PostgreSQL derivation.
+    abstract targets use `NO ACTION`. PostgreSQL is never pruned or classified for broader physical topology.
+    Provider-independent validation rejects effective identity cycles and non-terminal omitted edges; SQL Server-only
+    origin-terminal physical topology does not fail PostgreSQL derivation.
   - SQL Server consumes a globally selected action. Physical candidates are storage-mapped and deduplicated before
-    selection, and every other physical `ON UPDATE CASCADE` FK participates as a fixed legality-graph edge. A legal
-    all-native graph is accepted immediately; otherwise selection searches only the conflict core and checks origin-aware
-    carriers on demand. Every covered `NO ACTION` is safe for every fact and source-update flow that can change its target
-    key: source-update and carrier routes start from the same correlated root row, reach the same receiver row, carry the
-    affected-vector columns identically, and have structurally implied presence. Provider-independent validation rejects
-    semantic identity cycles. An incomplete all-native topological sort fails as
-    `SqlServerCascadeCycleNotSupported`; only an acyclic graph proceeds to diamond and overlapping multiple-path search.
-    There is no reduced-FK or identity-value trigger fallback; see
+    selection, and every other physical `ON UPDATE CASCADE` FK participates as a fixed legality-graph edge. An incomplete
+    all-native topological sort fails as `SqlServerCascadeCycleNotSupported`. After topology succeeds, run the same
+    shared-receiver value-flow validation PostgreSQL runs before fixed assignment. Only then accept a duplicate-free
+    all-native graph or search the conflict core with origin-aware carriers on demand. Every covered `NO ACTION` is safe
+    for every fact and source-update flow that can change its target key: source-update and carrier routes start from the
+    same correlated root row, reach the same receiver row, carry the affected-vector columns identically, and have
+    structurally implied presence. There is no reduced-FK or identity-value trigger fallback; see
     [mssql-cascading.md](mssql-cascading.md).
 - Emit one required propagation-key UNIQUE constraint on the target so every incoming complete FK is legal:
   `(<IdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)`. Widen the existing `*_RefKey`; do not emit

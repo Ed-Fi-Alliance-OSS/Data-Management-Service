@@ -81,10 +81,11 @@ Mitigations / guidance:
 
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
-SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). DMS rejects semantic
-identity cycles during provider-independent validation, then topologically orders the complete SQL Server physical
-all-native graph, including fixed cascade edges. An incomplete sort fails as
-`SqlServerCascadeCycleNotSupported`; PostgreSQL is not rejected for that SQL Server-only physical topology. Before either
+SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). After key unification,
+DMS promotes every document reference whose canonical local storage overlaps receiver public-identity storage, rejects
+cycles in that effective graph, and certifies every omitted physical edge as origin-terminal. SQL Server then
+topologically orders the broader all-native physical graph, including fixed cascade edges. An incomplete sort fails as
+`SqlServerCascadeCycleNotSupported`; PostgreSQL is not rejected for that SQL Server-only origin-terminal topology. Before either
 provider assigns actions, DMS also rejects multiple mutable FKs writing one canonical receiver
 column unless every writer under each `InitiatingOriginFact` starts from the same correlated root row, composes the same
 root storage column into the receiver, and executes in the same initiating statement. Only a conflicting graph enters

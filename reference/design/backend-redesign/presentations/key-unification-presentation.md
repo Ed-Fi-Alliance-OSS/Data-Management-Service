@@ -146,11 +146,13 @@ StudentSchoolAssociation_StudentUniqueId AS (
 
 ## Cascade Safety
 
-- **PostgreSQL**: Actions are assigned mechanically. PostgreSQL is never pruned or classified for multiple paths.
-  Provider-independent semantic identity-cycle validation still applies, but SQL Server-only physical topology does not
-  fail PostgreSQL derivation.
-- **SQL Server**: Error 1785 rejects duplicate cascade reachability and physical cycles. DMS rejects semantic identity
-  cycles provider-independently, reports an incomplete all-native topological sort as
+- **Provider-independent**: After key unification, a document reference whose canonical local storage overlaps receiver
+  public-identity storage is promoted atomically into the effective identity graph with its target `DocumentId` lineage
+  anchor. Promotion requires a structurally required reference; an optional overlap is unrepresentable. Effective cycles
+  fail before vector recursion, and every omitted physical edge is certified origin-terminal.
+- **PostgreSQL**: Actions are assigned mechanically. PostgreSQL is never pruned or classified for broader physical
+  topology after effective validation.
+- **SQL Server**: Error 1785 rejects duplicate cascade reachability and broader physical cycles. DMS reports an incomplete all-native topological sort as
   `SqlServerCascadeCycleNotSupported`, then globally selects physical actions for acyclic diamond conflicts. Origin-aware
   carrier `NO ACTION` edges may safely break diamonds. Independent parents remain legal, and no propagation trigger is
   used (see `design-docs/mssql-cascading.md`).
@@ -197,23 +199,19 @@ All members of a class must share the exact same physical signature:
 
 ## Pass Ordering
 
-`KeyUnificationPass` runs as step 5 in the set-level compilation pipeline:
+Required relative ordering in the set-level compilation pipeline:
 
-1. BaseTraversalAndDescriptorBindingPass
-2. DescriptorResourceMappingPass
-3. ExtensionTableDerivationPass
-4. ReferenceBindingPass
-5. **KeyUnificationPass** ← new
-6. AbstractIdentityTableAndUnionViewDerivationPass
-7. RootIdentityConstraintPass
-8. ReferenceConstraintPass
-9. ArrayUniquenessConstraintPass
-10. ApplyConstraintDialectHashingPass
-11. IndexAndTriggerInventoryPass
-12. ApplyDialectIdentifierShorteningPass
-13. CanonicalizeOrderingPass
+1. ReferenceBindingPass
+2. **KeyUnificationPass**
+3. **EffectiveIdentityDependencyPass** — promote canonical overlaps and reject effective cycles
+4. AbstractIdentityTableAndUnionViewDerivationPass
+5. RootIdentityConstraintPass
+6. TransitiveIdentityMutabilityPass over effective dependencies
+7. Complete-vector and ReferenceConstraintPass work
+8. Remaining downstream passes
 
-**After** ReferenceBindingPass (so propagated identity-part columns exist) and **before** constraint derivation passes (so they see the unified model).
+Effective dependency derivation is **after** key unification (so canonical storage is known) and **before** mutability,
+abstract-lineage, or complete-vector recursion.
 
 ## Manifest + Mapping Pack
 

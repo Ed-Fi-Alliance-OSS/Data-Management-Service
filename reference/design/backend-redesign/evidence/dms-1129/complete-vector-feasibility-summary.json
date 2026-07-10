@@ -1,7 +1,9 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "generated_by": "reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js",
+  "measurement_status": "pre-effective-identity-promotion-baseline",
   "assumptions": {
+    "effective_identity_dependencies": "Not yet modeled. This baseline follows authored binding.is_identity_component only; DMS-1274 must add post-KeyUnification canonical-overlap promotion and regenerate the summary.",
     "lineage_closure": "One root identity-contributing document reference is one independently replaceable lineage. Each target vector includes the stable transitive union inherited through those identity-reference chains. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
     "propagation_vector": "Target public RefKey storage columns, every complete transitive lineage DocumentId anchor, then target DocumentId.",
     "incoming_site_storage": "The conservative result allocates one BIGINT per inherited target lineage, reuses that column on the identity site that supplies it, and allocates one BIGINT per other incoming site/lineage pair. A sensitivity result reuses a required same-table direct-reference DocumentId only when every correlated canonical public column is identical.",

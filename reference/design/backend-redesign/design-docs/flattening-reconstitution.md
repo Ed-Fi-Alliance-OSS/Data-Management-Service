@@ -153,6 +153,9 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 - Reference reconstitution plan (local columns): reference-object writers populated from reference-identity binding columns (per `DocumentReferenceBinding`)
 - Abstract identity tables for polymorphic reference targets (from `abstractResources`)
 - Key unification metadata: per-column `DbColumnModel.Storage` and per-table `DbTableModel.KeyUnificationClasses` (see `key-unification.md`)
+- During derivation only, a post-key-unification effective identity-dependency inventory that distinguishes authored and
+  storage-promoted references. It drives cycle validation, mutability, vectors, and origin provenance but is not serialized
+  into runtime plans or AOT packs.
 
 This is not code generation; it is compiled (or deserialized) metadata cached by `(DataStoreId, EffectiveSchemaHash, ProjectName, ResourceName)`.
 
@@ -222,7 +225,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - derive scalar columns for the reference object’s **identity fields** (one per referenced identity component) using the `{ReferenceBaseName}_{IdentityFieldBaseName}` naming rule
      - suppress scalar-column derivation for the reference object’s `link` internals (if present); link values are not persisted
      - record a `DocumentReferenceBinding` (used for write-time FK population and for query compilation/reconstitution of reference-identity fields; identity-part binding columns may be `UnifiedAlias`)
-       - compute and persist `DocumentReferenceBinding.IsIdentityComponent` as `true` when any `identityJsonPaths` element is sourced from this reference object (i.e., when any `referenceJsonPaths[*].referenceJsonPath` is present in `identityJsonPaths`)
+       - compute and persist `DocumentReferenceBinding.IsIdentityComponent` as `true` when any `identityJsonPaths` element is sourced from this reference object (i.e., when any `referenceJsonPaths[*].referenceJsonPath` is present in `identityJsonPaths`); this records authored semantics only and is not the final propagation classification
    - For each descriptor path:
      - create a `..._DescriptorId` FK column at the table scope that owns that path
      - suppress the raw descriptor string scalar column at that JSON path; reconstitute the string from `dms.Descriptor` during reads.
@@ -257,7 +260,20 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - resolve all table and column names deterministically
    - validate no collisions and fail fast if any occur
 
-7. Apply `abstractResources` (polymorphic identity tables; optional views):
+7. Apply key unification, then derive and validate effective identity dependencies before any transitive mutability,
+   abstract-lineage, or complete-vector recursion:
+   - map every root public identity binding and every local document-reference public-value binding through
+     `DbColumnModel.Storage`;
+   - retain every authored `IsIdentityComponent` reference and promote any other document reference whose mapped local
+     canonical storage intersects the receiver's public identity storage;
+   - require every storage-promoted reference to be structurally required; reject an optional overlap as
+     `PropagationVectorNotRepresentable` rather than introducing conditional lineage;
+   - promote the whole binding atomically: add one target-to-receiver dependency, the target `DocumentId` direct lineage
+     anchor, target recursive anchors, and reference-replacement/origin provenance;
+   - reject every self-loop or directed cycle as `IdentityCascadeCycleNotSupported`, with a deterministic witness that
+     labels authored versus storage-promoted edges.
+
+8. Apply `abstractResources` (polymorphic identity tables; optional views):
    - For each abstract resource `A`, create a physical identity table `{schema}.{A}Identity` with:
      - `DocumentId` (PK; FK → `dms.Document(DocumentId)` ON DELETE CASCADE),
      - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
@@ -268,20 +284,23 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - Use `{schema}.{A}Identity` as the complete-vector FK target for abstract reference sites. PostgreSQL assigns its
      fixed full-cascade action without multiple-path classification. SQL Server includes abstract-target candidates in
      the same physical-cycle legality and global error-1785/carrier selection as concrete targets. Provider-independent
-     validation has already rejected semantic identity cycles (see
+     validation in step 7 has already rejected effective identity cycles (see
      [mssql-cascading.md](mssql-cascading.md)).
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
-8. After all resource models are available, derive one complete transitive propagation vector per target:
+9. Compute concrete/abstract mutability over the effective dependency graph, then derive one complete transitive
+   propagation vector per target:
    - public identity storage columns in target order;
-   - for every direct identity-contributing reference `T -> U`, `U.DocumentId` followed recursively by `U`'s complete
-     lineage-anchor inventory in stable structural order; and
+   - for every direct effective graph predecessor `U -> T`, whether authored or storage-promoted, `U.DocumentId` followed
+     recursively by `U`'s complete lineage-anchor inventory in stable structural order; and
    - the target's own `DocumentId` last.
    Every incoming `DocumentReferenceBinding` receives local lineage-anchor columns aligned to that same vector. Reuse local
    storage only with exact same-target-row and equivalent-presence proof; otherwise add dedicated stored anchor columns.
-   Widen the target's single `*_RefKey` UNIQUE constraint, construct and deduplicate physical FK candidates before
-   `OnUpdate` selection, then assign PostgreSQL actions mechanically or run SQL Server global selection. This is an
-   effective-schema pass, not a per-resource builder heuristic.
+   Widen the target's single `*_RefKey` UNIQUE constraint, construct and deduplicate physical FK candidates, then require
+   every physical edge omitted from the effective graph to be origin-terminal against the final receiver propagation-key
+   storage or fail derivation as an unsupported mapping. Only after that assertion assign PostgreSQL actions mechanically
+   or run SQL Server physical legality/global selection. This is an effective-schema pass, not a per-resource builder
+   heuristic.
 
 ### 4.2 Recommended child-table keys (stable internal collection identity)
 
@@ -425,7 +444,7 @@ column and every local lineage-anchor binding; there is no per-occurrence databa
 ### 5.2.2 Reference-resolution failure boundary
 
 Every submitted document reference must resolve through the ordinary bulk resolver before the write. A miss is never
-reinterpreted as an existing binding or predicted future identity. Semantic identity cycles are unsupported, so write
+reinterpreted as an existing binding or predicted future identity. Effective identity cycles are unsupported, so write
 plans need no deferred-reference marker, post-statement resolution pass, or cycle-specific locking protocol.
 
 ### 5.2.3 Authorization integration (pre-write checks)
@@ -589,7 +608,8 @@ Within a single transaction:
 6. No derived reverse-edge maintenance is required:
    - referential-id impacts propagate through complete-vector reference FKs over canonical storage. PostgreSQL consumes
      fixed actions; SQL Server rejects physical cycles and consumes globally selected actions that safely break covered
-     diamonds in acyclic graphs. Semantic identity cycles have already failed provider-independent validation. There is
+     diamonds in acyclic graphs. Effective identity cycles and non-terminal omitted edges have already failed
+     provider-independent validation. There is
      no
      identity-value propagation trigger (see [mssql-cascading.md](mssql-cascading.md)); and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
@@ -790,7 +810,7 @@ In this redesign, identity fields inside reference objects are persisted as loca
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
   plus any complete lineage-anchor columns. Native full-vector FK actions keep these values consistent: PostgreSQL uses
   its fixed assignment, while SQL Server rejects physical cycles and uses the globally selected error-1785-safe diamond
-  assignment for acyclic graphs. Semantic identity cycles are rejected before action selection (see
+  assignment for acyclic graphs. Effective identity cycles are rejected before action selection (see
   [mssql-cascading.md](mssql-cascading.md)).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
@@ -1368,10 +1388,13 @@ public abstract record TableConstraint
 /// Local stable DocumentId storage aligned positionally with the target's
 /// <c>ReferenceTargetAnchorRead.OrderedAnchorColumns</c>. Every incoming site has the same arity and order. A local
 /// column may be shared with another exact same-row reference binding; there are no per-site anchor subsets or repeated
-/// target-lineage paths in the runtime contract.
+/// target-lineage paths in the runtime contract. A storage-promoted effective dependency contributes the same atomic
+/// target-DocumentId lineage as an authored identity reference.
 /// </param>
 /// <param name="IsIdentityComponent">
-/// True when this reference contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
+/// True when this reference is authored as part of the parent document's identity. Post-key-unification effective
+/// dependency promotion is derivation-local and can promote a false value when canonical local storage overlaps receiver
+/// public-identity storage; consumers must not use this field as the final mutability or lineage classification.
 /// </param>
 public sealed record DocumentReferenceBinding(
     bool IsIdentityComponent,
@@ -2173,7 +2196,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
     // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE when the
-    // target's identity is mutable under the effective concrete/abstract mutability closure).
+    // target's identity is mutable under the post-key-unification effective concrete/abstract dependency closure).
 
     await tx.CommitAsync(ct);
 }

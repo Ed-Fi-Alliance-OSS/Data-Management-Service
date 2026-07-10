@@ -104,7 +104,8 @@ For each document reference site, the referencing table includes:
 - the stable `..._DocumentId` (stored/writable), and
 - the referenced resource’s identity natural-key fields as local per-site identity-part columns
   (`{RefBaseName}_{IdentityPart}`), and
-- the complete transitive lineage-anchor union exposed through the target's identity-contributing reference chains.
+- the complete transitive lineage-anchor union exposed through the target's authored and storage-promoted effective
+  identity dependencies.
 
 Under key unification, `{RefBaseName}_{IdentityPart}` columns are treated as **path/binding columns**. They may be
 stored (baseline redesign) or generated/persisted aliases of canonical storage columns (unified redesign), preserving
@@ -118,7 +119,8 @@ DDL generator requirements (derived from ApiSchema):
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
 - Enforce a complete-vector FK over canonical storage: public identity values, all complete transitive lineage anchors,
   and target `DocumentId`.
-  - Provider-independent validation rejects semantic identity cycles before action assignment.
+  - After key unification, provider-independent validation promotes canonical identity overlaps atomically, rejects
+    effective identity cycles before vector recursion, and certifies omitted physical edges as origin-terminal.
   - PostgreSQL assigns full-vector actions mechanically from target mutability. It is never pruned or classified for
     multiple paths.
   - SQL Server topologically rejects physical cascade cycles, then globally selects actions that satisfy error 1785 and
@@ -154,7 +156,7 @@ The pieces fit together like this:
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
    - The complete-vector FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses its fixed action and SQL
      Server includes the candidate in physical-cycle legality and global diamond action selection after
-     provider-independent semantic cycle validation (see
+     provider-independent post-key-unification effective-cycle validation (see
      [mssql-cascading.md](mssql-cascading.md)). This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored public identity values and lineage anchors are kept correct automatically.
@@ -270,8 +272,8 @@ This redesign keeps relationships keyed by stable `..._DocumentId`, but also sto
 fields and complete stable lineage anchors alongside every document reference. PostgreSQL assigns fixed full-vector
 actions mechanically. SQL Server topologically rejects physical cycles, then globally selects native cascades and
 origin-aware carrier-covered `NO ACTION` edges. Its search handles acyclic overlapping diamonds and parallel conflicts
-and fails before DDL only when no safe assignment exists (or a separately reported work limit is reached). Semantic
-identity cycles fail provider-independent validation. See
+and fails before DDL only when no safe assignment exists (or a separately reported work limit is reached). Authored and
+storage-promoted effective identity cycles fail provider-independent validation. See
 [mssql-cascading.md](mssql-cascading.md).
 
 Key effects:
@@ -281,8 +283,8 @@ Key effects:
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL is never pruned or classified for physical topology. Provider-independent storage and semantic
-  identity-cycle validation still applies.
+- PostgreSQL is never pruned or classified for broader origin-terminal physical topology. Provider-independent storage,
+  effective identity-cycle validation, and terminal-edge certification still apply.
 - SQL Server rejects physical cycles and a table reached by multiple cascade paths (error 1785). An incomplete all-native
   topological sort fails as `SqlServerCascadeCycleNotSupported`; an acyclic conflicting graph uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child). Global bounded search
@@ -321,7 +323,9 @@ stored state.
 ### Identity updates (`AllowIdentityUpdates`)
 
 If identity changes on update:
-- Treat `dms.ReferentialIdentity` as a derived index and recompute it **transactionally** (via triggers) for the changed document and any documents whose identity projection changes due to cascaded identity-component updates.
+- Treat `dms.ReferentialIdentity` as a derived index and recompute it **transactionally** (via triggers) for the changed
+  document and any documents whose identity projection changes through authored or storage-promoted effective dependency
+  cascades.
 - Relationships stored as `DocumentId` FKs remain valid; no rewrite of `..._DocumentId` columns is required.
 - Support every independently writable primitive component and non-empty primitive subset, one or more
   reference-backed replacements, multiple reference replacements, and mixed primitive/reference changes in one
@@ -340,7 +344,9 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
   - Propagation updates canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
   - Referrers’ `dms.Document.ContentVersion` stamps update because their full resource-state representation changes (the embedded reference identity changed).
-  - For identity-component referrers, triggers also update `dms.Document.IdentityVersion` and `dms.ReferentialIdentity` for the referrer (and this may cascade further).
+  - When canonical storage used by a referrer's identity changes, including through a storage-promoted non-identity
+    reference, triggers also update `dms.Document.IdentityVersion` and `dms.ReferentialIdentity` for the referrer; the
+    effective dependency graph determines whether that identity flow continues.
 
 - **Outgoing reference changes on a document** (`..._DocumentId` value changes)
   - Relational writes update the FK columns (`..._DocumentId`) and the canonical/storage identity-part columns (plus any

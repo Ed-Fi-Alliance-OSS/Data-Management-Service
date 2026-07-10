@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
-// DMS-1129 complete-vector feasibility measurement.
+// DMS-1129 authored-identity-only complete-vector feasibility baseline.
+//
+// This pre-promotion tool filters on binding.is_identity_component. DMS-1274 must extend it to
+// classify post-KeyUnification canonical overlaps before these values can serve as the final v2 gate.
 //
 // Usage from any directory:
 //   node reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js
@@ -1009,10 +1012,13 @@ function measureFixture(configuration) {
 }
 
 const summary = {
-  schema_version: 2,
+  schema_version: 3,
   generated_by:
     "reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js",
+  measurement_status: "pre-effective-identity-promotion-baseline",
   assumptions: {
+    effective_identity_dependencies:
+      "Not yet modeled. This baseline follows authored binding.is_identity_component only; DMS-1274 must add post-KeyUnification canonical-overlap promotion and regenerate the summary.",
     lineage_closure:
       "One root identity-contributing document reference is one independently replaceable lineage. Each target vector includes the stable transitive union inherited through those identity-reference chains. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
     propagation_vector:

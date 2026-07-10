@@ -28,8 +28,9 @@ Source documents:
 - Canonical storage is relational (root table per resource, child tables per collection) and is the source of truth.
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
 - Relationships use full-composite vectors containing referenced public identity values, complete transitive lineage
-  anchors, and stable target `DocumentId`. Provider-independent validation rejects semantic identity cycles. PostgreSQL
-  assigns fixed actions mechanically and is never pruned or classified for physical topology. SQL Server reports physical
+  anchors, and stable target `DocumentId`. After key unification, DMS promotes canonical identity overlaps atomically and
+  rejects cycles in that effective dependency graph. PostgreSQL assigns fixed actions mechanically and is never pruned or
+  classified for broader origin-terminal physical topology. SQL Server reports broader physical
   cycles from its normal topological legality pass and globally selects error-1785-legal actions for acyclic graphs;
   origin-aware carrier `NO ACTION` edges may safely break diamonds. There is no reduced-FK or identity-value trigger
   fallback (see [mssql-cascading.md](mssql-cascading.md)). Key-unified bindings may be presence-gated aliases of canonical
@@ -37,7 +38,8 @@ Source documents:
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server and PostgreSQL must both be supported, with explicit engine-specific behavior where they diverge. SQL
   Server alone performs physical-cycle and multiple-path topology fail-fast; PostgreSQL is never pruned or classified for
-  physical topology. Ordinary provider-independent validation, including semantic identity-cycle rejection, still
+  broader physical topology. Ordinary provider-independent validation, including effective identity-cycle rejection and
+  terminal-edge certification, still
   applies; see
   [mssql-cascading.md](mssql-cascading.md).
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
@@ -197,7 +199,8 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 3. **DB-enforced identity propagation**
    - Complete-vector FKs keep public identity and stable lineage anchors consistent. Provider-independent validation
-     rejects semantic identity cycles. PostgreSQL uses fixed actions; SQL Server rejects physical cycles from its normal
+     rejects authored and storage-promoted effective identity cycles. PostgreSQL uses fixed actions; SQL Server rejects
+     broader physical cycles from its normal
      topological legality pass and uses globally selected native cascades plus origin-aware carrier-covered `NO ACTION`
      diamond edges for acyclic graphs (see [mssql-cascading.md](mssql-cascading.md)).
    - Identity-changing writes may optionally be serialized (advisory/application lock) as an operational guardrail, but correctness does not depend on an application-managed lock table.
@@ -215,7 +218,8 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - For each document reference site, write the stable `..._DocumentId` FK column (resolved from `dms.ReferentialIdentity`) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
 
 5. **Strict identity maintenance (row-local triggers)**
-   - Per-resource triggers recompute `dms.ReferentialIdentity` when a document’s identity projection columns change (directly or via propagated updates to identity-component reference identity columns).
+   - Per-resource triggers recompute `dms.ReferentialIdentity` whenever the document's actual identity projection changes,
+     including a canonical update arriving through a storage-promoted effective dependency.
    - Identity changes therefore propagate transitively via DB-driven propagation (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible edges), without application-managed closure traversal.
 
 6. **Update tracking (stored metadata + tracked-change rows)**
@@ -264,7 +268,8 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 ## Key risks and mitigations (from the docs)
 
 - **Cascade feasibility and fan-out**
-  - Semantic identity cycles are rejected provider-independently. SQL Server physical cycles fail its normal topological
+  - Authored and post-key-unification storage-promoted effective identity cycles are rejected provider-independently.
+    Broader SQL Server physical cycles fail its normal topological
     legality pass; error 1785 duplicate reachability on acyclic graphs is handled by deterministic bounded global action
     selection. Exact-carrier cuts may safely break diamonds, and no reduced-FK/trigger fallback exists (see
     [mssql-cascading.md](mssql-cascading.md)).

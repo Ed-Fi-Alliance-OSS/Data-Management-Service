@@ -5,6 +5,13 @@ jira_url: https://edfi.atlassian.net/browse/DMS-945
 
 # Story: Derive Index + Trigger Inventory (DDL Intent)
 
+> **Historical delivery boundary.** DMS-945 is complete and owns deterministic index inventory plus the stamping,
+> referential-identity, and abstract-identity maintenance trigger intents described here. It does not own the revised
+> `v2` complete-vector or provider-action work. DMS-1274 owns post-key-unification effective identity dependencies,
+> complete vectors, physical candidates, and the effective-cycle guard; DMS-1258 owns PostgreSQL fixed actions plus SQL Server physical-cycle legality and diamond
+> selection. References below to those current integration rules constrain downstream consumers and do not attribute
+> that later work to DMS-945.
+
 ## Description
 
 Derive deterministic index and trigger inventories from the dialect-aware `DerivedRelationalModelSet`, per:
@@ -102,8 +109,8 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
   foreign-key pruning in `ReferenceConstraintPass` / DDL generation (see `design-docs/mssql-cascading.md`):
   - SQL Server uses deterministic bounded global selection over full-vector physical FK candidates;
   - an incomplete all-native topological sort fails as `SqlServerCascadeCycleNotSupported`; origin-aware carrier
-    `NO ACTION` edges may safely break diamonds in acyclic graphs; provider-independent validation rejects semantic
-    identity cycles;
+    `NO ACTION` edges may safely break diamonds in acyclic graphs; provider-independent validation promotes canonical
+    identity overlaps, rejects effective identity cycles, and certifies omitted edges as origin-terminal;
   - proved infeasibility and deterministic work-limit exhaustion are distinct failures; and
   - every FK keeps the complete vector.
   - the retired `MssqlIdentityPropagationTrigger` fan-out is **not** part of the trigger inventory.

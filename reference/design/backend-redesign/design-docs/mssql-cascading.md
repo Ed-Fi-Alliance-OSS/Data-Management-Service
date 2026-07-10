@@ -4,12 +4,13 @@
 
 This document is the authoritative DMS-1129 design after the simplification reset. It defines the smallest known
 architecture that preserves full referential integrity, correct SQL Server diamond handling, complete identity-change
-support, and the provider boundary between SQL Server and PostgreSQL. Genuine identity cycles are unsupported.
+support, and the provider boundary between SQL Server and PostgreSQL. Effective identity cycles are unsupported.
 
-The corrected transitive complete-vector measured screen has executable/reproducible evidence. It is a capacity screen,
-not an operational storage or performance measurement. Implementation and full-schema qualification remain open. The
-earlier reciprocal-cycle database POC is recorded as historical evidence only; cycle execution is not part of the
-supported contract.
+The authored-identity-only transitive complete-vector screen has executable/reproducible evidence. It predates
+post-key-unification effective-dependency promotion and is now a lower-bound baseline, not the final `v2` capacity gate or
+an operational storage/performance measurement. DMS-1274 must regenerate it with promoted lineages. Implementation and
+full-schema qualification remain open. The earlier reciprocal-cycle database POC is historical evidence only; cycle
+execution is not part of the supported contract.
 
 The complete-vector storage and provider-action changes are `RelationalMappingVersion = v2`. The implementation slice
 must bump `SchemaHashConstants.RelationalMappingVersion` when these rules land so an unchanged ApiSchema cannot match a
@@ -25,11 +26,14 @@ compatibility mode, legacy-schema interpretation, or migration.
 2. Identity values propagate through native `ON UPDATE CASCADE`. DMS does not use an identity-value propagation trigger.
    Existing triggers for referential-identity, abstract-identity, stamping, and change-query maintenance retain their
    separate responsibilities.
-3. Authored semantic identity cycles fail provider-independent validation before vector derivation. DMS does not cut or
-   execute them. MetaEd must perform the authoring-time check, and DMS repeats the same small graph guard at its input
-   boundary.
-4. PostgreSQL receives fixed actions mechanically. PostgreSQL is never pruned or classified for physical cascade
-   topology.
+3. MetaEd must reject authored semantic identity cycles. After reference binding and key unification, DMS derives one
+   effective identity-dependency graph. Authored identity references remain edges; any other document reference whose
+   mapped local canonical storage overlaps the receiver's public identity storage is promoted atomically, including its
+   target `DocumentId` lineage anchor. DMS rejects cycles in this effective graph before vector recursion and does not cut
+   or execute them.
+4. PostgreSQL receives fixed actions mechanically. PostgreSQL is never pruned or classified for broader physical cascade
+   topology. Every physical edge omitted from the effective identity graph must be proven origin-terminal after canonical
+   mapping.
 5. SQL Server alone classifies the physical cascade graph for error-1785 cycles and duplicate reachability, selects
    covered `NO ACTION` edges, and fails before DDL when the physical all-native graph has a cycle or no safe diamond
    assignment exists. Physical-cycle failure is the incomplete result of the same topological sort needed for path
@@ -76,25 +80,37 @@ For each reference target `T`, derive one ordered `CompletePropagationVector(T)`
 2. the complete transitive lineage-anchor union described below; and
 3. `T.DocumentId` last.
 
-An identity-contributing document reference is one atomic direct lineage even when it supplies several public identity
-values. Its stable anchor is the referenced row's `DocumentId`. For each direct lineage `T -> U`, append that anchor and
-then every lineage anchor in `CompletePropagationVector(U)` in `U`'s order. Apply this recursively in the target's stable
-structural reference order. The result is the finite transitive union of stable rows whose public values can flow through
-`T`'s identity-reference chains. Exact duplicate storage may be reused only with the same-row and presence proof below;
-otherwise each structural lineage path receives dedicated storage. Recursive authored identity definitions fail
-provider-independent validation as `IdentityCascadeCycleNotSupported`. Descriptor values are not document-reference
+Derive effective identity dependencies after key unification has mapped every binding to canonical storage. A document
+reference is one atomic direct lineage when either:
+
+- it is authored as an identity component; or
+- at least one of its mapped local public-value columns is canonical storage for a public identity value of the receiver.
+
+The second case is a storage-promoted dependency. Promotion is whole-reference, not per-column: its stable anchor is the
+referenced row's `DocumentId`, reference replacement is atomic, and the edge participates in mutability and origin-flow
+provenance. A storage-promoted reference must be structurally required. If the overlapping reference can be absent, fail
+as `PropagationVectorNotRepresentable`; the initial design does not add conditional per-row lineage or propagation-key
+variants.
+
+Orient each effective graph edge from referenced target `U` to dependent receiver `T`. To derive
+`CompletePropagationVector(T)`, visit each direct predecessor edge `U -> T`, append `U.DocumentId`, and then append every
+lineage anchor in `CompletePropagationVector(U)` in `U`'s order. Apply this recursively in the target's stable structural reference order.
+The result is the finite transitive union of stable rows whose public values can flow through `T`'s effective identity
+dependencies. Exact duplicate storage may be reused only with the same-row and presence proof below; otherwise each
+structural lineage path receives dedicated storage. Cycles in the effective dependency graph fail provider-independent
+validation as `IdentityCascadeCycleNotSupported` before this recursion. Descriptor values are not document-reference
 lineages.
 
 The transitive union is required even though only the direct references are independently replaceable on `T`. If `T`
 identifies through `U`, `U` identifies through `V`, and a receiver key-unifies `T`'s inherited `V` value with a direct
-`V` reference, a `U -> V` retarget must propagate both the new public value and `V.DocumentId` through `T`. A direct-only
+`V` reference, retargeting `U`'s `V` reference must propagate both the new public value and `V.DocumentId` through `T`. A direct-only
 inventory would combine the new public value with the receiver's old `V.DocumentId` and invalidate that full FK.
 
 Every incoming reference to `T` carries the same vector, and `T` exposes one corresponding propagation-key unique
 constraint. The current single `*_RefKey` constraint is widened when anchors are present; DMS does not create one key
 variant per incoming site.
 
-An inherited anchor is stored once: the local lineage-anchor column carried by `T`'s direct identity reference to `U` is
+An inherited anchor is stored once: the local lineage-anchor column carried by `T`'s direct effective identity dependency on `U` is
 also the column `T` exposes in its own complete vector. Do not create a second target-only copy. An existing direct
 `..._DocumentId` on `T` may replace that column only when the exact reuse conditions below hold.
 
@@ -136,8 +152,8 @@ intentional; schema minimization is not a correctness requirement.
 Implemented derivation must validate the final vector and receiver table against applicable supported-provider limits.
 It fails with `PropagationVectorNotRepresentable` rather than dropping an anchor or weakening a foreign key.
 
-The checked-in measurement tool and report are under [`../evidence/dms-1129`](../evidence/dms-1129). The stock-schema
-results are:
+The checked-in measurement tool and report are under [`../evidence/dms-1129`](../evidence/dms-1129). They currently
+filter on authored `IsIdentityComponent` and therefore provide this pre-promotion stock-schema baseline:
 
 | Measurement | Data Standard 5.2 | Data Standard 5.2 + TPDM |
 |---|---:|---:|
@@ -152,14 +168,15 @@ results are:
 | Maximum PostgreSQL four-byte UTF-8 payload | 2,560 | 2,560 |
 | Additional unique constraints | 0 | 0 |
 
-The focused SQL Server and PostgreSQL probes install the nine-column, widest-declared-byte vector, accept maximum-size
+The focused SQL Server and PostgreSQL probes install the nine-column, widest-declared-byte baseline vector, accept maximum-size
 test values, and cascade a maximum-width public value plus a lineage anchor. They do not exercise the 27-column
 widest-count vector. Complete anchors create no new crossing of the measured key/index column, declared-key payload, or
 table-column screens. This evidence does not measure total SQL Server row width, PostgreSQL tuple/index overhead, actual
 target-unique or FK-supporting index sizes, or representative write/cascade timing. It does not replace full
-generated-schema DDL qualification. It is sufficient to reject site-minimal anchor closure as unjustified complexity, but
-the `v2` storage shape is not frozen until DMS-1274 passes the early representative physical row/index and
-write-amplification gate.
+generated-schema DDL qualification. It supports the complete-vector direction but is not sufficient to freeze the new
+storage shape. DMS-1274 must first regenerate vector widths, lineage anchors, storage growth, artifact growth, provider
+screens, and mutable-candidate counts with effective dependencies, then pass the early representative physical row/index
+and write-amplification gate.
 
 The conservative relational-manifest projection grows by 3.25/3.64 percent and generated SQL by 1.26/1.43 percent for
 DS 5.2/TPDM.
@@ -241,12 +258,14 @@ artifact consumer later needs correlation outside the derivation process.
 The derivation order is:
 
 ```text
-semantic identity-cycle validation
--> reference binding
--> key unification and abstract identity
--> transitive identity mutability
+reference binding
+-> key unification
+-> effective identity-dependency derivation and provider-independent cycle validation
+-> abstract identity storage
+-> transitive effective identity mutability
 -> complete vectors and propagation keys
 -> storage-mapped physical candidates and deduplication
+-> certify every physical edge excluded from effective flow as origin-terminal against final receiver propagation keys
 -> SQL Server only: topologically order the all-native physical graph or fail its physical-cycle legality check
 -> shared-receiver value-flow validation
 -> PostgreSQL fixed actions OR SQL Server duplicate-reachability selection using the retained topological order
@@ -258,28 +277,31 @@ semantic identity-cycle validation
 
 ### Effective-schema mutability closure
 
-Compute concrete and abstract identity mutability together to a fixed point:
+Compute concrete and abstract identity mutability together to a fixed point over the effective identity-dependency graph:
 
 1. seed each concrete resource from its own `AllowIdentityUpdates` value;
-2. mark a concrete resource transitively mutable when an identity-contributing reference targets a mutable concrete or
-   abstract identity;
+2. for each effective edge from a mutable referenced target to its dependent receiver, mark that concrete receiver
+   transitively mutable, whether the edge is authored or storage-promoted;
 3. mark an abstract identity mutable when at least one of its effective-schema concrete members is transitively mutable;
    and
 4. repeat steps 2 and 3 until neither set changes.
 
 An abstract resource with only immutable concrete members is immutable. Abstractness by itself is never a cascade reason.
+Because storage-promoted references are included, a resource cannot remain classified immutable when an upstream native
+cascade can update canonical storage used by its public identity.
 The implementation must replace the current behavior in `TransitiveIdentityMutabilityPass`, which treats every abstract
 target as mutable, and must carry the resulting derivation-local abstract mutability into candidate action assignment.
 
-With this closure, the current static stock-schema reconstruction has a deliberately cheap expected path:
+The current pre-promotion static stock-schema reconstruction has this deliberately cheap baseline:
 
 | Schema | Mutable document-reference candidates | Cycle | Duplicate-reachability pair |
 |---|---:|---|---|
 | Data Standard 5.2 | 22 | None | None |
 | Data Standard 5.2 + TPDM | 23 | None | None |
 
-DMS-1258 must reproduce these counts from implemented v2 candidates and prove that both schemas return from the
-all-native SQL Server fast path without entering backtracking.
+DMS-1274 must inventory every post-key-unification storage-promoted dependency and confirm or replace these counts.
+DMS-1258 must reproduce the resulting implemented v2 counts and prove that both schemas return from the all-native SQL
+Server fast path without entering backtracking.
 
 Before implementation begins, update the DMS-1258 delivery description to this contract. It must require the
 provider-independent shared-receiver validation, on-demand stable-order origin-aware carrier DFS, native-first
@@ -318,7 +340,7 @@ reach any candidate in the group. The group is valid only when derivation proves
 2. compose the same root storage column through their native routes into the grouped receiver column; and
 3. propagate to the receiver as part of the same initiating database statement.
 
-Derive these facts from the same identity-mutability graph. Native cascades preserve an `InitiatingOriginFact`, while
+Derive these facts from the same effective identity-mutability graph. Native cascades preserve an `InitiatingOriginFact`, while
 trigger maintenance starts a new statement boundary. For every fact that can reach any candidate in the shared-column
 group, every candidate must have a native route from the same correlated root row carrying the same root storage column to
 the receiver under that fact. A missing candidate route, different root-row correlation, different composed source-column
@@ -357,9 +379,10 @@ For each physical document-reference candidate:
 - use full-vector `ON UPDATE CASCADE` when the target is mutable under the effective-schema closure; and
 - use full-vector `ON UPDATE NO ACTION` when the target is genuinely immutable, whether concrete or abstract.
 
-These actions are assigned mechanically from target mutability. Multiple cascade paths are retained. Semantic identity
-cycles and unsafe shared-column writers have already failed provider-independent validation. PostgreSQL receives no SQL
-Server mode or carrier witness, and a SQL-Server-incompatible physical graph does not fail a PostgreSQL build.
+These actions are assigned mechanically from target mutability. Multiple cascade paths are retained. Effective identity
+cycles, non-terminal omitted edges, and unsafe shared-column writers have already failed provider-independent validation.
+PostgreSQL receives no SQL Server mode or carrier witness, and a SQL-Server-incompatible broader origin-terminal physical
+graph does not fail a PostgreSQL build.
 
 Other provider-independent failures remain possible, including an unrepresentable vector, invalid storage mapping,
 mismatched vector arity, or ambiguous canonical-column mapping. Those are model failures, not SQL Server multiple-path
@@ -387,11 +410,13 @@ pass later reused for path counting; there is no cycle-cut search, carrier proof
 The retained graph of fixed edges plus `NativeCascade` decision edges must additionally contain at most one directed path
 between every ordered pair of tables.
 
-This physical check is SQL Server-specific. The semantic identity graph rejected before vector recursion contains only
-identity-contributing references. The physical graph also contains mutable document-reference candidates whose local
-reference does not contribute to the receiver's identity. Two resources can therefore have valid mutual non-identity
-references while producing a SQL Server-prohibited pair of physical `ON UPDATE CASCADE` edges. MetaEd's semantic check
-cannot establish SQL Server physical acyclicity, and PostgreSQL is not rejected solely for that topology.
+This physical check is SQL Server-specific. The effective identity graph rejected before vector recursion contains every
+document reference that can update receiver public-identity storage after canonical mapping. The physical graph is broader:
+it also contains origin-terminal mutable document-reference candidates and fixed cascades. Two resources can therefore
+have valid mutual non-identity references whose mapped local storage is disjoint from both receivers' propagation keys
+while still producing a SQL Server-prohibited pair of physical `ON UPDATE CASCADE` edges. Neither MetaEd's authored graph
+nor DMS's effective graph establishes SQL Server physical acyclicity, and PostgreSQL is not rejected solely for that
+broader topology.
 
 Raw incoming-edge count greater than one is not a multiple-path test. Independent parents with disjoint cascade ancestry
 are topology-legal. They reach this classifier only if the provider-independent shared-receiver validation has also
@@ -435,11 +460,13 @@ mutation powersets, symbolic value formulas, or subset-composition proofs. One o
 primitive subsets, and a direct reference replacement contributes its atomic complete-vector mapping. Those mutation
 forms remain required behavioral tests, not solver input.
 
-Shared-receiver validation follows the column-sensitive origin-flow provenance derived from the acyclic semantic
-identity-mutation graph; it does not use SQL Server's table-only physical topology as a provider-independent reachability
-graph. This keeps the validation finite for PostgreSQL mappings whose physical FK topology would be rejected by SQL
-Server. A non-identity reference candidate can terminate an origin flow at its receiver, but because its local columns do
-not change that receiver's propagation key, it cannot extend the flow around a physical table cycle.
+Shared-receiver validation follows the column-sensitive origin-flow provenance derived from the acyclic effective
+identity-dependency graph; it does not use SQL Server's table-only physical topology as a provider-independent reachability
+graph. This keeps the validation finite for PostgreSQL mappings whose broader physical FK topology would be rejected by
+SQL Server. A physical edge omitted from the effective graph must be proven origin-terminal after canonical mapping: none
+of its local update targets may be a receiver propagation-key column. A document reference that overlaps receiver public
+identity storage is promoted atomically before the graph guard. Any other fixed edge that can update a receiver
+propagation-key column must be represented in the effective flow model or fails as an unsupported physical mapping.
 
 Do not enumerate or retain carrier-route arrays. When validating a `CoveredNoAction` edge, traverse source-update and
 carrier routes on demand in stable order against the current retained graph, excluding the covered edge from the carrier.
@@ -537,7 +564,7 @@ A failure witness names the tables, columns, candidates, applicable `InitiatingO
 failed structural check in deterministic order. Exhaustive proof trees, omission proofs, canonical hash protocols, and
 solver-state serialization are not public contracts.
 
-## 7. Semantic Identity Cycles and SQL Server Physical Cycles
+## 7. Effective Identity Cycles and SQL Server Physical Cycles
 
 MetaEd does not currently enforce the required recursive-identity prohibition, and the existing ODS relational cascade
 enhancer has no visited/cycle guard. The first and only required METAED-1667 delivery is deterministic identity-cycle
@@ -546,24 +573,30 @@ validator rejects self-loops and directed cycles with one stable-order cycle wit
 new prohibition, not preservation of an existing validator. A semantic-diamond warning is outside this delivery; if it
 is still wanted, create a separate explicit follow-up.
 
-DMS validates the same invariant independently so malformed or hand-built input cannot reach complete-vector recursion.
-This is a small stable-order DFS or topological guard over the semantic identity graph, not a general cycle-analysis
-subsystem.
+DMS performs one stronger provider-independent guard after reference binding and key unification but before abstract
+lineage or complete-vector recursion. Build the effective identity-dependency graph with one vertex per resource identity.
+Add an edge from referenced identity to dependent identity for every authored identity reference and every
+storage-promoted reference whose mapped local canonical public-value storage overlaps the receiver's public identity
+storage. Promotion is atomic and includes the target `DocumentId` lineage anchor. Reject every self-loop and directed
+cycle as `IdentityCascadeCycleNotSupported`. The deterministic witness identifies each edge as authored or
+storage-promoted. This small stable-order DFS or topological guard subsumes DMS's authored semantic check; it is not a
+general cycle-analysis subsystem.
 
-Build the semantic identity-reference graph with one vertex per resource identity and an edge from a referenced identity
-to the identity that depends on it. Reject every self-loop and directed cycle as
-`IdentityCascadeCycleNotSupported`. The diagnostic names one deterministic semantic cycle in structural order.
+A storage-promoted dependency must be structurally required. Reject an optional overlapping reference as
+`PropagationVectorNotRepresentable`, because a row where it is absent cannot supply the non-null target `DocumentId`
+anchor required by `T`'s one propagation key and every present incoming reference to `T`.
 
-Semantic validation is provider-independent. It does not prove that SQL Server's broader physical update-cascade graph is
-acyclic: that graph also contains mutable non-identity reference sites and any other fixed physical update cascades. As
-part of normal SQL Server legality analysis, topologically sort the all-native physical graph. An incomplete sort fails as
-`SqlServerCascadeCycleNotSupported`. PostgreSQL performs no corresponding physical-topology rejection. SQL Server never
-searches for a cycle cut, and the runtime never predicts or defers resolution of a future identity. Every submitted
-reference must resolve normally before the write.
+Effective validation is provider-independent. It does not prove that SQL Server's broader physical update-cascade graph
+is acyclic: that graph also contains origin-terminal mutable non-identity reference sites and other fixed physical update
+cascades. As part of normal SQL Server legality analysis, topologically sort the all-native physical graph. An incomplete
+sort fails as `SqlServerCascadeCycleNotSupported`. PostgreSQL performs no corresponding broader physical-topology
+rejection. SQL Server never searches for a cycle cut, and the runtime never predicts or defers resolution of a future
+identity. Every submitted reference must resolve normally before the write.
 
 The reciprocal provider POC has been removed from the normal integration projects. A concise
 [historical observation](../evidence/dms-1129/reciprocal-cycle-poc.md) is retained; production fixtures must prove
-deterministic semantic rejection on both providers and deterministic physical-cycle failure on SQL Server.
+deterministic authored and storage-promoted effective-cycle rejection on both providers, plus deterministic failure of a
+distinct origin-terminal physical cycle on SQL Server.
 
 ## 8. Errors and Minimal Public Contracts
 
@@ -604,10 +637,11 @@ repeated target lineage paths, classifier modes, solver state, exhaustive certif
 identifiers, or cycle-specific metadata.
 
 MetaEd owns implementing the authored identity-cycle prohibition before its ODS relational enhancer. METAED-1667 does
-not include semantic-diamond analysis. MetaEd does not classify SQL Server realizability, search mode vectors, prove
-carriers, or report DMS work-limit outcomes. DMS retains its independent semantic validation and is the sole blocking
-authority after canonical storage mapping; it owns shared-receiver value-flow validation, physical candidate
-deduplication, SQL Server physical-topology legality, selected SQL Server actions, and provider provisioning.
+not include semantic-diamond analysis. MetaEd does not derive DMS canonical storage, storage-promoted dependencies,
+SQL Server realizability, search mode vectors, carriers, or work-limit outcomes. DMS owns the post-key-unification
+effective-graph guard and is the sole blocking authority after canonical storage mapping; it also owns shared-receiver
+value-flow validation, physical candidate deduplication, SQL Server physical-topology legality, selected SQL Server
+actions, and provider provisioning.
 
 ## 9. Verification and Delivery
 
@@ -615,7 +649,12 @@ deduplication, SQL Server physical-topology legality, selected SQL Server action
 
 Storage/candidate fixtures cover primitive identities, one and multiple reference-backed identities, abstract-member and
 identity-alias mappings, optional presence, child/collection/extension sites, unified columns, physical deduplication,
-parallel candidates, semantic-role provenance collapsed into one physical candidate, and provider-limit failures.
+parallel candidates, semantic-role provenance collapsed into one physical candidate, and provider-limit failures. Add a
+storage-promoted non-identity reference whose canonical local value overlaps receiver identity storage; it must become an
+atomic effective dependency, contribute the target `DocumentId` lineage anchor, make the receiver transitively mutable,
+and propagate that provenance downstream. A mutual promoted pair fails provider-independently as
+`IdentityCascadeCycleNotSupported`. A required promoted reference succeeds; the same canonical overlap on an optional
+reference fails as `PropagationVectorNotRepresentable` for both absent and present data fixtures.
 
 Behavioral mutation fixtures cover every primitive component and non-empty subset, each reference retarget, multiple
 retargets, primitive plus retargets, and all writable groups together. These are matrix tests of the whole-vector rule,
@@ -624,7 +663,8 @@ not classifier search cases.
 SQL Server fixtures cover the stock all-native fast path, sole edges, independent parents with disjoint receiver storage,
 covered/uncovered direct-versus-indirect and sibling diamonds, overlapping diamonds, parallel edges, fixed cascading
 edges, optional-carrier failure, a directly mutable sibling that prevents coverage, no solution, deterministic work-limit
-exhaustion, reversed-input determinism, and a physical cycle formed by otherwise-valid mutual non-identity references.
+exhaustion, reversed-input determinism, and a physical cycle formed by otherwise-valid mutual origin-terminal
+non-identity references whose local storage is disjoint from both receiver propagation keys.
 The physical-cycle fixture fails from the normal topological legality pass as `SqlServerCascadeCycleNotSupported` and is
 not sent through cycle-cut search. Include a prefix-state-sensitive carrier fixture in which two structural
 prefixes converge on the same intermediate table with different composed mapping, correlation, or presence state and only
@@ -636,13 +676,17 @@ crossed-key-position case above and the same-root-table/source-column but differ
 
 Provider/API fixtures cover errors 1785 and 547 for diamonds, ordinary reference-resolution failure, true retarget, stale
 version, rollback, hidden-profile-state preservation, stamping, referential-identity maintenance, change queries, and final
-constraint validation. Provider-independent model fixtures cover deterministic self-loop and multi-entity cycle rejection.
+constraint validation. Provider-independent model fixtures cover deterministic authored, storage-promoted, self-loop, and
+multi-entity effective-cycle rejection, plus rejection of any supposedly omitted physical edge that can update receiver
+propagation-key storage.
 
 ### Delivery slices
 
 1. **Database evidence and static feasibility:** stock-schema vector measurements and maximum-value probes.
-2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, limits, and
-   an early representative physical row/index and write-amplification gate before the `v2` storage shape is frozen.
+2. **Complete vectors and candidates:** post-key-unification effective dependency derivation; provider-independent
+   authored/storage-promoted cycle validation before vector recursion; atomic promoted lineage, effective mutability,
+   origin provenance, storage, propagation keys, physical deduplication, limits, and an early representative physical
+   row/index and write-amplification gate before the `v2` storage shape is frozen.
 3. **Provider actions:** PostgreSQL fixed assignment and SQL Server physical-cycle legality plus bounded global diamond
    selection.
 4. **Runtime mapping and manifest integration:** final actions, target anchor-read records, and aligned local anchor
@@ -657,9 +701,9 @@ All slices are required before the finalized `v2` relational contract is complet
 
 | Gate | Current result | Consequence |
 |---|---|---|
-| Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens; the focused provider probe covers the nine-column widest-byte case, not the 27-column widest-count case | Do not implement per-site minimal anchor closure; require the early DMS-1274 representative physical-storage gate before freezing `v2`, then retain DMS-1277 full-schema row/index and widest-count qualification. |
-| Cycle boundary | Semantic identity cycles are unsupported on both providers; SQL Server physical cascade cycles fail its legality pass | Keep MetaEd plus the small DMS semantic guard before vector recursion. Reuse SQL Server's required topological ordering to report physical cycles; add no physical-cycle rejection to PostgreSQL and no cycle-cut/runtime protocol. |
-| Stock all-native topology | Static reconstruction reports 22/23 candidates and no conflicts for DS 5.2/TPDM | Reproduce from implemented v2 candidates and return before conflict-core search. |
+| Complete vector measured screen | Authored-only pre-promotion baseline passed; effective-dependency remeasurement open | DMS-1274 regenerates vector/anchor/storage and candidate counts after canonical-overlap promotion and passes the representative physical-storage gate before freezing `v2`; DMS-1277 retains full-schema row/index and widest-count qualification. |
+| Cycle boundary | Authored and post-key-unification effective identity cycles are unsupported on both providers; broader SQL Server physical cascade cycles fail its legality pass | Keep MetaEd's authored guard plus one small DMS effective-graph guard before vector recursion. Promote canonical identity overlaps atomically with target lineage anchors. Reuse SQL Server's required topological ordering to report broader origin-terminal physical cycles; add no physical-cycle rejection to PostgreSQL and no cycle-cut/runtime protocol. |
+| Stock all-native topology | Pre-promotion static reconstruction reports 22/23 candidates and no conflicts for DS 5.2/TPDM | DMS-1274 inventories promoted dependencies and confirms or replaces the baseline; DMS-1258 reproduces the resulting implemented v2 counts and returns before conflict-core search. |
 | Simple global search | Design-ready; implementation measurement open | Use on-demand origin-aware carrier checks and the 1,000,000-unit budget counting only decision assignments and edge visits; add minimum-prune optimization only from performance evidence. |
 | Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions, target anchor-read records, and aligned local anchor columns; do not add classifier/proof/hash protocols. |
 
@@ -669,8 +713,8 @@ Legacy MetaEd/ODS orients edges from referenced entity to identity-dependent ent
 multiple-path test, and retains an alphabetically selected source while disabling others. Its “cyclical reference graph”
 test is a converging diamond rather than a directed cycle.
 
-DMS does not copy that algorithm. It rejects genuine semantic identity cycles, reports SQL Server physical cycles through
-the normal topological legality pass, constructs storage-mapped physical candidates,
+DMS does not copy that algorithm. It rejects authored and storage-promoted effective identity cycles, reports broader SQL
+Server physical cycles through the normal topological legality pass, constructs storage-mapped physical candidates,
 rejects unsafe shared-column writers independently of topology, distinguishes safe independent parents from duplicate
 reachability, validates both direct-versus-indirect and sibling diamonds against every initiating root-row flow, searches
 diamond action assignments globally, and fails SQL Server derivation instead of silently weakening referential integrity.

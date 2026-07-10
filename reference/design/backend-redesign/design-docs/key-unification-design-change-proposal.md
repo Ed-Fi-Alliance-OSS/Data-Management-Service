@@ -8,7 +8,8 @@ Draft (proposal).
 > `MssqlIdentityPropagationTrigger` triggers (including the "extend the trigger to non-root reference
 > sites" work item) are **historical and non-normative**. SQL Server identity-value propagation is
 > now native `ON UPDATE CASCADE` with **SQL-Server-only** global physical action selection. Exact-carrier
-> `NO ACTION` edges may safely break diamonds; provider-independent validation rejects semantic identity cycles. SQL
+> `NO ACTION` edges may safely break diamonds; provider-independent validation promotes canonical identity overlaps
+> atomically, rejects effective identity cycles, and certifies omitted physical edges as origin-terminal. Broader SQL
 > Server physical cycles fail its normal topological legality pass. PostgreSQL is
 > never pruned or classified for multiple-path topology — see [mssql-cascading.md](mssql-cascading.md). Native cascade already
 > follows composite reference FKs on child/extension binding tables, so no trigger change is needed

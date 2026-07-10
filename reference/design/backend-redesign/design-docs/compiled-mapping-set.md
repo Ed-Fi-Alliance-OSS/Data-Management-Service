@@ -377,7 +377,9 @@ Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - **Complete propagation vectors.** Each target has one vector: public identity storage columns, the finite transitive
-  union of stable `DocumentId` anchors exposed through its identity-reference chains, and the target's own `DocumentId`.
+  union of stable `DocumentId` anchors exposed through its post-key-unification effective identity dependencies, and the
+  target's own `DocumentId`. Authored identity references remain dependencies; canonical public-identity overlap promotes
+  the entire reference atomically and contributes its target `DocumentId` anchor.
   `ReferenceTargetAnchorReadsInResourceOrder` has one entry for every document target used by a
   `DocumentReferenceBinding`; it explicitly identifies the concrete root or abstract identity table, its `DocumentId`
   column, and its ordered target anchor columns. Every incoming `DocumentReferenceBinding.LineageAnchorColumns` list has
@@ -390,23 +392,26 @@ Notes:
   classifier modes and carrier witnesses are derivation-local diagnostics, not fields on `TableConstraint.ForeignKey` or
   `MappingSet`; add them only to a manifest if a concrete diagnostic consumer requires them. DDL consumes the final
   action and never reruns classification.
-- **Cycle, value-flow, and diamond support.** Provider-independent validation rejects recursive semantic identity
-  definitions as
-  `IdentityCascadeCycleNotSupported` and independently mutable FKs that write shared canonical receiver storage as
+- **Cycle, value-flow, and diamond support.** Provider-independent validation rejects cycles in the effective
+  identity-dependency graph as `IdentityCascadeCycleNotSupported`, after key unification and before vector recursion. It
+  also rejects a physical edge omitted from that graph unless final canonical mapping proves it cannot update receiver
+  propagation-key storage. SQL Server then topologically orders the broader all-native physical graph and fails an
+  incomplete sort as `SqlServerCascadeCycleNotSupported`; PostgreSQL performs no broader origin-terminal
+  physical-topology rejection. After SQL Server topology succeeds, and before PostgreSQL fixed assignment, reject
+  independently mutable FKs that write shared canonical receiver storage as
   `ConflictingUnifiedCascadeWritesNotSupported` unless every writer under each `InitiatingOriginFact` starts from the same
   correlated root row, composes the same root storage column into the receiver, and executes in the same initiating
-  statement. SQL Server first topologically orders the all-native physical graph and fails an incomplete sort as
-  `SqlServerCascadeCycleNotSupported`; PostgreSQL performs no physical-topology rejection. Only then may SQL Server accept
-  a legal all-native physical graph immediately; otherwise modes are selected by deterministic bounded first-feasible
-  search over the conflict core. Every physical `ON UPDATE CASCADE` FK
+  statement. Only then may SQL Server accept a duplicate-free all-native graph immediately; otherwise modes are selected
+  by deterministic bounded first-feasible search over the conflict core. Every physical `ON UPDATE CASCADE` FK
   participates as a decision or fixed edge, and covered edges use on-demand origin-aware carrier checks for every fact
   and source-update flow that can change the referenced target key.
   The shared deterministic 1,000,000-unit budget counts decision assignments and directed-edge visits. The stable search
   outcomes distinguish `SqlServerCascadeCycleNotSupported`, proved `NoSafeSqlServerAssignment`, and
   `CascadeClassificationComplexityExceeded`.
-- **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. Write
-  plans contain ordinary reference bindings and aligned local lineage-anchor columns only; they do not serialize solver
-  state, proof trees, or cycle-specific deferred-reference metadata.
+- **Runtime separation.** Authored/storage-promoted dependency labels and SQL Server mode/carrier witnesses are
+  derivation-local, not runtime write-plan contracts. Write plans contain ordinary reference bindings and aligned local
+  lineage-anchor columns only; they do not serialize effective graphs, solver state, proof trees, or cycle-specific
+  deferred-reference metadata.
 - **Failure convention.** Model derivation keeps the repository's exception-based convention with concise structural
   witnesses. Do not introduce a global success/proof artifact. See `design-docs/mssql-cascading.md`.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.

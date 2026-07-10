@@ -143,7 +143,8 @@ Notes:
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
-  - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
+  - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes, directly or
+    through cascaded canonical updates from authored or storage-promoted effective identity dependencies.
   - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the full resource-state document before readable profile projection, excluding server-generated response decorations such as `link`.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization is addressed separately in [auth.md](auth.md).
@@ -248,7 +249,10 @@ Operational considerations:
 
 Critical invariants:
 
-- **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document” for **all** identities (self-contained identities, reference-bearing identities, and descriptor URIs). This requires `dms.ReferentialIdentity` to be maintained transactionally on identity changes, including cascading recompute when upstream identity components change.
+- **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document” for **all** identities
+  (self-contained identities, reference-bearing identities, and descriptor URIs). This requires
+  `dms.ReferentialIdentity` to be maintained transactionally on identity changes, including cascaded canonical updates
+  from post-key-unification effective identity dependencies.
 - The resource root table’s natural-key unique constraint (binding/path columns for `identityJsonPaths`, including reference-site `..._DocumentId` and identity-part binding columns) remains a recommended relational guardrail; under key unification, some identity-part binding columns may be generated/persisted aliases of canonical storage columns. Identity-based resolution/upsert uses `dms.ReferentialIdentity`.
 - A document has **at most 2** referential ids:
   - the **primary** referential id for the document’s concrete `ResourceKeyId` (`(ProjectName, ResourceName)` in `dms.ResourceKey`)
@@ -587,7 +591,7 @@ Typical structure:
 - Reference key columns → one **FK-supporting** propagation-key unique constraint over
   `(<StorageIdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)` (the referenced key used by every incoming
   composite reference FK; public identity storage first, the finite transitive union of stable `DocumentId` anchors
-  exposed through identity-reference chains, and the target's own `DocumentId` last — see
+  exposed through post-key-unification effective identity dependencies, and the target's own `DocumentId` last — see
   [mssql-cascading.md](mssql-cascading.md)).
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
 - Scalar columns for top-level non-collection properties
@@ -604,23 +608,35 @@ Typical structure:
       (public identity storage first, complete transitive lineage anchors next, target `DocumentId` last)
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
+      - After key unification, retain authored identity references and promote any other document reference whose mapped
+        local canonical public-value storage overlaps the receiver's public identity storage. Promotion is atomic and
+        contributes the target `DocumentId` lineage anchor, recursive target anchors, effective mutability, and origin
+        provenance. A storage-promoted reference must be structurally required; an optional overlap fails as
+        `PropagationVectorNotRepresentable` rather than creating conditional lineage. Reject cycles in that effective
+        graph before vector recursion. Every physical edge omitted from the
+        graph must be disjoint from receiver propagation-key storage after final mapping.
       - PostgreSQL assigns actions mechanically from the effective-schema mutability closure: concrete targets use their
         transitive mutability, and an abstract target is mutable iff at least one concrete member is transitively mutable.
         Mutable targets use `ON UPDATE CASCADE`; genuinely immutable concrete or abstract targets use
-        `ON UPDATE NO ACTION`. PostgreSQL is never pruned or classified for multiple paths. Provider-independent
-        validation rejects semantic identity cycles; SQL Server-only physical topology does not fail PostgreSQL
-        derivation.
+        `ON UPDATE NO ACTION`. PostgreSQL is never pruned or classified for broader physical topology.
+        Provider-independent validation rejects effective identity cycles and non-terminal omitted edges; SQL Server-only
+        origin-terminal physical topology does not fail PostgreSQL derivation.
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
         - constructs and deduplicates storage-mapped physical candidates before action selection, and includes every
           other physical `ON UPDATE CASCADE` FK as a fixed legality-graph edge;
+        - topologically orders the all-native physical graph immediately after deduplication and fails an incomplete sort
+          as `SqlServerCascadeCycleNotSupported` before shared-writer validation, duplicate-path search, or DDL; the
+          retained stable order is reused for path counting;
+        - after topology succeeds, runs provider-independent shared-receiver value-flow validation before the all-native
+          fast path, just as PostgreSQL runs it before fixed action assignment;
         - globally selects `ON UPDATE CASCADE` or covered `ON UPDATE NO ACTION` for mutable edges so the retained graph is
           error-1785 legal and every pruned edge is covered for every initiating fact and source-update flow by a native
           route from the same correlated root row to the same receiver row, with identical affected-vector mapping,
           presence implication, and same-statement propagation;
-        - accepts a legal all-native graph immediately, otherwise searches only the conflict core with on-demand carrier
+        - accepts a duplicate-free all-native graph immediately, otherwise searches only the conflict core with on-demand carrier
           checks and native-first deterministic backtracking; and
-        - fails before DDL only when bounded search proves no safe assignment (or separately reaches its deterministic
-          work limit). There is no `DocumentId`-only or trigger fallback.
+        - distinguishes physical-cycle failure, bounded proof that no safe diamond assignment exists, and deterministic
+          work-limit exhaustion. There is no `DocumentId`-only or trigger fallback.
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding and lineage-anchor columns for that site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding and lineage-anchor columns for that site are not `NULL`
@@ -683,8 +699,9 @@ This redesign provisions an **identity table per abstract resource**:
   - referencing tables use the abstract target's complete propagation vector and target
     `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, <CompleteLineageDocumentIds...>, DocumentId)`.
     PostgreSQL assigns its fixed full-vector action without multiple-path classification. SQL Server includes these
-    physical candidates in the same global error-1785/carrier selection as concrete targets. Semantic identity cycles
-    fail provider-independent validation before action selection; SQL Server physical cycles fail its topological
+    physical candidates in the same global error-1785/carrier selection as concrete targets. Authored and
+    storage-promoted effective identity cycles fail provider-independent validation before action selection; broader SQL
+    Server physical cycles fail its topological
     legality pass. Abstract identity tables remain trigger-maintained by
     abstract-identity *maintenance* triggers, which are distinct from the removed identity-value propagation trigger;
     see [mssql-cascading.md](mssql-cascading.md).

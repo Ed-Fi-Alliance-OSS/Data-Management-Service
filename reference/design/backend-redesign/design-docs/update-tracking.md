@@ -23,8 +23,9 @@ The backend redesign needs resource-state-sensitive metadata:
 This redesign accomplishes indirect-update semantics without a reverse-edge table by persisting complete referenced
 public/lineage vectors alongside each stable target `..._DocumentId` and propagating them through native FK actions.
 PostgreSQL assigns fixed actions mechanically; SQL Server globally selects native cascades and origin-aware carrier-covered
-`NO ACTION` diamond edges after its physical-cycle legality check. Provider-independent validation rejects semantic
-identity cycles, while SQL Server-only physical topology does not fail PostgreSQL derivation. There is no identity-value
+`NO ACTION` diamond edges after its physical-cycle legality check. Provider-independent validation rejects authored and
+post-key-unification storage-promoted effective identity cycles and certifies omitted edges as origin-terminal, while
+SQL Server-only broader physical topology does not fail PostgreSQL derivation. There is no identity-value
 propagation trigger; see [mssql-cascading.md](mssql-cascading.md).
 
 Those referrer updates naturally trigger the same stamping rules as “direct” writes.
@@ -71,7 +72,10 @@ Each persisted document also maintains an **identity projection stamp**:
 - `IdentityVersion`
 - `IdentityLastModifiedAt`
 
-These are updated only when the document’s own identity/URI projection changes (including via cascaded updates to identity-component reference identity storage columns; see [key-unification.md](key-unification.md)). Identity stamps are not required to serve `_etag/_lastModifiedDate/ChangeVersion`, but are useful for diagnostics and future features.
+These are updated only when the document’s own identity/URI projection changes, including a cascaded canonical update
+through an authored or storage-promoted effective dependency; see [key-unification.md](key-unification.md). Identity
+stamps are not required to serve `_etag/_lastModifiedDate/ChangeVersion`, but are useful for diagnostics and future
+features.
 
 ### Global sequence
 
@@ -99,7 +103,8 @@ case, `ContentVersion` and `ContentLastModifiedAt` MUST remain unchanged.
 A document’s identity/URI projection changes when any identity component changes, including:
 
 - scalar identity columns on the root table, and
-- reference identity values stored alongside identity-component references (because those values participate in the document’s identity projection; canonical under key unification; see [key-unification.md](key-unification.md)).
+- any canonical storage value used by the identity projection, including values updated through authored or
+  storage-promoted effective dependencies (see [key-unification.md](key-unification.md)).
 
 ### Stamp updates
 

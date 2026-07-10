@@ -80,7 +80,9 @@ For each document reference site, the relational mapping stores:
 Complete-vector FKs target public identity values, complete transitive lineage anchors, and target `DocumentId`.
 PostgreSQL assigns fixed actions mechanically. SQL Server rejects physical cycles, then globally selects actions for
 acyclic graphs and may use an origin-aware carrier `NO ACTION` edge to break a diamond; provider-independent validation
-rejects semantic identity cycles. See [mssql-cascading.md](mssql-cascading.md).
+rejects cycles in the post-key-unification effective identity-dependency graph. That graph promotes a non-identity
+document reference when its mapped local canonical storage overlaps the receiver's public identity storage. See
+[mssql-cascading.md](mssql-cascading.md).
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -1635,13 +1637,44 @@ Referential actions:
 
 - `ON UPDATE` is dialect-specific:
   - PostgreSQL assigns complete-vector actions mechanically from target mutability and never runs multiple-path
-    classification, pruning, or physical-topology fail-fast. Provider-independent semantic identity-cycle validation
-    still applies.
+    classification, pruning, or broader physical-topology fail-fast. Provider-independent effective identity-cycle
+    validation still applies.
   - SQL Server globally selects physical actions (see [mssql-cascading.md](mssql-cascading.md)). Exact-carrier
-    `NO ACTION` edges may break diamonds or parallel conflicts. Provider-independent validation rejects semantic identity
-    cycles; an incomplete SQL Server all-native topological sort reports `SqlServerCascadeCycleNotSupported`. Every FK
-    keeps the complete vector and identity-value propagation is native cascade, not a trigger.
+    `NO ACTION` edges may break diamonds or parallel conflicts. Provider-independent validation rejects authored and
+    storage-promoted effective identity cycles; an incomplete SQL Server all-native topological sort reports
+    `SqlServerCascadeCycleNotSupported`. Every FK keeps the complete vector and identity-value propagation is native
+    cascade, not a trigger.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
+
+### Effective identity-dependency promotion (normative)
+
+Key unification can make a document reference physically identity-contributing even when the reference object is not
+listed in the receiver's `identityJsonPaths`. Derive the effective identity-dependency graph after `KeyUnificationPass`
+and before abstract-lineage or complete-vector recursion:
+
+1. For each resource, map every public identity binding through `DbColumnModel.Storage` and collect its canonical public
+   identity storage columns.
+2. For each `DocumentReferenceBinding`, map every local public-value binding through `DbColumnModel.Storage`.
+3. The reference is an effective identity dependency when it is authored as an identity component **or** the two sets
+   intersect.
+4. A storage-promoted reference must be structurally required. If an intersecting reference can be absent, fail as
+   `PropagationVectorNotRepresentable`; conditional per-row lineage and propagation-key variants are not part of the
+   initial design.
+5. Promotion is atomic. If one mapped component intersects, the entire document reference contributes one dependency,
+   its target `DocumentId` lineage anchor, atomic reference-replacement provenance, and every target lineage anchor.
+6. Orient the graph from referenced target to dependent receiver. Reject self-loops and directed cycles in the resulting
+   graph as `IdentityCascadeCycleNotSupported` before recursive
+   lineage derivation. The stable witness identifies each edge as authored or storage-promoted.
+7. Use the same graph for concrete/abstract mutability, complete vectors, `InitiatingOriginFact` derivation, and
+   shared-receiver validation.
+
+This rule prevents an upstream cascade from changing receiver identity storage while the receiver is still classified
+immutable. A physical edge omitted from the effective graph must be proven origin-terminal after canonical mapping: none
+of its local update targets may be a receiver propagation-key column. A fixed cascade that violates that invariant must be
+represented in the effective flow model or fail derivation as an unsupported mapping.
+
+`EffectiveIdentityDependency` and its authored/storage-promoted reason are derivation-local. Runtime mappings and
+manifests carry only the resulting complete vectors, final actions, target anchor-read records, and aligned local columns.
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
 
@@ -1705,8 +1738,8 @@ the SQL Server foreign-key-pruning design.
 
 DMS does **not** run SQL Server physical-topology classification on PostgreSQL. PostgreSQL is never pruned or classified
 for physical cycles or duplicate reachability; multiple paths retain the fixed provider actions. Provider-independent
-model validation rejects semantic identity cycles and unsafe shared canonical-column writers before either dialect
-assigns actions. DMS remains
+model validation rejects effective identity cycles, non-terminal omitted edges, and unsafe shared canonical-column
+writers before either dialect assigns actions. DMS remains
 authoritative for physical SQL Server selection (see
 [mssql-cascading.md](mssql-cascading.md)).
 
@@ -1743,9 +1776,9 @@ Normative guidance:
 SQL Server rejects a table that would appear more than once in one `UPDATE`/`DELETE`'s cascade action tree — a table
 reached by two distinct cascade paths from a **single origin** (a *diamond*), or a cycle (error 1785). It does **not**
 reject a table merely for having cascade in-degree > 1: *independent* parents into one receiver are legal. DMS rejects
-semantic identity cycles during provider-independent validation and handles SQL Server physical cycles plus diamonds in
-propagation direction (referenced/parent → referrer/child); see [mssql-cascading.md](mssql-cascading.md) for the full
-algorithm. Identity-value propagation is native
+authored and storage-promoted effective identity cycles during provider-independent validation and handles broader SQL
+Server physical cycles plus diamonds in propagation direction (referenced/parent → referrer/child); see
+[mssql-cascading.md](mssql-cascading.md) for the full algorithm. Identity-value propagation is native
 `ON UPDATE CASCADE`, not a trigger. Every SQL Server reference composite FK keeps the **full composite** key — identity
 columns are never dropped, so value-level referential integrity is always enforced.
 
@@ -1753,14 +1786,17 @@ The multi-edge shape above becomes a genuine diamond only when `B` and `C` depen
 update to that origin then reaches the referrer `A` by two paths (through `FK_A_B` and `FK_A_C`). Because both composite
 FKs share the same unified canonical column (`StudentUniqueId_Unified`), pruning one of them is *covered* by the
 surviving path. If `B` and `C` are independently mutable, the topology has no diamond, but the shared writable column is
-rejected by the provider-independent value-flow validation before the SQL Server classifier runs.
+rejected by the provider-independent value-flow validation after SQL Server physical-cycle legality succeeds and before
+the all-native fast path or duplicate-path action selection runs.
 
 Normative rules:
 
-1. Reject self-loops and directed cycles in the semantic identity-reference graph before complete-vector derivation.
-   Build the physical cascade multigraph in propagation direction over identity-propagating candidates whose targets are
-   mutable under the effective concrete/abstract mutability closure. For SQL Server, topologically order the all-native
-   graph immediately after candidate deduplication; an incomplete sort fails as
+1. After key unification, promote every document reference whose mapped local canonical storage overlaps receiver public
+   identity storage. Treat it atomically with its target `DocumentId` lineage anchor, and reject self-loops and directed
+   cycles in the resulting effective identity-dependency graph before complete-vector derivation. Build the broader
+   physical cascade multigraph in propagation direction over candidates whose targets are mutable under the effective
+   concrete/abstract closure. For SQL Server, topologically order the all-native graph immediately after candidate
+   deduplication; an incomplete sort fails as
    `SqlServerCascadeCycleNotSupported`. Reuse that stable order for path counting. PostgreSQL performs no physical-cycle
    topology check, and SQL Server does not search for a cycle cut.
 2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
@@ -1994,25 +2030,20 @@ schema set. It MUST run late enough that all candidate endpoint columns exist (i
 columns), and early enough that all downstream consumers (constraint derivation, index/trigger inventory, plan
 compilation, manifests, and DDL generation) see a unified model.
 
-### Recommended placement in `RelationalModelSetPasses` order
+### Required relative placement in `RelationalModelSetPasses`
 
-Recommended set-level pass order (relative to the current default implementation in
-`src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`):
+The full default pass inventory evolves independently; the normative relative order for this work is:
 
-1. `BaseTraversalAndDescriptorBindingPass`
-2. `DescriptorResourceMappingPass`
-3. `ExtensionTableDerivationPass`
-4. `ReferenceBindingPass`
-5. **`KeyUnificationPass` (new)** ← applies canonical columns + presence-gated aliases + `KeyUnificationClasses`
-6. `AbstractIdentityTableAndUnionViewDerivationPass`
-7. `RootIdentityConstraintPass`
-8. `ReferenceConstraintPass`
-9. `ArrayUniquenessConstraintPass`
-10. `ApplyConstraintDialectHashingPass`
-11. *(When implemented in E01)* `DeriveIndexInventoryPass` (DMS-945)
-12. *(When implemented in E01)* `DeriveTriggerInventoryPass` (DMS-945)
-13. `ApplyDialectIdentifierShorteningPass`
-14. `CanonicalizeOrderingPass`
+1. `ReferenceBindingPass`
+2. `KeyUnificationPass` — applies canonical columns, presence-gated aliases, and `KeyUnificationClasses`
+3. `EffectiveIdentityDependencyPass` (DMS-1274) — maps public/reference bindings to canonical storage, promotes overlaps,
+   and rejects effective cycles
+4. `AbstractIdentityTableAndUnionViewDerivationPass`
+5. `RootIdentityConstraintPass`
+6. `TransitiveIdentityMutabilityPass` — consumes effective dependencies, not authored flags alone
+7. complete-vector, propagation-key, and `ReferenceConstraintPass` work
+8. downstream semantic identity, array/stable-collection, descriptor-FK, hashing, storage validation, inventory,
+   shortening, and canonical-ordering passes
 
 Notes:
 
@@ -2024,6 +2055,9 @@ Notes:
 - `KeyUnificationPass` MUST run **before** any constraint derivation pass that needs to target canonical storage
   columns (notably reference composite FKs), and before any pass that builds SourceJsonPath-based lookups that must see
   the post-unification table/column inventory.
+- `EffectiveIdentityDependencyPass` MUST run immediately after key unification and before any abstract-lineage,
+  transitive-mutability, complete-vector, or propagation-key recursion. It must not rely only on
+  `DocumentReferenceBinding.IsIdentityComponent`.
 - If E01 derives index/trigger inventories (DMS-945), `DeriveIndexInventoryPass` and `DeriveTriggerInventoryPass`
   SHOULD run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names
   reflect the final hashed constraint identifiers.
@@ -2283,6 +2317,17 @@ semantics, or cascade correctness.
   - deterministic naming, including collision handling and dialect shortening compatibility,
   - correct physical type and nullability (`NULL` vs `TRUE`/`1` only),
   - storage-only (`SourceJsonPath = null`, `Storage = Stored`).
+- Effective identity-dependency classification is deterministic after canonical mapping:
+  - authored `IsIdentityComponent` references remain effective;
+  - one mapped local public-value intersection with receiver public-identity storage promotes the whole binding;
+  - the promoted binding contributes its target `DocumentId` and recursive lineage anchors, transitive mutability, and
+    origin provenance;
+  - a true non-identity reference whose mapped local storage is disjoint from receiver identity storage is not promoted;
+  - promoted self-loops, mutual promoted pairs, and mixed authored/promoted cycles fail as
+    `IdentityCascadeCycleNotSupported` with stable edge-kind witnesses; and
+  - an optional canonical-overlap reference fails as `PropagationVectorNotRepresentable`, while required promotion
+    succeeds; and
+  - after complete propagation keys are mapped, every excluded physical edge is asserted origin-terminal.
 
 ### DDL emission (PostgreSQL + SQL Server)
 
@@ -2307,7 +2352,9 @@ semantics, or cascade correctness.
 - SQL Server propagation strategy (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
   - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
     an incomplete stable topological sort for physical cycles followed by per-origin duplicate reachability, not raw
-    in-degree; semantic identity cycles have already been rejected provider-independently,
+    in-degree; authored and storage-promoted effective identity cycles have already been rejected provider-independently,
+  - every storage-promoted reference contributes atomic target-`DocumentId` lineage, transitive mutability, and origin
+    provenance; every omitted physical edge is proven origin-terminal after canonical mapping,
   - independent parents with disjoint receiver storage keep `ON UPDATE CASCADE`; multiple mutable FKs sharing one
     writable receiver column must first pass validation for every possible `InitiatingOriginFact`, with every writer
     reached from the same correlated root row under that fact, composing the same root storage column into the receiver,
@@ -2317,7 +2364,10 @@ semantics, or cascade correctness.
   - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
     target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,
   - SQL Server reports `SqlServerCascadeCycleNotSupported`, proved diamond no-solution, and deterministic work-limit
-    exhaustion separately; PostgreSQL does not fail for SQL Server physical topology.
+    exhaustion separately; PostgreSQL does not fail for broader SQL Server origin-terminal physical topology.
+- Provider fixtures distinguish a mutual storage-promoted pair, which fails provider-independently, from mutual
+  origin-terminal non-identity references whose local storage is disjoint from both receiver propagation keys, which are
+  retained by PostgreSQL and fail SQL Server's all-native topological legality pass.
 
 ### Write planning + flattening
 

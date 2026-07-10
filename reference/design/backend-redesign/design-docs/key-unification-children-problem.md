@@ -9,8 +9,9 @@ Draft.
 > mechanism is superseded by [mssql-cascading.md](mssql-cascading.md): SQL Server now uses native
 > `ON UPDATE CASCADE` plus **SQL-Server-only** global physical action selection. Covered `NO ACTION`
 > edges may break diamonds or parallel conflicts when origin-aware same-root-row/same-boundary carriers exist;
-> provider-independent validation rejects semantic identity cycles, and SQL Server physical cycles fail its normal
-> topological legality pass. PostgreSQL is never pruned or classified for physical topology.
+> provider-independent validation promotes canonical identity overlaps atomically, rejects effective identity cycles,
+> and certifies omitted physical edges as origin-terminal. Broader SQL Server physical cycles fail its normal topological
+> legality pass. PostgreSQL is never pruned or classified for that broader topology.
 > The `MssqlIdentityPropagationTrigger` references below are
 > retained as **historical analysis only** and are non-normative. Native cascade follows the FK on
 > child/extension binding tables directly, so the "SQL Server trigger only considers root-table
