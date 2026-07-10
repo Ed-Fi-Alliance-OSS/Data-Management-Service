@@ -191,6 +191,9 @@ action for the exact same physical FK and that action leaves the later convergen
 that case, restore the nearest such earlier choice and try its next stable survivor. A merely reachable, carrier-related,
 or disjoint earlier decision is not a retry dependency.
 
+A failed safety check caused by an unavailable or insufficient upstream carrier is an unsupported cut, not a retry
+dependency, unless the earlier decision assigned the opposite action to that exact physical FK.
+
 This is not a general constraint solver: DMS does not infer a decision-dependency graph, propose upstream edges,
 enumerate arbitrary graph assignments, or retry transitively related or disjoint decisions. If the directly shared
 physical-FK choices are exhausted, fail as `NoSafeSqlServerForeignKeyPruning`.
@@ -204,6 +207,10 @@ For each tentative cut, establish the following from the canonical table/column 
 structural, fail-closed test, not a general route, row-correlation, or value-flow proof. The retained candidate must be
 a required binding on the same physical receiver table and update the cut's same canonical local identity columns. All
 other shapes are rejected.
+
+The path check reuses the predecessor trace already needed for per-origin convergence detection. It compares existing
+FK column pairs edge by edge for the selected survivor path; it does not compose, store, or search transitive
+propagation vectors or alternate routes.
 
 1. **Same canonical local values.** Each local canonical identity column that the cut would change is updated by the
    retained native cascade through the same canonical storage column pairing. The retained path from the mutable origin
