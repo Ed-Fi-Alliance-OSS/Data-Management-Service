@@ -19,10 +19,10 @@ multiple-cascade-path convergence.
 3. DMS, not MetaEd, makes the SQL Server physical pruning decision after reference binding and key unification.
 4. Detection is ODS-style and per directly mutable origin. Two independent parents of one receiver are not a diamond.
 5. At a convergence, DMS considers the conflicting incoming edges in stable order. It retains the first safe survivor;
-   if a later convergence depends on an earlier survivor action and has no safe choice under that action, it retries
-   that earlier survivor choice. It fails only after those directly relevant choices are exhausted.
-6. A cut is safe only when the retained path updates the same canonical local FK values for the same receiver row in the
-   same native cascade statement. If the cut tuple's `DocumentId` must move, the retained path must carry that same move.
+   if a later convergence has no safe choice because of an earlier action on the same physical FK, it retries that
+   earlier survivor choice. It fails only after those shared-FK choices are exhausted.
+6. A cut is safe only when the retained native cascade operation updates the same canonical local FK values on the same
+   physical receiver table. If the cut tuple's `DocumentId` must move, the retained path must carry that same move.
 7. Cycles and unsupported cuts fail derivation. DMS does not search arbitrary upstream cuts, optimize a cut set, or retain
    a weaker fallback.
 
@@ -158,11 +158,10 @@ maintenance and stamping triggers.
 
 ### Build candidates and reject cycles
 
-For SQL Server only, collect full-composite document-reference candidate FKs after canonical storage mapping. Preserve
-transient contributing binding provenance for each candidate during this pass. This includes its canonical local
-`DocumentId` column nullability (the requiredness signal), identity bindings, and physical table/column correlation.
-It is not output metadata. Collapse identical physical constraints into one candidate because one physical constraint
-has one action, while retaining every contributing binding needed to evaluate that action safely.
+For SQL Server only, collect full-composite document-reference candidate FKs after canonical storage mapping. A
+candidate retains the canonical local identity columns, local `DocumentId` column, requiredness, and physical receiver
+table needed for the structural safe-cut test. This is pass-local input, not output metadata. Collapse identical
+physical constraints into one candidate because one physical constraint has one action.
 
 Detect self-loops and cycles in the reachable candidate components before pruning. A cycle fails as
 `SqlServerCascadeCycleNotSupported`; DMS does not cut an arbitrary cycle edge. DMS does not scan unrelated FK topology
@@ -186,44 +185,36 @@ unrelated cascade component just because SQL Server might have a topology concer
 For the convergence, evaluate survivor choices in stable `PruningEdgeKey` order. Tentatively retain one candidate
 survivor, cut the other conflicting incoming candidate edges, and apply the safe-cut test below.
 
-Commit the first safe choice unless a later convergence has no safe choice under an earlier survivor action on which its
-candidate set or safe-cut result depends. That is a decision dependency. It includes an exact physical-FK action
-conflict and the narrower case where the earlier action removed a retained carrier needed by the later convergence; it
-does not include a merely reachable or disjoint earlier decision. In that case, restore the nearest dependent earlier
-decision and try its next stable survivor. The implementation may maintain a decision stack keyed by physical edge and
-the convergences whose candidate or safety evaluation depends on that action.
+Commit the first safe choice. A later convergence may retry an earlier choice only when that earlier choice selected an
+action for the exact same physical FK and that action leaves the later convergence with no locally safe survivor. In
+that case, restore the nearest such earlier choice and try its next stable survivor. A merely reachable, carrier-related,
+or disjoint earlier decision is not a retry dependency.
 
-It must not turn this into a general constraint solver: it does not propose upstream edges, enumerate arbitrary graph
-assignments, retry merely transitively related decisions, or retry disjoint previously settled convergences. It retries
-only the stable survivor choices of a convergence that directly supplies a required candidate or carrier to the failed
-convergence. If those directly relevant survivor choices are exhausted, fail as
-`NoSafeSqlServerForeignKeyPruning`.
+This is not a general constraint solver: DMS does not infer a decision-dependency graph, propose upstream edges,
+enumerate arbitrary graph assignments, or retry transitively related or disjoint decisions. If the directly shared
+physical-FK choices are exhausted, fail as `NoSafeSqlServerForeignKeyPruning`.
 
 ## Safe-Cut Test
 
 Topology alone does not make a full-composite `NO ACTION` FK safe. A cut is safe only when the retained native cascade
 updates the same values that the cut edge would have updated while SQL Server checks the constraint.
 
-For each tentative cut, establish all of the following for every mutable origin whose retained path reaches that
-physical edge, using only the canonical table/column model and transient contributing binding provenance. This is a
-deliberately structural, fail-closed test, not a general route or value-flow proof. A recognized shape has the same
-canonical receiver storage columns, a required local reference anchor, and a retained candidate FK that updates those
-columns; all other shapes are rejected.
+For each tentative cut, establish the following from the canonical table/column model. This is a deliberately
+structural, fail-closed test, not a general route, row-correlation, or value-flow proof. The retained candidate must be
+a required binding on the same physical receiver table and update the cut's same canonical local identity columns. All
+other shapes are rejected.
 
-1. **Same receiver row.** The retained path and cut edge terminate at the same physical receiver row through the
-   contributing binding's physical table/column correlation. Table equality alone is not enough. If the recognized
-   structural shape does not establish this, reject the survivor; do not derive a general row-correlation proof.
-2. **Same canonical local values.** Each local canonical identity column that the cut would change is updated by the
-   retained native path through the same canonical source/target column pairing in the existing ordered bindings. Equal
-   current values or a merely similar logical path are not proof.
-3. **Complete correlation.** The cut's complete FK remains valid. An ordinary rename need not rewrite an unchanged
-   `DocumentId`; if a reference-backed retarget would require the cut's local `DocumentId` to move, the retained path
-   must update that same local anchor in the same native statement. Otherwise reject the survivor.
-4. **Required carrier.** The cut reference and retained carrier must have non-nullable canonical local reference
+1. **Same canonical local values.** Each local canonical identity column that the cut would change is updated by the
+   retained native cascade through the same canonical storage column pairing. Equal current values or a merely similar
+   logical path are not proof.
+2. **Complete correlation.** The cut's complete FK remains valid. An ordinary rename need not rewrite an unchanged
+   `DocumentId`; if a reference-backed retarget would require the cut's local `DocumentId` to move, the retained native
+   cascade must update that same local anchor. Otherwise reject the survivor.
+3. **Required bindings only.** The cut reference and retained candidate must have non-nullable canonical local reference
    `DocumentId` columns. DMS does not reason about optional references, synthetic presence gates, or arbitrary Boolean
    presence implication. A nullable anchor or any case requiring further proof is unsupported and rejected.
-5. **Same statement.** Coverage is a retained native `ON UPDATE CASCADE` path in the statement that checks the cut FK.
-   An `AFTER` trigger, later maintenance command, or application write is not a carrier.
+4. **Native coverage only.** Coverage is supplied by the retained native `ON UPDATE CASCADE` operation. An `AFTER`
+   trigger, later maintenance command, or application write is not a carrier.
 
 A direct DMS write that replaces a receiver reference supplies the complete public-identity and `DocumentId` tuple and is
 validated by the full-composite FK directly. It is not a carrier obligation for an incoming cut. Conversely, if a directly
@@ -242,8 +233,8 @@ Failures are stable and concise:
 
 - `SqlServerCascadeCycleNotSupported`: report a stable cycle witness within the candidate component.
 - `NoSafeSqlServerForeignKeyPruning`: report the mutable origin, convergence receiver, conflicting constraints,
-  survivor choices in stable order, and the first failed simple safety condition (row, canonical columns, `DocumentId`,
-  required carrier, statement boundary, or interacting convergence).
+  survivor choices in stable order, and the first failed simple safety condition (receiver table, canonical columns,
+  `DocumentId`, required binding, native coverage, or shared-FK action conflict).
 
 The diagnostic describes an unsupported schema; it is not a route-proof artifact.
 
@@ -267,7 +258,7 @@ Unit coverage must include:
 3. a covered direct-versus-indirect diamond;
 4. a convergence with three or more distinct incoming candidate edges from one origin;
 5. first stable survivor unsafe and second survivor safe;
-6. an interacting overlapping-diamond case that retries an earlier decision supplying a required candidate or carrier;
+6. an interacting overlapping-diamond case that retries an earlier decision selecting the same physical FK;
 7. a no-safe-survivor case;
 8. a self-loop and multi-table cycle;
 9. a canonical-column mismatch;
@@ -287,5 +278,5 @@ derive for PostgreSQL unless an independent existing validation rejects them.
 
 The retained ODS strategy is small: start at each mutable origin, walk identity-reference dependencies, detect a
 convergence, and disable redundant incoming cascades deterministically. DMS adds only the physical post-key-unification
-safety check, complete-FK/`DocumentId` protection, and retry of a genuinely interacting survivor choice. It does not add
+safety check, complete-FK/`DocumentId` protection, and retry of a conflicting shared-FK survivor choice. It does not add
 a generalized propagation-vector or graph-solver subsystem.
