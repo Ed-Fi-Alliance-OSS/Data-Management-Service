@@ -282,8 +282,11 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             # Call-recording start-local-dms.ps1 stub for teardown delegation tests. Captures the
             # teardown-relevant switches/values as an explicit key=value line so a test can tell
             # RemoveBootstrap=True apart from RemoveBootstrap=False (switch defaults to False when
-            # the caller omits it). ExitCode models a failed teardown (non-zero exit) so the entry
-            # script's exit-code propagation branch can be exercised.
+            # the caller omits it). Anything outside the forwarded whitelist lands in the trailing
+            # Rest= field via ValueFromRemainingArguments, so a test can assert excluded options
+            # (seed, configure, IDE, -DataStandardVersion) never reach teardown. ExitCode models a
+            # failed teardown (non-zero exit) so the entry script's exit-code propagation branch can
+            # be exercised.
             param(
                 [Parameter(Mandatory)]
                 [string]$Directory,
@@ -307,7 +310,7 @@ param(
     [string] `$DatabaseEngine,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
-Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine"
+Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
 exit $ExitCode
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
@@ -1247,6 +1250,31 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $log[0] | Should -Match "EnableSwaggerUI=True"
             $log[0] | Should -Match "DatabaseEngine=mssql"
             $log[0] | Should -Match ([regex]::Escape("EnvironmentFile=$($script:repo.EnvFile)"))
+        }
+
+        It "-d forwards only the compose-shape whitelist and no seed/configure/IDE/-DataStandardVersion options" {
+            # Guards the teardown forwarding whitelist. Options that do not change the compose-file set
+            # must never reach the delegation; the stub records anything outside the whitelist in Rest=,
+            # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-no-overforward.txt"
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -LoadSeedData `
+                -SeedTemplate Minimal `
+                -SchoolYearRange "2025-2026" `
+                -DataStandardVersion 6.1 `
+                -InfraOnly `
+                -d
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            $log.Count | Should -Be 1
+            $log[0] | Should -Match 'Rest=$' -Because "no argument outside the compose-shape whitelist may reach start-local-dms.ps1 teardown"
+            foreach ($excluded in 'LoadSeedData', 'SeedTemplate', 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly') {
+                $log[0] | Should -Not -Match $excluded -Because "$excluded is not a compose-shape option and must not be forwarded to teardown"
+            }
         }
     }
 
