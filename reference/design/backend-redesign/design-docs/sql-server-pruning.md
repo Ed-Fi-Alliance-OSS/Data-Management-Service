@@ -198,6 +198,9 @@ This is not a general constraint solver: DMS does not infer a decision-dependenc
 enumerate arbitrary graph assignments, or retry transitively related or disjoint decisions. If the directly shared
 physical-FK choices are exhausted, fail as `NoSafeSqlServerForeignKeyPruning`.
 
+Retry is permitted only to reverse an already-assigned action on the same physical FK. A survivor that merely supplies
+an upstream path or appears in a related convergence is not a retry dependency.
+
 ## Safe-Cut Test
 
 Topology alone does not make a full-composite `NO ACTION` FK safe. A cut is safe only when the retained native cascade
@@ -213,6 +216,9 @@ it follows only that cut's already-selected survivor chain and compares adjacent
 It discards the trace after that evaluation; it does not compose, store, or reuse transitive propagation vectors, and it
 does not search alternate routes.
 
+This evaluation returns only a yes/no result for the tentative cut; it creates no composed column mapping, reusable
+route representation, or new derivation artifact.
+
 1. **Same canonical local values.** Each local canonical identity column that the cut would change is updated by the
    retained native cascade through the same canonical storage column pairing. The retained path from the mutable origin
    to that survivor must retain the corresponding canonical identity-column pairings at each cascade edge; sharing a
@@ -222,6 +228,9 @@ does not search alternate routes.
 2. **Complete correlation.** The cut's complete FK remains valid. An ordinary rename need not rewrite an unchanged
    `DocumentId`. If preserving a cut would require its local reference `DocumentId` to change, reject the survivor:
    native identity cascades do not retarget document references or carry a `DocumentId` move.
+
+   A supported cut therefore covers identity renames with stable local anchors; a cut whose validity depends on
+   propagating a reference replacement is unsupported.
 3. **Required bindings only.** The cut reference and retained candidate must have non-nullable canonical local reference
    `DocumentId` columns. DMS does not reason about optional references, synthetic presence gates, or arbitrary Boolean
    presence implication. A nullable anchor or any case requiring further proof is unsupported and rejected.
