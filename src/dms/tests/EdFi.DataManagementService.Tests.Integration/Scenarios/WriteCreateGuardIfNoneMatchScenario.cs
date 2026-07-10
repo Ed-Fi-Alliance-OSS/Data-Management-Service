@@ -77,6 +77,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
                 HttpStatusCode.PreconditionFailed,
                 $"a POST that resolves to an existing document under If-None-Match: * must 412, not silently upsert. Body: {body}"
             );
+        AssertIfNoneMatchPreconditionFailed(body);
     }
 
     public static async Task It_rejects_an_existing_put_under_a_wildcard_if_none_match(
@@ -102,6 +103,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
                 HttpStatusCode.PreconditionFailed,
                 $"PUT to an existing target under If-None-Match: * must 412 (the target already has a representation). Body: {body}"
             );
+        AssertIfNoneMatchPreconditionFailed(body);
     }
 
     public static async Task It_returns_not_found_for_a_missing_put_under_a_wildcard_if_none_match(
@@ -150,6 +152,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
                 HttpStatusCode.PreconditionFailed,
                 $"a specific If-None-Match tag that matches the current ETag must 412. Body: {matchingBody}"
             );
+        AssertIfNoneMatchPreconditionFailed(matchingBody);
 
         using var nonMatchingRequest = new HttpRequestMessage(HttpMethod.Put, locationPath)
         {
@@ -293,6 +296,42 @@ internal static class WriteCreateGuardIfNoneMatchScenario
             .Be(
                 HttpStatusCode.NoContent,
                 $"a list in which no member matches must be satisfied and let the PUT succeed. Body: {body}"
+            );
+    }
+
+    private static void AssertIfNoneMatchPreconditionFailed(string responseBody)
+    {
+        JsonObject problem = JsonNode.Parse(responseBody)!.AsObject();
+
+        problem
+            .Select(static property => property.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+        problem["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                "The If-None-Match precondition failed because a current representation of the resource matched the request header."
+            );
+        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:precondition-failed:if-none-match");
+        problem["title"]!.GetValue<string>().Should().Be("If-None-Match Precondition Failed");
+        problem["status"]!.GetValue<int>().Should().Be(412);
+        problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        problem["validationErrors"]!.AsObject().Should().BeEmpty();
+        problem["errors"]!
+            .AsArray()
+            .Select(static error => error!.GetValue<string>())
+            .Should()
+            .Equal(
+                "The 'If-None-Match' request header requires that no current representation match the supplied value, but a matching representation exists."
             );
     }
 

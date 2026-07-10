@@ -214,7 +214,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         return isSatisfied
             ? null
-            : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind);
+            : RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                request.OperationKind,
+                EtagPreconditionEvaluator.GetFailureReason(request.WritePrecondition)
+            );
     }
 
     private async Task<InSessionTargetResolution> ResolvePostTargetAsync(
@@ -337,7 +340,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     preconditionCheckResult.CurrentState,
                     preconditionCheckResult.IsSatisfied
                         ? null
-                        : RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                        : RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                            request.OperationKind,
+                            EtagPreconditionEvaluator.GetFailureReason(request.WritePrecondition)
+                        )
                 );
             }
 

@@ -227,9 +227,9 @@ internal sealed class DescriptorWriteHandler(
                         diagnostics
                     );
 
-                case DescriptorLockedPreconditionResult.Mismatch:
+                case DescriptorLockedPreconditionResult.Mismatch(var reason):
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureETagMisMatch();
+                    return new UpsertResult.UpsertFailureETagMisMatch(reason);
 
                 case DescriptorLockedPreconditionResult.Loaded(
                     var sessionTargetContext,
@@ -415,9 +415,9 @@ internal sealed class DescriptorWriteHandler(
                             diagnostics
                         );
 
-                    case DescriptorLockedPreconditionResult.Mismatch:
+                    case DescriptorLockedPreconditionResult.Mismatch(var reason):
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return new UpdateResult.UpdateFailureETagMisMatch();
+                        return new UpdateResult.UpdateFailureETagMisMatch(reason);
 
                     case DescriptorLockedPreconditionResult.Loaded(
                         var sessionTargetContext,
@@ -730,8 +730,8 @@ internal sealed class DescriptorWriteHandler(
                             [failureMessage],
                             diagnostics
                         ),
-                        DescriptorLockedPreconditionResult.Mismatch =>
-                            new DeleteResult.DeleteFailureETagMisMatch(),
+                        DescriptorLockedPreconditionResult.Mismatch(var reason) =>
+                            new DeleteResult.DeleteFailureETagMisMatch(reason),
                         DescriptorLockedPreconditionResult.Loaded =>
                             await ExecuteDescriptorDeleteCommandAsync(
                                     request,
@@ -1048,7 +1048,9 @@ internal sealed class DescriptorWriteHandler(
 
         return isSatisfied
             ? new DescriptorLockedPreconditionResult.Loaded(targetContext, persisted, currentEtag)
-            : DescriptorLockedPreconditionResult.Mismatch.Instance;
+            : new DescriptorLockedPreconditionResult.Mismatch(
+                EtagPreconditionEvaluator.GetFailureReason(precondition)
+            );
     }
 
     private static RelationalWriteTargetContext TranslateDescriptorTargetContext(
@@ -2364,12 +2366,8 @@ internal sealed class DescriptorWriteHandler(
             SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
         ) : DescriptorLockedPreconditionResult;
 
-        public sealed record Mismatch : DescriptorLockedPreconditionResult
-        {
-            private Mismatch() { }
-
-            public static Mismatch Instance { get; } = new();
-        }
+        public sealed record Mismatch(ETagPreconditionFailureReason Reason)
+            : DescriptorLockedPreconditionResult;
 
         public sealed record Loaded(
             RelationalWriteTargetContext.ExistingDocument TargetContext,

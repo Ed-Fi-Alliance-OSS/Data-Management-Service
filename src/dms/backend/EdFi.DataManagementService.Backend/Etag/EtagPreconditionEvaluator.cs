@@ -26,6 +26,18 @@ internal static class EtagPreconditionEvaluator
             _ => true, // None (and any future arm) imposes no precondition here.
         };
 
+    public static ETagPreconditionFailureReason GetFailureReason(WritePrecondition precondition) =>
+        precondition switch
+        {
+            WritePrecondition.IfMatch => ETagPreconditionFailureReason.Concurrency,
+            WritePrecondition.IfNoneMatch =>
+                ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch,
+            _ => throw new ArgumentException(
+                "An ETag precondition failure reason requires If-Match or If-None-Match.",
+                nameof(precondition)
+            ),
+        };
+
     private static bool ProjectionEquals(string clientTag, string? currentEtag) =>
         string.Equals(
             EtagMatchProjection.Of(clientTag),

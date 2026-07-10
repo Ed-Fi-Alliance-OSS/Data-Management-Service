@@ -2124,7 +2124,11 @@ public class Given_Default_Relational_Write_Executor
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureETagMisMatch(
+                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                    )
+                )
             );
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -2160,7 +2164,11 @@ public class Given_Default_Relational_Write_Executor
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureETagMisMatch(
+                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                    )
+                )
             );
         result.AttemptOutcome.Should().NotBe(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
@@ -2229,7 +2237,11 @@ public class Given_Default_Relational_Write_Executor
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureETagMisMatch(
+                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                    )
+                )
             );
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -2259,7 +2271,11 @@ public class Given_Default_Relational_Write_Executor
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureETagMisMatch(
+                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                    )
+                )
             );
         result.AttemptOutcome.Should().NotBe(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(1);
@@ -2364,7 +2380,11 @@ public class Given_Default_Relational_Write_Executor
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureETagMisMatch(
+                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                    )
+                )
             );
         // The deferred path evaluates the precondition itself; it does not call the before-auth checker.
         _currentEtagPreconditionChecker.CheckCallCount.Should().Be(0);

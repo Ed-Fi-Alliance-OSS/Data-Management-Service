@@ -48,7 +48,7 @@ public record UpdateResult
     public record UpdateFailureNotExists() : UpdateResult();
 
     /// <summary>
-    /// A failure because the Etag mismatch
+    /// A failure because the request's If-Match or If-None-Match ETag precondition was not satisfied
     /// </summary>
     /// <param name="Reason">Machine-readable reason for the precondition failure</param>
     public record UpdateFailureETagMisMatch(

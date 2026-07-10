@@ -5,7 +5,7 @@
 
 namespace EdFi.DataManagementService.Core.External.Backend;
 
-/// <summary>Why an If-Match precondition failed, so the API can return an actionable 412 detail.</summary>
+/// <summary>Why an ETag precondition failed, so the API can return actionable 412 Problem Details.</summary>
 public enum ETagPreconditionFailureReason
 {
     /// <summary>The target exists but its current etag does not match the client's specific tag.</summary>
@@ -14,4 +14,7 @@ public enum ETagPreconditionFailureReason
     /// <summary>No current representation exists to satisfy the precondition (bare If-Match: * on a
     /// missing target, or If-Match on a resource that resolves to an insert).</summary>
     TargetDoesNotExist,
+
+    /// <summary>A current representation matches the client's If-None-Match precondition.</summary>
+    CurrentRepresentationMatchesIfNoneMatch,
 }

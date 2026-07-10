@@ -39,6 +39,8 @@ public static class FailureResponse
     private static readonly string _resourceKeySeedValidationErrorType =
         $"{_typePrefix}:resource-key-seed-validation-error";
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
+    private static readonly string _ifNoneMatchPreconditionFailedType =
+        $"{_typePrefix}:precondition-failed:if-none-match";
     private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
     private static readonly string _parameterValidationFailedType =
         $"{_badRequestTypePrefix}:parameter-validation-failed";
@@ -134,7 +136,18 @@ public static class FailureResponse
                     "The 'If-Match' request header requires a current representation of the resource, but none exists. Do not retry with If-Match; create the resource first, or omit If-Match.",
                 }
             ),
-            _ => ForETagMisMatch(
+            ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch => CreateBaseJsonObject(
+                detail: "The If-None-Match precondition failed because a current representation of the resource matched the request header.",
+                type: _ifNoneMatchPreconditionFailedType,
+                title: "If-None-Match Precondition Failed",
+                status: 412,
+                correlationId: traceId.Value,
+                errors:
+                [
+                    "The 'If-None-Match' request header requires that no current representation match the supplied value, but a matching representation exists.",
+                ]
+            ),
+            ETagPreconditionFailureReason.Concurrency => ForETagMisMatch(
                 "The item has been modified by another user.",
                 traceId,
                 new[]
@@ -142,6 +155,7 @@ public static class FailureResponse
                     "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
                 }
             ),
+            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
         };
 
     public static JsonNode ForNotFound(string detail, TraceId traceId) =>

@@ -1033,7 +1033,11 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
@@ -1068,7 +1072,11 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
@@ -1136,7 +1144,11 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePutAsync(request);
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
@@ -1169,7 +1181,11 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePutAsync(request);
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureETagMisMatch>();
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
