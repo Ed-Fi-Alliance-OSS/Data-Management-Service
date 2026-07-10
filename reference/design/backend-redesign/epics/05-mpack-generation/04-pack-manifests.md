@@ -26,7 +26,11 @@ Manifests are derived from:
   - envelope key fields,
   - uncompressed payload SHA-256,
   - resource key `(count, seed_hash)` summary,
-  - per-resource plan summaries (normalized SQL hashes preferred).
+  - per-resource plan summaries (normalized SQL hashes preferred),
+  - complete FK columns and final actions, and
+  - target anchor-read records plus aligned local anchor-column summaries.
+- Pack manifests do not expose SQL Server classifier modes or carrier witnesses unless a concrete diagnostic consumer is
+  separately approved.
 - `mappingset.manifest.json` excludes runtime-only caches/delegates and is stable across runs.
 - Snapshot/golden tests compare manifests byte-for-byte for small fixtures.
 

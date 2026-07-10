@@ -811,8 +811,8 @@ Key unification plus complete-vector propagation is part of `RelationalMappingVe
   consumers do not infer an older mode.
 - Future breaking mapping changes require another explicit mapping version.
 
-Repository status note (non-normative): the pack payload is not yet implemented. DMS-1129 adds only the lineage-anchor
-binding needed to reconstruct the runtime complete-vector projection; it adds no classifier mode, proof, solver,
-semantic-hash, or generalized deferred-reference pack protocol.
+Repository status note (non-normative): the pack payload is not yet implemented, and DMS-1129 does not implement or
+qualify it. E05 must carry the lineage-anchor binding needed to reconstruct the runtime complete-vector projection; it
+adds no classifier mode, proof, solver, semantic-hash, or generalized deferred-reference pack protocol.
 
 ---

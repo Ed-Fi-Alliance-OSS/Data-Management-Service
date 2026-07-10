@@ -1033,10 +1033,6 @@ const summary = {
     pgsql_columns_per_index_default_build: 32,
     pgsql_btree_payload_screen_bytes_default_8k_page: 2704,
   },
-  implementation_status: {
-    mapping_pack:
-      "MappingPackPayload is an empty placeholder and MappingSet.FromPayload throws NotSupportedException; no .mpack size can be measured.",
-  },
   fixtures: fixtureConfigurations.map(measureFixture),
 };
 

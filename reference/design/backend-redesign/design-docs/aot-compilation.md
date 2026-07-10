@@ -2,6 +2,10 @@
 
 Status: Draft.
 
+Implementation ownership is E05 (`DMS-963` through `DMS-970`). The DMS-1129 runtime delivery does not implement or
+qualify mapping packs. Its `RelationalMappingVersion = v2` complete-vector contract is an input to this future work: E05
+must serialize the finalized runtime projection without rerunning cascade classification at pack build or load time.
+
 This document defines an **optional** alternative to runtime compilation of the JSON→relational mapping described in:
 
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`

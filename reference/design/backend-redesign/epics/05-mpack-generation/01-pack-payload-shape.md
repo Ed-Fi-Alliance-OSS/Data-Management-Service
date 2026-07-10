@@ -20,13 +20,22 @@ Note: the payload is a *runtime-required subset* of the full derived model inven
 - Payload contains:
   - `resource_keys` entries including `resource_key_count` and `resource_key_seed_hash` semantics,
   - one `ResourcePack` per resource (sorted by `(project_name, resource_name)` ordinal),
-  - per-resource model and plan structures required by the consumer.
+  - per-resource model and plan structures required by the consumer,
+  - complete ordered FK columns with final provider actions,
+  - one top-level target anchor-read record per referenced document target, and
+  - each document-reference site's positionally aligned local lineage-anchor columns.
 - All repeated fields are emitted in the required canonical order (no dictionary iteration order dependence).
 - Payload invariants are validated at build time:
   - unique resources by `(project_name, resource_name)`,
   - `resource_key_count == resource_keys.Count`,
   - recomputed `resource_key_seed_hash` matches the embedded value,
-  - plan references (tables/columns/edge sources) exist in the embedded model.
+  - plan references (tables/columns/edge sources) exist in the embedded model,
+  - target anchor-read records are unique and ordered by target resource,
+  - target tables, document-id columns, and ordered anchor columns exist,
+  - every referenced target has exactly one record, including abstract targets, and
+  - each site's local anchor arity/order matches its target record.
+- Payload excludes derivation-local SQL Server classifier modes, carrier witnesses, solver state, proof trees, and
+  repeated target-lineage paths.
 - Unit tests lock down ordering for at least one small fixture payload.
 
 ## Tasks

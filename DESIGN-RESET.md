@@ -16,7 +16,7 @@ outside the supported model and are rejected before provider action assignment.
 ## Why the Design Was Reset
 
 The previous revision expanded foreign-key pruning into a generalized proof engine, graph-solver protocol, predictive
-future-reference language, storage-variant system, mapping-pack certificate, and cross-repository conformance contract.
+future-reference language, storage-variant system, serialized certificate, and cross-repository conformance contract.
 Those mechanisms were not justified by executable failures or supported-schema measurements.
 
 The reset keeps only behavior required for the supported release contract:
@@ -86,7 +86,7 @@ The computed `anchor_caused_limit_crossings` inventory is empty. Maximum-value p
 execute `ON UPDATE CASCADE`, and retain matching child rows for the nine-column widest-declared-byte case. The
 27-column widest-count case is not probed. Full generated-schema DDL, total SQL Server row width, PostgreSQL physical
 index overhead, actual target-unique/FK-supporting index sizes, reference-resolution round trips, representative row
-counts, write/cascade timing, and exact mapping-pack size remain implementation qualification.
+counts, and write/cascade timing remain implementation qualification.
 
 DMS-1274 owns an early representative physical row/index and write-amplification gate before the `v2` storage shape is
 treated as fixed. DMS-1277 retains exhaustive full-schema qualification across supported and adversarial schemas.
@@ -169,9 +169,9 @@ certificates are public contracts.
 
 MetaEd does not currently enforce the required recursive-identity prohibition. METAED-1667 must implement deterministic
 identity-cycle validation before the ODS relational cascade enhancer so a reachable cycle cannot loop in that enhancer.
-DMS independently validates the semantic identity-reference graph before complete-vector recursion so malformed,
-hand-built, or pack-loaded input cannot bypass that boundary. It repeats the check after storage mapping so table collapse
-cannot introduce a physical cycle. A self-loop or directed identity cycle fails with
+DMS independently validates the semantic identity-reference graph before complete-vector recursion so malformed or
+hand-built input cannot bypass that boundary. It repeats the check after storage mapping so table collapse cannot
+introduce a physical cycle. A self-loop or directed identity cycle fails with
 `IdentityCascadeCycleNotSupported`.
 
 Because cycles are not accepted, ordinary reference resolution is sufficient. POST, PUT, newly present references, and
@@ -185,10 +185,10 @@ cycle validation and is the sole blocking authority for SQL Server realizability
 
 ### 5. Minimal artifact contract — accepted constraint
 
-Persist only what a consumer uses:
+Persist only what a current consumer uses:
 
-- relational model and mapping pack: complete FK columns and final actions;
-- mapping/runtime projection: ordered lineage-anchor bindings;
+- relational model: complete FK columns and final actions;
+- runtime mapping projection: target anchor-read records and ordered local lineage-anchor bindings;
 - optional manifest diagnostics only after a concrete consumer exists.
 
 SQL Server modes, exhaustive derivation traces, solver state, omission proofs, semantic hashes, and certificate trees are
@@ -201,7 +201,7 @@ not mapping/runtime contracts.
 | Complete-vector measured screen | Passed as a capacity screen | Keep one complete vector; require the early DMS-1274 representative physical-storage gate before freezing `v2`, then retain DMS-1277 full-schema, widest-count, round-trip, and performance qualification. |
 | Stock all-native topology | Static reconstruction reports 22/23 mutable candidates and no conflicts | Reproduce from implemented v2 candidates and return before conflict-core search. |
 | Simple global search | Design-ready; implementation measurements remain DMS-1258/DMS-1277 work | Use on-demand structural carriers and the 1,000,000-unit deterministic bound; add minimum-prune optimization only for measured write-performance benefit. |
-| Minimal artifact contract | Accepted design constraint; implementation pending | Add fields only for concrete runtime/AOT consumers. |
+| Minimal artifact contract | Accepted design constraint; implementation pending | Add fields only for current runtime or manifest consumers. |
 
 ## Delivery Slices
 
@@ -210,7 +210,7 @@ not mapping/runtime contracts.
 | Database evidence and static feasibility | Complete | Computed capacity screen and focused widest-byte provider probes pass. |
 | Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented; representative physical row/index size and write-amplification pass an early architecture gate; the centralized mapping version is bumped to `v2`. |
 | Provider actions and SQL Server classifier | DMS-1258 | Stock schemas take the all-native fast path; generated DDL installs and structural-carrier diamond fixtures produce deterministic first-feasible outcomes within the fixed work budget. |
-| Manifest, AOT, and mapping-pack integration | DMS-1276 | Runtime and `v2` pack loading produce equivalent final models and behavior. |
+| Runtime mapping and manifest integration | DMS-1276 | Current runtime mappings and manifests expose complete vectors, final actions, target anchor-read records, and aligned local columns without classifier internals. |
 | Full-schema qualification | DMS-1277 | Freshly provisioned `v2` stock, TPDM, extension, and adversarial DDL pass; exhaustive row/index sizes, widest-count vectors, representative row counts, reference-resolution round trips, concurrency, and write/cascade timing pass and confirm the early DMS-1274 gate. |
 
 All slices are required before the `v2` relational contract is complete.
@@ -227,7 +227,7 @@ The authoritative design no longer contains:
 - deferred existing-reference resolution or runtime cycle metadata;
 - safe-cycle search, zero-hop cycle carriers, or cycle PUT protocols;
 - custom JSON recordset/correlation protocols without an accepted fixture;
-- SQL Server proof objects in runtime plans or mapping packs; or
+- SQL Server proof objects in runtime plans or manifests; or
 - a blocking MetaEd replica of DMS physical SQL Server classification; or
 - PostgreSQL topology classification or SQL Server compatibility failure.
 

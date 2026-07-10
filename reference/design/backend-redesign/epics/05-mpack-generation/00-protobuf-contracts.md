@@ -26,6 +26,12 @@ Key requirements:
   - compression metadata (`compression_algorithm`, `zstd_uncompressed_payload_length`)
   - integrity fields (`payload_sha256`) and `payload_zstd`.
 - The payload schema uses only `repeated` lists (no `map<>`) where ordering matters.
+- The payload schema represents the `RelationalMappingVersion = v2` runtime projection with:
+  - complete ordered FK columns and final referential actions,
+  - a top-level ordered `ReferenceTargetAnchorRead` inventory, and
+  - per-site ordered local lineage-anchor columns aligned to that inventory.
+- No protobuf field serializes SQL Server classifier modes, carrier witnesses, cycle-search state, proof trees, or
+  repeated target-lineage paths.
 - A shared C# contracts project/package is buildable without requiring developers to manually run `protoc`.
 - E15 roundtrip tests swap DTO contract types to protobuf-generated contract types while preserving existing test vectors and canonical JSON/hash assertions (ordering/binding drift detection remains intact).
 - Deterministic protobuf serialization is required in producer/consumer and test paths (runtime deterministic option enabled when producing bytes for comparisons/hashes).

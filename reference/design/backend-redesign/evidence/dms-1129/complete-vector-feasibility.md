@@ -153,10 +153,6 @@ generalized deferred-reference plan.
 | Relational-model manifest | 198,507 bytes (3.25%) | 252,867 bytes (3.64%) |
 | SQL Server DDL, rough text projection | 76,000 bytes (1.26%) | 98,400 bytes (1.43%) |
 
-Mapping-pack growth cannot yet be measured. `MappingPackPayload` is an empty placeholder and `MappingSet.FromPayload`
-throws `NotSupportedException`; the repository has no generated `.mpack` artifact. This supports deferring mapping-pack
-protocol changes until the runtime slice establishes the exact consumed fields.
-
 ## Remaining Implementation Qualification
 
 Gate 1's corrected transitive measured screen is passed for the architecture choice. The implementation slices must still:
@@ -172,7 +168,6 @@ Gate 1's corrected transitive measured screen is passed for the architecture cho
 6. Measure reference-resolution database commands/round trips, including requests with several distinct anchor-bearing
    target groups; prefer a single batched/multi-result command where supported.
 7. Measure derivation time and representative write/cascade timing for stock and TPDM schemas.
-8. Measure mapping-pack size only after a real pack payload exists.
 
 If a provider probe fails because of complete anchors, preserve the concrete failing fixture and introduce only the
 smallest measured demand-reduction mechanism needed for that case. Do not retain the current generalized site-minimal

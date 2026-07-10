@@ -24,7 +24,10 @@ This is shared infrastructure used by:
   - header fields match expected,
   - bounded zstd decompression,
   - `payload_sha256` verified,
-  - payload invariants verified.
+  - payload invariants verified,
+  - complete FK columns and final actions reconstruct without provider reclassification,
+  - target anchor-read records are unique, ordered, and refer to valid concrete or abstract target storage, and
+  - every document-reference site's local lineage-anchor columns match its target record by arity and position.
 - Pack selection and caching:
   - file-store lookup is deterministic,
   - packs are loaded lazily by effective hash (not all at startup),
@@ -33,6 +36,8 @@ This is shared infrastructure used by:
   - compares `ResourceKeySeedHash/Count` fast path when present,
   - falls back to ordered `dms.ResourceKey` diff on mismatch for diagnostics,
   - fails fast on mismatch.
+- `MappingSet.FromPayload(...)` reconstructs the same current runtime projection as runtime compilation without loading
+  classifier modes, carrier witnesses, cycle-search state, proof trees, or repeated target-lineage paths.
 
 ## Tasks
 

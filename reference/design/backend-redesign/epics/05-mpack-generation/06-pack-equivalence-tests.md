@@ -23,6 +23,11 @@ This is required to catch:
   - Path B: pack build → decode → `MappingSet.FromPayload(...)` → `mappingset.manifest.json` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`)
   - The manifests match exactly (after normalization).
 - Tests run for both dialects configured by the fixture.
+- Equivalence fixtures cover the `RelationalMappingVersion = v2` contract:
+  - complete document-reference vectors and final provider actions,
+  - target anchor reads from a concrete root and an abstract identity table,
+  - positionally aligned local lineage-anchor columns, and
+  - absence of derivation-local classifier modes and carrier witnesses.
 - Failures show a useful diff of the manifest mismatch.
 
 ## Tasks

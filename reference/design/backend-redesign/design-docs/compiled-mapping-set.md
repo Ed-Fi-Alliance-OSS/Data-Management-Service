@@ -467,9 +467,7 @@ Design invariants:
 - **Model derivation** (E01) produces `DerivedRelationalModelSet` from the effective schema set.
 - **DDL emission** (E02/E03) consumes `DerivedRelationalModelSet` and a dialect to emit deterministic SQL and manifests.
 - **Plan compilation** (E15) consumes `DerivedRelationalModelSet` and a dialect to produce the `WritePlansByResource`/`ReadPlansByResource` dictionaries used by `MappingSet`.
-- **Pack build** (E05) serializes the explicit runtime projection of `MappingSet` semantics into `.mpack`. That projection
-  includes complete-vector columns/actions, the target anchor-read inventory, and each site's aligned local anchor
-  columns, but excludes derivation-local SQL Server modes and carrier witnesses.
+- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution).
 - **Pack load** (E05-S05) and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
 
 ---

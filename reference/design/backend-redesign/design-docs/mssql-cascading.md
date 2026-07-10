@@ -54,7 +54,7 @@ compatibility mode, legacy-schema interpretation, or migration.
 - A generic missing-reference fallback or predictive reference-resolution language.
 - A cross-repository requirement that MetaEd reproduce DMS physical FK identities, selected actions, or carrier
   witnesses.
-- Mapping-pack derivation traces beyond the explicit target anchor-read contract required by the runtime.
+- Runtime or manifest derivation traces beyond the explicit target anchor-read contract required by current execution.
 - General root-to-child or cross-table equality propagation outside document-reference identity propagation.
 - General cycle support, cycle-cut search, zero-hop cycle carriers, or deferred future-identity resolution.
 
@@ -156,9 +156,8 @@ generated-schema DDL qualification. It is sufficient to reject site-minimal anch
 the `v2` storage shape is not frozen until DMS-1274 passes the early representative physical row/index and
 write-amplification gate.
 
-Mapping-pack size cannot yet be measured because the current pack payload is a stub. The conservative relational-manifest
-projection grows by 3.25/3.64 percent and generated SQL by 1.26/1.43 percent for DS 5.2/TPDM. Exact pack measurement
-belongs to the slice that implements a real pack consumer.
+The conservative relational-manifest projection grows by 3.25/3.64 percent and generated SQL by 1.26/1.43 percent for
+DS 5.2/TPDM.
 
 ### Ordinary write source for lineage anchors
 
@@ -185,7 +184,7 @@ arity mismatch, or null required anchor fails reference resolution. The request 
 FK remains the final correlation check. This is the ordinary value source for all anchor-bearing POST and PUT writes; it
 is not deferred-resolution metadata, predictive SQL, or a mutation-case protocol.
 
-Runtime and AOT mappings carry one explicit target anchor-read record keyed by target resource:
+Runtime mappings carry one explicit target anchor-read record keyed by target resource:
 
 ```text
 TargetResource
@@ -528,8 +527,8 @@ validator rejects self-loops and directed cycles with one stable-order cycle wit
 new prohibition, not preservation of an existing validator. A semantic-diamond warning is outside this delivery; if it
 is still wanted, create a separate explicit follow-up.
 
-DMS validates the same invariant independently so malformed, hand-built, or mapping-pack-loaded input cannot reach
-complete-vector recursion or provider action assignment.
+DMS validates the same invariant independently so malformed or hand-built input cannot reach complete-vector recursion
+or provider action assignment.
 
 Build the semantic identity-reference graph with one vertex per resource identity and an edge from a referenced identity
 to the identity that depends on it. Reject every self-loop and directed cycle as
@@ -557,8 +556,8 @@ Each finalized document-reference FK in the generic relational/runtime model con
 DDL consumes these values and never reruns classification.
 
 `NativeCascade`, `CoveredNoAction`, and `ImmutableNoAction` are derivation-local classifier labels. They are not fields on
-`TableConstraint.ForeignKey`, `MappingSet`, or the mapping pack. A manifest may add a mode and concise carrier witness
-only when a concrete diagnostic consumer requires them.
+`TableConstraint.ForeignKey` or `MappingSet`. A manifest may add a mode and concise carrier witness only when a concrete
+diagnostic consumer requires them.
 
 ### Failure convention
 
@@ -574,15 +573,13 @@ Keep the repository's exception-based model-derivation convention. Use a small s
 Each error carries a concise structural witness. Do not replace all builder results with a new global success/proof
 artifact.
 
-### Manifests, AOT, and packs
+### Runtime mappings and manifests
 
-The relational model and mapping pack carry final FK columns/actions. SQL Server modes and witnesses stay
-derivation-local unless a concrete manifest diagnostic consumer is established.
-
-Mapping packs carry one explicit target anchor-read record per referenced document target and each reference site's
-positionally aligned local anchor columns so `MappingSet.FromPayload` can reconstruct the runtime projection. They do not
-serialize repeated target lineage paths, classifier modes, solver state, exhaustive certificates, semantic hashes, or
-proof identifiers. Verify runtime/AOT semantic equivalence without adding cycle-specific metadata.
+The relational model carries final FK columns/actions. Runtime mappings carry one explicit target anchor-read record per
+referenced document target and each reference site's positionally aligned local anchor columns. SQL Server modes and
+witnesses stay derivation-local unless a concrete manifest diagnostic consumer is established. Runtime plans do not carry
+repeated target lineage paths, classifier modes, solver state, exhaustive certificates, semantic hashes, proof
+identifiers, or cycle-specific metadata.
 
 MetaEd owns implementing the authored identity-cycle prohibition before its ODS relational enhancer. METAED-1667 does
 not include semantic-diamond analysis. MetaEd does not classify SQL Server realizability, search mode vectors, prove
@@ -623,7 +620,8 @@ constraint validation. Provider-independent model fixtures cover deterministic s
 2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, limits, and
    an early representative physical row/index and write-amplification gate before the `v2` storage shape is frozen.
 3. **Provider actions:** PostgreSQL fixed assignment and SQL Server bounded global diamond selection.
-4. **Manifest/AOT/pack integration:** final actions, target anchor-read records, and aligned local anchor columns only.
+4. **Runtime mapping and manifest integration:** final actions, target anchor-read records, and aligned local anchor
+   columns only.
 5. **Full-schema qualification:** stock, TPDM, extension, and adversarial generated DDL; widest-count provider coverage;
    exhaustive row and target-unique/FK-supporting index sizes at representative row counts; reference-resolution round
    trips; concurrency; and write/cascade timing. This expands and confirms the early slice-2 physical-storage gate.

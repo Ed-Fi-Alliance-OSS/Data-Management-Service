@@ -23,6 +23,21 @@ Deliverables include:
 - A consumer/validator that selects packs by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)` and rejects invalid/mismatched packs.
 - Deterministic semantic manifests (`pack.manifest.json`, `mappingset.manifest.json`) to support testing without comparing raw `.mpack` bytes.
 
+### RelationalMappingVersion v2 handoff
+
+E05 owns the future artifact work for the DMS-1129 complete-vector/provider-action contract. DMS-1129 does not implement
+or qualify packs. When E05 is implemented, its payload must:
+
+- preserve complete ordered document-reference FK columns and finalized `OnDelete`/`OnUpdate` actions;
+- carry one explicit target anchor-read record per referenced document target, including abstract targets;
+- carry each reference site's positionally aligned local lineage-anchor columns;
+- reconstruct the same runtime mapping projection as runtime compilation; and
+- exclude derivation-local SQL Server classifier modes, carrier witnesses, cycle-search state, proof trees, and repeated
+  target-lineage paths.
+
+The normative field layout and validation rules live in `design-docs/mpack-format-v1.md`. DMS-964, DMS-965, DMS-967,
+DMS-968, and DMS-969 own the corresponding contract, payload, manifest, loader, and equivalence work.
+
 Plan compilation is shared with runtime compilation fallback and is owned by `reference/design/backend-redesign/epics/15-plan-compilation/EPIC.md`.
 
 Authorization objects remain out of scope.
