@@ -66,8 +66,11 @@ Related redesign discussion:
 ## Goals and Constraints
 
 - **Preserve legacy profile semantics**: readable profiles limit returned fields; writable profiles limit accepted input; hidden stored data is preserved on update.
-- **Preserve legacy ETag semantics**: readable profile filtering does not change `_etag`; profiled
-  and unprofiled responses for the same full resource state return the same concurrency validator.
+- **Preserve write-concurrency compatibility while serving correct representation validators**:
+  readable profile filtering changes the served `_etag` through `variantKey.profileCode`, so profiled
+  and unprofiled byte representations have different strong validators. Write-side `If-Match` and
+  `If-None-Match` comparisons project out `profileCode` (along with `format` and `linkFlag`) and
+  compare only the state-significant `ContentVersion` and `schemaEpoch` components.
 - **Core owns profile semantics**: member filtering, value filtering, readable vs writable mode, request validation, stored-state projection, and creatability rules belong in Core.
 - **Backend owns persistence mechanics**: relational flattening, current-state loading, semantic-key matching, `CollectionItemId` reservation, and DML execution remain backend responsibilities.
 - **No public API change**: the Core/backend profile contract is internal. Profile support must not add a new external write API.
@@ -124,8 +127,10 @@ The relational redesign must preserve these behaviors:
   - hidden 1:1 scopes are not deleted because they are absent from the filtered request,
   - hidden extension data is preserved under the same rules as base data.
 - These rules apply recursively to nested collections, common types, and `_ext` sites.
-- Readable profiles preserve server-generated metadata, including the full-resource `_etag`; they do
-  not create profile-specific concurrency validators.
+- Readable profiles preserve server-generated metadata fields, but the served `_etag` is composed
+  for the representation after profile selection and includes that profile's `profileCode`.
+  Profile-specific served validators do not create profile-specific write-concurrency state:
+  write-side `If-Match` and `If-None-Match` comparisons project `profileCode` out.
 
 ## Ownership Boundary
 
@@ -1031,8 +1036,9 @@ Related redesign discussion:
 - Core owns readable profile projection of that document,
 - backend serializers must not reimplement readable profile member filtering,
 - extension data participates in readable profile shaping under the same rules as base data.
-- `_etag` remains the full-resource validator from the pre-profile document; projection preserves
-  the metadata value rather than recomputing it from the filtered response.
+- backend composes the served `_etag` from the stored `ContentVersion` plus the request's
+  representation `variantKey` after readable-profile selection; `profileCode` makes byte-different
+  profiled and unprofiled responses carry different strong validators without hashing either body.
 
 ## No-Op Detection and Concurrency
 
@@ -1053,11 +1059,14 @@ Related redesign discussion:
   - extension rows under the same rules,
 - a no-op decision is provisional until backend verifies that the observed `ContentVersion` is still current,
 - if the observed `ContentVersion` is stale:
-  - with `If-Match`, return `412 Precondition Failed`,
-  - without `If-Match`, abandon the no-op fast path and re-evaluate against current state.
+  - with a specific-tag `If-Match`, return `412 Precondition Failed`,
+  - with wildcard `If-Match`, any `If-None-Match`, or no precondition, abandon the no-op fast path
+    and re-evaluate against current state; this lets a specific `If-None-Match` tag be compared with
+    the winning current state before deciding whether to return `412` or proceed.
 
-Profiles do not require a new concurrency surface. They rely on the same full-resource `If-Match` /
-`ContentVersion` guard as the rest of the redesign.
+Profiles do not require a new concurrency surface. Served tags include `profileCode` for
+conditional-GET correctness, while write-side `If-Match` and `If-None-Match` use the same
+state-significant (`ContentVersion`, `schemaEpoch`) projection as the rest of the redesign.
 
 ## Validation and Error Semantics
 

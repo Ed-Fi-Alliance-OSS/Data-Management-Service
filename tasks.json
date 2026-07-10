@@ -172,6 +172,6 @@
       "Review profiles.md, link-injection.md, data-model.md, overview.md, strengths-risks.md, auth.md, update-tracking.md, and transactions-and-concurrency.md for agreement on ContentVersion, variantKey, profileCode, linkFlag, conditional-request ordering, and projected write comparison.",
       "Run git diff --check."
     ],
-    "completed": false
+    "completed": true
   }
 ]

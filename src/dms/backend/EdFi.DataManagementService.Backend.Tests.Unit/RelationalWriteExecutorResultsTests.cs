@@ -16,9 +16,10 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 ///
 /// Scope (B7 regression lock): a stale guarded no-op (the merge synthesizer produced a no-op candidate,
 /// but the freshness check found the row has moved on since it was read) 412s ONLY for a specific-tag
-/// If-Match. A wildcard If-Match, and any If-None-Match (wildcard or specific tag), are existence-only
-/// preconditions rather than concurrency checks, so a stale no-op under those preconditions must fall
-/// through to the ordinary write-conflict/retry outcome exactly like the no-precondition case.
+/// If-Match. Wildcard If-Match and wildcard If-None-Match are existence preconditions. A specific-tag
+/// If-None-Match is an inverse state-significant comparison; after it passed against the observed row,
+/// a stale no-op must retry so the tag is evaluated against current state and can return 412 if that
+/// state now matches. All three cases therefore use the ordinary write-conflict/retry outcome.
 /// </summary>
 [TestFixture]
 public class Given_Relational_Write_Executor_Results_Build_Stale_No_Op_Compare_Result
@@ -137,9 +138,9 @@ public class Given_Relational_Write_Executor_Results_Build_Stale_No_Op_Compare_R
     [Test]
     public void It_returns_a_post_write_conflict_not_etag_mismatch_for_a_non_matching_if_none_match_tag()
     {
-        // B7: a non-matching If-None-Match tag against an existing row is a satisfied precondition
-        // (client copy is stale) that, once it reaches a stale guarded no-op, behaves like the
-        // no-precondition path: retry via write-conflict, never a 412.
+        // B7: a non-matching If-None-Match tag against the observed row is a satisfied
+        // state-significant precondition. Once the guarded no-op is stale, retry so the tag is
+        // re-evaluated against current state; do not return 412 from the stale comparison itself.
         var result = RelationalWriteExecutorResults.BuildStaleNoOpCompareResult(
             RelationalWriteOperationKind.Post,
             new WritePrecondition.IfNoneMatch("\"stale-client-tag\"")

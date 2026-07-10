@@ -43,3 +43,8 @@
 - Files: relational database failure mapper/tests; tasks.json.
 - Verified: mapper 13; IfNoneMatch 15; backend unit 1950; core retry/upsert 52; CSharpier/diff clean.
 - Blockers/next: none; ETag design documentation task remains.
+2026-07-09 - DMS-1264 - Representation-sensitive ETag design reconciliation
+- Decision: served tags use ContentVersion + full profile/link variant; write preconditions project representation selectors; cache stores ContentVersion, not reusable ETag; conditional GET follows authorization; RFC 9110 citations.
+- Files: ETag-related redesign docs, stale executor test commentary, tasks.json.
+- Verified: required stale-language searches inspected; focused backend fixture 8 passed; CSharpier/diff check clean.
+- Blockers/next: none; all tasks complete.
