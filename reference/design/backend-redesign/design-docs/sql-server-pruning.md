@@ -20,8 +20,10 @@ this document describes the intended replacement.
    error 1785 structurally. Unlike ODS, DMS evaluates every incoming-edge choice and never silently chooses an unsafe cut.
 5. Candidate choices are evaluated in stable order. The first complete safe assignment wins. When a later convergence
    invalidates an earlier choice, selection backtracks only across the interacting convergence choices.
-6. The pruning pass fails only when the SQL Server cascade graph contains a cycle or no incoming-edge assignment can
-   safely remove all duplicate paths. Other existing relational-model validation failures remain unchanged.
+6. Before assigning actions, SQL Server derivation rejects the focused unsupported case in which a mutable non-identity
+   reference writes canonical receiver identity storage. After that precondition passes, the pruning pass fails only when
+   the cascade graph contains a cycle or no incoming-edge assignment can safely remove all duplicate paths. Other existing
+   relational-model validation failures remain unchanged.
 7. The selector does not consider arbitrary upstream cuts, optimize for a globally minimal cut set, or perform generalized
    graph rejection.
 
@@ -67,7 +69,8 @@ choice is not safe.
 - Minimizing the total number of pruned edges or estimating cascade execution cost.
 - Adding complete transitive propagation vectors or additional lineage `DocumentId` columns.
 - Adding a `DocumentId`-only or trigger-based identity-value propagation fallback.
-- Adding provider-independent shared-writer, storage-promotion, or generalized equality-flow validation.
+- Adding provider-independent shared-writer, generalized storage-promotion, or equality-flow validation beyond the
+  focused SQL Server precondition defined here.
 - Persisting route proofs, search state, or classifier-specific metadata in runtime mappings or mapping packs.
 - Supporting arbitrary SQL updates outside the DMS-authorized identity-update behavior.
 
@@ -83,15 +86,17 @@ The selector operates on a directed physical multigraph:
 - An edge is directed from the **referenced target** to the **referencing receiver**, matching update propagation.
 - A **topology origin** is any vertex with an outgoing cascade edge. SQL Server considers every such vertex when checking
   cascade topology at DDL creation, regardless of whether DMS authorizes a direct write to that table.
-- A **mutation origin** is a physical statement root whose referenced key or dependent reference tuple may change through
-  a DMS-authorized write or a required maintenance statement.
+- A **mutation origin** is a physical statement root that changes a key referenced by a candidate cascade and can
+  therefore start an indirect receiver update. A direct DMS write that atomically supplies a receiver's complete local FK
+  tuple is not a propagation obligation for an edge into that receiver.
 - A **duplicate path** exists when one topology origin can reach one receiver through two distinct retained cascade paths.
 - A **convergence** is the first receiver at which those paths enter through distinct incoming edges.
 - A **survivor** is an incoming edge retained as `ON UPDATE CASCADE` for that convergence.
 - A **cut** is a conflicting incoming edge changed to full-composite `ON UPDATE NO ACTION`.
 
 The graph is a multigraph because two distinct references can produce parallel physical foreign keys between the same
-tables. Candidate identity is the action-independent `PruningEdgeKey`, not just the `(target table, receiver table)` pair.
+tables. Candidate identity is the `OnUpdate`-independent `PruningEdgeKey`, not just the
+`(target table, receiver table)` pair.
 
 ### Independent parents are not a convergence
 
@@ -178,22 +183,53 @@ For topology legality, every physical table with an outgoing cascade edge is a t
 and final validation consider all topology origins, including tables that DMS never updates directly. This is necessary
 because SQL Server error 1785 is based on the declared cascade graph, not the application's write permissions.
 
-For safe-cut value propagation, mutation origins are limited to physical statement roots that DMS can cause:
+For safe-cut value propagation, the origin-statement inventory is finite:
 
-- a directly mutable concrete resource root is a mutation origin;
-- an abstract identity table updated by its maintenance statement is a mutation origin for cascades leaving that table;
-  and
-- any other required maintenance statement that changes a referenced key starts a new mutation origin.
+- a DMS update of a directly mutable concrete resource root is an origin when the statement changes that root's
+  referenced identity key; and
+- an `AbstractIdentityMaintenance` update of an abstract identity table is an origin for cascades leaving that table.
+
+No other current maintenance statement changes a key referenced by a document-reference candidate.
+`ReferentialIdentityMaintenance`, `DocumentStamping` (including Change Query attachments), and
+`AuthHierarchyMaintenance` do not start pruning flows. `MssqlIdentityPropagationTrigger` is retired by this design.
+
+A direct DMS write may replace a reference on the receiver row being written by atomically supplying the complete local
+public-identity and `DocumentId` tuple. The full-composite FK validates that new tuple; the write needs no retained cascade
+carrier for an incoming cut edge. The same statement is still a mutation origin for downstream receivers if the
+replacement changes the written resource's own referenced identity key and a native cascade or abstract-identity
+maintenance statement then updates those receivers indirectly.
 
 A trigger statement is not a continuation of the statement that caused the trigger. It starts a new traversal boundary.
 Consequently, a route that crosses a later trigger statement cannot cover a `NO ACTION` foreign key checked by the
 earlier statement.
 
 Transitive mutability determines which document-reference edges are candidate cascades. Before selection begins, derive
-and freeze the set of mutation-origin flows that can change each candidate's local FK tuple in the all-native graph. A
-tentative cut never removes one of these safety obligations merely because the origin can no longer reach the receiver in
-the retained graph. Topology reachability and frozen mutation obligations are derivation-local and are not runtime mapping
-metadata.
+and freeze the propagation obligations from the all-native graph as normalized values of one derivation-local type:
+
+```text
+MutationFlow =
+    OriginStatement
+    + ReceiverRowKeyMapping
+    + ChangedColumnMapping
+    + RequiredPresenceAtoms
+```
+
+- `OriginStatement` is the stable statement kind and physical origin table for one native SQL statement boundary.
+- `ReceiverRowKeyMapping` is the ordered composed mapping from the origin row key to the receiver's stable physical row
+  key.
+- `ChangedColumnMapping` is the ordered mapping from changed origin-key positions to canonical receiver columns updated
+  by the route. It includes a local `DocumentId` mapping when that anchor changes.
+- `RequiredPresenceAtoms` is the normalized set of structural reference-presence atoms required for the route to exist.
+
+For each candidate, freeze only flows that can update its receiver tuple indirectly. Do not create a zero-edge flow for a
+direct DMS write of that receiver's complete local FK tuple. A tentative cut never removes a frozen obligation merely
+because the origin can no longer reach the receiver in the retained graph.
+
+One flow covers another when `OriginStatement` and `ReceiverRowKeyMapping` are equal, the covering
+`ChangedColumnMapping` includes every mapping required by the covered flow, and the covering
+`RequiredPresenceAtoms` are a subset of the covered flow's atoms. The subset direction means that whenever the cut route
+is present, the covering route is also present. These values, topology reachability, and search state are derivation-local;
+they are not runtime mapping or mapping-pack metadata.
 
 ## SQL Server Selection Algorithm
 
@@ -201,8 +237,8 @@ metadata.
 
 Build the physical graph from full-composite candidates after canonical storage mapping. Each edge records:
 
-- an action-independent `PruningEdgeKey` consisting of receiver table, ordered local columns, target table, and ordered
-  target columns;
+- an `OnUpdate`-independent `PruningEdgeKey` consisting of receiver table, ordered local columns, target table, ordered
+  target columns, and `OnDelete`;
 - target and receiver tables;
 - ordered `(target column, local column)` pairs;
 - target mutability;
@@ -210,15 +246,27 @@ Build the physical graph from full-composite candidates after canonical storage 
 - for document-reference decision edges, stable logical reference provenance needed for diagnostics and to determine
   which identity components a mutation origin may change. Fixed non-document edges have no such provenance.
 
-`PruningEdgeKey` deliberately excludes `OnUpdate`, rendered or shortened constraint names, and classifier state. The
-existing foreign-key `ConstraintIdentity` includes referential actions and therefore must not be reused as the selector's
-edge identity or ordering key.
+`PruningEdgeKey` deliberately excludes the selected `OnUpdate` value, rendered or shortened constraint names, and
+classifier state. It includes `OnDelete`, which remains an invariant property of the physical constraint. The existing
+foreign-key `ConstraintIdentity` includes both referential actions and therefore must not be reused as the selector's edge
+identity or ordering key.
 
 If multiple logical reference mappings collapse to one identical physical constraint after key unification, use one
 physical decision edge with all logical sites retained as diagnostic provenance. One physical constraint receives one
 action.
 
-### 2. Reject cycles
+### 2. Reject mutable non-identity writers of canonical identity storage
+
+After key unification and before assigning any actions, inspect every mutable document reference that is not authored as
+an identity component. If one of its local identity-part bindings resolves to canonical storage used by the receiver's
+referenced identity key, fail as `SqlServerMutableNonIdentityReferenceWritesIdentityStorageNotSupported`.
+
+Without this precondition, an update through the mutable non-identity reference could change the receiver's physical
+identity even though `TransitiveIdentityMutabilityPass` does not classify that reference as part of the receiver identity.
+A downstream full-composite `NO ACTION` FK could then block an update in a graph with no convergence for the selector to
+repair. This is a focused SQL Server storage-overlap check, not generalized storage-promotion or equality-flow analysis.
+
+### 3. Reject cycles
 
 Topologically sort the all-native SQL Server candidate graph, including fixed cascade edges. A self-loop or incomplete
 sort fails as `SqlServerCascadeCycleNotSupported`.
@@ -226,10 +274,11 @@ sort fails as `SqlServerCascadeCycleNotSupported`.
 Cycle cutting is deliberately outside the ODS-style diamond algorithm. The selector does not try converting an arbitrary
 cycle edge to `NO ACTION`.
 
-### 3. Traverse per topology origin
+### 4. Traverse per topology origin
 
-Process topology origins in stable physical-table order. Within one origin, walk the currently retained graph in stable
-topological and edge order, counting paths to each receiver and capping each count at two.
+Compute one stable topological order from the all-native graph, using stable physical-table order to break ties. Process
+topology origins in stable physical-table order. Within one origin, process receivers in that fixed topological order and
+incoming edges in stable `PruningEdgeKey` order, counting paths to each receiver and capping each count at two.
 
 When a receiver obtains a second path, identify the distinct incoming edges by which the conflicting paths enter the
 receiver. Only those incoming edges are choices for that convergence. Other incoming edges that are not on duplicate
@@ -239,7 +288,7 @@ This retains the significant ODS property: analysis is per origin, so independen
 they share a receiver. Using every topology origin additionally guarantees that final DDL satisfies SQL Server's
 structural error-1785 rule even when a fixed cascade component is not rooted at a DMS-authorized mutation origin.
 
-### 4. Evaluate incoming-edge choices
+### 5. Evaluate incoming-edge choices
 
 Evaluate possible survivors in stable `PruningEdgeKey` order. For one survivor choice, the other conflicting incoming
 edges become tentative cuts.
@@ -251,17 +300,22 @@ Fixed incoming edges have forced behavior:
 - if two or more conflicting incoming edges are fixed, the convergence has no solution; and
 - if no conflicting incoming edge is fixed, evaluate each decision edge as survivor in stable order.
 
-A tentative choice is admissible only when:
+A partial branch may be rejected before a complete assignment only for one of these monotone contradictions:
 
-- every new cut passes the safe-cut predicate below;
-- no physical edge is assigned both cascade and no-action by different origin traversals;
-- fixed cascade edges remain retained; and
-- the partial choice does not already leave an unavoidable duplicate path.
+- two conflicting fixed incoming edges require the same convergence to retain both paths;
+- one physical edge is assigned both cascade and no-action;
+- a required safe-cut clause has no retained or undecided route that any remaining action can satisfy; or
+- a retained duplicate path reaches a convergence with no remaining decision edge eligible under the incoming-edge rule.
+
+Later decisions only convert decision edges from cascade to no-action, so none of these contradictions can be repaired by
+continuing that branch. Every other partial assignment must recurse and be checked again as a completed assignment. In
+particular, an implementation must not reject a branch using an undefined heuristic such as “tentative cuts can be safe”
+or “unavoidable duplicate path.”
 
 Do not reject a convergence merely because the first incoming edge is unsafe. Continue through every incoming-edge
 choice.
 
-### 5. Continue and backtrack across interacting convergences
+### 6. Continue and backtrack across interacting convergences
 
 After making a tentative choice, continue traversal. A later convergence may share a physical edge with an earlier one or
 may depend on an earlier survivor as its only safe carrier. If the later convergence has no admissible choice, restore the
@@ -274,7 +328,7 @@ This is limited deterministic backtracking over convergence choices, not general
 - fixed cascade edges are never decisions; and
 - there is no cost function or minimum-cut optimization.
 
-### 6. Accept the first complete safe assignment
+### 7. Accept the first complete safe assignment
 
 An assignment is complete when every topology origin has at most one retained path to every receiver and every cut passes
 the safe-cut predicate against the final retained graph. Accept the first complete assignment in stable search order.
@@ -286,21 +340,20 @@ Conceptually:
 
 ```text
 search(current actions):
+    if current actions contain a listed monotone contradiction:
+        return failure
+
     find the first stable (origin, receiver) with two retained paths
     if none:
         return success if every cut is safe in the final graph
         return failure otherwise
 
     determine forced-fixed or stable decision survivor choices
-    if two or more conflicting incoming edges are fixed:
-        return failure
-
     for each allowed incoming survivor choice in stable order:
         cut the other conflicting incoming decision edges
         require the choice to remove at least one retained decision edge
-        if the tentative cuts can be safe and actions remain consistent:
-            if search(updated actions) succeeds:
-                return success
+        if search(updated actions) succeeds:
+            return success
 
     return failure
 ```
@@ -311,33 +364,43 @@ Topology alone does not make a full-composite `NO ACTION` edge safe. SQL Server 
 initiating statement, before a later propagation trigger could repair the receiver. A cut is safe only when a retained
 native cascade route performs the update that the cut edge would have performed.
 
-For a tentative cut from target `S` to receiver `R`, evaluate every mutation origin whose authorized change can alter
-any local column in the cut FK tuple. This includes a target-key update, a directly replaceable identity reference, or
-another native cascade that rewrites one of the local columns. Derive this obligation inventory from the original
-all-native graph before selection; do not recompute it from a graph in which tentative cuts have hidden a route. For each
-obligated mutation origin, the final retained graph must supply a native route that proves all of the following.
+For a tentative cut from target `S` to receiver `R`, evaluate the frozen `MutationFlow` obligations for:
+
+- an update of `S`'s referenced key, whether `S` is the statement origin or that key update is reached within the same
+  native cascade statement; and
+- an indirect update of the local FK tuple on `R` caused by a native cascade or an `AbstractIdentityMaintenance`
+  statement.
+
+Do not add an obligation for a direct DMS write to `R` that atomically supplies the complete local public-identity and
+`DocumentId` tuple. That statement is validated normally by the full-composite FK and does not need another graph route to
+perform its write.
+
+Derive the obligation inventory from the original all-native graph before selection; do not recompute it from a graph in
+which tentative cuts have hidden a route. For every obligated flow, the final retained graph must contain a covering
+`MutationFlow` whose route uses only retained native cascade edges. Coverage is the equality/inclusion relation defined
+above and has the following consequences.
 
 If the frozen inventory contains no mutation origin capable of changing the cut tuple, the value-flow obligation is
 vacuously satisfied. A direct SQL update outside DMS that would make the `NO ACTION` edge block is outside the supported
 write contract.
 
 For example, with `A -> B -> R` and `A -> R`, cutting `A -> R` must account for a directly authorized update of `B`
-that retargets its identity reference from `A1` to `A2`. That write does not change an `A` target key, but it can
-change the local `A` reference tuple on `R`, including `A_DocumentId`, through `B -> R`.
+that retargets its identity reference from `A1` to `A2`. The direct write to `B` needs no alternate carrier for `B`'s
+own incoming FK, but if it changes `B`'s referenced identity key, the resulting update of `R` through `B -> R` is indirect
+and remains a frozen obligation, including any required `A_DocumentId` change on `R`.
 
 ### Same receiver row
 
-The cut route and retained route terminate at the same physical row in `R`. Merely reaching the same table is insufficient.
-The selector may prove this only by composing existing ordered FK column pairs, stable target/receiver keys, and structural
-reference-presence atoms. The composed routes must produce the same receiver correlation key. Current data values, naming
-conventions, data-dependent joins, and arbitrary relational inference are not proof. If this finite structural composition
-does not establish row equality, the choice is unsafe.
+The cut flow and covering flow must have equal normalized `ReceiverRowKeyMapping` values and therefore terminate at the
+same physical row in `R`. Merely reaching the same table is insufficient. The selector may construct the mapping only by
+composing existing ordered FK column pairs and stable target/receiver keys. Current data values, naming conventions,
+data-dependent joins, and arbitrary relational inference are not proof. If this finite structural composition does not
+establish row equality, the choice is unsafe.
 
 ### Same canonical columns and values
 
-After key unification, every receiver storage column that the cut route would change is also changed by the retained route.
-Composing the ordered FK column pairs from the origin to `R` must map the same origin key position to the same canonical
-receiver column.
+After key unification, the covering flow's `ChangedColumnMapping` must include every mapping in the cut flow. Composing the
+ordered FK column pairs from the origin to `R` must map the same origin key position to the same canonical receiver column.
 
 Equal current values are not proof. For example, if one route maps root key position `P` to receiver column `X` and another
 maps root key position `Q` to `X`, the cut is unsafe even when `P` and `Q` happen to contain equal data.
@@ -356,17 +419,19 @@ an uncarried `DocumentId` change, derivation fails.
 
 ### Presence implication
 
-Whenever the cut reference is present on a receiver row, the retained route that covers it must also be present. Required
-identity-component references normally satisfy this structurally. An optional survivor cannot cover a required or
-independently present cut edge unless existing mapping metadata proves the implication.
+The covering flow's `RequiredPresenceAtoms` must be a subset of the cut flow's atoms, proving that whenever the cut
+reference is present on a receiver row, the retained route is also present. Required identity-component references normally
+satisfy this structurally. An optional survivor cannot cover a required or independently present cut edge unless existing
+mapping metadata proves the implication.
 
 The selector does not infer arbitrary Boolean presence relationships. If structural requiredness and the existing
 reference presence columns do not prove coverage, the choice is unsafe.
 
 ### Same native statement
 
-Every edge used for coverage is a retained native `ON UPDATE CASCADE` edge executed within the statement whose `NO ACTION`
-constraint is being checked. An `AFTER` trigger, later maintenance command, or application write is not a carrier.
+The cut and covering flows must have equal `OriginStatement` values, and every edge used for coverage must be a retained
+native `ON UPDATE CASCADE` edge executed within that statement. An `AFTER` trigger, later maintenance command, or
+application write is not a carrier.
 
 ### Safe for every mutation origin
 
@@ -376,15 +441,16 @@ redundant for an upstream rename was still the only correct propagation route fo
 identity change.
 
 The implementation does not enumerate arbitrary values or mutation powersets. It conservatively treats every directly
-writable public identity component and every directly replaceable identity reference as mutable, then composes the finite
-ordered column mappings already present in the relational model.
+writable public identity component and every directly replaceable identity reference as mutable when deriving downstream
+flows, then composes the finite ordered column mappings already present in the relational model. A directly replaceable
+reference still does not create an obligation for the direct write of its own complete local FK tuple.
 
 ## Determinism and Complexity
 
-All ordering uses action-independent final structural identifiers with ordinal comparison:
+All ordering uses `OnUpdate`-independent final structural identifiers with ordinal comparison:
 
 1. topology origin table;
-2. receiver table;
+2. receiver position in the stable all-native topological order, with physical-table order as the tie-breaker;
 3. `PruningEdgeKey`; and
 4. ordered column pairs as a final tie-breaker.
 
@@ -407,6 +473,10 @@ Runtime write and read mappings need no classifier state. A diagnostic/manifest 
 derivation-local reason, but route proofs and backtracking state are not artifact contracts.
 
 Failures are stable and concise:
+
+### `SqlServerMutableNonIdentityReferenceWritesIdentityStorageNotSupported`
+
+Report the logical reference provenance, receiver table, overlapping canonical columns, and receiver identity positions.
 
 ### `SqlServerCascadeCycleNotSupported`
 
@@ -460,9 +530,14 @@ The selector requires deterministic fixtures for:
 14. a tentative cut not erasing a mutation obligation derived from the all-native graph;
 15. required cut with optional survivor and no presence implication;
 16. the same physical FK reached from multiple mutation origins;
-17. action changes not affecting `PruningEdgeKey`, selection order, or diagnostics;
-18. reversed schema/declaration order producing identical actions and diagnostics; and
-19. root, child/collection, and extension receiver tables.
+17. `OnUpdate` changes not affecting `PruningEdgeKey`, selection order, or diagnostics, while otherwise identical edges
+    with different `OnDelete` values remain distinct;
+18. each permitted monotone partial-branch contradiction and a partial assignment that must recurse to a valid complete
+    assignment rather than being rejected heuristically;
+19. a mutable non-identity reference whose canonical binding overlaps receiver identity storage failing the focused SQL
+    Server precondition;
+20. reversed schema/declaration order producing identical actions and diagnostics; and
+21. root, child/collection, and extension receiver tables.
 
 ### SQL Server integration fixtures
 
@@ -472,7 +547,10 @@ Provider tests must prove:
 - every document-reference FK is full composite;
 - a retained cascade propagates an identity rename;
 - a covered `NO ACTION` edge remains valid because the retained cascade updates its canonical receiver columns;
+- a direct DMS PUT can replace the complete public-identity and `DocumentId` reference tuple on a receiver whose FK was
+  pruned, with the full-composite FK validating the replacement normally;
 - an unsafe graph fails before DDL;
+- the mutable non-identity/canonical-identity-storage overlap fails before action assignment and DDL;
 - no identity-value propagation trigger is emitted;
 - an insert racing a referenced identity rename cannot commit stale public values paired with a valid `DocumentId`;
 - cascaded child/extension updates fire the existing stamping behavior; and

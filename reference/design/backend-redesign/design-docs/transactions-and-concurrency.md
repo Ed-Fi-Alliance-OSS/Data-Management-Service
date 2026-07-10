@@ -117,15 +117,18 @@ DDL generator requirements (derived from ApiSchema):
     - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <CanonicalIdentityParts...>)` using
       `ON UPDATE CASCADE`.
   - SQL Server:
-    - concrete and abstract targets: emit `ON UPDATE NO ACTION`.
-    - eligible propagation targets (abstract or concrete `allowIdentityUpdates=true`) are maintained by
-      `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers (one trigger per referenced table, fan-out referrer actions,
-      canonical/storage-column updates only).
+    - concrete and abstract targets use full-composite FKs whose `ON UPDATE` actions are selected by
+      [sql-server-pruning.md](sql-server-pruning.md).
+    - retained native cascades propagate eligible identity updates; safe convergence cuts use full-composite
+      `ON UPDATE NO ACTION` and no `MssqlIdentityPropagationTrigger` is emitted.
+
+The SQL Server rules above supersede this document's earlier blanket `ON UPDATE NO ACTION` plus
+`MssqlIdentityPropagationTrigger` contract.
 
 When a referenced document’s identity changes (allowed only when `allowIdentityUpdates=true` for concrete targets), the
-database propagates updated identity values into all direct referrers’ **canonical/storage columns** (PostgreSQL FK
-cascades; SQL Server `MssqlIdentityPropagationTrigger` triggers). Any per-site binding aliases recompute automatically while preserving
-optional-reference presence semantics.
+database propagates updated identity values into all direct referrers' **canonical/storage columns** through retained
+native FK cascades. Any per-site binding aliases recompute automatically while preserving optional-reference presence
+semantics.
 
 #### Descriptor references (`..._DescriptorId`)
 
@@ -145,9 +148,8 @@ The pieces fit together like this:
 3. **Persist `..._DocumentId` plus abstract identity columns**:
    - The referencing row stores both the resolved `DocumentId` and the abstract identity column values provided in the payload.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
-   - The composite FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses `ON UPDATE CASCADE`, SQL Server uses
-     `ON UPDATE NO ACTION` plus `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced identity
-     table. This ensures:
+   - The composite FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses `ON UPDATE CASCADE`, while SQL Server
+     assigns a native cascade or safe cut under [sql-server-pruning.md](sql-server-pruning.md). This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored abstract identity columns are kept correct automatically.
 5. **Read-time reference identity projection is local**
@@ -232,8 +234,9 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - `dms.Descriptor` upsert if the resource is a descriptor.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
    - Composite FK propagation is dialect-specific: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges; SQL Server
-     uses `ON UPDATE NO ACTION` and `MssqlIdentityPropagationTrigger` for eligible edges. Both paths update
-     canonical/storage columns (binding aliases recompute).
+     retains native cascades where legal and uses safe full-composite `NO ACTION` cuts under
+     [sql-server-pruning.md](sql-server-pruning.md). Native propagation updates canonical/storage columns (binding aliases
+     recompute).
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
    - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
@@ -256,8 +259,8 @@ This redesign keeps relationships keyed by stable `..._DocumentId`, but also sto
 fields alongside every document reference. Composite-FK update behavior is dialect-specific:
 - PostgreSQL: `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true`
   (`ON UPDATE NO ACTION` otherwise).
-- SQL Server: `ON UPDATE NO ACTION` for all reference composite FKs; eligible propagation uses
-  `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers.
+- SQL Server: full-composite reference FKs retain `ON UPDATE CASCADE` where legal and safe; selected convergence cuts use
+  full-composite `ON UPDATE NO ACTION`. [sql-server-pruning.md](sql-server-pruning.md) is normative.
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
@@ -267,12 +270,10 @@ Key effects:
 
 Engine considerations:
 - PostgreSQL supports “cycles or multiple cascade paths” for FK cascades.
-- SQL Server uses `ON UPDATE NO ACTION` for all reference composite FKs.
-- For eligible SQL Server propagation edges (abstract targets or concrete `allowIdentityUpdates=true` targets), derive
-  deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers that:
-  - fire on the referenced table (`DbTriggerInfo.Table`),
-  - fan out to all impacted referrer tables (root and non-root reference sites), and
-  - update **canonical/storage columns** only (never binding aliases).
+- SQL Server rejects cycles and duplicate cascade paths, so its focused selector prunes only eligible incoming edges at
+  convergences and fails before DDL when no safe assignment exists.
+- SQL Server emits no `MssqlIdentityPropagationTrigger`; retained native cascades update **canonical/storage columns**
+  only (never binding aliases).
 
 ### Insert vs update detection
 
@@ -312,8 +313,8 @@ Operational guidance:
 
 Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change,
 because relationships are stored as stable `DocumentId` FKs. Identity propagation still exists for
-**canonical/storage identity-part columns** (FK cascades on PostgreSQL; `MssqlIdentityPropagationTrigger` triggers on SQL Server) and for
-**derived artifacts** (referential ids and stamps), and is handled in the database:
+**canonical/storage identity-part columns** through retained native FK cascades and for **derived artifacts** (referential
+ids and stamps), and is handled in the database:
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
   - Propagation updates canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
@@ -517,7 +518,10 @@ When serving from `dms.DocumentCache`, treat a row as usable only if it is **fre
 
 ### Rebuild/invalidation triggers (eventual consistency)
 
-Because indirect representation changes are materialized as local updates to referrers (via PostgreSQL FK cascades and SQL Server `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers), referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes. `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on referrers, without reverse dependency expansion at the projector layer.
+Because indirect representation changes are materialized as local updates to referrers through retained native FK
+cascades, referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes.
+`dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on
+referrers, without reverse dependency expansion at the projector layer.
 
 A minimal projector approach:
 

@@ -9,6 +9,7 @@ Source documents:
 - Data model: `reference/design/backend-redesign/design-docs/data-model.md`
 - Authentication & authorization: `reference/design/backend-redesign/design-docs/auth.md`
 - Key unification (canonical columns + generated aliases; presence-gated when optional): `reference/design/backend-redesign/design-docs/key-unification.md`
+- SQL Server foreign-key pruning: `reference/design/backend-redesign/design-docs/sql-server-pruning.md`
 - Flattening & reconstitution: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 - Unified mapping models (in-memory shape): `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`
 - AOT compilation (optional mapping pack distribution): `reference/design/backend-redesign/design-docs/aot-compilation.md`
@@ -27,7 +28,7 @@ Source documents:
 
 - Canonical storage is relational (root table per resource, child tables per collection) and is the source of truth.
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
-- Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise), while SQL Server uses `ON UPDATE NO ACTION` for all reference composite FKs and `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers for eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`). Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
+- Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
@@ -42,7 +43,7 @@ Source documents:
 - `DocumentId`: internal surrogate key (`bigint`) used for FKs and clustering.
 - `ReferentialId`: deterministic UUIDv5 used as the canonical “natural identity key”; stored in `dms.ReferentialIdentity`.
 - **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally as reference-identity bindings (which may be generated/persisted aliases of canonical stored columns under key unification) so referential ids can be recomputed row-locally.
-- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as database-driven propagation updates to canonical stored identity columns that back the local bindings (PostgreSQL FK cascades; SQL Server `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers for eligible edges), including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
+- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as native FK-cascade updates to canonical stored identity columns that back the local bindings, including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
 
 ## Data model summary
 
@@ -79,7 +80,7 @@ Source documents:
 
 ### Update tracking additions (unified design)
 
-`reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via database-driven propagation updates (PostgreSQL FK cascades; SQL Server `MssqlIdentityPropagationTrigger` triggers for eligible edges) to canonical stored identity columns that back local reference-identity bindings:
+`reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via retained native FK-cascade updates to canonical stored identity columns that back local reference-identity bindings:
 
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
 - `dms.Document` token columns:
@@ -104,8 +105,8 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
     - scalar identity elements become scalar columns,
     - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (stable), with referenced identity values bound at `{RefBaseName}_{IdentityPart}` columns for query/reconstitution (under key unification these may be presence-gated aliases of canonical stored columns; see `key-unification.md`).
   - Reference FK columns:
-    - for each document reference site: store `..._DocumentId` and the identity-part bindings, with a composite FK to the target identity key `(DocumentId, <IdentityParts...>)`. PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise). SQL Server always uses `ON UPDATE NO ACTION` for reference composite FKs; eligible propagation targets are maintained by `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced table. Under key unification, composite FKs are built over canonical stored identity columns (single source of truth), while per-site/per-path identity-part bindings can remain as generated/persisted aliases.
-    - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityParts...>)` with the same dialect-specific update behavior (`ON UPDATE CASCADE` on PostgreSQL; `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger` triggers on SQL Server),
+    - for each document reference site: store `..._DocumentId` and the identity-part bindings, with a composite FK to the target identity key `(DocumentId, <IdentityParts...>)`. PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise). SQL Server assigns native cascade or a safe full-composite `NO ACTION` cut under `sql-server-pruning.md`. Under key unification, composite FKs are built over canonical stored identity columns (single source of truth), while per-site/per-path identity-part bindings can remain as generated/persisted aliases.
+    - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityParts...>)` with the same dialect-specific update behavior (native cascade on PostgreSQL; SQL Server action selected by `sql-server-pruning.md`),
     - descriptors: FK to `dms.Descriptor(DocumentId)` via `..._DescriptorId`.
 
 - Collection tables `{schema}.{Resource}_{CollectionPath}`:
@@ -182,7 +183,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - For descriptor references, validate “is a descriptor” via `dms.Descriptor` (and optionally enforce expected discriminator/type in application code).
 
 3. **DB-enforced identity propagation**
-   - Composite foreign keys keep canonical stored identity columns consistent when referenced identities change (PostgreSQL `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true`; SQL Server `ON UPDATE NO ACTION` for all reference composite FKs plus `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers for eligible edges). Per-site/per-path identity bindings may be generated/persisted (and presence-gated) aliases of those canonical columns under key unification.
+   - Composite foreign keys keep canonical stored identity columns consistent when referenced identities change (PostgreSQL `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true`; SQL Server retained native cascades plus safe cuts selected by `sql-server-pruning.md`). Per-site/per-path identity bindings may be generated/persisted (and presence-gated) aliases of those canonical columns under key unification.
    - Identity-changing writes may optionally be serialized (advisory/application lock) as an operational guardrail, but correctness does not depend on an application-managed lock table.
 
 4. **Flatten and write relational rows (single transaction)**
@@ -199,7 +200,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 5. **Strict identity maintenance (row-local triggers)**
    - Per-resource triggers recompute `dms.ReferentialIdentity` when a document’s identity projection columns change (directly or via propagated updates to identity-component reference identity columns).
-   - Identity changes therefore propagate transitively via DB-driven propagation (PostgreSQL FK cascades; SQL Server `MssqlIdentityPropagationTrigger` triggers), without application-managed closure traversal.
+   - Identity changes therefore propagate transitively via retained native FK cascades, without application-managed closure traversal.
 
 6. **Update tracking (stored metadata + tracked-change rows)**
    - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion/ContentLastModifiedAt`.
@@ -247,11 +248,11 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 ## Key risks and mitigations (from the docs)
 
 - **Cascade feasibility and fan-out**
-  - SQL Server “multiple cascade paths” / cycle restrictions are the reason SQL Server reference composite FKs are emitted as `ON UPDATE NO ACTION` and eligible propagation is handled via `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers.
+  - SQL Server multiple-cascade-path and cycle restrictions require the focused selection and fail-fast rules in `sql-server-pruning.md`.
   - Identity updates on “hub” documents can synchronously update many dependent rows; needs guardrails, telemetry, and a deadlock retry policy.
 
 - **Trigger correctness and multi-row stamping**
-  - Stamping must produce per-row unique `ChangeVersion` values (especially for SQL Server multi-row propagation-trigger updates) and must cover changes across root + child + extension tables.
+  - Stamping must produce per-row unique `ChangeVersion` values (especially for SQL Server multi-row cascade updates) and must cover changes across root + child + extension tables.
 
 - **Read amplification**
   - Reconstitution can be expensive for deep resources (many child tables/result sets); benchmark representative deep resources early and treat read-path performance as a first-class requirement.
