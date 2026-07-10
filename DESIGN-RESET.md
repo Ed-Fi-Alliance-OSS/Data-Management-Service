@@ -8,8 +8,9 @@ This document defines how to reduce the current design to the simplest responsib
 required SQL Server cycle behavior, complete v1 identity-change support, and PostgreSQL provider policy.
 
 The documentation reset and collateral restoration are complete. Slice 0 now proves the reciprocal provider cycle and
-passes complete-vector feasibility for Data Standard 5.2 and TPDM. The actual DMS PUT gate remains open because the
-current production model still uses the superseded SQL Server reduced-FK/propagation-trigger path; a faithful HTTP POC
+passes the measured complete-vector key-width/column-count screen for Data Standard 5.2 and TPDM. The actual DMS PUT gate
+remains open because the current production model still uses the superseded SQL Server reduced-FK/propagation-trigger
+path; a faithful HTTP POC
 requires the narrow portions of delivery Slices 1 through 3. The reset therefore defines the bounded implementation
 direction without claiming the runtime cycle is already executable.
 
@@ -95,10 +96,11 @@ Every other mechanism must be justified by either a failing correctness fixture 
 
 The reproducible measurements in
 `reference/design/backend-redesign/evidence/dms-1129/complete-vector-feasibility.md` and focused maximum-value provider
-probes pass Gate 1. Data Standard 5.2 reaches 13 columns and 1,284 declared SQL Server bytes; TPDM reaches 14 columns.
+probes pass Gate 1's measured screen. Data Standard 5.2 reaches 13 columns and 1,284 declared SQL Server bytes; TPDM reaches 14 columns.
 The conservative model adds 152/176 anchor columns respectively, with a maximum per-table increase of eight `BIGINT`
-columns (64 bytes). No complete vector crosses a column, table, or nonclustered unique-key limit because of its anchors,
-and the worst SQL Server and PostgreSQL vectors accept maximum-size values.
+columns (64 bytes). No complete vector crosses a screened key-column, table-column, or nonclustered unique-key threshold
+because of its anchors, and the worst SQL Server and PostgreSQL vectors accept maximum-size values. This does not measure
+total SQL Server row width or PostgreSQL tuple/index overhead.
 
 V1 therefore uses one complete vector per target. Site-minimal demand closure, `AnchorSetId` variants, and omission
 proofs are removed. Full generated-schema qualification remains an implementation-slice requirement.
@@ -142,12 +144,12 @@ The checked-in measurement derives these Data Standard 5.2 and TPDM statistics f
 
 - maximum propagation-vector column count;
 - maximum encoded key bytes;
-- maximum physical row-width contribution;
+- added fixed-width row contribution (not total row width);
 - number of added anchor columns;
 - number of new unique constraints;
 - projected generic manifest/DDL increase (actual mapping-pack increase is unavailable because the pack payload is not
   implemented); and
-- every case that exceeds a provider key, index, row, or identifier limit.
+- every case that exceeds the screened key/index column, declared-key payload, or table-column thresholds.
 
 If complete-vector propagation exceeds a real supported-provider limit, reintroduce minimal demand closure as a separate,
 measured subsystem. Do not retain it preemptively merely because it produces narrower keys.
@@ -276,19 +278,19 @@ For each complete assignment:
 4. verify the carrier reaches the same receiver row with the same complete vector in the same constraint-check boundary;
 5. verify optional-reference presence implications;
 6. verify competing writes to unified receiver columns carry the same symbolic value; and
-7. verify every required deferred PUT binding is executable.
-
-Cycle membership alone is never a failure condition.
+Cycle membership alone is never a failure condition. The selector does not call or anticipate write-plan compilation.
 
 ### Selection Objective
 
 Choose among valid assignments using:
 
 1. fewest `CoveredNoAction` mutable edges;
-2. fewest deferred PUT bindings or other runtime obligations; and
-3. a stable structural edge-order mode vector.
+2. a stable structural edge-order mode vector.
 
-This accounts for runtime burden without introducing a general cost optimizer.
+This is deliberately database-only while Gate 2 is open. Plan compilation consumes the selected actions afterward. Gate
+2 must prove that the deterministic database-safe assignment is executable through DMS PUT. Only if that fixture fails
+while another database-safe assignment could work may Slice 3 introduce a minimal pre-selection
+`DeferredPutEligibility` input; do not duplicate or predict write-plan logic inside the classifier.
 
 ### Complexity Policy
 
@@ -321,18 +323,14 @@ real consumer is identified.
 
 ### Derived Relational Model
 
-For each finalized document-reference FK, the relational model should contain:
+For each finalized document-reference FK, the generic relational model contains:
 
 - the full ordered local and target FK columns;
-- final `OnDelete` and `OnUpdate` actions;
-- a small SQL Server-only mode distinguishing:
-  - `NativeCascade`;
-  - `CoveredNoAction`; and
-  - `ImmutableNoAction`;
-- concise carrier diagnostics for `CoveredNoAction` when required by the relational-model manifest.
+- final `OnDelete` and `OnUpdate` actions.
 
-The SQL Server mode is null for PostgreSQL and for parent, descriptor, core, and other non-document-reference FKs; those
-constraints do not participate in the classifier.
+The classifier may use `NativeCascade`, `CoveredNoAction`, and `ImmutableNoAction` as derivation-local labels. They are
+not part of `TableConstraint.ForeignKey`, `MappingSet`, or the mapping pack. Add a manifest-only mode or concise carrier
+diagnostic only when a concrete diagnostic consumer requires it.
 
 DDL generation consumes the final actions and never reruns classification.
 
@@ -351,12 +349,13 @@ Do not expose SQL Server proof objects to runtime.
 
 ### Mapping Packs
 
-Mapping packs already carry final FK `on_update` actions. They should not serialize solver state, exhaustive
-certificates, or proof identifiers.
+Mapping packs carry final FK `on_update` actions and the `ReferenceLineageAnchorBinding` inventory needed to reconstruct
+the runtime projection. They do not carry derivation-local SQL Server modes, solver state, exhaustive certificates, or
+proof identifiers.
 
-Defer mapping-pack changes until runtime slice implementation identifies the minimal deferred-binding metadata that an
-AOT consumer actually needs. Generic table, column, constraint, and write-binding payloads should carry the complete
-vector wherever possible without a new cross-cutting protocol.
+Defer only the Gate 2 deferred-binding fields until runtime implementation identifies the minimal AOT metadata actually
+consumed. Generic table, column, constraint, and write-binding payloads carry the complete vector without a new
+cross-cutting protocol.
 
 ### Failure Convention
 
@@ -407,7 +406,7 @@ classifier, but implementation work should be delivered in independently testabl
 
 All slices are required before the finalized v1 relational contract is complete.
 
-### Slice 0: Evidence and Feasibility
+### Slice 0: Database Evidence and Static Feasibility
 
 Deliverables:
 
@@ -415,13 +414,12 @@ Deliverables:
 - DDL with one `CASCADE` and one `NO ACTION` FK;
 - single-component and all-component identity updates;
 - negative classification when both sides allow direct identity updates;
-- actual DMS PUT through the accepted cycle;
 - PostgreSQL full-cascade equivalent;
-- deferred ordinary-resolution POC;
 - Data Standard 5.2 and TPDM complete-vector statistics; and
-- a written decision accepting or rejecting both simplification hypotheses.
+- a written Gate 1 decision and an explicit open/bounded Gate 2 decision.
 
-Exit criterion: the load-bearing cycle and storage model are executable and measured, not merely reasoned about.
+Exit criterion: the load-bearing database cycle is executable and the storage hypothesis has a reproducible measured
+screen. Runtime PUT feasibility is owned wholly by Slice 3.
 
 ### Slice 1: Complete Vectors and Physical Candidates
 
@@ -447,7 +445,7 @@ Deliverables:
 - deterministic bounded global selection;
 - exact carrier validation, including zero-hop origin writes;
 - safely breakable and unbreakable cycle handling;
-- runtime-burden-aware tie-breaking;
+- database-only deterministic tie-breaking;
 - concise selected-action diagnostics; and
 - deterministic no-solution versus complexity-limit failures.
 
@@ -457,6 +455,8 @@ Exit criterion: generated DDL installs on both providers and all graph/value-flo
 
 Deliverables:
 
+- deferred ordinary-resolution POC;
+- actual DMS PUT through the accepted cycle on both providers;
 - update-only deferred existing-reference handling;
 - normal-lookup-first behavior;
 - stable target and receiver-row correlation;
@@ -475,7 +475,8 @@ Exit criterion: every accepted fixture executes through the normal DMS API and p
 
 Deliverables:
 
-- final actions and concise SQL Server modes in the relational-model manifest;
+- final actions in the relational-model manifest, plus manifest-only SQL Server diagnostics only if a concrete consumer
+  requires them;
 - minimal runtime deferred-binding metadata;
 - runtime/AOT semantic equivalence;
 - mapping-pack validation for the finalized full vectors and actions; and
@@ -559,18 +560,25 @@ Checked-in fixtures must cover at least:
 
 ## Decision Gates
 
-### Gate 1: Complete Vector Feasibility
+### Gate 1: Complete Vector Measured Screen
 
-**Current result: Pass.** The measured stock schemas and maximum-value provider probes fit. Site-minimal anchor closure is
-removed from the authoritative design.
+**Current result: Pass for the measured architecture screen.** The stock-schema key/index column counts, declared key
+payloads, table column counts, added fixed-width contribution, and focused maximum-value probes fit. Site-minimal anchor
+closure is removed from the authoritative design. Total SQL Server row width, PostgreSQL tuple/index overhead, and full
+generated-schema DDL remain Slice 5 qualification.
 
-- **Pass:** DS 5.2 and TPDM fit supported provider limits. Remove minimal per-site anchor closure from the design.
+- **Pass:** DS 5.2 and TPDM introduce no anchor-caused crossing in the measured screen. Remove minimal per-site anchor
+  closure from the design.
 - **Fail:** retain measurements and design the smallest demand-reduction mechanism that fixes the actual failing cases.
 
 ### Gate 2: Deferred Ordinary Resolution
 
 **Current result: Open.** The executor seam is confirmed, but the actual cycle has not executed through DMS PUT. The
 narrow hypothesis remains provisional and no generalized replacement protocol is accepted.
+
+While open, SQL Server selection remains database-only. If the selected assignment cannot execute but another
+database-safe assignment can, define the smallest pre-selection `DeferredPutEligibility` input in Slice 3 and feed that
+fact into selection; do not make the classifier compile or duplicate write plans.
 
 - **Pass:** the actual DMS PUT cycle, authorization, locking, collection correlation, and post-statement resolution work
   safely. Replace the generalized future-resolution protocol.
@@ -591,15 +599,15 @@ infrastructure.
 **Current result: Design constraint; implementation validation pending.** No proof/hash/global artifact protocol is
 retained.
 
-- **Pass:** final FK actions, concise SQL Server decisions, and minimal deferred-binding metadata serve DDL, runtime, and
-  pack consumers. Do not introduce a global proof artifact.
+- **Pass:** final FK actions, lineage-anchor bindings, optional manifest-only SQL Server diagnostics, and minimal
+  deferred-binding metadata serve their concrete consumers. Do not introduce a global proof artifact.
 - **Fail:** add a shared artifact only for the concrete fields consumed by two or more implemented producers.
 
 ## Immediate Next Steps
 
 1. **Done:** preserve this document as the reset scope-control and decision record.
-2. **Partially done:** Slice 0 proves the provider cycle and complete-vector feasibility; the actual DMS PUT remains the
-   open Gate 2 item in DMS-1275.
+2. **Done:** Slice 0 proves the provider cycle and passes the measured complete-vector screen; the actual DMS PUT belongs
+   to Slice 3 and remains the open Gate 2 item in DMS-1275.
 3. **Done:** check in and execute the reciprocal SQL Server and PostgreSQL provider fixtures.
 4. **Open — DMS-1275:** exercise the same case through actual DMS PUT using deferred ordinary resolution.
 5. **Done:** check in reproducible Data Standard 5.2 and TPDM complete-vector statistics and maximum-value probes.
@@ -617,7 +625,7 @@ The reset is complete when:
 - the concrete safely breakable cycle is executable through SQL Server and DMS PUT;
 - PostgreSQL has no topology-classification or topology-failure path;
 - all v1 identity mutation forms are represented by checked-in fixtures;
-- complete-vector feasibility is measured and decided;
+- the complete-vector architecture screen is measured and decided, with full row/index/DDL qualification explicit;
 - the SQL Server selector is global, deterministic, bounded, and understandable;
 - runtime future-reference handling is no more general than demonstrated cases require;
 - derivation proofs remain internal validation rather than a cross-system serialization protocol;

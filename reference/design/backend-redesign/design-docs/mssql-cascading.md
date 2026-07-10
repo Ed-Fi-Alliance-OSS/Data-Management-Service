@@ -6,7 +6,7 @@ This document is the authoritative DMS-1129 design after the simplification rese
 architecture that preserves full referential integrity, safely breakable SQL Server cycles, complete v1 identity-change
 support, and the provider boundary between SQL Server and PostgreSQL.
 
-The direct database cycle and complete-vector feasibility gates have executable evidence. The actual DMS PUT gate is
+The direct database cycle and complete-vector measured screen have executable/reproducible evidence. The actual DMS PUT gate is
 still open: the current executor has a suitable transaction seam, but no accepted cycle has yet executed through the
 normal DMS API. Sections that depend on that gate say so explicitly.
 
@@ -102,11 +102,10 @@ The CourseOffering site may reuse its exact direct School anchor. It still carri
 Session referrer receives the same complete vector rather than a narrower site-specific variant. The extra storage is
 intentional; schema minimization is not a correctness requirement.
 
-### Provider-limit validation
+### Measured feasibility screen and implementation validation
 
-Derivation validates the final vector and receiver table against supported-provider column, index, FK, row, and
-identifier limits. It fails with `PropagationVectorNotRepresentable` rather than dropping an anchor or weakening a
-foreign key.
+Implemented derivation must validate the final vector and receiver table against applicable supported-provider limits.
+It fails with `PropagationVectorNotRepresentable` rather than dropping an anchor or weakening a foreign key.
 
 The checked-in measurement tool and report are under [`../evidence/dms-1129`](../evidence/dms-1129). The stock-schema
 results are:
@@ -125,8 +124,9 @@ results are:
 | Additional unique constraints | 0 | 0 |
 
 The worst SQL Server and PostgreSQL vectors install and accept maximum-size test values. Complete anchors create no new
-crossing of a provider limit. The complete-vector hypothesis therefore passes for the stock schemas; site-minimal anchor
-closure is not part of v1.
+crossing of the measured key/index column, declared-key payload, or table-column screens. This evidence does not measure
+total SQL Server row width or PostgreSQL tuple/index overhead, and it does not replace full generated-schema DDL
+qualification. It is sufficient for the v1 architecture choice, so site-minimal anchor closure is not part of v1.
 
 Mapping-pack size cannot yet be measured because the current pack payload is a stub. A conservative relational-manifest
 projection grows by about 2.5 percent and generated SQL by less than 1 percent. Exact pack measurement belongs to the
@@ -239,7 +239,6 @@ For every complete action assignment and applicable mutation case, prove:
 6. **Presence implication.** Whenever the covered edge is present, a complete carrier is present.
 7. **Statement boundary.** The carrier write is visible at the covered FK's constraint-check boundary.
 8. **Subset composition.** The proof remains valid for every supported simultaneous group combination.
-9. **API executability.** Every required deferred existing-reference binding can execute through the normal PUT path.
 
 A direct origin write to the covered receiver row is an explicit zero-hop carrier. Reachability alone, common table
 ancestry, equality of old values, or success for one populated example is not a proof.
@@ -259,14 +258,19 @@ mutable candidates participating in an error-1785 conflict or a value-flow choic
 structural order.
 
 For every complete assignment, the selector verifies graph legality, every carrier obligation, optional-reference
-presence, unified-column value agreement, and deferred-PUT executability. Partial assignments that already violate a
-monotone graph or carrier obligation are pruned.
+presence, and unified-column value agreement. Partial assignments that already violate a monotone graph or carrier
+obligation are pruned.
 
 Select among valid assignments by:
 
 1. fewest `CoveredNoAction` edges;
-2. fewest deferred PUT bindings or other executor obligations; and
-3. lexicographically smallest structural edge-order mode vector.
+2. lexicographically smallest structural edge-order mode vector.
+
+Selection is database-only while the deferred-resolution Gate 2 is open. It neither invokes plan compilation nor
+duplicates plan eligibility logic. Plan compilation consumes the selected actions afterward. If Gate 2 proves that the
+deterministic database-safe winner is not executable while another database-safe assignment is, introduce only a small
+pre-selection `DeferredPutEligibility` input derived before selection; do not make the classifier anticipate the write
+plan contract.
 
 Do not add a general cost model. Add memoization or reachability-state canonicalization only when measured stock,
 extension, or adversarial fixtures exceed the selected work bound.
@@ -416,21 +420,23 @@ The gate has not passed until the concrete cycle executes through a normal DMS P
 non-correlated, newly-present, stale, true-retarget, rollback, collection-correlation, stamping, and referential-identity
 controls. Until then, this section is a bounded implementation hypothesis, not evidence that the API path works.
 
+Until that gate passes, failure to compile a `DeferredExistingReferenceBinding` is a Slice 3 plan-compilation result, not
+`NoSafeSqlServerAssignment`. The classifier remains database-only.
+
 ## 9. Errors and Minimal Public Contracts
 
 ### Final relational model
 
-Each finalized document-reference FK contains:
+Each finalized document-reference FK in the generic relational/runtime model contains:
 
 - ordered local and target columns;
-- final `OnDelete` and `OnUpdate` actions;
-- a non-null SQL Server mode when the dialect is SQL Server; and
-- a concise carrier witness for `CoveredNoAction` only when a manifest diagnostic consumer requires it.
+- final `OnDelete` and `OnUpdate` actions.
 
 DDL consumes these values and never reruns classification.
 
-`SqlServerMode` is null for PostgreSQL and for parent, descriptor, core, and other non-document-reference FKs on either
-dialect; those constraints do not participate in this classifier.
+`NativeCascade`, `CoveredNoAction`, and `ImmutableNoAction` are derivation-local classifier labels. They are not fields on
+`TableConstraint.ForeignKey`, `MappingSet`, or the mapping pack. A manifest may add a mode and concise carrier witness
+only when a concrete diagnostic consumer requires them.
 
 ### Failure convention
 
@@ -442,17 +448,20 @@ Keep the repository's exception-based model-derivation convention. Use a small s
 - `CascadeClassificationComplexityExceeded`; and
 - `DeferredExistingReferenceNotExecutable`.
 
-Each error carries a concise structural witness. Do not replace all builder results with a new global success/proof
-artifact.
+The first four are model derivation/classification errors. `DeferredExistingReferenceNotExecutable` belongs to Slice 3
+plan compilation unless Gate 2 later establishes a minimal pre-selection eligibility input. Each error carries a concise
+structural witness. Do not replace all builder results with a new global success/proof artifact.
 
 ### Manifests, AOT, and packs
 
-The relational-model manifest carries final FK columns/actions and, if needed for diagnostics, concise SQL Server modes
-and witnesses. Runtime plans carry only executor-consumed deferred-binding metadata.
+The relational model and mapping pack carry final FK columns/actions. Runtime plans carry only executor-consumed
+deferred-binding metadata. SQL Server modes and witnesses stay derivation-local unless a concrete manifest diagnostic
+consumer is established.
 
-Mapping packs already carry final FK actions. They do not serialize solver state, exhaustive certificates, semantic
-hashes, or proof identifiers. Add deferred-binding fields only when the implemented AOT consumer requires them, and
-verify runtime/AOT semantic equivalence at that time.
+Mapping packs also carry each reference site's lineage-anchor bindings so `MappingSet.FromPayload` can reconstruct the
+runtime projection. They do not serialize classifier modes, solver state, exhaustive certificates, semantic hashes, or
+proof identifiers. Add deferred-binding fields only when the implemented AOT consumer requires them, and verify
+runtime/AOT semantic equivalence at that time.
 
 MetaEd owns early authored-model feedback for SQL Server realizability. DMS remains authoritative for canonical storage,
 physical candidate deduplication, selected SQL Server actions, and provider provisioning. MetaEd may exchange authored
@@ -479,10 +488,11 @@ referential-identity maintenance, change queries, and final constraint validatio
 
 ### Delivery slices
 
-1. **Evidence and feasibility:** provider cycle, DMS PUT POC, and stock-schema vector measurements.
+1. **Database evidence and static feasibility:** provider cycle and stock-schema vector measurements.
 2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, and limits.
 3. **Provider actions:** PostgreSQL fixed assignment and SQL Server bounded global selection.
-4. **DMS PUT execution:** narrow deferred existing bindings and every v1 mutation form.
+4. **DMS PUT execution:** deferred-resolution POC, actual cycle PUT, narrow deferred existing bindings, and every v1
+   mutation form.
 5. **Manifest/AOT/pack integration:** only final state and implemented runtime metadata.
 6. **Full-schema qualification:** stock, TPDM, extension, adversarial, concurrency, and performance evidence.
 
@@ -493,11 +503,11 @@ an umbrella with independently testable child stories.
 
 | Gate | Current result | Consequence |
 |---|---|---|
-| Complete vector feasibility | Pass for DS 5.2 and TPDM, including maximum-value provider probes | Do not implement per-site minimal anchor closure. |
+| Complete vector measured screen | Pass for DS 5.2 and TPDM key/column screens, including maximum-value provider probes | Do not implement per-site minimal anchor closure; retain full-schema row/index qualification. |
 | Reciprocal database cycle | Pass on SQL Server and PostgreSQL | Retain zero-hop cycle breaking as a required classifier outcome. |
 | Deferred ordinary resolution | Open; executor seam identified, actual DMS PUT not yet executed | Do not freeze or claim the runtime protocol complete. |
 | Simple global search | Open until the classifier exists and is measured | Start with deterministic bounded DFS; add optimization only from evidence. |
-| Minimal artifact contract | Design constraint; implementation validation pending | Do not add proof/hash/pack protocols preemptively. |
+| Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions and lineage bindings; do not add classifier/proof/hash protocols. |
 
 ## Relationship to Legacy ODS
 

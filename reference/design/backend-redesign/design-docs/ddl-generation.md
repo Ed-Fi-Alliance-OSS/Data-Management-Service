@@ -251,8 +251,9 @@ The DDL generator must emit document-reference columns and constraints that enab
 
 Candidate identity excludes `OnUpdate`. DDL generation receives the finalized `TableConstraint.ForeignKey` values and
 must not rerun PostgreSQL assignment or SQL Server classification. A SQL Server derivation failure emits no DDL or
-success manifest. Manifests may contain the final SQL Server mode and a concise carrier witness for a covered
-`NO ACTION`; they do not contain solver state, exhaustive certificates, or semantic hash protocols.
+success manifest. Classifier modes and carrier witnesses remain derivation-local; add manifest-only diagnostics if a
+concrete consumer requires them. Manifests do not contain solver state, exhaustive certificates, or semantic hash
+protocols.
 
 **Link injection and DDL (V1 note)**
 

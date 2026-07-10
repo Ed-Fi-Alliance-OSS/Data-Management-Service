@@ -374,17 +374,15 @@ Notes:
   column, unique-constraint, FK, and write-binding models carry these values; there is no `AnchorSetId`, per-site key
   variant, omission proof, or cross-cutting hash protocol.
 - **Final provider actions.** `TableConstraint.ForeignKey` carries the complete ordered column lists and final
-  `OnDelete`/`OnUpdate`. PostgreSQL actions are fixed mechanically and have no topology diagnostics. Each SQL Server
-  **document-reference** FK also carries one `SqlServerCascadeMode` from `NativeCascade`, `CoveredNoAction`, or
-  `ImmutableNoAction`; the mode is null for PostgreSQL and for parent, descriptor, core, and other non-document-reference
-  FKs. The classifier may retain a concise structural carrier witness internally for `CoveredNoAction`; add it to a
-  manifest only if a concrete diagnostic consumer requires it. DDL consumes the final action and never reruns
-  classification.
+  `OnDelete`/`OnUpdate`. PostgreSQL actions are fixed mechanically and have no topology diagnostics. SQL Server
+  classifier modes and carrier witnesses are derivation-local diagnostics, not fields on `TableConstraint.ForeignKey` or
+  `MappingSet`; add them only to a manifest if a concrete diagnostic consumer requires them. DDL consumes the final
+  action and never reruns classification.
 - **Cycle support.** SQL Server modes are selected by deterministic bounded global search over physical candidates.
   Safely covered cycles are broken; cycle membership is not itself an error. The only search outcomes exposed as stable
   categories are proved `NoSafeSqlServerAssignment` and distinct
   `CascadeClassificationComplexityExceeded`.
-- **Runtime separation.** A SQL Server carrier witness is diagnostic and is not a runtime write-plan contract. If the
+- **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. If the
   deferred existing-reference PUT POC passes, the write plan adds only the binding/site, persisted target
   `DocumentId` source, stable receiver-row locator, retained-route eligibility marker, and post-statement same-target
   resolution requirement. It does not serialize solver state or proof trees.
@@ -450,7 +448,9 @@ Design invariants:
 - **Model derivation** (E01) produces `DerivedRelationalModelSet` from the effective schema set.
 - **DDL emission** (E02/E03) consumes `DerivedRelationalModelSet` and a dialect to emit deterministic SQL and manifests.
 - **Plan compilation** (E15) consumes `DerivedRelationalModelSet` and a dialect to produce the `WritePlansByResource`/`ReadPlansByResource` dictionaries used by `MappingSet`.
-- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution).
+- **Pack build** (E05) serializes the explicit runtime projection of `MappingSet` semantics into `.mpack`. That projection
+  includes complete-vector columns/actions and `ReferenceLineageAnchorBinding` values, but excludes derivation-local SQL
+  Server modes and carrier witnesses.
 - **Pack load** (E05-S05) and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
 
 ---

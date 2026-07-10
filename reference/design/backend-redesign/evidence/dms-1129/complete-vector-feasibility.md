@@ -5,9 +5,10 @@
 This is reproducible static evidence for Design Reset Gate 1. It measures the complete intrinsic propagation-vector
 hypothesis against the checked-in authoritative Data Standard 5.2 and Data Standard 5.2 plus TPDM inputs.
 
-The static result plus focused maximum-value provider probes pass Design Reset Gate 1 for choosing one complete vector
-per target. Full generated Data Standard/TPDM DDL remains an implementation qualification item; it is not a reason to
-retain site-minimal anchor closure in the design.
+The static result plus focused maximum-value provider probes pass Design Reset Gate 1's measured key-width/column-count
+screen for choosing one complete vector per target. Full generated Data Standard/TPDM DDL, total SQL Server row width,
+and PostgreSQL tuple/index overhead remain implementation qualification items; they are not evidence for retaining
+site-minimal anchor closure in the design.
 
 ## Reproduce
 
@@ -80,7 +81,7 @@ The only obvious safe storage reuses found in either corpus are the Session Scho
 `CourseOffering.sessionReference` and `StudentSchoolAttendanceEvent.sessionReference`; both reuse the required local
 `School_DocumentId`. The conservative feasibility result does not depend on those reuses.
 
-## Provider-Limit Screen
+## Measured Provider Screen
 
 Neither corpus exceeds the 32-column key limit used by SQL Server foreign keys or a default PostgreSQL index, and no
 table approaches SQL Server's 1,024-column limit. See the official
@@ -103,6 +104,9 @@ needed.
 
 The largest PostgreSQL public-plus-anchor payload estimate is 654 ASCII bytes or 2,544 bytes with every character encoded
 as four-byte UTF-8. That is below the prototype's 2,704-byte default-page screening threshold before tuple overhead.
+
+This static screen does not calculate total SQL Server row width, actual physical index size, or PostgreSQL B-tree tuple
+overhead/compression. Those remain full generated-model qualification work.
 
 Focused probes exercised the worst `SurveySectionResponse` shape rather than a narrower surrogate:
 
@@ -137,7 +141,7 @@ protocol changes until the runtime slice establishes the exact consumed fields.
 
 ## Remaining Implementation Qualification
 
-Gate 1 is passed for the architecture choice. The implementation slices must still:
+Gate 1's measured screen is passed for the architecture choice. The implementation slices must still:
 
 1. Implement the complete-vector prototype in relational-model derivation and emit real provider DDL.
 2. Install the full DS 5.2 and DS 5.2 plus TPDM DDL on both providers.

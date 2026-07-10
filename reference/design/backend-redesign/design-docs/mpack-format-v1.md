@@ -22,6 +22,9 @@ The `.mpack` format is a redistributable artifact that contains **dialect-specif
 - per-resource relational models (tables/columns/paths) needed by generic flatten/reconstitute
 - per-resource, dialect-specific SQL plans and projection metadata (write/read/reference-identity/descriptor-URI)
 
+This is an explicit runtime projection, not a serialization of relational-model derivation. It includes final FK actions
+and reference lineage-anchor bindings, but excludes derivation-local SQL Server classifier modes and carrier witnesses.
+
 The consumer (DMS runtime) MUST be able to execute schema-dependent relational work for that effective schema **without compiling** models or SQL from `ApiSchema.json` at runtime (but Core may still load `ApiSchema.json` for validation and identity extraction).
 
 ---
@@ -135,6 +138,8 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
   - within `document_reference_bindings[*]`: `identity_bindings` preserve ApiSchema `referenceJsonPaths` order
     (identity field order); duplicate `reference_json_path` values are allowed only within one binding and represent a
     same-site flattened reference group
+  - within `document_reference_bindings[*]`: `lineage_anchor_bindings` preserve the target's intrinsic structural
+    reference order and MUST NOT be resorted
   - within `key_unification_classes[*]`:
     - `member_path_columns` order is semantically significant and MUST NOT be sorted
     - producers MUST emit the list exactly as derived (used for deterministic write-time coalescing)
@@ -256,6 +261,8 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
        - `descriptor_edge_sources[*].descriptor_value_path` has no duplicates
        - `document_reference_bindings[*].identity_bindings[*].reference_json_path` MAY repeat only within one
          `document_reference_binding` and only to represent one same-site flattened reference group
+       - `document_reference_bindings[*].lineage_anchor_bindings[*].target_identity_reference_path` is distinct within
+         the binding, and each anchor column exists as writable storage on the binding table
      - all referenced tables/columns/bindings referenced by plans exist in the model
      - write/query binding invariants:
        - each `column_bindings[*].parameter_name` is present and unique case-insensitively within a statement
@@ -274,6 +281,7 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
 7. Reconstruct executor-facing contracts deterministically from normalized payload values:
    - resolve table identities by `(schema, name)` and columns by `DbColumnName.value` (within each resolved table)
    - compile canonical JsonPath strings into `JsonPathExpression` runtime objects
+   - reconstruct `ReferenceLineageAnchorBinding` in payload order; do not derive lineage from FK column names
    - derive keyset temp-table contract from dialect constants (`page`/`#page`, column `DocumentId`)
    - preserve authoritative payload order for all ordering-sensitive collections (no runtime resorting)
    - bind parameters by explicit metadata (`column_bindings`, query parameter inventories), never by SQL-text parsing
@@ -292,6 +300,7 @@ During step 7, consumers MUST fail fast with deterministic errors when any recon
 - duplicate canonical paths (`reference_object_path`, `descriptor_value_path`)
 - duplicate `reference_json_path` values in `read_plan.reference_identity_projection_table_plans[*].bindings_in_order[*].identity_field_ordinals_in_order`
 - duplicate `document_reference_bindings[*].identity_bindings[*].reference_json_path` values that are not confined to one same-site flattened reference group
+- duplicate lineage `target_identity_reference_path` values or unknown/non-writable lineage anchor columns
 - duplicate/ambiguous parameter names where uniqueness is required
 - unsupported dialect values when deriving keyset table constants
 
@@ -558,11 +567,17 @@ message DocumentReferenceBinding {
   DbColumnName fk_column = 4;                            // "..._DocumentId"
   QualifiedResourceName target_resource = 5;
   repeated ReferenceIdentityBinding identity_bindings = 6; // identity field order; duplicate reference_json_path allowed only for same-site flattened reference groups
+  repeated ReferenceLineageAnchorBinding lineage_anchor_bindings = 7; // target intrinsic structural reference order
 }
 
 message ReferenceIdentityBinding {
   string reference_json_path = 1;                        // where to write in the referencing document
   DbColumnName column = 2;                               // physical column holding the identity value
+}
+
+message ReferenceLineageAnchorBinding {
+  string target_identity_reference_path = 1;               // intrinsic identity-contributing reference path on target
+  DbColumnName column = 2;                                 // local writable stable-DocumentId storage column
 }
 
 message DescriptorEdgeSource {
@@ -775,7 +790,8 @@ Key unification is part of `RelationalMappingVersion = v1` (not a `PackFormatVer
 - A v1 pack that omits required storage/key-unification metadata is invalid; consumers do not infer an older mode.
 - Future post-v1 breaking changes require an explicit new mapping version.
 
-Repository status note (non-normative): the pack payload is not yet implemented, so DMS-1129 adds no proof, solver,
+Repository status note (non-normative): the pack payload is not yet implemented. DMS-1129 adds only the lineage-anchor
+binding needed to reconstruct the runtime complete-vector projection; it adds no classifier mode, proof, solver,
 semantic-hash, or generalized deferred-reference pack protocol.
 
 ---

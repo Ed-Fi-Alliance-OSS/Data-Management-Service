@@ -236,7 +236,6 @@ classDiagram
         IReadOnlyList~DbColumnName~ TargetColumns
         ReferentialAction OnDelete
         ReferentialAction OnUpdate
-        SqlServerCascadeMode? SqlServerMode
     }
 
     class AllOrNoneNullability {
@@ -251,19 +250,11 @@ classDiagram
         Cascade
     }
 
-    class SqlServerCascadeMode {
-        <<enumeration>>
-        NativeCascade
-        CoveredNoAction
-        ImmutableNoAction
-    }
-
     TableConstraint <|-- Unique
     TableConstraint <|-- ForeignKey
     TableConstraint <|-- AllOrNoneNullability
     ForeignKey --> ReferentialAction : OnDelete
     ForeignKey --> ReferentialAction : OnUpdate
-    ForeignKey --> SqlServerCascadeMode : SQL Server document refs only
 ```
 
 | Constraint type | Purpose | Example |
@@ -627,7 +618,7 @@ flowchart LR
     subgraph P7["Pass 7: Reference Constraints"]
         direction TB
         P7A["Derive complete-vector FKs to<br/>target reference-key UNIQUE"]
-        P7B["Assign fixed PostgreSQL actions<br/>or globally select SQL Server actions<br/>(SqlServerCascadeMode)"]
+        P7B["Assign fixed PostgreSQL actions<br/>or globally select SQL Server actions<br/>(final OnUpdate)"]
         P7C["Derive all-or-none CHECKs over<br/>public aliases + lineage anchors"]
         P7A --> P7B --> P7C
     end

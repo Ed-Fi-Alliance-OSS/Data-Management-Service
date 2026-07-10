@@ -1335,13 +1335,6 @@ public sealed record DbColumnModel(
     ColumnStorage Storage
 );
 
-public enum SqlServerCascadeMode
-{
-    NativeCascade,
-    CoveredNoAction,
-    ImmutableNoAction,
-}
-
 /// <summary>
 /// Logical constraints that map to physical database constraints.
 /// Names are deterministic so that constraint-violation errors can be mapped back to API concepts.
@@ -1355,10 +1348,7 @@ public abstract record TableConstraint
         DbTableName TargetTable,
         IReadOnlyList<DbColumnName> TargetColumns,
         ReferentialAction OnDelete,
-        ReferentialAction OnUpdate,
-        // Required exactly for SQL Server document-reference FKs. Null for PostgreSQL and for parent,
-        // descriptor, core, and other non-document-reference FKs on either dialect.
-        SqlServerCascadeMode? SqlServerMode = null
+        ReferentialAction OnUpdate
     ) : TableConstraint;
 }
 
