@@ -39,7 +39,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _writeSession = A.Fake<IRelationalWriteSession>();
         _sut = new RelationalCurrentEtagPreconditionChecker(
             _currentStateLoader,
-            new ServedEtagComposer(),
             NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
         );
 
@@ -252,10 +251,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         );
     }
 
-    // Recomposes the etag the checker is expected to produce for the current row: same schema epoch,
-    // JSON format, links-on, and (by default) no profile. linkFlag/format/profile are all projected out
-    // of the If-Match comparison (amended 2026-07-04); profileName still varies the composed served tag
-    // but does not affect the match.
+    // Composes a client-facing etag for the current row. The checker evaluates only its ContentVersion
+    // and schemaEpoch projection, so format, profile, and link differences do not affect the match.
     private static string CurrentComposedEtag(
         SqlDialect dialect,
         long contentVersion,

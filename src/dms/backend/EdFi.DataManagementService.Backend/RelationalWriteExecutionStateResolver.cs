@@ -15,7 +15,6 @@ internal sealed class RelationalWriteExecutionStateResolver(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalCurrentEtagPreconditionChecker currentEtagPreconditionChecker,
-    IServedEtagComposer servedEtagComposer,
     ILogger<RelationalWriteExecutionStateResolver> logger
 )
 {
@@ -28,9 +27,6 @@ internal sealed class RelationalWriteExecutionStateResolver(
     private readonly IRelationalCurrentEtagPreconditionChecker _currentEtagPreconditionChecker =
         currentEtagPreconditionChecker
         ?? throw new ArgumentNullException(nameof(currentEtagPreconditionChecker));
-
-    private readonly IServedEtagComposer _servedEtagComposer =
-        servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
 
     private readonly ILogger<RelationalWriteExecutionStateResolver> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
@@ -189,25 +185,12 @@ internal sealed class RelationalWriteExecutionStateResolver(
             };
         }
 
-        // If-Match / If-None-Match compare the state-significant projection of the composed etag
-        // (ContentVersion, schemaEpoch). format, linkFlag, and profileCode are projected out (profileCode
-        // as of the 2026-07-04 ADR amendment), so the values passed for them here are not significant.
-        // EtagPreconditionEvaluator short-circuits a wildcard precondition to the existence answer because
-        // currentState being non-null means the target row exists.
-        var currentEtag = _servedEtagComposer.Compose(
-            new ServedEtagContext(
-                request.MappingSet.Key.EffectiveSchemaHash,
-                ResponseFormat.Json,
-                request.ProfileWriteContext?.ProfileName,
-                LinksEnabled: true,
-                currentState.DocumentMetadata.ContentVersion
-            )
-        );
-
-        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
+        // Write preconditions compare ContentVersion and schemaEpoch only. Evaluate that state projection
+        // directly; representation-specific format, profile, and link inputs are intentionally absent.
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfiedByCurrentState(
             request.WritePrecondition,
-            targetExists: true,
-            currentEtag
+            currentState.DocumentMetadata.ContentVersion,
+            request.MappingSet.Key.EffectiveSchemaHash
         );
 
         if (_logger.IsEnabled(LogLevel.Debug))
@@ -215,9 +198,9 @@ internal sealed class RelationalWriteExecutionStateResolver(
             var existing = (RelationalWriteTargetContext.ExistingDocument)request.TargetContext;
             _logger.LogDebug(
                 "Deferred etag precondition for document {DocumentId}: "
-                    + "currentTag={CurrentTag}, satisfied={IsSatisfied}",
+                    + "contentVersion={ContentVersion}, satisfied={IsSatisfied}",
                 existing.DocumentId,
-                currentEtag,
+                currentState.DocumentMetadata.ContentVersion,
                 isSatisfied
             );
         }
@@ -335,8 +318,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                         request.MappingSet,
                         request.ExistingDocumentReadPlan!,
                         targetContext,
-                        request.WritePrecondition,
-                        request.ProfileWriteContext?.ProfileName
+                        request.WritePrecondition
                     ),
                     writeSession,
                     cancellationToken

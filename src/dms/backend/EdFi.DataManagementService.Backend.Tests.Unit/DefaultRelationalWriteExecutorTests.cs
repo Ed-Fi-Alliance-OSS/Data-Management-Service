@@ -2643,7 +2643,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_maps_a_losing_IfNoneMatch_wildcard_create_race_to_precondition_failed()
+    public async Task It_maps_a_losing_IfNoneMatch_wildcard_create_race_to_a_retryable_write_conflict()
     {
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
@@ -2668,11 +2668,7 @@ public class Given_Default_Relational_Write_Executor
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpsertFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                )
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
             );
         _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);

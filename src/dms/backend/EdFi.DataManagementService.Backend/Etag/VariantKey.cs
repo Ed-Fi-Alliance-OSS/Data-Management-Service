@@ -100,7 +100,6 @@ public static class VariantKeyFactory
         bool linksEnabled
     )
     {
-        ArgumentException.ThrowIfNullOrEmpty(effectiveSchemaHash);
         ArgumentException.ThrowIfNullOrEmpty(profileCode);
 
         var schemaEpoch = SchemaEpoch(effectiveSchemaHash);
@@ -112,8 +111,9 @@ public static class VariantKeyFactory
 
     // First 8 lowercase hex characters of the in-force EffectiveSchemaHash (already lowercase hex,
     // per EffectiveSchemaHashProvider; lowercased defensively).
-    private static string SchemaEpoch(string effectiveSchemaHash)
+    internal static string SchemaEpoch(string effectiveSchemaHash)
     {
+        ArgumentException.ThrowIfNullOrEmpty(effectiveSchemaHash);
         var lower = effectiveSchemaHash.ToLowerInvariant();
         return lower.Length <= 8 ? lower : lower[..8];
     }

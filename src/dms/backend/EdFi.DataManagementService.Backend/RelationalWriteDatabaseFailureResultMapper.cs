@@ -70,16 +70,10 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
         return resolution switch
         {
-            RelationalWriteConstraintResolution.RootNaturalKeyUnique
-                when IsWildcardIfNoneMatchCreate(request) =>
-                RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                    request.OperationKind,
-                    ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                ),
-            RelationalWriteConstraintResolution.RootNaturalKeyUnique
-                when IsSpecificIfNoneMatchCreate(request) => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpsertFailureWriteConflict()
-            ),
+            // Re-run the whole POST after a guarded create race so the winning representation is
+            // resolved and subjected to stored-value authorization before If-None-Match is evaluated.
+            RelationalWriteConstraintResolution.RootNaturalKeyUnique when IsIfNoneMatchCreate(request) =>
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict()),
             RelationalWriteConstraintResolution.RootNaturalKeyUnique
             or RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique =>
                 BuildIdentityConflictFailureResult(request),
@@ -102,15 +96,10 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         };
     }
 
-    private static bool IsWildcardIfNoneMatchCreate(RelationalWriteExecutorRequest request) =>
+    private static bool IsIfNoneMatchCreate(RelationalWriteExecutorRequest request) =>
         request.OperationKind == RelationalWriteOperationKind.Post
         && request.TargetContext is RelationalWriteTargetContext.CreateNew
-        && request.WritePrecondition is WritePrecondition.IfNoneMatch { IsWildcard: true };
-
-    private static bool IsSpecificIfNoneMatchCreate(RelationalWriteExecutorRequest request) =>
-        request.OperationKind == RelationalWriteOperationKind.Post
-        && request.TargetContext is RelationalWriteTargetContext.CreateNew
-        && request.WritePrecondition is WritePrecondition.IfNoneMatch { IsWildcard: false };
+        && request.WritePrecondition is WritePrecondition.IfNoneMatch;
 
     private static RelationalWriteExecutorResult BuildIdentityConflictFailureResult(
         RelationalWriteExecutorRequest request

@@ -38,6 +38,19 @@ public class Given_EtagPreconditionEvaluator
     }
 
     [Test]
+    public void It_satisfies_IfMatch_directly_from_current_state_when_projection_matches()
+    {
+        EtagPreconditionEvaluator
+            .IsSatisfiedByCurrentState(
+                new WritePrecondition.IfMatch(MatchingClientTag),
+                contentVersion: 5,
+                effectiveSchemaHash: "a1b2c3d4ffffffff"
+            )
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
     public void It_does_not_satisfy_IfMatch_when_projection_differs()
     {
         EtagPreconditionEvaluator

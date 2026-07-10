@@ -98,7 +98,6 @@ internal sealed class DescriptorWriteHandler(
         );
 
         IRelationalWriteSession? writeSession = null;
-        var createNewTargetSelected = false;
 
         try
         {
@@ -185,7 +184,6 @@ internal sealed class DescriptorWriteHandler(
                     // proposed namespace check already ran inside the resolve).
                     if (request.WritePrecondition is WritePrecondition.IfNoneMatch)
                     {
-                        createNewTargetSelected = true;
                         var insertResult = await InsertDescriptorAsync(
                                 request,
                                 body,
@@ -271,13 +269,10 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
-            return
-                createNewTargetSelected
-                && request.WritePrecondition is WritePrecondition.IfNoneMatch { IsWildcard: true }
-                ? new UpsertResult.UpsertFailureETagMisMatch(
-                    ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                )
-                : new UpsertResult.UpsertFailureWriteConflict();
+            // The classifier does not identify which unique constraint failed, so the violation does not
+            // prove that the guarded target now exists. Re-run the whole POST to resolve the actual target
+            // and, when one exists, authorize it before evaluating the precondition.
+            return new UpsertResult.UpsertFailureWriteConflict();
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
         {

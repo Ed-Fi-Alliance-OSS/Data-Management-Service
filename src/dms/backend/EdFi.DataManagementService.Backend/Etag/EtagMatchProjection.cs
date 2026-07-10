@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Backend.Etag;
@@ -53,4 +54,15 @@ public static class EtagMatchProjection
         // ContentVersion with the state-significant component. Format/profileCode/linkFlag are dropped.
         return EtagValue.Compose(contentVersion, components.IfMatchSignificant());
     }
+
+    /// <summary>
+    /// Composes the state-significant projection directly from persisted state, without first creating
+    /// a representation-specific served etag whose format, profile, and link components would immediately
+    /// be discarded.
+    /// </summary>
+    public static string OfCurrentState(long contentVersion, string effectiveSchemaHash) =>
+        EtagValue.Compose(
+            contentVersion.ToString(CultureInfo.InvariantCulture),
+            VariantKeyFactory.SchemaEpoch(effectiveSchemaHash)
+        );
 }

@@ -14,6 +14,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Etag;
 public class Given_EtagMatchProjection
 {
     [Test]
+    public void It_composes_the_current_state_projection_without_representation_components()
+    {
+        EtagMatchProjection.OfCurrentState(5, "A1B2C3D4FFFFFFFF").Should().Be("5-a1b2c3d4");
+    }
+
+    [Test]
     public void It_drops_format_profile_and_linkFlag_keeping_version_and_epoch()
     {
         EtagMatchProjection.Of("5-a1b2c3d4.j._.l").Should().Be("5-a1b2c3d4");

@@ -176,7 +176,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     }
 
     [Test]
-    public void It_maps_wildcard_IfNoneMatch_root_create_races_to_precondition_failures()
+    public void It_maps_wildcard_IfNoneMatch_root_create_races_to_retryable_write_conflicts()
     {
         ConfigureRootNaturalKeyUniqueViolation();
         var request = CreateRequest(
@@ -190,11 +190,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpsertFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                )
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
             );
     }
 

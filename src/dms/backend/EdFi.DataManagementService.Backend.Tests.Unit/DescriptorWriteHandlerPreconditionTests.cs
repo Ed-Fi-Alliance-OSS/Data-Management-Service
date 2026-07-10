@@ -981,14 +981,14 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
-    public async Task It_returns_precondition_failed_when_a_concurrent_descriptor_create_wins_an_IfNoneMatch_wildcard_race()
+    public async Task It_returns_a_retryable_write_conflict_for_an_unclassified_unique_failure_under_IfNoneMatch_wildcard()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([]);
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
             command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-                ? new StubDbException("concurrent descriptor unique violation")
+                ? new StubDbException("unclassified descriptor unique violation")
                 : null;
         var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
         A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);
@@ -1000,11 +1000,7 @@ public class Given_Descriptor_Write_Preconditions
 
         var result = await sut.HandlePostAsync(request);
 
-        result
-            .Should()
-            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
+        result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);

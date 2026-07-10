@@ -10,20 +10,38 @@ namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
 /// Decides whether a write may proceed under an HTTP conditional precondition, given whether the
-/// target currently exists and (when it does) its composed served etag. If-Match and If-None-Match
-/// compare the same state-significant projection (ContentVersion, schemaEpoch); only the polarity
-/// differs. Reads use full-tag comparison and are handled in the read handler, not here.
+/// target currently exists and (when it does) its state-significant ETag projection. If-Match and
+/// If-None-Match compare the same projection (ContentVersion, schemaEpoch); only the polarity differs.
+/// Reads use full-tag comparison and are handled in the read handler, not here.
 /// </summary>
 internal static class EtagPreconditionEvaluator
 {
     public static bool IsSatisfied(WritePrecondition precondition, bool targetExists, string? currentEtag) =>
+        IsSatisfiedAgainstProjection(precondition, targetExists, EtagMatchProjection.Of(currentEtag));
+
+    public static bool IsSatisfiedByCurrentState(
+        WritePrecondition precondition,
+        long contentVersion,
+        string effectiveSchemaHash
+    ) =>
+        IsSatisfiedAgainstProjection(
+            precondition,
+            targetExists: true,
+            EtagMatchProjection.OfCurrentState(contentVersion, effectiveSchemaHash)
+        );
+
+    private static bool IsSatisfiedAgainstProjection(
+        WritePrecondition precondition,
+        bool targetExists,
+        string currentProjection
+    ) =>
         precondition switch
         {
             WritePrecondition.None => true,
             WritePrecondition.IfMatch m => targetExists
-                && (m.IsWildcard || ProjectionEquals(m.Value, currentEtag)),
+                && (m.IsWildcard || ProjectionEquals(m.Value, currentProjection)),
             WritePrecondition.IfNoneMatch n => !targetExists
-                || (!n.IsWildcard && !n.Values.Any(v => ProjectionEquals(v, currentEtag))),
+                || (!n.IsWildcard && !n.Values.Any(v => ProjectionEquals(v, currentProjection))),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(precondition),
                 precondition,
@@ -43,10 +61,6 @@ internal static class EtagPreconditionEvaluator
             ),
         };
 
-    private static bool ProjectionEquals(string clientTag, string? currentEtag) =>
-        string.Equals(
-            EtagMatchProjection.Of(clientTag),
-            EtagMatchProjection.Of(currentEtag),
-            StringComparison.Ordinal
-        );
+    private static bool ProjectionEquals(string clientTag, string currentProjection) =>
+        string.Equals(EtagMatchProjection.Of(clientTag), currentProjection, StringComparison.Ordinal);
 }

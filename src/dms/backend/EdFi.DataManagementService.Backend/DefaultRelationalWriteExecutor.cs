@@ -60,7 +60,6 @@ internal sealed class DefaultRelationalWriteExecutor(
         targetLookupResolver,
         currentStateLoader,
         currentEtagPreconditionChecker,
-        servedEtagComposer,
         (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<RelationalWriteExecutionStateResolver>()
     );
 
