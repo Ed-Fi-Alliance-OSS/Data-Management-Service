@@ -24,7 +24,7 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
   - `DeriveIndexInventoryPass`: applies FK index policy deterministically.
   - `DeriveTriggerInventoryPass`: derives trigger intent inventory (stamping, referential-identity, and abstract-identity
     maintenance triggers). SQL Server identity-value propagation is **not** a trigger — it is native `ON UPDATE CASCADE`
-    with globally selected exact-carrier `NO ACTION` edges that may safely break diamonds (see
+    with globally selected origin-aware carrier `NO ACTION` edges that may safely break diamonds (see
     `design-docs/mssql-cascading.md`); the retired
     `MssqlIdentityPropagationTrigger` fan-out is not emitted.
 
@@ -101,7 +101,7 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 - SQL Server identity-value propagation is **not** a trigger and produces no trigger intents. It is handled by
   foreign-key pruning in `ReferenceConstraintPass` / DDL generation (see `design-docs/mssql-cascading.md`):
   - SQL Server uses deterministic bounded global selection over full-vector physical FK candidates;
-  - exact-carrier `NO ACTION` edges may safely break diamonds; provider-independent validation rejects identity cycles;
+  - origin-aware carrier `NO ACTION` edges may safely break diamonds; provider-independent validation rejects identity cycles;
   - proved infeasibility and deterministic work-limit exhaustion are distinct failures; and
   - every FK keeps the complete vector.
   - the retired `MssqlIdentityPropagationTrigger` fan-out is **not** part of the trigger inventory.

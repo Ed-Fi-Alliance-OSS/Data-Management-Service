@@ -32,9 +32,10 @@ compatibility mode, legacy-schema interpretation, or migration.
    `NO ACTION` edges, and fails before DDL when no safe diamond assignment exists.
 6. SQL Server selection is global and may backtrack. Local first-fit pruning is not correct for overlapping diamonds or
    parallel conflicts.
-7. Every covered `NO ACTION` edge has a structural carrier that starts at the covered edge's `CascadeSourceKey` and
-   reaches the same receiver row with the same complete-vector mapping; covered-edge presence implies carrier presence,
-   and the route propagates natively in the same SQL statement.
+7. Every covered `NO ACTION` edge is safe for every `InitiatingOriginFact` that can update its referenced target key. For
+   each such fact, a retained native route from the same initiating root row reaches the same receiver row and carries
+   exactly the target-vector columns affected by that origin; covered-edge presence implies both source-update and carrier
+   presence, and both routes execute in the same SQL statement.
 8. The runtime covers every independently writable primitive component, every non-empty primitive subset, one or more
    reference-backed replacements, multiple reference replacements, and mixed primitive/reference changes.
 9. The finalized relational model, not the DDL emitter, owns the chosen FK actions.
@@ -42,8 +43,8 @@ compatibility mode, legacy-schema interpretation, or migration.
     members in the effective schema is transitively mutable.
 11. Topology legality does not prove value-flow safety. Before either provider assigns actions, reject any canonical
     receiver column that multiple mutable FKs can write unless shared-receiver validation succeeds independently for
-    every possible `InitiatingOriginFact`, with every writer reached under that fact in the same database statement and
-    carrying the same root-key value into that receiver column.
+    every possible `InitiatingOriginFact`, with every writer reached from the same initiating root row in the same
+    database statement and carrying the same root storage column into that receiver column.
 
 ### Non-goals
 
@@ -226,6 +227,10 @@ while retaining every contributing logical site's role, provenance, and presence
 the physical-row and optional-reference atoms used by the structural carrier relation. Parallel candidates remain
 distinct edges only when at least one physical identity component above differs.
 
+Derivation-local provenance also supplies the possible `InitiatingOriginFact` and origin-flow states used after
+deduplication. Those facts, mappings, correlations, and statement boundaries are not candidate identity and never split
+an otherwise-identical physical constraint.
+
 Internal equality and ordering use structural records and ordinal comparers. A durable hash is added only if a concrete
 artifact consumer later needs correlation outside the derivation process.
 
@@ -273,10 +278,10 @@ DMS-1258 must reproduce these counts from implemented v2 candidates and prove th
 all-native SQL Server fast path without entering backtracking.
 
 Before implementation begins, update the DMS-1258 delivery description to this contract. It must require the
-provider-independent shared-receiver validation, on-demand stable-order carrier DFS, native-first first-feasible search,
-and the effort accounting in Section 6. Remove requirements for precomputed carrier routes, fewest-prunes optimization,
-and the superseded work-unit categories. DMS-1258 is not an alternate algorithm specification; this document is
-authoritative.
+provider-independent shared-receiver validation, on-demand stable-order origin-aware carrier DFS, native-first
+first-feasible search, and the effort accounting in Section 6. Remove requirements for immediate-target-only carriers,
+precomputed carrier routes, fewest-prunes optimization, and the superseded work-unit categories. DMS-1258 is not an
+alternate algorithm specification; this document is authoritative.
 
 ### Shared canonical receiver value-flow validation
 
@@ -289,25 +294,32 @@ Microsoft documents the single-path cascade-tree restriction separately from the
 reject changes: [MSSQLSERVER_1785](https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1785-database-engine-error?view=sql-server-ver17)
 and [Primary and foreign key constraints](https://learn.microsoft.com/en-us/sql/relational-databases/tables/primary-and-foreign-key-constraints?view=sql-server-ver17).
 
-An `InitiatingOriginFact` is the tuple `(directly mutable root table, ordered root key, statement boundary)` seeded by one
-directly authorized identity mutation. It is used only by shared-receiver value-flow validation. The validation is
-quantified independently over every possible `InitiatingOriginFact`; it must not substitute a common upstream fact for a
-target's own fact when that target is both directly and transitively mutable. The fact identifies the mutation scope; it
-does not by itself prove that two paths carry the same root-key component or value.
+An `InitiatingOriginFact` is the tuple `(directly mutable root table, ordered root propagation key, root-row correlation,
+statement boundary)` seeded by one directly authorized identity mutation. `Root-row correlation` is structural: paths
+share it only when canonical metadata proves they originate at the same physical root row, using the same stable
+`DocumentId` or the same complete declared row key. Equal current values, the same root table/key shape, and the same
+statement do not prove the same fact.
+
+The fact is shared derivation-local input to value-flow and covered-edge validation. Route state composes the fact's root
+columns, root-row correlation, and presence atoms through native edges. Validation is quantified independently over every
+possible fact; it must not substitute a common upstream fact for a target's own fact when that target is both directly and
+transitively mutable. A target's directly authorized identity update therefore contributes its own fact even when an
+upstream fact can also reach it.
 
 After canonical storage mapping and effective mutability are known, group mutable physical FK candidates by writable
 receiver column. For each group with more than one candidate, enumerate every possible `InitiatingOriginFact` that can
 reach any candidate in the group. The group is valid only when derivation proves, for every such fact, that all writers:
 
-1. are reached from that same directly mutable root table and ordered root key; and
+1. are reached from the same physical root row under that fact;
 2. compose the same root storage column through their native routes into the grouped receiver column; and
 3. propagate to the receiver as part of the same initiating database statement.
 
 Derive these facts from the same identity-mutability graph. Native cascades preserve an `InitiatingOriginFact`, while
 trigger maintenance starts a new statement boundary. For every fact that can reach any candidate in the shared-column
-group, every candidate must have a native route carrying the same root storage column to the receiver under that same
-fact. A missing candidate route, a different composed source-column mapping, a different root key, or a crossed statement
-boundary fails validation. Do not reuse SQL Server's backtracking classifier for this check.
+group, every candidate must have a native route from the same correlated root row carrying the same root storage column to
+the receiver under that fact. A missing candidate route, different root-row correlation, different composed source-column
+mapping, different root key, or crossed statement boundary fails validation. Do not reuse SQL Server's backtracking
+classifier for this check.
 
 Same fact and statement are insufficient without source-column equality. For example, let `R(P, Q, DocumentId)` be a
 mutable root and let one receiver hold `FK1 (X, Y, D1) -> R(P, Q, DocumentId)` and
@@ -315,11 +327,17 @@ mutable root and let one receiver hold `FK1 (X, Y, D1) -> R(P, Q, DocumentId)` a
 `FK2` maps `Q` to `X`. When `P = Q` initially and only `P` changes, no final `X` can satisfy both FKs. This mapping fails
 provider-independent validation before PostgreSQL action assignment or SQL Server selection.
 
-Two paths do not share an `InitiatingOriginFact` merely because they have equal current values, logical ancestry, or
-naming. A target with its own supported identity update contributes its own fact, even if it is also transitively mutable
-from a common upstream target. Concrete-to-abstract identity maintenance does not satisfy the same-statement rule: the
-abstract table is updated by an `AFTER` trigger in a later DML statement. Apply the validation to concrete/concrete,
-concrete/abstract, and abstract/abstract candidate pairs alike.
+The same root table, source column, and statement are also insufficient without root-row correlation. Let
+`R(P, Q, DocumentId)` contain two rows whose `P` values are equal but whose `Q` and `DocumentId` values differ. If one
+receiver path derives `X` from the first row and another derives the same `X` from the second, changing only the first
+row's `P` updates one path and immediately invalidates the other full FK. Those paths have distinct
+`InitiatingOriginFact` values and fail validation even though both compose `R.P` to `X`.
+
+Two paths do not share an `InitiatingOriginFact` merely because they have equal current values, the same root resource,
+logical ancestry, or naming. A target with its own supported identity update contributes its own fact, even if it is also
+transitively mutable from a common upstream target. Concrete-to-abstract identity maintenance does not satisfy the
+same-statement rule: the abstract table is updated by an `AFTER` trigger in a later DML statement. Apply the validation to
+concrete/concrete, concrete/abstract, and abstract/abstract candidate pairs alike.
 
 The initial implementation fails the mapping as `ConflictingUnifiedCascadeWritesNotSupported`; it does not split a
 previously unified column or defer constraint checking. This validation is provider-independent and runs before the
@@ -357,7 +375,7 @@ Parallel candidates remain parallel edges. Fixed edges participate in cycle vali
 conflict-core derivation, and carrier reachability. They are never silently ignored or converted to decision edges.
 Every graph edge exposes its ordered target/local FK column pairs. A fixed edge may serve as part of a carrier only when
 derivation can also establish the required row-correlation and presence metadata; otherwise it remains in legality checks
-but is ineligible during exact-carrier traversal.
+but is ineligible during origin-aware carrier traversal.
 
 Provider-independent validation guarantees the all-native physical cascade graph is acyclic. The retained graph of fixed
 edges plus `NativeCascade` decision edges must additionally contain at most one directed path between every ordered pair
@@ -367,46 +385,52 @@ Raw incoming-edge count greater than one is not a multiple-path test. Independen
 are topology-legal. They reach this classifier only if the provider-independent shared-receiver validation has also
 proved their value flows safe; independent parents that write the same canonical receiver column have already failed.
 
-### Finite structural carrier relation
+### Finite origin-aware structural carrier relation
 
-For a mutable candidate edge `covered`, its `CascadeSourceKey` is the tuple `(referenced target table, ordered target
-propagation key)`. This term is used only by carrier validation and is distinct from `InitiatingOriginFact`: every carrier
-DFS starts at the covered FK's `CascadeSourceKey`, never at an upstream directly mutable root. A carrier is a directed path
-from that source table/key to the covered edge's receiver table/row `R` through retained fixed edges and other
-`NativeCascade` decision edges. The route is eligible only when all of these structural checks pass:
+For a mutable candidate edge `covered` from referenced target `S` to receiver row `R`, enumerate every
+`InitiatingOriginFact` whose native flow can update at least one column of `S`'s propagation key. For each fact, identify a
+retained native **source-update route** from that fact's root row to `S`; the route is zero-hop when `S` itself is directly
+mutable. Then find a retained native **carrier route** from the same fact and correlated root row to `R`, excluding
+`covered`. The edge is coverable only when every possible source-update flow has such a carrier. This admits a sibling
+diamond such as `Root -> B -> Receiver` and `Root -> C -> Receiver`, while a direct identity update of `C` still requires
+an alternate route beginning at `C`.
 
-1. **Same cascade source key.** The route starts at `covered`'s `CascadeSourceKey`. Table reachability alone is
+An origin-aware carrier is eligible only when all of these structural checks pass:
+
+1. **Same initiating fact and root row.** The source-update and carrier routes start from the same
+   `InitiatingOriginFact`, including identical root-row correlation. Common root table/key shape or equal current values is
    insufficient.
-2. **Same receiver row.** The route terminates at the same physical receiver table and the composed row-correlation
-   mapping is identical to `covered`'s declared receiver-row identity. Correlation must use the same stable `DocumentId`
-   or the same complete declared row key; common ancestry is insufficient.
-3. **Identical complete-vector mapping.** Compose each path edge's ordered target-to-local column pairs and project the
-   composition to the columns originating in `covered`'s target vector. The result must equal `covered`'s complete
-   ordered target-to-receiver column mapping exactly, including public values, every lineage anchor, and terminal target
-   `DocumentId`; no covered receiver column may have a competing source. A route may carry unrelated columns in addition
-   to this identical mapping.
+2. **Same receiver row.** Compose the source-update route with `covered`. The carrier must terminate at the same physical
+   receiver table and row, with identical correlation through the same stable `DocumentId` or complete declared row key.
+3. **Identical affected-vector mapping.** Compose the origin columns through the source-update route and then `covered`.
+   Project to the columns of `S`'s target vector that the fact can change. The carrier's origin-to-receiver composition
+   must equal that projected mapping exactly; no affected receiver column may have a competing source. Columns of `S`'s
+   vector that the fact cannot change need no redundant write. For a directly mutable `S`, the fact includes every
+   independently writable primitive component and every atomic reference vector, so this equality covers their arbitrary
+   supported combinations.
 4. **Presence implication.** Candidate derivation normalizes presence to a conjunction of canonical structural atoms:
    physical-row presence identified by its correlation key and optional-reference presence identified by its stored
-   presence column. Required references add no atom. For every logical site retained on the deduplicated `covered`
-   candidate, the union of route atoms must be a subset of the covered site's atoms. This finite set-containment rule is
-   the only implication rule; an implication requiring Boolean inference is not a carrier.
-5. **Native same-statement propagation.** Every edge on the selected route is either a fixed native cascade or a
-   `NativeCascade` decision edge. SQL Server therefore performs the complete write in the initiating statement. A trigger
-   or later DML statement is never a carrier.
+   presence column. Required references add no atom. For every logical site retained on deduplicated `covered`, the union
+   of source-update and carrier route atoms must be a subset of the covered site's atoms. This finite set-containment rule
+   is the only implication rule; an implication requiring Boolean inference is not a carrier.
+5. **Native same-statement propagation.** Every edge on both routes is either a fixed native cascade or a
+   `NativeCascade` decision edge under the fact's statement boundary. A trigger or later DML statement starts a different
+   fact and never supplies a carrier for the earlier statement.
 
-Candidate derivation records ordered column mappings, receiver-row correlation keys, and canonical presence atoms, so
-these checks are equality and finite set-membership operations. The classifier does not construct mutation powersets,
-symbolic origins, value formulas, or subset-composition proofs. Whole-vector mapping equality covers every primitive
-subset, and atomic reference-vector replacement composes across one or multiple reference changes. Those mutation forms
-remain required behavioral tests, not solver input.
+Candidate derivation records origin facts, ordered column mappings, row-correlation keys, and canonical presence atoms, so
+these checks are column composition, equality, and finite set-membership operations. The classifier does not construct
+mutation powersets, symbolic value formulas, or subset-composition proofs. One origin-column mapping covers arbitrary
+primitive subsets, and a direct reference replacement contributes its atomic complete-vector mapping. Those mutation
+forms remain required behavioral tests, not solver input.
 
-Do not enumerate or retain carrier routes. When validating a `CoveredNoAction` edge, run a stable-order DFS in the current
-retained graph, excluding the covered edge. Compose the source-key mapping, receiver-row correlation, and presence atoms
-in reusable scratch state while traversing, and restore that state when backtracking over an edge. Traversal is
-prefix-state-sensitive: a vertex reached through another prefix with a different composed mapping, row correlation, or
-presence-atom set must be visited and explored again. Do not use a global visited-vertex set or vertex-only memoization.
-Stop at the first route that passes every structural check; discard the scratch route after retaining only the final
-diagnostic witness. A graph can have exponentially many routes, so route lists are not derivation artifacts.
+Do not enumerate or retain carrier-route arrays. When validating a `CoveredNoAction` edge, traverse source-update and
+carrier routes on demand in stable order against the current retained graph, excluding the covered edge from the carrier.
+Compose origin-column mapping, row correlation, and presence atoms in reusable scratch state, and restore that state when
+backtracking over an edge. Traversal is prefix-state-sensitive: a vertex reached through another prefix with a different
+composed mapping, row correlation, or presence-atom set must be visited and explored again. Do not use a global
+visited-vertex set or vertex-only memoization. Stop at the first carrier for each source-update flow; discard scratch routes
+after retaining only the final diagnostic witness. A graph can have exponentially many routes, so route lists are not
+derivation artifacts.
 
 Reachability alone, common table ancestry, equality of old values, or success for one populated example does not satisfy
 the relation.
@@ -440,7 +464,8 @@ For every complete assignment:
 
 1. count paths in the retained DAG from each origin in structural order, capping each receiver count at two; reject the
    vector when any receiver obtains a second path; and
-2. for each `CoveredNoAction` edge in structural order, run the on-demand exact-carrier DFS against that retained graph.
+2. for each `CoveredNoAction` edge in structural order, run the on-demand origin-aware carrier traversal against that
+   retained graph for every applicable `InitiatingOriginFact` and source-update flow.
 
 Partial assignments may be pruned only when the duplicate-path or missing-carrier result is monotone under every
 completion.
@@ -483,15 +508,16 @@ Because the required result is first-feasible rather than minimum-prune, a valid
 For each `CoveredNoAction` edge, keep the smallest auditable carrier witness:
 
 - the structural pruned FK;
+- the applicable `InitiatingOriginFact` and source-update route;
 - the selected ordered native carrier route;
-- the covered edge's `CascadeSourceKey`;
+- the common correlated root row;
 - the common receiver-row correlation key;
-- the identical complete-vector column mapping; and
+- the identical affected-vector column mapping; and
 - the presence relationship.
 
-A failure witness names the tables, columns, candidates, applicable `InitiatingOriginFact` or `CascadeSourceKey`, and
-first failed structural check in deterministic order. Exhaustive proof trees, omission proofs, canonical hash protocols,
-and solver-state serialization are not public contracts.
+A failure witness names the tables, columns, candidates, applicable `InitiatingOriginFact`, source-update flow, and first
+failed structural check in deterministic order. Exhaustive proof trees, omission proofs, canonical hash protocols, and
+solver-state serialization are not public contracts.
 
 ## 7. Identity Cycles Are Unsupported
 
@@ -577,14 +603,15 @@ retargets, primitive plus retargets, and all writable groups together. These are
 not classifier search cases.
 
 SQL Server fixtures cover the stock all-native fast path, sole edges, independent parents with disjoint receiver storage,
-covered/uncovered and overlapping diamonds, parallel edges, fixed cascading edges, optional-carrier failure, no solution,
-deterministic work-limit exhaustion, and reversed-input determinism. Include a prefix-state-sensitive carrier fixture in
-which two structural prefixes converge on the same intermediate table with different composed mapping, correlation, or
-presence state and only the later prefix yields an eligible carrier. Provider-independent fixtures cover conflicting
-unified writes: independently mutable parents sharing one receiver column, including a concrete/abstract pair, fail as
+covered/uncovered direct-versus-indirect and sibling diamonds, overlapping diamonds, parallel edges, fixed cascading
+edges, optional-carrier failure, a directly mutable sibling that prevents coverage, no solution, deterministic work-limit
+exhaustion, and reversed-input determinism. Include a prefix-state-sensitive carrier fixture in which two structural
+prefixes converge on the same intermediate table with different composed mapping, correlation, or presence state and only
+the later prefix yields an eligible carrier. Provider-independent fixtures cover conflicting unified writes:
+independently mutable parents sharing one receiver column, including a concrete/abstract pair, fail as
 `ConflictingUnifiedCascadeWritesNotSupported` before either provider assigns actions or SQL Server takes the fast path;
-same-`InitiatingOriginFact`, same-source-column, same-statement writers remain valid. Include the crossed-key-position
-case above to prove that same-fact/same-statement writers with different source-column mappings fail.
+same-`InitiatingOriginFact`, same-root-row, same-source-column, same-statement writers remain valid. Include both the
+crossed-key-position case above and the same-root-table/source-column but different-root-row case to prove they fail.
 
 Provider/API fixtures cover errors 1785 and 547 for diamonds, ordinary reference-resolution failure, true retarget, stale
 version, rollback, hidden-profile-state preservation, stamping, referential-identity maintenance, change queries, and final
@@ -610,7 +637,7 @@ All slices are required before the finalized `v2` relational contract is complet
 | Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens; the focused provider probe covers the nine-column widest-byte case, not the 27-column widest-count case | Do not implement per-site minimal anchor closure; require the early DMS-1274 representative physical-storage gate before freezing `v2`, then retain DMS-1277 full-schema row/index and widest-count qualification. |
 | Identity-cycle boundary | Settled: unsupported | Reject deterministically before vector recursion or provider action assignment; add no cycle runtime protocol. |
 | Stock all-native topology | Static reconstruction reports 22/23 candidates and no conflicts for DS 5.2/TPDM | Reproduce from implemented v2 candidates and return before conflict-core search. |
-| Simple global search | Design-ready; implementation measurement open | Use on-demand exact-carrier checks and the 1,000,000-unit budget counting only decision assignments and edge visits; add minimum-prune optimization only from performance evidence. |
+| Simple global search | Design-ready; implementation measurement open | Use on-demand origin-aware carrier checks and the 1,000,000-unit budget counting only decision assignments and edge visits; add minimum-prune optimization only from performance evidence. |
 | Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions, target anchor-read records, and aligned local anchor columns; do not add classifier/proof/hash protocols. |
 
 ## Relationship to Legacy ODS
@@ -621,5 +648,5 @@ test is a converging diamond rather than a directed cycle.
 
 DMS does not copy that algorithm. It rejects genuine identity cycles, constructs storage-mapped physical candidates,
 rejects unsafe shared-column writers independently of topology, distinguishes safe independent parents from duplicate
-reachability, searches diamond action assignments globally, and fails SQL Server derivation instead of silently weakening
-referential integrity.
+reachability, validates both direct-versus-indirect and sibling diamonds against every initiating root-row flow, searches
+diamond action assignments globally, and fails SQL Server derivation instead of silently weakening referential integrity.

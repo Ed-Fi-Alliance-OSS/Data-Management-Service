@@ -65,7 +65,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 Identity updates can synchronously fan out to many rows because:
 - complete public/lineage vectors propagate into direct referrers through PostgreSQL fixed actions or SQL Server
-  globally selected native cascades and exact-carrier `NO ACTION` diamond cuts (see
+  globally selected native cascades and origin-aware carrier `NO ACTION` diamond cuts (see
   [mssql-cascading.md](mssql-cascading.md)), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
@@ -84,11 +84,12 @@ Mitigations / guidance:
 SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). DMS rejects identity
 cycles during provider-independent validation, then tries the complete physical all-native graph, including fixed cascade
 edges. Before either provider assigns actions, DMS also rejects multiple mutable FKs writing one canonical receiver
-column unless every writer under each `InitiatingOriginFact` composes the same root storage column into the receiver in
-the same initiating statement. Only a conflicting graph enters deterministic bounded conflict-core search. Independent
-parents with disjoint receiver storage remain legal; diamonds and parallel conflicts are action choices. A mutable edge
-may use full-vector `NO ACTION` only when an on-demand search finds a retained native route from the same
-`CascadeSourceKey` with the same receiver row, complete-vector mapping, and structurally implied presence. The native-first
+column unless every writer under each `InitiatingOriginFact` starts from the same correlated root row, composes the same
+root storage column into the receiver, and executes in the same initiating statement. Only a conflicting graph enters
+deterministic bounded conflict-core search. Independent parents with disjoint receiver storage remain legal; diamonds and
+parallel conflicts are action choices. A mutable edge may use full-vector `NO ACTION` only when every fact and native
+source-update flow that can change its target key has an on-demand retained native carrier from the same correlated root
+row to the same receiver row, with identical affected-vector mapping and structurally implied presence. The native-first
 selector returns the first valid deterministic assignment; minimum-prune
 optimization requires measured write-performance evidence. The classifier uses reusable linear-size state and a
 1,000,000-unit deterministic work budget that charges only decision assignments and directed-edge visits. Proved
@@ -96,7 +97,7 @@ infeasibility and work-limit exhaustion are distinct, and there is no reduced-FK
 [mssql-cascading.md](mssql-cascading.md).
 
 Risks:
-- extra derivation complexity (physical multigraph, exact carrier validation, deterministic bounded global selection),
+- extra derivation complexity (physical multigraph, origin-aware carrier validation, deterministic bounded global selection),
 - higher likelihood of engine-specific behavior and performance differences.
 - key unification can increase the chance of “multiple cascade paths”: shared canonical columns can participate in multiple composite FKs, creating multi-edge cascades.
 

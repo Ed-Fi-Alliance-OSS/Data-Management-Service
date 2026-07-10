@@ -30,7 +30,7 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   - absent optional paths MUST reconstitute as absent (`NULL` at the binding column), and
   - predicates against a per-path column MUST continue to imply that the path was present.
 - **Remain compatible with identity propagation** via composite FKs and dialect-specific propagation mechanics
-  (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond cuts; see
+  (PostgreSQL fixed actions; SQL Server global action selection with origin-aware carrier diamond cuts; see
   [mssql-cascading.md](mssql-cascading.md)).
 - **Support both PostgreSQL and SQL Server** with deterministic DDL generation.
 
@@ -78,7 +78,7 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
 Complete-vector FKs target public identity values, complete transitive lineage anchors, and target `DocumentId`. PostgreSQL assigns
-fixed actions mechanically. SQL Server globally selects actions and may use an exact-carrier `NO ACTION` edge to break a
+fixed actions mechanically. SQL Server globally selects actions and may use an origin-aware carrier `NO ACTION` edge to break a
 diamond; provider-independent validation rejects identity cycles. See [mssql-cascading.md](mssql-cascading.md).
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
@@ -362,7 +362,7 @@ Any consumer that needs a column for **DML/DDL that targets writable storage** M
 
 - Writes (flattening / parameter binding): write only storage columns.
 - Foreign key derivation + emission: define FKs only over storage columns.
-- Identity propagation (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond
+- Identity propagation (PostgreSQL fixed actions; SQL Server global action selection with origin-aware carrier diamond
   cuts; see [mssql-cascading.md](mssql-cascading.md)): update storage columns only.
 - FK-supporting index derivation: index the final FK column list after storage mapping and de-duplication.
 
@@ -1721,16 +1721,18 @@ Normative guidance:
   unification. This design exists specifically to avoid that failure mode.
 - Before provider action assignment, group mutable physical FK candidates by writable receiver column. Multiple writers
   are supported only when validation succeeds independently for every possible `InitiatingOriginFact`—directly mutable
-  root, ordered root key, and statement boundary—and every writer composes the same root storage column into the grouped
-  receiver column under that fact in the same initiating statement. Otherwise fail derivation as
-  `ConflictingUnifiedCascadeWritesNotSupported`. Same root key and statement are insufficient when writers map different
-  root-key components into one receiver column. The initial implementation does not split the unification class or require
-  deferred constraints.
+  root, ordered root propagation key, root-row correlation, and statement boundary—and every writer starts from the same
+  physical root row and composes the same root storage column into the grouped receiver column under that fact in the same
+  initiating statement. Otherwise fail derivation as `ConflictingUnifiedCascadeWritesNotSupported`. The same root
+  table/key shape, source column, and statement are insufficient when paths originate at different root rows; the same
+  root row and statement are insufficient when writers map different root-key components into one receiver column. The
+  initial implementation does not split the unification class or require deferred constraints.
 - Concrete/abstract pairs are subject to the same rule. Abstract identity maintenance occurs in an `AFTER` trigger's
   later DML statement, so it cannot prove same-statement propagation for a column also written through a concrete FK.
-- DDL verification MUST include a same-`InitiatingOriginFact`/same-source-column/same-statement fan-out that succeeds, a
-  crossed-key-position fan-out with the same fact and statement but different source-column mappings that fails, and
-  independent-parent and concrete/abstract shared-writer fixtures that fail provider-independent derivation.
+- DDL verification MUST include a same-`InitiatingOriginFact`/same-root-row/same-source-column/same-statement fan-out that
+  succeeds; a crossed-key-position fan-out with the same fact, row, and statement but different source-column mappings
+  that fails; a same-root-table/source-column/statement fan-out from different root rows that fails; and independent-parent
+  and concrete/abstract shared-writer fixtures that fail provider-independent derivation.
 
 #### SQL Server (foreign-key pruning; native cascade on eligible edges)
 
@@ -1758,20 +1760,22 @@ Normative rules:
 2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
    ancestor), not raw in-degree. Independent parents whose FKs write disjoint receiver columns stay
    `ON UPDATE CASCADE` and are never pruned. Independent mutable parents that share a writable receiver column fail the
-   provider-independent validation above. A candidate `NO ACTION` break for a diamond is admissible only when another
-   route starts at the covered FK's `CascadeSourceKey`—its referenced table and ordered target propagation key—and
-   reaches the same receiver row with an identical complete-vector column mapping, structural presence implication, and
-   native same-statement propagation. Candidate breaks are inputs to the deterministic bounded **global** selection
-   defined in [mssql-cascading.md](mssql-cascading.md), not local first-fit; overlapping diamonds and parallel conflicts
-   can share edges, so the winning breaks are chosen by global backtracking. Both survivor and pruned edges keep the
-   complete vector. Primitive/reference mutation combinations remain behavioral matrix tests, not classifier inputs.
+   provider-independent validation above. A candidate `NO ACTION` break for a diamond is admissible only when, for every
+   initiating fact and native source-update flow that can change the covered target key, another retained route starts at
+   the same correlated root row, reaches the same receiver row, composes the origin-affected target-vector columns
+   identically, has structurally implied presence, and propagates in the same statement. This admits the sibling diamond
+   described above; if a sibling is directly mutable, its own fact still requires a carrier beginning at that sibling.
+   Candidate breaks are inputs to the deterministic bounded **global** selection defined in
+   [mssql-cascading.md](mssql-cascading.md), not local first-fit; overlapping diamonds and parallel conflicts can share
+   edges, so the winning breaks are chosen by global backtracking. Both survivor and pruned edges keep the complete vector.
+   Primitive/reference mutation combinations remain behavioral matrix tests, not classifier inputs.
 3. Fail derivation only when bounded search proves no complete safe assignment; report deterministic work-limit
    exhaustion separately. There is no `DocumentId`-only FK and no identity-value propagation trigger.
 
-Because the pruned edge keeps its complete vector and an exact carrier supplies the same values in the same statement,
-the `NO ACTION` FK never observes a mismatch; see [mssql-cascading.md](mssql-cascading.md). If the two paths do **not**
-have an exact complete-vector carrier (an uncovered convergence), the graph is not representable on SQL Server and
-derivation fails fast rather than dropping a required cascade.
+Because the pruned edge keeps its complete vector and every possible source update has an origin-aware carrier supplying
+the affected values in the same statement, the `NO ACTION` FK never observes a mismatch; see
+[mssql-cascading.md](mssql-cascading.md). If any source-update flow lacks that carrier, the graph is not representable on
+SQL Server and derivation fails fast rather than dropping a required cascade.
 
 ### All-or-none nullability constraints
 
@@ -2298,9 +2302,10 @@ semantics, or cascade correctness.
     per-origin duplicate reachability, not raw in-degree; identity cycles have already been rejected,
   - independent parents with disjoint receiver storage keep `ON UPDATE CASCADE`; multiple mutable FKs sharing one
     writable receiver column must first pass validation for every possible `InitiatingOriginFact`, with every writer
-    reached under that fact, composing the same root storage column into the receiver, and propagating in the same
-    statement, or fail as `ConflictingUnifiedCascadeWritesNotSupported`,
-  - a mutable edge uses `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
+    reached from the same correlated root row under that fact, composing the same root storage column into the receiver,
+    and propagating in the same statement, or fail as `ConflictingUnifiedCascadeWritesNotSupported`,
+  - a mutable edge uses `ON UPDATE NO ACTION` only with origin-aware affected-vector carrier coverage for every fact and
+    source-update flow that can change its referenced target key,
   - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
     target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,
   - SQL Server reports proved no-solution separately from deterministic work-limit exhaustion.

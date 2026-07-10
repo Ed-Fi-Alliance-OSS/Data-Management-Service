@@ -22,7 +22,7 @@ The backend redesign needs resource-state-sensitive metadata:
 
 This redesign accomplishes indirect-update semantics without a reverse-edge table by persisting complete referenced
 public/lineage vectors alongside each stable target `..._DocumentId` and propagating them through native FK actions.
-PostgreSQL assigns fixed actions mechanically; SQL Server globally selects native cascades and exact-carrier covered
+PostgreSQL assigns fixed actions mechanically; SQL Server globally selects native cascades and origin-aware carrier-covered
 `NO ACTION` diamond edges. Provider-independent validation rejects identity cycles. There is no identity-value propagation
 trigger; see [mssql-cascading.md](mssql-cascading.md).
 

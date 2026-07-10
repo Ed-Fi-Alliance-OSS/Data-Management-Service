@@ -392,11 +392,12 @@ Notes:
   action and never reruns classification.
 - **Cycle, value-flow, and diamond support.** Provider-independent validation rejects recursive identity definitions as
   `IdentityCascadeCycleNotSupported` and independently mutable FKs that write shared canonical receiver storage as
-  `ConflictingUnifiedCascadeWritesNotSupported` unless every writer under each `InitiatingOriginFact` composes the same
-  root storage column into the receiver in the same initiating statement. Only then may SQL Server accept a legal
-  all-native physical graph immediately; otherwise modes are selected by deterministic bounded first-feasible search over
-  the conflict core. Every physical
-  `ON UPDATE CASCADE` FK participates as a decision or fixed edge, and covered edges use on-demand exact-carrier checks.
+  `ConflictingUnifiedCascadeWritesNotSupported` unless every writer under each `InitiatingOriginFact` starts from the same
+  correlated root row, composes the same root storage column into the receiver, and executes in the same initiating
+  statement. Only then may SQL Server accept a legal all-native physical graph immediately; otherwise modes are selected
+  by deterministic bounded first-feasible search over the conflict core. Every physical `ON UPDATE CASCADE` FK
+  participates as a decision or fixed edge, and covered edges use on-demand origin-aware carrier checks for every fact
+  and source-update flow that can change the referenced target key.
   The shared deterministic 1,000,000-unit budget counts decision assignments and directed-edge visits. The stable search
   outcomes are proved `NoSafeSqlServerAssignment` and distinct `CascadeClassificationComplexityExceeded`.
 - **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. Write

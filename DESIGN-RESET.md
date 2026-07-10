@@ -43,16 +43,18 @@ Everything else must be introduced from a concrete failing fixture or measured p
 6. SQL Server alone performs error-1785 duplicate-path classification, selective pruning, and topology fail-fast.
 7. SQL Server selection is global and deterministic because overlapping diamonds and parallel conflicts may require
    backtracking.
-8. Every pruned SQL Server edge has a structural carrier that starts at the covered edge's `CascadeSourceKey` and reaches
-   the same receiver row with the same complete-vector mapping; covered-edge presence implies carrier presence, and every
-   carrier edge propagates natively in the same SQL statement.
+8. Every pruned SQL Server edge is safe for every `InitiatingOriginFact` that can update its referenced target key. For
+   each fact, retained native source-update and carrier routes start from the same correlated root row, reach the same
+   receiver row, carry the origin-affected target-vector columns identically, are implied by covered-edge presence, and
+   execute in the same SQL statement.
 9. The runtime supports every independently writable primitive component and subset, one or more reference-backed replacements,
    and mixed primitive/reference changes.
 10. SQL Server fails before DDL when exhaustive bounded analysis proves no safe diamond assignment; work-limit
     exhaustion is a distinct result.
 11. Ordinary provider-independent model validation applies to both dialects.
-12. Multiple FKs may write one canonical receiver column only when every writer under each `InitiatingOriginFact`
-    composes the same root storage column to that receiver in the same initiating statement.
+12. Multiple FKs may write one canonical receiver column only when every writer under each `InitiatingOriginFact` starts
+    from the same physical root row, composes the same root storage column to that receiver, and executes in the same
+    initiating statement.
 13. Abstractness is not mutability. An abstract target is mutable iff at least one effective-schema concrete member is
     transitively mutable.
 
@@ -118,13 +120,14 @@ retains multiple paths. Identity cycles have already failed provider-independent
 SQL Server constructs storage-mapped physical candidates, deduplicates identical candidates, and selects final update
 actions globally. Every physical `ON UPDATE CASCADE` FK participates as a decision or fixed edge. The input graph is
 cycle-free by validation; the retained cascade multigraph must contain at most one path between every ordered table pair.
-A covered `NO ACTION` edge must have a retained carrier route that passes the finite structural relation in the
-authoritative design. Whole-vector equality makes mutation powersets and symbolic value proofs unnecessary classifier
-inputs.
+A covered `NO ACTION` edge must pass the finite origin-aware structural relation in the authoritative design for every
+fact and source-update flow that can change its referenced key. Origin-column composition makes mutation powersets and
+symbolic value proofs unnecessary classifier inputs.
 
 Before either provider assigns actions, shared-receiver validation requires every writer under each possible initiating
-fact to compose the same root storage column into the grouped receiver column in the same statement. Same root key and
-statement without the same composed source-column mapping is not safe.
+fact to originate at the same physical root row and compose the same root storage column into the grouped receiver column
+in the same statement. Same root table/key shape, source column, and statement without the same correlated root row is not
+safe; neither is the same root row and statement with different composed source-column mappings.
 
 The finalized relational model owns `OnUpdate`; DDL only renders it.
 
@@ -139,11 +142,13 @@ deterministic DFS/backtracking over its decision edges. Use stable structural ed
 stop at the first valid assignment. Minimum-prune optimization is deferred unless DMS-1277 measures a material supported
 write-performance benefit.
 
-Validate each covered edge on demand in the current retained graph. Every carrier DFS starts at the covered FK's
-`CascadeSourceKey`—its referenced table and ordered target propagation key—and must prove the same receiver row, identical
-complete-vector column mapping, finite presence implication, and native same-statement propagation. Traversal is
-prefix-state-sensitive: backtrack scratch composition, revisit a vertex reached through a different mapping, correlation,
-or presence state, and do not use vertex-only memoization. Do not store all carrier routes.
+Validate each covered edge on demand in the current retained graph for every `InitiatingOriginFact` and source-update flow
+that can change its referenced target key. Source-update and carrier routes must start at the same correlated root row,
+reach the same receiver row, compose the origin-affected target-vector columns identically, satisfy finite presence
+implication, and propagate natively in the same statement. This admits sibling diamonds while a directly mutable sibling
+still contributes its own fact and requires a carrier from itself. Traversal is prefix-state-sensitive: backtrack scratch
+composition, revisit a vertex reached through a different mapping, correlation, or presence state, and do not use
+vertex-only memoization. Do not store route arrays.
 
 The classifier has one deterministic budget of 1,000,000 work units per derived SQL Server schema. Charge one unit only
 before assigning a mode to one conflict-core decision edge during DFS/backtracking or visiting one directed edge during
@@ -156,8 +161,9 @@ buffers are an implementation optimization; implementations still must not enume
 Do not add memoization, canonical solver state, a general cost model, or serialized proof trees unless measured stock,
 extension, or adversarial fixtures exceed that bound.
 
-Selected-edge diagnostics retain only the covered edge and selected structural carrier route. Failure diagnostics name
-the first failed structural relation. No universal hashes or proof certificates are public contracts.
+Selected-edge diagnostics retain only the covered edge, applicable initiating fact and source-update route, and selected
+structural carrier route. Failure diagnostics name the first failed structural relation. No universal hashes or proof
+certificates are public contracts.
 
 ### 4. Identity cycles, reference resolution, and MetaEd boundary — accepted
 

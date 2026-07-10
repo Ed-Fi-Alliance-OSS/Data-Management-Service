@@ -30,7 +30,7 @@ Source documents:
 - Relationships use full-composite vectors containing referenced public identity values, complete transitive lineage
   anchors, and stable target `DocumentId`. Provider-independent validation rejects identity cycles. PostgreSQL assigns
   fixed actions mechanically and is never pruned or classified for multiple paths. SQL Server globally selects
-  error-1785-legal actions; exact-carrier `NO ACTION` edges may safely break diamonds. There is no reduced-FK or
+  error-1785-legal actions; origin-aware carrier `NO ACTION` edges may safely break diamonds. There is no reduced-FK or
   identity-value trigger fallback (see [mssql-cascading.md](mssql-cascading.md)). Key-unified bindings may be presence-gated aliases of
   canonical storage (see `key-unification.md`).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
@@ -114,7 +114,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
   - Reference FK columns:
     - for each document reference site: store public identity bindings, every target transitive lineage anchor, and terminal
       target `..._DocumentId`; target the one complete propagation key. PostgreSQL uses fixed actions. SQL Server uses
-      globally selected actions with exact carrier coverage for diamonds. Under key unification, FKs target
+      globally selected actions with origin-aware carrier coverage for diamonds. Under key unification, FKs target
       canonical storage while path bindings may remain generated/persisted aliases.
     - polymorphic targets use the same complete-vector/provider-action rules against
       `{schema}.{AbstractResource}Identity`; see [mssql-cascading.md](mssql-cascading.md),
@@ -196,7 +196,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 3. **DB-enforced identity propagation**
    - Complete-vector FKs keep public identity and stable lineage anchors consistent. Provider-independent validation
      rejects identity cycles. PostgreSQL uses fixed actions; SQL Server uses globally selected native cascades and
-     exact-carrier covered `NO ACTION` diamond edges (see [mssql-cascading.md](mssql-cascading.md)).
+     origin-aware carrier-covered `NO ACTION` diamond edges (see [mssql-cascading.md](mssql-cascading.md)).
    - Identity-changing writes may optionally be serialized (advisory/application lock) as an operational guardrail, but correctness does not depend on an application-managed lock table.
 
 4. **Flatten and write relational rows (single transaction)**

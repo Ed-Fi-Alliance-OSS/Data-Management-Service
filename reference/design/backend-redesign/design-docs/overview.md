@@ -24,7 +24,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 4. **Bounded cascades with stable FKs**: Store relationships as full-composite vectors containing referenced identity
    values, complete transitive lineage anchors, and stable target `DocumentId`. Provider-independent validation rejects
    identity cycles. PostgreSQL assigns fixed actions mechanically and is never pruned or classified for multiple paths.
-   SQL Server globally selects error-1785-legal actions and permits exact-carrier `NO ACTION` cuts for diamonds.
+   SQL Server globally selects error-1785-legal actions and permits origin-aware carrier `NO ACTION` cuts for diamonds.
    Every FK keeps the complete vector; there is no reduced-FK or identity-value trigger fallback (see
    [mssql-cascading.md](mssql-cascading.md)). Key-unified bindings may be presence-gated aliases of canonical storage;
    see [key-unification.md](key-unification.md).

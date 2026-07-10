@@ -613,8 +613,9 @@ Typical structure:
         - constructs and deduplicates storage-mapped physical candidates before action selection, and includes every
           other physical `ON UPDATE CASCADE` FK as a fixed legality-graph edge;
         - globally selects `ON UPDATE CASCADE` or covered `ON UPDATE NO ACTION` for mutable edges so the retained graph is
-          error-1785 legal and every pruned edge has a structural carrier from the same `CascadeSourceKey` with the same
-          receiver row, complete-vector mapping, presence implication, and native same-statement propagation;
+          error-1785 legal and every pruned edge is covered for every initiating fact and source-update flow by a native
+          route from the same correlated root row to the same receiver row, with identical affected-vector mapping,
+          presence implication, and same-statement propagation;
         - accepts a legal all-native graph immediately, otherwise searches only the conflict core with on-demand carrier
           checks and native-first deterministic backtracking; and
         - fails before DDL only when bounded search proves no safe assignment (or separately reaches its deterministic

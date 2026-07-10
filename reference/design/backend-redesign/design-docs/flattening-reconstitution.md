@@ -938,7 +938,7 @@ stored identity column. As a result:
 - reference expansion during JSON writing reads the binding columns so optional reference sites remain absent when absent.
 
 Complete-vector FKs keep public identity and stable lineage anchors consistent. PostgreSQL uses fixed provider actions;
-SQL Server uses globally selected native cascades and exact-carrier `NO ACTION` edges (see
+SQL Server uses globally selected native cascades and origin-aware carrier `NO ACTION` edges (see
 [mssql-cascading.md](mssql-cascading.md)).
 
 For polymorphic/abstract targets, referrers store the public abstract identity fields (for example,

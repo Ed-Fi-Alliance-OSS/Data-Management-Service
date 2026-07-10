@@ -121,14 +121,14 @@ DDL generator requirements (derived from ApiSchema):
   - Provider-independent validation rejects identity cycles before action assignment.
   - PostgreSQL assigns full-vector actions mechanically from target mutability. It is never pruned or classified for
     multiple paths.
-  - SQL Server globally selects physical actions that satisfy error 1785 and exact carrier safety. Diamonds and parallel
+  - SQL Server globally selects physical actions that satisfy error 1785 and origin-aware carrier safety. Diamonds and parallel
     conflicts are action choices. Derivation fails before DDL only when no safe assignment exists or the distinct
     deterministic work limit is reached. There is no `DocumentId`-only or
     identity-value trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
 
 When a referenced document’s identity changes, the database propagates updated identity values into all direct
 referrers’ **canonical/storage columns** (PostgreSQL FK cascades; SQL Server native `ON UPDATE CASCADE` on eligible
-edges plus exact-carrier covered `NO ACTION` edges). Public values and lineage anchors move together. Any per-site binding
+edges plus origin-aware carrier-covered `NO ACTION` edges). Public values and lineage anchors move together. Any per-site binding
 aliases recompute automatically while preserving optional-reference presence semantics.
 
 #### Descriptor references (`..._DescriptorId`)
@@ -244,7 +244,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - `dms.Descriptor` upsert if the resource is a descriptor.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
    - Complete-vector FK propagation is dialect-specific: PostgreSQL uses its fixed actions; SQL Server uses globally
-     selected native cascades and exact-carrier covered `NO ACTION` diamond edges (see
+     selected native cascades and origin-aware carrier-covered `NO ACTION` diamond edges (see
      [mssql-cascading.md](mssql-cascading.md)). Both paths update canonical storage and binding aliases recompute.
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
@@ -267,7 +267,7 @@ Integration points:
 
 This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key
 fields and complete stable lineage anchors alongside every document reference. PostgreSQL assigns fixed full-vector
-actions mechanically. SQL Server globally selects native cascades and exact-carrier covered `NO ACTION` edges. Its
+actions mechanically. SQL Server globally selects native cascades and origin-aware carrier-covered `NO ACTION` edges. Its
 search handles overlapping diamonds and parallel conflicts and fails before DDL only when no safe assignment exists (or
 a separately reported work limit is reached). Identity cycles fail provider-independent validation. See
 [mssql-cascading.md](mssql-cascading.md).
@@ -283,8 +283,10 @@ Engine considerations:
   validation still applies.
 - SQL Server rejects a table reached by multiple cascade paths (error 1785), so it uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child). Global bounded search
-  chooses a legal retained graph and requires every pruned edge to have a retained route from the same `CascadeSourceKey`
-  with the same receiver row, complete-vector mapping, presence implication, and native same-statement propagation.
+  chooses a legal retained graph and requires every pruned edge to be safe for every initiating fact and source-update flow
+  that can change its referenced target key. Source-update and carrier routes must start from the same correlated root
+  row, reach the same receiver row, compose the affected-vector columns identically, satisfy presence implication, and
+  propagate natively in the same statement.
   Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
   propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 
