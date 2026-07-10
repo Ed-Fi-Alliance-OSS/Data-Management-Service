@@ -7,10 +7,10 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core;
-using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -102,9 +102,10 @@ public class TokenEndpointModuleTests
         [Test]
         public void Then_it_returns_the_upstream_response_body()
         {
-            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
-            _jsonContent?["expires_in"]?.Should().Be(300);
-            _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
+            _jsonContent!["status_code"]!.GetValue<int>().Should().Be(200);
+            _jsonContent["body"]!["token"]!.ToString().Should().Be("fake_access_token");
+            _jsonContent["body"]!["expires_in"]!.GetValue<int>().Should().Be(300);
+            _jsonContent["body"]!["token_type"]!.ToString().Should().Be("bearer");
         }
     }
 
@@ -174,15 +175,16 @@ public class TokenEndpointModuleTests
         [Test]
         public void Then_it_returns_the_upstream_response_body()
         {
-            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
-            _jsonContent?["expires_in"]?.Should().Be(300);
-            _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
+            _jsonContent!["status_code"]!.GetValue<int>().Should().Be(200);
+            _jsonContent["body"]!["token"]!.ToString().Should().Be("fake_access_token");
+            _jsonContent["body"]!["expires_in"]!.GetValue<int>().Should().Be(300);
+            _jsonContent["body"]!["token_type"]!.ToString().Should().Be("bearer");
         }
     }
 
     [TestFixture]
-    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Json_Content :
-        TokenEndpointModuleTests
+    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Json_Content
+        : TokenEndpointModuleTests
     {
         private JsonNode? _jsonContent;
         private HttpResponseMessage? _response;
@@ -255,15 +257,16 @@ public class TokenEndpointModuleTests
         [Test]
         public void Then_it_returns_the_upstream_response_body()
         {
-            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
-            _jsonContent?["expires_in"]?.Should().Be(300);
-            _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
+            _jsonContent!["status_code"]!.GetValue<int>().Should().Be(200);
+            _jsonContent["body"]!["token"]!.ToString().Should().Be("fake_access_token");
+            _jsonContent["body"]!["expires_in"]!.GetValue<int>().Should().Be(300);
+            _jsonContent["body"]!["token_type"]!.ToString().Should().Be("bearer");
         }
     }
 
     [TestFixture]
-    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Form_Content :
-        TokenEndpointModuleTests
+    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Form_Content
+        : TokenEndpointModuleTests
     {
         private JsonNode? _jsonContent;
         private HttpResponseMessage? _response;
@@ -336,15 +339,16 @@ public class TokenEndpointModuleTests
         [Test]
         public void Then_it_returns_the_upstream_response_body()
         {
-            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
-            _jsonContent?["expires_in"]?.Should().Be(300);
-            _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
+            _jsonContent!["status_code"]!.GetValue<int>().Should().Be(200);
+            _jsonContent["body"]!["token"]!.ToString().Should().Be("fake_access_token");
+            _jsonContent["body"]!["expires_in"]!.GetValue<int>().Should().Be(300);
+            _jsonContent["body"]!["token_type"]!.ToString().Should().Be("bearer");
         }
     }
 
     [TestFixture]
-    public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Invalid_Tenant :
-        TokenEndpointModuleTests
+    public class When_Posting_To_Qualified_Internal_Token_Endpoint_When_Tenant_Validator_Returns_False
+        : TokenEndpointModuleTests
     {
         private JsonNode? _jsonContent;
         private HttpResponseMessage? _response;
@@ -384,7 +388,8 @@ public class TokenEndpointModuleTests
                         collection.AddTransient<ITenantValidator>(_ =>
                         {
                             var tenantValidator = A.Fake<ITenantValidator>();
-                            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>.Ignored)).Returns(false);
+                            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>.Ignored))
+                                .Returns(false);
                             return tenantValidator;
                         });
                         // Configure AppSettings for multitenancy and route qualifiers
@@ -415,19 +420,18 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void Then_it_returns_not_found_for_an_invalid_tenant()
+        public void Then_it_still_returns_the_upstream_response_code()
         {
-            _response!.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Test]
-        public void Then_it_returns_a_standard_not_found_payload()
+        public void Then_it_still_returns_the_upstream_response_body()
         {
-            _jsonContent?["detail"]?.ToString().Should().Be("The specified resource could not be found.");
-            _jsonContent?["type"]?.ToString().Should().Be("urn:ed-fi:api:not-found");
-            _jsonContent?["title"]?.ToString().Should().Be("Not Found");
-            _jsonContent?["status"]?.GetValue<int>().Should().Be(404);
+            _jsonContent!["status_code"]!.GetValue<int>().Should().Be(200);
+            _jsonContent["body"]!["token"]!.ToString().Should().Be("fake_access_token");
+            _jsonContent["body"]!["expires_in"]!.GetValue<int>().Should().Be(300);
+            _jsonContent["body"]!["token_type"]!.ToString().Should().Be("bearer");
         }
     }
 }
-
