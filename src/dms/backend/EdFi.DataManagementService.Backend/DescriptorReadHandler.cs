@@ -451,7 +451,8 @@ internal sealed class DescriptorReadHandler(
                     descriptorRow,
                     RelationalGetRequestReadMode.ExternalResponse,
                     request.ReadableProfileProjectionContext,
-                    request.MappingSet.Key.EffectiveSchemaHash
+                    request.MappingSet.Key.EffectiveSchemaHash,
+                    request.ResponseContentCoding
                 )
             );
         }
@@ -460,15 +461,17 @@ internal sealed class DescriptorReadHandler(
     }
 
     // Descriptors carry no reference links and are always served as JSON, so the served etag's
-    // linkFlag/format components are the fixed descriptor values ("n" / "j"); only the profile
-    // component varies, and only for ExternalResponse reads that a readable profile actually
-    // projects. This condition mirrors RelationalDocumentStoreRepository.ShouldApplyReadableProfileProjection
-    // so the descriptor and non-descriptor read paths stay in lockstep.
+    // linkFlag/format components are the fixed descriptor values ("n" / "j"). Profile varies only
+    // for ExternalResponse reads that a readable profile actually projects; content coding varies
+    // with response compression. This condition mirrors
+    // RelationalDocumentStoreRepository.ShouldApplyReadableProfileProjection so the descriptor and
+    // non-descriptor read paths stay in lockstep.
     private JsonNode MaterializeDescriptorDocument(
         DescriptorReadRow descriptorRow,
         RelationalGetRequestReadMode readMode,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
-        string effectiveSchemaHash
+        string effectiveSchemaHash,
+        ResponseContentCoding responseContentCoding
     )
     {
         var appliesReadableProfileProjection =
@@ -489,7 +492,8 @@ internal sealed class DescriptorReadHandler(
                     ResponseFormat.Json,
                     etagProfileName,
                     LinksEnabled: false,
-                    descriptorRow.ContentVersion
+                    descriptorRow.ContentVersion,
+                    responseContentCoding
                 )
             );
         }
@@ -522,7 +526,8 @@ internal sealed class DescriptorReadHandler(
             descriptorRow,
             request.ReadMode,
             request.ReadableProfileProjectionContext,
-            request.MappingSet.Key.EffectiveSchemaHash
+            request.MappingSet.Key.EffectiveSchemaHash,
+            request.ResponseContentCoding
         );
 
     private static RelationalCommand BuildQueryCommand(SqlDialect dialect, PageKeysetSpec.Query plannedQuery)

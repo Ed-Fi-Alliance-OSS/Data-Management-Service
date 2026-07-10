@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
+
 namespace EdFi.DataManagementService.Core.Utilities;
 
 /// <summary>
 /// The wire format of an API <c>_etag</c>: an opaque strong entity-tag of the form
 /// "{ContentVersion}-{variantKey}". The ContentVersion component is treated as an opaque
-/// string and is never parsed or compared numerically (RFC 7232 §2.3, §3.1).
+/// string and is never parsed or compared numerically (RFC 9110 §8.8.3, §13.1.1).
 /// </summary>
 public static class EtagValue
 {
@@ -77,5 +79,67 @@ public static class EtagValue
 
         value = headerValue;
         return true;
+    }
+
+    private static string ParseNonEmptyTag(string headerValue)
+    {
+        var candidate = headerValue.StartsWith("W/", StringComparison.Ordinal)
+            ? headerValue[2..]
+            : headerValue;
+
+        return candidate.Length >= 2 && candidate[0] == '"' && candidate[^1] == '"'
+            ? candidate[1..^1]
+            : candidate;
+    }
+
+    /// <summary>
+    /// Parses an If-None-Match header value that may contain a comma-separated entity-tag list into the
+    /// ordered opaque tag values, stripping an optional W/ weak prefix and surrounding quotes while
+    /// tolerating bare unquoted values for each non-empty list element. Returns an empty list for a null
+    /// or empty header value. The bare <c>*</c> wildcard is not special-cased here; callers that need
+    /// wildcard semantics must detect a raw, sole <c>*</c> before parsing.
+    /// </summary>
+    /// <remarks>
+    /// DMS-generated opaque tags contain no commas, but client-supplied entity-tags may. A comma is a
+    /// list delimiter only outside a quoted opaque tag.
+    /// </remarks>
+    public static IReadOnlyList<string> ParseConditionalTagList(string? headerValue)
+    {
+        if (string.IsNullOrEmpty(headerValue))
+        {
+            return [];
+        }
+
+        List<string> values = [];
+        int partStart = 0;
+        bool isInsideQuotedTag = false;
+
+        for (int index = 0; index < headerValue.Length; index++)
+        {
+            switch (headerValue[index])
+            {
+                case '"':
+                    isInsideQuotedTag = !isInsideQuotedTag;
+                    break;
+                case ',' when !isInsideQuotedTag:
+                    AddNonEmptyTag(headerValue.AsSpan(partStart, index - partStart), values);
+                    partStart = index + 1;
+                    break;
+            }
+        }
+
+        AddNonEmptyTag(headerValue.AsSpan(partStart), values);
+        return values;
+    }
+
+    private static void AddNonEmptyTag(ReadOnlySpan<char> part, List<string> values)
+    {
+        var trimmed = part.Trim();
+        if (trimmed.IsEmpty)
+        {
+            return;
+        }
+
+        values.Add(ParseNonEmptyTag(trimmed.ToString()));
     }
 }

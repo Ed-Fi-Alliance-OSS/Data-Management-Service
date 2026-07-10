@@ -333,35 +333,52 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
     the persistence layer; see `update-tracking.md`).
   - Because identity propagation is materialized as row updates, the same per-table stamping triggers cover indirect changes (no read-time dependency derivation).
 
-### Concurrency (optimistic `If-Match`)
+### Concurrency (ETag preconditions)
 
 With stored representation stamps:
 - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the served representation (see
-  `update-tracking.md`). It is an RFC 7232 strong validator: quoted in `ETag`, never `W/`.
+  `update-tracking.md`). It is an RFC 9110 §8.8.1 strong validator, using the entity-tag grammar in
+  §8.8.3: quoted in `ETag`, never `W/`.
+- Conditional GET `If-None-Match` uses the RFC 9110 §8.8.3.2 weak comparison function against the
+  full served tag, including all representation-selector components, after authorization and other
+  normal request checks would permit `200`; any match returns `304` per RFC 9110 §13.1.2. Content
+  coding is representation-significant, so identity, Brotli, and gzip tags differ. When response
+  compression is enabled, ETag-bearing `200` and `304` responses include `Vary: Accept-Encoding`.
 - PUT/DELETE `If-Match` validation is row-local and uses strong comparison over the tag's
   **state-significant projection**:
   - read the current `ContentVersion` for that `DocumentId` and compose the expected tag from the
     inbound request's representation context;
-  - compare it to the request `_etag`, **excluding** the `format`, `profileCode`, and `linkFlag`
-    components (representation encoding/filtering only) and **retaining** `ContentVersion` and
+  - compare it to the request `_etag`, **excluding** the `format`, `profileCode`, `linkFlag`, and
+    `contentCoding` components (representation encoding/filtering/transfer only) and **retaining** `ContentVersion` and
     `schemaEpoch` (amended 2026-07-04: `profileCode` is excluded, so a cross-profile `If-Match` no
     longer yields `412` on profile alone);
   - if mismatched on any retained component, return `412 Precondition Failed`.
-- A bare, unquoted `If-Match: *` is an RFC 7232 §3.1 wildcard existence precondition, not an opaque
+- POST/PUT `If-None-Match` uses RFC 9110 §8.8.3.2 weak comparison over the same state-significant
+  projection used by `If-Match`. A matching tag returns `412`; a non-matching tag proceeds so
+  representation-only differences never flip a write precondition.
+- A bare, unquoted `If-Match: *` is an RFC 9110 §13.1.1 wildcard existence precondition, not an opaque
   tag (amended 2026-07-05): it is satisfied whenever a current representation of the target
   `DocumentId` exists (any `ContentVersion`, no projection comparison) and returns `412` when it
   does not. For PUT and DELETE this is the one case where a missing target returns `412` instead of
   `404`; a POST upsert that resolves to an insert (no current representation) likewise returns
   `412`. A quoted `"*"` is treated as an ordinary opaque tag.
+- A bare, unquoted `If-None-Match: *` is the inverse RFC 9110 §13.1.2 existence precondition: it
+  returns `412` when the POST/PUT target exists and permits creation when it does not. A quoted `"*"`
+  remains an ordinary opaque tag.
 - On input the server accepts an unquoted `If-Match` value as equivalent to the same value quoted
   (amended 2026-07-05, for legacy ODS/API compatibility); emitted `ETag`/`If-Match` headers stay
-  quoted and `W/` weak tags remain rejected.
+  quoted and `W/` weak tags remain rejected by `If-Match`. `If-None-Match` accepts `W/` input for
+  weak comparison.
+- `If-Match` takes precedence when both headers are present, as required by RFC 9110 §13.2.2.
 - A no-op decision made before the write batch is only provisional. Before short-circuiting, the backend MUST verify
   that the `ContentVersion` observed during comparison is still current for that `DocumentId`.
   - If the observed `ContentVersion` is still current, the backend may commit a successful no-op without DML.
-  - If the observed `ContentVersion` is no longer current and the request supplied `If-Match`, return `412 Precondition Failed`.
-  - If the observed `ContentVersion` is no longer current and no `If-Match` precondition was supplied, abandon the
-    no-op fast path and retry / re-evaluate against current state rather than returning success based on stale data.
+  - If the observed `ContentVersion` is no longer current and the request supplied a specific-tag
+    `If-Match`, return `412 Precondition Failed`.
+  - If the observed `ContentVersion` is no longer current under wildcard `If-Match`, any
+    `If-None-Match`, or no precondition, abandon the no-op fast path and retry / re-evaluate against
+    current state. A specific `If-None-Match` can return `412` only after its tag is re-evaluated
+    against that current state.
 
 Because FK cascades update referrers’ rows and triggers bump their representation stamps, indirect changes correctly cause `If-Match` failures on subsequently stale clients.
 
@@ -378,8 +395,8 @@ Collection-write note:
   described above. Different readable profiles yield different *served* `_etag` values (for
   conditional-GET cache correctness), but profile is **not** an input to that guard (amended
   2026-07-04): the `If-Match` comparison uses only `ContentVersion` and `schemaEpoch`, so a
-  cross-profile `If-Match` matches when those agree. (`format`, `profileCode`, and `linkFlag` are all
-  excluded from the `If-Match` comparison.) No new API surface is required.
+  cross-profile `If-Match` matches when those agree. (`format`, `profileCode`, `linkFlag`, and
+  `contentCoding` are all excluded from the `If-Match` comparison.) No new API surface is required.
 
 ### Deadlock + retry policy
 

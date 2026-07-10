@@ -25,7 +25,6 @@ internal sealed class DescriptorWriteHandler(
     IRelationalWriteSessionFactory writeSessionFactory,
     ILogger<DescriptorWriteHandler> logger,
     IServedEtagComposer servedEtagComposer,
-    IIfMatchEvaluator ifMatchEvaluator,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null
 ) : IDescriptorWriteHandler
@@ -42,8 +41,6 @@ internal sealed class DescriptorWriteHandler(
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IServedEtagComposer _servedEtagComposer =
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
-    private readonly IIfMatchEvaluator _ifMatchEvaluator =
-        ifMatchEvaluator ?? throw new ArgumentNullException(nameof(ifMatchEvaluator));
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
@@ -104,7 +101,7 @@ internal sealed class DescriptorWriteHandler(
 
         try
         {
-            if (request.WritePrecondition is not WritePrecondition.IfMatch ifMatch)
+            if (!RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition))
             {
                 _logger.LogDebug(
                     "Resolving descriptor POST target context for {Resource} - {TraceId}",
@@ -162,13 +159,13 @@ internal sealed class DescriptorWriteHandler(
 
             writeSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
 
-            var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
+            var preconditionResult = await ResolveLockedDescriptorForPreconditionAsync(
                     request.MappingSet,
                     request.Resource,
                     request.DocumentUuid,
                     request.ReferentialId,
                     DescriptorPreconditionTargetKind.Post,
-                    ifMatch,
+                    request.WritePrecondition,
                     writeSession,
                     cancellationToken,
                     request.ProfileName,
@@ -180,7 +177,27 @@ internal sealed class DescriptorWriteHandler(
 
             switch (preconditionResult)
             {
-                case DescriptorLockedPreconditionResult.CreateNew:
+                case DescriptorLockedPreconditionResult.CreateNew(var createDocumentUuid):
+                    // If-Match on an insert has no current representation to match, so it fails (412).
+                    // If-None-Match on an insert is the create-only success case: no current
+                    // representation exists, so the insert proceeds in the same locked session (the
+                    // proposed namespace check already ran inside the resolve).
+                    if (request.WritePrecondition is WritePrecondition.IfNoneMatch)
+                    {
+                        var insertResult = await InsertDescriptorAsync(
+                                request,
+                                body,
+                                createDocumentUuid,
+                                resourceKeyId,
+                                writeSession.CreateCommandExecutor(),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                        return insertResult;
+                    }
+
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new UpsertResult.UpsertFailureETagMisMatch(
                         ETagPreconditionFailureReason.TargetDoesNotExist
@@ -210,9 +227,9 @@ internal sealed class DescriptorWriteHandler(
                         diagnostics
                     );
 
-                case DescriptorLockedPreconditionResult.Mismatch:
+                case DescriptorLockedPreconditionResult.Mismatch(var reason):
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureETagMisMatch();
+                    return new UpsertResult.UpsertFailureETagMisMatch(reason);
 
                 case DescriptorLockedPreconditionResult.Loaded(
                     var sessionTargetContext,
@@ -252,6 +269,10 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
+            // A unique violation can come from the generated DocumentUuid rather than the descriptor
+            // identity, so it does not prove that the guarded target now exists. Returning a retryable
+            // conflict replays the whole POST with a fresh candidate UUID; a true target race is then
+            // re-resolved and evaluated against the precondition.
             return new UpsertResult.UpsertFailureWriteConflict();
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
@@ -339,19 +360,19 @@ internal sealed class DescriptorWriteHandler(
 
         try
         {
-            if (request.WritePrecondition is WritePrecondition.IfMatch ifMatch)
+            if (RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition))
             {
                 writeSession = await _writeSessionFactory
                     .CreateAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
+                var preconditionResult = await ResolveLockedDescriptorForPreconditionAsync(
                         request.MappingSet,
                         request.Resource,
                         request.DocumentUuid,
                         referentialId: null,
                         DescriptorPreconditionTargetKind.Put,
-                        ifMatch,
+                        request.WritePrecondition,
                         writeSession,
                         cancellationToken,
                         request.ProfileName,
@@ -366,10 +387,11 @@ internal sealed class DescriptorWriteHandler(
                     case DescriptorLockedPreconditionResult.NotFound:
                     case DescriptorLockedPreconditionResult.MissingDocument:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
-                        // missing PUT target yields the precondition-failed (412) result rather than
-                        // not-exists (404).
-                        return ifMatch.IsWildcard
+                        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard If-Match against
+                        // a missing PUT target yields the precondition-failed (412) result rather than
+                        // not-exists (404). A wildcard If-None-Match against a missing target is the
+                        // success case, so it falls through to the normal not-exists (404) result.
+                        return request.WritePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
                             ? new UpdateResult.UpdateFailureETagMisMatch(
                                 ETagPreconditionFailureReason.TargetDoesNotExist
                             )
@@ -397,9 +419,9 @@ internal sealed class DescriptorWriteHandler(
                             diagnostics
                         );
 
-                    case DescriptorLockedPreconditionResult.Mismatch:
+                    case DescriptorLockedPreconditionResult.Mismatch(var reason):
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return new UpdateResult.UpdateFailureETagMisMatch();
+                        return new UpdateResult.UpdateFailureETagMisMatch(reason);
 
                     case DescriptorLockedPreconditionResult.Loaded(
                         var sessionTargetContext,
@@ -673,7 +695,7 @@ internal sealed class DescriptorWriteHandler(
                 }
                 else
                 {
-                    var preconditionResult = await ResolveLockedDescriptorForIfMatchAsync(
+                    var preconditionResult = await ResolveLockedDescriptorForPreconditionAsync(
                             request.MappingSet,
                             request.Resource,
                             request.DocumentUuid,
@@ -690,7 +712,7 @@ internal sealed class DescriptorWriteHandler(
 
                     outcome = preconditionResult switch
                     {
-                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a
                         // missing DELETE target yields the precondition-failed (412) result rather
                         // than not-exists (404).
                         DescriptorLockedPreconditionResult.NotFound
@@ -712,8 +734,8 @@ internal sealed class DescriptorWriteHandler(
                             [failureMessage],
                             diagnostics
                         ),
-                        DescriptorLockedPreconditionResult.Mismatch =>
-                            new DeleteResult.DeleteFailureETagMisMatch(),
+                        DescriptorLockedPreconditionResult.Mismatch(var reason) =>
+                            new DeleteResult.DeleteFailureETagMisMatch(reason),
                         DescriptorLockedPreconditionResult.Loaded =>
                             await ExecuteDescriptorDeleteCommandAsync(
                                     request,
@@ -795,13 +817,13 @@ internal sealed class DescriptorWriteHandler(
         }
     }
 
-    private async Task<DescriptorLockedPreconditionResult> ResolveLockedDescriptorForIfMatchAsync(
+    private async Task<DescriptorLockedPreconditionResult> ResolveLockedDescriptorForPreconditionAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
         ReferentialId? referentialId,
         DescriptorPreconditionTargetKind targetKind,
-        WritePrecondition.IfMatch ifMatch,
+        WritePrecondition precondition,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken,
         string? profileName = null,
@@ -811,7 +833,7 @@ internal sealed class DescriptorWriteHandler(
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(ifMatch);
+        ArgumentNullException.ThrowIfNull(precondition);
         ArgumentNullException.ThrowIfNull(writeSession);
 
         var sessionCommandExecutor = writeSession.CreateCommandExecutor();
@@ -886,12 +908,14 @@ internal sealed class DescriptorWriteHandler(
                 throw new ArgumentOutOfRangeException(nameof(targetKind), targetKind, null);
         }
 
-        if (targetContext is RelationalWriteTargetContext.CreateNew)
+        if (targetContext is RelationalWriteTargetContext.CreateNew(var createDocumentUuid))
         {
             // POST with If-Match where no existing document was found normally returns ETagMisMatch,
-            // but a configured proposed-value namespace authorization must run first so that a denial
-            // (403) precedes the stale precondition (412). The proposed check is a single statement
-            // against the dialect's namespace authorization SQL and needs no row lookup.
+            // and If-None-Match on the same create proceeds to insert (the caller branches on the
+            // precondition type). Either way a configured proposed-value namespace authorization must
+            // run first so that a denial (403) precedes the precondition outcome. The proposed check is
+            // a single statement against the dialect's namespace authorization SQL and needs no row
+            // lookup.
             if (proposedNamespaceAuthorization is not null)
             {
                 var preconditionFromProposed = await EvaluateNamespaceAuthorizationAsync(
@@ -910,7 +934,7 @@ internal sealed class DescriptorWriteHandler(
                 }
             }
 
-            return DescriptorLockedPreconditionResult.CreateNew.Instance;
+            return new DescriptorLockedPreconditionResult.CreateNew(createDocumentUuid);
         }
 
         if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
@@ -973,28 +997,6 @@ internal sealed class DescriptorWriteHandler(
             }
         }
 
-        if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag))
-        {
-            var evaluation = _ifMatchEvaluator.Evaluate(ifMatch, currentEtag);
-
-            if (_logger.IsEnabled(LogLevel.Debug))
-            {
-                _logger.LogDebug(
-                    "Descriptor If-Match precondition for document {DocumentId}: wildcard={IsWildcard}, "
-                        + "clientTag={ClientTag}, currentTag={CurrentTag}, matched={IsMatch}",
-                    existingTargetContext.DocumentId,
-                    ifMatch.IsWildcard,
-                    LoggingSanitizer.SanitizeForLogging(ifMatch.Value),
-                    currentEtag,
-                    evaluation.IsMatch
-                );
-            }
-
-            return evaluation.IsMatch
-                ? new DescriptorLockedPreconditionResult.Loaded(existingTargetContext, persisted, currentEtag)
-                : DescriptorLockedPreconditionResult.Mismatch.Instance;
-        }
-
         return lockedCurrentState switch
         {
             DescriptorCurrentStateLoadResult.MissingDocument => DescriptorLockedPreconditionResult
@@ -1002,10 +1004,57 @@ internal sealed class DescriptorWriteHandler(
                 .Instance,
             DescriptorCurrentStateLoadResult.MissingDescriptor =>
                 new DescriptorLockedPreconditionResult.MissingDescriptor(existingTargetContext.DocumentId),
+            DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag) =>
+                EvaluateDescriptorPreconditionWithLogging(
+                    precondition,
+                    existingTargetContext,
+                    persisted,
+                    currentEtag,
+                    _logger
+                ),
             _ => throw new InvalidOperationException(
                 $"Unexpected locked descriptor state result type '{lockedCurrentState.GetType().Name}'."
             ),
         };
+    }
+
+    private static DescriptorLockedPreconditionResult EvaluateDescriptorPreconditionWithLogging(
+        WritePrecondition precondition,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        PersistedDescriptorState persisted,
+        string currentEtag,
+        ILogger logger
+    )
+    {
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
+            precondition,
+            targetExists: true,
+            currentEtag
+        );
+
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            var clientTag = precondition switch
+            {
+                WritePrecondition.IfMatch m => m.IsWildcard ? "*" : m.Value,
+                WritePrecondition.IfNoneMatch n => n.IsWildcard ? "*" : string.Join(", ", n.Values),
+                _ => "(none)",
+            };
+            logger.LogDebug(
+                "Descriptor etag precondition for document {DocumentId}: "
+                    + "clientTag={ClientTag}, currentTag={CurrentTag}, satisfied={IsSatisfied}",
+                targetContext.DocumentId,
+                LoggingSanitizer.SanitizeForLogging(clientTag),
+                currentEtag,
+                isSatisfied
+            );
+        }
+
+        return isSatisfied
+            ? new DescriptorLockedPreconditionResult.Loaded(targetContext, persisted, currentEtag)
+            : new DescriptorLockedPreconditionResult.Mismatch(
+                EtagPreconditionEvaluator.GetFailureReason(precondition)
+            );
     }
 
     private static RelationalWriteTargetContext TranslateDescriptorTargetContext(
@@ -2295,12 +2344,7 @@ internal sealed class DescriptorWriteHandler(
     {
         private DescriptorLockedPreconditionResult() { }
 
-        public sealed record CreateNew : DescriptorLockedPreconditionResult
-        {
-            private CreateNew() { }
-
-            public static CreateNew Instance { get; } = new();
-        }
+        public sealed record CreateNew(DocumentUuid DocumentUuid) : DescriptorLockedPreconditionResult;
 
         public sealed record NotFound : DescriptorLockedPreconditionResult
         {
@@ -2326,12 +2370,8 @@ internal sealed class DescriptorWriteHandler(
             SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
         ) : DescriptorLockedPreconditionResult;
 
-        public sealed record Mismatch : DescriptorLockedPreconditionResult
-        {
-            private Mismatch() { }
-
-            public static Mismatch Instance { get; } = new();
-        }
+        public sealed record Mismatch(ETagPreconditionFailureReason Reason)
+            : DescriptorLockedPreconditionResult;
 
         public sealed record Loaded(
             RelationalWriteTargetContext.ExistingDocument TargetContext,

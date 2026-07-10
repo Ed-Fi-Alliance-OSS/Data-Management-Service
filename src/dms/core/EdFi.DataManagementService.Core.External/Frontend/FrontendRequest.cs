@@ -59,5 +59,9 @@ public record FrontendRequest(
     /// <summary>
     /// JSON path for the first duplicate property found by the frontend, or null if none was found or scanning was not attempted
     /// </summary>
-    string? DuplicatePropertyPath = null
+    string? DuplicatePropertyPath = null,
+    /// <summary>
+    /// The content coding negotiated by the frontend for a successful resource response.
+    /// </summary>
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
 );

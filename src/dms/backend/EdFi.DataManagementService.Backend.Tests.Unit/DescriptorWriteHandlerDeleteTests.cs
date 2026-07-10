@@ -208,8 +208,7 @@ public class Given_Descriptor_Write_Handler_Delete
                 Resolver,
                 SessionFactory,
                 Logger,
-                new ServedEtagComposer(),
-                new IfMatchEvaluator()
+                new ServedEtagComposer()
             );
         }
 

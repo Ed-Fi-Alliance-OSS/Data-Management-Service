@@ -39,7 +39,7 @@ Descriptor references remain on their existing canonical-URI string surface.
     - [Compiled Read-Plan Extensions](#compiled-read-plan-extensions)
     - [JSON Reconstitution Integration](#json-reconstitution-integration)
   - [Feature Flag](#feature-flag)
-  - [Cache and Etag](#cache-and-etag)
+  - [Cache and ETag](#cache-and-etag)
   - [Authorization](#authorization)
   - [Collection Responses](#collection-responses)
   - [Out of Scope](#out-of-scope)
@@ -303,11 +303,11 @@ A single configuration key controls link emission:
   response-shaping pass** in the repository wrapper — after the materializer injects API metadata
   (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection runs, and immediately
   before the body is returned to the caller. The materializer's reconstituted intermediate is
-  always link-bearing (caller-agnostic), `_etag` is computed once over that intermediate, and the
-  strip pass mutates only the served projection. `link` is excluded from `_etag` canonicalization
-  in both flag states (the canonical formatter strips `{id, link, _etag, _lastModifiedDate}`
-  recursively before hashing per `design-docs/update-tracking.md` §Serving API metadata), so the
-  strip pass does not change `_etag`. The auxiliary lookup and plan compilation are unaffected.
+  always link-bearing (caller-agnostic), while the served `_etag` is composed for the final request
+  variant from stored `ContentVersion` plus `variantKey`. `variantKey.linkFlag` is `l` when links
+  are served and `n` when they are stripped, so the two byte-different responses carry different
+  strong validators without hashing either document. The auxiliary lookup and plan compilation are
+  unaffected.
 
 **Rationale for response-shaping rather than plan-shaping.** Treating the flag as a response
 filter eliminates dual plan shapes, startup plan-fingerprint reconciliation, and the mixed-plan
@@ -345,39 +345,35 @@ the next process restart, consistent with the flag-flip-across-restart case in
 The flag governs GET response serialization only — write endpoints (POST/PUT/DELETE) do not emit
 `link` and are unaffected. The strip pass removes exactly the `link` subtree on reference objects;
 other server-generated fields (`_etag`, `_lastModifiedDate`) are untouched. Because `link` is a
-server-generated response decoration derived from persisted reference state, the flag does not
-participate in `_etag` derivation.
+server-generated response decoration derived from persisted reference state, it is outside the
+profile namespace; nevertheless, the flag participates in served `_etag` derivation through
+`variantKey.linkFlag` so conditional GET remains byte-correct.
 
 ---
 
-## Cache and Etag
+## Cache and ETag
 
 `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document, with
 `link` subtrees already present (since the plan always emits them). The `ResourceLinks:Enabled`
 flag is applied as the final response-shaping pass in the repository wrapper — after the
-materializer injects `_etag` and after readable-profile projection (when applicable) runs.
-`_etag` is computed once inside the materializer over the link-bearing intermediate and survives
-both projection and strip unchanged because the canonical formatter excludes `link`/`_etag`/
-`_lastModifiedDate` from hashing. The cached materialized full-resource `_etag` is reused for
-both unprofiled and profiled responses. CDC and indexing consumers of `dms.DocumentCache` observe
-the unprojected intermediate (with `link` subtrees); DMS does not maintain a second link-free
-projection.
-
-`dms.DocumentCache` stores the materialized full-resource `_etag` alongside the cached
-`DocumentJson`. That cached `_etag` is computed with `link` excluded from the canonical hash and is
-returned for both unprofiled and profiled responses. The `ResourceLinks:Enabled` strip pass and
-readable-profile projection do not change `_etag`: flag-on, flag-off, profiled, and unprofiled
-responses for the same full resource state return the same value. See
+readable-profile projection (when applicable) runs and before serialization. The cache stores the
+`ContentVersion` associated with `DocumentJson`, not a materialized `_etag`. At the serving boundary,
+DMS composes `_etag` from that cached `ContentVersion` plus the request's full `variantKey`, including
+the active `profileCode`, `linkFlag`, and `contentCoding`. Flag-on, flag-off, profiled, unprofiled,
+identity, and compressed responses can
+therefore share one caller-agnostic cached document while carrying distinct validators whenever
+their served bytes differ. CDC and indexing consumers observe the unprojected intermediate (with
+`link` subtrees); DMS does not maintain a second link-free projection. See
 [update-tracking.md](update-tracking.md) §Serving API metadata for the normative derivation.
 
 A flag flip does not require cache truncation, fingerprint reconciliation, or an advisory lock:
-flag-on and flag-off responses reuse the same `_etag` for the same full resource state.
+the cached state and `ContentVersion` remain valid, while per-request composition changes
+`linkFlag` and therefore rotates the served `_etag`.
 
-The freshness check on cache reads remains unchanged:
+Cache freshness follows the resource-state stamp:
 
 ```
 cached ContentVersion == dms.Document.ContentVersion
-AND cached LastModifiedAt == dms.Document.ContentLastModifiedAt
 ```
 
 Cached hrefs are bound to `EffectiveSchemaHash`: any change to a `projectEndpointName` or
@@ -475,11 +471,11 @@ the `DocumentUuid`-stamping decision in particular has been made.
 **Feature-flag tests:**
 
 - Flag on + fully-defined references → response body carries `link`.
-- Flag off → response body has no `link` on any reference; `_etag` matches the flag-on value for
-  the same full resource state because `link` is excluded from canonicalization.
+- Flag off → response body has no `link` on any reference; `_etag` differs from the flag-on value for
+  the same full resource state because `variantKey.linkFlag` participates in the served validator.
 - Flag flip across a process restart → existing cached rows remain valid for freshness-check
-  purposes; `_etag` values computed pre-flip still match post-flip responses for the same full
-  resource state.
+  purposes, while post-flip responses receive the other `linkFlag` and a correspondingly different
+  `_etag`.
 
 **Fixture tests:**
 
@@ -509,8 +505,10 @@ the seam exists; the placeholder test `It_emits_link_when_caller_has_no_per_refe
 pins the present behavior.)
 
 **Caller-agnostic cache test.** Two callers who can both read the same source document — one
-authorized for the target, one not — receive the same cached intermediate JSON and the same
-full-resource `_etag`; profile projection and flag-off stripping do not change the validator.
+authorized for the target, one not — receive the same cached intermediate JSON and
+`ContentVersion`. Their served `_etag` is composed per request; identical representation contexts
+produce the same tag, while profile selection, flag-off stripping, or content-coding negotiation
+changes the appropriate `variantKey` component.
 
 ---
 
@@ -531,7 +529,8 @@ Small-to-medium. The implementation surfaces:
 
 No new per-reference DDL. No new singleton metadata tables. No abstract-identity LEFT JOINs in
 hydration SQL. No startup trigger-existence validation. No advisory-lock protocol. No
-cache truncate. No link-driven etag churn.
+cache truncate when link mode changes; `linkFlag` rotates the served ETag without rebuilding cached
+documents.
 
 ---
 
@@ -550,7 +549,7 @@ cache truncate. No link-driven etag churn.
   contract.
 - [compiled-mapping-set.md](compiled-mapping-set.md) §4.3 step 6 — descriptor URI auxiliary
   pattern this design reuses.
-- [update-tracking.md](update-tracking.md) — `_etag` derivation from the canonical resource-state
-  body, excluding response decorations such as `link`.
+- [update-tracking.md](update-tracking.md) — `_etag` composition from `ContentVersion` plus the
+  request's `variantKey`, including `linkFlag`.
 - [auth.md](auth.md) — authorization strategy families.
 - [profiles.md](profiles.md) — readable-profile projection boundary.

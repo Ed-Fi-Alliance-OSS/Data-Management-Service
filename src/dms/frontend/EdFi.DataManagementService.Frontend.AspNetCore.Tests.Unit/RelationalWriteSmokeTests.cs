@@ -223,7 +223,7 @@ public class Given_A_Host_Using_The_Relational_Backend
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
         response.Headers.TryGetValues("ETag", out var etagValues).Should().BeTrue();
-        // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3); the write
+        // The ETag response header is served as a quoted strong validator (RFC 9110 §8.8.3); the write
         // result's opaque etag value is wrapped in double quotes at the HTTP boundary.
         etagValues.Should().ContainSingle().Which.Should().Be($"\"{FakeWriteResultEtag}\"");
         response.Headers.Location.Should().NotBeNull();

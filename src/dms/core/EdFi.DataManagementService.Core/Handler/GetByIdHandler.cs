@@ -3,6 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
@@ -11,6 +14,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -24,6 +28,8 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// </summary>
 internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
+    private const string IfNoneMatchHeaderName = "If-None-Match";
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering GetByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
@@ -112,6 +118,13 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
 
     private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, JsonNode edfiDoc)
     {
+        string servedEtag = RequireServedEtag(edfiDoc);
+
+        if (TryCreateNotModified(requestInfo, servedEtag, out FrontendResponse notModified))
+        {
+            return notModified;
+        }
+
         var contentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
             ? ProfileHeaderParser.BuildProfileContentType(
                 requestInfo.ResourceSchema.ResourceName.Value,
@@ -120,7 +133,88 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             )
             : "application/json";
 
-        return new FrontendResponse(StatusCode: 200, Body: edfiDoc, Headers: [], ContentType: contentType);
+        return new FrontendResponse(
+            StatusCode: 200,
+            Body: edfiDoc,
+            Headers: new() { ["etag"] = servedEtag },
+            ContentType: contentType
+        );
+    }
+
+    private static string RequireServedEtag(JsonNode edfiDoc)
+    {
+        if (
+            edfiDoc["_etag"] is not JsonValue etagValue
+            || etagValue.GetValueKind() is not JsonValueKind.String
+        )
+        {
+            throw new InvalidOperationException(
+                "A successful get-by-id repository result must contain a non-empty string '_etag' value."
+            );
+        }
+
+        string servedEtag = etagValue.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(servedEtag))
+        {
+            throw new InvalidOperationException(
+                "A successful get-by-id repository result must contain a non-empty string '_etag' value."
+            );
+        }
+
+        return servedEtag;
+    }
+
+    /// <summary>
+    /// Determines whether a conditional GET's If-None-Match header is satisfied by the served etag,
+    /// meaning the client's cached representation is still current. Returns true and produces a 304
+    /// response (no body) when so; otherwise returns false and the caller proceeds with a normal 200.
+    /// </summary>
+    private static bool TryCreateNotModified(
+        RequestInfo requestInfo,
+        string servedEtag,
+        out FrontendResponse response
+    )
+    {
+        response = null!;
+
+        if (!requestInfo.FrontendRequest.Headers.TryGetValue(IfNoneMatchHeaderName, out var rawHeaderValue))
+        {
+            return false;
+        }
+
+        // RFC 9110 §13.1.2 wildcard: a bare (unquoted) "*" means "if any representation exists" -- and
+        // since reaching this method means the resource exists, the precondition is false. This must be
+        // detected from the RAW header value before ParseConditionalTagList strips quotes, which would
+        // otherwise turn a quoted "*" (an ordinary opaque tag) into the wildcard.
+        bool isWildcard = string.Equals(rawHeaderValue, "*", StringComparison.Ordinal);
+
+        IReadOnlyList<string> clientTags = isWildcard
+            ? []
+            : EtagValue.ParseConditionalTagList(rawHeaderValue);
+        if (!isWildcard && clientTags.Count == 0)
+        {
+            return false;
+        }
+
+        // Full-tag comparison against the entire served etag (ContentVersion plus variantKey), not a
+        // projection: If-None-Match is representation-sensitive, so a client tag that differs only in
+        // the variantKey tail (format/profile/links/content-coding) must not match.
+        // EtagMatchProjection is a write-side (If-Match) concern and does not apply here.
+        bool matches =
+            isWildcard || clientTags.Any(t => string.Equals(t, servedEtag, StringComparison.Ordinal));
+
+        if (!matches)
+        {
+            return false;
+        }
+
+        response = new FrontendResponse(
+            StatusCode: 304,
+            Body: null,
+            Headers: new() { ["etag"] = servedEtag },
+            ContentType: null
+        );
+        return true;
     }
 
     private static IGetRequest CreateGetRequest(RequestInfo requestInfo)
@@ -134,7 +228,8 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             TraceId: requestInfo.FrontendRequest.TraceId,
-            ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
+            ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
+            ResponseContentCoding: GetServedEtagContentCoding(requestInfo)
         );
     }
 }

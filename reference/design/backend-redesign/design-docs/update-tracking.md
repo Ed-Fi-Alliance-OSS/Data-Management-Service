@@ -16,10 +16,10 @@ The backend redesign needs resource-state-sensitive metadata:
 - `_etag` MUST change whenever the served byte-representation changes. It is derived from
   `ContentVersion` (which tracks resource-state change) **and** a `variantKey` that distinguishes
   the byte-affecting representation selectors (response format/media type, active readable profile,
-  and `link` mode). Unlike `_lastModifiedDate`/`ChangeVersion`, `_etag` is therefore
+  `link` mode, and response content coding). Unlike `_lastModifiedDate`/`ChangeVersion`, `_etag` is therefore
   representation-sensitive: two representations of the same stored state that differ in served bytes
-  (e.g. different readable profiles, or links on vs. off) MUST carry different `_etag` values, as
-  required for RFC 7232 strong validators.
+  (e.g. different readable profiles, links on vs. off, or identity vs. gzip coding) MUST carry different `_etag` values, as
+  required for RFC 9110 §8.8.1 strong validators.
   Descriptor identity/URI is immutable, while descriptor metadata fields are mutable and affect
   only the descriptor resource's own representation.
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
@@ -38,12 +38,14 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 1. **Correctness**: `_lastModifiedDate` and `ChangeVersion` MUST change when the full
    resource-state representation changes. `_etag` MUST change whenever the served byte-representation
    changes — i.e. on resource-state change **and** on any change to the representation selectors
-   (format, readable profile, `link` mode).
-2. **RFC 7232 strong validator**: `_etag` is served as a strong validator (unquoted in the
-   `_etag` body field, quoted in the `ETag` header, never `W/`-prefixed). `If-Match` uses strong
-   comparison over the tag's **state-significant projection** — `ContentVersion` and `schemaEpoch`;
-   the `format`, `profileCode`, and `linkFlag` components are excluded (see "Optimistic concurrency").
-   Weak validators would fail every `If-Match` and are not permitted.
+   (format, readable profile, `link` mode, content coding).
+2. **RFC 9110 validator semantics**: `_etag` is served as a strong validator (RFC 9110 §8.8.1),
+   unquoted in the `_etag` body field, quoted as an entity-tag in the `ETag` header (RFC 9110
+   §8.8.3), and never `W/`-prefixed. `If-Match` uses strong comparison and `If-None-Match` uses weak
+   comparison (RFC 9110 §8.8.3.2). Write-side comparisons use the tag's **state-significant
+   projection** — `ContentVersion` and `schemaEpoch`; the `format`, `profileCode`, `linkFlag`, and
+   `contentCoding` components are excluded (see "ETag preconditions"). Weak validators cannot satisfy `If-Match`
+   and are not emitted.
 3. **Change Queries alignment**: `ChangeVersion` MUST be a global, monotonically increasing `bigint`.
 4. **Cross-engine**: must work on PostgreSQL and SQL Server.
 5. **Optimistic concurrency**: `If-Match` must be resource-state-sensitive.
@@ -165,7 +167,7 @@ For a document `P`:
   - `ContentVersion(P) = dms.Document.ContentVersion`, serialized as an **opaque string** (never
     interpreted numerically by server or client).
   - `variantKey` is the deterministic representation token defined in "`variantKey` encoding"
-    below. It makes `_etag` distinct per served byte-representation, satisfying RFC 7232
+    below. It makes `_etag` distinct per served byte-representation, satisfying RFC 9110 §8.8.1
     strong-validator semantics.
   - `_etag` MUST be computed with **no document hashing and no representation readback**: it is a
     string composition of the stored `ContentVersion` counter and precomputed representation tokens.
@@ -187,12 +189,12 @@ from the cached `ContentVersion` and the request's `variantKey`. Freshness is ju
 
 ### `variantKey` encoding (normative)
 
-`variantKey` is a dot-delimited, fixed-order, lowercase ASCII token of four always-present
+`variantKey` is a dot-delimited, fixed-order, lowercase ASCII token of five always-present
 components. All characters are drawn from `[a-z0-9_]` plus the `.` separator — all valid `etagc`
-characters (RFC 7232 §2.3); it contains no `"` or `\`.
+characters (RFC 9110 §8.8.3); it contains no `"` or `\`.
 
 ```
-variantKey = schemaEpoch "." format "." profileCode "." linkFlag
+variantKey = schemaEpoch "." format "." profileCode "." linkFlag "." contentCoding
 ```
 
 1. **`schemaEpoch`** — the first 8 lowercase hex characters of the in-force `EffectiveSchemaHash`.
@@ -210,18 +212,25 @@ variantKey = schemaEpoch "." format "." profileCode "." linkFlag
    the ContentVersion ADR's 2026-07-08 `profileCode`-hash amendment; the earlier "compile-time index"
    form was never implemented because a `MappingSet` exposes no enumerable profile catalog.)
 4. **`linkFlag`** — `l` when `DataManagement:ResourceLinks:Enabled` is true, `n` when false.
+5. **`contentCoding`** — a stable code for the selected HTTP response content coding: `i` =
+   identity, `b` = Brotli (`br`), and `g` = gzip. Selection comes from the registered ASP.NET Core
+   response-compression provider; any additional provider requires a registered stable code.
 
-Example: `_etag` body value `5-a1b2c3d4.j._.l`; `ETag` header `"5-a1b2c3d4.j._.l"`.
+Examples: identity `_etag` body value `5-a1b2c3d4.j._.l.i`, header
+`"5-a1b2c3d4.j._.l.i"`; gzip `_etag` body value `5-a1b2c3d4.j._.l.g`, header
+`"5-a1b2c3d4.j._.l.g"`.
 
 The server MUST recompute the full `_etag` deterministically from request context (negotiated
-format, profile in effect, `link` mode) plus the loaded schema at read response, write response,
-and `If-Match` evaluation, with **no document hashing and no representation readback**. The only
-database access the tag requires is obtaining the stored `ContentVersion` counter it composes over —
-already loaded with the row on the read path, a single lightweight scalar read in the persistence
-layer on the write path (see "Serving API metadata"), and the locked-row read on `If-Match` — never a
-hydrate-materialize-hash readback of the document. At `If-Match` evaluation the server compares
-only the **state-significant projection** of the tag (`ContentVersion` and `schemaEpoch`; `format`,
-`profileCode`, and `linkFlag` excluded) — see "Optimistic concurrency".
+format, profile in effect, `link` mode, and content coding) plus the loaded schema at read response
+and write response, with **no document hashing and no representation readback**. Write responses
+use the identity-coding variant because they carry no encoded resource representation. The
+only database access the tag requires is obtaining the stored `ContentVersion` counter it composes
+over — already loaded with the row on the read path, a single lightweight scalar read in the
+persistence layer on the write path (see "Serving API metadata"), and the locked-row read for a
+write precondition — never a hydrate-materialize-hash readback of the document. Conditional-read
+`If-None-Match` compares the full served tag; write-side `If-Match` and `If-None-Match` compare only
+the **state-significant projection** (`ContentVersion` and `schemaEpoch`; `format`, `profileCode`,
+`linkFlag`, and `contentCoding` excluded) — see "ETag preconditions".
 
 ## Change Query candidate selection (cross-reference)
 
@@ -233,17 +242,23 @@ Change Query candidate selection is defined in [change-queries.md](change-querie
 
 `update-tracking.md` owns the stamping contract on `dms.Document` and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
 
-## Optimistic concurrency (`If-Match`)
+## ETag preconditions (`If-Match` and `If-None-Match`)
 
 With stored representation stamps:
 
 - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the representation actually served
-  (see "Serving API metadata"). It is a strong validator.
+  (see "Serving API metadata"). It is a strong validator under RFC 9110 §8.8.1.
+- Conditional GET evaluates `If-None-Match` only after authorization and other normal request checks
+  would permit a successful response. It uses RFC 9110 §8.8.3.2 weak comparison against the **full
+  served tag**, including `format`, `profileCode`, `linkFlag`, and `contentCoding`; any matching list
+  member returns `304 Not Modified` with the current `ETag`, as specified by RFC 9110 §13.1.2.
+  When response compression is enabled, ETag-bearing `200` and `304` responses include
+  `Vary: Accept-Encoding`.
 - PUT/DELETE validates `If-Match` using strong comparison over the tag's **state-significant
   projection**. The backend reads the current `ContentVersion` and composes the expected tag from
   the request's `variantKey`, then compares it to the client's `If-Match` while **ignoring the
-  `format`, `profileCode`, and `linkFlag` components** — these encode only how the representation is
-  rendered or filtered, never resource state, and never change on a write. The compared components
+  `format`, `profileCode`, `linkFlag`, and `contentCoding` components** — these encode only how the
+  representation is rendered, filtered, or transferred, never resource state. The compared components
   are `ContentVersion` and `schemaEpoch`. `profileCode` is **not** significant (amended 2026-07-04):
   a profiled or cross-profile `If-Match` matches whenever `ContentVersion` and `schemaEpoch` agree,
   matching legacy ODS/API behavior — a readable profile filters the response body but does not alter
@@ -251,15 +266,24 @@ With stored representation stamps:
   served `ETag` still carries the full `variantKey`; only the write-time comparison is projected, so
   conditional-GET / `If-None-Match` caching stays byte-correct.) A client presents the `_etag` it
   obtained for the representation it is acting on.
-- A bare, unquoted `If-Match: *` is not an opaque tag but an RFC 7232 §3.1 wildcard existence
+- POST/PUT write-side `If-None-Match` uses RFC 9110 §8.8.3.2 weak comparison over the same
+  state-significant projection. Any matching supplied tag returns `412 Precondition Failed`; a
+  non-match proceeds through the normal write path. This deliberately differs from conditional GET,
+  where all representation components remain significant.
+- A bare, unquoted `If-Match: *` is not an opaque tag but an RFC 9110 §13.1.1 wildcard existence
   precondition (amended 2026-07-05): it is satisfied whenever a current representation of the target
   exists (any `ContentVersion`, no projection comparison) and returns `412` when none exists. For
   PUT and DELETE this is the one case where a missing target returns `412` instead of `404`; a POST
   upsert that resolves to an insert (no current representation) likewise returns `412`. Only the
   bare, unquoted `*` is the wildcard — a quoted `"*"` is treated as an ordinary opaque tag.
+- A bare, unquoted `If-None-Match: *` is the inverse RFC 9110 §13.1.2 existence precondition: it
+  returns `412` for a POST/PUT target that exists and permits a create when the target is absent. A
+  quoted `"*"` is an ordinary opaque tag.
 - On input the server accepts an unquoted `If-Match` value as equivalent to the same value quoted
   (amended 2026-07-05, for legacy ODS/API compatibility). Emitted `ETag` headers remain quoted and
-  `W/` weak tags remain rejected; the relaxation is on the input grammar only.
+  `W/` weak tags remain rejected by `If-Match`; `If-None-Match` accepts them for weak comparison.
+- When both headers are present, `If-Match` takes precedence and `If-None-Match` is ignored, following
+  RFC 9110 §13.2.2.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
 
 ## Retention and `oldestChangeVersion`

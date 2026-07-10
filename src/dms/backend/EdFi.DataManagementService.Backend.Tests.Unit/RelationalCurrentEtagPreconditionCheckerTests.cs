@@ -39,8 +39,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _writeSession = A.Fake<IRelationalWriteSession>();
         _sut = new RelationalCurrentEtagPreconditionChecker(
             _currentStateLoader,
-            new ServedEtagComposer(),
-            new IfMatchEvaluator(),
             NullLogger<RelationalCurrentEtagPreconditionChecker>.Instance
         );
 
@@ -74,14 +72,17 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
+        result.CurrentState.Should().NotBeNull();
         result.TargetContext.ObservedContentVersion.Should().Be(LockedContentVersion);
         _capturedLockCommand.CommandText.Should().Contain("FOR UPDATE");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.\"DocumentId\" = @documentId");
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
-        _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
+        _capturedCurrentStateLoadRequest
+            .TargetContext.ObservedContentVersion.Should()
+            .Be(LockedContentVersion);
     }
 
     [Test]
@@ -92,24 +93,25 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeFalse();
+        result!.IsSatisfied.Should().BeFalse();
         _capturedLockCommand.CommandText.Should().Contain("WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
-        _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
     }
 
     [Test]
-    public async Task It_ignores_link_and_format_differences_in_the_if_match_value()
+    public async Task It_ignores_link_format_and_content_coding_differences_in_the_if_match_value()
     {
         // Client presents an etag captured under links-off / (hypothetical) XML; the checker composes
-        // the current tag under links-on / JSON. The state-significant projection drops format and
-        // linkFlag, so the precondition still matches.
+        // the current tag under links-on / JSON / identity coding. The state-significant projection
+        // drops format, linkFlag, and contentCoding, so the precondition still matches.
         var linkAndFormatDivergentEtag = EtagComposer.Compose(
             LockedContentVersion,
-            new VariantKey($"{SchemaEpoch(SqlDialect.Pgsql)}.x._.n")
+            new VariantKey($"{SchemaEpoch(SqlDialect.Pgsql)}.x._.n.g")
         );
         var request = CreateRequest(
             SqlDialect.Pgsql,
@@ -119,7 +121,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
     }
 
     [Test]
@@ -133,25 +135,29 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeFalse();
+        result!.IsSatisfied.Should().BeFalse();
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
     }
 
     [Test]
     public async Task It_reports_mismatch_when_only_the_schema_epoch_differs()
     {
-        // Same ContentVersion, same format/profile/link, but a different schema epoch. schemaEpoch IS
-        // state-significant for If-Match (only format/profileCode/linkFlag are projected out), so this
-        // must 412. Guards against a refactor accidentally dropping schemaEpoch from the comparison.
+        // Same ContentVersion and representation selectors, but a different schema epoch. schemaEpoch
+        // IS state-significant for If-Match (format/profileCode/linkFlag/contentCoding are projected
+        // out), so this must 412. Guards against accidentally dropping schemaEpoch from the comparison.
         var differentEpochEtag = EtagComposer.Compose(
             LockedContentVersion,
-            new VariantKey($"ffffffff.j._.l")
+            new VariantKey("ffffffff.j._.l.i")
         );
         var request = CreateRequest(SqlDialect.Pgsql, new WritePrecondition.IfMatch(differentEpochEtag));
 
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeFalse();
+        result!.IsSatisfied.Should().BeFalse();
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
     }
 
     [Test]
@@ -170,13 +176,13 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
     }
 
     [Test]
     public async Task It_matches_a_wildcard_precondition_when_the_document_exists()
     {
-        // RFC 7232 If-Match: * matches whenever the target exists, regardless of the current etag.
+        // RFC 9110 §13.1.1 If-Match: * matches whenever the target exists, regardless of the current etag.
         // A deliberately non-matching Value proves the match comes from the wildcard flag, not the value.
         var request = CreateRequest(
             SqlDialect.Pgsql,
@@ -186,12 +192,62 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         var result = await _sut.CheckAsync(request, _writeSession);
 
         result.Should().NotBeNull();
-        result!.IsMatch.Should().BeTrue();
+        result!.IsSatisfied.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_is_not_satisfied_by_an_if_none_match_wildcard_when_the_document_exists()
+    {
+        // If-None-Match: * asserts the target does NOT exist. Reaching the checker means the row is
+        // locked and present, so the precondition is not satisfied (the write must 412).
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsSatisfied.Should().BeFalse();
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
+    }
+
+    [Test]
+    public async Task It_is_not_satisfied_by_an_if_none_match_tag_that_matches_the_current_projection()
+    {
+        // If-None-Match with a tag whose state-significant projection matches the current representation
+        // means the client's cached copy is current, so the conditional write must fail (412).
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfNoneMatch(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion))
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsSatisfied.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_is_satisfied_by_an_if_none_match_tag_that_does_not_match_the_current_projection()
+    {
+        // A non-matching If-None-Match tag means the client's copy is stale, so the write proceeds.
+        var request = CreateRequest(
+            SqlDialect.Pgsql,
+            new WritePrecondition.IfNoneMatch(CurrentComposedEtag(SqlDialect.Pgsql, LockedContentVersion - 1))
+        );
+
+        var result = await _sut.CheckAsync(request, _writeSession);
+
+        result.Should().NotBeNull();
+        result!.IsSatisfied.Should().BeTrue();
+        result.CurrentState.Should().NotBeNull();
     }
 
     private RelationalCurrentEtagPreconditionCheckRequest CreateRequest(
         SqlDialect dialect,
-        WritePrecondition.IfMatch precondition
+        WritePrecondition precondition
     )
     {
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
@@ -206,10 +262,20 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         );
     }
 
-    // Recomposes the etag the checker is expected to produce for the current row: same schema epoch,
-    // JSON format, links-on, and (by default) no profile. linkFlag/format/profile are all projected out
-    // of the If-Match comparison (amended 2026-07-04); profileName still varies the composed served tag
-    // but does not affect the match.
+    private void CurrentStateShouldNotHaveBeenLoaded()
+    {
+        A.CallTo(() =>
+                _currentStateLoader.LoadAsync(
+                    A<RelationalWriteCurrentStateLoadRequest>._,
+                    _writeSession,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    // Composes a client-facing etag for the current row. The checker evaluates only its ContentVersion
+    // and schemaEpoch projection, so format, profile, and link differences do not affect the match.
     private static string CurrentComposedEtag(
         SqlDialect dialect,
         long contentVersion,

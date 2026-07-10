@@ -230,6 +230,51 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_If_None_Match_Precondition_Failure : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureETagMisMatch(
+                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_complete_if_none_match_problem_details()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(412);
+            JsonNode
+                .DeepEquals(
+                    requestInfo.FrontendResponse.Body,
+                    JsonNode.Parse(
+                        """
+                        {"detail":"The If-None-Match precondition failed because a current representation of the resource matched the request header.","type":"urn:ed-fi:api:precondition-failed:if-none-match","title":"If-None-Match Precondition Failed","status":412,"correlationId":"trace-id","validationErrors":{},"errors":["The 'If-None-Match' request header requires that no current representation match the supplied value, but a matching representation exists."]}
+                        """
+                    )
+                )
+                .Should()
+                .BeTrue();
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Etag_Mismatch_Target_Does_Not_Exist
         : UpdateByIdHandlerTests
     {

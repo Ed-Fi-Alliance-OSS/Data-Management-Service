@@ -50,7 +50,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     // the write handler's/executor's etag through unchanged (and that it is neither the client's stale
     // request etag nor a stamp-style validator), not the etag format, so any stable opaque value that is
     // produced without the etag formatter suffices.
-    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l";
+    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l.i";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),
@@ -7675,6 +7675,38 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_ignores_if_none_match_on_a_delete_and_still_deletes()
+    {
+        // Decision 6: DELETE + If-None-Match is not a meaningful idiom. The delete precondition path
+        // keys on If-Match, so a sibling If-None-Match falls through to "no precondition" — the delete
+        // proceeds and the etag precondition checker is never invoked.
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteNamespaceAuthorization(new NamespaceAuthorizationExecutionResult.Authorized());
+        ConfigureDeleteOutcome(deleted: true);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            mappingSet,
+            new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+            documentUuid
+        );
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_namespace_mismatch_403_and_does_not_delete_without_if_match()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -8943,7 +8975,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         SqlDialect dialect
     )
     {
-        // RFC 7232 If-Match: * requires the target to exist; against an unresolvable DELETE target
+        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; against an unresolvable DELETE target
         // the wildcard yields 412 rather than 404. Default fake returns null from the UUID lookup.
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
@@ -8973,7 +9005,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         SqlDialect dialect
     )
     {
-        // RFC 7232 If-Match: * requires the target to exist; the initial lookup resolves a document,
+        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; the initial lookup resolves a document,
         // but the target vanishes (a concurrent delete) before the DELETE lock can be acquired. The
         // wildcard still yields 412 rather than 404, with reason TargetDoesNotExist since there is no
         // current representation left to compare against.

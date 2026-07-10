@@ -1115,7 +1115,7 @@ public class Given_A_Mssql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden_Fiel
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  RFC 7232 wildcard (If-Match: *) end-to-end behavior against a real database.
+//  RFC 9110 §13.1.1 wildcard (If-Match: *) end-to-end behavior against a real database.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]

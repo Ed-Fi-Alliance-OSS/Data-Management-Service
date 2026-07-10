@@ -23,7 +23,8 @@ public sealed record DescriptorGetByIdRequest
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         TraceId traceId,
-        RelationalAuthorizationContext? relationalAuthorizationContext = null
+        RelationalAuthorizationContext? relationalAuthorizationContext = null,
+        ResponseContentCoding responseContentCoding = ResponseContentCoding.Identity
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -37,6 +38,7 @@ public sealed record DescriptorGetByIdRequest
         TraceId = traceId;
         RelationalAuthorizationContext =
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
+        ResponseContentCoding = responseContentCoding;
     }
 
     /// <summary>
@@ -81,6 +83,9 @@ public sealed record DescriptorGetByIdRequest
     /// carry the namespace prefixes the planner needs.
     /// </summary>
     public RelationalAuthorizationContext RelationalAuthorizationContext { get; init; }
+
+    /// <summary>The content coding selected for the external response.</summary>
+    public ResponseContentCoding ResponseContentCoding { get; init; }
 }
 
 /// <summary>
@@ -98,7 +103,8 @@ public sealed record DescriptorQueryRequest
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         TraceId traceId,
         RelationalAuthorizationContext? relationalAuthorizationContext = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        ResponseContentCoding responseContentCoding = ResponseContentCoding.Identity
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -114,6 +120,7 @@ public sealed record DescriptorQueryRequest
         RelationalAuthorizationContext =
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
         ChangeVersionRange = changeVersionRange ?? ChangeVersionRange.None;
+        ResponseContentCoding = responseContentCoding;
     }
 
     /// <summary>
@@ -164,6 +171,9 @@ public sealed record DescriptorQueryRequest
     /// <see cref="ChangeVersionRange.None"/> when neither parameter was supplied.
     /// </summary>
     public ChangeVersionRange ChangeVersionRange { get; init; }
+
+    /// <summary>The content coding selected for the external response.</summary>
+    public ResponseContentCoding ResponseContentCoding { get; init; }
 }
 
 /// <summary>

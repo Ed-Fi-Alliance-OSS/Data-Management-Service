@@ -144,7 +144,7 @@ Notes:
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, and link flag); the document body is not hashed for etag construction.
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization is addressed separately in [auth.md](auth.md).
 
@@ -483,13 +483,16 @@ Prefer **eventual consistency** (background/write-driven projection) where rows 
 The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution,
 with `link` subtrees already present when link injection is compiled into the read plan.
 Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
-strip pass runs on the projected document immediately before serialization. Neither step changes
-the cached/full-resource `_etag` (see [link-injection.md](link-injection.md#cache-and-etag)).
+strip pass runs on the projected document immediately before serialization. The served `_etag` is
+then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
+participate in the request's `variantKey` (see
+[link-injection.md](link-injection.md#cache-and-etag)).
 
-Update tracking note: `dms.DocumentCache` stores cached `ContentVersion` plus the materialized
-`_etag/_lastModifiedDate`, and cache reads validate freshness by comparing cached
-`ContentVersion`/`LastModifiedAt` to the current
-`dms.Document.ContentVersion`/`ContentLastModifiedAt`.
+Update tracking note: `dms.DocumentCache` stores the `ContentVersion` associated with the cached
+document, not one reusable `_etag`. Cache reads validate freshness against the current
+`dms.Document.ContentVersion`; the server composes `_etag` per request from that version and the
+request's `variantKey`. `LastModifiedAt` remains denormalized for the materialized projection and
+CDC/indexing consumers.
 
 Denormalized resource naming:
 
@@ -507,7 +510,6 @@ CREATE TABLE dms.DocumentCache (
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
-    Etag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
@@ -529,7 +531,6 @@ CREATE TABLE dms.DocumentCache (
     ResourceName nvarchar(256) NOT NULL,
     ResourceVersion nvarchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
-    Etag nvarchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),

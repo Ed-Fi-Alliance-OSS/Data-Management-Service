@@ -45,7 +45,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Stored update tracking (stamps + tracked-change rows)
 
-- Serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps and computes `_etag` from deterministic canonical JSON for the full resource-state document before readable profile projection, excluding response decorations such as `link` (no read-time dependency derivation).
+- Serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps and composes `_etag` from `ContentVersion` plus the request's representation `variantKey` (including `profileCode` and `linkFlag`), with no document hashing or read-time dependency derivation.
 - Uses per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns (single-table range filter for `?minChangeVersion=X&maxChangeVersion=Y` reads) and per-resource `tracked_changes_*` tables (for `/deletes` and `/keyChanges`) for scalable Change Query candidate selection. See [change-queries.md](change-queries.md).
 
 ### Stable collection identities + merge semantics for collections
@@ -160,7 +160,7 @@ The redesign moves read complexity from “fetch 1 JSON blob” to “hydrate ro
 
 This baseline reduces some previous read overhead by:
 - reconstituting reference identity fields from local binding columns (no referenced-table joins), and
-- computing `_etag` from the canonical JSON form of the full resource-state document before readable profile projection, excluding response decorations such as `link`, while serving `_lastModifiedDate/ChangeVersion` from stored stamps (no dependency-token expansion).
+- composing `_etag` from stored `ContentVersion` plus the request's representation `variantKey`, while serving `_lastModifiedDate/ChangeVersion` from stored stamps (no document hashing or dependency-token expansion).
 
 Guidance:
 - Benchmark read paths early with representative deep resources and realistic page sizes (25/100/200).

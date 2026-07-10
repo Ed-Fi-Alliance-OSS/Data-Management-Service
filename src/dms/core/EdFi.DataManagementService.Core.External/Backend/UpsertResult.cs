@@ -88,7 +88,7 @@ public record UpsertResult
     public record UpsertFailureWriteConflict() : UpsertResult();
 
     /// <summary>
-    /// A failure because the current ETag does not exactly match the request's If-Match precondition
+    /// A failure because the request's If-Match or If-None-Match ETag precondition was not satisfied
     /// </summary>
     /// <param name="Reason">Machine-readable reason for the precondition failure</param>
     public record UpsertFailureETagMisMatch(

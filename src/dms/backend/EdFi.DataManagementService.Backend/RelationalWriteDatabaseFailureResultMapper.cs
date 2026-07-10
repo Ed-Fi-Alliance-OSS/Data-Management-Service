@@ -70,9 +70,13 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
         return resolution switch
         {
-            RelationalWriteConstraintResolution.RootNaturalKeyUnique => BuildIdentityConflictFailureResult(
-                request
-            ),
+            // Re-run the whole POST after a guarded create race so the winning representation is
+            // resolved and subjected to stored-value authorization before If-None-Match is evaluated.
+            RelationalWriteConstraintResolution.RootNaturalKeyUnique when IsIfNoneMatchCreate(request) =>
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict()),
+            RelationalWriteConstraintResolution.RootNaturalKeyUnique
+            or RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique =>
+                BuildIdentityConflictFailureResult(request),
             RelationalWriteConstraintResolution.RequestReference requestReference
                 when TryBuildRequestReferenceFailureResult(
                     request.OperationKind,
@@ -91,6 +95,11 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             ),
         };
     }
+
+    private static bool IsIfNoneMatchCreate(RelationalWriteExecutorRequest request) =>
+        request.OperationKind == RelationalWriteOperationKind.Post
+        && request.TargetContext is RelationalWriteTargetContext.CreateNew
+        && request.WritePrecondition is WritePrecondition.IfNoneMatch;
 
     private static RelationalWriteExecutorResult BuildIdentityConflictFailureResult(
         RelationalWriteExecutorRequest request

@@ -53,7 +53,9 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
         // user-facing identity conflict when it originates from the abstract identity table that a concrete
         // EducationOrganization subclass projects into (e.g. UX_EducationOrganizationIdentity_NK). Resolve
         // those natural-key constraints to the same identity-conflict result used for concrete roots; the
-        // mapper reports the concrete request body's identity values.
+        // mapper reports the concrete request body's identity values. Keep the resolution type distinct:
+        // unlike a concrete root collision, an abstract identity collision does not prove that the target
+        // guarded by If-None-Match: * now exists.
         return ResolveAbstractIdentityUniqueConstraint(request, violation);
     }
 
@@ -89,7 +91,9 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
 
             return match.Columns.Any(keyColumnNames.Contains)
                 ? new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName)
-                : new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violation.ConstraintName);
+                : new RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique(
+                    violation.ConstraintName
+                );
         }
 
         return new RelationalWriteConstraintResolution.Unresolved(violation.ConstraintName);

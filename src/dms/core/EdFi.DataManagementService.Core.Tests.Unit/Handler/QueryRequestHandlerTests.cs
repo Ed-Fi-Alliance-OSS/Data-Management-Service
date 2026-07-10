@@ -67,6 +67,10 @@ public class QueryRequestHandlerTests
         [SetUp]
         public async Task Setup()
         {
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                ResponseContentCoding = ResponseContentCoding.Brotli,
+            };
             var (queryHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
             await queryHandler.Execute(_requestInfo, NullNext);
@@ -90,6 +94,7 @@ public class QueryRequestHandlerTests
                 .BeAssignableTo<IQueryRequest>()
                 .Subject;
             relationalRequest.MappingSet.Should().BeSameAs(_requestInfo.MappingSet);
+            relationalRequest.ResponseContentCoding.Should().Be(ResponseContentCoding.Brotli);
         }
     }
 

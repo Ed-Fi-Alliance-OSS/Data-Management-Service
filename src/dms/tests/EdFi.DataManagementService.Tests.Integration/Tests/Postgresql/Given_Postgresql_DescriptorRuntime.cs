@@ -18,6 +18,10 @@ public sealed class Given_Postgresql_DescriptorRuntime : PostgresqlApiIntegratio
         DescriptorRuntimeScenario.It_creates_and_reads_a_descriptor(Harness);
 
     [Test]
+    public Task It_returns_not_modified_for_a_matching_descriptor_if_none_match() =>
+        DescriptorRuntimeScenario.It_returns_not_modified_for_a_matching_descriptor_if_none_match(Harness);
+
+    [Test]
     public Task It_updates_descriptor_non_identity_fields_and_advances_metadata() =>
         DescriptorRuntimeScenario.It_updates_descriptor_non_identity_fields_and_advances_metadata(Harness);
 

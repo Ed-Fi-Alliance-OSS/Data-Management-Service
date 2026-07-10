@@ -190,7 +190,7 @@ public class Given_DescriptorReadHandler
             )
         );
         // The profile-reduced representation the client actually sees must carry a distinct etag
-        // (RFC 7232 strong-validator semantics: distinct byte-representations, distinct etags).
+        // (RFC 9110 §8.8.1 strong-validator semantics: distinct byte-representations, distinct etags).
         var profiledEtag = _servedEtagComposer.Compose(
             new ServedEtagContext(
                 mappingSet.Key.EffectiveSchemaHash,
@@ -276,7 +276,7 @@ public class Given_DescriptorReadHandler
 
         var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(expectedEtag);
-        success.EdfiDoc["_etag"]!.GetValue<string>().Should().EndWith("._.n");
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().EndWith("._.n.i");
     }
 
     [Test]
