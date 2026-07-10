@@ -229,13 +229,16 @@ Notes:
   unchanged.
 * **Always tear down before switching Data Standard versions** — the provisioned database and
   staged workspace are version-specific, and DMS refuses to start against a database whose
-  effective schema hash does not match. Tear down with `bootstrap-local-dms.ps1 -d -v` **and the
-  same `-DatabaseEngine` you started with**, so the provisioned database volume is actually
-  removed — teardown selects the compose file (and therefore the named volume) by engine, so a
-  mismatched engine leaves that volume behind. For the MSSQL examples above:
-  `bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v` (it delegates to
+  effective schema hash does not match. For local bootstraps, tear down with
+  `bootstrap-local-dms.ps1 -d -v` **and the same `-DatabaseEngine` you started with**, so the
+  provisioned database volume is actually removed — teardown selects the compose file (and
+  therefore the named volume) by engine, so a mismatched engine leaves that volume behind. For the
+  MSSQL examples above: `bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v` (it delegates to
   `start-local-dms.ps1 -d -v -RemoveBootstrap`, removing both the SQL Server volume and the staged
-  `.bootstrap/` workspace).
+  `.bootstrap/` workspace). For published bootstraps (`bootstrap-published-dms.ps1`), tear down
+  with `start-published-dms.ps1 -d -v -RemoveBootstrap` instead — the published stack runs as a
+  separate compose project (`dms-published`), which `bootstrap-local-dms.ps1 -d -v` does not
+  touch.
 
 ## Schema Selection
 
@@ -373,7 +376,10 @@ local `.bootstrap/` workspace by delegating to
 `teardown-local-dms.ps1` script, then rerun the prepare commands. Add the same
 `-DatabaseEngine` you started with (e.g. `-DatabaseEngine mssql`) so teardown
 also removes that engine's data volume; the workspace removal itself is
-engine-independent.
+engine-independent. If you started the stack with `start-local-dms.ps1`
+directly, `./start-local-dms.ps1 -d -v -RemoveBootstrap` with the same flags
+you started with remains the equivalent direct recovery — including options
+the bootstrap wrapper does not accept, such as `-EnableKafka`.
 
 > **Note on `-RemoveBootstrap`:** `./bootstrap-local-dms.ps1 -d -v` removes the
 > `.bootstrap/` workspace for you — it delegates to

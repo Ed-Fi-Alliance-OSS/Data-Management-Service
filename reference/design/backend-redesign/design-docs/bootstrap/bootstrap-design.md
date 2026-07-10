@@ -334,8 +334,8 @@ Those static assets are runtime content inputs, not a second schema authority fo
 On same-checkout reruns, bootstrap treats this staged schema workspace as immutable while a running DMS
 process or already-provisioned database may still depend on it. If the intended staged schema set matches
 the existing workspace exactly, bootstrap reuses it as-is. If it differs, bootstrap fails fast and requires
-`start-local-dms.ps1 -d -v` or equivalent environment reset rather than rewriting live schema files in
-place.
+`bootstrap-local-dms.ps1 -d -v` or equivalent environment reset rather than rewriting live schema files
+in place.
 
 Package names, package versions, and developer-supplied source directories are only selection inputs. They
 are not themselves the hashed artifact. Package-backed selection is a later input-materialization path that

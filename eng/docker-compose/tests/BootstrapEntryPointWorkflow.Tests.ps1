@@ -1252,10 +1252,14 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $log[0] | Should -Match ([regex]::Escape("EnvironmentFile=$($script:repo.EnvFile)"))
         }
 
-        It "-d forwards only the compose-shape whitelist and no seed/configure/IDE/-DataStandardVersion options" {
+        It "-d forwards only the compose-shape whitelist; every other declared option stays behind" {
             # Guards the teardown forwarding whitelist. Options that do not change the compose-file set
             # must never reach the delegation; the stub records anything outside the whitelist in Rest=,
             # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
+            # Binds every parameter the entry script declares outside the whitelist (the teardown
+            # short-circuit returns before the wrapper's option-validation rules run, so all of them
+            # can be bound in one invocation); an unbound option would slip through the loop's
+            # ContainsKey gate unnoticed.
             $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-no-overforward.txt"
             New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
 
@@ -1263,16 +1267,25 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -EnvironmentFile $script:repo.EnvFile `
                 -LoadSeedData `
                 -SeedTemplate Minimal `
+                -SeedDataPath (Join-Path $script:repo.RepoRoot "seed-data") `
+                -AdditionalNamespacePrefix "uri://example.org" `
                 -SchoolYearRange "2025-2026" `
                 -DataStandardVersion 6.1 `
                 -InfraOnly `
+                -DmsBaseUrl "http://localhost:5198" `
+                -EnableConfig `
+                -AddExtensionSecurityMetadata `
+                -NoDataStore `
+                -AddSmokeTestCredentials `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
 
             $log.Count | Should -Be 1
             $log[0] | Should -Match 'Rest=$' -Because "no argument outside the compose-shape whitelist may reach start-local-dms.ps1 teardown"
-            foreach ($excluded in 'LoadSeedData', 'SeedTemplate', 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly') {
+            foreach ($excluded in 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
+                'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
+                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials') {
                 $log[0] | Should -Not -Match $excluded -Because "$excluded is not a compose-shape option and must not be forwarded to teardown"
             }
         }
