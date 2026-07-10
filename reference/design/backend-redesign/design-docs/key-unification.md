@@ -305,8 +305,8 @@ Semantics:
 - For each public identity column in the composite FK, use `DbColumnModel.Storage` to map:
   - local FK columns → canonical storage columns
   - referenced target columns → canonical storage columns
-- Append the corresponding local/target `LineageAnchorBindings` in stable transitive-lineage order and the terminal
-  target `DocumentId`.
+- Append the site's local `LineageAnchorColumns` and the target's `ReferenceTargetAnchorRead.OrderedAnchorColumns`
+  positionally in stable transitive-lineage order, then append the terminal target `DocumentId`.
 - Keep all-or-none constraints over the per-site aliases and local lineage-anchor columns, preserving the original
   meaning.
 
@@ -1697,13 +1697,13 @@ This section defines the required cross-engine behavior and mitigation strategy.
 
 PostgreSQL has no SQL Server 1785 DDL restriction on multiple cascade paths, so DMS emits declarative
 full-composite `ON UPDATE CASCADE` on **every** eligible edge (eligibility defined by transitive identity mutability:
-`IsAbstract || TransitivelyAllowIdentityUpdates`) and **never physically prunes** PostgreSQL FKs. This is unchanged by
+the effective concrete/abstract mutability closure) and **never physically prunes** PostgreSQL FKs. This is unchanged by
 the SQL Server foreign-key-pruning design.
 
-DMS does **not** run SQL Server multiple-path/value-flow classification or fail-fast on PostgreSQL. PostgreSQL is never
-pruned or classified for multiple paths; multiple paths retain the fixed provider actions. Provider-independent model
-validation rejects identity cycles before either dialect assigns actions. MetaEd may provide early SQL Server
-realizability feedback, but DMS remains authoritative for physical SQL Server selection (see
+DMS does **not** run SQL Server multiple-path classification on PostgreSQL. PostgreSQL is never pruned or classified for
+duplicate reachability; multiple paths retain the fixed provider actions. Provider-independent model validation rejects
+identity cycles and unsafe shared canonical-column writers before either dialect assigns actions. DMS remains
+authoritative for physical SQL Server selection (see
 [mssql-cascading.md](mssql-cascading.md)).
 
 Key properties under unification:
@@ -1711,19 +1711,22 @@ Key properties under unification:
 - The historical PostgreSQL hazard was a `CHECK (colA = colB)` constraint across two **independently-cascaded writable**
   columns (a “mid-cascade” failure). Key unification removes that pattern by ensuring there is only one writable
   physical column for the unified value.
-- When multiple composite FKs on a referencing row share the same canonical identity-part columns, cascaded updates are
-  safe because the stored canonical key is updated atomically as a single value for that row (there is no second
-  writable copy to drift).
+- One writable physical column removes drift between duplicate local copies, but it does **not** make independent cascade
+  writers safe. If only one parent changes the canonical column, the receiver can immediately violate its full FK to an
+  unchanged parent.
 
 Normative guidance:
 
 - Do **not** introduce DB-level equality checks across two independently-cascaded stored columns as an alternative to
   unification. This design exists specifically to avoid that failure mode.
-- Prefer the default FK behavior (`NOT DEFERRABLE`) and rely on normal FK cascade semantics; unification is intended to
-  make the cascade behavior safe without requiring deferred constraints.
-- DDL verification MUST include a fixture scenario where a single identity update fans out across multiple cascade
-  paths that reach the same referrer table whose composite FKs share unified canonical columns, and MUST validate the
-  identity update succeeds (no transient FK violations and no mid-cascade check failures).
+- Before provider action assignment, group mutable physical FK candidates by writable receiver column. Multiple writers
+  are supported only when every possible write has the same physical mutation origin and reaches the receiver in the
+  same initiating statement. Otherwise fail derivation as `ConflictingUnifiedCascadeWritesNotSupported`. The initial
+  implementation does not split the unification class or require deferred constraints.
+- Concrete/abstract pairs are subject to the same rule. Abstract identity maintenance occurs in an `AFTER` trigger's
+  later DML statement, so it cannot prove same-statement propagation for a column also written through a concrete FK.
+- DDL verification MUST include both a same-origin/same-statement fan-out that succeeds and independent-parent and
+  concrete/abstract shared-writer fixtures that fail provider-independent derivation.
 
 #### SQL Server (foreign-key pruning; native cascade on eligible edges)
 
@@ -1739,17 +1742,20 @@ columns are never dropped, so value-level referential integrity is always enforc
 The multi-edge shape above becomes a genuine diamond only when `B` and `C` depend on the **same upstream identity**: an
 update to that origin then reaches the referrer `A` by two paths (through `FK_A_B` and `FK_A_C`). Because both composite
 FKs share the same unified canonical column (`StudentUniqueId_Unified`), pruning one of them is *covered* by the
-surviving path. (If `B` and `C` were independent, both edges would stay `CASCADE` — no diamond, no pruning.)
+surviving path. If `B` and `C` are independently mutable, the topology has no diamond, but the shared writable column is
+rejected by the provider-independent value-flow validation before the SQL Server classifier runs.
 
 Normative rules:
 
 1. Reject self-loops and directed cycles in the semantic identity-reference graph before complete-vector derivation.
    Build the physical cascade multigraph in propagation direction over identity-propagating candidates (target is abstract
-   or `TransitivelyAllowIdentityUpdates = true`), then reject any physical cycle introduced by storage mapping or table
-   collapse before provider action assignment.
+   or transitively mutable under the effective concrete/abstract closure), then reject any physical cycle introduced by
+   storage mapping or table collapse before provider action assignment.
 2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
-   ancestor), not raw in-degree. Independent parents into a shared receiver stay `ON UPDATE CASCADE` and are never
-   pruned. A candidate `NO ACTION` break for a diamond is admissible only when another route has the same physical
+   ancestor), not raw in-degree. Independent parents whose FKs write disjoint receiver columns stay
+   `ON UPDATE CASCADE` and are never pruned. Independent mutable parents that share a writable receiver column fail the
+   provider-independent validation above. A candidate `NO ACTION` break for a diamond is admissible only when another
+   route has the same physical
    mutation origin, receiver row, identical complete-vector column mapping, structural presence implication, and native
    same-statement propagation. Candidate breaks are inputs to the deterministic bounded **global** selection defined in
    [mssql-cascading.md](mssql-cascading.md), not local first-fit; overlapping diamonds and parallel conflicts can share
@@ -2286,8 +2292,10 @@ semantics, or cascade correctness.
 - SQL Server propagation strategy (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
   - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
     per-origin duplicate reachability, not raw in-degree; identity cycles have already been rejected,
-  - eligible edges (including independent parents into a shared receiver) keep `ON UPDATE CASCADE`; a mutable edge uses
-    `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
+  - independent parents with disjoint receiver storage keep `ON UPDATE CASCADE`; multiple mutable FKs sharing one
+    writable receiver column must first prove the same physical mutation origin and same-statement propagation or fail
+    as `ConflictingUnifiedCascadeWritesNotSupported`,
+  - a mutable edge uses `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
   - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
     target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,
   - SQL Server reports proved no-solution separately from deterministic work-limit exhaustion.

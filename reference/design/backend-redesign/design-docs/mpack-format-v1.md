@@ -22,8 +22,9 @@ The `.mpack` format is a redistributable artifact that contains **dialect-specif
 - per-resource relational models (tables/columns/paths) needed by generic flatten/reconstitute
 - per-resource, dialect-specific SQL plans and projection metadata (write/read/reference-identity/descriptor-URI)
 
-This is an explicit runtime projection, not a serialization of relational-model derivation. It includes final FK actions
-and reference lineage-anchor bindings, but excludes derivation-local SQL Server classifier modes and carrier witnesses.
+This is an explicit runtime projection, not a serialization of relational-model derivation. It includes final FK actions,
+one target anchor-read record per referenced document target, and each site's aligned local anchor columns, but excludes
+derivation-local SQL Server classifier modes and carrier witnesses.
 
 The consumer (DMS runtime) MUST be able to execute schema-dependent relational work for that effective schema **without compiling** models or SQL from `ApiSchema.json` at runtime (but Core may still load `ApiSchema.json` for validation and identity extraction).
 
@@ -125,6 +126,8 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
 
 - `resource_keys`: ascending by `(resource_key_id)` (and then by `(project_name, resource_name)` for tie-breaking, though ties are invalid).
 - `resources`: ascending by `(project_name, resource_name)` using ordinal (culture-invariant) string ordering.
+- `reference_target_anchor_reads`: ascending by `(target_resource.project_name, target_resource.resource_name)` using
+  ordinal string ordering.
 - Within each `RelationalResourceModel`:
   - `tables_in_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)` using ordinal string ordering
     - This canonical order MUST match in-memory `RelationalResourceModel.TablesInDependencyOrder` and is used by both read hydration and write flattening.
@@ -137,8 +140,8 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
   - within `document_reference_bindings[*]`: `identity_bindings` preserve ApiSchema `referenceJsonPaths` order
     (identity field order); duplicate `reference_json_path` values are allowed only within one binding and represent a
     same-site flattened reference group
-  - within `document_reference_bindings[*]`: `lineage_anchor_bindings` preserve the target's transitive structural
-    lineage order and MUST NOT be resorted
+  - within `document_reference_bindings[*]`: `lineage_anchor_columns` are aligned positionally with the target's
+    `reference_target_anchor_reads[*].ordered_anchor_columns` and MUST NOT be resorted
   - within `key_unification_classes[*]`:
     - `member_path_columns` order is semantically significant and MUST NOT be sorted
     - producers MUST emit the list exactly as derived (used for deterministic write-time coalescing)
@@ -253,6 +256,12 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - `resource_key_count == resource_keys.Count`
    - recompute `resource_key_seed_hash` from `resource_keys` and compare
    - `resources` are unique by `(project_name, resource_name)` and sorted
+   - `reference_target_anchor_reads` are unique by `target_resource`, sorted, and contain one entry for every target named
+     by a `document_reference_binding`
+   - each target anchor-read record names explicit, non-empty `target_table` and `document_id_column` values; its
+     `ordered_anchor_columns` are distinct, exclude `document_id_column`, and preserve target transitive-lineage order
+   - for a concrete target, the target table, document-id column, and anchor columns exist in its relational model; an
+     abstract target has no relational model, so its record is the authoritative physical read contract
    - For each `ResourcePack`:
      - if `is_abstract=false`, has `relational_model`, `write_plan`, and `read_plan`
      - within `relational_model`, canonical path keys are unique:
@@ -260,8 +269,9 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
        - `descriptor_edge_sources[*].descriptor_value_path` has no duplicates
        - `document_reference_bindings[*].identity_bindings[*].reference_json_path` MAY repeat only within one
          `document_reference_binding` and only to represent one same-site flattened reference group
-       - `document_reference_bindings[*].lineage_anchor_bindings[*].target_identity_reference_path_chain` is non-empty
-         and distinct within the binding, and each anchor column exists as writable storage on the binding table
+       - `document_reference_bindings[*].lineage_anchor_columns` has the same arity as its target's
+         `ordered_anchor_columns`, preserves that positional order, and each local column exists as writable storage on
+         the binding table
      - all referenced tables/columns/bindings referenced by plans exist in the model
      - write/query binding invariants:
        - each `column_bindings[*].parameter_name` is present and unique case-insensitively within a statement
@@ -280,7 +290,9 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
 7. Reconstruct executor-facing contracts deterministically from normalized payload values:
    - resolve table identities by `(schema, name)` and columns by `DbColumnName.value` (within each resolved table)
    - compile canonical JsonPath strings into `JsonPathExpression` runtime objects
-   - reconstruct `ReferenceLineageAnchorBinding` in payload order; do not derive lineage from FK column names
+   - reconstruct `ReferenceTargetAnchorRead` directly from the top-level inventory and preserve its anchor-column order
+   - reconstruct each site's local lineage-anchor columns in payload order and validate them positionally against its
+     target record; do not derive a target table, target anchor, or local binding from FK names
    - derive keyset temp-table contract from dialect constants (`page`/`#page`, column `DocumentId`)
    - preserve authoritative payload order for all ordering-sensitive collections (no runtime resorting)
    - bind parameters by explicit metadata (`column_bindings`, query parameter inventories), never by SQL-text parsing
@@ -299,7 +311,8 @@ During step 7, consumers MUST fail fast with deterministic errors when any recon
 - duplicate canonical paths (`reference_object_path`, `descriptor_value_path`)
 - duplicate `reference_json_path` values in `read_plan.reference_identity_projection_table_plans[*].bindings_in_order[*].identity_field_ordinals_in_order`
 - duplicate `document_reference_bindings[*].identity_bindings[*].reference_json_path` values that are not confined to one same-site flattened reference group
-- empty/duplicate lineage `target_identity_reference_path_chain` values or unknown/non-writable lineage anchor columns
+- missing/duplicate target anchor-read records, anchor-arity mismatches, or unknown/non-writable target or local anchor
+  columns
 - duplicate/ambiguous parameter names where uniqueness is required
 - unsupported dialect values when deriving keyset table constants
 
@@ -372,6 +385,9 @@ message MappingPackPayload {
 
   // Per-resource artifacts.
   repeated ResourcePack resources = 20;
+
+  // Target-level runtime contract for batched lineage-anchor reads.
+  repeated ReferenceTargetAnchorRead reference_target_anchor_reads = 21;
 }
 
 message SchemaComponent {
@@ -388,6 +404,13 @@ message ResourceKeyEntry {
   string resource_name = 3;
   string resource_version = 4;                          // SemVer from ApiSchema projectSchema.projectVersion
   bool is_abstract_resource = 5;
+}
+
+message ReferenceTargetAnchorRead {
+  QualifiedResourceName target_resource = 1;
+  DbTableName target_table = 2;                         // concrete root or abstract identity table
+  DbColumnName document_id_column = 3;
+  repeated DbColumnName ordered_anchor_columns = 4;     // target transitive-lineage order; may be empty
 }
 
 message ResourcePack {
@@ -566,17 +589,14 @@ message DocumentReferenceBinding {
   DbColumnName fk_column = 4;                            // "..._DocumentId"
   QualifiedResourceName target_resource = 5;
   repeated ReferenceIdentityBinding identity_bindings = 6; // identity field order; duplicate reference_json_path allowed only for same-site flattened reference groups
-  repeated ReferenceLineageAnchorBinding lineage_anchor_bindings = 7; // target transitive structural lineage order
+  reserved 7;
+  reserved "lineage_anchor_bindings";
+  repeated DbColumnName lineage_anchor_columns = 8;     // local writable columns aligned to target record order
 }
 
 message ReferenceIdentityBinding {
   string reference_json_path = 1;                        // where to write in the referencing document
   DbColumnName column = 2;                               // physical column holding the identity value
-}
-
-message ReferenceLineageAnchorBinding {
-  repeated string target_identity_reference_path_chain = 1; // non-empty outer-to-inner structural reference path chain
-  DbColumnName column = 2;                                  // local writable stable-DocumentId storage column
 }
 
 message DescriptorEdgeSource {

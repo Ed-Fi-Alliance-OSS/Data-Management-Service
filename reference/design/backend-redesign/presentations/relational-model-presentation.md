@@ -278,7 +278,7 @@ classDiagram
         DbColumnName FkColumn
         QualifiedResourceName TargetResource
         IReadOnlyList~ReferenceIdentityBinding~ IdentityBindings
-        IReadOnlyList~ReferenceLineageAnchorBinding~ LineageAnchorBindings
+        IReadOnlyList~DbColumnName~ LineageAnchorColumns
     }
 
     class ReferenceIdentityBinding {
@@ -286,9 +286,11 @@ classDiagram
         DbColumnName Column
     }
 
-    class ReferenceLineageAnchorBinding {
-        IReadOnlyList~JsonPathExpression~ TargetIdentityReferencePathChain
-        DbColumnName Column
+    class ReferenceTargetAnchorRead {
+        QualifiedResourceName TargetResource
+        DbTableName TargetTable
+        DbColumnName DocumentIdColumn
+        IReadOnlyList~DbColumnName~ OrderedAnchorColumns
     }
 
     class DescriptorEdgeSource {
@@ -300,13 +302,17 @@ classDiagram
     }
 
     DocumentReferenceBinding --> "1..*" ReferenceIdentityBinding
-    DocumentReferenceBinding --> "0..*" ReferenceLineageAnchorBinding
+    DocumentReferenceBinding --> "1" ReferenceTargetAnchorRead : TargetResource lookup
 ```
 
 **`DocumentReferenceBinding`** — records how a JSON reference object maps to:
 - a `..._DocumentId` FK column, plus
 - per-identity-part binding columns (e.g., `Student_StudentUniqueId`), plus
-- the target's complete transitive lineage-anchor inventory
+- local lineage-anchor columns aligned to the target-level anchor-read record
+
+**`ReferenceTargetAnchorRead`** — records once per referenced target:
+- the concrete root or abstract identity table and its `DocumentId` column
+- the ordered target anchor columns used by the runtime batch read
 
 **`ReferenceIdentityBinding`** — maps a single identity scalar within a reference to:
 - a `ReferenceJsonPath` locating the scalar in the JSON reference object

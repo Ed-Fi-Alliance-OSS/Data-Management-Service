@@ -352,12 +352,20 @@ public sealed record DbTriggerInfo(
     DbTableName? MirrorStampTargetTable = null
 );
 
+public sealed record ReferenceTargetAnchorRead(
+    QualifiedResourceName TargetResource,
+    DbTableName TargetTable,
+    DbColumnName DocumentIdColumn,
+    IReadOnlyList<DbColumnName> OrderedAnchorColumns
+);
+
 public sealed record DerivedRelationalModelSet(
     EffectiveSchemaInfo EffectiveSchema,
     SqlDialect Dialect,
     IReadOnlyList<ProjectSchemaInfo> ProjectSchemasInEndpointOrder,
     IReadOnlyList<ConcreteResourceModel> ConcreteResourcesInNameOrder,
     IReadOnlyList<AbstractIdentityTableInfo> AbstractIdentityTablesInNameOrder,
+    IReadOnlyList<ReferenceTargetAnchorRead> ReferenceTargetAnchorReadsInResourceOrder,
     IReadOnlyList<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder,
     IReadOnlyList<TrackedChangeTableInfo> TrackedChangeTablesInNameOrder,
     IReadOnlyList<DbIndexInfo> IndexesInCreateOrder,
@@ -370,23 +378,29 @@ Notes:
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - **Complete propagation vectors.** Each target has one vector: public identity storage columns, the finite transitive
   union of stable `DocumentId` anchors exposed through its identity-reference chains, and the target's own `DocumentId`.
-  Every incoming `DocumentReferenceBinding` maps that complete vector to local storage. The generic table,
-  column, unique-constraint, FK, and write-binding models carry these values; there is no `AnchorSetId`, per-site key
-  variant, omission proof, or cross-cutting hash protocol.
+  `ReferenceTargetAnchorReadsInResourceOrder` has one entry for every document target used by a
+  `DocumentReferenceBinding`; it explicitly identifies the concrete root or abstract identity table, its `DocumentId`
+  column, and its ordered target anchor columns. Every incoming `DocumentReferenceBinding.LineageAnchorColumns` list has
+  matching arity and maps those anchors positionally to local storage. Runtime never infers an abstract table or target
+  anchor order from incoming FKs or naming conventions. The generic table, column, unique-constraint, FK, and
+  write-binding models carry these values; there is no `AnchorSetId`, per-site key variant, repeated target-lineage path,
+  omission proof, or cross-cutting hash protocol.
 - **Final provider actions.** `TableConstraint.ForeignKey` carries the complete ordered column lists and final
   `OnDelete`/`OnUpdate`. PostgreSQL actions are fixed mechanically and have no topology diagnostics. SQL Server
   classifier modes and carrier witnesses are derivation-local diagnostics, not fields on `TableConstraint.ForeignKey` or
   `MappingSet`; add them only to a manifest if a concrete diagnostic consumer requires them. DDL consumes the final
   action and never reruns classification.
-- **Cycle boundary and diamond support.** Provider-independent validation rejects recursive identity definitions as
-  `IdentityCascadeCycleNotSupported`. SQL Server accepts a legal all-native physical graph immediately; otherwise modes
-  are selected by deterministic bounded first-feasible search over the conflict core. Every physical
+- **Cycle, value-flow, and diamond support.** Provider-independent validation rejects recursive identity definitions as
+  `IdentityCascadeCycleNotSupported` and independently mutable FKs that write shared canonical receiver storage as
+  `ConflictingUnifiedCascadeWritesNotSupported` unless they prove the same physical origin and same-statement
+  propagation. Only then may SQL Server accept a legal all-native physical graph immediately; otherwise modes are
+  selected by deterministic bounded first-feasible search over the conflict core. Every physical
   `ON UPDATE CASCADE` FK participates as a decision or fixed edge, and covered edges use on-demand exact-carrier checks.
-  The shared deterministic work budget is 1,000,000 units. The stable search outcomes are proved
-  `NoSafeSqlServerAssignment` and distinct `CascadeClassificationComplexityExceeded`.
+  The shared deterministic 1,000,000-unit budget counts decision assignments and directed-edge visits. The stable search
+  outcomes are proved `NoSafeSqlServerAssignment` and distinct `CascadeClassificationComplexityExceeded`.
 - **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. Write
-  plans contain ordinary reference and lineage-anchor bindings only; they do not serialize solver state, proof trees, or
-  cycle-specific deferred-reference metadata.
+  plans contain ordinary reference bindings and aligned local lineage-anchor columns only; they do not serialize solver
+  state, proof trees, or cycle-specific deferred-reference metadata.
 - **Failure convention.** Model derivation keeps the repository's exception-based convention with concise structural
   witnesses. Do not introduce a global success/proof artifact. See `design-docs/mssql-cascading.md`.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
@@ -441,6 +455,8 @@ Design invariants:
 - All ordering-sensitive collections in `DerivedRelationalModelSet` are stored in canonical order (ordinal string ordering), and any lookup dictionaries are derived from those lists.
 - A runtime implementation must not depend on dictionary iteration order for determinism.
 - For `ConcreteResourcesInNameOrder`, “name order” means ordinal sort by `(project_name, resource_name)`.
+- `ReferenceTargetAnchorReadsInResourceOrder` is unique and ordinal-sorted by `TargetResource`; each target used by a
+  document-reference binding has exactly one entry.
 
 ---
 
@@ -450,8 +466,8 @@ Design invariants:
 - **DDL emission** (E02/E03) consumes `DerivedRelationalModelSet` and a dialect to emit deterministic SQL and manifests.
 - **Plan compilation** (E15) consumes `DerivedRelationalModelSet` and a dialect to produce the `WritePlansByResource`/`ReadPlansByResource` dictionaries used by `MappingSet`.
 - **Pack build** (E05) serializes the explicit runtime projection of `MappingSet` semantics into `.mpack`. That projection
-  includes complete-vector columns/actions and `ReferenceLineageAnchorBinding` values, but excludes derivation-local SQL
-  Server modes and carrier witnesses.
+  includes complete-vector columns/actions, the target anchor-read inventory, and each site's aligned local anchor
+  columns, but excludes derivation-local SQL Server modes and carrier witnesses.
 - **Pack load** (E05-S05) and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
 
 ---
@@ -493,8 +509,9 @@ For a write request targeting resource `R`:
      - descriptor references (descriptor resource key + normalized URI).
    - Perform a single batched lookup against `dms.ReferentialIdentity` to resolve `ReferentialId → DocumentId` for *all* of them.
    - Group successful document references by the target resource in `DocumentReferenceBinding`; for each group, batch-read
-     the target's ordered lineage-anchor columns by `DocumentId` from its concrete root or abstract identity table. Skip
-     this read for targets whose complete vector has no lineage anchors.
+     `ReferenceTargetAnchorRead.OrderedAnchorColumns` from its explicit `TargetTable`, matching rows through the explicit
+     `DocumentIdColumn`. Skip this read when `OrderedAnchorColumns` is empty. Do not infer abstract tables or anchor order
+     from incoming FKs or names.
    - Materialize `ResolvedReferenceSet` with a typed result per document-reference occurrence containing the terminal
      `DocumentId`, `ResourceKeyId`, and ordered lineage-anchor `DocumentId` values. Descriptor results remain keyed by
      `(normalizedUri, descriptorResource)` and carry no lineage tuple.
@@ -503,7 +520,8 @@ For a write request targeting resource `R`:
 
 4. **Build the per-request reference index**
    - Build an `IDocumentReferenceInstanceIndex` for this request using:
-     - `ResourceWritePlan.Model.DocumentReferenceBindings` (the “reference sites”: wildcard reference-object path + FK column + target resource), and
+     - `ResourceWritePlan.Model.DocumentReferenceBindings` (the “reference sites”: wildcard reference-object path + FK
+       column + target resource + aligned local lineage-anchor columns), and
      - Core’s extracted `DocumentReferenceArrays` (reference instances with concrete JSON locations that include array indices), and
      - the typed resolved occurrence values (to obtain the terminal `DocumentId` and ordered lineage anchors).
    - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath` (array indices along the wildcard

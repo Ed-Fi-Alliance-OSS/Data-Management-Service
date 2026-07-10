@@ -40,6 +40,9 @@ compatibility mode, legacy-schema interpretation, or migration.
 9. The finalized relational model, not the DDL emitter, owns the chosen FK actions.
 10. Abstractness does not imply mutability. An abstract identity target is mutable only when at least one of its concrete
     members in the effective schema is transitively mutable.
+11. Topology legality does not prove value-flow safety. Before either provider assigns actions, reject any canonical
+    receiver column that multiple mutable FKs can write unless every write has the same physical mutation origin and
+    reaches the receiver in the same database statement.
 
 ### Non-goals
 
@@ -49,7 +52,7 @@ compatibility mode, legacy-schema interpretation, or migration.
 - A generic missing-reference fallback or predictive reference-resolution language.
 - A cross-repository requirement that MetaEd reproduce DMS physical FK identities, selected actions, or carrier
   witnesses.
-- Mapping-pack changes before an implemented runtime consumer identifies the minimal additional fields it needs.
+- Mapping-pack derivation traces beyond the explicit target anchor-read contract required by the runtime.
 - General root-to-child or cross-table equality propagation outside document-reference identity propagation.
 - General cycle support, cycle-cut search, zero-hop cycle carriers, or deferred future-identity resolution.
 
@@ -179,6 +182,19 @@ arity mismatch, or null required anchor fails reference resolution. The request 
 FK remains the final correlation check. This is the ordinary value source for all anchor-bearing POST and PUT writes; it
 is not deferred-resolution metadata, predictive SQL, or a mutation-case protocol.
 
+Runtime and AOT mappings carry one explicit target anchor-read record keyed by target resource:
+
+```text
+TargetResource
+TargetTable
+DocumentIdColumn
+OrderedAnchorColumns
+```
+
+`TargetTable` names the concrete root or abstract identity table. Incoming site bindings carry only their aligned local
+anchor columns. Runtime uses the target record directly and never infers an abstract table or anchor order from incoming
+FKs, resource naming conventions, or repeated lineage paths.
+
 ## 3. Physical Foreign-Key Candidate Derivation
 
 Candidate construction occurs after reference binding, key unification, abstract-identity derivation, transitive
@@ -220,6 +236,7 @@ semantic identity-cycle validation
 -> transitive identity mutability
 -> complete vectors and propagation keys
 -> storage-mapped physical candidates and deduplication
+-> shared-receiver value-flow validation
 -> physical identity-cascade cycle validation
 -> PostgreSQL fixed actions OR SQL Server global selection
 -> finalized TableConstraint.ForeignKey values
@@ -253,6 +270,48 @@ With this closure, the current static stock-schema reconstruction has a delibera
 DMS-1258 must reproduce these counts from implemented v2 candidates and prove that both schemas return from the
 all-native SQL Server fast path without entering backtracking.
 
+Before implementation begins, update the DMS-1258 delivery description to this contract. It must require the
+provider-independent shared-receiver validation, on-demand stable-order carrier DFS, native-first first-feasible search,
+and the effort accounting in Section 6. Remove requirements for precomputed carrier routes, fewest-prunes optimization,
+and the superseded work-unit categories. DMS-1258 is not an alternate algorithm specification; this document is
+authoritative.
+
+### Shared canonical receiver value-flow validation
+
+SQL Server topology rules and immediate FK enforcement are separate constraints. Independent parents with disjoint
+cascade ancestry are topology-legal, but they are not value-flow-safe when their composite FKs share a writable receiver
+column. For example, if `B(X, BId)` and `C(X, CId)` independently cascade into `A(X, BId, CId)`, changing only `B.X`
+updates `A.X` and immediately invalidates `A`'s unchanged full FK to `C`.
+
+Microsoft documents the single-path cascade-tree restriction separately from the referential actions that update or
+reject changes: [MSSQLSERVER_1785](https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1785-database-engine-error?view=sql-server-ver17)
+and [Primary and foreign key constraints](https://learn.microsoft.com/en-us/sql/relational-databases/tables/primary-and-foreign-key-constraints?view=sql-server-ver17).
+
+After canonical storage mapping and effective mutability are known, group mutable physical FK candidates by writable
+receiver column. A group with more than one candidate is valid only when derivation proves, for every supported mutation
+of that column, that all writers:
+
+1. have the same physical mutation origin table and ordered origin key; and
+2. propagate to the receiver as part of the same initiating database statement.
+
+Make the proof finite by deriving writer facts from the same identity-mutability graph. A directly permitted identity
+change seeds `(origin table, ordered origin key, statement boundary)`; native cascades preserve that fact, while trigger
+maintenance starts a new statement boundary. For every origin fact that can reach any candidate in the shared-column
+group, every candidate must have a native route carrying that column to the receiver under the same fact. A missing
+candidate route, a different origin key, or a crossed statement boundary fails validation. Do not reuse SQL Server's
+backtracking classifier for this check.
+
+An origin shared only by equal current values, logical ancestry, or naming is not proof. A target with its own supported
+identity update contributes its own physical mutation origin, even if it is also transitively mutable from a common
+upstream target. Concrete-to-abstract identity maintenance does not satisfy the same-statement rule: the abstract table is
+updated by an `AFTER` trigger in a later DML statement. Apply the validation to concrete/concrete, concrete/abstract, and
+abstract/abstract candidate pairs alike.
+
+The initial implementation fails the mapping as `ConflictingUnifiedCascadeWritesNotSupported`; it does not split a
+previously unified column or defer constraint checking. This validation is provider-independent and runs before the
+PostgreSQL fixed assignment and before SQL Server's all-native fast path. It does not reject independent parents whose
+FKs write disjoint receiver columns.
+
 ### PostgreSQL fixed actions
 
 PostgreSQL does not execute the SQL Server classifier or search.
@@ -262,13 +321,13 @@ For each physical document-reference candidate:
 - use full-vector `ON UPDATE CASCADE` when the target is mutable under the effective-schema closure; and
 - use full-vector `ON UPDATE NO ACTION` when the target is genuinely immutable, whether concrete or abstract.
 
-These actions are assigned mechanically from target mutability. Multiple cascade paths are retained. Identity cycles have
-already failed provider-independent validation. PostgreSQL receives no SQL Server mode or carrier witness, and a
-SQL-Server-incompatible multiple-path graph does not fail a PostgreSQL build.
+These actions are assigned mechanically from target mutability. Multiple cascade paths are retained. Identity cycles and
+unsafe shared-column writers have already failed provider-independent validation. PostgreSQL receives no SQL Server mode
+or carrier witness, and a SQL-Server-incompatible multiple-path graph does not fail a PostgreSQL build.
 
-Provider-independent failures remain possible, including an identity cycle, unrepresentable vector, invalid storage
-mapping, mismatched vector arity, or ambiguous canonical-column mapping. Those are model failures, not SQL Server
-multiple-path classification.
+Other provider-independent failures remain possible, including an unrepresentable vector, invalid storage mapping,
+mismatched vector arity, or ambiguous canonical-column mapping. Those are model failures, not SQL Server multiple-path
+classification.
 
 ## 5. SQL Server Graph Legality and Structural Carriers
 
@@ -291,7 +350,8 @@ edges plus `NativeCascade` decision edges must additionally contain at most one 
 of tables.
 
 Raw incoming-edge count greater than one is not a multiple-path test. Independent parents with disjoint cascade ancestry
-are legal.
+are topology-legal. They reach this classifier only if the provider-independent shared-receiver validation has also
+proved their value flows safe; independent parents that write the same canonical receiver column have already failed.
 
 ### Finite structural carrier relation
 
@@ -343,8 +403,9 @@ Every SQL Server physical document-reference FK receives one final mode:
 | `CoveredNoAction` | `ON UPDATE NO ACTION` | The mutable edge is pruned and has a retained structural carrier route. |
 | `ImmutableNoAction` | `ON UPDATE NO ACTION` | The target has no supported identity mutation origin. |
 
-Validate the all-native graph first. If it is cycle-free and has no duplicate-reachability pair, accept it immediately;
-no conflict core, carrier traversal, or backtracking is required.
+After provider-independent shared-receiver value-flow validation, validate the all-native graph. If it is cycle-free and
+has no duplicate-reachability pair, accept it immediately; no conflict core, carrier traversal, or backtracking is
+required.
 
 Only after the fast path fails, compute the conflict core without enumerating routes. Count all-native paths from each
 origin in topological order, capping counts at two. For each conflicting origin/receiver pair, use forward and reverse
@@ -372,22 +433,17 @@ physical inputs produce identical actions; they do not claim global prune optima
 Selection is database-only. It neither invokes plan compilation nor duplicates write-plan logic. Plan compilation
 consumes the selected actions afterward.
 
-The classifier has a single DMS-owned limit of **1,000,000 work units per derived SQL Server schema**. Every classifier
-loop charges the counter before it performs one of these deterministic operations:
+The classifier has a single DMS-owned limit of **1,000,000 work units per derived SQL Server schema**. Charge one unit
+before either algorithmic event:
 
-- examining one physical vertex or edge during cycle, topological ordering, path-count, conflict-core, legality, or
-  carrier traversal;
-- assigning one conflict-core decision edge;
-- composing or comparing one ordered column-mapping pair;
-- comparing one receiver-row correlation-key element;
-- examining one presence atom during union or implication comparison; or
-- initializing or resetting one reusable buffer slot.
+- assigning a mode to one conflict-core decision edge during DFS/backtracking; or
+- visiting one directed edge during cycle/topological, path-count, conflict-core, legality, or on-demand carrier DFS.
 
-The implementation uses reusable assignment, path-count, reachability, DFS-stack, mapping, and presence buffers. It does
-not copy a mode vector per branch or allocate/store carrier-route arrays. Classifier memory is therefore linear in the
-input graph plus its declared mapping/correlation/presence metadata, with an on-demand DFS stack bounded by the acyclic
-vertex count. The work counter covers every traversal and metadata-comparison loop; it is a deterministic effort bound,
-not a wall-clock promise.
+Column-mapping comparisons, correlation elements, presence atoms, vertex initialization, and scratch-buffer resets do not
+define additional work-unit kinds. Their sizes are already bounded by the relational model and provider limits. Reusable
+buffers and other allocation reductions are implementation optimizations to adopt when measurements justify them, not
+part of the classifier contract. Implementations still must not enumerate or retain carrier-route arrays. The counter is
+a deterministic algorithmic effort bound, not a wall-clock promise.
 
 Graph checks, mode traversal, and on-demand carrier checks draw from the same counter in stable structural order. A
 fixture that consumes exactly the last unit completes; attempting the next unit yields
@@ -421,10 +477,12 @@ contracts.
 
 ## 7. Identity Cycles Are Unsupported
 
-MetaEd does not currently enforce the required recursive-identity prohibition. METAED-1667 must add deterministic
-identity-cycle validation before the ODS relational cascade enhancer runs; otherwise a reachable cycle can make that
-enhancer follow references indefinitely. The validator rejects self-loops and directed cycles with one stable-order cycle
-witness. A semantic-diamond warning remains optional and non-blocking.
+MetaEd does not currently enforce the required recursive-identity prohibition, and the existing ODS relational cascade
+enhancer has no visited/cycle guard. The first and only required METAED-1667 delivery is deterministic identity-cycle
+validation before that enhancer runs; otherwise a reachable cycle can make it follow references indefinitely. The
+validator rejects self-loops and directed cycles with one stable-order cycle witness. The ticket must describe this as a
+new prohibition, not preservation of an existing validator. A semantic-diamond warning is outside this delivery; if it
+is still wanted, create a separate explicit follow-up.
 
 DMS validates the same invariant independently so malformed, hand-built, or mapping-pack-loaded input cannot reach
 complete-vector recursion or provider action assignment.
@@ -463,6 +521,7 @@ only when a concrete diagnostic consumer requires them.
 Keep the repository's exception-based model-derivation convention. Use a small set of typed categories:
 
 - `IdentityCascadeCycleNotSupported`;
+- `ConflictingUnifiedCascadeWritesNotSupported`;
 - `PropagationVectorNotRepresentable`;
 - `PhysicalForeignKeyCandidateConflict`;
 - `NoSafeSqlServerAssignment`;
@@ -476,15 +535,16 @@ artifact.
 The relational model and mapping pack carry final FK columns/actions. SQL Server modes and witnesses stay
 derivation-local unless a concrete manifest diagnostic consumer is established.
 
-Mapping packs also carry each reference site's lineage-anchor bindings so `MappingSet.FromPayload` can reconstruct the
-runtime projection. They do not serialize classifier modes, solver state, exhaustive certificates, semantic hashes, or
+Mapping packs carry one explicit target anchor-read record per referenced document target and each reference site's
+positionally aligned local anchor columns so `MappingSet.FromPayload` can reconstruct the runtime projection. They do not
+serialize repeated target lineage paths, classifier modes, solver state, exhaustive certificates, semantic hashes, or
 proof identifiers. Verify runtime/AOT semantic equivalence without adding cycle-specific metadata.
 
-MetaEd owns implementing the authored identity-cycle prohibition before its ODS relational enhancer. It may also emit an
-early, non-blocking warning for a semantic diamond, but it does not classify SQL Server realizability, search mode vectors,
-prove carriers, or report DMS work-limit outcomes. DMS retains its independent semantic validation and is the sole
-blocking authority after canonical storage mapping; it owns physical candidate deduplication, physical cycle validation,
-selected SQL Server actions, and provider provisioning.
+MetaEd owns implementing the authored identity-cycle prohibition before its ODS relational enhancer. METAED-1667 does
+not include semantic-diamond analysis. MetaEd does not classify SQL Server realizability, search mode vectors, prove
+carriers, or report DMS work-limit outcomes. DMS retains its independent semantic validation and is the sole blocking
+authority after canonical storage mapping; it owns shared-receiver value-flow validation, physical candidate
+deduplication, physical cycle validation, selected SQL Server actions, and provider provisioning.
 
 ## 9. Verification and Delivery
 
@@ -498,9 +558,12 @@ Behavioral mutation fixtures cover every primitive component and non-empty subse
 retargets, primitive plus retargets, and all writable groups together. These are matrix tests of the whole-vector rule,
 not classifier search cases.
 
-SQL Server fixtures cover the stock all-native fast path, sole edges, independent parents, covered/uncovered and
-overlapping diamonds, parallel edges, fixed cascading edges, optional-carrier failure, conflicting unified writes, no
-solution, deterministic work-limit exhaustion, and reversed-input determinism.
+SQL Server fixtures cover the stock all-native fast path, sole edges, independent parents with disjoint receiver storage,
+covered/uncovered and overlapping diamonds, parallel edges, fixed cascading edges, optional-carrier failure, no solution,
+deterministic work-limit exhaustion, and reversed-input determinism. Provider-independent fixtures cover conflicting
+unified writes: independently mutable parents sharing one receiver column, including a concrete/abstract pair, fail as
+`ConflictingUnifiedCascadeWritesNotSupported` before either provider assigns actions or SQL Server takes the fast path;
+same-origin, same-statement writers remain valid.
 
 Provider/API fixtures cover errors 1785 and 547 for diamonds, ordinary reference-resolution failure, true retarget, stale
 version, rollback, hidden-profile-state preservation, stamping, referential-identity maintenance, change queries, and final
@@ -511,7 +574,7 @@ constraint validation. Provider-independent model fixtures cover deterministic s
 1. **Database evidence and static feasibility:** stock-schema vector measurements and maximum-value probes.
 2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, and limits.
 3. **Provider actions:** PostgreSQL fixed assignment and SQL Server bounded global diamond selection.
-4. **Manifest/AOT/pack integration:** final actions and ordinary lineage-anchor bindings only.
+4. **Manifest/AOT/pack integration:** final actions, target anchor-read records, and aligned local anchor columns only.
 5. **Full-schema qualification:** stock, TPDM, extension, and adversarial generated DDL; widest-count provider coverage;
    actual row and target-unique/FK-supporting index sizes at representative row counts; reference-resolution round trips;
    concurrency; and write/cascade timing.
@@ -525,8 +588,8 @@ All slices are required before the finalized `v2` relational contract is complet
 | Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens; the focused provider probe covers the nine-column widest-byte case, not the 27-column widest-count case | Do not implement per-site minimal anchor closure; retain full-schema row/index and widest-count qualification. |
 | Identity-cycle boundary | Settled: unsupported | Reject deterministically before vector recursion or provider action assignment; add no cycle runtime protocol. |
 | Stock all-native topology | Static reconstruction reports 22/23 candidates and no conflicts for DS 5.2/TPDM | Reproduce from implemented v2 candidates and return before conflict-core search. |
-| Simple global search | Design-ready; implementation measurement open | Use on-demand exact-carrier checks and the 1,000,000-unit deterministic budget; add minimum-prune optimization only from performance evidence. |
-| Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions and lineage bindings; do not add classifier/proof/hash protocols. |
+| Simple global search | Design-ready; implementation measurement open | Use on-demand exact-carrier checks and the 1,000,000-unit budget counting only decision assignments and edge visits; add minimum-prune optimization only from performance evidence. |
+| Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions, target anchor-read records, and aligned local anchor columns; do not add classifier/proof/hash protocols. |
 
 ## Relationship to Legacy ODS
 
@@ -535,5 +598,6 @@ multiple-path test, and retains an alphabetically selected source while disablin
 test is a converging diamond rather than a directed cycle.
 
 DMS does not copy that algorithm. It rejects genuine identity cycles, constructs storage-mapped physical candidates,
-distinguishes independent parents from duplicate reachability, searches diamond action assignments globally, and fails
-SQL Server derivation instead of silently weakening referential integrity.
+rejects unsafe shared-column writers independently of topology, distinguishes safe independent parents from duplicate
+reachability, searches diamond action assignments globally, and fails SQL Server derivation instead of silently weakening
+referential integrity.

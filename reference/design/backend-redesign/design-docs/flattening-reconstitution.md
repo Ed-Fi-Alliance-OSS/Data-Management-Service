@@ -277,7 +277,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - for every direct identity-contributing reference `T -> U`, `U.DocumentId` followed recursively by `U`'s complete
      lineage-anchor inventory in stable structural order; and
    - the target's own `DocumentId` last.
-   Every incoming `DocumentReferenceBinding` receives local lineage-anchor bindings for that same vector. Reuse local
+   Every incoming `DocumentReferenceBinding` receives local lineage-anchor columns aligned to that same vector. Reuse local
    storage only with exact same-target-row and equivalent-presence proof; otherwise add dedicated stored anchor columns.
    Widen the target's single `*_RefKey` UNIQUE constraint, construct and deduplicate physical FK candidates before
    `OnUpdate` selection, then assign PostgreSQL actions mechanically or run SQL Server global selection. This is an
@@ -1362,10 +1362,11 @@ public abstract record TableConstraint
 /// flattened reference field fans out to multiple upstream identity bindings. Consumers that materialize logical JSON
 /// fields must group such duplicates by <c>ReferenceJsonPath</c>.
 /// </param>
-/// <param name="LineageAnchorBindings">
-/// The target's complete transitive reference-backed lineage inventory mapped to local stable DocumentId storage.
-/// Every incoming site has the same ordered inventory. A local column may be shared with another exact same-row
-/// reference binding; there are no per-site anchor subsets or propagation-key variants.
+/// <param name="LineageAnchorColumns">
+/// Local stable DocumentId storage aligned positionally with the target's
+/// <c>ReferenceTargetAnchorRead.OrderedAnchorColumns</c>. Every incoming site has the same arity and order. A local
+/// column may be shared with another exact same-row reference binding; there are no per-site anchor subsets or repeated
+/// target-lineage paths in the runtime contract.
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this reference contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
@@ -1377,7 +1378,7 @@ public sealed record DocumentReferenceBinding(
     DbColumnName FkColumn,                         // e.g. "School_DocumentId"
     QualifiedResourceName TargetResource,
     IReadOnlyList<ReferenceIdentityBinding> IdentityBindings,
-    IReadOnlyList<ReferenceLineageAnchorBinding> LineageAnchorBindings
+    IReadOnlyList<DbColumnName> LineageAnchorColumns
 );
 
 /// <summary>
@@ -1387,14 +1388,6 @@ public sealed record DocumentReferenceBinding(
 /// <param name="Column">Binding column holding the identity value (may be <c>UnifiedAlias</c> under key unification).</param>
 public sealed record ReferenceIdentityBinding(
     JsonPathExpression ReferenceJsonPath,
-    DbColumnName Column
-);
-
-/// <summary>
-/// Maps one structural identity-reference lineage path exposed by the target to stable local DocumentId storage.
-/// </summary>
-public sealed record ReferenceLineageAnchorBinding(
-    IReadOnlyList<JsonPathExpression> TargetIdentityReferencePathChain,
     DbColumnName Column
 );
 
@@ -2178,7 +2171,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
     // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE when the
-    // target's identity can change transitively — IsAbstract || TransitivelyAllowIdentityUpdates).
+    // target's identity is mutable under the effective concrete/abstract mutability closure).
 
     await tx.CommitAsync(ct);
 }
