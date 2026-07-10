@@ -22,9 +22,9 @@ Draft. This is an initial design proposal for replacing the current three-table 
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
 4. **Bounded cascades with stable FKs**: Store relationships as full-composite vectors containing referenced identity
-   values, complete transitive lineage anchors, and stable target `DocumentId`. PostgreSQL assigns fixed actions
-   mechanically and is never pruned, topology-classified, or failed because of cascade topology. SQL Server globally
-   selects error-1785-legal actions and permits exact-carrier `NO ACTION` cuts for diamonds or safely breakable cycles.
+   values, complete transitive lineage anchors, and stable target `DocumentId`. Provider-independent validation rejects
+   identity cycles. PostgreSQL assigns fixed actions mechanically and is never pruned or classified for multiple paths.
+   SQL Server globally selects error-1785-legal actions and permits exact-carrier `NO ACTION` cuts for diamonds.
    Every FK keeps the complete vector; there is no reduced-FK or identity-value trigger fallback (see
    [mssql-cascading.md](mssql-cascading.md)). Key-unified bindings may be presence-gated aliases of canonical storage;
    see [key-unification.md](key-unification.md).
@@ -42,7 +42,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
 - **Polymorphic references use abstract identity tables and abstract union views**: For abstract targets, provision an
   `{AbstractResource}Identity` table and target it with the same complete-vector/provider-action rules as concrete
-  resources, including SQL Server safe cycle breaking. Also provision `{AbstractResource}_View` for diagnostics; see
+  resources, including SQL Server diamond handling. Also provision `{AbstractResource}_View` for diagnostics; see
   [data-model.md](data-model.md) and [mssql-cascading.md](mssql-cascading.md).
 
 ## Key Implications vs the Current Three-Table Design
@@ -55,7 +55,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
   - responses reconstitute reference identity values from local bindings. Complete public/anchor vectors stay consistent
-    through PostgreSQL fixed actions or SQL Server globally selected actions, including safe cycle cuts (see
+    through PostgreSQL fixed actions or SQL Server globally selected diamond actions (see
     [mssql-cascading.md](mssql-cascading.md)).
 - Identity/URI changes do not rewrite terminal target `..._DocumentId` values, but **do** propagate complete public and
   lineage-anchor values. Cascades still exist for derived artifacts, but they are handled row-locally:
@@ -134,10 +134,10 @@ This redesign is split into focused docs in this directory:
 
 ## Risks / Open Questions
 
-1. **Cascade feasibility (SQL Server)**: Error 1785 is handled by deterministic bounded global physical action
-   selection. Exact-carrier cuts may safely break diamonds or cycles; cycle membership alone is not a failure. Proved
-   no-solution and work-limit exhaustion are distinct, with no reduced-FK/trigger fallback. See
-   [mssql-cascading.md](mssql-cascading.md).
+1. **Cascade feasibility (SQL Server)**: Provider-independent validation rejects identity cycles. SQL Server error 1785
+   duplicate reachability is handled by deterministic bounded global physical action selection. Exact-carrier cuts may
+   safely break diamonds. Proved no-solution and work-limit exhaustion are distinct, with no reduced-FK/trigger fallback.
+   See [mssql-cascading.md](mssql-cascading.md).
 2. **Operational fan-out**: an identity update on a “hub” document can synchronously update many referencing rows (via PostgreSQL FK cascades or SQL Server native `ON UPDATE CASCADE` on eligible edges), increasing deadlock and latency risk.
 3. **Schema width/index pressure**: persisting referenced identity fields for all document reference sites increases table width and may require additional indexing for query performance.
 4. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).

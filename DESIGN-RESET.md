@@ -9,9 +9,9 @@ This file is the scope-control and decision record. The authoritative technical 
 Reproducible measurements are in
 [`reference/design/backend-redesign/evidence/dms-1129`](reference/design/backend-redesign/evidence/dms-1129).
 
-The database cycle and corrected complete-vector screen have passed. The actual cycle has not executed through DMS PUT,
-so deferred existing-reference handling remains an open implementation gate under DMS-1275. The current production model
-still emits the superseded reduced-FK/identity-value-trigger shape and cannot yet provide that proof.
+The corrected complete-vector screen has passed. The current production model still emits the superseded
+reduced-FK/identity-value-trigger shape, so implementation and full-schema qualification remain open. Identity cycles are
+outside the supported model and are rejected before provider action assignment.
 
 ## Why the Design Was Reset
 
@@ -23,7 +23,7 @@ The reset keeps only behavior required for v1 correctness:
 
 - full-composite document-reference foreign keys;
 - complete identity propagation through native cascades;
-- SQL Server error-1785 action selection and safe cycle breaking;
+- correct SQL Server error-1785 action selection for diamonds and overlapping multiple-path conflicts;
 - all valid primitive, reference-backed, and mixed identity mutations;
 - PostgreSQL's fixed provider behavior; and
 - the minimum runtime metadata needed to execute accepted DMS PUT cases.
@@ -36,19 +36,19 @@ Everything else must be introduced from a concrete failing fixture or measured p
 2. Every document-reference FK is full composite.
 3. Identity values propagate through native `ON UPDATE CASCADE`; there is no reduced-FK or identity-value propagation
    trigger fallback.
-4. PostgreSQL receives actions mechanically and is never pruned, topology-classified, or failed because of cascade
-   topology.
-5. SQL Server alone performs error-1785 classification, selective pruning, and topology fail-fast.
-6. SQL Server selection is global and deterministic because overlapping diamonds and cycles may require backtracking.
-7. Cycle membership is not a failure. Every safely breakable assignment is considered within deterministic bounds.
+4. Identity cycles are invalid for v1. Semantic cycles fail before vector derivation; physical cycles introduced by
+   storage mapping fail before action selection. DMS does not cut or execute cycles.
+5. PostgreSQL receives actions mechanically and is never pruned or classified for multiple-path topology.
+6. SQL Server alone performs error-1785 duplicate-path classification, selective pruning, and topology fail-fast.
+7. SQL Server selection is global and deterministic because overlapping diamonds and parallel conflicts may require
+   backtracking.
 8. Every pruned SQL Server edge has an exact same-row, same-value, same-statement-boundary carrier for every applicable
    mutation.
 9. V1 supports every independently writable primitive component and subset, one or more reference-backed replacements,
    and mixed primitive/reference changes.
-10. An accepted cycle must execute through actual unprofiled and profile-constrained DMS PUTs.
-11. SQL Server fails before DDL when exhaustive bounded analysis proves no safe assignment; work-limit exhaustion is a
-    distinct result.
-12. Ordinary provider-independent model validation applies to both dialects.
+10. SQL Server fails before DDL when exhaustive bounded analysis proves no safe diamond assignment; work-limit
+    exhaustion is a distinct result.
+11. Ordinary provider-independent model validation applies to both dialects.
 
 ## Decision Record
 
@@ -99,11 +99,12 @@ resolution machinery.
 ### 2. Provider boundary — accepted
 
 PostgreSQL assigns full-vector `CASCADE` to abstract or transitively mutable targets and `NO ACTION` to genuinely immutable
-concrete targets. It retains cycles and multiple paths.
+concrete targets. It retains multiple paths. Identity cycles have already failed provider-independent validation.
 
 SQL Server constructs storage-mapped physical candidates, deduplicates identical candidates, and selects final update
-actions globally. The retained cascade multigraph must be acyclic and contain at most one path between every ordered table
-pair. Every covered `NO ACTION` edge must pass the exact-carrier obligations in the authoritative design.
+actions globally. The input graph is cycle-free by validation; the retained cascade multigraph must contain at most one
+path between every ordered table pair. Every covered `NO ACTION` edge must pass the exact-carrier obligations in the
+authoritative design.
 
 The finalized relational model owns `OnUpdate`; DDL only renders it.
 
@@ -120,28 +121,16 @@ extension, or adversarial fixtures exceed the selected work bound.
 Selected-edge diagnostics retain only a concise structural carrier witness. Failure diagnostics name the first failed
 obligation. No universal hashes or proof certificates are public contracts.
 
-### 4. Deferred existing references — open and bounded
+### 4. Identity cycles and reference resolution — accepted
 
-An identity-changing PUT can submit a still-present reference using the target's future identity. Ordinary pre-write
-lookup misses because the retained cascade has not created that identity yet.
+MetaEd does not admit recursive identity definitions in the supported input contract. DMS independently validates the
+semantic identity-reference graph before complete-vector recursion so malformed, hand-built, or pack-loaded input cannot
+bypass that boundary. It repeats the check after storage mapping so table collapse cannot introduce a physical cycle. A
+self-loop or directed identity cycle fails with `IdentityCascadeCycleNotSupported`.
 
-The only retained hypothesis is:
-
-- normal lookup always wins;
-- only an already-persisted binding on an existing PUT may defer;
-- the persisted target `DocumentId` and only lineage anchors proved unchanged may be reused;
-- changing public values come from the submitted/origin write;
-- changing lineage anchors come from typed ordinary resolved vectors or proved origin writes;
-- subject, receiver, and target rows are correlated and locked by stable identity;
-- the normal resolver runs again with a fresh session-bound instance after DML; and
-- the submitted identity must resolve uniquely to the same target `DocumentId` before commit.
-
-POST, newly present references, and true retargets use ordinary resolution. A miss, ambiguity, different target, stale
-state, failed FK, or contract mismatch rolls back the transaction.
-
-The unprofiled executor has the necessary transaction seam. The profile path currently rejects the miss earlier, so the
-gate requires both unprofiled and profile-constrained PUTs, including hidden-state preservation and collection-row
-correlation. Until those tests pass, this is an implementation hypothesis rather than a completed runtime protocol.
+Because cycles are not accepted, ordinary reference resolution is sufficient. POST, PUT, newly present references, and
+true retargets all require normal pre-write resolution. DMS does not reuse a persisted target for a submitted identity
+that does not resolve, predict a future identity, or compile deferred existing-reference metadata.
 
 ### 5. Minimal artifact contract — accepted constraint
 
@@ -149,7 +138,6 @@ Persist only what a consumer uses:
 
 - relational model and mapping pack: complete FK columns and final actions;
 - mapping/runtime projection: ordered lineage-anchor bindings;
-- write plan: only an implemented deferred-binding marker needed by the executor; and
 - optional manifest diagnostics only after a concrete consumer exists.
 
 SQL Server modes, exhaustive derivation traces, solver state, omission proofs, semantic hashes, and certificate trees are
@@ -160,8 +148,6 @@ not mapping/runtime contracts.
 | Gate | Status | Required consequence |
 |---|---|---|
 | Complete-vector measured screen | Passed | Keep one complete vector; retain full-schema physical qualification. |
-| Reciprocal provider cycle | Passed | Keep safe zero-hop cycle breaking and PostgreSQL full cascades. |
-| Deferred ordinary resolution | Open — DMS-1275 | Do not claim runtime cycle support until both DMS PUT paths pass. |
 | Simple global search | Open until DMS-1258 implementation measurements | Add optimization only for an observed bound failure. |
 | Minimal artifact contract | Accepted design constraint; implementation pending | Add fields only for concrete runtime/AOT consumers. |
 
@@ -169,10 +155,9 @@ not mapping/runtime contracts.
 
 | Slice | Ownership | Exit condition |
 |---|---|---|
-| Database evidence and static feasibility | Complete | Provider cycle and computed complete-vector screen pass. |
+| Database evidence and static feasibility | Complete | Computed complete-vector screen and maximum-value probes pass. |
 | Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented. |
-| Provider actions and SQL Server classifier | DMS-1258 | Generated DDL installs and graph/value-flow fixtures produce deterministic outcomes. |
-| DMS PUT identity execution | DMS-1275 | Actual unprofiled/profile PUT cycles and all v1 mutation forms pass on both providers. |
+| Provider actions and SQL Server classifier | DMS-1258 | Generated DDL installs and diamond/value-flow fixtures produce deterministic outcomes. |
 | Manifest, AOT, and mapping-pack integration | DMS-1276 | Runtime and pack loading produce equivalent final models and behavior. |
 | Full-schema qualification | DMS-1277 | Stock, TPDM, extension, adversarial, concurrency, and performance evidence pass. |
 
@@ -186,6 +171,8 @@ The authoritative design no longer contains:
 - site-specific anchor-set fixed points or omission proofs;
 - serialized solver machinery or a provisional-feasible result;
 - a generalized predictive future-reference language;
+- deferred existing-reference resolution or runtime cycle metadata;
+- safe-cycle search, zero-hop cycle carriers, or cycle PUT protocols;
 - custom JSON recordset/correlation protocols without an accepted fixture;
 - SQL Server proof objects in runtime plans or mapping packs; or
 - PostgreSQL topology classification or SQL Server compatibility failure.
@@ -194,4 +181,4 @@ The authoritative design no longer contains:
 
 The authoritative design owns the full fixture matrix. The reset is successful as a design exercise because it records a
 bounded architecture, evidence-backed decisions, explicit open gates, and independently testable delivery slices. The v1
-implementation is complete only when every delivery slice passes, especially the actual DMS PUT cycle.
+implementation is complete only when every remaining delivery slice passes.

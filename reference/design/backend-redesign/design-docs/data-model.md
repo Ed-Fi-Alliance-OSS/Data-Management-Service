@@ -605,13 +605,13 @@ Typical structure:
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
       - PostgreSQL assigns actions mechanically: abstract or transitively mutable targets use `ON UPDATE CASCADE`, and
-        genuinely immutable concrete targets use `ON UPDATE NO ACTION`. PostgreSQL is never pruned,
-        topology-classified, or failed because of cascade topology.
+        genuinely immutable concrete targets use `ON UPDATE NO ACTION`. PostgreSQL is never pruned or classified for
+        multiple paths. Provider-independent validation rejects identity cycles.
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
         - constructs and deduplicates storage-mapped physical candidates before action selection;
         - globally selects `ON UPDATE CASCADE` or covered `ON UPDATE NO ACTION` for mutable edges so the retained graph is
           error-1785 legal and every pruned edge has an exact same-row, same-value, same-statement carrier;
-        - treats diamonds, parallel edges, and cycles as action choices that may require backtracking; and
+        - treats diamonds and parallel conflicts as action choices that may require backtracking; and
         - fails before DDL only when bounded search proves no safe assignment (or separately reaches its deterministic
           work limit). There is no `DocumentId`-only or trigger fallback.
   - Add an all-or-none CHECK constraint per reference site:
@@ -675,9 +675,9 @@ This redesign provisions an **identity table per abstract resource**:
 - FKs for abstract reference sites:
   - referencing tables use the abstract target's complete propagation vector and target
     `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, <CompleteLineageDocumentIds...>, DocumentId)`.
-    PostgreSQL assigns its fixed full-vector action without topology classification. SQL Server includes these physical
-    candidates in the same global error-1785/carrier selection as concrete targets, so a safely covered cycle may be
-    broken and an unsafe assignment fails before DDL. Abstract identity tables remain trigger-maintained by
+    PostgreSQL assigns its fixed full-vector action without multiple-path classification. SQL Server includes these
+    physical candidates in the same global error-1785/carrier selection as concrete targets. Identity cycles fail
+    provider-independent validation before action selection. Abstract identity tables remain trigger-maintained by
     abstract-identity *maintenance* triggers, which are distinct from the removed identity-value propagation trigger;
     see [mssql-cascading.md](mssql-cascading.md).
 

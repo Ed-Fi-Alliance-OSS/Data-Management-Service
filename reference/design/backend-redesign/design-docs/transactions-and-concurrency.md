@@ -121,11 +121,12 @@ DDL generator requirements (derived from ApiSchema):
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
 - Enforce a complete-vector FK over canonical storage: public identity values, all complete transitive lineage anchors,
   and target `DocumentId`.
-  - PostgreSQL assigns full-vector actions mechanically from target mutability. It is never pruned,
-    topology-classified, or failed because of cascade topology.
-  - SQL Server globally selects physical actions that satisfy error 1785 and exact carrier safety. Diamonds, parallel
-    edges, and cycles are action choices; safely covered cycles are supported. Derivation fails before DDL only when no
-    safe assignment exists or the distinct deterministic work limit is reached. There is no `DocumentId`-only or
+  - Provider-independent validation rejects identity cycles before action assignment.
+  - PostgreSQL assigns full-vector actions mechanically from target mutability. It is never pruned or classified for
+    multiple paths.
+  - SQL Server globally selects physical actions that satisfy error 1785 and exact carrier safety. Diamonds and parallel
+    conflicts are action choices. Derivation fails before DDL only when no safe assignment exists or the distinct
+    deterministic work limit is reached. There is no `DocumentId`-only or
     identity-value trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
 
 When a referenced document’s identity changes, the database propagates updated identity values into all direct
@@ -155,7 +156,7 @@ The pieces fit together like this:
      target `DocumentId`.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
    - The complete-vector FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses its fixed action and SQL
-     Server includes the candidate in global action selection, including safe cycle breaking (see
+     Server includes the candidate in global diamond action selection after provider-independent cycle validation (see
      [mssql-cascading.md](mssql-cascading.md)). This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored public identity values and lineage anchors are kept correct automatically.
@@ -228,10 +229,6 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      The ordinary resolved occurrence therefore carries `(DocumentId, ordered lineage anchors)`; targets without anchors
      need no second read, and no reference occurrence causes an individual query.
    - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
-   - For an approved existing-binding future-identity miss on an unprofiled or profile-constrained PUT, defer only the
-     stable target id after stored-state authorization/current-state correlation. Profile-constrained execution uses the
-     normal Core-produced writable-profile and stored-state visibility contracts and preserves hidden state. Changing
-     public values still come from submitted/origin bindings.
 3. Backend writes within a single transaction:
    - For update flows that already loaded the current document state, backend SHOULD compare the request-derived
      post-merge rowset to the current persisted rowset before issuing DML. If they are equal, treat the request as a successful
@@ -241,8 +238,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - For each document reference site:
      - persist the stable `..._DocumentId`, and
      - populate canonical/storage identity-part columns deterministically (key-unified when required).
-     - populate every complete lineage-anchor column from the occurrence's typed ordinary resolved vector, a persisted
-       value proved unchanged for an eligible deferred existing binding, or a proved origin-write binding.
+     - populate every complete lineage-anchor column from the occurrence's typed ordinary resolved vector.
      - per-site identity-part binding columns (`{RefBaseName}_{IdentityPart}`) may be generated aliases and are not
        written directly.
    - If key unification introduces synthetic presence flags for optional non-reference paths, writers MUST set those
@@ -251,13 +247,12 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - `dms.Descriptor` upsert if the resource is a descriptor.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
    - Complete-vector FK propagation is dialect-specific: PostgreSQL uses its fixed actions; SQL Server uses globally
-     selected native cascades and exact-carrier covered `NO ACTION` edges, including accepted cycle breaks (see
+     selected native cascades and exact-carrier covered `NO ACTION` diamond edges (see
      [mssql-cascading.md](mssql-cascading.md)). Both paths update canonical storage and binding aliases recompute.
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
      changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
    - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
-5. For every deferred binding, a fresh ordinary resolver verifies the submitted future referential identity resolves to
-   the same persisted target `DocumentId`. Commit only after all checks pass; otherwise roll back everything.
+5. Commit only after all checks pass; otherwise roll back everything.
 
 ### Authorization (CRUD checks)
 
@@ -276,8 +271,9 @@ Integration points:
 This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key
 fields and complete stable lineage anchors alongside every document reference. PostgreSQL assigns fixed full-vector
 actions mechanically. SQL Server globally selects native cascades and exact-carrier covered `NO ACTION` edges. Its
-search handles overlapping diamonds and safely breakable cycles and fails before DDL only when no safe assignment exists
-(or a separately reported work limit is reached). See [mssql-cascading.md](mssql-cascading.md).
+search handles overlapping diamonds and parallel conflicts and fails before DDL only when no safe assignment exists (or
+a separately reported work limit is reached). Identity cycles fail provider-independent validation. See
+[mssql-cascading.md](mssql-cascading.md).
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
@@ -286,9 +282,9 @@ Key effects:
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL is never pruned, topology-classified, or failed because of cascade topology. Provider-independent storage
-  and model validation still applies.
-- SQL Server rejects a table reached by multiple cascade paths, and cascade cycles (error 1785), so it uses
+- PostgreSQL is never pruned or classified for multiple-path topology. Provider-independent storage and identity-cycle
+  validation still applies.
+- SQL Server rejects a table reached by multiple cascade paths (error 1785), so it uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child). Global bounded search
   chooses a legal retained graph and proves every pruned edge has the same-row, same-value, same-boundary carrier.
   Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
@@ -382,10 +378,6 @@ Collection-write note:
 ### Deadlock + retry policy
 
 Deadlocks are possible under contention, especially for identity updates with large cascades. The correct response is to roll back and retry the **entire** write transaction.
-
-For deferred existing-reference PUTs, gather the subject, receiver, and target `DocumentId` values before resource DML,
-lock them in deterministic numeric order, reload/validate the correlated state, and then write. Locking one root and later
-discovering a reciprocal target is insufficient and can deadlock with the inverse operation.
 
 Recommended: bounded retry (e.g., 3 attempts) with jittered backoff. Treat these as retryable:
 - PostgreSQL: `40P01` (deadlock detected)

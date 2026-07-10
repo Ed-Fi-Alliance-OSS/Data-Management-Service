@@ -266,8 +266,9 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of
      identity columns or complete lineage anchors).
    - Use `{schema}.{A}Identity` as the complete-vector FK target for abstract reference sites. PostgreSQL assigns its
-     fixed full-cascade action without topology classification. SQL Server includes abstract-target candidates in the
-     same global error-1785/carrier selection as concrete targets, including safely breakable cycles (see
+     fixed full-cascade action without multiple-path classification. SQL Server includes abstract-target candidates in
+     the same global error-1785/carrier selection as concrete targets. Provider-independent validation has already
+     rejected identity cycles (see
      [mssql-cascading.md](mssql-cascading.md)).
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
@@ -421,32 +422,11 @@ target without lineage anchors needs no additional read. During row materializat
 current row's `OrdinalPath` because it is enumerating the arrays. It performs one O(1) lookup to populate the terminal FK
 column and every local lineage-anchor binding; there is no per-occurrence database query or per-row hashing.
 
-### 5.2.2 Deferred existing references during an identity-changing PUT
+### 5.2.2 Reference-resolution failure boundary
 
-Normal bulk lookup always runs first and always wins. A missing document reference is not generally reusable. After
-stored authorization and current-state loading, an unresolved occurrence may continue only when a compiled marker proves
-that it is an already-present binding on the persisted receiver row, its target `DocumentId` is stable, and a retained
-native route gives that same target the submitted future identity in the initiating statement.
-
-For that occurrence, reuse only the persisted target `DocumentId` and lineage anchors proved unchanged. Changing public
-identity values come from the submitted/origin write, and changing reference-backed lineage anchors come from typed
-ordinary resolved vectors or other proved origin-write bindings. Reusing the old complete vector would be incorrect.
-
-The executor locks subject, receiver, and target documents in deterministic stable-id order, revalidates current state,
-and feeds the approved target id through the ordinary row materializer. Existing stable collection-row correlation is
-reused; request ordinals never become persisted correlation identity.
-
-Immediately after resource DML, create a fresh session-bound ordinary resolver so a memoized pre-write miss cannot be
-reused. Resolve each submitted future identity again inside the transaction and require the same target `DocumentId`.
-Any miss, ambiguity, different target, stale state, failed FK, or marker mismatch rolls back all work. POST, newly
-present references, and true retargets retain ordinary resolution. Profile-constrained PUT is part of this gate: use the
-normal Core-produced writable-profile and stored-state visibility contracts, preserve hidden rows/values, and defer only
-a visible writable binding already correlated to the persisted receiver row.
-
-The POC must determine the exact minimal marker, but it is bounded to owning binding/site, persisted target-id source,
-stable receiver-row locator, retained-route eligibility, and post-statement same-target verification. Do not introduce
-per-mutation-case resolution plans, predictive SQL, JSON recordsets, or a generic future-reference protocol. See
-[mssql-cascading.md](mssql-cascading.md) for the open evidence gate.
+Every submitted document reference must resolve through the ordinary bulk resolver before the write. A miss is never
+reinterpreted as an existing binding or predicted future identity. Identity cycles are unsupported, so write plans need no
+deferred-reference marker, post-statement resolution pass, or cycle-specific locking protocol.
 
 ### 5.2.3 Authorization integration (pre-write checks)
 
@@ -608,12 +588,11 @@ Within a single transaction:
    - extension child collections using the same merge strategy as core collections
 6. No derived reverse-edge maintenance is required:
    - referential-id impacts propagate through complete-vector reference FKs over canonical storage. PostgreSQL consumes
-     fixed actions; SQL Server consumes globally selected actions that may safely break diamonds or cycles. There is no
+     fixed actions; SQL Server consumes globally selected actions that safely break covered diamonds. Identity cycles
+     have already failed provider-independent validation. There is no
      identity-value propagation trigger (see [mssql-cascading.md](mssql-cascading.md)); and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
-7. For every approved deferred existing reference, rerun the ordinary resolver with a fresh session-bound instance and
-   require the submitted future identity to resolve to the same persisted target `DocumentId`.
-8. Commit only after all verification and committed-representation reads succeed; otherwise roll back the transaction.
+7. Commit only after all verification and committed-representation reads succeed; otherwise roll back the transaction.
 
 Bulk insert options (non-codegen):
 - **Multi-row INSERT** with parameters (good default)
@@ -809,8 +788,8 @@ In this redesign, identity fields inside reference objects are persisted as loca
 - `..._DocumentId` (stable FK), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
   plus any complete lineage-anchor columns. Native full-vector FK actions keep these values consistent: PostgreSQL uses
-  its fixed assignment, while SQL Server uses the globally selected error-1785-safe assignment, including supported
-  cycle breaks (see [mssql-cascading.md](mssql-cascading.md)).
+  its fixed assignment, while SQL Server uses the globally selected error-1785-safe diamond assignment. Identity cycles
+  are rejected before action selection (see [mssql-cascading.md](mssql-cascading.md)).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
 

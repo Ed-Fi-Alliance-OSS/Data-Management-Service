@@ -3,13 +3,12 @@
 ## Status
 
 This document is the authoritative DMS-1129 design after the simplification reset. It defines the smallest known
-architecture that preserves full referential integrity, safely breakable SQL Server cycles, complete v1 identity-change
-support, and the provider boundary between SQL Server and PostgreSQL.
+architecture that preserves full referential integrity, correct SQL Server diamond handling, complete v1 identity-change
+support, and the provider boundary between SQL Server and PostgreSQL. Genuine identity cycles are unsupported.
 
-The direct database cycle and corrected transitive complete-vector measured screen have executable/reproducible evidence.
-The actual DMS PUT gate is still open: the current executor has a suitable unprofiled transaction seam, but no accepted
-cycle has yet executed through the normal DMS API and the profile path still rejects the pre-write miss. Sections that
-depend on that gate say so explicitly.
+The corrected transitive complete-vector measured screen has executable/reproducible evidence. Implementation and
+full-schema qualification remain open. The earlier reciprocal-cycle database POC is retained as historical evidence only;
+cycle execution is no longer part of the v1 contract.
 
 `RelationalMappingVersion` remains `v1`. This is the initial production relational contract; this work adds no mapping
 compatibility mode, legacy-schema interpretation, database migration, or version bump.
@@ -23,20 +22,18 @@ compatibility mode, legacy-schema interpretation, database migration, or version
 2. Identity values propagate through native `ON UPDATE CASCADE`. DMS does not use an identity-value propagation trigger.
    Existing triggers for referential-identity, abstract-identity, stamping, and change-query maintenance retain their
    separate responsibilities.
-3. PostgreSQL receives fixed actions mechanically. PostgreSQL is never pruned, topology-classified, or failed because
-   of cascade topology.
-4. SQL Server alone classifies the physical cascade graph for error 1785, selects covered `NO ACTION` edges, and fails
-   before DDL when no safe assignment exists.
-5. SQL Server selection is global and may backtrack. Local first-fit pruning is not correct for overlapping diamonds,
-   parallel edges, or cycles.
-6. Cycle membership is not a failure. A cycle is an action-choice problem, and every safely breakable assignment is
-   considered within deterministic bounds.
+3. Identity cycles fail provider-independent validation before vector derivation or provider action assignment. DMS does
+   not cut or execute them.
+4. PostgreSQL receives fixed actions mechanically. PostgreSQL is never pruned or topology-classified for multiple paths.
+5. SQL Server alone classifies the physical cascade graph for error-1785 duplicate reachability, selects covered
+   `NO ACTION` edges, and fails before DDL when no safe diamond assignment exists.
+6. SQL Server selection is global and may backtrack. Local first-fit pruning is not correct for overlapping diamonds or
+   parallel conflicts.
 7. Every covered `NO ACTION` edge has an exact same-row, same-value, same-statement-boundary carrier for every applicable
    identity mutation.
 8. V1 covers every independently writable primitive component, every non-empty primitive subset, one or more
    reference-backed replacements, multiple reference replacements, and mixed primitive/reference changes.
 9. The finalized relational model, not the DDL emitter, owns the chosen FK actions.
-10. An assignment that requires an unexecutable future-identity PUT binding is not safe.
 
 ### Non-goals
 
@@ -48,6 +45,7 @@ compatibility mode, legacy-schema interpretation, database migration, or version
   witnesses.
 - Mapping-pack changes before an implemented runtime consumer identifies the minimal additional fields it needs.
 - General root-to-child or cross-table equality propagation outside document-reference identity propagation.
+- General cycle support, cycle-cut search, zero-hop cycle carriers, or deferred future-identity resolution.
 
 Ordinary provider-independent model validation still applies to both dialects. The PostgreSQL policy above is only a
 statement about cascade topology.
@@ -67,9 +65,9 @@ values. Its stable anchor is the referenced row's `DocumentId`. For each direct 
 then every lineage anchor in `CompletePropagationVector(U)` in `U`'s order. Apply this recursively in the target's stable
 structural reference order. The result is the finite transitive union of stable rows whose public values can flow through
 `T`'s identity-reference chains. Exact duplicate storage may be reused only with the same-row and presence proof below;
-otherwise each structural lineage path receives dedicated storage. Recursive authored identity definitions that cannot
-produce a finite structural union fail provider-independent model validation. Descriptor values are not
-document-reference lineages.
+otherwise each structural lineage path receives dedicated storage. Recursive authored identity definitions fail
+provider-independent validation as `IdentityCascadeCycleNotSupported`. Descriptor values are not document-reference
+lineages.
 
 The transitive union is required even though only the direct references are independently replaceable on `T`. If `T`
 identifies through `U`, `U` identifies through `V`, and a receiver key-unifies `T`'s inherited `V` value with a direct
@@ -205,11 +203,13 @@ artifact consumer later needs correlation outside the derivation process.
 The derivation order is:
 
 ```text
-reference binding
+semantic identity-cycle validation
+-> reference binding
 -> key unification and abstract identity
 -> transitive identity mutability
 -> complete vectors and propagation keys
 -> storage-mapped physical candidates and deduplication
+-> physical identity-cascade cycle validation
 -> PostgreSQL fixed actions OR SQL Server global selection
 -> finalized TableConstraint.ForeignKey values
 -> naming, shortening, manifests, and DDL
@@ -224,15 +224,13 @@ For each physical document-reference candidate:
 - use full-vector `ON UPDATE CASCADE` when the target is abstract or transitively permits identity changes; and
 - use full-vector `ON UPDATE NO ACTION` when the concrete target is genuinely immutable.
 
-These actions are assigned mechanically from target mutability. Cycles and multiple cascade paths are retained.
-PostgreSQL receives no SQL Server mode or carrier witness, and a SQL Server-incompatible graph does not fail a PostgreSQL
-build.
+These actions are assigned mechanically from target mutability. Multiple cascade paths are retained. Identity cycles have
+already failed provider-independent validation. PostgreSQL receives no SQL Server mode or carrier witness, and a
+SQL-Server-incompatible multiple-path graph does not fail a PostgreSQL build.
 
-Provider-independent failures remain possible, including an unrepresentable vector, invalid storage mapping, mismatched
-vector arity, or ambiguous canonical-column mapping. Those are model failures, not topology classification.
-
-PostgreSQL may derive the same minimal deferred-PUT runtime marker from its fixed cascade routes. That is executor-plan
-derivation, not PostgreSQL pruning, unsafe-graph detection, or topology fail-fast.
+Provider-independent failures remain possible, including an identity cycle, unrepresentable vector, invalid storage
+mapping, mismatched vector arity, or ambiguous canonical-column mapping. Those are model failures, not SQL Server
+multiple-path classification.
 
 ## 5. SQL Server Graph Legality and Carrier Safety
 
@@ -241,10 +239,8 @@ derivation, not PostgreSQL pruning, unsafe-graph detection, or topology fail-fas
 Build a directed multigraph with one vertex per physical table and one edge per mutable physical candidate, oriented
 from referenced target to referencing receiver. Parallel candidates remain parallel edges.
 
-The retained `NativeCascade` subgraph must satisfy SQL Server error-1785 legality:
-
-- it contains no directed cycle; and
-- there is at most one retained directed path between every ordered pair of tables.
+Provider-independent validation guarantees the input identity-cascade graph is acyclic. The retained `NativeCascade`
+subgraph must additionally contain at most one directed path between every ordered pair of tables.
 
 Raw incoming-edge count greater than one is not a multiple-path test. Independent parents with disjoint cascade ancestry
 are legal.
@@ -279,8 +275,7 @@ For every complete action assignment and applicable mutation case, prove:
 7. **Statement boundary.** The carrier write is visible at the covered FK's constraint-check boundary.
 8. **Subset composition.** The proof remains valid for every supported simultaneous group combination.
 
-A direct origin write to the covered receiver row is an explicit zero-hop carrier. Reachability alone, common table
-ancestry, equality of old values, or success for one populated example is not a proof.
+Reachability alone, common table ancestry, equality of old values, or success for one populated example is not a proof.
 
 ## 6. Deterministic Bounded Global Selection
 
@@ -307,11 +302,8 @@ This traversal makes the first valid assignment exactly the required objective:
 1. fewest `CoveredNoAction` edges;
 2. lexicographically smallest structural edge-order mode vector.
 
-Selection is database-only while the deferred-resolution Gate 2 is open. It neither invokes plan compilation nor
-duplicates plan eligibility logic. Plan compilation consumes the selected actions afterward. If Gate 2 proves that the
-deterministic database-safe winner is not executable while another database-safe assignment is, introduce only a small
-pre-selection `DeferredPutEligibility` input derived before selection; do not make the classifier anticipate the write
-plan contract.
+Selection is database-only. It neither invokes plan compilation nor duplicates write-plan logic. Plan compilation
+consumes the selected actions afterward.
 
 Do not add a general cost model. Add memoization or reachability-state canonicalization only when measured stock,
 extension, or adversarial fixtures exceed the selected work bound.
@@ -325,8 +317,6 @@ The selector emits no provisional feasible assignment. It distinguishes:
 Because a valid assignment ends its exact-cardinality/lexicographic iteration immediately, there is no state in which a
 feasible assignment exists but its required optimum remains unproved.
 
-Cycle membership never directly produces either result.
-
 ### Concise diagnostics
 
 For each `CoveredNoAction` edge, keep the smallest auditable carrier witness:
@@ -334,7 +324,7 @@ For each `CoveredNoAction` edge, keep the smallest auditable carrier witness:
 - the structural pruned FK;
 - mutation group or grouped cases;
 - retained changed-target route;
-- receiver carrier route, including explicit zero-hop origin write;
+- receiver carrier route;
 - complete receiver-row correlation key; and
 - statement boundary.
 
@@ -342,140 +332,25 @@ A failure witness names the tables, columns, candidates, mutation origin, and fi
 order. Exhaustive proof trees, omission proofs, canonical hash protocols, and solver-state serialization are not public
 contracts.
 
-## 7. Concrete Safely Breakable Cycle
+## 7. Identity Cycles Are Unsupported
 
-The minimum non-vacuous fixture has two public primitive components and reciprocal full FKs:
+The supported MetaEd contract contains no recursive identity definitions. DMS validates that invariant independently so
+malformed, hand-built, or mapping-pack-loaded input cannot reach complete-vector recursion or provider action assignment.
 
-```text
-e_BA: CycleA(Key1, Key2, B_DocumentId)
-          -> CycleB(Key1, Key2, DocumentId)
-       graph edge CycleB -> CycleA
+Build the semantic identity-reference graph with one vertex per resource identity and an edge from a referenced identity
+to the identity that depends on it. Reject every self-loop and directed cycle as
+`IdentityCascadeCycleNotSupported`. After canonical storage mapping and physical-candidate deduplication, apply the same
+check to the physical cascade graph so table collapse cannot reintroduce a cycle. The diagnostic identifies the validation
+stage and names one deterministic cycle in structural order.
 
-e_AB: CycleB(Key1, Key2, A_DocumentId)
-          -> CycleA(Key1, Key2, DocumentId)
-       graph edge CycleA -> CycleB
-```
+This validation is provider-independent. PostgreSQL's ability to install some physical cascade cycles does not expand the
+DMS v1 model. SQL Server never searches for a cycle cut, and the runtime never predicts or defers resolution of a future
+identity. Every submitted reference must resolve normally before the write.
 
-`CycleB` permits direct identity updates. `CycleA` has no direct mutation origin and changes only through `e_BA`. The
-safe SQL Server assignment is:
+The checked-in reciprocal provider tests remain useful evidence of database behavior, but they are not required DMS model
+or API fixtures and do not justify cycle-specific implementation.
 
-| FK | Mode | Action |
-|---|---|---|
-| `e_BA` | `NativeCascade` | `ON UPDATE CASCADE` |
-| `e_AB` | `CoveredNoAction` | `ON UPDATE NO ACTION` |
-
-For reciprocal rows `a` and `b`:
-
-```text
-a.B_DocumentId = b.DocumentId
-b.A_DocumentId = a.DocumentId
-a.(Key1, Key2) = b.(Key1, Key2)
-```
-
-a direct `CycleB` update is the zero-hop receiver carrier for `b`, while `e_BA` is the one-hop changed-target route to
-`a`. At the statement constraint boundary, both rows contain the same new component values and `e_AB` remains valid.
-The same routes prove `{Key1}`, `{Key2}`, and `{Key1, Key2}`.
-
-If `CycleA` also permits direct identity updates, no one-edge cut covers both origins. Pruning `e_AB` leaves a direct
-CycleA update uncovered; pruning `e_BA` leaves a direct CycleB update uncovered; pruning both covers neither. The
-classifier must return `NoSafeSqlServerAssignment` before DDL.
-
-Executable provider tests are checked in at:
-
-- [`MssqlCascadeCycleProofTests.cs`](../../../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCascadeCycleProofTests.cs)
-- [`PostgresqlCascadeCycleProofTests.cs`](../../../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlCascadeCycleProofTests.cs)
-
-They prove that:
-
-- SQL Server installs one trusted `CASCADE` and one trusted `NO ACTION` FK;
-- SQL Server propagates each primitive subset and `DBCC CHECKCONSTRAINTS` stays clean;
-- the unsupported reverse direct update fails with error 547;
-- making both SQL Server edges cascade reproduces error 1785; and
-- PostgreSQL installs and executes the reciprocal full-cascade version.
-
-This proves the database constraint boundary assumed by the carrier model. It does not substitute for the DMS PUT gate.
-
-## 8. Narrow DMS PUT Deferred Resolution
-
-### Why ordinary pre-write resolution misses
-
-In the accepted cycle, a PUT of `CycleB` still contains its reference to `CycleA`, expressed with CycleA's future public
-identity. That referential identity does not exist before the statement; CycleA receives it from the retained cascade.
-Normal pre-write lookup therefore misses even though the persisted binding still identifies the same stable CycleA row.
-
-### Required update-only workflow
-
-Normal lookup always wins. After stored-state authorization and current-state loading, an unresolved binding may defer
-only when compiled metadata proves all of these facts for either an unprofiled or profile-constrained PUT:
-
-1. the operation is an identity-changing PUT of an existing document;
-2. the binding already exists on the persisted receiver row;
-3. its persisted target `DocumentId` is non-null and stable;
-4. a selected retained cascade route gives that same target the submitted identity in the initiating statement;
-5. the receiver row is already correlated by the normal executor's stable row locator; and
-6. every full-vector value other than the deferred terminal target id is supplied by a typed ordinary resolved vector,
-   a persisted value proved unchanged, or the initiating origin write.
-
-The executor reuses only the persisted target `DocumentId` and persisted lineage anchors proved unchanged. Submitted
-future public values and changing lineage anchors from ordinary resolved vectors or proved origin writes flow through the
-ordinary merged row. It does not predict values with custom SQL and does not treat an arbitrary lookup miss as an
-unchanged reference.
-
-Before resource DML, the executor:
-
-- completes authorization against the stable persisted target;
-- locks subject, receiver, and target rows in deterministic stable-id order;
-- rejects a new binding, missing persisted binding, ambiguity, stale row, value disagreement, or unsupported mutation;
-  and
-- uses existing stable collection-row correlation for collection sites; and
-- for a profile-constrained PUT, applies the ordinary Core-produced writable-profile shape and stored-state visibility
-  context, preserves every hidden value/row, and proves that the deferred binding is visible and writable rather than
-  inferring it from the filtered body.
-
-After the identity-changing statement and before commit, the executor reruns the ordinary bulk referential-identity
-resolver inside the same transaction. The submitted future identity must resolve uniquely to the same persisted target
-`DocumentId`. A miss, ambiguity, different target, failed FK, stale state, or model/runtime mismatch rolls back all work.
-
-POST and true retargets retain ordinary resolution. A true retarget that resolves normally is never converted into a
-deferred existing binding.
-
-### Minimal runtime metadata
-
-The compiled plan needs only a small `DeferredExistingReferenceBinding` marker:
-
-- owning resource and binding/site;
-- persisted target `DocumentId` source;
-- stable persisted receiver-row locator;
-- retained cascade route or equivalent eligibility marker; and
-- post-statement same-target resolution requirement.
-
-It does not consume SQL Server carrier proof objects, mutation-case identifiers, predictive projections, JSON recordset
-protocols, or custom verification SQL.
-
-### Gate status
-
-The current write executor already opens one transaction, performs stored authorization, allows an unprofiled missing
-document reference to survive through current-state loading and proposed authorization, and fails it immediately before
-persist. That is the intended insertion point for the unprofiled workflow. The profile-constrained path currently rejects
-the same miss before that seam; moving only an eligible existing binding through the normal profile merge/authorization
-path is required Gate 2 work, not an accepted non-goal.
-
-The audited seams are [`DefaultRelationalWriteExecutor`](../../../../src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs)
-and the request-scoped, miss-memoizing [`ReferenceResolver`](../../../../src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolver.cs).
-The current reduced SQL Server FK and propagation-trigger behavior remains in
-[`ReferenceConstraintPass`](../../../../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs)
-and [`DeriveTriggerInventoryPass`](../../../../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs),
-which is why an HTTP test cannot yet exercise this reset design faithfully.
-
-The gate has not passed until the concrete cycle executes through normal unprofiled and profile-constrained DMS PUTs on
-both providers with typo, non-correlated, newly-present, stale, true-retarget, rollback, collection-correlation,
-hidden-profile-state preservation, stamping, and referential-identity controls. Until then, this section is a bounded
-implementation hypothesis, not evidence that the API path works.
-
-Until that gate passes, failure to compile a `DeferredExistingReferenceBinding` is a Slice 3 plan-compilation result, not
-`NoSafeSqlServerAssignment`. The classifier remains database-only.
-
-## 9. Errors and Minimal Public Contracts
+## 8. Errors and Minimal Public Contracts
 
 ### Final relational model
 
@@ -494,32 +369,30 @@ only when a concrete diagnostic consumer requires them.
 
 Keep the repository's exception-based model-derivation convention. Use a small set of typed categories:
 
+- `IdentityCascadeCycleNotSupported`;
 - `PropagationVectorNotRepresentable`;
 - `PhysicalForeignKeyCandidateConflict`;
 - `NoSafeSqlServerAssignment`;
-- `CascadeClassificationComplexityExceeded`; and
-- `DeferredExistingReferenceNotExecutable`.
+- `CascadeClassificationComplexityExceeded`.
 
-The first four are model derivation/classification errors. `DeferredExistingReferenceNotExecutable` belongs to Slice 3
-plan compilation unless Gate 2 later establishes a minimal pre-selection eligibility input. Each error carries a concise
-structural witness. Do not replace all builder results with a new global success/proof artifact.
+Each error carries a concise structural witness. Do not replace all builder results with a new global success/proof
+artifact.
 
 ### Manifests, AOT, and packs
 
-The relational model and mapping pack carry final FK columns/actions. Runtime plans carry only executor-consumed
-deferred-binding metadata. SQL Server modes and witnesses stay derivation-local unless a concrete manifest diagnostic
-consumer is established.
+The relational model and mapping pack carry final FK columns/actions. SQL Server modes and witnesses stay
+derivation-local unless a concrete manifest diagnostic consumer is established.
 
 Mapping packs also carry each reference site's lineage-anchor bindings so `MappingSet.FromPayload` can reconstruct the
 runtime projection. They do not serialize classifier modes, solver state, exhaustive certificates, semantic hashes, or
-proof identifiers. Add deferred-binding fields only when the implemented AOT consumer requires them, and verify
-runtime/AOT semantic equivalence at that time.
+proof identifiers. Verify runtime/AOT semantic equivalence without adding cycle-specific metadata.
 
-MetaEd owns early authored-model feedback for SQL Server realizability. DMS remains authoritative for canonical storage,
-physical candidate deduplication, selected SQL Server actions, and provider provisioning. MetaEd may exchange authored
-semantic paths and outcome categories without reproducing DMS internal identifiers.
+MetaEd owns the authored identity-cycle prohibition and early feedback for SQL Server diamond realizability. DMS remains
+authoritative for provider-independent cycle validation, canonical storage, physical candidate deduplication, selected
+SQL Server actions, and provider provisioning. MetaEd may exchange authored semantic paths and outcome categories without
+reproducing DMS internal identifiers.
 
-## 10. Verification and Delivery
+## 9. Verification and Delivery
 
 ### Required checked-in fixtures
 
@@ -531,23 +404,20 @@ Mutation fixtures cover every primitive component and non-empty subset, each ref
 primitive plus retargets, and all writable groups together.
 
 SQL Server fixtures cover sole edges, independent parents, covered/uncovered and overlapping diamonds, parallel edges,
-safe and unsafe cycles, zero-hop carriers, optional-carrier failure, conflicting unified writes, no solution, deterministic
-work-limit exhaustion, and reversed-input determinism.
+optional-carrier failure, conflicting unified writes, no solution, deterministic work-limit exhaustion, and reversed-input
+determinism.
 
-Provider/API fixtures cover errors 1785 and 547, direct cycle SQL, unprofiled and profile-constrained cycle PUTs,
-PostgreSQL full-cascade cycles, old-identity concurrency rejection, typo/future-identity rejection, true retarget, stale
-version, rollback, hidden-profile-state preservation, stamping, referential-identity maintenance, change queries, and
-final constraint validation.
+Provider/API fixtures cover errors 1785 and 547 for diamonds, ordinary reference-resolution failure, true retarget, stale
+version, rollback, hidden-profile-state preservation, stamping, referential-identity maintenance, change queries, and final
+constraint validation. Provider-independent model fixtures cover deterministic self-loop and multi-entity cycle rejection.
 
 ### Delivery slices
 
-1. **Database evidence and static feasibility:** provider cycle and stock-schema vector measurements.
+1. **Database evidence and static feasibility:** stock-schema vector measurements and maximum-value probes.
 2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, and limits.
-3. **Provider actions:** PostgreSQL fixed assignment and SQL Server bounded global selection.
-4. **DMS PUT execution:** deferred-resolution POC, unprofiled and profile-constrained cycle PUTs, narrow deferred existing
-   bindings, and every v1 mutation form.
-5. **Manifest/AOT/pack integration:** only final state and implemented runtime metadata.
-6. **Full-schema qualification:** stock, TPDM, extension, adversarial, concurrency, and performance evidence.
+3. **Provider actions:** PostgreSQL fixed assignment and SQL Server bounded global diamond selection.
+4. **Manifest/AOT/pack integration:** final actions and ordinary lineage-anchor bindings only.
+5. **Full-schema qualification:** stock, TPDM, extension, adversarial, concurrency, and performance evidence.
 
 All slices are required before the finalized v1 relational contract is complete. DMS-1258 must be narrowed or used as
 an umbrella with independently testable child stories.
@@ -557,9 +427,8 @@ an umbrella with independently testable child stories.
 | Gate | Current result | Consequence |
 |---|---|---|
 | Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens, including maximum-value provider probes | Do not implement per-site minimal anchor closure; retain full-schema row/index qualification. |
-| Reciprocal database cycle | Pass on SQL Server and PostgreSQL | Retain zero-hop cycle breaking as a required classifier outcome. |
-| Deferred ordinary resolution | Open; unprofiled executor seam identified, profile path and actual DMS PUT not yet proven | Do not freeze or claim the runtime protocol complete. |
-| Simple global search | Open until the classifier exists and is measured | Start with deterministic bounded iterative-deepening DFS; add optimization only from evidence. |
+| Identity-cycle boundary | Settled: unsupported | Reject deterministically before vector recursion or provider action assignment; add no cycle runtime protocol. |
+| Simple global search | Open until the classifier exists and is measured | Search only diamond/parallel conflicts; add optimization only from evidence. |
 | Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions and lineage bindings; do not add classifier/proof/hash protocols. |
 
 ## Relationship to Legacy ODS
@@ -568,6 +437,6 @@ Legacy MetaEd/ODS orients edges from referenced entity to identity-dependent ent
 multiple-path test, and retains an alphabetically selected source while disabling others. Its “cyclical reference graph”
 test is a converging diamond rather than a directed cycle.
 
-DMS does not copy that algorithm. It constructs storage-mapped physical candidates, distinguishes independent parents
-from duplicate reachability, searches action assignments globally, permits coverage-certified cycle cuts, and fails SQL
-Server derivation instead of silently weakening referential integrity.
+DMS does not copy that algorithm. It rejects genuine identity cycles, constructs storage-mapped physical candidates,
+distinguishes independent parents from duplicate reachability, searches diamond action assignments globally, and fails
+SQL Server derivation instead of silently weakening referential integrity.

@@ -8,8 +8,8 @@ Draft.
 > identity-value propagation used `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`. That
 > mechanism is superseded by [mssql-cascading.md](mssql-cascading.md): SQL Server now uses native
 > `ON UPDATE CASCADE` plus **SQL-Server-only** global physical action selection. Covered `NO ACTION`
-> edges may break diamonds, parallel conflicts, or cycles when exact same-row/same-boundary carriers exist; cycle
-> membership is not a failure. PostgreSQL is never pruned, topology-classified, or failed because of cascade topology.
+> edges may break diamonds or parallel conflicts when exact same-row/same-boundary carriers exist; provider-independent
+> validation rejects identity cycles. PostgreSQL is never pruned or classified for multiple-path topology.
 > The `MssqlIdentityPropagationTrigger` references below are
 > retained as **historical analysis only** and are non-normative. Native cascade follows the FK on
 > child/extension binding tables directly, so the "SQL Server trigger only considers root-table

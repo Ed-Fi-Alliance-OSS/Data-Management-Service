@@ -65,7 +65,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 Identity updates can synchronously fan out to many rows because:
 - complete public/lineage vectors propagate into direct referrers through PostgreSQL fixed actions or SQL Server
-  globally selected native cascades and exact-carrier `NO ACTION` edges (including safe cycle cuts; see
+  globally selected native cascades and exact-carrier `NO ACTION` diamond cuts (see
   [mssql-cascading.md](mssql-cascading.md)), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
@@ -81,12 +81,12 @@ Mitigations / guidance:
 
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
-SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). DMS handles this with
-deterministic bounded global physical action selection rather than disabling all cascades. Independent parents remain
-legal; diamonds, parallel conflicts, and cycles are action choices. A mutable edge may use full-vector `NO ACTION` only
-when every applicable mutation has an exact same-row, same-value, same-presence, same-boundary carrier. Cycle membership
-is not itself a failure. Proved infeasibility and work-limit exhaustion are distinct, and there is no reduced-FK or
-identity-value trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
+SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). DMS rejects identity
+cycles during provider-independent validation, then uses deterministic bounded global physical action selection for
+duplicate paths rather than disabling all cascades. Independent parents remain legal; diamonds and parallel conflicts are
+action choices. A mutable edge may use full-vector `NO ACTION` only when every applicable mutation has an exact same-row,
+same-value, same-presence, same-boundary carrier. Proved infeasibility and work-limit exhaustion are distinct, and there
+is no reduced-FK or identity-value trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
 
 Risks:
 - extra derivation complexity (physical multigraph, exact carrier validation, deterministic bounded global selection),

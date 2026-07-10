@@ -146,11 +146,11 @@ StudentSchoolAssociation_StudentUniqueId AS (
 
 ## Cascade Safety
 
-- **PostgreSQL**: Actions are assigned mechanically. PostgreSQL is never pruned, topology-classified, or failed because
-  of cascade topology.
-- **SQL Server**: Error 1785 rejects duplicate cascade reachability and retained cycles. DMS globally selects physical
-  actions; exact-carrier `NO ACTION` edges may safely break diamonds or cycles. Independent parents remain legal, cycle
-  membership alone is not a failure, and no propagation trigger is used (see `design-docs/mssql-cascading.md`).
+- **PostgreSQL**: Actions are assigned mechanically. PostgreSQL is never pruned or classified for multiple paths.
+  Provider-independent identity-cycle validation still applies.
+- **SQL Server**: Error 1785 rejects duplicate cascade reachability and retained cycles. DMS rejects identity cycles
+  provider-independently, then globally selects physical actions; exact-carrier `NO ACTION` edges may safely break
+  diamonds. Independent parents remain legal, and no propagation trigger is used (see `design-docs/mssql-cascading.md`).
 
 ## Triggers Under Unification
 

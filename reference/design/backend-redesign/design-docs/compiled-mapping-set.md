@@ -378,14 +378,13 @@ Notes:
   classifier modes and carrier witnesses are derivation-local diagnostics, not fields on `TableConstraint.ForeignKey` or
   `MappingSet`; add them only to a manifest if a concrete diagnostic consumer requires them. DDL consumes the final
   action and never reruns classification.
-- **Cycle support.** SQL Server modes are selected by deterministic bounded global search over physical candidates.
-  Safely covered cycles are broken; cycle membership is not itself an error. The only search outcomes exposed as stable
-  categories are proved `NoSafeSqlServerAssignment` and distinct
-  `CascadeClassificationComplexityExceeded`.
-- **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. If the
-  unprofiled and profile-constrained deferred existing-reference PUT POC passes, the write plan adds only the binding/site, persisted target
-  `DocumentId` source, stable receiver-row locator, retained-route eligibility marker, and post-statement same-target
-  resolution requirement. It does not serialize solver state or proof trees.
+- **Cycle boundary and diamond support.** Provider-independent validation rejects recursive identity definitions as
+  `IdentityCascadeCycleNotSupported`. SQL Server modes are selected by deterministic bounded global search over the
+  remaining acyclic physical candidates to resolve duplicate-reachability conflicts. The stable search outcomes are
+  proved `NoSafeSqlServerAssignment` and distinct `CascadeClassificationComplexityExceeded`.
+- **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. Write
+  plans contain ordinary reference and lineage-anchor bindings only; they do not serialize solver state, proof trees, or
+  cycle-specific deferred-reference metadata.
 - **Failure convention.** Model derivation keeps the repository's exception-based convention with concise structural
   witnesses. Do not introduce a global success/proof artifact. See `design-docs/mssql-cascading.md`.
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.

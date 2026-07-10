@@ -239,10 +239,12 @@ The DDL generator must emit document-reference columns and constraints that enab
     - the target's complete transitive lineage-anchor columns, then
     - `DocumentId`.
   - PostgreSQL assigns the fixed full-vector action mechanically: mutable/abstract targets cascade, immutable concrete
-    targets use `NO ACTION`. It is never pruned, topology-classified, or failed because of cascade topology.
+    targets use `NO ACTION`. It is never pruned or classified for multiple paths. Provider-independent validation rejects
+    identity cycles.
   - SQL Server consumes a globally selected action. Physical candidates are storage-mapped and deduplicated before
-    selection; every covered `NO ACTION` has an exact same-row, same-value, same-statement carrier, and safely breakable
-    cycles are supported. There is no reduced-FK or identity-value trigger fallback; see
+    selection; every covered `NO ACTION` has an exact same-row, same-value, same-statement carrier. Provider-independent
+    validation rejects identity cycles, so selection handles diamonds and overlapping multiple-path conflicts only. There
+    is no reduced-FK or identity-value trigger fallback; see
     [mssql-cascading.md](mssql-cascading.md).
 - Emit one required propagation-key UNIQUE constraint on the target so every incoming complete FK is legal:
   `(<IdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)`. Widen the existing `*_RefKey`; do not emit

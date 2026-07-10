@@ -30,7 +30,7 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   - absent optional paths MUST reconstitute as absent (`NULL` at the binding column), and
   - predicates against a per-path column MUST continue to imply that the path was present.
 - **Remain compatible with identity propagation** via composite FKs and dialect-specific propagation mechanics
-  (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond/cycle cuts; see
+  (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond cuts; see
   [mssql-cascading.md](mssql-cascading.md)).
 - **Support both PostgreSQL and SQL Server** with deterministic DDL generation.
 
@@ -79,7 +79,7 @@ For each document reference site, the relational mapping stores:
 
 Complete-vector FKs target public identity values, complete transitive lineage anchors, and target `DocumentId`. PostgreSQL assigns
 fixed actions mechanically. SQL Server globally selects actions and may use an exact-carrier `NO ACTION` edge to break a
-diamond or cycle; see [mssql-cascading.md](mssql-cascading.md).
+diamond; provider-independent validation rejects identity cycles. See [mssql-cascading.md](mssql-cascading.md).
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -362,7 +362,7 @@ Any consumer that needs a column for **DML/DDL that targets writable storage** M
 
 - Writes (flattening / parameter binding): write only storage columns.
 - Foreign key derivation + emission: define FKs only over storage columns.
-- Identity propagation (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond/cycle
+- Identity propagation (PostgreSQL fixed actions; SQL Server global action selection with exact-carrier diamond
   cuts; see [mssql-cascading.md](mssql-cascading.md)): update storage columns only.
 - FK-supporting index derivation: index the final FK column list after storage mapping and de-duplication.
 
@@ -1632,11 +1632,11 @@ storage columns, complete transitive lineage anchors, then target `DocumentId`**
 Referential actions:
 
 - `ON UPDATE` is dialect-specific:
-  - PostgreSQL assigns complete-vector actions mechanically from target mutability and never runs topology
-    classification, pruning, or topology fail-fast.
+  - PostgreSQL assigns complete-vector actions mechanically from target mutability and never runs multiple-path
+    classification, pruning, or topology fail-fast. Provider-independent identity-cycle validation still applies.
   - SQL Server globally selects physical actions (see [mssql-cascading.md](mssql-cascading.md)). Exact-carrier
-    `NO ACTION` edges may break diamonds, parallel conflicts, or cycles; cycle membership is not a failure. Every FK
-    keeps the complete vector and identity-value propagation is native cascade, not a trigger.
+    `NO ACTION` edges may break diamonds or parallel conflicts. Provider-independent validation rejects identity cycles.
+    Every FK keeps the complete vector and identity-value propagation is native cascade, not a trigger.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1699,10 +1699,11 @@ full-composite `ON UPDATE CASCADE` on **every** eligible edge (eligibility defin
 `IsAbstract || TransitivelyAllowIdentityUpdates`) and **never physically prunes** PostgreSQL FKs. This is unchanged by
 the SQL Server foreign-key-pruning design.
 
-DMS does **not** run SQL Server graph/value-flow classification or fail-fast on PostgreSQL. PostgreSQL is never pruned,
-topology-classified, or failed because of cascade topology; multiple paths and cycles retain the fixed provider actions.
-Provider-independent storage validation still applies. MetaEd may provide early SQL Server realizability feedback, but
-DMS remains authoritative for physical SQL Server selection (see [mssql-cascading.md](mssql-cascading.md)).
+DMS does **not** run SQL Server multiple-path/value-flow classification or fail-fast on PostgreSQL. PostgreSQL is never
+pruned or classified for multiple paths; multiple paths retain the fixed provider actions. Provider-independent model
+validation rejects identity cycles before either dialect assigns actions. MetaEd may provide early SQL Server
+realizability feedback, but DMS remains authoritative for physical SQL Server selection (see
+[mssql-cascading.md](mssql-cascading.md)).
 
 Key properties under unification:
 
@@ -1727,9 +1728,10 @@ Normative guidance:
 
 SQL Server rejects a table that would appear more than once in one `UPDATE`/`DELETE`'s cascade action tree — a table
 reached by two distinct cascade paths from a **single origin** (a *diamond*), or a cycle (error 1785). It does **not**
-reject a table merely for having cascade in-degree > 1: *independent* parents into one receiver are legal. DMS handles
-diamonds and cycles with **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child);
-see [mssql-cascading.md](mssql-cascading.md) for the full algorithm. Identity-value propagation is native
+reject a table merely for having cascade in-degree > 1: *independent* parents into one receiver are legal. DMS rejects
+identity cycles during provider-independent validation and handles diamonds with **foreign-key pruning** analyzed in
+propagation direction (referenced/parent → referrer/child); see [mssql-cascading.md](mssql-cascading.md) for the full
+algorithm. Identity-value propagation is native
 `ON UPDATE CASCADE`, not a trigger. Every SQL Server reference composite FK keeps the **full composite** key — identity
 columns are never dropped, so value-level referential integrity is always enforced.
 
@@ -1740,14 +1742,16 @@ surviving path. (If `B` and `C` were independent, both edges would stay `CASCADE
 
 Normative rules:
 
-1. Build the physical cascade multigraph in propagation direction over identity-propagating candidates (target is
-   abstract or `TransitivelyAllowIdentityUpdates = true`). Cycles are action-choice constraints, not automatic failures.
+1. Reject self-loops and directed cycles in the semantic identity-reference graph before complete-vector derivation.
+   Build the physical cascade multigraph in propagation direction over identity-propagating candidates (target is abstract
+   or `TransitivelyAllowIdentityUpdates = true`), then reject any physical cycle introduced by storage mapping or table
+   collapse before provider action assignment.
 2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
    ancestor), not raw in-degree. Independent parents into a shared receiver stay `ON UPDATE CASCADE` and are never
-   pruned. A candidate `NO ACTION` break for a diamond or cycle is admissible only when every applicable complete-vector
+   pruned. A candidate `NO ACTION` break for a diamond is admissible only when every applicable complete-vector
    change has an exact same-row, same-value, same-presence, same-statement carrier. Candidate breaks are inputs to the
    deterministic bounded **global** selection defined in [mssql-cascading.md](mssql-cascading.md), not local first-fit;
-   overlapping diamonds, parallel conflicts, and cycles can share edges, so the winning breaks are chosen by global
+   overlapping diamonds and parallel conflicts can share edges, so the winning breaks are chosen by global
    backtracking. Both survivor and pruned edges keep the complete vector.
 3. Fail derivation only when bounded search proves no complete safe assignment; report deterministic work-limit
    exhaustion separately. There is no `DocumentId`-only FK and no identity-value propagation trigger.
@@ -2279,7 +2283,7 @@ semantics, or cascade correctness.
 - FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
 - SQL Server propagation strategy (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
   - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
-    per-origin duplicate reachability, not raw in-degree; cycles are searched for safe action cuts rather than rejected,
+    per-origin duplicate reachability, not raw in-degree; identity cycles have already been rejected,
   - eligible edges (including independent parents into a shared receiver) keep `ON UPDATE CASCADE`; a mutable edge uses
     `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
   - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
