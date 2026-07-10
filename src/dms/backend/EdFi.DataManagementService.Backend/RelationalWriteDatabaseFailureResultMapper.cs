@@ -70,9 +70,15 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
         return resolution switch
         {
-            RelationalWriteConstraintResolution.RootNaturalKeyUnique => BuildIdentityConflictFailureResult(
-                request
-            ),
+            RelationalWriteConstraintResolution.RootNaturalKeyUnique
+                when IsWildcardIfNoneMatchCreate(request) =>
+                RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                    request.OperationKind,
+                    ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                ),
+            RelationalWriteConstraintResolution.RootNaturalKeyUnique
+            or RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique =>
+                BuildIdentityConflictFailureResult(request),
             RelationalWriteConstraintResolution.RequestReference requestReference
                 when TryBuildRequestReferenceFailureResult(
                     request.OperationKind,
@@ -91,6 +97,11 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             ),
         };
     }
+
+    private static bool IsWildcardIfNoneMatchCreate(RelationalWriteExecutorRequest request) =>
+        request.OperationKind == RelationalWriteOperationKind.Post
+        && request.TargetContext is RelationalWriteTargetContext.CreateNew
+        && request.WritePrecondition is WritePrecondition.IfNoneMatch { IsWildcard: true };
 
     private static RelationalWriteExecutorResult BuildIdentityConflictFailureResult(
         RelationalWriteExecutorRequest request

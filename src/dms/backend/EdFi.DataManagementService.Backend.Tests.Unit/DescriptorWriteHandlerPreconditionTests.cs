@@ -981,6 +981,65 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_returns_precondition_failed_when_a_concurrent_descriptor_create_wins_an_IfNoneMatch_wildcard_race()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
+        sessionFactory.Session.Executor.CommandExceptionFactory = command =>
+            command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                ? new StubDbException("concurrent descriptor unique violation")
+                : null;
+        var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
+        A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory, classifier);
+        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+        };
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_retains_write_conflict_for_a_descriptor_unique_failure_under_a_specific_IfNoneMatch()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
+        sessionFactory.Session.Executor.CommandExceptionFactory = command =>
+            command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
+                ? new StubDbException("descriptor unique violation")
+                : null;
+        var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
+        A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);
+        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory, classifier);
+        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("\"specific-tag\""),
+        };
+
+        var result = await sut.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_inserts_descriptor_post_create_under_a_specific_if_none_match_tag()
     {
         // POST → INSERT (CreateNew): a specific If-None-Match tag against no current representation is

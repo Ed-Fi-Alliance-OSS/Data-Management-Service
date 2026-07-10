@@ -2655,6 +2655,45 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_maps_a_losing_IfNoneMatch_wildcard_create_race_to_precondition_failed()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
+            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("concurrent duplicate key");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureETagMisMatch(
+                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                    )
+                )
+            );
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_maps_root_natural_key_unique_violations_raised_on_commit_to_update_identity_conflicts()
     {
         var request = CreateRequest(

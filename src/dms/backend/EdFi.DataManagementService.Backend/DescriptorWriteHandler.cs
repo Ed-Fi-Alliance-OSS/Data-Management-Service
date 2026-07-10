@@ -98,6 +98,7 @@ internal sealed class DescriptorWriteHandler(
         );
 
         IRelationalWriteSession? writeSession = null;
+        var createNewTargetSelected = false;
 
         try
         {
@@ -184,6 +185,7 @@ internal sealed class DescriptorWriteHandler(
                     // proposed namespace check already ran inside the resolve).
                     if (request.WritePrecondition is WritePrecondition.IfNoneMatch)
                     {
+                        createNewTargetSelected = true;
                         var insertResult = await InsertDescriptorAsync(
                                 request,
                                 body,
@@ -269,7 +271,13 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
-            return new UpsertResult.UpsertFailureWriteConflict();
+            return
+                createNewTargetSelected
+                && request.WritePrecondition is WritePrecondition.IfNoneMatch { IsWildcard: true }
+                ? new UpsertResult.UpsertFailureETagMisMatch(
+                    ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
+                )
+                : new UpsertResult.UpsertFailureWriteConflict();
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
         {

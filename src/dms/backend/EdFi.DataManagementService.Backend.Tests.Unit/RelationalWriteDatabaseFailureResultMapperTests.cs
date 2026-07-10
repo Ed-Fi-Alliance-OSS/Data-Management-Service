@@ -190,6 +190,39 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     }
 
     [Test]
+    public void It_retains_abstract_identity_conflicts_for_IfNoneMatch_wildcard_creates()
+    {
+        var classifier = new RecordingRelationalWriteExceptionClassifier
+        {
+            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                "UX_EducationOrganizationIdentity_NK"
+            ),
+        };
+        var mapper = new RelationalWriteDatabaseFailureResultMapper(
+            classifier,
+            new RelationalWriteConstraintResolver()
+        );
+        var request = CreateSchoolAbstractIdentityRequest(
+            RelationalWriteOperationKind.Post,
+            new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+        );
+
+        var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "155901")]
+                    )
+                )
+            );
+    }
+
+    [Test]
     public void It_maps_abstract_education_organization_identity_unique_violations_on_put_to_identity_conflicts()
     {
         // The same abstract-identity natural-key violation on a PUT must surface the Update identity-conflict
@@ -407,7 +440,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     // so both the POST and PUT identity-conflict paths are covered. Shares its table shapes with the
     // constraint-resolver tests via AbstractIdentitySchoolTestData.
     private static RelationalWriteExecutorRequest CreateSchoolAbstractIdentityRequest(
-        RelationalWriteOperationKind operationKind
+        RelationalWriteOperationKind operationKind,
+        WritePrecondition? writePrecondition = null
     )
     {
         var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel();
@@ -431,7 +465,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetContext.ExistingDocument(345L, updateDocumentUuid, 44L)
-                : new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
+                : new RelationalWriteTargetContext.CreateNew(createDocumentUuid),
+            writePrecondition: writePrecondition
         );
     }
 
