@@ -241,15 +241,16 @@ The DDL generator must emit document-reference columns and constraints that enab
   - PostgreSQL assigns the fixed full-vector action mechanically from effective-schema mutability. An abstract target is
     mutable iff at least one concrete member is transitively mutable. Mutable targets cascade; immutable concrete or
     abstract targets use `NO ACTION`. PostgreSQL is never pruned or classified for multiple paths. Provider-independent
-    validation rejects identity cycles.
+    validation rejects semantic identity cycles; SQL Server-only physical topology does not fail PostgreSQL derivation.
   - SQL Server consumes a globally selected action. Physical candidates are storage-mapped and deduplicated before
     selection, and every other physical `ON UPDATE CASCADE` FK participates as a fixed legality-graph edge. A legal
     all-native graph is accepted immediately; otherwise selection searches only the conflict core and checks origin-aware
     carriers on demand. Every covered `NO ACTION` is safe for every fact and source-update flow that can change its target
     key: source-update and carrier routes start from the same correlated root row, reach the same receiver row, carry the
     affected-vector columns identically, and have structurally implied presence. Provider-independent validation rejects
-    identity cycles, so selection handles diamonds and overlapping multiple-path conflicts only. There is no reduced-FK or
-    identity-value trigger fallback; see
+    semantic identity cycles. An incomplete all-native topological sort fails as
+    `SqlServerCascadeCycleNotSupported`; only an acyclic graph proceeds to diamond and overlapping multiple-path search.
+    There is no reduced-FK or identity-value trigger fallback; see
     [mssql-cascading.md](mssql-cascading.md).
 - Emit one required propagation-key UNIQUE constraint on the target so every incoming complete FK is legal:
   `(<IdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)`. Widen the existing `*_RefKey`; do not emit

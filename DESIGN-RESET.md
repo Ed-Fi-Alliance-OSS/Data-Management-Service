@@ -37,10 +37,13 @@ Everything else must be introduced from a concrete failing fixture or measured p
 2. Every document-reference FK is full composite.
 3. Identity values propagate through native `ON UPDATE CASCADE`; there is no reduced-FK or identity-value propagation
    trigger fallback.
-4. Identity cycles are invalid. Semantic cycles fail before vector derivation; physical cycles introduced by
-   storage mapping fail before action selection. DMS does not cut or execute cycles.
-5. PostgreSQL receives actions mechanically and is never pruned or classified for multiple-path topology.
-6. SQL Server alone performs error-1785 duplicate-path classification, selective pruning, and topology fail-fast.
+4. Authored semantic identity cycles are invalid and fail before vector derivation on both providers. MetaEd must perform
+   the authoring-time check, and DMS repeats the same small guard at its input boundary. DMS does not cut or execute
+   cycles.
+5. PostgreSQL receives actions mechanically and is never pruned or classified for physical cascade topology.
+6. SQL Server alone performs error-1785 physical-cycle and duplicate-path classification, selective diamond pruning, and
+   topology fail-fast. Physical-cycle detection is the incomplete result of the same topological sort used for path
+   counting, not a separate solver. PostgreSQL is not rejected for SQL Server physical topology.
 7. SQL Server selection is global and deterministic because overlapping diamonds and parallel conflicts may require
    backtracking.
 8. Every pruned SQL Server edge is safe for every `InitiatingOriginFact` that can update its referenced target key. For
@@ -49,8 +52,8 @@ Everything else must be introduced from a concrete failing fixture or measured p
    execute in the same SQL statement.
 9. The runtime supports every independently writable primitive component and subset, one or more reference-backed replacements,
    and mixed primitive/reference changes.
-10. SQL Server fails before DDL when exhaustive bounded analysis proves no safe diamond assignment; work-limit
-    exhaustion is a distinct result.
+10. SQL Server fails before DDL when its all-native physical graph is cyclic or exhaustive bounded analysis proves no safe
+    diamond assignment; work-limit exhaustion is a distinct result.
 11. Ordinary provider-independent model validation applies to both dialects.
 12. Multiple FKs may write one canonical receiver column only when every writer under each `InitiatingOriginFact` starts
     from the same physical root row, composes the same root storage column to that receiver, and executes in the same
@@ -115,11 +118,13 @@ deferred resolution machinery.
 Concrete and abstract identity mutability are computed together to a fixed point. An abstract identity is mutable only
 when at least one of its effective-schema concrete members is transitively mutable. PostgreSQL assigns full-vector
 `CASCADE` to targets mutable under that closure and `NO ACTION` to genuinely immutable concrete or abstract targets. It
-retains multiple paths. Identity cycles have already failed provider-independent validation.
+retains multiple paths. Semantic identity cycles have already failed provider-independent validation.
 
 SQL Server constructs storage-mapped physical candidates, deduplicates identical candidates, and selects final update
-actions globally. Every physical `ON UPDATE CASCADE` FK participates as a decision or fixed edge. The input graph is
-cycle-free by validation; the retained cascade multigraph must contain at most one path between every ordered table pair.
+actions globally. Every physical `ON UPDATE CASCADE` FK participates as a decision or fixed edge. Immediately after
+candidate deduplication, one stable topological pass either supplies the order later used for path counting or fails as
+`SqlServerCascadeCycleNotSupported`. The retained cascade multigraph must contain at most one path between every ordered
+table pair.
 A covered `NO ACTION` edge must pass the finite origin-aware structural relation in the authoritative design for every
 fact and source-update flow that can change its referenced key. Origin-column composition makes mutation powersets and
 symbolic value proofs unnecessary classifier inputs.
@@ -134,8 +139,8 @@ The finalized relational model owns `OnUpdate`; DDL only renders it.
 ### 3. Simple global SQL Server search — accepted finite design, measurement open
 
 Try the all-native graph first. The corrected mutability reconstruction reports 22 candidates for DS 5.2 and 23 for DS
-5.2 plus TPDM, with no cycles or duplicate-reachability pairs; DMS-1258 must reproduce those counts and return through
-this fast path.
+5.2 plus TPDM, with no SQL Server physical cycles or duplicate-reachability pairs; DMS-1258 must reproduce those counts
+and return through this fast path.
 
 Only when the fast path finds duplicate reachability, derive the conflict core without enumerating routes and run
 deterministic DFS/backtracking over its decision edges. Use stable structural edge order, try native before covered, and
@@ -165,23 +170,29 @@ Selected-edge diagnostics retain only the covered edge, applicable initiating fa
 structural carrier route. Failure diagnostics name the first failed structural relation. No universal hashes or proof
 certificates are public contracts.
 
-### 4. Identity cycles, reference resolution, and MetaEd boundary — accepted
+### 4. Semantic identity cycles, SQL Server physical cycles, reference resolution, and MetaEd boundary — accepted
 
 MetaEd does not currently enforce the required recursive-identity prohibition. METAED-1667 must implement deterministic
 identity-cycle validation before the ODS relational cascade enhancer so a reachable cycle cannot loop in that enhancer.
 DMS independently validates the semantic identity-reference graph before complete-vector recursion so malformed or
-hand-built input cannot bypass that boundary. It repeats the check after storage mapping so table collapse cannot
-introduce a physical cycle. A self-loop or directed identity cycle fails with
-`IdentityCascadeCycleNotSupported`.
+hand-built input cannot bypass that boundary. A self-loop or directed semantic identity cycle fails with
+`IdentityCascadeCycleNotSupported`. This is a small DFS or topological guard, not a general cycle subsystem.
 
-Because cycles are not accepted, ordinary reference resolution is sufficient. POST, PUT, newly present references, and
-true retargets all require normal pre-write resolution. DMS does not reuse a persisted target for a submitted identity
-that does not resolve, predict a future identity, or compile deferred existing-reference metadata.
+MetaEd's semantic check does not prove SQL Server physical acyclicity. DMS's physical graph also contains mutable
+non-identity reference sites and any fixed physical update cascades; otherwise-valid mutual non-identity references can
+therefore form a SQL Server-prohibited cycle. SQL Server reports an incomplete all-native topological sort as
+`SqlServerCascadeCycleNotSupported`. PostgreSQL performs no corresponding physical-topology rejection, and SQL Server
+does not search for a cycle cut.
+
+Because semantic identity cycles are not accepted, ordinary reference resolution is sufficient. POST, PUT, newly present
+references, and true retargets all require normal pre-write resolution. DMS does not reuse a persisted target for a
+submitted identity that does not resolve, predict a future identity, or compile deferred existing-reference metadata.
 
 MetaEd must reject recursive authored identity definitions. That cycle rejection is the first and only METAED-1667
 delivery. A non-blocking semantic diamond warning is outside METAED-1667 and requires a separate ticket if still wanted.
 MetaEd does not run DMS's physical candidate search, carrier classification, or work-limit logic. DMS retains independent
-cycle validation and is the sole blocking authority for SQL Server realizability after canonical storage mapping.
+semantic validation and is the sole blocking authority for SQL Server physical realizability after canonical storage
+mapping.
 
 ### 5. Minimal artifact contract — accepted constraint
 
@@ -199,6 +210,7 @@ not mapping/runtime contracts.
 | Gate | Status | Required consequence |
 |---|---|---|
 | Complete-vector measured screen | Passed as a capacity screen | Keep one complete vector; require the early DMS-1274 representative physical-storage gate before freezing `v2`, then retain DMS-1277 full-schema, widest-count, round-trip, and performance qualification. |
+| Cycle boundary | Semantic identity cycles fail on both providers; SQL Server physical cycles fail its normal legality pass | Keep MetaEd plus the small DMS semantic guard before vector recursion. Reuse SQL Server's topological ordering to report physical cycles; add no PostgreSQL physical-topology rejection or cycle-cut/runtime protocol. |
 | Stock all-native topology | Static reconstruction reports 22/23 mutable candidates and no conflicts | Reproduce from implemented v2 candidates and return before conflict-core search. |
 | Simple global search | Design-ready; implementation measurements remain DMS-1258/DMS-1277 work | Use on-demand structural carriers and the 1,000,000-unit deterministic bound; add minimum-prune optimization only for measured write-performance benefit. |
 | Minimal artifact contract | Accepted design constraint; implementation pending | Add fields only for current runtime or manifest consumers. |
@@ -208,8 +220,8 @@ not mapping/runtime contracts.
 | Slice | Ownership | Exit condition |
 |---|---|---|
 | Database evidence and static feasibility | Complete | Computed capacity screen and focused widest-byte provider probes pass. |
-| Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented; representative physical row/index size and write-amplification pass an early architecture gate; the centralized mapping version is bumped to `v2`. |
-| Provider actions and SQL Server classifier | DMS-1258 | Stock schemas take the all-native fast path; generated DDL installs and structural-carrier diamond fixtures produce deterministic first-feasible outcomes within the fixed work budget. |
+| Complete vectors and physical candidates | DMS-1274 | Semantic identity cycles fail before vector recursion; deterministic full FK shapes and ordinary anchor-vector resolution are implemented; representative physical row/index size and write-amplification pass an early architecture gate; the centralized mapping version is bumped to `v2`. |
+| Provider actions and SQL Server classifier | DMS-1258 | SQL Server physical cycles fail from its normal topological legality pass; stock schemas take the all-native fast path; generated DDL installs and structural-carrier diamond fixtures produce deterministic first-feasible outcomes within the fixed work budget. |
 | Runtime mapping and manifest integration | DMS-1276 | Current runtime mappings and manifests expose complete vectors, final actions, target anchor-read records, and aligned local columns without classifier internals. |
 | Full-schema qualification | DMS-1277 | Freshly provisioned `v2` stock, TPDM, extension, and adversarial DDL pass; exhaustive row/index sizes, widest-count vectors, representative row counts, reference-resolution round trips, concurrency, and write/cascade timing pass and confirm the early DMS-1274 gate. |
 
@@ -226,6 +238,7 @@ The authoritative design no longer contains:
 - a generalized predictive future-reference language;
 - deferred existing-reference resolution or runtime cycle metadata;
 - safe-cycle search, zero-hop cycle carriers, or cycle PUT protocols;
+- provider-independent rejection of SQL Server-only physical cascade topology;
 - custom JSON recordset/correlation protocols without an accepted fixture;
 - SQL Server proof objects in runtime plans or manifests; or
 - a blocking MetaEd replica of DMS physical SQL Server classification; or

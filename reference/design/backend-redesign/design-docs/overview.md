@@ -23,8 +23,9 @@ Draft. This is an initial design proposal for replacing the current three-table 
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
 4. **Bounded cascades with stable FKs**: Store relationships as full-composite vectors containing referenced identity
    values, complete transitive lineage anchors, and stable target `DocumentId`. Provider-independent validation rejects
-   identity cycles. PostgreSQL assigns fixed actions mechanically and is never pruned or classified for multiple paths.
-   SQL Server globally selects error-1785-legal actions and permits origin-aware carrier `NO ACTION` cuts for diamonds.
+   semantic identity cycles. PostgreSQL assigns fixed actions mechanically and is never pruned or classified for physical
+   topology. SQL Server reports physical cycles from its normal topological legality pass, globally selects
+   error-1785-legal actions for acyclic graphs, and permits origin-aware carrier `NO ACTION` cuts for diamonds.
    Every FK keeps the complete vector; there is no reduced-FK or identity-value trigger fallback (see
    [mssql-cascading.md](mssql-cascading.md)). Key-unified bindings may be presence-gated aliases of canonical storage;
    see [key-unification.md](key-unification.md).
@@ -134,9 +135,11 @@ This redesign is split into focused docs in this directory:
 
 ## Risks / Open Questions
 
-1. **Cascade feasibility (SQL Server)**: Provider-independent validation rejects identity cycles. SQL Server error 1785
-   duplicate reachability is handled by deterministic bounded global physical action selection. Exact-carrier cuts may
-   safely break diamonds. Proved no-solution and work-limit exhaustion are distinct, with no reduced-FK/trigger fallback.
+1. **Cascade feasibility (SQL Server)**: Provider-independent validation rejects semantic identity cycles. SQL Server
+   physical cycles fail its normal all-native topological sort; error 1785 duplicate reachability on acyclic graphs is
+   handled by deterministic bounded global physical action selection. Exact-carrier cuts may safely break diamonds.
+   Physical-cycle failure, proved diamond no-solution, and work-limit exhaustion are distinct, with no reduced-FK/trigger
+   fallback.
    See [mssql-cascading.md](mssql-cascading.md).
 2. **Operational fan-out**: an identity update on a “hub” document can synchronously update many referencing rows (via PostgreSQL FK cascades or SQL Server native `ON UPDATE CASCADE` on eligible edges), increasing deadlock and latency risk.
 3. **Schema width/index pressure**: persisting referenced identity fields for all document reference sites increases table width and may require additional indexing for query performance.

@@ -77,9 +77,10 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_DocumentId` (stable key)
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
-Complete-vector FKs target public identity values, complete transitive lineage anchors, and target `DocumentId`. PostgreSQL assigns
-fixed actions mechanically. SQL Server globally selects actions and may use an origin-aware carrier `NO ACTION` edge to break a
-diamond; provider-independent validation rejects identity cycles. See [mssql-cascading.md](mssql-cascading.md).
+Complete-vector FKs target public identity values, complete transitive lineage anchors, and target `DocumentId`.
+PostgreSQL assigns fixed actions mechanically. SQL Server rejects physical cycles, then globally selects actions for
+acyclic graphs and may use an origin-aware carrier `NO ACTION` edge to break a diamond; provider-independent validation
+rejects semantic identity cycles. See [mssql-cascading.md](mssql-cascading.md).
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -1634,10 +1635,12 @@ Referential actions:
 
 - `ON UPDATE` is dialect-specific:
   - PostgreSQL assigns complete-vector actions mechanically from target mutability and never runs multiple-path
-    classification, pruning, or topology fail-fast. Provider-independent identity-cycle validation still applies.
+    classification, pruning, or physical-topology fail-fast. Provider-independent semantic identity-cycle validation
+    still applies.
   - SQL Server globally selects physical actions (see [mssql-cascading.md](mssql-cascading.md)). Exact-carrier
-    `NO ACTION` edges may break diamonds or parallel conflicts. Provider-independent validation rejects identity cycles.
-    Every FK keeps the complete vector and identity-value propagation is native cascade, not a trigger.
+    `NO ACTION` edges may break diamonds or parallel conflicts. Provider-independent validation rejects semantic identity
+    cycles; an incomplete SQL Server all-native topological sort reports `SqlServerCascadeCycleNotSupported`. Every FK
+    keeps the complete vector and identity-value propagation is native cascade, not a trigger.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1700,9 +1703,10 @@ full-composite `ON UPDATE CASCADE` on **every** eligible edge (eligibility defin
 the effective concrete/abstract mutability closure) and **never physically prunes** PostgreSQL FKs. This is unchanged by
 the SQL Server foreign-key-pruning design.
 
-DMS does **not** run SQL Server multiple-path classification on PostgreSQL. PostgreSQL is never pruned or classified for
-duplicate reachability; multiple paths retain the fixed provider actions. Provider-independent model validation rejects
-identity cycles and unsafe shared canonical-column writers before either dialect assigns actions. DMS remains
+DMS does **not** run SQL Server physical-topology classification on PostgreSQL. PostgreSQL is never pruned or classified
+for physical cycles or duplicate reachability; multiple paths retain the fixed provider actions. Provider-independent
+model validation rejects semantic identity cycles and unsafe shared canonical-column writers before either dialect
+assigns actions. DMS remains
 authoritative for physical SQL Server selection (see
 [mssql-cascading.md](mssql-cascading.md)).
 
@@ -1739,7 +1743,7 @@ Normative guidance:
 SQL Server rejects a table that would appear more than once in one `UPDATE`/`DELETE`'s cascade action tree — a table
 reached by two distinct cascade paths from a **single origin** (a *diamond*), or a cycle (error 1785). It does **not**
 reject a table merely for having cascade in-degree > 1: *independent* parents into one receiver are legal. DMS rejects
-identity cycles during provider-independent validation and handles diamonds with **foreign-key pruning** analyzed in
+semantic identity cycles during provider-independent validation and handles SQL Server physical cycles plus diamonds in
 propagation direction (referenced/parent → referrer/child); see [mssql-cascading.md](mssql-cascading.md) for the full
 algorithm. Identity-value propagation is native
 `ON UPDATE CASCADE`, not a trigger. Every SQL Server reference composite FK keeps the **full composite** key — identity
@@ -1755,8 +1759,10 @@ Normative rules:
 
 1. Reject self-loops and directed cycles in the semantic identity-reference graph before complete-vector derivation.
    Build the physical cascade multigraph in propagation direction over identity-propagating candidates whose targets are
-   mutable under the effective concrete/abstract mutability closure, then reject any physical cycle introduced by storage
-   mapping or table collapse before provider action assignment.
+   mutable under the effective concrete/abstract mutability closure. For SQL Server, topologically order the all-native
+   graph immediately after candidate deduplication; an incomplete sort fails as
+   `SqlServerCascadeCycleNotSupported`. Reuse that stable order for path counting. PostgreSQL performs no physical-cycle
+   topology check, and SQL Server does not search for a cycle cut.
 2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
    ancestor), not raw in-degree. Independent parents whose FKs write disjoint receiver columns stay
    `ON UPDATE CASCADE` and are never pruned. Independent mutable parents that share a writable receiver column fail the
@@ -1769,8 +1775,9 @@ Normative rules:
    [mssql-cascading.md](mssql-cascading.md), not local first-fit; overlapping diamonds and parallel conflicts can share
    edges, so the winning breaks are chosen by global backtracking. Both survivor and pruned edges keep the complete vector.
    Primitive/reference mutation combinations remain behavioral matrix tests, not classifier inputs.
-3. Fail derivation only when bounded search proves no complete safe assignment; report deterministic work-limit
-   exhaustion separately. There is no `DocumentId`-only FK and no identity-value propagation trigger.
+3. Fail SQL Server derivation immediately for a physical cycle. For an acyclic conflict graph, fail only when bounded
+   search proves no complete safe diamond assignment; report deterministic work-limit exhaustion separately. There is no
+   `DocumentId`-only FK and no identity-value propagation trigger.
 
 Because the pruned edge keeps its complete vector and every possible source update has an origin-aware carrier supplying
 the affected values in the same statement, the `NO ACTION` FK never observes a mismatch; see
@@ -2299,7 +2306,8 @@ semantics, or cascade correctness.
 - FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
 - SQL Server propagation strategy (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
   - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
-    per-origin duplicate reachability, not raw in-degree; identity cycles have already been rejected,
+    an incomplete stable topological sort for physical cycles followed by per-origin duplicate reachability, not raw
+    in-degree; semantic identity cycles have already been rejected provider-independently,
   - independent parents with disjoint receiver storage keep `ON UPDATE CASCADE`; multiple mutable FKs sharing one
     writable receiver column must first pass validation for every possible `InitiatingOriginFact`, with every writer
     reached from the same correlated root row under that fact, composing the same root storage column into the receiver,
@@ -2308,7 +2316,8 @@ semantics, or cascade correctness.
     source-update flow that can change its referenced target key,
   - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
     target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,
-  - SQL Server reports proved no-solution separately from deterministic work-limit exhaustion.
+  - SQL Server reports `SqlServerCascadeCycleNotSupported`, proved diamond no-solution, and deterministic work-limit
+    exhaustion separately; PostgreSQL does not fail for SQL Server physical topology.
 
 ### Write planning + flattening
 

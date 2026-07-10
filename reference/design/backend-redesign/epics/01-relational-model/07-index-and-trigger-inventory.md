@@ -101,7 +101,9 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 - SQL Server identity-value propagation is **not** a trigger and produces no trigger intents. It is handled by
   foreign-key pruning in `ReferenceConstraintPass` / DDL generation (see `design-docs/mssql-cascading.md`):
   - SQL Server uses deterministic bounded global selection over full-vector physical FK candidates;
-  - origin-aware carrier `NO ACTION` edges may safely break diamonds; provider-independent validation rejects identity cycles;
+  - an incomplete all-native topological sort fails as `SqlServerCascadeCycleNotSupported`; origin-aware carrier
+    `NO ACTION` edges may safely break diamonds in acyclic graphs; provider-independent validation rejects semantic
+    identity cycles;
   - proved infeasibility and deterministic work-limit exhaustion are distinct failures; and
   - every FK keeps the complete vector.
   - the retired `MssqlIdentityPropagationTrigger` fan-out is **not** part of the trigger inventory.

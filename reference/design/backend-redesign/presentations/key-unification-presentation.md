@@ -147,10 +147,13 @@ StudentSchoolAssociation_StudentUniqueId AS (
 ## Cascade Safety
 
 - **PostgreSQL**: Actions are assigned mechanically. PostgreSQL is never pruned or classified for multiple paths.
-  Provider-independent identity-cycle validation still applies.
-- **SQL Server**: Error 1785 rejects duplicate cascade reachability and retained cycles. DMS rejects identity cycles
-  provider-independently, then globally selects physical actions; origin-aware carrier `NO ACTION` edges may safely break
-  diamonds. Independent parents remain legal, and no propagation trigger is used (see `design-docs/mssql-cascading.md`).
+  Provider-independent semantic identity-cycle validation still applies, but SQL Server-only physical topology does not
+  fail PostgreSQL derivation.
+- **SQL Server**: Error 1785 rejects duplicate cascade reachability and physical cycles. DMS rejects semantic identity
+  cycles provider-independently, reports an incomplete all-native topological sort as
+  `SqlServerCascadeCycleNotSupported`, then globally selects physical actions for acyclic diamond conflicts. Origin-aware
+  carrier `NO ACTION` edges may safely break diamonds. Independent parents remain legal, and no propagation trigger is
+  used (see `design-docs/mssql-cascading.md`).
 
 ## Triggers Under Unification
 

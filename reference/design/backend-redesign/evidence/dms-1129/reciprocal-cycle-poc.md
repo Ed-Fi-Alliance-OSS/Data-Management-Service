@@ -8,8 +8,12 @@ two useful database facts:
   error 547.
 - PostgreSQL can install reciprocal full-vector cascades and propagated the tested primitive key changes.
 
-These observations do not define a supported DMS model. DMS rejects semantic identity cycles before vector derivation and
-storage-mapped physical cycles before provider action selection. The executable reciprocal-cycle POCs were therefore
-removed from the normal integration projects; production tests must cover deterministic cycle rejection instead.
+These observations do not define a supported DMS model. DMS rejects this semantic identity cycle before vector derivation
+on either provider, so it never reaches physical action assignment. Separately, a semantic-identity-acyclic model can
+still produce a SQL Server physical update-cascade cycle through otherwise-valid mutual non-identity references. SQL
+Server reports that case from its normal all-native topological legality pass as
+`SqlServerCascadeCycleNotSupported`; PostgreSQL performs no corresponding physical-topology rejection. The executable
+reciprocal identity-cycle POCs were therefore removed from the normal integration projects. Production tests cover the
+provider-independent semantic guard and the distinct SQL Server physical-cycle outcome.
 
 The removed SQL remains available in Git history if a provider behavior needs to be reproduced again.

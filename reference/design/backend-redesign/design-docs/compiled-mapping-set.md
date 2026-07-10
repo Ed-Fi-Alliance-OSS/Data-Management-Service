@@ -390,16 +390,20 @@ Notes:
   classifier modes and carrier witnesses are derivation-local diagnostics, not fields on `TableConstraint.ForeignKey` or
   `MappingSet`; add them only to a manifest if a concrete diagnostic consumer requires them. DDL consumes the final
   action and never reruns classification.
-- **Cycle, value-flow, and diamond support.** Provider-independent validation rejects recursive identity definitions as
+- **Cycle, value-flow, and diamond support.** Provider-independent validation rejects recursive semantic identity
+  definitions as
   `IdentityCascadeCycleNotSupported` and independently mutable FKs that write shared canonical receiver storage as
   `ConflictingUnifiedCascadeWritesNotSupported` unless every writer under each `InitiatingOriginFact` starts from the same
   correlated root row, composes the same root storage column into the receiver, and executes in the same initiating
-  statement. Only then may SQL Server accept a legal all-native physical graph immediately; otherwise modes are selected
-  by deterministic bounded first-feasible search over the conflict core. Every physical `ON UPDATE CASCADE` FK
+  statement. SQL Server first topologically orders the all-native physical graph and fails an incomplete sort as
+  `SqlServerCascadeCycleNotSupported`; PostgreSQL performs no physical-topology rejection. Only then may SQL Server accept
+  a legal all-native physical graph immediately; otherwise modes are selected by deterministic bounded first-feasible
+  search over the conflict core. Every physical `ON UPDATE CASCADE` FK
   participates as a decision or fixed edge, and covered edges use on-demand origin-aware carrier checks for every fact
   and source-update flow that can change the referenced target key.
   The shared deterministic 1,000,000-unit budget counts decision assignments and directed-edge visits. The stable search
-  outcomes are proved `NoSafeSqlServerAssignment` and distinct `CascadeClassificationComplexityExceeded`.
+  outcomes distinguish `SqlServerCascadeCycleNotSupported`, proved `NoSafeSqlServerAssignment`, and
+  `CascadeClassificationComplexityExceeded`.
 - **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. Write
   plans contain ordinary reference bindings and aligned local lineage-anchor columns only; they do not serialize solver
   state, proof trees, or cycle-specific deferred-reference metadata.

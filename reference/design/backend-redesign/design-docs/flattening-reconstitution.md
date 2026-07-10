@@ -267,8 +267,8 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      identity columns or complete lineage anchors).
    - Use `{schema}.{A}Identity` as the complete-vector FK target for abstract reference sites. PostgreSQL assigns its
      fixed full-cascade action without multiple-path classification. SQL Server includes abstract-target candidates in
-     the same global error-1785/carrier selection as concrete targets. Provider-independent validation has already
-     rejected identity cycles (see
+     the same physical-cycle legality and global error-1785/carrier selection as concrete targets. Provider-independent
+     validation has already rejected semantic identity cycles (see
      [mssql-cascading.md](mssql-cascading.md)).
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
@@ -425,8 +425,8 @@ column and every local lineage-anchor binding; there is no per-occurrence databa
 ### 5.2.2 Reference-resolution failure boundary
 
 Every submitted document reference must resolve through the ordinary bulk resolver before the write. A miss is never
-reinterpreted as an existing binding or predicted future identity. Identity cycles are unsupported, so write plans need no
-deferred-reference marker, post-statement resolution pass, or cycle-specific locking protocol.
+reinterpreted as an existing binding or predicted future identity. Semantic identity cycles are unsupported, so write
+plans need no deferred-reference marker, post-statement resolution pass, or cycle-specific locking protocol.
 
 ### 5.2.3 Authorization integration (pre-write checks)
 
@@ -588,8 +588,9 @@ Within a single transaction:
    - extension child collections using the same merge strategy as core collections
 6. No derived reverse-edge maintenance is required:
    - referential-id impacts propagate through complete-vector reference FKs over canonical storage. PostgreSQL consumes
-     fixed actions; SQL Server consumes globally selected actions that safely break covered diamonds. Identity cycles
-     have already failed provider-independent validation. There is no
+     fixed actions; SQL Server rejects physical cycles and consumes globally selected actions that safely break covered
+     diamonds in acyclic graphs. Semantic identity cycles have already failed provider-independent validation. There is
+     no
      identity-value propagation trigger (see [mssql-cascading.md](mssql-cascading.md)); and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 7. Commit only after all verification and committed-representation reads succeed; otherwise roll back the transaction.
@@ -788,8 +789,9 @@ In this redesign, identity fields inside reference objects are persisted as loca
 - `..._DocumentId` (stable FK), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
   plus any complete lineage-anchor columns. Native full-vector FK actions keep these values consistent: PostgreSQL uses
-  its fixed assignment, while SQL Server uses the globally selected error-1785-safe diamond assignment. Identity cycles
-  are rejected before action selection (see [mssql-cascading.md](mssql-cascading.md)).
+  its fixed assignment, while SQL Server rejects physical cycles and uses the globally selected error-1785-safe diamond
+  assignment for acyclic graphs. Semantic identity cycles are rejected before action selection (see
+  [mssql-cascading.md](mssql-cascading.md)).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
 

@@ -118,12 +118,12 @@ DDL generator requirements (derived from ApiSchema):
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
 - Enforce a complete-vector FK over canonical storage: public identity values, all complete transitive lineage anchors,
   and target `DocumentId`.
-  - Provider-independent validation rejects identity cycles before action assignment.
+  - Provider-independent validation rejects semantic identity cycles before action assignment.
   - PostgreSQL assigns full-vector actions mechanically from target mutability. It is never pruned or classified for
     multiple paths.
-  - SQL Server globally selects physical actions that satisfy error 1785 and origin-aware carrier safety. Diamonds and parallel
-    conflicts are action choices. Derivation fails before DDL only when no safe assignment exists or the distinct
-    deterministic work limit is reached. There is no `DocumentId`-only or
+  - SQL Server topologically rejects physical cascade cycles, then globally selects actions that satisfy error 1785 and
+    origin-aware carrier safety for acyclic graphs. Diamonds and parallel conflicts are action choices. Physical-cycle
+    failure, proved no-solution, and deterministic work-limit exhaustion are distinct. There is no `DocumentId`-only or
     identity-value trigger fallback; see [mssql-cascading.md](mssql-cascading.md).
 
 When a referenced document’s identity changes, the database propagates updated identity values into all direct
@@ -153,7 +153,8 @@ The pieces fit together like this:
      target `DocumentId`.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
    - The complete-vector FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses its fixed action and SQL
-     Server includes the candidate in global diamond action selection after provider-independent cycle validation (see
+     Server includes the candidate in physical-cycle legality and global diamond action selection after
+     provider-independent semantic cycle validation (see
      [mssql-cascading.md](mssql-cascading.md)). This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored public identity values and lineage anchors are kept correct automatically.
@@ -267,9 +268,10 @@ Integration points:
 
 This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key
 fields and complete stable lineage anchors alongside every document reference. PostgreSQL assigns fixed full-vector
-actions mechanically. SQL Server globally selects native cascades and origin-aware carrier-covered `NO ACTION` edges. Its
-search handles overlapping diamonds and parallel conflicts and fails before DDL only when no safe assignment exists (or
-a separately reported work limit is reached). Identity cycles fail provider-independent validation. See
+actions mechanically. SQL Server topologically rejects physical cycles, then globally selects native cascades and
+origin-aware carrier-covered `NO ACTION` edges. Its search handles acyclic overlapping diamonds and parallel conflicts
+and fails before DDL only when no safe assignment exists (or a separately reported work limit is reached). Semantic
+identity cycles fail provider-independent validation. See
 [mssql-cascading.md](mssql-cascading.md).
 
 Key effects:
@@ -279,9 +281,10 @@ Key effects:
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL is never pruned or classified for multiple-path topology. Provider-independent storage and identity-cycle
-  validation still applies.
-- SQL Server rejects a table reached by multiple cascade paths (error 1785), so it uses
+- PostgreSQL is never pruned or classified for physical topology. Provider-independent storage and semantic
+  identity-cycle validation still applies.
+- SQL Server rejects physical cycles and a table reached by multiple cascade paths (error 1785). An incomplete all-native
+  topological sort fails as `SqlServerCascadeCycleNotSupported`; an acyclic conflicting graph uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child). Global bounded search
   chooses a legal retained graph and requires every pruned edge to be safe for every initiating fact and source-update flow
   that can change its referenced target key. Source-update and carrier routes must start from the same correlated root

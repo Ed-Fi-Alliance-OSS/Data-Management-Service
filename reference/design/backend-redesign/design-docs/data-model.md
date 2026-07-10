@@ -608,7 +608,8 @@ Typical structure:
         transitive mutability, and an abstract target is mutable iff at least one concrete member is transitively mutable.
         Mutable targets use `ON UPDATE CASCADE`; genuinely immutable concrete or abstract targets use
         `ON UPDATE NO ACTION`. PostgreSQL is never pruned or classified for multiple paths. Provider-independent
-        validation rejects identity cycles.
+        validation rejects semantic identity cycles; SQL Server-only physical topology does not fail PostgreSQL
+        derivation.
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
         - constructs and deduplicates storage-mapped physical candidates before action selection, and includes every
           other physical `ON UPDATE CASCADE` FK as a fixed legality-graph edge;
@@ -682,8 +683,9 @@ This redesign provisions an **identity table per abstract resource**:
   - referencing tables use the abstract target's complete propagation vector and target
     `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, <CompleteLineageDocumentIds...>, DocumentId)`.
     PostgreSQL assigns its fixed full-vector action without multiple-path classification. SQL Server includes these
-    physical candidates in the same global error-1785/carrier selection as concrete targets. Identity cycles fail
-    provider-independent validation before action selection. Abstract identity tables remain trigger-maintained by
+    physical candidates in the same global error-1785/carrier selection as concrete targets. Semantic identity cycles
+    fail provider-independent validation before action selection; SQL Server physical cycles fail its topological
+    legality pass. Abstract identity tables remain trigger-maintained by
     abstract-identity *maintenance* triggers, which are distinct from the removed identity-value propagation trigger;
     see [mssql-cascading.md](mssql-cascading.md).
 

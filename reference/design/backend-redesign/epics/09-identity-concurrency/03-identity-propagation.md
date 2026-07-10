@@ -31,7 +31,8 @@ Align with:
      classified or pruned for multiple paths, and
    - on SQL Server, deterministic bounded global action selection over physical candidates. Every covered `NO ACTION`
      diamond edge needs origin-aware same-root-row/same-boundary coverage for every source-update flow;
-     provider-independent validation rejects identity cycles.
+     an incomplete all-native topological sort fails as `SqlServerCascadeCycleNotSupported`, and provider-independent
+     validation rejects semantic identity cycles.
      Every FK keeps the full vector and there is no `DocumentId`-only shape or identity-value propagation trigger (see
      `design-docs/mssql-cascading.md`).
 2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes, recomputing `ReferentialId` using the engine UUIDv5 helper (`E02-S06`).
