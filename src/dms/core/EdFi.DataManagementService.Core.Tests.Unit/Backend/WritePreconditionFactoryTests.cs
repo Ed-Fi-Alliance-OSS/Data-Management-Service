@@ -41,7 +41,7 @@ public class WritePreconditionFactoryTests
         result.Should().Be(new WritePrecondition.IfMatch(expectedValue));
     }
 
-    [TestCase("W/\"5-a1b2c3d4.j._.l\"")] // weak validators must not be used with If-Match (RFC 7232 §3.1)
+    [TestCase("W/\"5-a1b2c3d4.j._.l\"")] // weak validators must not be used with If-Match (RFC 9110 §13.1.1)
     public void It_keeps_a_weak_if_match_verbatim_so_it_cannot_match_a_current_tag(string ifMatchValue)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

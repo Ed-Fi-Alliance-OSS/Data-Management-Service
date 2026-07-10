@@ -175,7 +175,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     [Test]
     public async Task It_matches_a_wildcard_precondition_when_the_document_exists()
     {
-        // RFC 7232 If-Match: * matches whenever the target exists, regardless of the current etag.
+        // RFC 9110 §13.1.1 If-Match: * matches whenever the target exists, regardless of the current etag.
         // A deliberately non-matching Value proves the match comes from the wildcard flag, not the value.
         var request = CreateRequest(
             SqlDialect.Pgsql,

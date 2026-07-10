@@ -47,7 +47,7 @@ internal static class ConditionalGetIfNoneMatchScenario
         (string locationPath, string etag) = await CreateStudentAsync(harness, "cgm-unquoted-001");
 
         // Unquoted (no surrounding double quotes) -- proves ODS-6853 legacy compatibility with
-        // non-conforming clients that send a bare opaque value instead of an RFC 7232 quoted string.
+        // non-conforming clients that send a bare opaque value instead of an RFC 9110 §8.8.3 quoted string.
         using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
         request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, etag);
 
@@ -138,7 +138,7 @@ internal static class ConditionalGetIfNoneMatchScenario
     {
         (string locationPath, string etag) = await CreateStudentAsync(harness, "cgm-list-weak-001");
 
-        // Weak comparison (RFC 9110 §2.1): a W/-prefixed member is compared by opaque value only, so
+        // Weak comparison (RFC 9110 §8.8.3.2): a W/-prefixed member is compared by opaque value only, so
         // W/"<etag>" matches the strong served "<etag>". Combined with the list form here.
         using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
         request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n\", W/\"{etag}\"");

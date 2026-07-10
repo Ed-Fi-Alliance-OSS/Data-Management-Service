@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.Etag;
 public static class EtagComposer
 {
     // ContentVersion is emitted as an opaque, culture-invariant decimal string; it is never parsed
-    // or compared numerically downstream (RFC 7232 §2.3).
+    // or compared numerically downstream (RFC 9110 §8.8.3).
     public static string Compose(long contentVersion, VariantKey variantKey) =>
         EtagValue.Compose(contentVersion.ToString(CultureInfo.InvariantCulture), variantKey.Value);
 }

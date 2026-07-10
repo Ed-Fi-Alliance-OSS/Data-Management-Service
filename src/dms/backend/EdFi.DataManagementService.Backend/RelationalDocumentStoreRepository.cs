@@ -418,7 +418,7 @@ public sealed class RelationalDocumentStoreRepository(
 
                 if (resolved is null)
                 {
-                    // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing
+                    // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing
                     // DELETE target yields the precondition-failed (412) result rather than 404.
                     outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
                         ? new DeleteResult.DeleteFailureETagMisMatch(
@@ -437,7 +437,7 @@ public sealed class RelationalDocumentStoreRepository(
 
                     if (lockedContentVersion is null)
                     {
-                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a
                         // target that vanished before locking yields 412 rather than 404.
                         outcome = writePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
                             ? new DeleteResult.DeleteFailureETagMisMatch(
@@ -2243,7 +2243,7 @@ public sealed class RelationalDocumentStoreRepository(
             && targetLookupResult is RelationalWriteTargetLookupResult.NotFound
         )
         {
-            // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+            // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing PUT
             // target yields the precondition-failed (412) result rather than not-exists (404).
             return new TargetContextResolution(
                 null,

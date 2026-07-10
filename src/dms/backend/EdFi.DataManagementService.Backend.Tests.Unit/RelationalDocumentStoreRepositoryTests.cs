@@ -8975,7 +8975,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         SqlDialect dialect
     )
     {
-        // RFC 7232 If-Match: * requires the target to exist; against an unresolvable DELETE target
+        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; against an unresolvable DELETE target
         // the wildcard yields 412 rather than 404. Default fake returns null from the UUID lookup.
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePrecondition = new WritePrecondition.IfMatch("some-wrong-value", IsWildcard: true);
@@ -9005,7 +9005,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         SqlDialect dialect
     )
     {
-        // RFC 7232 If-Match: * requires the target to exist; the initial lookup resolves a document,
+        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; the initial lookup resolves a document,
         // but the target vanishes (a concurrent delete) before the DELETE lock can be acquired. The
         // wildcard still yields 412 rather than 404, with reason TargetDoesNotExist since there is no
         // current representation left to compare against.

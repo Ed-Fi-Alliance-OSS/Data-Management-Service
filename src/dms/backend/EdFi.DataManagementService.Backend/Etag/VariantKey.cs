@@ -16,8 +16,8 @@ public enum ResponseFormat
 
 /// <summary>
 /// The representation discriminator embedded in a served etag so the tag is a strong validator
-/// (RFC 7232 §2.1): <c>schemaEpoch "." format "." profileCode "." linkFlag</c>. All characters
-/// are valid <c>etagc</c> (RFC 7232 §2.3).
+/// (RFC 9110 §8.8.1): <c>schemaEpoch "." format "." profileCode "." linkFlag</c>. All characters
+/// are valid <c>etagc</c> (RFC 9110 §8.8.3).
 /// </summary>
 public readonly record struct VariantKey(string Value)
 {
@@ -74,7 +74,7 @@ public readonly record struct VariantKey(string Value)
     )
     {
         /// <summary>
-        /// The subset that remains significant for RFC 7232 If-Match comparison. Per the 2026-07-04
+        /// The subset that remains significant for RFC 9110 §13.1.1 If-Match comparison. Per the 2026-07-04
         /// ADR amendment this is <see cref="SchemaEpoch"/> only; format, profileCode, and linkFlag are
         /// projected out. This is the single definition of "what If-Match compares".
         /// </summary>

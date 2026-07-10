@@ -119,7 +119,7 @@
       "Compare the resulting citations with https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8 and https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.",
       "Run git diff --check."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "correctness",

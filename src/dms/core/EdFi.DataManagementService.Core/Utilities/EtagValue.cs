@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.Utilities;
 /// <summary>
 /// The wire format of an API <c>_etag</c>: an opaque strong entity-tag of the form
 /// "{ContentVersion}-{variantKey}". The ContentVersion component is treated as an opaque
-/// string and is never parsed or compared numerically (RFC 7232 §2.3, §3.1).
+/// string and is never parsed or compared numerically (RFC 9110 §8.8.3, §13.1.1).
 /// </summary>
 public static class EtagValue
 {

@@ -20,7 +20,7 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
     public async Task It_writes_the_etag_header_as_a_quoted_strong_validator()
     {
         // The composed opaque _etag value (unquoted, as it appears in the JSON body); the ETag
-        // response header must serve it as a quoted strong validator per RFC 7232 §2.3.
+        // response header must serve it as a quoted strong validator per RFC 9110 §8.8.3.
         const string opaqueEtag = "5-a1b2c3d4.j._.l";
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Scheme = "https";

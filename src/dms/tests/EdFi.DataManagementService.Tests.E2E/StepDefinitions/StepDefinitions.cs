@@ -1669,7 +1669,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             _rawEtag = _apiResponse.Headers["etag"];
             _rawEtag.Should().NotBeNullOrEmpty();
-            _rawEtag.Should().StartWith("\"").And.EndWith("\""); // RFC 7232 §2.3 quoted strong validator
+            _rawEtag.Should().StartWith("\"").And.EndWith("\""); // RFC 9110 §8.8.3 quoted strong validator
         }
 
         // Asserts the opaque ETag value (quotes stripped) conforms to the DMS-1252 format:
@@ -1700,7 +1700,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             current.Should().NotBe(_scenarioVariables.GetValueByName(variableName));
         }
 
-        // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
+        // The ETag response header is served as a quoted strong validator (RFC 9110 §8.8.3). Strip the
         // surrounding quotes so the captured value matches the unquoted _etag in the response body and
         // round-trips as an If-Match request header (the API accepts both quoted and unquoted forms).
         private static string StripEtagQuotes(string? etag) =>

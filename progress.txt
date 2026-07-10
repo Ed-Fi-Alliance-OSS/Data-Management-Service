@@ -33,3 +33,8 @@
 - Files: GetByIdHandlerTests, E2E StepDefinitions, tasks.json.
 - Verified: GetByIdHandler 34; freshly compiled ETag E2E 22; descriptor conditional GET E2E 1; formatting/diff clean.
 - Blockers/next: direct ./build-dms.ps1 lacks executable bit; pwsh invocation passed. One documentation task remains.
+2026-07-09 - DMS-1264 - RFC 9110 citation corrections
+- Decision: use current RFC sections consistently: validator strength 8.8.1, entity-tag grammar 8.8.3, comparison 8.8.3.2, If-Match 13.1.1; retain If-None-Match 13.1.2 and precedence 13.2.2.
+- Files: ETag ADR; ETag/conditional-request production and test comments; tasks.json.
+- Verified: stale RFC searches clean; core 15, backend 29, frontend 2; CSharpier/diff checks clean.
+- Blockers/next: none; all tasks complete.

@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// <summary>
 /// Write-side <c>If-None-Match</c> create-guard: POSTs/PUTs a Student against the real DMS HTTP
 /// pipeline with various <c>If-None-Match</c> request headers, asserting the create-only semantics
-/// (RFC 7232 <c>If-None-Match: *</c> succeeds only when no current representation exists). Hard-coded
+/// (RFC 9110 §13.1.2 <c>If-None-Match: *</c> succeeds only when no current representation exists). Hard-coded
 /// for the ProfileRootOnlyMerge fixture's Student shape: project endpoint <c>ed-fi</c>, resource
 /// <c>students</c>, required identity <c>studentUniqueId</c>, required non-identity <c>firstName</c>.
 /// Each scenario uses a fresh, per-call unique <c>studentUniqueId</c> to avoid cross-test collisions

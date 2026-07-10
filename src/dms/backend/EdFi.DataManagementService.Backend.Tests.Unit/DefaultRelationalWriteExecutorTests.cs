@@ -1528,7 +1528,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_if_match_failure_for_a_wildcard_put_when_the_target_is_missing()
     {
-        // RFC 7232 If-Match: * requires the target to exist; against a missing PUT target the
+        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; against a missing PUT target the
         // wildcard yields 412 (ETag mismatch) rather than 404 (not exists). The precondition checker
         // returning null signals the target was absent under the If-Match precondition.
         var request = CreateRequest(

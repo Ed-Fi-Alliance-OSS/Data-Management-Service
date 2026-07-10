@@ -397,7 +397,7 @@ public class Given_Descriptor_Write_Preconditions
     [Test]
     public async Task It_returns_precondition_failed_for_descriptor_put_when_the_target_is_missing_under_a_wildcard_if_match()
     {
-        // RFC 7232 If-Match: * requires the target to exist; against a missing PUT target the
+        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; against a missing PUT target the
         // wildcard yields 412 (ETag mismatch) rather than 404 (not exists). The scoped PUT lookup
         // misses (no enqueued rows), so ResolveLockedDescriptorForIfMatchAsync returns NotFound.
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
@@ -582,7 +582,7 @@ public class Given_Descriptor_Write_Preconditions
     [Test]
     public async Task It_updates_descriptor_put_when_if_match_is_a_wildcard_against_an_existing_descriptor()
     {
-        // RFC 7232 If-Match: * succeeds against any existing target, even when the supplied opaque
+        // RFC 9110 §13.1.1 If-Match: * succeeds against any existing target, even when the supplied opaque
         // value would not match the current etag.
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -864,7 +864,7 @@ public class Given_Descriptor_Write_Preconditions
     [Test]
     public async Task It_returns_precondition_failed_for_descriptor_delete_when_the_scoped_lookup_misses_under_a_wildcard_if_match()
     {
-        // RFC 7232 If-Match: * requires the target to exist; against a missing DELETE target the
+        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; against a missing DELETE target the
         // wildcard yields 412 (ETag mismatch) rather than 404 (not exists).
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);

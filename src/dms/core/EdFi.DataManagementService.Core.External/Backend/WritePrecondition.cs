@@ -22,7 +22,7 @@ public abstract record WritePrecondition
     /// <summary>
     /// The request carries an <c>If-Match</c> precondition. When <see cref="IsWildcard"/> is false,
     /// <see cref="Value"/> is the opaque tag compared against the current representation. When true,
-    /// this is the RFC 7232 §3.1 wildcard (<c>If-Match: *</c>): the precondition succeeds whenever a
+    /// this is the RFC 9110 §13.1.1 wildcard (<c>If-Match: *</c>): the precondition succeeds whenever a
     /// current representation of the target exists and fails (412) when it does not; <see cref="Value"/>
     /// is not compared.
     /// </summary>

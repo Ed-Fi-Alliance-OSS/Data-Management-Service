@@ -177,7 +177,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureWriteConflict()
                 ),
-                // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+                // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing PUT
                 // target yields the precondition-failed (412) result rather than not-exists (404). An
                 // If-None-Match against a now-missing target is the success case, so it falls through to
                 // the normal not-exists (404) result.
@@ -400,7 +400,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
             RelationalWriteTargetRequest.Put => new InSessionTargetResolution(
                 null,
                 null,
-                // RFC 7232 If-Match: * requires the target to exist; a wildcard against a missing PUT
+                // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing PUT
                 // target yields the precondition-failed (412) result rather than not-exists (404).
                 request.WritePrecondition
                     is WritePrecondition.IfMatch { IsWildcard: true }

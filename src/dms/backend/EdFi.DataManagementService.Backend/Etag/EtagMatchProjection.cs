@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Core.Utilities;
 namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
-/// Produces the state-significant projection of an etag value used for RFC 7232 If-Match matching.
+/// Produces the state-significant projection of an etag value used for RFC 9110 §13.1.1 If-Match matching.
 /// A served etag is "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}". Per the ADR
 /// (as amended 2026-07-04), If-Match ignores the representation-selector components (format,
 /// profileCode, linkFlag) and retains only ContentVersion and schemaEpoch. Two tags match iff their

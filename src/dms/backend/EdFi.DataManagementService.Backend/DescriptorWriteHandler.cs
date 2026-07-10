@@ -391,7 +391,7 @@ internal sealed class DescriptorWriteHandler(
                     case DescriptorLockedPreconditionResult.NotFound:
                     case DescriptorLockedPreconditionResult.MissingDocument:
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        // RFC 7232 If-Match: * requires the target to exist; a wildcard If-Match against
+                        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard If-Match against
                         // a missing PUT target yields the precondition-failed (412) result rather than
                         // not-exists (404). A wildcard If-None-Match against a missing target is the
                         // success case, so it falls through to the normal not-exists (404) result.
@@ -716,7 +716,7 @@ internal sealed class DescriptorWriteHandler(
 
                     outcome = preconditionResult switch
                     {
-                        // RFC 7232 If-Match: * requires the target to exist; a wildcard against a
+                        // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a
                         // missing DELETE target yields the precondition-failed (412) result rather
                         // than not-exists (404).
                         DescriptorLockedPreconditionResult.NotFound

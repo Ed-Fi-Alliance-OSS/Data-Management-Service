@@ -530,7 +530,7 @@ public static class AspNetCoreFrontend
         foreach (var header in frontendResponse.Headers)
         {
             // The _etag is stored as an opaque, unquoted value in the JSON body; serve it on the
-            // ETag response header as a quoted strong validator (RFC 7232 §2.3). Other headers pass
+            // ETag response header as a quoted strong validator (RFC 9110 §8.8.3). Other headers pass
             // through verbatim. Normalize via TryParseHeaderValue to handle any pre-quoted values,
             // and skip empty values.
             if (string.Equals(header.Key, "etag", StringComparison.OrdinalIgnoreCase))

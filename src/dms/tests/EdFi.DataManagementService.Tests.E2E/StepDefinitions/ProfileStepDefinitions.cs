@@ -1339,7 +1339,7 @@ public class ProfileStepDefinitions(
     {
         string headerValue = GetResponseHeaderValue(headerName);
 
-        // The ETag response header is served as a quoted strong validator (RFC 7232 §2.3). Strip the
+        // The ETag response header is served as a quoted strong validator (RFC 9110 §8.8.3). Strip the
         // surrounding quotes so the stored value matches the unquoted _etag in the response body.
         if (
             headerName.Equals("etag", StringComparison.OrdinalIgnoreCase)
