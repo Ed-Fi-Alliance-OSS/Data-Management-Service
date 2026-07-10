@@ -1079,7 +1079,7 @@ public class Given_A_Postgresql_Delete_With_A_Stale_Profiled_Etag_After_A_Hidden
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  RFC 7232 wildcard (If-Match: *) end-to-end behavior against a real database.
+//  RFC 9110 §13.1.1 wildcard (If-Match: *) end-to-end behavior against a real database.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]

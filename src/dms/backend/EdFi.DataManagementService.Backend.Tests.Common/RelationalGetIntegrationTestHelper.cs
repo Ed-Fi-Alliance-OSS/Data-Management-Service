@@ -19,7 +19,8 @@ public sealed record IntegrationRelationalGetRequest(
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
-    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
+    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
 ) : IGetRequest
 {
     public ResourceName ResourceName => ResourceInfo.ResourceName;
@@ -88,12 +89,14 @@ public static class RelationalGetIntegrationTestHelper
     }
 
     /// <summary>
-    /// The composed strong-validator etag wire shape: "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}".
+    /// The composed strong-validator etag wire shape:
+    /// "{ContentVersion}-{schemaEpoch}.{format}.{profileCode}.{linkFlag}.{contentCoding}".
     /// ContentVersion is digits; schemaEpoch is up to 8 lowercase hex; format is a single lowercase letter (j today);
-    /// profileCode is "_" (no profile) or an 8-hex SHA-256 prefix; linkFlag is l/n. The exact ContentVersion is not
-    /// asserted here because it is not derivable from the request body — callers assert monotonicity/parity separately.
+    /// profileCode is "_" (no profile) or an 8-hex SHA-256 prefix; linkFlag is l/n; contentCoding is i/b/g.
+    /// The exact ContentVersion is not asserted here because it is not derivable from the request body — callers
+    /// assert monotonicity/parity separately.
     /// </summary>
-    private const string ComposedEtagPattern = @"^\d+-[0-9a-f]{1,8}\.[a-z]\.(_|[0-9a-f]{8})\.[ln]$";
+    private const string ComposedEtagPattern = @"^\d+-[0-9a-f]{1,8}\.[a-z]\.(_|[0-9a-f]{8})\.[ln]\.[ibg]$";
 
     public static void AssertComposedEtag(string? etag)
     {

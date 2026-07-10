@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
@@ -49,8 +50,34 @@ public class Given_RelationalReadMaterializer
         result["id"]!.GetValue<string>().Should().Be(_documentUuid.ToString());
         // ContentVersion 91; schemaEpoch = first 8 hex of BuildMappingSet()'s EffectiveSchemaHash
         // ("01234567"); format j (JSON); no profile ("_"); links enabled by default ("l").
-        result["_etag"]!.GetValue<string>().Should().Be("91-01234567.j._.l");
+        result["_etag"]!.GetValue<string>().Should().Be("91-01234567.j._.l.i");
         result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-03T14:10:11Z");
+    }
+
+    [Test]
+    public void It_includes_the_selected_content_coding_in_the_external_etag()
+    {
+        var sut = CreateMaterializer();
+        var readPlan = CreateReadPlan();
+
+        var result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                CreateDocumentMetadataRow(
+                    contentVersion: 91L,
+                    contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+                ),
+                CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
+                [],
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+            {
+                MappingSet = BuildMappingSet(),
+                EtagVariant = new EtagVariantInputs(null, ResponseFormat.Json, ResponseContentCoding.Gzip),
+            }
+        );
+
+        result["_etag"]!.GetValue<string>().Should().Be("91-01234567.j._.l.g");
     }
 
     [Test]
@@ -608,7 +635,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         // EffectiveSchemaHash ("01234567"); format j (JSON); no profile ("_"); links enabled ("l").
         // The link-bearing intermediate does not change this — the etag is representation-variant
         // based, not a hash of the served body.
-        result["_etag"]!.GetValue<string>().Should().Be("1-01234567.j._.l");
+        result["_etag"]!.GetValue<string>().Should().Be("1-01234567.j._.l.i");
     }
 
     [Test]
@@ -1071,7 +1098,7 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
         materialized[0].Document["_etag"]!
             .GetValue<string>()
             .Should()
-            .Be("7-01234567.j._.l");
+            .Be("7-01234567.j._.l.i");
     }
 
     private static ResourceReadPlan BuildReadPlanWithDocumentReferenceBinding()

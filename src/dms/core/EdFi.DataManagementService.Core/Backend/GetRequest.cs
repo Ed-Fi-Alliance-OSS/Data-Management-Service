@@ -31,7 +31,8 @@ internal sealed record RelationalGetRequest(
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
-    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
+    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
 ) : IGetRequest
 {
     public ResourceName ResourceName => ResourceInfo.ResourceName;

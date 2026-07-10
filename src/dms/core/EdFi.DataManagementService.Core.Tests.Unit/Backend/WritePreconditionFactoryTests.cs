@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
@@ -22,8 +23,8 @@ public class WritePreconditionFactoryTests
         result.Should().BeOfType<WritePrecondition.None>();
     }
 
-    [TestCase("\"5-a1b2c3d4.j._.l\"", "5-a1b2c3d4.j._.l")] // quoted strong validator -> unquoted opaque tag
-    [TestCase("5-a1b2c3d4.j._.l", "5-a1b2c3d4.j._.l")] // bare unquoted value tolerated
+    [TestCase("\"5-a1b2c3d4.j._.l.i\"", "5-a1b2c3d4.j._.l.i")] // quoted strong validator -> unquoted opaque tag
+    [TestCase("5-a1b2c3d4.j._.l.i", "5-a1b2c3d4.j._.l.i")] // bare unquoted value tolerated
     [TestCase("plain-opaque-value", "plain-opaque-value")]
     public void It_normalizes_the_if_match_to_the_unquoted_opaque_tag(
         string ifMatchValue,
@@ -40,7 +41,7 @@ public class WritePreconditionFactoryTests
         result.Should().Be(new WritePrecondition.IfMatch(expectedValue));
     }
 
-    [TestCase("W/\"5-a1b2c3d4.j._.l\"")] // weak validators must not be used with If-Match (RFC 7232 §3.1)
+    [TestCase("W/\"5-a1b2c3d4.j._.l.i\"")] // weak validators must not be used with If-Match (RFC 9110 §13.1.1)
     public void It_keeps_a_weak_if_match_verbatim_so_it_cannot_match_a_current_tag(string ifMatchValue)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -76,5 +77,87 @@ public class WritePreconditionFactoryTests
         var result = WritePreconditionFactory.Create(headers);
 
         result.Should().Be(new WritePrecondition.IfMatch("*")); // IsWildcard defaults false
+    }
+
+    [Test]
+    public void It_produces_a_wildcard_if_none_match_for_a_bare_asterisk()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = "*",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfNoneMatch("*", IsWildcard: true));
+    }
+
+    [TestCase("\"5-a1b2c3d4.j._.l.i\"")] // quoted strong validator
+    [TestCase("5-a1b2c3d4.j._.l.i")] // bare unquoted value tolerated
+    [TestCase("W/\"5-a1b2c3d4.j._.l.i\"")] // weak validator accepted (unlike If-Match)
+    public void It_normalizes_the_if_none_match_to_the_unquoted_opaque_tag(string ifNoneMatchValue)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = ifNoneMatchValue,
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfNoneMatch("5-a1b2c3d4.j._.l.i"));
+    }
+
+    [Test]
+    public void It_produces_an_if_none_match_with_multiple_opaque_tags()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = "\"4-does-not-match\", W/\"5-a1b2c3d4.j._.l.i\", 6-other",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result
+            .Should()
+            .Be(new WritePrecondition.IfNoneMatch(["4-does-not-match", "5-a1b2c3d4.j._.l.i", "6-other"]));
+    }
+
+    [Test]
+    public void It_does_not_fail_if_none_match_when_the_current_tag_is_only_embedded_inside_a_quoted_tag()
+    {
+        const string currentEtag = "5-a1b2c3d4.j._.l.i";
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = $"\"prefix,{currentEtag},suffix\"",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfNoneMatch($"prefix,{currentEtag},suffix"));
+        EtagPreconditionEvaluator.IsSatisfied(result, targetExists: true, currentEtag).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_prefers_if_match_when_both_if_match_and_if_none_match_are_present()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-Match"] = "\"5-a1b2c3d4.j._.l.i\"",
+            ["If-None-Match"] = "*",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfMatch("5-a1b2c3d4.j._.l.i"));
+    }
+
+    [Test]
+    public void It_returns_none_when_neither_if_match_nor_if_none_match_is_present()
+    {
+        var result = WritePreconditionFactory.Create(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        );
+
+        result.Should().BeOfType<WritePrecondition.None>();
     }
 }

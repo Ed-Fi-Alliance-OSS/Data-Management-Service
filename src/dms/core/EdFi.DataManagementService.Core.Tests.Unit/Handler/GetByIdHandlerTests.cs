@@ -29,6 +29,23 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class GetByIdHandlerTests
 {
+    private const string ServedEtag = "5-a1b2c3d4.j._.l.i";
+
+    private sealed class SuccessfulRepository : NotImplementedDocumentStoreRepository
+    {
+        public JsonObject ResponseBody { get; } = new() { ["value"] = "expected", ["_etag"] = ServedEtag };
+
+        public IGetRequest? CapturedRequest { get; private set; }
+
+        public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+        {
+            CapturedRequest = getRequest;
+            return Task.FromResult<GetResult>(
+                new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
+            );
+        }
+    }
+
     internal static RelationshipAuthorizationFailure CreateRelationshipFailure() =>
         new(
             RelationshipAuthorizationFailureValueSource.Stored,
@@ -92,26 +109,16 @@ public class GetByIdHandlerTests
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Success : GetByIdHandlerTests
     {
-        internal class Repository : NotImplementedDocumentStoreRepository
-        {
-            public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
-            public IGetRequest? CapturedRequest { get; private set; }
-
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
-            {
-                CapturedRequest = getRequest;
-                return Task.FromResult<GetResult>(
-                    new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
-                );
-            }
-        }
-
-        private readonly Repository _repository = new();
+        private readonly SuccessfulRepository _repository = new();
         private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
         {
+            requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+            {
+                ResponseContentCoding = ResponseContentCoding.Gzip,
+            };
             var (getByIdHandler, serviceProvider) = Handler(_repository);
             requestInfo.ScopedServiceProvider = serviceProvider;
             await getByIdHandler.Execute(requestInfo, NullNext);
@@ -121,7 +128,14 @@ public class GetByIdHandlerTests
         public void It_has_the_correct_response()
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(200);
-            requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+            requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(_repository.ResponseBody);
+        }
+
+        [Test]
+        public void It_emits_the_served_etag_as_a_response_header()
+        {
+            requestInfo.FrontendResponse.Headers.Should().ContainKey("etag");
+            requestInfo.FrontendResponse.Headers["etag"].Should().Be(ServedEtag);
         }
 
         [Test]
@@ -132,6 +146,83 @@ public class GetByIdHandlerTests
                 .BeAssignableTo<IGetRequest>()
                 .Subject;
             relationalRequest.MappingSet.Should().BeSameAs(requestInfo.MappingSet);
+            relationalRequest.ResponseContentCoding.Should().Be(ResponseContentCoding.Gzip);
+        }
+    }
+
+    public enum InvalidEtagValue
+    {
+        Missing,
+        Empty,
+        NonString,
+    }
+
+    [TestFixture(InvalidEtagValue.Missing)]
+    [TestFixture(InvalidEtagValue.Empty)]
+    [TestFixture(InvalidEtagValue.NonString)]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_An_Invalid_Etag(
+        InvalidEtagValue invalidEtagValue
+    ) : GetByIdHandlerTests
+    {
+        private sealed class Repository(InvalidEtagValue invalidEtagValue)
+            : NotImplementedDocumentStoreRepository
+        {
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                JsonObject responseBody = invalidEtagValue switch
+                {
+                    InvalidEtagValue.Missing => new JsonObject { ["value"] = "expected" },
+                    InvalidEtagValue.Empty => new JsonObject
+                    {
+                        ["value"] = "expected",
+                        ["_etag"] = string.Empty,
+                    },
+                    InvalidEtagValue.NonString => new JsonObject { ["value"] = "expected", ["_etag"] = 123 },
+                    _ => throw new InvalidOperationException(
+                        $"Unknown invalid ETag value: {invalidEtagValue}"
+                    ),
+                };
+
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(No.DocumentUuid, responseBody, DateTime.UtcNow, getRequest.TraceId.Value)
+                );
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository(invalidEtagValue));
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            try
+            {
+                await getByIdHandler.Execute(_requestInfo, NullNext);
+            }
+            catch (Exception exception)
+            {
+                _exception = exception;
+            }
+        }
+
+        [Test]
+        public void It_fails_with_an_actionable_repository_invariant_error()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+            _exception!
+                .Message.Should()
+                .Contain("successful get-by-id repository result")
+                .And.Contain("non-empty string '_etag'");
+        }
+
+        [Test]
+        public void It_does_not_construct_a_success_response()
+        {
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
         }
     }
 
@@ -194,13 +285,67 @@ public class GetByIdHandlerTests
         }
     }
 
+    [TestFixture("\"5-a1b2c3d4.j._.l.i\"", 304)]
+    [TestFixture("5-a1b2c3d4.j._.l.i", 304)]
+    [TestFixture("W/\"5-a1b2c3d4.j._.l.i\"", 304)]
+    [TestFixture("\"4-does-not-match\", W/\"5-a1b2c3d4.j._.l.i\"", 304)]
+    [TestFixture("\"4-does-not-match\", W/\"6-also-does-not-match\"", 200)]
+    [TestFixture("\"prefix,5-a1b2c3d4.j._.l.i,suffix\"", 200)]
+    [TestFixture("\"9-does-not-match\"", 200)]
+    [TestFixture("\"5-a1b2c3d4.j._.n.i\"", 200)]
+    [TestFixture("\"5-a1b2c3d4.j._.l.g\"", 200)]
+    [TestFixture("*", 304)]
+    [TestFixture("\"*\"", 200)]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_If_None_Match(
+        string ifNoneMatch,
+        int expectedStatusCode
+    ) : GetByIdHandlerTests
+    {
+        private readonly SuccessfulRepository _repository = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                Headers = new Dictionary<string, string> { ["If-None-Match"] = ifNoneMatch },
+            };
+            var (getByIdHandler, serviceProvider) = Handler(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await getByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_the_expected_conditional_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(expectedStatusCode);
+            _requestInfo.FrontendResponse.Headers["etag"].Should().Be(ServedEtag);
+
+            if (expectedStatusCode == 304)
+            {
+                _requestInfo.FrontendResponse.Body.Should().BeNull();
+                _requestInfo.FrontendResponse.ContentType.Should().BeNull();
+            }
+            else
+            {
+                _requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(_repository.ResponseBody);
+            }
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Repository_That_Returns_Success_With_A_Null_LastModifiedTraceId : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
+            public static readonly JsonObject ResponseBody = new()
+            {
+                ["value"] = "expected",
+                ["_etag"] = "5-a1b2c3d4.j._.l.i",
+            };
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
@@ -631,7 +776,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 return Task.FromResult<GetResult>(
                     new GetSuccess(
                         No.DocumentUuid,
-                        new JsonObject(),
+                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l.i" },
                         DateTime.UtcNow,
                         getRequest.TraceId.Value
                     )
@@ -708,6 +853,10 @@ actual: {requestInfo.FrontendResponse.Body}
                 ),
                 WasExplicitlySpecified: true
             );
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                ResponseContentCoding = ResponseContentCoding.Gzip,
+            };
 
             var (getByIdHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -747,6 +896,12 @@ actual: {requestInfo.FrontendResponse.Body}
                 .CapturedRequest.ReadableProfileProjectionContext.IdentityPropertyNames.Should()
                 .Equal("studentUniqueId", "schoolReference");
             _repository.CapturedRequest.ResourceName.Should().Be(new ResourceName("Student"));
+            _repository
+                .CapturedRequest.ResponseContentCoding.Should()
+                .Be(
+                    ResponseContentCoding.Identity,
+                    "profile response media types are not in the ASP.NET response-compression allowlist"
+                );
         }
 
         [Test]
@@ -929,7 +1084,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 return Task.FromResult<GetResult>(
                     new GetSuccess(
                         No.DocumentUuid,
-                        new JsonObject(),
+                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l.i" },
                         DateTime.UtcNow,
                         getRequest.TraceId.Value
                     )

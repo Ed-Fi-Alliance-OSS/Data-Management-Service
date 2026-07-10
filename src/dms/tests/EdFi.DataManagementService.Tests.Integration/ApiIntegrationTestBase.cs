@@ -59,6 +59,9 @@ public abstract class ApiIntegrationTestBase
     /// </summary>
     protected virtual bool CaptureQueryPlans => false;
 
+    /// <summary>Enables ASP.NET Core response compression for scenarios that exercise coding variants.</summary>
+    protected virtual bool EnableAspNetCompression => false;
+
     /// <summary>
     /// Builds the claim set provider used by the in-process host.
     /// </summary>
@@ -103,6 +106,10 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);
             builder.UseSetting("AppSettings:Datastore", Datastore);
             builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
+            builder.UseSetting(
+                "AppSettings:EnableAspNetCompression",
+                EnableAspNetCompression ? "true" : "false"
+            );
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
             builder.UseSetting("ConfigurationServiceSettings:ClientSecret", "test-cms-secret");

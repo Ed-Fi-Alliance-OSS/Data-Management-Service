@@ -34,7 +34,7 @@ public enum RelationalGetRequestReadMode
 /// <param name="ProfileName">
 /// The name of the readable profile in effect. Used as the stable input to the served
 /// <c>_etag</c>'s profile discriminator so representations under different profiles carry
-/// distinct etags (RFC 7232 strong validators).
+/// distinct etags (RFC 9110 §8.8.1 strong validators).
 /// </param>
 public sealed record ReadableProfileProjectionContext(
     ContentTypeDefinition ContentTypeDefinition,
@@ -95,4 +95,9 @@ public interface IGetRequest : IRequestWithMappingSet
     /// Null when no readable profile applies or projection must be suppressed.
     /// </summary>
     ReadableProfileProjectionContext? ReadableProfileProjectionContext { get; }
+
+    /// <summary>
+    /// The content coding selected for the external response. Stored-document reads use identity.
+    /// </summary>
+    ResponseContentCoding ResponseContentCoding { get; }
 }

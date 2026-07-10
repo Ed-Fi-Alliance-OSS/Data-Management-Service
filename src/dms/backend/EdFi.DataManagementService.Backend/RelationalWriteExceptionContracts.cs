@@ -136,6 +136,12 @@ internal abstract record RelationalWriteConstraintResolution
             : base(constraintName) { }
     }
 
+    public sealed record AbstractIdentityNaturalKeyUnique : ConstraintMatch
+    {
+        public AbstractIdentityNaturalKeyUnique(string constraintName)
+            : base(constraintName) { }
+    }
+
     public sealed record RequestReference : ConstraintMatch
     {
         public RequestReference(

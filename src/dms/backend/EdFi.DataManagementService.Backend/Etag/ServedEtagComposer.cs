@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Model;
+
 namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
@@ -16,7 +18,8 @@ public readonly record struct ServedEtagContext(
     ResponseFormat Format,
     string? ProfileName,
     bool LinksEnabled,
-    long ContentVersion
+    long ContentVersion,
+    ResponseContentCoding ContentCoding = ResponseContentCoding.Identity
 );
 
 /// <summary>
@@ -37,7 +40,8 @@ public sealed class ServedEtagComposer : IServedEtagComposer
                 context.EffectiveSchemaHash,
                 context.Format,
                 ProfileVariantCode.Of(context.ProfileName),
-                context.LinksEnabled
+                context.LinksEnabled,
+                context.ContentCoding
             )
         );
 }

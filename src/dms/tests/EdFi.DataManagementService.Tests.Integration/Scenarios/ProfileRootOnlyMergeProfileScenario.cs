@@ -134,8 +134,8 @@ internal static class ProfileRootOnlyMergeProfileScenario
         // As of the 2026-07-04 ADR amendment, profileCode is no longer state-significant for If-Match
         // (EtagMatchProjection compares only ContentVersion + schemaEpoch), so using an etag from a
         // profiled GET here is incidental rather than required - the unprofiled seed POST's etag would
-        // also match. GET never sets an ETag response header (GetByIdHandler always returns Headers: []),
-        // so the etag must be read from the "_etag" body field instead.
+        // also match. Use the profiled GET's ETag header to prove it carries the same served tag as the
+        // body and can guard the subsequent write.
         using HttpResponseMessage profiledGetResponse = await GetProfiledAsync(
             harness,
             locationPath,
@@ -143,7 +143,12 @@ internal static class ProfileRootOnlyMergeProfileScenario
         );
         string profiledGetBody = await profiledGetResponse.Content.ReadAsStringAsync();
         profiledGetResponse.StatusCode.Should().Be(HttpStatusCode.OK, profiledGetBody);
-        string profiledEtag = JsonNode.Parse(profiledGetBody)!.AsObject()["_etag"]!.GetValue<string>();
+        string bodyEtag = JsonNode.Parse(profiledGetBody)!.AsObject()["_etag"]!.GetValue<string>();
+        profiledGetResponse
+            .TryReadRawEtag(out string profiledEtag)
+            .Should()
+            .BeTrue("a successful profiled GET must emit its served ETag in the response header");
+        profiledEtag.Should().Be(bodyEtag, "the GET header and body must expose the same served ETag");
 
         var putPayload = new JsonObject
         {

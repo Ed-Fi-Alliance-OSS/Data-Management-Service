@@ -15,6 +15,8 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
@@ -341,26 +343,29 @@ public static class AspNetCoreFrontend
 
     private const string ContentTypeHeaderName = "Content-Type";
     private const string AuthorizationHeaderName = "Authorization";
+    private const string IfNoneMatchHeaderName = "If-None-Match";
 
     /// <summary>
     /// Headers that must reach core verbatim rather than through the blank-dropping,
     /// first-non-blank reduction in <see cref="ExtractHeadersFrom"/>: Content-Type (an explicit
     /// blank is rejected with 415) and Authorization (an explicit blank or a repeated header is
     /// a malformed header rejected with 401, distinct from a missing header, which reports
-    /// "Authorization header is missing.").
+    /// "Authorization header is missing."), and If-None-Match (multiple values form one
+    /// comma-separated entity-tag list whose members must all reach core).
     /// </summary>
     private static readonly string[] HeadersPreservedWhenExplicitlySent =
     [
         ContentTypeHeaderName,
         AuthorizationHeaderName,
+        IfNoneMatchHeaderName,
     ];
 
     /// <summary>
     /// Takes an HttpRequest and returns its headers as a dictionary. Blank header values are
     /// dropped and multi-valued headers are reduced to their first non-blank value, except for
     /// the headers in <see cref="HeadersPreservedWhenExplicitlySent"/>, which are delivered
-    /// verbatim (blank preserved, multiple values comma-joined) so core can classify an
-    /// explicit blank or a repeated header as malformed rather than as missing or valid.
+    /// verbatim (blank preserved, multiple values comma-joined) so core can validate the complete
+    /// field value or apply list semantics.
     /// </summary>
     private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request)
     {
@@ -375,8 +380,8 @@ public static class AspNetCoreFrontend
 
         // The filtering above discards blank values and reduces a repeated header to its first
         // non-blank value. Normalize the preserved headers to their full comma-joined value so
-        // an explicit blank reaches core as present-but-invalid and a repeated header is not
-        // reduced to a single authenticatable value. string.Join is used instead of
+        // an explicit blank reaches core as present-but-invalid and a multi-valued header is not
+        // reduced before core can validate or interpret it. string.Join is used instead of
         // StringValues.ToString() because ToString() drops empty entries, which would silently
         // erase a blank duplicate sent alongside a valid value.
         foreach (string headerName in HeadersPreservedWhenExplicitlySent)
@@ -501,8 +506,61 @@ public static class AspNetCoreFrontend
             Tenant: ExtractTenantFrom(httpRequest, appSettings),
             ParsedBody: jsonBody.ParsedBody,
             BodyParseErrorMessage: jsonBody.ParseErrorMessage,
-            DuplicatePropertyPath: jsonBody.DuplicatePropertyPath
+            DuplicatePropertyPath: jsonBody.DuplicatePropertyPath,
+            ResponseContentCoding: HttpMethods.IsGet(httpRequest.Method)
+                ? ResolveResponseContentCoding(httpRequest.HttpContext)
+                : ResponseContentCoding.Identity
         );
+    }
+
+    /// <summary>
+    /// Uses the same registered provider as ASP.NET Core response compression to select the content
+    /// coding that a successful JSON response will use. Absence of the service means compression is
+    /// disabled. The provider is consulted again by the compression middleware when the body is
+    /// written; negotiation is deterministic for the unchanged request headers.
+    /// </summary>
+    internal static ResponseContentCoding ResolveResponseContentCoding(HttpContext httpContext)
+    {
+        if (
+            GetResponseCompressionProvider(httpContext) is not { } responseCompressionProvider
+            || !responseCompressionProvider.CheckRequestAcceptsCompression(httpContext)
+        )
+        {
+            return ResponseContentCoding.Identity;
+        }
+
+        if (
+            responseCompressionProvider.GetCompressionProvider(httpContext)?.EncodingName
+            is not { } encodingName
+        )
+        {
+            return ResponseContentCoding.Identity;
+        }
+
+        if (string.Equals(encodingName, "br", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResponseContentCoding.Brotli;
+        }
+
+        if (string.Equals(encodingName, "gzip", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResponseContentCoding.Gzip;
+        }
+
+        throw new InvalidOperationException(
+            $"Response compression selected unsupported content coding '{encodingName}'. "
+                + "Register a stable served-etag variant code before enabling this provider."
+        );
+    }
+
+    private static IResponseCompressionProvider? GetResponseCompressionProvider(HttpContext httpContext)
+    {
+        if (httpContext.RequestServices is null)
+        {
+            return null;
+        }
+
+        return httpContext.RequestServices.GetService<IResponseCompressionProvider>();
     }
 
     /// <summary>
@@ -527,7 +585,7 @@ public static class AspNetCoreFrontend
         foreach (var header in frontendResponse.Headers)
         {
             // The _etag is stored as an opaque, unquoted value in the JSON body; serve it on the
-            // ETag response header as a quoted strong validator (RFC 7232 §2.3). Other headers pass
+            // ETag response header as a quoted strong validator (RFC 9110 §8.8.3). Other headers pass
             // through verbatim. Normalize via TryParseHeaderValue to handle any pre-quoted values,
             // and skip empty values.
             if (string.Equals(header.Key, "etag", StringComparison.OrdinalIgnoreCase))
@@ -543,6 +601,24 @@ public static class AspNetCoreFrontend
             }
         }
 
+        // Successful resource GETs can vary by readable profile/media type. They can also vary by
+        // content coding when response compression is enabled, including query responses whose item
+        // etags carry the selected coding and 304 responses whose empty body bypasses compression
+        // middleware. Declare both request selectors at the serving boundary so caches never reuse a
+        // representation across incompatible Accept or Accept-Encoding values.
+        if (
+            HttpMethods.IsGet(httpContext.Request.Method)
+            && frontendResponse.StatusCode is StatusCodes.Status200OK or StatusCodes.Status304NotModified
+        )
+        {
+            AppendVaryHeaderIfMissing(httpContext.Response, "Accept");
+
+            if (GetResponseCompressionProvider(httpContext) is not null)
+            {
+                AppendVaryHeaderIfMissing(httpContext.Response, "Accept-Encoding");
+            }
+        }
+
         return Results.Content(
             statusCode: frontendResponse.StatusCode,
             content: frontendResponse.Body == null
@@ -551,6 +627,18 @@ public static class AspNetCoreFrontend
             contentType: frontendResponse.ContentType,
             contentEncoding: Encoding.UTF8
         );
+    }
+
+    private static void AppendVaryHeaderIfMissing(HttpResponse response, string fieldName)
+    {
+        if (
+            !response
+                .Headers.GetCommaSeparatedValues("Vary")
+                .Contains(fieldName, StringComparer.OrdinalIgnoreCase)
+        )
+        {
+            response.Headers.Append("Vary", fieldName);
+        }
     }
 
     /// <summary>

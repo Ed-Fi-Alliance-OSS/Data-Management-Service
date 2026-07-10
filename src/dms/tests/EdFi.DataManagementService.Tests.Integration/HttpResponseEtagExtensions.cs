@@ -9,7 +9,7 @@ internal static class HttpResponseEtagExtensions
 {
     /// <summary>
     /// Reads the ETag header and normalizes it to an unquoted opaque value.
-    /// DMS emits ETag headers as RFC 7232 quoted strong validators (e.g., "1-3581150b.j._.n"),
+    /// DMS emits ETag headers as RFC 9110 §8.8.3 quoted strong validators (e.g., "1-3581150b.j._.n"),
     /// which are parsed back to their unquoted form for test assertions.
     /// </summary>
     public static bool TryReadRawEtag(this HttpResponseMessage response, out string etag)

@@ -92,7 +92,7 @@ Source documents:
   - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`; back `/deletes` and `/keyChanges`. Populated by the same `*_Stamp` triggers extended with `DocumentStamping.ChangeTracking`.
   - `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server); backs `/availableChangeVersions`.
 - Served metadata:
-  - `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, and link flag); the document body is not hashed for etag construction.
+  - `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
   - `_lastModifiedDate` served from `ContentLastModifiedAt`.
 
 ### Per-project schemas and resource tables

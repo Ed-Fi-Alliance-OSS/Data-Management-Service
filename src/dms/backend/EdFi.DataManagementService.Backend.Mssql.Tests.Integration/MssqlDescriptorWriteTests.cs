@@ -74,6 +74,109 @@ public class Given_MssqlDescriptorWriteHandler
     }
 
     [Test]
+    public async Task It_inserts_a_new_descriptor_via_post_under_wildcard_if_none_match()
+    {
+        var handler = ResolveHandler();
+        var request = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "GuardedCreate",
+                "shortDescription": "Guarded Create"
+            }
+            """
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+        };
+
+        var result = await handler.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_for_existing_descriptor_post_under_wildcard_if_none_match()
+    {
+        var handler = ResolveHandler();
+        var resource = _database.Fixture.SchoolTypeDescriptorResource;
+        const string body = """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "GuardedExistingPost",
+                "shortDescription": "Guarded Existing Post"
+            }
+            """;
+        var createResult = await handler.HandlePostAsync(CreatePostRequest(resource, body));
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        var request = CreatePostRequest(resource, body) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+        };
+
+        var result = await handler.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_for_existing_descriptor_put_under_wildcard_if_none_match()
+    {
+        var handler = ResolveHandler();
+        var resource = _database.Fixture.SchoolTypeDescriptorResource;
+        const string body = """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "GuardedExistingPut",
+                "shortDescription": "Guarded Existing Put"
+            }
+            """;
+        var createResult = await handler.HandlePostAsync(CreatePostRequest(resource, body));
+        var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
+        var request = CreatePutRequest(resource, documentUuid, body) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+        };
+
+        var result = await handler.HandlePutAsync(request);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_missing_descriptor_put_under_wildcard_if_none_match()
+    {
+        var handler = ResolveHandler();
+        var request = CreatePutRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            new DocumentUuid(Guid.NewGuid()),
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "GuardedMissingPut",
+                "shortDescription": "Guarded Missing Put"
+            }
+            """
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
+        };
+
+        var result = await handler.HandlePutAsync(request);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
+    }
+
+    [Test]
     public async Task It_updates_tracking_stamps_when_descriptor_representation_changes()
     {
         var handler = ResolveHandler();
@@ -175,8 +278,8 @@ public class Given_MssqlDescriptorWriteHandler
         ((UpsertResult.InsertSuccess)createResult)
             .ETag.Should()
             .MatchRegex(
-                @"^\d+-[a-z0-9]{1,8}\.j\._\.n$",
-                "the descriptor write etag is composed as {ContentVersion}-{schemaEpoch}.j._.n (no profile, links off)"
+                @"^\d+-[a-z0-9]{1,8}\.j\._\.n\.i$",
+                "the descriptor write etag is composed as {ContentVersion}-{schemaEpoch}.j._.n.i (no profile, links off, identity coding)"
             );
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
             createResult,

@@ -444,12 +444,21 @@ ODS requires 3 roundtrips for the same operation.
 #### GET-by-id
 
 - Roundtrip #1
-  - Retrieve the DocumentId and etag by its Uuid (to abort if not found, and for reconstitution) (etag to enforce `If-None-Match`, if applicable)
+  - Retrieve the `DocumentId` and `ContentVersion` by its Uuid (to abort if not found and supply
+    reconstitution/validator metadata).
 - Roundtrip #2
   - Run authorization check using the already-stored values (throw if unauthorized)
   - Reconstitute the record
+  - After authorization and every other normal request check would permit a `200`, compose the full
+    served validator from `ContentVersion` plus the request's `variantKey` and evaluate
+    `If-None-Match`; a full-tag match returns `304`, otherwise return the reconstituted `200` body.
 
 ODS requires 2 roundtrips for the same operation.
+
+The conditional check deliberately follows authorization and normal response selection. A matching
+validator must not turn a request that would otherwise be unauthorized or unsuccessful into `304`,
+and it must use the same profile, format, link, and content-coding context as the representation that would have
+been served.
 
 #### GET-many
 
@@ -791,7 +800,8 @@ async Task GetGradeBookEntryById()
     var requestParams = new
     {
         uuid = new Guid("2af0e37e-9bb1-4770-8d0f-32d1b91c3984"),
-        etag = 123
+        ifNoneMatch = "\"123-a1b2c3d4.j._.l.i\"",
+        variantKey = "a1b2c3d4.j._.l.i"
     };
 
     await using var roundtrip1 = new NpgsqlCommand(@"
@@ -821,11 +831,6 @@ async Task GetGradeBookEntryById()
         throw new InvalidOperationException(message: "Not found");
     }
 
-    if (requestParams.etag == currentCanonicalJsonEtag) // TBD Calculate the etag from the canonical JSON form used by the _etag contract
-    {
-        throw new InvalidOperationException(message: "Not modified");
-    }
-
     await using var roundtrip2 = new NpgsqlCommand(@"
         -- Authorize stored values: namespace-based
         SELECT CASE
@@ -846,6 +851,15 @@ async Task GetGradeBookEntryById()
     try
     {
         await using var roundtrip2Reader = await roundtrip2.ExecuteReaderAsync();
+
+        // Omitted: consume the reconstitution result sets and complete all other normal response
+        // checks. Only a request that could otherwise return 200 evaluates If-None-Match.
+        var currentServedEtag = $"{contentVersion}-{requestParams.variantKey}";
+
+        if (IfNoneMatchWeaklyMatchesFullTag(requestParams.ifNoneMatch, currentServedEtag))
+        {
+            throw new InvalidOperationException(message: "Not modified");
+        }
     }
     catch (PostgresException ex) when (ex.SqlState == "AUTH1")
     {

@@ -40,6 +40,43 @@ internal static class DescriptorRuntimeScenario
             .Be(postEtag, "POST ETag header must match the subsequent GET _etag");
     }
 
+    public static async Task It_returns_not_modified_for_a_matching_descriptor_if_none_match(
+        ApiIntegrationHarness harness
+    )
+    {
+        DescriptorValues descriptor = CreateDescriptorValues("conditional-get");
+        (string locationPath, _) = await CreateDescriptorAsync(harness, descriptor);
+
+        using HttpResponseMessage initialGetResponse = await harness.HttpClient.GetAsync(locationPath);
+        string initialGetBody = await initialGetResponse.Content.ReadAsStringAsync();
+        initialGetResponse.StatusCode.Should().Be(HttpStatusCode.OK, initialGetBody);
+        initialGetResponse
+            .TryReadRawEtag(out string getEtag)
+            .Should()
+            .BeTrue("descriptor GET-by-id must emit an ETag header");
+        JsonObject returned = JsonNode.Parse(initialGetBody)!.AsObject();
+        returned["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(getEtag, "the descriptor GET header and response body must use the same ETag");
+
+        using var conditionalGetRequest = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        conditionalGetRequest.Headers.TryAddWithoutValidation("If-None-Match", $"\"{getEtag}\"");
+        using HttpResponseMessage conditionalGetResponse = await harness.HttpClient.SendAsync(
+            conditionalGetRequest
+        );
+
+        conditionalGetResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
+        (await conditionalGetResponse.Content.ReadAsStringAsync())
+            .Should()
+            .BeEmpty("a 304 descriptor response must not carry a body");
+        conditionalGetResponse
+            .TryReadRawEtag(out string notModifiedEtag)
+            .Should()
+            .BeTrue("a 304 descriptor response must still carry the current ETag header");
+        notModifiedEtag.Should().Be(getEtag);
+    }
+
     public static async Task It_updates_descriptor_non_identity_fields_and_advances_metadata(
         ApiIntegrationHarness harness
     )
