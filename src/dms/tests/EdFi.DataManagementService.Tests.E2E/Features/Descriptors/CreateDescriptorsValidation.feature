@@ -515,3 +515,29 @@ Feature: Create a Descriptor
                         "description": "Little Shell Tribe of Chippewa Indians of Montana"
                     }
                   """
+
+        @e2e-ci-shard-2
+        Scenario: 19 Use If-None-Match for descriptor conditional GET and guarded create
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with header "If-None-Match" value "*"
+                  """
+                  {
+                    "codeValue": "Conditional Descriptor",
+                    "description": "Conditional Descriptor",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Conditional Descriptor"
+                  }
+                  """
+             Then it should respond with 201
+              And the ETag is in the response header
+             When a GET if-none-match "{IfNoneMatch}" request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             Then it should respond with 304
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with header "If-None-Match" value "*"
+                  """
+                  {
+                    "codeValue": "Conditional Descriptor",
+                    "description": "Conditional Descriptor Updated",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Conditional Descriptor"
+                  }
+                  """
+             Then it should respond with 412
