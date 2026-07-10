@@ -94,7 +94,11 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
+            public static readonly JsonObject ResponseBody = new()
+            {
+                ["value"] = "expected",
+                ["_etag"] = "5-a1b2c3d4.j._.l",
+            };
             public IGetRequest? CapturedRequest { get; private set; }
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
@@ -132,6 +136,82 @@ public class GetByIdHandlerTests
                 .BeAssignableTo<IGetRequest>()
                 .Subject;
             relationalRequest.MappingSet.Should().BeSameAs(requestInfo.MappingSet);
+        }
+    }
+
+    public enum InvalidEtagValue
+    {
+        Missing,
+        Empty,
+        NonString,
+    }
+
+    [TestFixture(InvalidEtagValue.Missing)]
+    [TestFixture(InvalidEtagValue.Empty)]
+    [TestFixture(InvalidEtagValue.NonString)]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_An_Invalid_Etag(
+        InvalidEtagValue invalidEtagValue
+    ) : GetByIdHandlerTests
+    {
+        private sealed class Repository(InvalidEtagValue invalidEtagValue)
+            : NotImplementedDocumentStoreRepository
+        {
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                JsonObject responseBody = invalidEtagValue switch
+                {
+                    InvalidEtagValue.Missing => new JsonObject { ["value"] = "expected" },
+                    InvalidEtagValue.Empty => new JsonObject
+                    {
+                        ["value"] = "expected",
+                        ["_etag"] = string.Empty,
+                    },
+                    InvalidEtagValue.NonString => new JsonObject { ["value"] = "expected", ["_etag"] = 123 },
+                    _ => throw new InvalidOperationException(
+                        $"Unknown invalid ETag value: {invalidEtagValue}"
+                    ),
+                };
+
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(No.DocumentUuid, responseBody, DateTime.UtcNow, getRequest.TraceId.Value)
+                );
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository(invalidEtagValue));
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            try
+            {
+                await getByIdHandler.Execute(_requestInfo, NullNext);
+            }
+            catch (Exception exception)
+            {
+                _exception = exception;
+            }
+        }
+
+        [Test]
+        public void It_fails_with_an_actionable_repository_invariant_error()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+            _exception!
+                .Message.Should()
+                .Contain("successful get-by-id repository result")
+                .And.Contain("non-empty string '_etag'");
+        }
+
+        [Test]
+        public void It_does_not_construct_a_success_response()
+        {
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
         }
     }
 
@@ -656,7 +736,11 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
+            public static readonly JsonObject ResponseBody = new()
+            {
+                ["value"] = "expected",
+                ["_etag"] = "5-a1b2c3d4.j._.l",
+            };
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
@@ -1087,7 +1171,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 return Task.FromResult<GetResult>(
                     new GetSuccess(
                         No.DocumentUuid,
-                        new JsonObject(),
+                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l" },
                         DateTime.UtcNow,
                         getRequest.TraceId.Value
                     )
@@ -1385,7 +1469,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 return Task.FromResult<GetResult>(
                     new GetSuccess(
                         No.DocumentUuid,
-                        new JsonObject(),
+                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l" },
                         DateTime.UtcNow,
                         getRequest.TraceId.Value
                     )

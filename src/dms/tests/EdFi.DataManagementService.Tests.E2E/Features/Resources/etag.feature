@@ -28,6 +28,7 @@ Feature: ETag validations
                     "_etag": "{etag}"
                   }
                   """
+              And the ETag is in the response header
         @e2e-ci-shard-1
         Scenario: 02 Ensure that clients can pass an IfMatch in the request header
              When a POST request is made to "/ed-fi/students" with

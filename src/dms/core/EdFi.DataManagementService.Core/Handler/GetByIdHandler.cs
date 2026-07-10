@@ -5,6 +5,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
@@ -117,12 +118,9 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
 
     private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, JsonNode edfiDoc)
     {
-        string? servedEtag = edfiDoc["_etag"]?.GetValue<string>();
+        string servedEtag = RequireServedEtag(edfiDoc);
 
-        if (
-            !string.IsNullOrEmpty(servedEtag)
-            && TryCreateNotModified(requestInfo, servedEtag, out FrontendResponse notModified)
-        )
+        if (TryCreateNotModified(requestInfo, servedEtag, out FrontendResponse notModified))
         {
             return notModified;
         }
@@ -138,9 +136,32 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
         return new FrontendResponse(
             StatusCode: 200,
             Body: edfiDoc,
-            Headers: new() { ["etag"] = servedEtag ?? "" },
+            Headers: new() { ["etag"] = servedEtag },
             ContentType: contentType
         );
+    }
+
+    private static string RequireServedEtag(JsonNode edfiDoc)
+    {
+        if (
+            edfiDoc["_etag"] is not JsonValue etagValue
+            || etagValue.GetValueKind() is not JsonValueKind.String
+        )
+        {
+            throw new InvalidOperationException(
+                "A successful get-by-id repository result must contain a non-empty string '_etag' value."
+            );
+        }
+
+        string servedEtag = etagValue.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(servedEtag))
+        {
+            throw new InvalidOperationException(
+                "A successful get-by-id repository result must contain a non-empty string '_etag' value."
+            );
+        }
+
+        return servedEtag;
     }
 
     /// <summary>
