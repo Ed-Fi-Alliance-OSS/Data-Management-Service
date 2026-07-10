@@ -17,6 +17,7 @@ Feature: Route Qualifier Discovery API
               | 255901/2025 |
 
     Scenario: Discovery endpoint with tenant and full route qualifiers returns URLs with route context
+         And tenant "Tenant_RouteQualifier" has an application for district "255901"
          When a GET request is made to discovery endpoint with route "Tenant_RouteQualifier/255901/2024"
           And the oauth url from the discovery response is used to request a DMS token
          Then it should respond with 200
