@@ -439,11 +439,17 @@ function measureFixture(configuration) {
           sum + scalarPayloadBytes(columnType(columnName), dialect, stringMode),
         0,
       );
-    const baselineMssqlBytes = propagationKey.columns.reduce(
-      (sum, columnName) =>
-        sum + scalarPayloadBytes(tableColumn(targetTable, columnName).type, "mssql"),
-      0,
-    );
+    const baselineBytes = (dialect, stringMode) =>
+      propagationKey.columns.reduce(
+        (sum, columnName) =>
+          sum +
+          scalarPayloadBytes(
+            tableColumn(targetTable, columnName).type,
+            dialect,
+            stringMode,
+          ),
+        0,
+      );
 
     vectorMeasurements.push({
       target: targetKey,
@@ -452,7 +458,10 @@ function measureFixture(configuration) {
       anchorCount: anchors.length,
       vectorColumnCount: vectorColumns.length,
       vectorColumns,
-      baselineMssqlBytes,
+      baselineVectorColumnCount: propagationKey.columns.length,
+      baselineMssqlBytes: baselineBytes("mssql"),
+      baselinePgsqlAsciiBytes: baselineBytes("pgsql", "ascii"),
+      baselinePgsqlUtf8MaxBytes: baselineBytes("pgsql", "utf8-max"),
       mssqlBytes: bytes("mssql"),
       pgsqlAsciiBytes: bytes("pgsql", "ascii"),
       pgsqlUtf8MaxBytes: bytes("pgsql", "utf8-max"),
@@ -815,6 +824,70 @@ function measureFixture(configuration) {
       (sum, vector) => sum + vector.anchorCount * vector.incomingSiteCount * 40,
       0,
     );
+  const anchorCausedLimitCrossings = [
+    ...vectorMeasurements.flatMap(vector => {
+      const crossings = [];
+
+      function addCrossing(kind, limit, baseline, complete) {
+        if (baseline <= limit && complete > limit) {
+          crossings.push({
+            kind,
+            target: vector.target,
+            limit,
+            baseline,
+            complete,
+          });
+        }
+      }
+
+      addCrossing(
+        "vector-columns",
+        32,
+        vector.baselineVectorColumnCount,
+        vector.vectorColumnCount,
+      );
+      addCrossing(
+        "mssql-foreign-key-declared-bytes",
+        900,
+        vector.baselineMssqlBytes,
+        vector.mssqlBytes,
+      );
+      addCrossing(
+        "mssql-nonclustered-unique-declared-bytes",
+        1700,
+        vector.baselineMssqlBytes,
+        vector.mssqlBytes,
+      );
+      addCrossing(
+        "pgsql-ascii-payload-bytes",
+        2704,
+        vector.baselinePgsqlAsciiBytes,
+        vector.pgsqlAsciiBytes,
+      );
+      addCrossing(
+        "pgsql-four-byte-utf8-payload-bytes",
+        2704,
+        vector.baselinePgsqlUtf8MaxBytes,
+        vector.pgsqlUtf8MaxBytes,
+      );
+
+      return crossings;
+    }),
+    ...tableGrowth
+      .filter(
+        table => table.baseline_column_count <= 1024 && table.final_column_count > 1024,
+      )
+      .map(table => ({
+        kind: "mssql-table-columns",
+        target: table.table,
+        limit: 1024,
+        baseline: table.baseline_column_count,
+        complete: table.final_column_count,
+      })),
+  ].sort(
+    (left, right) =>
+      compareText(left.kind, right.kind) || compareText(left.target, right.target),
+  );
 
   return {
     fixture: configuration.name,
@@ -910,7 +983,7 @@ function measureFixture(configuration) {
       pgsql_vectors_over_2704_four_byte_utf8_payload_bytes: vectorMeasurements
         .filter(vector => vector.pgsqlUtf8MaxBytes > 2704)
         .map(vector => vector.target),
-      full_inventory_fails_where_minimal_demand_would_fit: [],
+      anchor_caused_limit_crossings: anchorCausedLimitCrossings,
     },
     artifact_projection: {
       relational_manifest_delta_bytes: Buffer.byteLength(syntheticManifestText) -
@@ -936,7 +1009,7 @@ function measureFixture(configuration) {
 }
 
 const summary = {
-  schema_version: 1,
+  schema_version: 2,
   generated_by:
     "reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js",
   assumptions: {
@@ -969,6 +1042,12 @@ const summary = {
 
 const summaryText = `${JSON.stringify(summary, null, 2)}\n`;
 const mode = process.argv[2] ?? "--check";
+const gateCrossings = summary.fixtures.flatMap(fixture =>
+  fixture.provider_limit_screen.anchor_caused_limit_crossings.map(crossing => ({
+    fixture: fixture.fixture,
+    ...crossing,
+  })),
+);
 
 if (mode === "--write") {
   fs.writeFileSync(summaryPath, summaryText, "utf8");
@@ -990,4 +1069,11 @@ if (mode === "--write") {
   }
 } else {
   throw new Error(`Unknown option '${mode}'. Use --check, --write, or --print.`);
+}
+
+if (gateCrossings.length > 0) {
+  process.stderr.write(
+    `Complete-vector gate failed with ${gateCrossings.length} anchor-caused provider-limit crossing(s):\n${JSON.stringify(gateCrossings, null, 2)}\n`,
+  );
+  process.exitCode = 1;
 }

@@ -223,6 +223,10 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      - self-contained identities
      - reference-bearing identities (kept current via cascades + per-resource triggers)
      - polymorphic/abstract identities via superclass/abstract alias rows in `dms.ReferentialIdentity`
+   - Group successful document references by compiled target resource and batch-read that target's ordered complete
+     lineage-anchor columns by `DocumentId` from the concrete root or abstract identity table in the same transaction.
+     The ordinary resolved occurrence therefore carries `(DocumentId, ordered lineage anchors)`; targets without anchors
+     need no second read, and no reference occurrence causes an individual query.
    - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
    - For an approved existing-binding future-identity miss on an unprofiled or profile-constrained PUT, defer only the
      stable target id after stored-state authorization/current-state correlation. Profile-constrained execution uses the
@@ -237,7 +241,8 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - For each document reference site:
      - persist the stable `..._DocumentId`, and
      - populate canonical/storage identity-part columns deterministically (key-unified when required).
-     - populate every complete lineage-anchor column from ordinary resolved inputs or a proved origin-write binding.
+     - populate every complete lineage-anchor column from the occurrence's typed ordinary resolved vector, a persisted
+       value proved unchanged for an eligible deferred existing binding, or a proved origin-write binding.
      - per-site identity-part binding columns (`{RefBaseName}_{IdentityPart}`) may be generated aliases and are not
        written directly.
    - If key unification introduces synthetic presence flags for optional non-reference paths, writers MUST set those

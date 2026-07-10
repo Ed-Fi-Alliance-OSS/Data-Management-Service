@@ -20,7 +20,8 @@ node reference/design/backend-redesign/evidence/dms-1129/measure-complete-vector
 
 The default mode recomputes the measurement and byte-compares it with
 `complete-vector-feasibility-summary.json`. Use `--print` to inspect generated JSON or `--write` to intentionally
-regenerate the checked-in summary.
+regenerate the checked-in summary. Every mode exits nonzero when the computed
+`anchor_caused_limit_crossings` inventory is non-empty.
 
 The script reads the same authoritative ApiSchema inputs and relational-model manifests used by the DDL golden-fixture
 pipeline. It does not modify those fixtures.
@@ -117,10 +118,12 @@ overhead/compression. Those remain full generated-model qualification work.
 
 Focused probes exercised the worst `SurveySectionResponse` shape rather than a narrower surrogate:
 
-- SQL Server 2022 (`16.0.4205.1`) installed the nine-column 1,300-byte target UNIQUE and full child FK, then accepted a
-  target and child row with every `nvarchar` component at its declared maximum.
-- PostgreSQL 18.4 installed the equivalent full FK and accepted target/child rows with a measured 2,560-byte payload
-  using distinct, incompressible four-byte UTF-8 characters at every declared maximum.
+- SQL Server 2022 (`16.0.4205.1`) installed the nine-column 1,300-byte target UNIQUE and full cascading child FK, accepted
+  a target and child row with every `nvarchar` component at its declared maximum, and cascaded a maximum-width public
+  value plus a lineage anchor.
+- PostgreSQL 18.4 installed the equivalent cascading full FK, accepted target/child rows with a measured 2,560-byte
+  payload using distinct, incompressible four-byte UTF-8 characters at every declared maximum, and cascaded a
+  maximum-width public value plus a lineage anchor.
 
 The provider probes are checked in as
 [`MssqlCompletePropagationVectorFeasibilityTests.cs`](../../../../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCompletePropagationVectorFeasibilityTests.cs)
@@ -128,8 +131,9 @@ and
 [`PostgresqlCompletePropagationVectorFeasibilityTests.cs`](../../../../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlCompletePropagationVectorFeasibilityTests.cs).
 These results resolve the measured width risk; they do not replace the later full-schema generated-DDL qualification.
 
-No measured case fails the complete inventory while a site-minimal anchor subset would fit a column-count or
-nonclustered-UNIQUE limit.
+The computed `anchor_caused_limit_crossings` inventory is empty: adding complete anchors causes no measured vector,
+declared-key payload, or table-column threshold crossing. The tool makes no claim about whether a removed site-minimal
+algorithm would fit a hypothetical failing case.
 
 ## Artifact Projection
 

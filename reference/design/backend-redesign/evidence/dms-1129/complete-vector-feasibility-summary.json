@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generated_by": "reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js",
   "assumptions": {
     "lineage_closure": "One root identity-contributing document reference is one independently replaceable lineage. Each target vector includes the stable transitive union inherited through those identity-reference chains. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
@@ -138,7 +138,7 @@
         "mssql_vectors_over_1700_declared_bytes": [],
         "pgsql_vectors_over_2704_ascii_payload_bytes": [],
         "pgsql_vectors_over_2704_four_byte_utf8_payload_bytes": [],
-        "full_inventory_fails_where_minimal_demand_would_fit": []
+        "anchor_caused_limit_crossings": []
       },
       "artifact_projection": {
         "relational_manifest_delta_bytes": 198507,
@@ -266,7 +266,7 @@
         "mssql_vectors_over_1700_declared_bytes": [],
         "pgsql_vectors_over_2704_ascii_payload_bytes": [],
         "pgsql_vectors_over_2704_four_byte_utf8_payload_bytes": [],
-        "full_inventory_fails_where_minimal_demand_would_fit": []
+        "anchor_caused_limit_crossings": []
       },
       "artifact_projection": {
         "relational_manifest_delta_bytes": 252867,

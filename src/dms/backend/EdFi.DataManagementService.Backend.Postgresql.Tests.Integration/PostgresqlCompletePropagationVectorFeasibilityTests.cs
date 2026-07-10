@@ -86,6 +86,7 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Postgresql
                     section_survey_document_id,
                     document_id
                 )
+                ON UPDATE CASCADE
             );
 
             -- Distinct astral code points keep the maximum UTF-8 payload incompressible.
@@ -114,6 +115,11 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Postgresql
                 section_survey_document_id,
                 document_id
             FROM public.wide_vector_target;
+
+            UPDATE public.wide_vector_target
+            SET
+                namespace_value = reverse(namespace_value),
+                response_document_id = 11;
             """
         );
 
@@ -159,7 +165,7 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Postgresql
     }
 
     [Test]
-    public void It_accepts_the_maximum_declared_full_vector_payload()
+    public void It_accepts_and_cascades_the_maximum_declared_full_vector_payload()
     {
         _encodedPayloadBytes.Should().Be(2560);
         _storedTupleBytes.Should().BeGreaterThan(_encodedPayloadBytes);

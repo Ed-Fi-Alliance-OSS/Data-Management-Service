@@ -408,14 +408,18 @@ Update Core’s `ReferenceExtractor` to populate `DocumentReference.Path` by usi
 
 Backend turns extracted references + bulk DB resolution into a per-request index:
 
-`(ReferenceObjectPath, OrdinalPath[]) → ReferencedDocumentId`
+`(ReferenceObjectPath, OrdinalPath[]) → (ReferencedDocumentId, OrderedLineageAnchorDocumentIds[])`
 
 Where `OrdinalPath[]` is the vector of array ordinals along the wildcard path:
 - Root scope: `[]`
 - `$.addresses[*]`: `[addressOrdinal]`
 - `$.addresses[*].periods[*]`: `[addressOrdinal, periodOrdinal]`
 
-During row materialization, the flattener already knows the current row’s `OrdinalPath` because it is enumerating the arrays. It performs an O(1) lookup to populate each FK column (no per-row hashing).
+After resolving referential ids, the backend groups successful occurrences by target resource and batch-reads the
+target's ordered lineage-anchor columns from its concrete root or abstract identity table in the same transaction. A
+target without lineage anchors needs no additional read. During row materialization, the flattener already knows the
+current row's `OrdinalPath` because it is enumerating the arrays. It performs one O(1) lookup to populate the terminal FK
+column and every local lineage-anchor binding; there is no per-occurrence database query or per-row hashing.
 
 ### 5.2.2 Deferred existing references during an identity-changing PUT
 
@@ -424,9 +428,9 @@ stored authorization and current-state loading, an unresolved occurrence may con
 that it is an already-present binding on the persisted receiver row, its target `DocumentId` is stable, and a retained
 native route gives that same target the submitted future identity in the initiating statement.
 
-For that occurrence, reuse only the persisted target `DocumentId` and values proved unchanged. Changing public identity
-values come from the submitted/origin write, and reference-backed lineage anchors come from ordinary successful
-resolution or other proved origin-write bindings. Reusing the old complete vector would be incorrect.
+For that occurrence, reuse only the persisted target `DocumentId` and lineage anchors proved unchanged. Changing public
+identity values come from the submitted/origin write, and changing reference-backed lineage anchors come from typed
+ordinary resolved vectors or other proved origin-write bindings. Reusing the old complete vector would be incorrect.
 
 The executor locks subject, receiver, and target documents in deterministic stable-id order, revalidates current state,
 and feeds the approved target id through the ordinary row materializer. Existing stable collection-row correlation is

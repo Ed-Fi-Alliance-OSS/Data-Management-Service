@@ -138,14 +138,38 @@ results are:
 | Maximum PostgreSQL four-byte UTF-8 payload | 2,560 | 2,560 |
 | Additional unique constraints | 0 | 0 |
 
-The worst SQL Server and PostgreSQL vectors install and accept maximum-size test values. Complete anchors create no new
-crossing of the measured key/index column, declared-key payload, or table-column screens. This evidence does not measure
-total SQL Server row width or PostgreSQL tuple/index overhead, and it does not replace full generated-schema DDL
-qualification. It is sufficient for the v1 architecture choice, so site-minimal anchor closure is not part of v1.
+The worst SQL Server and PostgreSQL vectors install, accept maximum-size test values, and cascade a maximum-width public
+value plus a lineage anchor. Complete anchors create no new crossing of the measured key/index column, declared-key
+payload, or table-column screens. This evidence does not measure total SQL Server row width or PostgreSQL tuple/index
+overhead, and it does not replace full generated-schema DDL qualification. It is sufficient for the v1 architecture
+choice, so site-minimal anchor closure is not part of v1.
 
 Mapping-pack size cannot yet be measured because the current pack payload is a stub. The conservative relational-manifest
 projection grows by 3.25/3.64 percent and generated SQL by 1.26/1.43 percent for DS 5.2/TPDM. Exact pack measurement
 belongs to the slice that implements a real pack consumer.
+
+### Ordinary write source for lineage anchors
+
+Reference JSON supplies the target's public identity values, but it does not supply the stable `DocumentId` anchors in
+the target's complete vector. Ordinary successful reference resolution therefore returns a typed resolved vector, not
+only the terminal target `DocumentId`:
+
+```text
+(target DocumentId, ordered target lineage-anchor DocumentIds)
+```
+
+The resolver obtains it without a per-occurrence query:
+
+1. resolve all submitted referential ids through `dms.ReferentialIdentity` as one ordinary bulk operation;
+2. group successful document references by compiled target resource;
+3. for each target group, batch-read the ordered lineage-anchor columns from that target's concrete root or abstract
+   identity table by the resolved `DocumentId` values, using the same transaction; and
+4. attach that ordered anchor tuple to every resolved occurrence for the row materializer.
+
+A target with no lineage anchors needs no second read. A missing target row, duplicate row, wrong target type, vector
+arity mismatch, or null required anchor fails reference resolution. The request still supplies public values and the full
+FK remains the final correlation check. This is the ordinary value source for all anchor-bearing POST and PUT writes; it
+is not deferred-resolution metadata, predictive SQL, or a mutation-case protocol.
 
 ## 3. Physical Foreign-Key Candidate Derivation
 
@@ -389,12 +413,13 @@ only when compiled metadata proves all of these facts for either an unprofiled o
 3. its persisted target `DocumentId` is non-null and stable;
 4. a selected retained cascade route gives that same target the submitted identity in the initiating statement;
 5. the receiver row is already correlated by the normal executor's stable row locator; and
-6. every full-vector value other than the deferred terminal target id is supplied by ordinary resolved inputs or the
-   initiating origin write.
+6. every full-vector value other than the deferred terminal target id is supplied by a typed ordinary resolved vector,
+   a persisted value proved unchanged, or the initiating origin write.
 
-The executor reuses only the persisted target `DocumentId`. Submitted future public values and normally resolved lineage
-anchors flow through the ordinary merged row. It does not predict values with custom SQL and does not treat an arbitrary
-lookup miss as an unchanged reference.
+The executor reuses only the persisted target `DocumentId` and persisted lineage anchors proved unchanged. Submitted
+future public values and changing lineage anchors from ordinary resolved vectors or proved origin writes flow through the
+ordinary merged row. It does not predict values with custom SQL and does not treat an arbitrary lookup miss as an
+unchanged reference.
 
 Before resource DML, the executor:
 

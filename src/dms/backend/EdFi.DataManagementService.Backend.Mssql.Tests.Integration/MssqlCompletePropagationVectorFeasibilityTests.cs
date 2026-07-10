@@ -93,6 +93,7 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                     [SectionSurveyDocumentId],
                     [DocumentId]
                 )
+                ON UPDATE CASCADE
             );
 
             INSERT INTO [dbo].[WideVectorTarget]
@@ -123,6 +124,11 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                 4,
                 5
             );
+
+            UPDATE [dbo].[WideVectorTarget]
+            SET
+                [Namespace] = REPLICATE(N'W', 255),
+                [ResponseDocumentId] = 11;
             """
         );
 
@@ -165,7 +171,7 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
     }
 
     [Test]
-    public void It_accepts_the_maximum_declared_full_vector_payload()
+    public void It_accepts_and_cascades_the_maximum_declared_full_vector_payload()
     {
         _encodedPayloadBytes.Should().Be(1300);
         _matchingChildRows.Should().Be(1);

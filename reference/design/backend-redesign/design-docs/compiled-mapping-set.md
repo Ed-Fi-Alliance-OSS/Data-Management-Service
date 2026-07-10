@@ -491,10 +491,12 @@ For a write request targeting resource `R`:
      - document references (target resource key + extracted identity values), and
      - descriptor references (descriptor resource key + normalized URI).
    - Perform a single batched lookup against `dms.ReferentialIdentity` to resolve `ReferentialId → DocumentId` for *all* of them.
-   - Split the resolved rows into the request-scoped maps needed by the flattener:
-     - `ResolvedReferenceSet.DocumentIdByReferentialId` for document references, and
-     - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(normalizedUri, descriptorResource)`).
-   - Materialize `ResolvedReferenceSet` for this request.
+   - Group successful document references by the target resource in `DocumentReferenceBinding`; for each group, batch-read
+     the target's ordered lineage-anchor columns by `DocumentId` from its concrete root or abstract identity table. Skip
+     this read for targets whose complete vector has no lineage anchors.
+   - Materialize `ResolvedReferenceSet` with a typed result per document-reference occurrence containing the terminal
+     `DocumentId`, `ResourceKeyId`, and ordered lineage-anchor `DocumentId` values. Descriptor results remain keyed by
+     `(normalizedUri, descriptorResource)` and carry no lineage tuple.
    - Note: under key unification, this same `ResolvedReferenceSet.DescriptorIdByKey` map is also consumed by `KeyUnificationWritePlan`
      when coalescing unified descriptor endpoints into canonical storage columns (see `key-unification.md`).
 
@@ -502,8 +504,9 @@ For a write request targeting resource `R`:
    - Build an `IDocumentReferenceInstanceIndex` for this request using:
      - `ResourceWritePlan.Model.DocumentReferenceBindings` (the “reference sites”: wildcard reference-object path + FK column + target resource), and
      - Core’s extracted `DocumentReferenceArrays` (reference instances with concrete JSON locations that include array indices), and
-     - `ResolvedReferenceSet.DocumentIdByReferentialId` (to convert each instance’s referential id → referenced `DocumentId`).
-   - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath` (array indices along the wildcard reference path), what referenced `DocumentId` should be written to the FK column?”
+     - the typed resolved occurrence values (to obtain the terminal `DocumentId` and ordered lineage anchors).
+   - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath` (array indices along the wildcard
+     reference path), what terminal `DocumentId` and lineage-anchor tuple should be written?”
      - `ordinalPath` examples: root reference `[]`; `$.students[*].studentReference` → `[studentOrdinal]`; `$.addresses[*].periods[*].calendarReference` → `[addressOrdinal, periodOrdinal]`.
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.
 
