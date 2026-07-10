@@ -22,8 +22,7 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
 
 - Set-level (`DMS-1033`) uses two whole-schema passes over the complete derived table/constraint inventory:
   - `DeriveIndexInventoryPass`: applies FK index policy deterministically.
-  - `DeriveTriggerInventoryPass`: derives trigger intent inventory, including SQL Server `MssqlIdentityPropagationTrigger` fan-out
-    metadata.
+  - `DeriveTriggerInventoryPass`: derives maintenance and stamping trigger intent inventory.
 
 ## Scope (What This Story Is Talking About)
 
@@ -95,15 +94,12 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 
 - Trigger contracts interpret `IdentityProjectionColumns` as null-safe old/new value-diff compare sets, not
   `UPDATE(column)` gates.
-- SQL Server-only identity propagation is represented by explicit `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger
-  intents with stable naming.
-  - SQL Server reference composite FKs always use `ON UPDATE NO ACTION`.
-  - For eligible targets (abstract targets and concrete targets with `allowIdentityUpdates=true`), inventory emits one
-    propagation trigger per referenced table (`Table`) with deterministic referrer fan-out actions.
-  - Propagation fan-out actions update canonical/storage columns only (never alias/binding columns).
+- SQL Server identity-value propagation is not a trigger inventory concern. Full-composite reference-FK actions are
+  finalized by [SQL Server foreign-key pruning](../../design-docs/sql-server-pruning.md); no
+  `MssqlIdentityPropagationTrigger` intent is emitted.
 - Trigger names follow `data-model.md` rules and are collision-checked after dialect shortening.
   - Trigger naming should use `TR_{TableName}_{Purpose}` with purpose tokens aligned to `data-model.md`:
-    - `Stamp`, `ReferentialIdentity`, `AbstractIdentity`, `PropagateIdentity`.
+    - `Stamp`, `ReferentialIdentity`, `AbstractIdentity`.
 
 Out of scope for this story:
 - Core `dms.Document` journal triggers (owned by core DDL emission).
@@ -126,8 +122,7 @@ Out of scope for this story:
 2. Implement deterministic trigger intent derivation per `ddl-generation.md`:
    - table stamping triggers,
    - referential identity maintenance triggers,
-   - abstract identity maintenance triggers,
-   - SQL Server `MssqlIdentityPropagationTrigger` triggers (one trigger per referenced table with fan-out referrer actions).
+   - abstract identity maintenance triggers.
 3. Ensure both the DDL emitter and the manifest emitter consume the same derived inventories.
 4. Add unit tests for ordering, suppression, and naming determinism.
 5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.
