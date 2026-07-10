@@ -213,7 +213,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 var executionStateResolutionOptions =
                     etagPreconditionEvaluation
                     is EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
-                        ? ExecutionStateResolutionOptions.DeferredIfMatch(
+                        ? ExecutionStateResolutionOptions.DeferredEtagPrecondition(
                             storedAuthorizationBoundary,
                             postTargetReevaluation
                         )

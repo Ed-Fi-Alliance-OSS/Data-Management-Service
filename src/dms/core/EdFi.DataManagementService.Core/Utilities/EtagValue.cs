@@ -81,30 +81,6 @@ public static class EtagValue
         return true;
     }
 
-    /// <summary>
-    /// Parses an If-None-Match header value using RFC 9110 §2.1 WEAK comparison: strips an optional
-    /// W/ weak prefix (accepted, unlike <see cref="TryParseHeaderValue"/>) and surrounding quotes,
-    /// tolerating a bare unquoted value. The bare "*" wildcard is returned verbatim for the caller to
-    /// interpret. No entity-tag list parsing.
-    /// </summary>
-    /// <remarks>
-    /// Because this method strips quotes, a quoted <c>"*"</c> and a bare <c>*</c> are indistinguishable
-    /// in its output. Callers that must detect the RFC 9110 §13.1.2 wildcard have to check the RAW header
-    /// value (<c>rawHeaderValue == "*"</c>, ordinal) BEFORE calling this method -- only the bare,
-    /// unquoted form is the wildcard.
-    /// </remarks>
-    public static bool TryParseConditionalTag(string? headerValue, out string value)
-    {
-        value = string.Empty;
-        if (string.IsNullOrEmpty(headerValue))
-        {
-            return false;
-        }
-
-        value = ParseNonEmptyTag(headerValue);
-        return true;
-    }
-
     private static string ParseNonEmptyTag(string headerValue)
     {
         var candidate = headerValue.StartsWith("W/", StringComparison.Ordinal)
@@ -118,9 +94,9 @@ public static class EtagValue
 
     /// <summary>
     /// Parses an If-None-Match header value that may contain a comma-separated entity-tag list into the
-    /// ordered opaque tag values, applying the same weak-tag, quote-stripping, and unquoted tolerance as
-    /// <see cref="TryParseConditionalTag"/> to each non-empty list element. Returns an empty list for a
-    /// null or empty header value. The bare <c>*</c> wildcard is not special-cased here; callers that need
+    /// ordered opaque tag values, stripping an optional W/ weak prefix and surrounding quotes while
+    /// tolerating bare unquoted values for each non-empty list element. Returns an empty list for a null
+    /// or empty header value. The bare <c>*</c> wildcard is not special-cased here; callers that need
     /// wildcard semantics must detect a raw, sole <c>*</c> before parsing.
     /// </summary>
     /// <remarks>

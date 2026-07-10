@@ -165,4 +165,55 @@ public class Given_EtagPreconditionEvaluator
             .Should()
             .BeTrue();
     }
+
+    [Test]
+    public void It_reports_no_etag_precondition_for_none()
+    {
+        RelationalWriteExecutionStateResolver
+            .HasEtagPrecondition(new WritePrecondition.None())
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void It_reports_an_etag_precondition_for_if_match()
+    {
+        RelationalWriteExecutionStateResolver
+            .HasEtagPrecondition(new WritePrecondition.IfMatch(MatchingClientTag))
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_reports_an_etag_precondition_for_if_none_match()
+    {
+        RelationalWriteExecutionStateResolver
+            .HasEtagPrecondition(new WritePrecondition.IfNoneMatch(MatchingClientTag))
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_rejects_an_unknown_precondition_during_precondition_detection()
+    {
+        var act = () =>
+            RelationalWriteExecutionStateResolver.HasEtagPrecondition(new UnknownWritePrecondition());
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("precondition");
+    }
+
+    [Test]
+    public void It_rejects_an_unknown_precondition_during_evaluation()
+    {
+        var act = () =>
+            EtagPreconditionEvaluator.IsSatisfied(
+                new UnknownWritePrecondition(),
+                targetExists: true,
+                CurrentEtag
+            );
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("precondition");
+    }
+
+    private sealed record UnknownWritePrecondition : WritePrecondition;
 }

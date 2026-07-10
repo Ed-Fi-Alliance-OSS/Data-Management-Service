@@ -19,11 +19,16 @@ internal static class EtagPreconditionEvaluator
     public static bool IsSatisfied(WritePrecondition precondition, bool targetExists, string? currentEtag) =>
         precondition switch
         {
+            WritePrecondition.None => true,
             WritePrecondition.IfMatch m => targetExists
                 && (m.IsWildcard || ProjectionEquals(m.Value, currentEtag)),
             WritePrecondition.IfNoneMatch n => !targetExists
                 || (!n.IsWildcard && !n.Values.Any(v => ProjectionEquals(v, currentEtag))),
-            _ => true, // None (and any future arm) imposes no precondition here.
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(precondition),
+                precondition,
+                "Unsupported write precondition type."
+            ),
         };
 
     public static ETagPreconditionFailureReason GetFailureReason(WritePrecondition precondition) =>

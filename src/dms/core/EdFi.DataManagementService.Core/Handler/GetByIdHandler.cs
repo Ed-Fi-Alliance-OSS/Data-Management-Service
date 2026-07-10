@@ -184,8 +184,8 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
 
         // RFC 9110 §13.1.2 wildcard: a bare (unquoted) "*" means "if any representation exists" -- and
         // since reaching this method means the resource exists, the precondition is false. This must be
-        // detected from the RAW header value (before parsing), because EtagValue.TryParseConditionalTag
-        // strips quotes and would otherwise turn a quoted "*" (an ordinary opaque tag) into the wildcard.
+        // detected from the RAW header value before ParseConditionalTagList strips quotes, which would
+        // otherwise turn a quoted "*" (an ordinary opaque tag) into the wildcard.
         bool isWildcard = string.Equals(rawHeaderValue, "*", StringComparison.Ordinal);
 
         IReadOnlyList<string> clientTags = isWildcard

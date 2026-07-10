@@ -55,7 +55,6 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
     RelationalWriteCurrentState CurrentState,
     RelationalWriteTargetContext.ExistingDocument TargetContext,
-    string CurrentEtag,
     bool IsSatisfied
 );
 
@@ -211,7 +210,6 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         return new RelationalCurrentEtagPreconditionCheckResult(
             currentState,
             refreshedTargetContext,
-            currentEtag,
             isSatisfied
         );
     }

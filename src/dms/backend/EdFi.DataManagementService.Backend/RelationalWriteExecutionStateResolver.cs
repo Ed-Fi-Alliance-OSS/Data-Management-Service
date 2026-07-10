@@ -42,7 +42,17 @@ internal sealed class RelationalWriteExecutionStateResolver(
     /// only the proceed-vs-412 outcome differs, centralized in <see cref="EtagPreconditionEvaluator"/>.
     /// </summary>
     internal static bool HasEtagPrecondition(WritePrecondition precondition) =>
-        precondition is WritePrecondition.IfMatch or WritePrecondition.IfNoneMatch;
+        precondition switch
+        {
+            WritePrecondition.None => false,
+            WritePrecondition.IfMatch => true,
+            WritePrecondition.IfNoneMatch => true,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(precondition),
+                precondition,
+                "Unsupported write precondition type."
+            ),
+        };
 
     public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(
         RelationalWriteExecutorRequest request
@@ -121,7 +131,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
         // FAIL-OPEN HAZARD: this early return must admit BOTH If-Match and If-None-Match. If it kept
         // keying on If-Match only, an If-None-Match write against an existing, authorization-bounded
         // target would take the deferred path, return null here, and proceed WITHOUT the required 412.
-        if (request.WritePrecondition is WritePrecondition.None)
+        if (!HasEtagPrecondition(request.WritePrecondition))
         {
             return null;
         }
@@ -480,7 +490,7 @@ internal sealed record ExecutionStateResolutionOptions(
             postTargetReevaluation
         );
 
-    public static ExecutionStateResolutionOptions DeferredIfMatch(
+    public static ExecutionStateResolutionOptions DeferredEtagPrecondition(
         StoredRelationshipAuthorizationBoundary storedAuthorizationBoundary,
         PostTargetReevaluationMode postTargetReevaluation
     )

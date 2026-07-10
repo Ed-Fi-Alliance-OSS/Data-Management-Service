@@ -23,3 +23,8 @@
 - Files: EtagValue, parser/factory/GET tests, stale deadlock retry GET fixture, tasks.json.
 - Verified: focused core 59; factory 15; backend ETag 26; full core 2702; full backend 1941; formatting/diff clean.
 - Blockers/next: none.
+2026-07-09 - DMS-1264 - Generalized ETag precondition cleanup
+- Decision: explicit None/IfMatch/IfNoneMatch dispatch throws on future arms; deferred path reuses same predicate; remove unused parser/result data.
+- Files: EtagValue/GET comments/tests, precondition evaluator/resolver/checker/executor, relational unit/integration tests, tasks.json.
+- Verified: focused core 19; focused backend 31; full core 2697; full backend 1944; PostgreSQL/MSSQL integration projects build clean; diff clean.
+- Blockers/next: none.
