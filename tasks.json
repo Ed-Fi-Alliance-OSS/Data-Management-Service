@@ -137,5 +137,41 @@
       "Run git diff --check."
     ],
     "completed": true
+  },
+  {
+    "category": "correctness",
+    "description": "Medium: Retry a regular-resource POST create race under a specific If-None-Match tag so the precondition is evaluated against the winning representation.",
+    "acceptance-criteria": [
+      "When a regular-resource POST selected CreateNew under a non-wildcard If-None-Match precondition and persistence loses a concrete root-natural-key race, the first attempt returns a retryable write-conflict result instead of a 409 identity conflict.",
+      "The retried request re-resolves the winning representation and returns 412 when any supplied tag's state-significant projection matches, while a non-matching tag proceeds through the normal authorized POST-as-update path.",
+      "If-None-Match: * root-natural-key races continue to return 412 immediately, and requests without If-None-Match plus unrelated abstract-identity uniqueness conflicts retain their existing 409 mappings.",
+      "Deterministic unit coverage exercises the specific-tag root-natural-key collision mapping and the preserved wildcard, unguarded, and abstract-identity mappings."
+    ],
+    "steps-to-verify": [
+      "Review RelationalWriteDatabaseFailureResultMapper.BuildConstraintViolationFailureResult and confirm that a concrete RootNaturalKeyUnique collision under CreateNew POST distinguishes wildcard If-None-Match, specific-tag If-None-Match, and unguarded requests.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter 'FullyQualifiedName~RelationalWriteDatabaseFailureResultMapper'.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter 'FullyQualifiedName~IfNoneMatch'.",
+      "Review the Core upsert retry predicate and confirm that UpsertFailureWriteConflict causes the request to re-enter target resolution before any POST-as-update is authorized or persisted."
+    ],
+    "completed": true
+  },
+  {
+    "category": "documentation",
+    "description": "Medium: Reconcile the backend redesign documents and stale test commentary with the representation-sensitive ETag contract implemented by DMS-1264.",
+    "acceptance-criteria": [
+      "profiles.md states that served ETags vary by readable profile while write-side If-Match and If-None-Match comparisons project out profileCode and remain state-significant.",
+      "link-injection.md and data-model.md state that linkFlag participates in the served ETag, that the tag is composed from ContentVersion plus variantKey without document hashing, and that a cache stores ContentVersion rather than one reusable ETag.",
+      "overview.md and strengths-risks.md no longer describe pre-profile canonical-JSON hashing or claim that profile and link shaping leave the served ETag unchanged.",
+      "auth.md derives the conditional-GET validator from ContentVersion plus the request variantKey and evaluates If-None-Match only after authorization and other normal request checks would permit a successful response.",
+      "update-tracking.md and transactions-and-concurrency.md cite the applicable RFC 9110 validator, entity-tag, comparison, and precondition sections instead of stale RFC 7232 sections.",
+      "RelationalWriteExecutorResultsTests explains that a stale no-op under a specific If-None-Match tag retries so the tag can be re-evaluated against current state, without describing every If-None-Match form as an existence-only precondition."
+    ],
+    "steps-to-verify": [
+      "Run rg -n -i 'canonical.*etag|etag.*canonical|etag.*hash|profile.*same.*etag|link.*same.*etag|RFC 7232' reference/design/backend-redesign/design-docs and inspect every remaining match against reference/adr-etag-from-content-version.md.",
+      "Run rg -n 'existence-only' src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteExecutorResultsTests.cs and confirm the wildcard and specific-tag semantics are distinguished.",
+      "Review profiles.md, link-injection.md, data-model.md, overview.md, strengths-risks.md, auth.md, update-tracking.md, and transactions-and-concurrency.md for agreement on ContentVersion, variantKey, profileCode, linkFlag, conditional-request ordering, and projected write comparison.",
+      "Run git diff --check."
+    ],
+    "completed": false
   }
 ]

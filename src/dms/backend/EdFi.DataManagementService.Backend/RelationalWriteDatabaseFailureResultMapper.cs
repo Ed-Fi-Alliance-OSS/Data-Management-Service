@@ -77,6 +77,10 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
                     ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
                 ),
             RelationalWriteConstraintResolution.RootNaturalKeyUnique
+                when IsSpecificIfNoneMatchCreate(request) => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict()
+            ),
+            RelationalWriteConstraintResolution.RootNaturalKeyUnique
             or RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique =>
                 BuildIdentityConflictFailureResult(request),
             RelationalWriteConstraintResolution.RequestReference requestReference
@@ -102,6 +106,11 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         request.OperationKind == RelationalWriteOperationKind.Post
         && request.TargetContext is RelationalWriteTargetContext.CreateNew
         && request.WritePrecondition is WritePrecondition.IfNoneMatch { IsWildcard: true };
+
+    private static bool IsSpecificIfNoneMatchCreate(RelationalWriteExecutorRequest request) =>
+        request.OperationKind == RelationalWriteOperationKind.Post
+        && request.TargetContext is RelationalWriteTargetContext.CreateNew
+        && request.WritePrecondition is WritePrecondition.IfNoneMatch { IsWildcard: false };
 
     private static RelationalWriteExecutorResult BuildIdentityConflictFailureResult(
         RelationalWriteExecutorRequest request

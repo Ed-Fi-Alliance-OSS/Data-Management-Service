@@ -38,3 +38,8 @@
 - Files: ETag ADR; ETag/conditional-request production and test comments; tasks.json.
 - Verified: stale RFC searches clean; core 15, backend 29, frontend 2; CSharpier/diff checks clean.
 - Blockers/next: none; all tasks complete.
+2026-07-09 - DMS-1264 - Specific If-None-Match POST create-race retry
+- Decision: concrete root-key collision after CreateNew maps specific tag to retryable write conflict; wildcard remains immediate 412; unguarded/abstract collisions remain 409.
+- Files: relational database failure mapper/tests; tasks.json.
+- Verified: mapper 13; IfNoneMatch 15; backend unit 1950; core retry/upsert 52; CSharpier/diff clean.
+- Blockers/next: none; ETag design documentation task remains.
