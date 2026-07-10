@@ -7,6 +7,7 @@ using System.Data;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
@@ -742,17 +743,20 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
 
     private static string FlipLinkFlag(string etag)
     {
-        if (etag.EndsWith(".l", StringComparison.Ordinal))
+        string[] components = etag.Split(VariantKey.ComponentSeparator);
+        if (components.Length != VariantKey.ComponentCount)
         {
-            return string.Concat(etag.AsSpan(0, etag.Length - 1), "n");
+            throw new InvalidOperationException($"Unexpected etag variant key in '{etag}'.");
         }
 
-        if (etag.EndsWith(".n", StringComparison.Ordinal))
+        components[^2] = components[^2] switch
         {
-            return string.Concat(etag.AsSpan(0, etag.Length - 1), "l");
-        }
+            "l" => "n",
+            "n" => "l",
+            _ => throw new InvalidOperationException($"Unexpected etag link flag in '{etag}'."),
+        };
 
-        throw new InvalidOperationException($"Unexpected etag link flag in '{etag}'.");
+        return string.Join(VariantKey.ComponentSeparator, components);
     }
 
     private ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>

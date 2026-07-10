@@ -143,7 +143,10 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
         RelationalGetIntegrationTestHelper.AssertComposedEtag(servedEtag);
         servedEtag
             .Should()
-            .EndWith(".l", "the link flag component is 'l' when ResourceLinksOptions.Enabled is true");
+            .EndWith(
+                ".l.i",
+                "the link flag component is 'l' when ResourceLinksOptions.Enabled is true and the content coding is identity"
+            );
 
         _recordedEtagWithFlagEnabled = servedEtag;
     }
@@ -171,10 +174,13 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
         RelationalGetIntegrationTestHelper.AssertComposedEtag(servedEtag);
         servedEtag
             .Should()
-            .EndWith(".n", "the link flag component is 'n' when ResourceLinksOptions.Enabled is false");
+            .EndWith(
+                ".n.i",
+                "the link flag component is 'n' when ResourceLinksOptions.Enabled is false and the content coding is identity"
+            );
 
         // The served _etag DIFFERS across the flip because the link flag is representation-complete
-        // (adr-etag-from-content-version.md: the served tag carries all four variantKey components so
+        // (adr-etag-from-content-version.md: the served tag carries all five variantKey components so
         // conditional GET / If-None-Match remain correct).
         servedEtag
             .Should()

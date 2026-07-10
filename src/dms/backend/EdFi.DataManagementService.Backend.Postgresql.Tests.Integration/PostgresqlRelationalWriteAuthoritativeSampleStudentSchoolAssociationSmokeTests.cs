@@ -6,6 +6,7 @@
 using System.Data;
 using System.Globalization;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -1326,21 +1327,24 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         }
     }
 
-    // Flips the trailing linkFlag component ("l" <-> "n") of a composed etag so tests can present an
-    // etag captured under the opposite link mode.
+    // Flips the linkFlag component ("l" <-> "n") of a composed etag so tests can present an etag
+    // captured under the opposite link mode.
     private static string FlipLinkFlag(string etag)
     {
-        if (etag.EndsWith(".l", StringComparison.Ordinal))
+        string[] components = etag.Split(VariantKey.ComponentSeparator);
+        if (components.Length != VariantKey.ComponentCount)
         {
-            return string.Concat(etag.AsSpan(0, etag.Length - 1), "n");
+            throw new InvalidOperationException($"Unexpected etag variant key in '{etag}'.");
         }
 
-        if (etag.EndsWith(".n", StringComparison.Ordinal))
+        components[^2] = components[^2] switch
         {
-            return string.Concat(etag.AsSpan(0, etag.Length - 1), "l");
-        }
+            "l" => "n",
+            "n" => "l",
+            _ => throw new InvalidOperationException($"Unexpected etag link flag in '{etag}'."),
+        };
 
-        throw new InvalidOperationException($"Unexpected etag link flag in '{etag}'.");
+        return string.Join(VariantKey.ComponentSeparator, components);
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)

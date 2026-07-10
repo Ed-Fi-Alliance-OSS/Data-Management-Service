@@ -278,8 +278,8 @@ public class Given_MssqlDescriptorWriteHandler
         ((UpsertResult.InsertSuccess)createResult)
             .ETag.Should()
             .MatchRegex(
-                @"^\d+-[a-z0-9]{1,8}\.j\._\.n$",
-                "the descriptor write etag is composed as {ContentVersion}-{schemaEpoch}.j._.n (no profile, links off)"
+                @"^\d+-[a-z0-9]{1,8}\.j\._\.n\.i$",
+                "the descriptor write etag is composed as {ContentVersion}-{schemaEpoch}.j._.n.i (no profile, links off, identity coding)"
             );
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
             createResult,

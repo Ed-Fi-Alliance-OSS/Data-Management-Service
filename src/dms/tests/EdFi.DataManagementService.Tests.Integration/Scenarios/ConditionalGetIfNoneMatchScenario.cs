@@ -205,7 +205,7 @@ internal static class ConditionalGetIfNoneMatchScenario
         matchingGzipResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
         matchingGzipResponse.TryReadRawEtag(out string matchedEtag).Should().BeTrue();
         matchedEtag.Should().Be(gzipEtag);
-        matchingGzipResponse.Headers.Vary.Should().ContainSingle("Accept-Encoding");
+        matchingGzipResponse.Headers.Vary.Should().BeEquivalentTo("Accept", "Accept-Encoding");
     }
 
     private static async Task<(string locationPath, string etag)> CreateStudentAsync(
