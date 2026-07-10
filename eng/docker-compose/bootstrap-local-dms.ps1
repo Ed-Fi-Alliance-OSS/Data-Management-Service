@@ -187,14 +187,8 @@
 #>
 [CmdletBinding()]
 param(
-    # Teardown: stop the local DMS stack instead of starting it. Delegates to
-    # start-local-dms.ps1 -d and returns before any staging/configure/provision/DMS/seed work.
-    # Combine with -v to also delete data volumes and remove the .bootstrap workspace.
+    # Teardown switches (see .PARAMETER d / .PARAMETER v). Stop the stack; -v also removes volumes.
     [Switch]$d,
-
-    # Teardown volume + workspace deletion modifier. Valid only with -d. Delegates to
-    # start-local-dms.ps1 -d -v -RemoveBootstrap so data volumes and the .bootstrap workspace are
-    # removed. Rejected when supplied without -d.
     [Switch]$v,
 
     [Switch]$LoadSeedData,
@@ -260,13 +254,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Teardown short-circuit: bootstrap-local-dms.ps1 is the documented entry point for BOTH start and
-# stop. -d stops the stack; -d -v also deletes volumes and removes the .bootstrap workspace.
-# start-local-dms.ps1 owns -d/-v/-RemoveBootstrap, so teardown delegates to it and returns before
-# any staging/configure/provision/DMS/seed orchestration (and before the wrapper module is even
-# imported). -v maps to -v -RemoveBootstrap so the workspace is wiped; -RemoveBootstrap is not
-# exposed here because -v implies it through the delegation. -v alone is meaningless (it only
-# modifies a teardown), so it is rejected before any work runs.
+# Teardown short-circuit (see .DESCRIPTION): delegate stop / volume + workspace removal to
+# start-local-dms.ps1, which owns -d/-v/-RemoveBootstrap, and return before importing the wrapper or
+# running any phase. -v maps to -v -RemoveBootstrap; -v without -d is meaningless, so reject it.
 if ($v -and -not $d) {
     throw "-v requires -d. Use bootstrap-local-dms.ps1 -d -v to stop services, delete volumes, and remove the .bootstrap workspace."
 }
@@ -276,17 +266,19 @@ if ($d) {
         $teardownArgs.v = $true
         $teardownArgs.RemoveBootstrap = $true
     }
-    # Forward only the options that shape the Docker compose set start-local-dms.ps1 rebuilds for
+    # Forward only the flags that shape the compose-file set start-local-dms.ps1 rebuilds for
     # `docker compose ... down`, so teardown targets the same containers/volumes and env the stack
     # started with: -DatabaseEngine (postgresql.yml vs mssql.yml), -IdentityProvider (keycloak.yml),
     # -EnableKafkaUI (kafka.yml + kafka-ui.yml), -EnableSwaggerUI (swagger-ui.yml), and the env file.
     # Seed/configure/IDE options and -DataStandardVersion do not change the compose-file set (the DS
-    # overlay only rewrites env values such as SCHEMA_PACKAGES), so they are not forwarded.
-    if ($PSBoundParameters.ContainsKey('EnvironmentFile')) { $teardownArgs.EnvironmentFile = $EnvironmentFile }
-    if ($PSBoundParameters.ContainsKey('IdentityProvider')) { $teardownArgs.IdentityProvider = $IdentityProvider }
-    if ($EnableKafkaUI) { $teardownArgs.EnableKafkaUI = $true }
-    if ($EnableSwaggerUI) { $teardownArgs.EnableSwaggerUI = $true }
-    $teardownArgs.DatabaseEngine = $DatabaseEngine
+    # overlay only rewrites env values such as SCHEMA_PACKAGES), so they are omitted. Each is forwarded
+    # only when the caller bound it; the unbound defaults (postgresql, no switches) match
+    # start-local-dms.ps1's own, so an omitted flag and its default forward identically.
+    foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine') {
+        if ($PSBoundParameters.ContainsKey($name)) {
+            $teardownArgs[$name] = $PSBoundParameters[$name]
+        }
+    }
 
     $global:LASTEXITCODE = 0
     & "$PSScriptRoot/start-local-dms.ps1" @teardownArgs
@@ -298,12 +290,13 @@ if ($d) {
 
 Import-Module "$PSScriptRoot/bootstrap-wrapper.psm1" -Force
 
-# Copy the bound parameters for the start path. -d/-v are teardown-only and are handled above
-# (this point is unreachable with either bound), but strip them defensively so the wrapper - which
-# declares neither - never receives them if the short-circuit above is ever changed.
+# Copy the bound parameters for the start path, then strip -d/-v. An explicit -d:$false / -v:$false
+# binds the switch into $PSBoundParameters without tripping the short-circuit above, so this point is
+# reachable with either bound; the wrapper declares neither parameter, so leaving them in the splat
+# would crash Invoke-BootstrapWrapper.
 $wrapperArgs = @{} + $PSBoundParameters
-$wrapperArgs.Remove("d") | Out-Null
-$wrapperArgs.Remove("v") | Out-Null
+$wrapperArgs.Remove("d")
+$wrapperArgs.Remove("v")
 $wrapperArgs["StartScriptName"] = "start-local-dms.ps1"
 
 Invoke-BootstrapWrapper @wrapperArgs

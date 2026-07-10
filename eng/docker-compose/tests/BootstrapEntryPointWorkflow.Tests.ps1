@@ -282,13 +282,16 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             # Call-recording start-local-dms.ps1 stub for teardown delegation tests. Captures the
             # teardown-relevant switches/values as an explicit key=value line so a test can tell
             # RemoveBootstrap=True apart from RemoveBootstrap=False (switch defaults to False when
-            # the caller omits it).
+            # the caller omits it). ExitCode models a failed teardown (non-zero exit) so the entry
+            # script's exit-code propagation branch can be exercised.
             param(
                 [Parameter(Mandatory)]
                 [string]$Directory,
 
                 [Parameter(Mandatory)]
-                [string]$CallLogPath
+                [string]$CallLogPath,
+
+                [int]$ExitCode = 0
             )
 
             $scriptPath = Join-Path $Directory "start-local-dms.ps1"
@@ -305,8 +308,47 @@ param(
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine"
+exit $ExitCode
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
+        }
+
+        function script:Invoke-TeardownDelegation {
+            # Drives the wrapper teardown path with every phase stub recording, asserts the run
+            # short-circuited to exactly one start-local-dms.ps1 delegation (no staging, configure,
+            # provision, or seed phase), and returns that single delegation log line so the caller can
+            # make the flag-specific assertions (v, RemoveBootstrap, forwarded compose-shape options).
+            param(
+                [Parameter(Mandatory)]
+                [string]$CallLogName,
+
+                [switch]$v
+            )
+
+            $callLog = Join-Path $script:repo.RepoRoot $CallLogName
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            if ($v) {
+                & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -d -v
+            }
+            else {
+                & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -d
+            }
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            $log.Count | Should -Be 1 -Because "teardown must short-circuit to a single start-local-dms.ps1 delegation"
+            $log[0] | Should -Match "^teardown "
+            $log | Where-Object { $_ -like "prepare-*" } | Should -BeNullOrEmpty
+            $log | Where-Object { $_ -like "configure*" } | Should -BeNullOrEmpty
+            $log | Where-Object { $_ -like "provision*" } | Should -BeNullOrEmpty
+            $log | Where-Object { $_ -like "seed*" }      | Should -BeNullOrEmpty
+
+            return $log[0]
         }
     }
 
@@ -1158,51 +1200,31 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 
     Context "bootstrap-local-dms.ps1 teardown delegation call-graph (DMS-1272)" {
         It "-d delegates to start-local-dms.ps1 -d and runs no staging/configure/provision/seed phase" {
-            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-d.txt"
-            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
-            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
-            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
-            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
-            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $delegation = Invoke-TeardownDelegation -CallLogName "call-log-teardown-d.txt"
 
-            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -d
-
-            $log = @(Get-Content -LiteralPath $callLog)
-
-            $log.Count | Should -Be 1 -Because "teardown must short-circuit to a single start-local-dms.ps1 delegation"
-            $log[0] | Should -Match "^teardown "
-            $log[0] | Should -Match "d=True"
-            $log[0] | Should -Match "v=False"
-            $log[0] | Should -Match "RemoveBootstrap=False" -Because "-d alone must not remove the .bootstrap workspace"
-
-            $log | Where-Object { $_ -like "prepare-*" }  | Should -BeNullOrEmpty
-            $log | Where-Object { $_ -like "configure*" }  | Should -BeNullOrEmpty
-            $log | Where-Object { $_ -like "provision*" }  | Should -BeNullOrEmpty
-            $log | Where-Object { $_ -like "seed*" }        | Should -BeNullOrEmpty
+            $delegation | Should -Match "d=True"
+            $delegation | Should -Match "v=False"
+            $delegation | Should -Match "RemoveBootstrap=False" -Because "-d alone must not remove the .bootstrap workspace"
         }
 
         It "-d -v delegates to start-local-dms.ps1 with -v and -RemoveBootstrap, running no other phase" {
-            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-dv.txt"
-            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
-            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
-            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
-            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
-            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $delegation = Invoke-TeardownDelegation -CallLogName "call-log-teardown-dv.txt" -v
 
-            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -d -v
+            $delegation | Should -Match "d=True"
+            $delegation | Should -Match "v=True"
+            $delegation | Should -Match "RemoveBootstrap=True" -Because "-d -v must remove the .bootstrap workspace via delegation"
+        }
 
-            $log = @(Get-Content -LiteralPath $callLog)
+        It "-d raises when the start-local-dms.ps1 teardown delegation exits non-zero" {
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-exit.txt"
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ExitCode 3 | Out-Null
 
-            $log.Count | Should -Be 1
-            $log[0] | Should -Match "^teardown "
-            $log[0] | Should -Match "d=True"
-            $log[0] | Should -Match "v=True"
-            $log[0] | Should -Match "RemoveBootstrap=True" -Because "-d -v must remove the .bootstrap workspace via delegation"
+            {
+                & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -d
+            } | Should -Throw "*teardown failed with exit code 3*"
 
-            $log | Where-Object { $_ -like "prepare-*" }  | Should -BeNullOrEmpty
-            $log | Where-Object { $_ -like "configure*" }  | Should -BeNullOrEmpty
-            $log | Where-Object { $_ -like "provision*" }  | Should -BeNullOrEmpty
-            $log | Where-Object { $_ -like "seed*" }        | Should -BeNullOrEmpty
+            # The delegation must have run and recorded before the entry script raised on its exit code.
+            (@(Get-Content -LiteralPath $callLog))[0] | Should -Match "^teardown "
         }
 
         It "-d forwards the teardown-relevant compose-shape options to start-local-dms.ps1" {
@@ -1241,6 +1263,31 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             } | Should -Throw "*-v requires -d*"
 
             Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no phase or teardown delegation may run when -v is supplied without -d"
+        }
+    }
+
+    Context "bootstrap-local-dms.ps1 explicit -Switch:`$false teardown binding (DMS-1272)" {
+        It "-d:`$false takes the start path and does not reach the wrapper as an undeclared parameter" {
+            # An explicit -d:$false / -v:$false binds the switch into $PSBoundParameters without tripping
+            # the teardown short-circuit, so the start path is reached with the switches still bound. The
+            # entry script must strip both before splatting to Invoke-BootstrapWrapper, which declares
+            # neither; an unstripped -d/-v would crash the wrapper on parameter binding before any phase.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-d-false.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly -d:$false -v:$false
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            # The start path ran (configure + provision), proving -d:$false did not short-circuit to
+            # teardown and that -d/-v were stripped before the wrapper splat (an unstripped -d throws
+            # on binding, leaving the log empty).
+            $log | Should -Contain "configure smoke=False"
+            $log | Should -Contain "provision"
         }
     }
 }
