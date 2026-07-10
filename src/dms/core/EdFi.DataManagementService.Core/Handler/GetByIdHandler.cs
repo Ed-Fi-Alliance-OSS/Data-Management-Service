@@ -198,8 +198,8 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
 
         // Full-tag comparison against the entire served etag (ContentVersion plus variantKey), not a
         // projection: If-None-Match is representation-sensitive, so a client tag that differs only in
-        // the variantKey tail (format/profile/links) must not match. EtagMatchProjection is a write-side
-        // (If-Match) concern and does not apply here.
+        // the variantKey tail (format/profile/links/content-coding) must not match.
+        // EtagMatchProjection is a write-side (If-Match) concern and does not apply here.
         bool matches =
             isWildcard || clientTags.Any(t => string.Equals(t, servedEtag, StringComparison.Ordinal));
 
@@ -227,7 +227,8 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             TraceId: requestInfo.FrontendRequest.TraceId,
-            ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
+            ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
+            ResponseContentCoding: GetServedEtagContentCoding(requestInfo)
         );
     }
 }

@@ -4,8 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using NUnit.Framework;
 
@@ -167,5 +171,62 @@ public class Given_AspNetCoreFrontend_Request_Header_Extraction
         var headers = ExtractHeaders(request => request.Headers["X-Custom"] = "");
 
         headers.Should().NotContainKey("X-Custom");
+    }
+
+    [TestCase("gzip", ResponseContentCoding.Gzip)]
+    [TestCase("br", ResponseContentCoding.Brotli)]
+    [TestCase("identity", ResponseContentCoding.Identity)]
+    [TestCase("gzip;q=0, br", ResponseContentCoding.Brotli)]
+    public void It_uses_the_registered_response_compression_provider_to_select_content_coding(
+        string acceptEncoding,
+        ResponseContentCoding expectedContentCoding
+    )
+    {
+        var responseCompressionProvider = A.Fake<IResponseCompressionProvider>();
+        A.CallTo(() => responseCompressionProvider.CheckRequestAcceptsCompression(A<HttpContext>._))
+            .Returns(true);
+
+        if (expectedContentCoding is ResponseContentCoding.Identity)
+        {
+            A.CallTo(() => responseCompressionProvider.GetCompressionProvider(A<HttpContext>._))
+                .Returns(null);
+        }
+        else
+        {
+            string encodingName = expectedContentCoding is ResponseContentCoding.Brotli ? "br" : "gzip";
+            var compressionProvider = CompressionProvider(encodingName);
+            A.CallTo(() => responseCompressionProvider.GetCompressionProvider(A<HttpContext>._))
+                .Returns(compressionProvider);
+        }
+
+        var services = new ServiceCollection()
+            .AddSingleton(responseCompressionProvider)
+            .BuildServiceProvider();
+        var httpContext = new DefaultHttpContext { RequestServices = services };
+        httpContext.Request.Headers.AcceptEncoding = acceptEncoding;
+
+        AspNetCoreFrontend.ResolveResponseContentCoding(httpContext).Should().Be(expectedContentCoding);
+    }
+
+    [Test]
+    public void It_selects_identity_when_response_compression_is_not_registered()
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().BuildServiceProvider(),
+        };
+        httpContext.Request.Headers.AcceptEncoding = "gzip";
+
+        AspNetCoreFrontend
+            .ResolveResponseContentCoding(httpContext)
+            .Should()
+            .Be(ResponseContentCoding.Identity);
+    }
+
+    private static ICompressionProvider CompressionProvider(string encodingName)
+    {
+        var compressionProvider = A.Fake<ICompressionProvider>();
+        A.CallTo(() => compressionProvider.EncodingName).Returns(encodingName);
+        return compressionProvider;
     }
 }

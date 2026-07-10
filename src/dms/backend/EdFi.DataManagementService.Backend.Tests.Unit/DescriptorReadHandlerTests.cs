@@ -276,7 +276,7 @@ public class Given_DescriptorReadHandler
 
         var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(expectedEtag);
-        success.EdfiDoc["_etag"]!.GetValue<string>().Should().EndWith("._.n");
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().EndWith("._.n.i");
     }
 
     [Test]

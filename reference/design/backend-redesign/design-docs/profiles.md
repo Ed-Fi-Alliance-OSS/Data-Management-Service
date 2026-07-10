@@ -69,7 +69,8 @@ Related redesign discussion:
 - **Preserve write-concurrency compatibility while serving correct representation validators**:
   readable profile filtering changes the served `_etag` through `variantKey.profileCode`, so profiled
   and unprofiled byte representations have different strong validators. Write-side `If-Match` and
-  `If-None-Match` comparisons project out `profileCode` (along with `format` and `linkFlag`) and
+  `If-None-Match` comparisons project out `profileCode` (along with `format`, `linkFlag`, and
+  `contentCoding`) and
   compare only the state-significant `ContentVersion` and `schemaEpoch` components.
 - **Core owns profile semantics**: member filtering, value filtering, readable vs writable mode, request validation, stored-state projection, and creatability rules belong in Core.
 - **Backend owns persistence mechanics**: relational flattening, current-state loading, semantic-key matching, `CollectionItemId` reservation, and DML execution remain backend responsibilities.

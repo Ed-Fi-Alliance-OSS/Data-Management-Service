@@ -100,14 +100,14 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     }
 
     [Test]
-    public async Task It_ignores_link_and_format_differences_in_the_if_match_value()
+    public async Task It_ignores_link_format_and_content_coding_differences_in_the_if_match_value()
     {
         // Client presents an etag captured under links-off / (hypothetical) XML; the checker composes
-        // the current tag under links-on / JSON. The state-significant projection drops format and
-        // linkFlag, so the precondition still matches.
+        // the current tag under links-on / JSON / identity coding. The state-significant projection
+        // drops format, linkFlag, and contentCoding, so the precondition still matches.
         var linkAndFormatDivergentEtag = EtagComposer.Compose(
             LockedContentVersion,
-            new VariantKey($"{SchemaEpoch(SqlDialect.Pgsql)}.x._.n")
+            new VariantKey($"{SchemaEpoch(SqlDialect.Pgsql)}.x._.n.g")
         );
         var request = CreateRequest(
             SqlDialect.Pgsql,
@@ -137,12 +137,12 @@ public class Given_RelationalCurrentEtagPreconditionChecker
     [Test]
     public async Task It_reports_mismatch_when_only_the_schema_epoch_differs()
     {
-        // Same ContentVersion, same format/profile/link, but a different schema epoch. schemaEpoch IS
-        // state-significant for If-Match (only format/profileCode/linkFlag are projected out), so this
-        // must 412. Guards against a refactor accidentally dropping schemaEpoch from the comparison.
+        // Same ContentVersion and representation selectors, but a different schema epoch. schemaEpoch
+        // IS state-significant for If-Match (format/profileCode/linkFlag/contentCoding are projected
+        // out), so this must 412. Guards against accidentally dropping schemaEpoch from the comparison.
         var differentEpochEtag = EtagComposer.Compose(
             LockedContentVersion,
-            new VariantKey($"ffffffff.j._.l")
+            new VariantKey("ffffffff.j._.l.i")
         );
         var request = CreateRequest(SqlDialect.Pgsql, new WritePrecondition.IfMatch(differentEpochEtag));
 

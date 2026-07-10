@@ -123,7 +123,8 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             PaginationParameters: requestInfo.PaginationParameters,
             TraceId: requestInfo.FrontendRequest.TraceId,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
-            ChangeVersionRange: requestInfo.ChangeVersionRange
+            ChangeVersionRange: requestInfo.ChangeVersionRange,
+            ResponseContentCoding: GetServedEtagContentCoding(requestInfo)
         );
     }
 }

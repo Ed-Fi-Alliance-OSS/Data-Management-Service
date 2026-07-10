@@ -14,6 +14,8 @@ see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-m
 see [Amendment (2026-07-06)](#amendment-2026-07-06-if-none-match-support). \
 **Amended 2026-07-07:** the served descriptor `_etag` is now profile-sensitive for conditional-GET
 correctness — see [Amendment (2026-07-07, descriptor profile etag)](#amendment-2026-07-07-descriptor-served-etag-varies-by-readable-profile). \
+**Amended 2026-07-10:** response content coding was added to `variantKey` so identity, Brotli, and
+gzip representations have distinct strong validators — see [Amendment (2026-07-10)](#amendment-2026-07-10-content-coding-added-to-the-served-etag). \
 **Amended 2026-07-08:** a final `ContentVersion` read is restored — relocated into the persister,
 after every table mutation — because the root-insert stamp is stale once child-table writes fire
 stamp triggers; see [Amendment (2026-07-08, final ContentVersion read)](#amendment-2026-07-08-final-contentversion-read-relocated-into-the-persister). \
@@ -121,20 +123,20 @@ One redesign requirement is **deliberately reversed**: the redesign specifies a 
 
 RFC 9110 §8.8.1 distinguishes strong and weak validators. A strong validator must change whenever the representation changes in any way — any two responses sharing the etag are byte-for-byte identical for that representation — while a weak validator promises only semantic equivalence. This design requires **strong** validators: RFC 9110 §13.1.1 mandates the *strong* comparison function for `If-Match`, and weak (`W/`-prefixed) etags never satisfy strong comparison, so a weak etag would make every `If-Match` precondition fail and break the optimistic-concurrency protection this design depends on. Etags are therefore served as strong entity-tags — quoted, with no `W/` prefix. Weakening is **not** an available fallback.
 
-A bare `ContentVersion` is a strong validator only when each resource state maps to a single served byte-representation. That condition does not hold: the served bytes already vary by **profile** (readable-profile projection removes fields; selected per request) and by **link mode** (`ResourceLinksOptions.Enabled`; server configuration), and may vary by **format / media type** in the future (e.g. XML). A bare counter would assign the same etag to these byte-different representations, violating strong-validator semantics and conditional-GET cache correctness.
+A bare `ContentVersion` is a strong validator only when each resource state maps to a single served byte-representation. That condition does not hold: the served bytes vary by **profile** (readable-profile projection removes fields; selected per request), **link mode** (`ResourceLinksOptions.Enabled`; server configuration), and **content coding** (identity, Brotli, or gzip), and may vary by **format / media type** in the future (e.g. XML). A bare counter would assign the same etag to these byte-different representations, violating strong-validator semantics and conditional-GET cache correctness.
 
-**Prescription — the etag MUST be `"{ContentVersion}-{variantKey}"`.** `variantKey` is a short, deterministic, stable token encoding every byte-affecting representation selector in scope — at minimum the response **format / media type**, the active **profile** (or its absence), and the **link mode**. This keeps each representation's etag distinct (strict RFC 9110 §8.8.1 adherence) while staying cheap: it composes the counter with a small key and performs no hashing of the document body. The `variantKey` is adopted **now**, not deferred, so cache and conditional-request behavior is correct across profiles and link modes from the start and no later contract change is required.
+**Prescription — the etag MUST be `"{ContentVersion}-{variantKey}"`.** `variantKey` is a short, deterministic, stable token encoding every byte-affecting representation selector in scope — the response **format / media type**, the active **profile** (or its absence), the **link mode**, and the selected **content coding**. This keeps each representation's etag distinct (strict RFC 9110 §8.8.1 adherence) while staying cheap: it composes the counter with a small key and performs no hashing of the document body.
 
 **`ContentVersion` MUST be treated as a string.** HTTP entity-tags are opaque, quoted strings (e.g. `ETag: "5-json"`). Neither the server nor clients may interpret the `ContentVersion` portion as a number: serialize it as a string in the `_etag` body field and as a quoted value in the `ETag` header, compare it as an opaque string (RFC strong comparison is character-by-character), and document it to clients as opaque so they never parse it or compare it numerically.
 
-**`If-Match` comparison (decided).** The *served* etag carries the full `variantKey`, but `If-Match` evaluation compares only the **state-significant projection** of the tag. The origin server mints these tags and may therefore compare them with knowledge of their structure — etag opacity binds clients, not the server. The compared components are `ContentVersion` and `schemaEpoch`. The `variantKey` components **`format`**, **`profileCode`**, and **`linkFlag`** encode representation selectors rather than resource state, so they are excluded from the write-time `If-Match` match. This preserves optimistic-concurrency safety — ignored components cannot mask a state change because any persisted change advances `ContentVersion` — while avoiding false `412`s across representation variants that denote the same state. The *served* etags remain full strong validators for conditional **GET** / `If-None-Match` cache correctness, and only the write-time `If-Match` comparison is projected to the state-significant subset
+**`If-Match` comparison (decided).** The *served* etag carries the full `variantKey`, but `If-Match` evaluation compares only the **state-significant projection** of the tag. The origin server mints these tags and may therefore compare them with knowledge of their structure — etag opacity binds clients, not the server. The compared components are `ContentVersion` and `schemaEpoch`. The `variantKey` components **`format`**, **`profileCode`**, **`linkFlag`**, and **`contentCoding`** encode representation selectors rather than resource state, so they are excluded from the write-time `If-Match` match. This preserves optimistic-concurrency safety — ignored components cannot mask a state change because any persisted change advances `ContentVersion` — while avoiding false `412`s across representation variants that denote the same state. The *served* etags remain full strong validators for conditional **GET** / `If-None-Match` cache correctness, and only the write-time `If-Match` comparison is projected to the state-significant subset.
 
 ### `variantKey` encoding (specification)
 
-`variantKey` is a dot-delimited, fixed-order, lowercase ASCII token of four components. All characters are drawn from `[a-z0-9_]` plus the `.` separator — all valid `etagc` characters (RFC 9110 §8.8.3), containing no `"` or `\`.
+`variantKey` is a dot-delimited, fixed-order, lowercase ASCII token of five components. All characters are drawn from `[a-z0-9_]` plus the `.` separator — all valid `etagc` characters (RFC 9110 §8.8.3), containing no `"` or `\`.
 
 ```
-variantKey = schemaEpoch "." format "." profileCode "." linkFlag
+variantKey = schemaEpoch "." format "." profileCode "." linkFlag "." contentCoding
 etag-value = ContentVersion "-" variantKey          ; opaque; never parsed numerically
 ETag       = DQUOTE etag-value DQUOTE               ; quotes are HTTP framing only
 ```
@@ -145,25 +147,30 @@ Components, in fixed order:
 2. **`format`** — a stable one-or-two-char code for the response media type, from a fixed server-side registry. Defined today: `j` = `application/json`. Reserve further codes (e.g. `x` = XML) as formats are added. Never derive this from the raw media-type string at runtime; map through the registry so codes stay stable.
 3. **`profileCode`** — `_` when no profile is applied; otherwise the first 8 lowercase hex characters of `SHA-256(UTF-8(profileName))`, where `profileName` is the readable profile name. This hashes only the tiny, static profile-name descriptor — never the representation JSON — so it preserves the decision to stop hashing document bodies.
 4. **`linkFlag`** — `l` when `ResourceLinksOptions.Enabled` is true (links emitted), `n` when false.
+5. **`contentCoding`** — a stable code for the selected response content coding: `i` = identity,
+   `b` = Brotli (`br`), and `g` = gzip. The ASP.NET Core response-compression provider is the source
+   of the negotiated coding; adding another provider requires registering a new stable code.
 
 Examples (`ContentVersion` = 5, schema epoch `a1b2c3d4`):
 
 | Representation | `_etag` body value | `ETag` header |
 |---|---|---|
-| JSON, no profile, links on | `5-a1b2c3d4.j._.l` | `"5-a1b2c3d4.j._.l"` |
-| JSON, profiled, links off | `5-a1b2c3d4.j.9f1d2c3a.n` | `"5-a1b2c3d4.j.9f1d2c3a.n"` |
-| (future) XML, no profile, links on | `5-a1b2c3d4.x._.l` | `"5-a1b2c3d4.x._.l"` |
+| JSON, no profile, links on, identity | `5-a1b2c3d4.j._.l.i` | `"5-a1b2c3d4.j._.l.i"` |
+| JSON, no profile, links on, gzip | `5-a1b2c3d4.j._.l.g` | `"5-a1b2c3d4.j._.l.g"` |
+| JSON, profiled, links off, identity | `5-a1b2c3d4.j.9f1d2c3a.n.i` | `"5-a1b2c3d4.j.9f1d2c3a.n.i"` |
+| (future) XML, no profile, links on, Brotli | `5-a1b2c3d4.x._.l.b` | `"5-a1b2c3d4.x._.l.b"` |
 
 Rules:
 
-- The opaque-tag value is everything between the quotes (`5-a1b2c3d4.j._.l`); the double-quotes are HTTP framing only. The `_etag` JSON body field carries the **unquoted** value; the `ETag` / `If-Match` headers the server **emits** carry it **quoted**. On **input**, however, the server accepts an `If-Match` value whether or not it is quoted (see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted)); this asymmetry is deliberate, for legacy compatibility. A bare `If-Match: *` is handled separately as an RFC 9110 §13.1.1 wildcard, not as an opaque tag (see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching)).
+- The opaque-tag value is everything between the quotes (`5-a1b2c3d4.j._.l.i`); the double-quotes are HTTP framing only. The `_etag` JSON body field carries the **unquoted** value; the `ETag` / `If-Match` headers the server **emits** carry it **quoted**. On **input**, however, the server accepts an `If-Match` value whether or not it is quoted (see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted)); this asymmetry is deliberate, for legacy compatibility. A bare `If-Match: *` is handled separately as an RFC 9110 §13.1.1 wildcard, not as an opaque tag (see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching)).
 - `ContentVersion` and every `variantKey` component are treated as **opaque strings** — no component is parsed or compared numerically.
 - All components are always present (use `_` / `n` for "none" / "off") so the token has a fixed shape and is never ambiguous.
-- The server composes the full tag deterministically from `ContentVersion`, request context (negotiated format, profile in effect, link mode), and the loaded schema at three points: read response, write response, and `If-Match` precondition. Reads use the row's `ContentVersion`; write responses use the final `ContentVersion` returned by the persistence layer after all mutations, including the lightweight scalar read described in the 2026-07-08 amendment; `If-Match` preconditions compose the current served tag from the currently loaded row/version. No document hydration or document hashing is performed for etag construction. At the `If-Match` precondition the comparison is against the **state-significant projection** (`ContentVersion`, `schemaEpoch`; `format`, `profileCode`, and `linkFlag` excluded) — see "`If-Match` comparison (decided)" and the 2026-07-04 amendment.
+- The server composes the full tag deterministically from `ContentVersion`, request context (negotiated format, profile in effect, link mode, and selected content coding), and the loaded schema. Reads use the row's `ContentVersion`; write responses use the final `ContentVersion` returned by the persistence layer after all mutations and emit the identity-coding variant because they carry no encoded resource representation. No document hydration or document hashing is performed for etag construction. Write preconditions compare the **state-significant projection** (`ContentVersion`, `schemaEpoch`; `format`, `profileCode`, `linkFlag`, and `contentCoding` excluded) — see "`If-Match` comparison (decided)" and the 2026-07-04 amendment.
+- When response compression is enabled, ETag-bearing GET responses include `Vary: Accept-Encoding`. This applies to `304 Not Modified` as well as `200 OK`; a 304 has no body, so the serving boundary adds the field even though the compression middleware does not execute its body-write hook.
 
-Cost: each etag is a string concatenation of the counter with four small tokens. `schemaEpoch` and the `format` registry are derived from already-loaded schema metadata, `profileCode` is `_` or a short SHA-256 prefix of the readable profile name, and `linkFlag` is a config read. For write responses, the current implementation pays one scalar `ContentVersion` lookup after persistence-side mutations so trigger-stamped child changes are reflected in the returned etag. No per-document hashing occurs.
+Cost: each etag is a string concatenation of the counter with five small tokens. `schemaEpoch` and the `format` registry are derived from already-loaded schema metadata, `profileCode` is `_` or a short SHA-256 prefix of the readable profile name, `linkFlag` is a config read, and `contentCoding` comes from the already-selected response-compression provider. For write responses, the current implementation pays one scalar `ContentVersion` lookup after persistence-side mutations so trigger-stamped child changes are reflected in the returned etag. No per-document hashing occurs.
 
-**Alternative (fixed-length opaque token).** If a uniform, fully-opaque etag is preferred over the debuggable structured form, set `variantKey` to the first 12 hex characters of `SHA-256("{schemaEpoch}|{format}|{profileCode}|{linkFlag}")`. This hashes only a tiny descriptor string (cacheable per variant), not the document, so it preserves the performance goal; it trades operator readability for fixed width. The structured form is recommended unless fixed-length tags are specifically required.
+**Alternative (fixed-length opaque token).** If a uniform, fully-opaque etag is preferred over the debuggable structured form, set `variantKey` to the first 12 hex characters of `SHA-256("{schemaEpoch}|{format}|{profileCode}|{linkFlag}|{contentCoding}")`. This hashes only a tiny descriptor string (cacheable per variant), not the document, so it preserves the performance goal; it trades operator readability for fixed width. The structured form is recommended unless fixed-length tags are specifically required.
 
 ## Supporting findings (code review, 2026-06-30)
 
@@ -187,7 +194,7 @@ The redesign docs that currently *specify* the content hash must be updated: `up
 
 ### Client-visible behavior
 
-`_etag` values become compact, opaque, quoted strong entity-tags of the form `"{ContentVersion}-{variantKey}"` rather than hashes; the `ContentVersion` portion is treated as an opaque string, never a number. Acceptable because the contract has not shipped. The *served* etag varies by profile, format, and link mode — a deliberate change from the redesign's original profile/link-insensitive etag, for RFC 9110 conditional-GET correctness. `If-Match` matching, however, compares only the **state-significant projection** (`ContentVersion`, `schemaEpoch`): it is insensitive to `profileCode`, `format`, and `linkFlag`, so representation-only differences do not cause a spurious `412` when the resource state is unchanged. `If-None-Match` (weak comparison, conditional GET) continues to use the full served etag
+`_etag` values become compact, opaque, quoted strong entity-tags of the form `"{ContentVersion}-{variantKey}"` rather than hashes; the `ContentVersion` portion is treated as an opaque string, never a number. Acceptable because the contract has not shipped. The *served* etag varies by profile, format, link mode, and content coding — a deliberate change from the redesign's original profile/link-insensitive etag, for RFC 9110 conditional-GET correctness. `If-Match` matching, however, compares only the **state-significant projection** (`ContentVersion`, `schemaEpoch`): it is insensitive to `profileCode`, `format`, `linkFlag`, and `contentCoding`, so representation-only differences do not cause a spurious `412` when the resource state is unchanged. `If-None-Match` (weak comparison, conditional GET) continues to use the full served etag.
 
 ### What is given up
 
@@ -246,7 +253,7 @@ Cross-profile and profiled-vs-unprofiled `If-Match` (and DELETE `If-Match`) now 
 
 ### What changed
 
-RFC 9110 §8.8.3 defines an entity-tag as an `opaque-tag` that **must** be double-quoted (`opaque-tag = DQUOTE *etagc DQUOTE`), so a strict reading — the posture this ADR otherwise adopts — treats `If-Match: "5-a1b2c3d4.j._.l"` as valid and a bare `If-Match: 5-a1b2c3d4.j._.l` as malformed. The legacy Ed-Fi ODS/API, by contrast, does **not** enforce the quoting requirement on input: it accepts the quoted and unquoted forms interchangeably for `If-Match`.
+RFC 9110 §8.8.3 defines an entity-tag as an `opaque-tag` that **must** be double-quoted (`opaque-tag = DQUOTE *etagc DQUOTE`), so a strict reading — the posture this ADR otherwise adopts — treats `If-Match: "5-a1b2c3d4.j._.l.i"` as valid and a bare `If-Match: 5-a1b2c3d4.j._.l.i` as malformed. The legacy Ed-Fi ODS/API, by contrast, does **not** enforce the quoting requirement on input: it accepts the quoted and unquoted forms interchangeably for `If-Match`.
 
 This amendment adopts the legacy behavior as a **requirement**: on **input**, the DMS treats an unquoted `If-Match` value as equivalent to the same value quoted. Both forms resolve to the same opaque tag and are compared identically against the server-composed expected tag.
 
@@ -348,8 +355,8 @@ The ADR's original analysis and every prior amendment addressed only `If-Match`.
 
 **Comparison basis — the read/write asymmetry (the crux of this amendment).**
 
-- **Conditional reads compare the FULL served tag** — every `variantKey` component (`ContentVersion`, `schemaEpoch`, `format`, `profileCode`, `linkFlag`). This is precisely the cache-correctness guarantee the ADR already cites as the reason served etags are representation-complete: a client that cached a *JSON / profile-3 / links-off* body must **not** receive `304` when it re-requests the resource under a different profile, format, or link mode, because the served bytes genuinely differ.
-- **Write-side `If-None-Match` compares the state-significant projection** (`ContentVersion`, `schemaEpoch`) through the existing `EtagMatchProjection.Of` — identical to `If-Match`, and for the same reason: representation variance (`format`, `profileCode`, `linkFlag`) must not spuriously flip a state precondition. A bare `*` compares nothing; it is a pure existence test.
+- **Conditional reads compare the FULL served tag** — `ContentVersion` plus every `variantKey` component (`schemaEpoch`, `format`, `profileCode`, `linkFlag`, `contentCoding`). This is precisely the cache-correctness guarantee the ADR already cites as the reason served etags are representation-complete: a client that cached a *JSON / profile-3 / links-off / gzip* body must **not** receive `304` when it re-requests the resource under a different profile, format, link mode, or content coding, because the served bytes genuinely differ.
+- **Write-side `If-None-Match` compares the state-significant projection** (`ContentVersion`, `schemaEpoch`) through the existing `EtagMatchProjection.Of` — identical to `If-Match`, and for the same reason: representation variance (`format`, `profileCode`, `linkFlag`, `contentCoding`) must not spuriously flip a state precondition. A bare `*` compares nothing; it is a pure existence test.
 
 Thus reads use the full tag and writes use the projection. This is intentional: it is the same deliberate decoupling of served-etag comparison from write-precondition comparison that the 2026-07-04 amendment introduced for `If-Match`, applied here in the opposite direction — for `If-None-Match`, reads are the *stricter* side.
 
@@ -387,7 +394,7 @@ This is the exact inverse of the `If-Match: *` wildcard ([Amendment 2026-07-05, 
 
 ### Decisions
 
-1. **Reads compare the full served tag; writes compare the state-significant projection.** Reads are about representation/cache correctness (all `variantKey` components significant); writes are about resource state (`format`/`profileCode`/`linkFlag` projected out, exactly as for `If-Match`).
+1. **Reads compare the full served tag; writes compare the state-significant projection.** Reads are about representation/cache correctness (all `variantKey` components significant); writes are about resource state (`format`/`profileCode`/`linkFlag`/`contentCoding` projected out, exactly as for `If-Match`).
 2. **`If-None-Match` uses weak comparison and accepts `W/` tags on input;** `If-Match` remains strong-only. Emission is unchanged — the server still emits only strong tags. In practice this means `W/"1-abc"` on `If-None-Match` is compared as if it were `"1-abc"` — only the opaque-tag portion matters.
 3. **`If-None-Match` accepts a comma-separated list of entity-tags** per RFC 9110 §13.1.2. The precondition triggers (`304` or `412`) if **any** tag in the list matches. Each tag in the list is independently subject to weak comparison, `W/` stripping, and quoted/unquoted tolerance.
 4. **Only the bare `*` is the wildcard, and it is inverted from `If-Match: *`** — it asserts *non-existence*. A quoted `"*"` is an ordinary (mismatching) opaque tag.
@@ -539,7 +546,7 @@ integer, e.g. `3`)." The implementation instead derives it as a short lowercase-
 of the readable profile *name*** — `ProfileVariantCode.Of` returns `VariantKey.NoProfileCode` (`_`)
 when no profile applies, otherwise the first 4 bytes (8 hex characters) of
 `SHA-256(UTF-8(profileName))`. A served etag's `profileCode` is therefore `_` or an 8-hex token
-(e.g. `5-a1b2c3d4.j.9f3a2b1c.n`), not a small integer.
+(e.g. `5-a1b2c3d4.j.9f3a2b1c.n.i`), not a small integer.
 
 The index form was not used because a `MappingSet` exposes no enumerable profile catalog from which to
 assign stable ordinals. The name-hash prefix is deterministic and stable across processes and engines,
@@ -569,7 +576,8 @@ validators, exactly as RFC 9110 §8.8.1 requires (see
 
 ### What did not change
 
-- The etag format `"{ContentVersion}-{variantKey}"` and the fixed four-component `variantKey` order.
+- At the time of this amendment, the etag format `"{ContentVersion}-{variantKey}"` and then-current
+  four-component `variantKey` order. The 2026-07-10 amendment subsequently added `contentCoding`.
 - `If-Match` comparison, which projects `profileCode` out entirely (along with `format` and
   `linkFlag`) per [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison),
   so the profile-name hash never affects optimistic-concurrency behavior — it only affects served-etag
@@ -582,6 +590,39 @@ The `variantKey` documentation now matches the shipped encoding: `profileCode` i
 SHA-256 prefix of the profile name. The change is descriptive — it records how the etag is already
 built and affirms that hashing the profile descriptor (not the representation) is consistent with the
 ADR's core decision.
+
+## Amendment (2026-07-10): content coding added to the served etag
+
+**Status:** Accepted — fixes strong-validator correctness when ASP.NET response compression is enabled. \
+**Date:** 2026-07-10 \
+**Author:** Brad Banister, with implementation assistance from Codex.
+
+### What changed
+
+`variantKey` gains a fifth, always-present `contentCoding` component after `linkFlag`: `i` for
+identity, `b` for Brotli, and `g` for gzip. The frontend asks the registered ASP.NET Core response
+compression provider which coding it selected and carries that stable enum value to read
+materialization. The `_etag` body field and `ETag` response header are therefore composed for the
+same representation that the compression middleware serves.
+
+Conditional GET continues comparing the full served tag. A client that cached a gzip response can
+receive `304` only when gzip is selected again; changing to identity or Brotli produces a different
+tag and a `200` response. ETag-bearing GET responses also vary on `Accept-Encoding`, including 304
+responses whose empty body does not activate the response-compression middleware's normal header
+hook.
+
+### Write-side behavior
+
+`contentCoding` is a representation selector, not resource state. `EtagMatchProjection` therefore
+projects it out along with `format`, `profileCode`, and `linkFlag`, retaining only `ContentVersion`
+and `schemaEpoch`. An ETag obtained from an identity, Brotli, or gzip GET protects the same write
+state and does not cause a representation-only `412`. Write responses carry the identity code
+because they do not enclose a content-coded resource representation.
+
+### Consequence
+
+Identity and compressed byte representations no longer share a strong validator, while optimistic
+concurrency and write-side `If-None-Match` remain content-coding-insensitive.
 
 ## References
 

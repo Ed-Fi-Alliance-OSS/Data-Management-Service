@@ -203,7 +203,8 @@ public sealed class RelationalDocumentStoreRepository(
                     getRequest.AuthorizationStrategyEvaluators,
                     getRequest.ReadableProfileProjectionContext,
                     getRequest.TraceId,
-                    getRequest.AuthorizationContext
+                    getRequest.AuthorizationContext,
+                    getRequest.ResponseContentCoding
                 )
             );
         }
@@ -1021,7 +1022,8 @@ public sealed class RelationalDocumentStoreRepository(
                         queryRequest.ReadableProfileProjectionContext,
                         queryRequest.TraceId,
                         queryRequest.AuthorizationContext,
-                        queryRequest.ChangeVersionRange
+                        queryRequest.ChangeVersionRange,
+                        queryRequest.ResponseContentCoding
                     )
                 )
                 .ConfigureAwait(false);
@@ -2529,7 +2531,11 @@ public sealed class RelationalDocumentStoreRepository(
                 {
                     MappingSet = mappingSet,
                     DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
-                    EtagVariant = new EtagVariantInputs(readProfileName, ResponseFormat.Json),
+                    EtagVariant = new EtagVariantInputs(
+                        readProfileName,
+                        ResponseFormat.Json,
+                        relationalGetRequest.ResponseContentCoding
+                    ),
                 }
             );
 
@@ -3915,7 +3921,11 @@ public sealed class RelationalDocumentStoreRepository(
             )
             {
                 MappingSet = relationalQueryRequest.MappingSet,
-                EtagVariant = new EtagVariantInputs(projectionContext?.ProfileName, ResponseFormat.Json),
+                EtagVariant = new EtagVariantInputs(
+                    projectionContext?.ProfileName,
+                    ResponseFormat.Json,
+                    relationalQueryRequest.ResponseContentCoding
+                ),
             }
         );
 

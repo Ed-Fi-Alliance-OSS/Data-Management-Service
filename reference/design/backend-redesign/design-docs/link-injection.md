@@ -359,7 +359,8 @@ flag is applied as the final response-shaping pass in the repository wrapper —
 readable-profile projection (when applicable) runs and before serialization. The cache stores the
 `ContentVersion` associated with `DocumentJson`, not a materialized `_etag`. At the serving boundary,
 DMS composes `_etag` from that cached `ContentVersion` plus the request's full `variantKey`, including
-the active `profileCode` and `linkFlag`. Flag-on, flag-off, profiled, and unprofiled responses can
+the active `profileCode`, `linkFlag`, and `contentCoding`. Flag-on, flag-off, profiled, unprofiled,
+identity, and compressed responses can
 therefore share one caller-agnostic cached document while carrying distinct validators whenever
 their served bytes differ. CDC and indexing consumers observe the unprojected intermediate (with
 `link` subtrees); DMS does not maintain a second link-free projection. See
@@ -506,8 +507,8 @@ pins the present behavior.)
 **Caller-agnostic cache test.** Two callers who can both read the same source document — one
 authorized for the target, one not — receive the same cached intermediate JSON and
 `ContentVersion`. Their served `_etag` is composed per request; identical representation contexts
-produce the same tag, while profile selection or flag-off stripping changes the appropriate
-`variantKey` component.
+produce the same tag, while profile selection, flag-off stripping, or content-coding negotiation
+changes the appropriate `variantKey` component.
 
 ---
 

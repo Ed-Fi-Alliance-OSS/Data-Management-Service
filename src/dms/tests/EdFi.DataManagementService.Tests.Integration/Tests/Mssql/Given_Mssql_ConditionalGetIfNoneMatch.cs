@@ -12,6 +12,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 public sealed class Given_Mssql_ConditionalGetIfNoneMatch : MssqlApiIntegrationTestBase
 {
     protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
+    protected override bool EnableAspNetCompression => true;
 
     [Test]
     public Task It_returns_304_for_a_matching_quoted_if_none_match() =>
@@ -30,8 +31,12 @@ public sealed class Given_Mssql_ConditionalGetIfNoneMatch : MssqlApiIntegrationT
         ConditionalGetIfNoneMatchScenario.It_returns_200_for_a_stale_if_none_match(Harness);
 
     [Test]
-    public Task It_returns_200_when_only_the_variant_key_differs() =>
-        ConditionalGetIfNoneMatchScenario.It_returns_200_when_only_the_variant_key_differs(Harness);
+    public Task It_returns_200_when_only_the_content_coding_differs() =>
+        ConditionalGetIfNoneMatchScenario.It_returns_200_when_only_the_content_coding_differs(Harness);
+
+    [Test]
+    public Task It_uses_distinct_validators_for_identity_and_gzip() =>
+        ConditionalGetIfNoneMatchScenario.It_uses_distinct_validators_for_identity_and_gzip(Harness);
 
     [Test]
     public Task It_returns_304_when_a_matching_tag_is_in_a_list() =>

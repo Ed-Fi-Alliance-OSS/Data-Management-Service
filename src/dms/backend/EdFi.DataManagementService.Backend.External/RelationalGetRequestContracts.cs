@@ -95,4 +95,9 @@ public interface IGetRequest : IRequestWithMappingSet
     /// Null when no readable profile applies or projection must be suppressed.
     /// </summary>
     ReadableProfileProjectionContext? ReadableProfileProjectionContext { get; }
+
+    /// <summary>
+    /// The content coding selected for the external response. Stored-document reads use identity.
+    /// </summary>
+    ResponseContentCoding ResponseContentCoding { get; }
 }

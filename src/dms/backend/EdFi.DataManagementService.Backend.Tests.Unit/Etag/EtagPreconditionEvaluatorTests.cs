@@ -14,9 +14,9 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Etag;
 [Parallelizable]
 public class Given_EtagPreconditionEvaluator
 {
-    private const string CurrentEtag = "5-a1b2c3d4.j._.l";
-    private const string MatchingClientTag = "5-a1b2c3d4.x.3.n";
-    private const string DifferingClientTag = "6-a1b2c3d4.j._.l";
+    private const string CurrentEtag = "5-a1b2c3d4.j._.l.i";
+    private const string MatchingClientTag = "5-a1b2c3d4.x.3.n.g";
+    private const string DifferingClientTag = "6-a1b2c3d4.j._.l.i";
 
     [TestCase(true)]
     [TestCase(false)]
@@ -122,7 +122,7 @@ public class Given_EtagPreconditionEvaluator
     {
         EtagPreconditionEvaluator
             .IsSatisfied(
-                new WritePrecondition.IfNoneMatch([DifferingClientTag, "7-other.j._.l"]),
+                new WritePrecondition.IfNoneMatch([DifferingClientTag, "7-other.j._.l.i"]),
                 true,
                 CurrentEtag
             )

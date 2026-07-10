@@ -391,7 +391,7 @@ Feature: ETag validations
                   """
              Then it should respond with 201 or 200
               And the quoted ETag is in the response header
-              And the ETag value matches the pattern "^\d+-[0-9a-f]{8}\.j\.(_|[0-9a-f]{8})\.[ln]$"
+              And the ETag value matches the pattern "^\d+-[0-9a-f]{8}\.j\.(_|[0-9a-f]{8})\.[ln]\.[ibg]$"
               And the ETag is in the response header
               And the record can be retrieved with a GET request
                   """

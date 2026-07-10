@@ -42,7 +42,8 @@ internal sealed record RelationalQueryRequest(
     PaginationParameters PaginationParameters,
     TraceId TraceId,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
-    ChangeVersionRange? ChangeVersionRange = null
+    ChangeVersionRange? ChangeVersionRange = null,
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
 ) : IQueryRequest
 {
     ChangeVersionRange IQueryRequest.ChangeVersionRange =>

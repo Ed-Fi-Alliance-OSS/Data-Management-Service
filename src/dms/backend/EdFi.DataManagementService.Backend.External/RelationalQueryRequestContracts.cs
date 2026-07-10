@@ -117,4 +117,7 @@ public interface IQueryRequest : IRequestWithMappingSet
     /// <see cref="ChangeVersionRange.None"/> when neither parameter was supplied.
     /// </summary>
     ChangeVersionRange ChangeVersionRange { get; }
+
+    /// <summary>The content coding selected for the external response.</summary>
+    ResponseContentCoding ResponseContentCoding { get; }
 }

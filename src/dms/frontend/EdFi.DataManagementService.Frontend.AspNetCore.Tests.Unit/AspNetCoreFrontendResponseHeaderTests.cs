@@ -5,8 +5,10 @@
 
 using System.Reflection;
 using EdFi.DataManagementService.Core.Model;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -86,9 +88,13 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         const string opaqueEtag = "5-a1b2c3d4.j._.l";
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Scheme = "https";
+        httpContext.Request.Method = HttpMethods.Get;
         httpContext.Request.Host = new HostString("localhost");
         httpContext.Request.Path = "/data/testproject/widgets/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        httpContext.RequestServices = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(A.Fake<IResponseCompressionProvider>())
+            .BuildServiceProvider();
         using var responseBody = new MemoryStream();
         httpContext.Response.Body = responseBody;
 
@@ -111,5 +117,9 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         httpContext.Response.StatusCode.Should().Be(304);
         httpContext.Response.Headers.ETag.ToString().Should().Be($"\"{opaqueEtag}\"");
         responseBody.Length.Should().Be(0);
+        httpContext
+            .Response.Headers.GetCommaSeparatedValues("Vary")
+            .Should()
+            .ContainSingle("Accept-Encoding");
     }
 }

@@ -29,7 +29,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class GetByIdHandlerTests
 {
-    private const string ServedEtag = "5-a1b2c3d4.j._.l";
+    private const string ServedEtag = "5-a1b2c3d4.j._.l.i";
 
     private sealed class SuccessfulRepository : NotImplementedDocumentStoreRepository
     {
@@ -115,6 +115,10 @@ public class GetByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
+            requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+            {
+                ResponseContentCoding = ResponseContentCoding.Gzip,
+            };
             var (getByIdHandler, serviceProvider) = Handler(_repository);
             requestInfo.ScopedServiceProvider = serviceProvider;
             await getByIdHandler.Execute(requestInfo, NullNext);
@@ -142,6 +146,7 @@ public class GetByIdHandlerTests
                 .BeAssignableTo<IGetRequest>()
                 .Subject;
             relationalRequest.MappingSet.Should().BeSameAs(requestInfo.MappingSet);
+            relationalRequest.ResponseContentCoding.Should().Be(ResponseContentCoding.Gzip);
         }
     }
 
@@ -280,14 +285,15 @@ public class GetByIdHandlerTests
         }
     }
 
-    [TestFixture("\"5-a1b2c3d4.j._.l\"", 304)]
-    [TestFixture("5-a1b2c3d4.j._.l", 304)]
-    [TestFixture("W/\"5-a1b2c3d4.j._.l\"", 304)]
-    [TestFixture("\"4-does-not-match\", W/\"5-a1b2c3d4.j._.l\"", 304)]
+    [TestFixture("\"5-a1b2c3d4.j._.l.i\"", 304)]
+    [TestFixture("5-a1b2c3d4.j._.l.i", 304)]
+    [TestFixture("W/\"5-a1b2c3d4.j._.l.i\"", 304)]
+    [TestFixture("\"4-does-not-match\", W/\"5-a1b2c3d4.j._.l.i\"", 304)]
     [TestFixture("\"4-does-not-match\", W/\"6-also-does-not-match\"", 200)]
-    [TestFixture("\"prefix,5-a1b2c3d4.j._.l,suffix\"", 200)]
+    [TestFixture("\"prefix,5-a1b2c3d4.j._.l.i,suffix\"", 200)]
     [TestFixture("\"9-does-not-match\"", 200)]
-    [TestFixture("\"5-a1b2c3d4.j._.n\"", 200)]
+    [TestFixture("\"5-a1b2c3d4.j._.n.i\"", 200)]
+    [TestFixture("\"5-a1b2c3d4.j._.l.g\"", 200)]
     [TestFixture("*", 304)]
     [TestFixture("\"*\"", 200)]
     [Parallelizable]
@@ -337,7 +343,7 @@ public class GetByIdHandlerTests
             public static readonly JsonObject ResponseBody = new()
             {
                 ["value"] = "expected",
-                ["_etag"] = "5-a1b2c3d4.j._.l",
+                ["_etag"] = "5-a1b2c3d4.j._.l.i",
             };
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
@@ -769,7 +775,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 return Task.FromResult<GetResult>(
                     new GetSuccess(
                         No.DocumentUuid,
-                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l" },
+                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l.i" },
                         DateTime.UtcNow,
                         getRequest.TraceId.Value
                     )
@@ -846,6 +852,10 @@ actual: {requestInfo.FrontendResponse.Body}
                 ),
                 WasExplicitlySpecified: true
             );
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                ResponseContentCoding = ResponseContentCoding.Gzip,
+            };
 
             var (getByIdHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -885,6 +895,12 @@ actual: {requestInfo.FrontendResponse.Body}
                 .CapturedRequest.ReadableProfileProjectionContext.IdentityPropertyNames.Should()
                 .Equal("studentUniqueId", "schoolReference");
             _repository.CapturedRequest.ResourceName.Should().Be(new ResourceName("Student"));
+            _repository
+                .CapturedRequest.ResponseContentCoding.Should()
+                .Be(
+                    ResponseContentCoding.Identity,
+                    "profile response media types are not in the ASP.NET response-compression allowlist"
+                );
         }
 
         [Test]
@@ -1067,7 +1083,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 return Task.FromResult<GetResult>(
                     new GetSuccess(
                         No.DocumentUuid,
-                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l" },
+                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l.i" },
                         DateTime.UtcNow,
                         getRequest.TraceId.Value
                     )

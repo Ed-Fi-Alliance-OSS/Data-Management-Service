@@ -75,7 +75,7 @@ internal static class ConditionalGetIfNoneMatchScenario
         (string locationPath, _) = await CreateStudentAsync(harness, "cgm-stale-001");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
-        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, "\"1-00000000.j._.n\"");
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, "\"1-00000000.j._.n.i\"");
 
         using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
         string getBody = await getResponse.Content.ReadAsStringAsync();
@@ -85,26 +85,24 @@ internal static class ConditionalGetIfNoneMatchScenario
         returned["studentUniqueId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
     }
 
-    public static async Task It_returns_200_when_only_the_variant_key_differs(ApiIntegrationHarness harness)
+    public static async Task It_returns_200_when_only_the_content_coding_differs(
+        ApiIntegrationHarness harness
+    )
     {
         (string locationPath, string etag) = await CreateStudentAsync(harness, "cgm-variant-001");
 
-        // Flip only the final character of the etag tail (the variantKey's trailing segment, e.g. a
-        // link flag such as .l/.n) to a different valid [a-z0-9_] character, leaving the rest of the
-        // served etag -- including its ContentVersion -- untouched.
-        char lastChar = etag[^1];
-        char flippedChar = lastChar == 'n' ? 'l' : 'n';
-        string mutatedEtag = string.Concat(etag.AsSpan(0, etag.Length - 1), flippedChar.ToString());
+        etag.Should().EndWith(".i", "the request does not accept a compressed response");
+        string gzipEtag = string.Concat(etag.AsSpan(0, etag.Length - 1), "g");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
-        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"{mutatedEtag}\"");
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"{gzipEtag}\"");
 
         using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
         string getBody = await getResponse.Content.ReadAsStringAsync();
 
         // This proves the read path compares the FULL served tag (representation-sensitive), not the
         // write-side state-significant projection (EtagMatchProjection), which would ignore the
-        // variantKey tail and wrongly yield 304 here.
+        // content-coding component and wrongly yield 304 here.
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK, getBody);
         JsonObject returned = JsonNode.Parse(getBody)!.AsObject();
         returned["studentUniqueId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
@@ -120,7 +118,7 @@ internal static class ConditionalGetIfNoneMatchScenario
         using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
         request.Headers.TryAddWithoutValidation(
             IfNoneMatchHeaderName,
-            $"\"1-00000000.j._.n\", \"{etag}\", \"2-11111111.j._.n\""
+            $"\"1-00000000.j._.n.i\", \"{etag}\", \"2-11111111.j._.n.i\""
         );
 
         using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
@@ -141,7 +139,10 @@ internal static class ConditionalGetIfNoneMatchScenario
         // Weak comparison (RFC 9110 §8.8.3.2): a W/-prefixed member is compared by opaque value only, so
         // W/"<etag>" matches the strong served "<etag>". Combined with the list form here.
         using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
-        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n\", W/\"{etag}\"");
+        request.Headers.TryAddWithoutValidation(
+            IfNoneMatchHeaderName,
+            $"\"1-00000000.j._.n.i\", W/\"{etag}\""
+        );
 
         using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
 
@@ -157,7 +158,7 @@ internal static class ConditionalGetIfNoneMatchScenario
         using var request = new HttpRequestMessage(HttpMethod.Get, locationPath);
         request.Headers.TryAddWithoutValidation(
             IfNoneMatchHeaderName,
-            "\"1-00000000.j._.n\", \"2-11111111.j._.n\""
+            "\"1-00000000.j._.n.i\", \"2-11111111.j._.n.i\""
         );
 
         using HttpResponseMessage getResponse = await harness.HttpClient.SendAsync(request);
@@ -171,6 +172,40 @@ internal static class ConditionalGetIfNoneMatchScenario
             );
         JsonObject returned = JsonNode.Parse(getBody)!.AsObject();
         returned["studentUniqueId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+    }
+
+    public static async Task It_uses_distinct_validators_for_identity_and_gzip(ApiIntegrationHarness harness)
+    {
+        (string locationPath, _) = await CreateStudentAsync(harness, "cgm-content-coding-001");
+
+        using var identityResponse = await harness.HttpClient.GetAsync(locationPath);
+        identityResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        identityResponse.TryReadRawEtag(out string identityEtag).Should().BeTrue();
+        identityEtag.Should().EndWith(".i");
+
+        using var gzipRequest = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        gzipRequest.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip");
+        using var gzipResponse = await harness.HttpClient.SendAsync(gzipRequest);
+        gzipResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        gzipResponse.Content.Headers.ContentEncoding.Should().ContainSingle("gzip");
+        gzipResponse.TryReadRawEtag(out string gzipEtag).Should().BeTrue();
+        gzipEtag.Should().EndWith(".g").And.NotBe(identityEtag);
+
+        using var changedCodingRequest = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        changedCodingRequest.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"{gzipEtag}\"");
+        using var changedCodingResponse = await harness.HttpClient.SendAsync(changedCodingRequest);
+        changedCodingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        changedCodingResponse.TryReadRawEtag(out string changedCodingEtag).Should().BeTrue();
+        changedCodingEtag.Should().Be(identityEtag);
+
+        using var matchingGzipRequest = new HttpRequestMessage(HttpMethod.Get, locationPath);
+        matchingGzipRequest.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip");
+        matchingGzipRequest.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"{gzipEtag}\"");
+        using var matchingGzipResponse = await harness.HttpClient.SendAsync(matchingGzipRequest);
+        matchingGzipResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
+        matchingGzipResponse.TryReadRawEtag(out string matchedEtag).Should().BeTrue();
+        matchedEtag.Should().Be(gzipEtag);
+        matchingGzipResponse.Headers.Vary.Should().ContainSingle("Accept-Encoding");
     }
 
     private static async Task<(string locationPath, string etag)> CreateStudentAsync(

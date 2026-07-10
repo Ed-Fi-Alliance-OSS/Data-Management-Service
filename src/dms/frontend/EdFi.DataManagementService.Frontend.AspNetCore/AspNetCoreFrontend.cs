@@ -15,6 +15,8 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
@@ -504,8 +506,61 @@ public static class AspNetCoreFrontend
             Tenant: ExtractTenantFrom(httpRequest, appSettings),
             ParsedBody: jsonBody.ParsedBody,
             BodyParseErrorMessage: jsonBody.ParseErrorMessage,
-            DuplicatePropertyPath: jsonBody.DuplicatePropertyPath
+            DuplicatePropertyPath: jsonBody.DuplicatePropertyPath,
+            ResponseContentCoding: HttpMethods.IsGet(httpRequest.Method)
+                ? ResolveResponseContentCoding(httpRequest.HttpContext)
+                : ResponseContentCoding.Identity
         );
+    }
+
+    /// <summary>
+    /// Uses the same registered provider as ASP.NET Core response compression to select the content
+    /// coding that a successful JSON response will use. Absence of the service means compression is
+    /// disabled. The provider is consulted again by the compression middleware when the body is
+    /// written; negotiation is deterministic for the unchanged request headers.
+    /// </summary>
+    internal static ResponseContentCoding ResolveResponseContentCoding(HttpContext httpContext)
+    {
+        if (
+            GetResponseCompressionProvider(httpContext) is not { } responseCompressionProvider
+            || !responseCompressionProvider.CheckRequestAcceptsCompression(httpContext)
+        )
+        {
+            return ResponseContentCoding.Identity;
+        }
+
+        if (
+            responseCompressionProvider.GetCompressionProvider(httpContext)?.EncodingName
+            is not { } encodingName
+        )
+        {
+            return ResponseContentCoding.Identity;
+        }
+
+        if (string.Equals(encodingName, "br", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResponseContentCoding.Brotli;
+        }
+
+        if (string.Equals(encodingName, "gzip", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResponseContentCoding.Gzip;
+        }
+
+        throw new InvalidOperationException(
+            $"Response compression selected unsupported content coding '{encodingName}'. "
+                + "Register a stable served-etag variant code before enabling this provider."
+        );
+    }
+
+    private static IResponseCompressionProvider? GetResponseCompressionProvider(HttpContext httpContext)
+    {
+        if (httpContext.RequestServices is null)
+        {
+            return null;
+        }
+
+        return httpContext.RequestServices.GetService<IResponseCompressionProvider>();
     }
 
     /// <summary>
@@ -517,6 +572,8 @@ public static class AspNetCoreFrontend
         string dmsPath
     )
     {
+        bool emittedEtag = false;
+
         if (frontendResponse.LocationHeaderPath != null)
         {
             string urlBeforeDmsPath = httpContext
@@ -538,12 +595,28 @@ public static class AspNetCoreFrontend
                 if (EtagValue.TryParseHeaderValue(header.Value, out var etagValue))
                 {
                     httpContext.Response.Headers.Append(header.Key, EtagValue.ToHeaderValue(etagValue));
+                    emittedEtag = true;
                 }
             }
             else
             {
                 httpContext.Response.Headers.Append(header.Key, header.Value);
             }
+        }
+
+        // ETag-bearing GET responses select a validator by Accept-Encoding. A 304 has no body, so
+        // ResponseCompressionMiddleware never reaches its body-write hook where it normally adds
+        // this Vary value; add it at the serving boundary for both 200 and 304 responses.
+        if (
+            emittedEtag
+            && HttpMethods.IsGet(httpContext.Request.Method)
+            && GetResponseCompressionProvider(httpContext) is not null
+            && !httpContext
+                .Response.Headers.GetCommaSeparatedValues("Vary")
+                .Contains("Accept-Encoding", StringComparer.OrdinalIgnoreCase)
+        )
+        {
+            httpContext.Response.Headers.Append("Vary", "Accept-Encoding");
         }
 
         return Results.Content(

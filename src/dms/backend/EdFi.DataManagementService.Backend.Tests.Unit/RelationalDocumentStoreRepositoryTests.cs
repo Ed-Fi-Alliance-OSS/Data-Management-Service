@@ -50,7 +50,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     // the write handler's/executor's etag through unchanged (and that it is neither the client's stale
     // request etag nor a stamp-style validator), not the etag format, so any stable opaque value that is
     // produced without the etag formatter suffices.
-    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l";
+    private const string ComposedWriteResultEtag = "1-a1b2c3d4.j._.l.i";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),

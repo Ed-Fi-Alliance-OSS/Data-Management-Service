@@ -278,7 +278,8 @@ internal sealed class RelationalReadMaterializer(
                 variant.Format,
                 variant.ProfileName,
                 _linksOptions.Enabled,
-                documentMetadata.ContentVersion
+                documentMetadata.ContentVersion,
+                variant.ContentCoding
             )
         );
     }

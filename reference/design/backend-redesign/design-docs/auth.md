@@ -457,7 +457,7 @@ ODS requires 2 roundtrips for the same operation.
 
 The conditional check deliberately follows authorization and normal response selection. A matching
 validator must not turn a request that would otherwise be unauthorized or unsuccessful into `304`,
-and it must use the same profile, format, and link context as the representation that would have
+and it must use the same profile, format, link, and content-coding context as the representation that would have
 been served.
 
 #### GET-many
@@ -800,8 +800,8 @@ async Task GetGradeBookEntryById()
     var requestParams = new
     {
         uuid = new Guid("2af0e37e-9bb1-4770-8d0f-32d1b91c3984"),
-        ifNoneMatch = "\"123-a1b2c3d4.j._.l\"",
-        variantKey = "a1b2c3d4.j._.l"
+        ifNoneMatch = "\"123-a1b2c3d4.j._.l.i\"",
+        variantKey = "a1b2c3d4.j._.l.i"
     };
 
     await using var roundtrip1 = new NpgsqlCommand(@"

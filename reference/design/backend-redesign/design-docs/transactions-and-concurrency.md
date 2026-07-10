@@ -341,13 +341,15 @@ With stored representation stamps:
   §8.8.3: quoted in `ETag`, never `W/`.
 - Conditional GET `If-None-Match` uses the RFC 9110 §8.8.3.2 weak comparison function against the
   full served tag, including all representation-selector components, after authorization and other
-  normal request checks would permit `200`; any match returns `304` per RFC 9110 §13.1.2.
+  normal request checks would permit `200`; any match returns `304` per RFC 9110 §13.1.2. Content
+  coding is representation-significant, so identity, Brotli, and gzip tags differ. When response
+  compression is enabled, ETag-bearing `200` and `304` responses include `Vary: Accept-Encoding`.
 - PUT/DELETE `If-Match` validation is row-local and uses strong comparison over the tag's
   **state-significant projection**:
   - read the current `ContentVersion` for that `DocumentId` and compose the expected tag from the
     inbound request's representation context;
-  - compare it to the request `_etag`, **excluding** the `format`, `profileCode`, and `linkFlag`
-    components (representation encoding/filtering only) and **retaining** `ContentVersion` and
+  - compare it to the request `_etag`, **excluding** the `format`, `profileCode`, `linkFlag`, and
+    `contentCoding` components (representation encoding/filtering/transfer only) and **retaining** `ContentVersion` and
     `schemaEpoch` (amended 2026-07-04: `profileCode` is excluded, so a cross-profile `If-Match` no
     longer yields `412` on profile alone);
   - if mismatched on any retained component, return `412 Precondition Failed`.
@@ -393,8 +395,8 @@ Collection-write note:
   described above. Different readable profiles yield different *served* `_etag` values (for
   conditional-GET cache correctness), but profile is **not** an input to that guard (amended
   2026-07-04): the `If-Match` comparison uses only `ContentVersion` and `schemaEpoch`, so a
-  cross-profile `If-Match` matches when those agree. (`format`, `profileCode`, and `linkFlag` are all
-  excluded from the `If-Match` comparison.) No new API surface is required.
+  cross-profile `If-Match` matches when those agree. (`format`, `profileCode`, `linkFlag`, and
+  `contentCoding` are all excluded from the `If-Match` comparison.) No new API surface is required.
 
 ### Deadlock + retry policy
 

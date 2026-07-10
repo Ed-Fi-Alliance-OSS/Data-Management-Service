@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -61,5 +62,33 @@ public class Given_ServedEtagComposer
             )
         );
         profiled.Should().NotBe(unprofiled);
+    }
+
+    [Test]
+    public void It_distinguishes_content_codings_in_served_etags()
+    {
+        var identity = _sut.Compose(
+            new ServedEtagContext(
+                "A1B2C3D4E5",
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: true,
+                ContentVersion: 9,
+                ResponseContentCoding.Identity
+            )
+        );
+        var gzip = _sut.Compose(
+            new ServedEtagContext(
+                "A1B2C3D4E5",
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: true,
+                ContentVersion: 9,
+                ResponseContentCoding.Gzip
+            )
+        );
+
+        identity.Should().Be("9-a1b2c3d4.j._.l.i");
+        gzip.Should().Be("9-a1b2c3d4.j._.l.g");
     }
 }

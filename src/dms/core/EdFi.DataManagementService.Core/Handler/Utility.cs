@@ -153,6 +153,20 @@ public static class Utility
     }
 
     /// <summary>
+    /// Returns the content coding that participates in the served etag. The ASP.NET compression
+    /// allowlist contains <c>application/json</c>, while readable-profile media types use a custom
+    /// <c>application/vnd...+json</c> type and are therefore served with identity coding.
+    /// </summary>
+    internal static ResponseContentCoding GetServedEtagContentCoding(RequestInfo requestInfo)
+    {
+        ArgumentNullException.ThrowIfNull(requestInfo);
+
+        return requestInfo.ProfileContext?.ResourceProfile.ReadContentType is null
+            ? requestInfo.FrontendRequest.ResponseContentCoding
+            : ResponseContentCoding.Identity;
+    }
+
+    /// <summary>
     /// Executes an operation within a resilience pipeline, handling retry logging.
     /// </summary>
     internal static async Task<TResult> ExecuteWithRetryLogging<TResult>(

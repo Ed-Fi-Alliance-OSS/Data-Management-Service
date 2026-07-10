@@ -144,7 +144,7 @@ Notes:
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, and link flag); the document body is not hashed for etag construction.
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization is addressed separately in [auth.md](auth.md).
 
@@ -484,8 +484,9 @@ The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by
 with `link` subtrees already present when link injection is compiled into the read plan.
 Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
 strip pass runs on the projected document immediately before serialization. The served `_etag` is
-then specific to that representation context: `profileCode` and `linkFlag` participate in the
-request's `variantKey` (see [link-injection.md](link-injection.md#cache-and-etag)).
+then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
+participate in the request's `variantKey` (see
+[link-injection.md](link-injection.md#cache-and-etag)).
 
 Update tracking note: `dms.DocumentCache` stores the `ContentVersion` associated with the cached
 document, not one reusable `_etag`. Cache reads validate freshness against the current

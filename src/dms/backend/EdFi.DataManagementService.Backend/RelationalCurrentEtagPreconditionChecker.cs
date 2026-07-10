@@ -79,7 +79,8 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         ArgumentNullException.ThrowIfNull(precondition);
 
         // DELETE serves no representation, and write preconditions compare only ContentVersion and
-        // schemaEpoch. Evaluate that projection directly instead of inventing format/profile/link inputs.
+        // schemaEpoch. Evaluate that projection directly instead of inventing
+        // format/profile/link/content-coding inputs.
         var isSatisfied = EtagPreconditionEvaluator.IsSatisfiedByCurrentState(
             precondition,
             lockedTargetContext.ObservedContentVersion,
