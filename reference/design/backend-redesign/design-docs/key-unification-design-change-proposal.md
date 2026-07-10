@@ -2,7 +2,9 @@
 
 ## Status
 
-Draft (proposal).
+Superseded proposal. [SQL Server foreign-key pruning](sql-server-pruning.md) replaces its SQL Server
+`MssqlIdentityPropagationTrigger` direction. This document remains historical analysis of the separate cross-scope
+key-unification problem; it is not part of DMS-1129.
 
 ## Background
 

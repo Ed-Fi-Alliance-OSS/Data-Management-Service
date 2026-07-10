@@ -169,13 +169,14 @@ merely because it exists.
 
 ### Traverse per mutable origin
 
-Process mutable origins, receivers, and incoming edges in stable physical order. For each origin, walk the retained
-candidate graph while retaining the predecessor edge for each first arrival and a second-arrival trace when needed. Two
-arrivals are enough to establish that a receiver has a convergence, but they are not enough to select its cuts: at the
-earliest receiver with distinct incoming physical edges, collect every distinct incoming candidate edge that is
-reachable from that origin. Those, and only those, are the choices. If two paths arrive through the same incoming edge,
-their convergence is upstream and that receiver supplies no pruning choice. Incoming edges not on a duplicate path from
-that origin remain cascades.
+Process mutable origins, receivers, and incoming edges in stable physical order. The walk is reachability, not path
+enumeration: for an origin and a fixed set of retained actions, visit each reachable candidate vertex and edge at most
+once, retaining the predecessor edge for each first arrival and a second-arrival trace only when needed. Two arrivals
+are enough to establish that a receiver has a convergence, but they are not enough to select its cuts: at the earliest
+receiver with distinct incoming physical edges, collect every distinct incoming candidate edge that is reachable from
+that origin. Those, and only those, are the choices. If two paths arrive through the same incoming edge, their
+convergence is upstream and that receiver supplies no pruning choice. Incoming edges not on a duplicate path from that
+origin remain cascades.
 
 This is intentionally not global raw-in-degree pruning. Independent parents remain legal, and DMS does not reject an
 unrelated cascade component just because SQL Server might have a topology concern outside DMS-1129's candidate domain.
@@ -205,8 +206,11 @@ a required binding on the same physical receiver table and update the cut's same
 other shapes are rejected.
 
 1. **Same canonical local values.** Each local canonical identity column that the cut would change is updated by the
-   retained native cascade through the same canonical storage column pairing. Equal current values or a merely similar
-   logical path are not proof.
+   retained native cascade through the same canonical storage column pairing. The retained path from the mutable origin
+   to that survivor must retain the corresponding canonical identity-column pairings at each cascade edge; sharing a
+   receiver column alone is not coverage. Equal current values or a merely similar logical path are not proof. This
+   check follows the selected retained path's existing ordered column pairs; it does not derive propagation vectors or
+   general value-flow proofs.
 2. **Complete correlation.** The cut's complete FK remains valid. An ordinary rename need not rewrite an unchanged
    `DocumentId`; if a reference-backed retarget would require the cut's local `DocumentId` to move, the retained native
    cascade must update that same local anchor. Otherwise reject the survivor.

@@ -2,7 +2,8 @@
 
 ## Status
 
-Draft.
+Superseded as a solution direction by [SQL Server foreign-key pruning](sql-server-pruning.md). Retained as historical
+problem analysis for the cross-scope key-unification gap; its SQL Server trigger description is not current design.
 
 ## Purpose
 
