@@ -19,6 +19,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
+using Polly.Retry;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -28,13 +29,18 @@ public class UpsertHandlerTests
 {
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IDocumentStoreRepository documentStoreRepository
+    ) => Handler(documentStoreRepository, ResiliencePipeline.Empty);
+
+    internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
+        IDocumentStoreRepository documentStoreRepository,
+        ResiliencePipeline resiliencePipeline
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        var handler = new UpsertHandler(NullLogger.Instance, ResiliencePipeline.Empty);
+        var handler = new UpsertHandler(NullLogger.Instance, resiliencePipeline);
 
         return (handler, serviceProvider);
     }
@@ -712,6 +718,68 @@ public class UpsertHandlerTests
             requestInfo.FrontendResponse.Body.Should().NotBeNull();
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Succeeds_After_A_Write_Conflict : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public List<DocumentUuid> CandidateDocumentUuids { get; } = [];
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                CandidateDocumentUuids.Add(upsertRequest.DocumentUuid);
+
+                return Task.FromResult<UpsertResult>(
+                    CandidateDocumentUuids.Count == 1
+                        ? new UpsertFailureWriteConflict()
+                        : new InsertSuccess(upsertRequest.DocumentUuid, "\"test-etag\"")
+                );
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private Repository _repository = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new Repository();
+            var resiliencePipeline = new ResiliencePipelineBuilder()
+                .AddRetry(
+                    new RetryStrategyOptions
+                    {
+                        MaxRetryAttempts = 1,
+                        Delay = TimeSpan.Zero,
+                        ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
+                    }
+                )
+                .Build();
+            var (upsertHandler, serviceProvider) = Handler(_repository, resiliencePipeline);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await upsertHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_retries_the_upsert()
+        {
+            _repository.CandidateDocumentUuids.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_generates_a_fresh_candidate_document_uuid_for_the_retry()
+        {
+            _repository.CandidateDocumentUuids.Should().OnlyHaveUniqueItems();
+        }
+
+        [Test]
+        public void It_returns_insert_success()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(201);
         }
     }
 

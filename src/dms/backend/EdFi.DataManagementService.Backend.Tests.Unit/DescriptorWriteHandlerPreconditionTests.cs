@@ -981,14 +981,14 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
-    public async Task It_returns_a_retryable_write_conflict_for_an_unclassified_unique_failure_under_IfNoneMatch_wildcard()
+    public async Task It_returns_a_retryable_write_conflict_for_a_document_uuid_unique_failure_under_IfNoneMatch_wildcard()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([]);
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
             command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-                ? new StubDbException("unclassified descriptor unique violation")
+                ? new StubDbException("unique constraint UX_Document_DocumentUuid")
                 : null;
         var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
         A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);

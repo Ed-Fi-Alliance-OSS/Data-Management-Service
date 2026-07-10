@@ -269,9 +269,10 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
-            // The classifier does not identify which unique constraint failed, so the violation does not
-            // prove that the guarded target now exists. Re-run the whole POST to resolve the actual target
-            // and, when one exists, authorize it before evaluating the precondition.
+            // A unique violation can come from the generated DocumentUuid rather than the descriptor
+            // identity, so it does not prove that the guarded target now exists. Returning a retryable
+            // conflict replays the whole POST with a fresh candidate UUID; a true target race is then
+            // re-resolved and evaluated against the precondition.
             return new UpsertResult.UpsertFailureWriteConflict();
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
