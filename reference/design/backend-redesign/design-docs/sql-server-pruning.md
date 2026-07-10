@@ -208,9 +208,10 @@ structural, fail-closed test, not a general route, row-correlation, or value-flo
 a required binding on the same physical receiver table and update the cut's same canonical local identity columns. All
 other shapes are rejected.
 
-The path check reuses the predecessor trace already needed for per-origin convergence detection. It compares existing
-FK column pairs edge by edge for the selected survivor path; it does not compose, store, or search transitive
-propagation vectors or alternate routes.
+The path check reuses the predecessor trace already needed for per-origin convergence detection. For one tentative cut,
+it follows only that cut's already-selected survivor chain and compares adjacent existing FK column pairs edge by edge.
+It discards the trace after that evaluation; it does not compose, store, or reuse transitive propagation vectors, and it
+does not search alternate routes.
 
 1. **Same canonical local values.** Each local canonical identity column that the cut would change is updated by the
    retained native cascade through the same canonical storage column pairing. The retained path from the mutable origin
@@ -219,8 +220,8 @@ propagation vectors or alternate routes.
    check follows the selected retained path's existing ordered column pairs; it does not derive propagation vectors or
    general value-flow proofs.
 2. **Complete correlation.** The cut's complete FK remains valid. An ordinary rename need not rewrite an unchanged
-   `DocumentId`; if a reference-backed retarget would require the cut's local `DocumentId` to move, the retained native
-   cascade must update that same local anchor. Otherwise reject the survivor.
+   `DocumentId`. If preserving a cut would require its local reference `DocumentId` to change, reject the survivor:
+   native identity cascades do not retarget document references or carry a `DocumentId` move.
 3. **Required bindings only.** The cut reference and retained candidate must have non-nullable canonical local reference
    `DocumentId` columns. DMS does not reason about optional references, synthetic presence gates, or arbitrary Boolean
    presence implication. A nullable anchor or any case requiring further proof is unsupported and rejected.
