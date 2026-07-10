@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
@@ -119,6 +120,21 @@ public class WritePreconditionFactoryTests
         result
             .Should()
             .Be(new WritePrecondition.IfNoneMatch(["4-does-not-match", "5-a1b2c3d4.j._.l", "6-other"]));
+    }
+
+    [Test]
+    public void It_does_not_fail_if_none_match_when_the_current_tag_is_only_embedded_inside_a_quoted_tag()
+    {
+        const string currentEtag = "5-a1b2c3d4.j._.l";
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["If-None-Match"] = $"\"prefix,{currentEtag},suffix\"",
+        };
+
+        var result = WritePreconditionFactory.Create(headers);
+
+        result.Should().Be(new WritePrecondition.IfNoneMatch($"prefix,{currentEtag},suffix"));
+        EtagPreconditionEvaluator.IsSatisfied(result, targetExists: true, currentEtag).Should().BeTrue();
     }
 
     [Test]

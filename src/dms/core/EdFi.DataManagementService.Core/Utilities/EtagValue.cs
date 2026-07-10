@@ -124,9 +124,8 @@ public static class EtagValue
     /// wildcard semantics must detect a raw, sole <c>*</c> before parsing.
     /// </summary>
     /// <remarks>
-    /// This parser intentionally uses a simple comma split because DMS opaque tags are generated from
-    /// digits plus <c>[a-z0-9_.]</c> variant components and therefore contain no commas or quotes; <c>W/</c>
-    /// weak prefixes add neither.
+    /// DMS-generated opaque tags contain no commas, but client-supplied entity-tags may. A comma is a
+    /// list delimiter only outside a quoted opaque tag.
     /// </remarks>
     public static IReadOnlyList<string> ParseConditionalTagList(string? headerValue)
     {
@@ -136,17 +135,35 @@ public static class EtagValue
         }
 
         List<string> values = [];
-        foreach (var part in headerValue.Split(','))
-        {
-            var trimmed = part.Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
+        int partStart = 0;
+        bool isInsideQuotedTag = false;
 
-            values.Add(ParseNonEmptyTag(trimmed));
+        for (int index = 0; index < headerValue.Length; index++)
+        {
+            switch (headerValue[index])
+            {
+                case '"':
+                    isInsideQuotedTag = !isInsideQuotedTag;
+                    break;
+                case ',' when !isInsideQuotedTag:
+                    AddNonEmptyTag(headerValue.AsSpan(partStart, index - partStart), values);
+                    partStart = index + 1;
+                    break;
+            }
         }
 
+        AddNonEmptyTag(headerValue.AsSpan(partStart), values);
         return values;
+    }
+
+    private static void AddNonEmptyTag(ReadOnlySpan<char> part, List<string> values)
+    {
+        var trimmed = part.Trim();
+        if (trimmed.IsEmpty)
+        {
+            return;
+        }
+
+        values.Add(ParseNonEmptyTag(trimmed.ToString()));
     }
 }

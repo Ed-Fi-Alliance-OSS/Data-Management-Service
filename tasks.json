@@ -1,0 +1,141 @@
+[
+  {
+    "category": "correctness",
+    "description": "Medium: Preserve If-None-Match: * POST semantics when a concurrent create wins after the in-session absence check.",
+    "acceptance-criteria": [
+      "A relational POST that selected CreateNew under If-None-Match: * maps a root-natural-key uniqueness race to 412 Precondition Failed instead of an identity conflict or generic write conflict.",
+      "A descriptor POST that selected CreateNew under If-None-Match: * maps the equivalent descriptor uniqueness race to 412 Precondition Failed.",
+      "Constraint failures for requests without If-None-Match: * and constraint failures unrelated to the guarded target retain their existing mappings.",
+      "Deterministic tests cover the losing concurrent-create outcome for ordinary resources and descriptors without weakening the database uniqueness guard."
+    ],
+    "steps-to-verify": [
+      "Review the root-natural-key branch in RelationalWriteDatabaseFailureResultMapper and the descriptor unique-constraint catch to confirm that only a CreateNew POST guarded by If-None-Match: * receives the precondition-failure mapping.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter 'FullyQualifiedName~IfNoneMatch'.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter 'FullyQualifiedName~WriteCreateGuardIfNoneMatch' with both PostgreSQL and SQL Server integration databases configured."
+    ],
+    "completed": true
+  },
+  {
+    "category": "correctness",
+    "description": "Medium: Enforce the mandatory GET-by-id ETag invariant instead of silently returning 200 without an ETag header.",
+    "acceptance-criteria": [
+      "GetByIdHandler requires every successful repository result to contain a non-empty string _etag before constructing a 200 or 304 response.",
+      "A successful repository result with a missing, empty, or non-string _etag fails with an actionable invariant error and cannot produce a 200 response without an ETag header.",
+      "Normal 200 and matching If-None-Match 304 responses continue to use the same served tag in the response header.",
+      "Unit coverage includes the missing-etag invariant as well as the existing 200 and 304 success cases.",
+      "The cross-engine profiled GET scenario no longer claims GET omits ETag; it asserts that the real HTTP 200 response header is present, equals the body _etag, and can be used for the subsequent If-Match write.",
+      "An E2E GET-by-id scenario explicitly asserts the ETag response header after the GET, rather than relying only on the POST header or the body _etag."
+    ],
+    "steps-to-verify": [
+      "Review GetByIdHandler.CreateSuccessResponse and confirm that it no longer uses an empty-string fallback for the etag response header.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter 'FullyQualifiedName~GetByIdHandler'.",
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter 'FullyQualifiedName~ResponseHeader'.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter 'FullyQualifiedName~ProfileRootOnlyMerge_ProfiledHttp' with both PostgreSQL and SQL Server integration databases configured.",
+      "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-1'."
+    ],
+    "completed": true
+  },
+  {
+    "category": "tests",
+    "description": "Medium: Add real PostgreSQL, SQL Server, and E2E coverage for descriptor If-None-Match behavior.",
+    "acceptance-criteria": [
+      "PostgreSQL descriptor integration tests cover guarded POST insert, guarded POST-to-existing 412, existing PUT 412, and missing PUT 404 behavior.",
+      "SQL Server descriptor integration tests cover the same guarded POST and PUT outcomes.",
+      "At least one cross-engine HTTP-pipeline descriptor scenario proves that a GET emits ETag and a matching If-None-Match returns 304 with no body.",
+      "A Docker-stack E2E descriptor scenario covers a matching conditional GET and wildcard create-guard behavior through the public descriptor endpoints.",
+      "The descriptor tests exercise the real DescriptorWriteHandler and descriptor read path rather than fake command executors."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter 'FullyQualifiedName~DescriptorWriteHandler'.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter 'FullyQualifiedName~DescriptorWriteHandler' with ConnectionStrings__MssqlAdmin configured.",
+      "Run the descriptor conditional-GET scenario through src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj for both database fixtures.",
+      "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '<descriptor If-None-Match scenario filter>'."
+    ],
+    "completed": true
+  },
+  {
+    "category": "refactoring",
+    "description": "Low: Remove stale If-Match-only and single-tag leftovers and make generalized ETag precondition dispatch explicit.",
+    "acceptance-criteria": [
+      "The unused EtagValue.TryParseConditionalTag method and its single-tag-only tests are removed, and comments point directly to ParseConditionalTagList.",
+      "RelationalCurrentEtagPreconditionCheckResult no longer carries a CurrentEtag value that production callers never consume.",
+      "ExecutionStateResolutionOptions uses an ETag-precondition name instead of DeferredIfMatch for the path shared by If-Match and If-None-Match.",
+      "HasEtagPrecondition and EtagPreconditionEvaluator explicitly handle None, IfMatch, and IfNoneMatch, and reject an unknown future WritePrecondition arm instead of silently treating it as absent or satisfied.",
+      "Deferred precondition evaluation uses the same explicit precondition predicate rather than admitting every non-None arm.",
+      "The cleanup does not change conditional GET comparison, write-precondition polarity, or response status behavior."
+    ],
+    "steps-to-verify": [
+      "Run rg 'TryParseConditionalTag|DeferredIfMatch|\\.CurrentEtag' src/dms and confirm no stale production references remain.",
+      "Review the HasEtagPrecondition and EtagPreconditionEvaluator switches and confirm their fallback rejects unknown precondition types.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter 'FullyQualifiedName~EtagValue'.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter 'FullyQualifiedName~EtagPrecondition'."
+    ],
+    "completed": false
+  },
+  {
+    "category": "correctness",
+    "description": "Medium: Return If-None-Match-specific 412 Problem Details instead of describing the failure as an If-Match optimistic-lock conflict.",
+    "acceptance-criteria": [
+      "A matching specific If-None-Match tag and If-None-Match: * against an existing POST or PUT target return status 412 with detail, title, type, and errors that identify the If-None-Match precondition and do not claim the item was modified by another user.",
+      "The corrected response shape is used by both ordinary-resource and descriptor write paths.",
+      "Existing If-Match mismatch and missing-target Problem Details remain unchanged.",
+      "Core handler or HTTP-pipeline tests assert the complete If-None-Match 412 response body rather than only the status code."
+    ],
+    "steps-to-verify": [
+      "Review ETagPreconditionFailureReason, FailureResponse, and the regular and descriptor precondition-failure mappings to confirm that If-Match and If-None-Match select distinct response semantics.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter 'FullyQualifiedName~UpsertHandler|FullyQualifiedName~UpdateByIdHandler'.",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter 'FullyQualifiedName~WriteCreateGuardIfNoneMatch' with both PostgreSQL and SQL Server integration databases configured."
+    ],
+    "completed": true
+  },
+  {
+    "category": "refactoring",
+    "description": "Low: Consolidate duplicated conditional-GET unit fixtures and E2E If-None-Match request helpers.",
+    "acceptance-criteria": [
+      "GetByIdHandler conditional-GET cases reuse one successful repository fixture and parameterized inputs instead of repeating the same repository, response body, setup, and assertions for every tag form.",
+      "The consolidated cases retain coverage for quoted, unquoted, weak, list hit, list miss, variant-only mismatch, bare wildcard, and quoted wildcard inputs.",
+      "The E2E If-None-Match GET step reuses the existing generic GET-with-header request path, including ETag placeholder resolution, instead of maintaining a second copy of URL and header construction.",
+      "The refactor preserves the repository testing style required by the project and does not reduce behavior coverage."
+    ],
+    "steps-to-verify": [
+      "Review GetByIdHandlerTests.cs and confirm that the repeated nested Repository implementations and identical Setup/assert blocks have been removed.",
+      "Review StepDefinitions.cs and confirm there is one shared GET-with-header request implementation and one shared authenticated-header builder.",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter 'FullyQualifiedName~GetByIdHandler'.",
+      "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'FullyQualifiedName~ETag'."
+    ],
+    "completed": false
+  },
+  {
+    "category": "documentation",
+    "description": "Low: Correct the RFC 9110 section references introduced in the ETag ADR and If-None-Match comments.",
+    "acceptance-criteria": [
+      "Weak-versus-strong validator text cites RFC 9110 section 8.8.1 and entity-tag comparison text cites section 8.8.3.2 where applicable.",
+      "Entity-tag grammar and etagc references cite RFC 9110 section 8.8.3 rather than sections 2.1 or 2.3.",
+      "If-Match behavior and wildcard references cite RFC 9110 section 13.1.1 rather than section 3.1, while If-None-Match and precondition precedence continue to cite sections 13.1.2 and 13.2.2.",
+      "Production comments, test comments, and the ADR use consistent current-RFC citations without changing behavior."
+    ],
+    "steps-to-verify": [
+      "Run rg 'RFC 9110 §(2\\.1|2\\.3|3\\.1)' reference/adr-etag-from-content-version.md src/dms and inspect any remaining matches for correctness.",
+      "Compare the resulting citations with https://www.rfc-editor.org/rfc/rfc9110.html#section-8.8 and https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.",
+      "Run git diff --check."
+    ],
+    "completed": false
+  },
+  {
+    "category": "correctness",
+    "description": "Medium: Parse If-None-Match entity-tag lists without treating commas inside quoted opaque tags as list delimiters.",
+    "acceptance-criteria": [
+      "ParseConditionalTagList preserves a comma inside a quoted entity-tag as part of that tag and splits only between list members.",
+      "Quoted and unquoted DMS tags, weak W/ tags, optional whitespace, empty input, and sole bare-wildcard handling retain their current behavior.",
+      "A legal non-matching quoted entity-tag whose opaque value contains the current DMS tag between commas cannot cause a false 304 on GET or a false 412 on POST or PUT.",
+      "Unit tests cover quoted comma-containing tags alongside ordinary multi-tag lists and weak tags."
+    ],
+    "steps-to-verify": [
+      "Review EtagValue.ParseConditionalTagList and confirm that it recognizes entity-tag quote boundaries instead of using string.Split(',').",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter 'FullyQualifiedName~EtagValue|FullyQualifiedName~GetByIdHandler'.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter 'FullyQualifiedName~EtagPrecondition'.",
+      "Run git diff --check."
+    ],
+    "completed": true
+  }
+]

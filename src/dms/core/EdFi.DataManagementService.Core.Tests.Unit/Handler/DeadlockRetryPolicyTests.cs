@@ -494,7 +494,7 @@ public class DeadlockRetryPolicyTests
                 return Task.FromResult<GetResult>(
                     new GetResult.GetSuccess(
                         No.DocumentUuid,
-                        new JsonObject(),
+                        new JsonObject { ["_etag"] = "5-a1b2c3d4.j._.l" },
                         DateTime.Now,
                         getRequest.TraceId.Value
                     )

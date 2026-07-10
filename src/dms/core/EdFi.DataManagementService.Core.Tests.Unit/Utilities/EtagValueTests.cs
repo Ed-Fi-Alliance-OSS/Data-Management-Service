@@ -133,6 +133,15 @@ public class Given_EtagValue
     }
 
     [Test]
+    public void It_preserves_commas_inside_quoted_conditional_tags()
+    {
+        EtagValue
+            .ParseConditionalTagList("\"first,5-a1b2c3d4.j._.l,last\", W/\"weak,tag\", unquoted-tag")
+            .Should()
+            .Equal("first,5-a1b2c3d4.j._.l,last", "weak,tag", "unquoted-tag");
+    }
+
+    [Test]
     public void It_accepts_quoted_and_unquoted_conditional_tag_list_values()
     {
         EtagValue
