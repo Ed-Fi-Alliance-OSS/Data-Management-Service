@@ -51,6 +51,8 @@ Everything else must be introduced from a concrete failing fixture or measured p
 10. SQL Server fails before DDL when exhaustive bounded analysis proves no safe diamond assignment; work-limit
     exhaustion is a distinct result.
 11. Ordinary provider-independent model validation applies to both dialects.
+12. Abstractness is not mutability. An abstract target is mutable iff at least one effective-schema concrete member is
+    transitively mutable.
 
 ## Decision Record
 
@@ -65,7 +67,7 @@ Each target exposes one ordered vector containing:
 Every incoming reference carries that vector and targets one widened propagation-key unique constraint. Exact same-row,
 same-presence storage may be reused; otherwise a structural lineage gets dedicated storage.
 
-The checked-in measurements currently show:
+The checked-in capacity-screen measurements currently show:
 
 | Measurement | Data Standard 5.2 | Data Standard 5.2 + TPDM |
 |---|---:|---:|
@@ -77,8 +79,10 @@ The checked-in measurements currently show:
 | Maximum per-table added columns/bytes | 11 / 88 | 20 / 160 |
 
 The computed `anchor_caused_limit_crossings` inventory is empty. Maximum-value provider probes install the full FK,
-execute `ON UPDATE CASCADE`, and retain matching child rows. Full generated-schema DDL, total SQL Server row width,
-PostgreSQL physical index overhead, and exact mapping-pack size remain implementation qualification.
+execute `ON UPDATE CASCADE`, and retain matching child rows for the nine-column widest-declared-byte case. The
+27-column widest-count case is not probed. Full generated-schema DDL, total SQL Server row width, PostgreSQL physical
+index overhead, actual target-unique/FK-supporting index sizes, reference-resolution round trips, representative row
+counts, write/cascade timing, and exact mapping-pack size remain implementation qualification.
 
 Site-minimal demand closure, `AnchorSetId` variants, omission proofs, and multiple propagation keys per target are removed.
 If implementation later finds a provider failure caused by complete anchors, preserve that fixture and add only the
@@ -92,41 +96,49 @@ typed `(target DocumentId, ordered lineage-anchor DocumentIds)` result:
 1. bulk-resolve referential ids;
 2. group successes by compiled target resource;
 3. batch-read that target's anchors by `DocumentId` from its concrete root or abstract identity table in the same
-   transaction; and
+   transaction, using a batched/multi-result command where supported; and
 4. attach the tuple to resolved occurrences for O(1) row materialization.
 
-Targets without anchors need no second read. This is ordinary complete-vector materialization, not predictive or deferred
-resolution machinery.
+Targets without anchors need no anchor read. DMS-1277 must measure the actual command/round-trip count; one command per
+distinct target group is not assumed to be free. This is ordinary complete-vector materialization, not predictive or
+deferred resolution machinery.
 
 ### 2. Provider boundary — accepted
 
-PostgreSQL assigns full-vector `CASCADE` to abstract or transitively mutable targets and `NO ACTION` to genuinely immutable
-concrete targets. It retains multiple paths. Identity cycles have already failed provider-independent validation.
+Concrete and abstract identity mutability are computed together to a fixed point. An abstract identity is mutable only
+when at least one of its effective-schema concrete members is transitively mutable. PostgreSQL assigns full-vector
+`CASCADE` to targets mutable under that closure and `NO ACTION` to genuinely immutable concrete or abstract targets. It
+retains multiple paths. Identity cycles have already failed provider-independent validation.
 
 SQL Server constructs storage-mapped physical candidates, deduplicates identical candidates, and selects final update
-actions globally. The input graph is cycle-free by validation; the retained cascade multigraph must contain at most one
-path between every ordered table pair. A covered `NO ACTION` edge must have a retained carrier route that passes the
-finite structural relation in the authoritative design. Whole-vector equality makes mutation powersets and symbolic
-value proofs unnecessary classifier inputs.
+actions globally. Every physical `ON UPDATE CASCADE` FK participates as a decision or fixed edge. The input graph is
+cycle-free by validation; the retained cascade multigraph must contain at most one path between every ordered table pair.
+A covered `NO ACTION` edge must have a retained carrier route that passes the finite structural relation in the
+authoritative design. Whole-vector equality makes mutation powersets and symbolic value proofs unnecessary classifier
+inputs.
 
 The finalized relational model owns `OnUpdate`; DDL only renders it.
 
 ### 3. Simple global SQL Server search — accepted finite design, measurement open
 
-Use deterministic iterative-deepening DFS/backtracking:
+Try the all-native graph first. The corrected mutability reconstruction reports 22 candidates for DS 5.2 and 23 for DS
+5.2 plus TPDM, with no cycles or duplicate-reachability pairs; DMS-1258 must reproduce those counts and return through
+this fast path.
 
-1. minimize the number of covered `NO ACTION` edges; then
-2. choose the lexicographically smallest structural mode vector.
+Only when the fast path finds duplicate reachability, derive the conflict core without enumerating routes and run
+deterministic DFS/backtracking over its decision edges. Use stable structural edge order, try native before covered, and
+stop at the first valid assignment. Minimum-prune optimization is deferred unless DMS-1277 measures a material supported
+write-performance benefit.
 
-Before mode search, enumerate structurally eligible carrier routes through the all-native acyclic graph. A route is
-eligible only when it has the same physical origin and receiver row as the covered edge, composes to the identical
-complete-vector column mapping, satisfies the finite presence implication, and consists entirely of native cascades in
-the selected mode vector.
+Validate each covered edge on demand in the current retained graph. The carrier DFS must prove the same physical origin
+and receiver row, identical complete-vector column mapping, finite presence implication, and native same-statement
+propagation. Do not store all carrier routes.
 
-The classifier has one deterministic budget of 1,000,000 work units per derived SQL Server schema. One unit is charged
-whenever conflict-core derivation examines an edge, carrier-route DFS extends a route by one edge, mode DFS assigns one
-decision edge, graph validation examines one retained edge, or carrier validation examines one precomputed route. The
-counter and traversal use structural order and never wall-clock time. Exhausting the budget yields
+The classifier has one deterministic budget of 1,000,000 work units per derived SQL Server schema. Charge every
+vertex/edge examination, decision assignment, ordered column-mapping composition/comparison, receiver-correlation
+comparison, presence-atom examination, and reusable-buffer slot initialization/reset. Use reusable linear-size buffers
+rather than route lists, per-branch mode-vector copies, or other search-sized allocations. The counter and traversal use
+structural order and never wall-clock time. Exhausting the budget yields
 `CascadeClassificationComplexityExceeded`.
 
 Do not add memoization, canonical solver state, a general cost model, or serialized proof trees unless measured stock,
@@ -137,18 +149,21 @@ the first failed structural relation. No universal hashes or proof certificates 
 
 ### 4. Identity cycles, reference resolution, and MetaEd boundary — accepted
 
-MetaEd does not admit recursive identity definitions in the supported input contract. DMS independently validates the
-semantic identity-reference graph before complete-vector recursion so malformed, hand-built, or pack-loaded input cannot
-bypass that boundary. It repeats the check after storage mapping so table collapse cannot introduce a physical cycle. A
-self-loop or directed identity cycle fails with `IdentityCascadeCycleNotSupported`.
+MetaEd does not currently enforce the required recursive-identity prohibition. METAED-1667 must implement deterministic
+identity-cycle validation before the ODS relational cascade enhancer so a reachable cycle cannot loop in that enhancer.
+DMS independently validates the semantic identity-reference graph before complete-vector recursion so malformed,
+hand-built, or pack-loaded input cannot bypass that boundary. It repeats the check after storage mapping so table collapse
+cannot introduce a physical cycle. A self-loop or directed identity cycle fails with
+`IdentityCascadeCycleNotSupported`.
 
 Because cycles are not accepted, ordinary reference resolution is sufficient. POST, PUT, newly present references, and
 true retargets all require normal pre-write resolution. DMS does not reuse a persisted target for a submitted identity
 that does not resolve, predict a future identity, or compile deferred existing-reference metadata.
 
-MetaEd continues to reject recursive authored identity definitions. It may also emit a non-blocking semantic diamond
-warning as early author feedback. It does not run DMS's physical candidate search, carrier classification, or work-limit
-logic. DMS is the sole blocking authority for SQL Server realizability after canonical storage mapping.
+MetaEd must reject recursive authored identity definitions and may also emit a non-blocking semantic diamond warning as
+early author feedback. It does not run DMS's physical candidate search, carrier classification, or work-limit logic. DMS
+retains independent cycle validation and is the sole blocking authority for SQL Server realizability after canonical
+storage mapping.
 
 ### 5. Minimal artifact contract — accepted constraint
 
@@ -165,19 +180,20 @@ not mapping/runtime contracts.
 
 | Gate | Status | Required consequence |
 |---|---|---|
-| Complete-vector measured screen | Passed | Keep one complete vector; retain full-schema physical qualification. |
-| Simple global search | Design-ready; implementation measurements remain DMS-1258/DMS-1277 work | Use the finite structural carrier relation and 1,000,000-unit deterministic bound; add optimization only for an observed bound failure. |
+| Complete-vector measured screen | Passed as a capacity screen | Keep one complete vector; retain full-schema physical, widest-count, round-trip, and performance qualification. |
+| Stock all-native topology | Static reconstruction reports 22/23 mutable candidates and no conflicts | Reproduce from implemented v2 candidates and return before conflict-core search. |
+| Simple global search | Design-ready; implementation measurements remain DMS-1258/DMS-1277 work | Use on-demand structural carriers and the 1,000,000-unit deterministic bound; add minimum-prune optimization only for measured write-performance benefit. |
 | Minimal artifact contract | Accepted design constraint; implementation pending | Add fields only for concrete runtime/AOT consumers. |
 
 ## Delivery Slices
 
 | Slice | Ownership | Exit condition |
 |---|---|---|
-| Database evidence and static feasibility | Complete | Computed complete-vector screen and maximum-value probes pass. |
+| Database evidence and static feasibility | Complete | Computed capacity screen and focused widest-byte provider probes pass. |
 | Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented; the centralized mapping version is bumped to `v2`. |
-| Provider actions and SQL Server classifier | DMS-1258 | Generated DDL installs and structural-carrier diamond fixtures produce deterministic outcomes within the fixed work budget. |
+| Provider actions and SQL Server classifier | DMS-1258 | Stock schemas take the all-native fast path; generated DDL installs and structural-carrier diamond fixtures produce deterministic first-feasible outcomes within the fixed work budget. |
 | Manifest, AOT, and mapping-pack integration | DMS-1276 | Runtime and `v2` pack loading produce equivalent final models and behavior. |
-| Full-schema qualification | DMS-1277 | Freshly provisioned `v2` stock, TPDM, extension, adversarial, concurrency, and performance evidence pass. |
+| Full-schema qualification | DMS-1277 | Freshly provisioned `v2` stock, TPDM, extension, and adversarial DDL pass; actual row/index sizes, widest-count vectors, representative row counts, reference-resolution round trips, concurrency, and write/cascade timing pass. |
 
 All slices are required before the `v2` relational contract is complete.
 

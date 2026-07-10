@@ -6,8 +6,9 @@ This is reproducible static evidence for Design Reset Gate 1. It measures the co
 hypothesis against the checked-in authoritative Data Standard 5.2 and Data Standard 5.2 plus TPDM inputs.
 
 The static result plus focused maximum-value provider probes pass Design Reset Gate 1's measured key-width/column-count
-screen for choosing one complete vector per target. Full generated Data Standard/TPDM DDL, total SQL Server row width,
-and PostgreSQL tuple/index overhead remain implementation qualification items; they are not evidence for retaining
+screen for choosing one complete vector per target. Full generated Data Standard/TPDM DDL, the 27-column widest-count
+case, total SQL Server row width, PostgreSQL tuple/index overhead, actual supporting-index size, reference-resolution
+round trips, and write/cascade timing remain implementation qualification items; they are not evidence for retaining
 site-minimal anchor closure in the design.
 
 ## Reproduce
@@ -113,10 +114,11 @@ needed.
 The largest PostgreSQL public-plus-anchor payload estimate is 674 ASCII bytes or 2,560 bytes with every character encoded
 as four-byte UTF-8. That is below the prototype's 2,704-byte default-page screening threshold before tuple overhead.
 
-This static screen does not calculate total SQL Server row width, actual physical index size, or PostgreSQL B-tree tuple
-overhead/compression. Those remain full generated-model qualification work.
+This static screen does not calculate total SQL Server row width, actual target-unique or FK-supporting index size,
+PostgreSQL B-tree tuple overhead/compression, or physical storage at representative row counts. Those remain full
+generated-model qualification work.
 
-Focused probes exercised the worst `SurveySectionResponse` shape rather than a narrower surrogate:
+Focused probes exercised the widest-declared-byte `SurveySectionResponse` shape rather than a narrower surrogate:
 
 - SQL Server 2022 (`16.0.4205.1`) installed the nine-column 1,300-byte target UNIQUE and full cascading child FK, accepted
   a target and child row with every `nvarchar` component at its declared maximum, and cascaded a maximum-width public
@@ -125,11 +127,13 @@ Focused probes exercised the worst `SurveySectionResponse` shape rather than a n
   payload using distinct, incompressible four-byte UTF-8 characters at every declared maximum, and cascaded a
   maximum-width public value plus a lineage anchor.
 
-The provider probes are checked in as
+The probe's nine-column vector does not exercise the 27-column widest-count TPDM
+`EvaluationObjectiveRating` vector. The provider probes are checked in as
 [`MssqlCompletePropagationVectorFeasibilityTests.cs`](../../../../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCompletePropagationVectorFeasibilityTests.cs)
 and
 [`PostgresqlCompletePropagationVectorFeasibilityTests.cs`](../../../../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlCompletePropagationVectorFeasibilityTests.cs).
-These results resolve the measured width risk; they do not replace the later full-schema generated-DDL qualification.
+These results resolve only the measured key-width/column-count architecture screen; they do not replace the later
+widest-count or full-schema generated-DDL qualification.
 
 The computed `anchor_caused_limit_crossings` inventory is empty: adding complete anchors causes no measured vector,
 declared-key payload, or table-column threshold crossing. The tool makes no claim about whether a removed site-minimal
@@ -156,10 +160,14 @@ Gate 1's corrected transitive measured screen is passed for the architecture cho
 
 1. Implement the complete-vector prototype in relational-model derivation and emit real provider DDL.
 2. Install the full DS 5.2 and DS 5.2 plus TPDM DDL on both providers.
-3. Retain maximum-value cases for all five wide SQL Server vectors and the widest PostgreSQL vectors in generated-model
-   provider coverage.
-4. Measure actual row/index sizes and derivation time from the implemented model rather than this static payload estimate.
-5. Measure mapping-pack size only after a real pack payload exists.
+3. Add maximum-value provider coverage for the 27-column widest-count vector, all five wide SQL Server vectors, and the
+   widest PostgreSQL vectors in the generated model.
+4. Measure actual row and target-unique/FK-supporting index sizes at representative row counts rather than this static
+   payload estimate.
+5. Measure reference-resolution database commands/round trips, including requests with several distinct anchor-bearing
+   target groups; prefer a single batched/multi-result command where supported.
+6. Measure derivation time and representative write/cascade timing for stock and TPDM schemas.
+7. Measure mapping-pack size only after a real pack payload exists.
 
 If a provider probe fails because of complete anchors, preserve the concrete failing fixture and introduce only the
 smallest measured demand-reduction mechanism needed for that case. Do not retain the current generalized site-minimal

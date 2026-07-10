@@ -604,15 +604,19 @@ Typical structure:
       (public identity storage first, complete transitive lineage anchors next, target `DocumentId` last)
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
-      - PostgreSQL assigns actions mechanically: abstract or transitively mutable targets use `ON UPDATE CASCADE`, and
-        genuinely immutable concrete targets use `ON UPDATE NO ACTION`. PostgreSQL is never pruned or classified for
-        multiple paths. Provider-independent validation rejects identity cycles.
+      - PostgreSQL assigns actions mechanically from the effective-schema mutability closure: concrete targets use their
+        transitive mutability, and an abstract target is mutable iff at least one concrete member is transitively mutable.
+        Mutable targets use `ON UPDATE CASCADE`; genuinely immutable concrete or abstract targets use
+        `ON UPDATE NO ACTION`. PostgreSQL is never pruned or classified for multiple paths. Provider-independent
+        validation rejects identity cycles.
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
-        - constructs and deduplicates storage-mapped physical candidates before action selection;
+        - constructs and deduplicates storage-mapped physical candidates before action selection, and includes every
+          other physical `ON UPDATE CASCADE` FK as a fixed legality-graph edge;
         - globally selects `ON UPDATE CASCADE` or covered `ON UPDATE NO ACTION` for mutable edges so the retained graph is
           error-1785 legal and every pruned edge has a structural carrier with the same physical origin, receiver row,
           complete-vector mapping, presence implication, and native same-statement propagation;
-        - treats diamonds and parallel conflicts as action choices that may require backtracking; and
+        - accepts a legal all-native graph immediately, otherwise searches only the conflict core with on-demand carrier
+          checks and native-first deterministic backtracking; and
         - fails before DDL only when bounded search proves no safe assignment (or separately reaches its deterministic
           work limit). There is no `DocumentId`-only or trigger fallback.
   - Add an all-or-none CHECK constraint per reference site:

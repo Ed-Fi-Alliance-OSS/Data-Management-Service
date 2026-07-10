@@ -238,11 +238,14 @@ The DDL generator must emit document-reference columns and constraints that enab
     - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, then
     - the target's complete transitive lineage-anchor columns, then
     - `DocumentId`.
-  - PostgreSQL assigns the fixed full-vector action mechanically: mutable/abstract targets cascade, immutable concrete
-    targets use `NO ACTION`. It is never pruned or classified for multiple paths. Provider-independent validation rejects
-    identity cycles.
+  - PostgreSQL assigns the fixed full-vector action mechanically from effective-schema mutability. An abstract target is
+    mutable iff at least one concrete member is transitively mutable. Mutable targets cascade; immutable concrete or
+    abstract targets use `NO ACTION`. PostgreSQL is never pruned or classified for multiple paths. Provider-independent
+    validation rejects identity cycles.
   - SQL Server consumes a globally selected action. Physical candidates are storage-mapped and deduplicated before
-    selection; every covered `NO ACTION` has a retained native route with the same physical origin, receiver row,
+    selection, and every other physical `ON UPDATE CASCADE` FK participates as a fixed legality-graph edge. A legal
+    all-native graph is accepted immediately; otherwise selection searches only the conflict core and checks exact
+    carriers on demand. Every covered `NO ACTION` has a retained native route with the same physical origin, receiver row,
     complete-vector mapping, and structurally implied presence. Provider-independent validation rejects identity cycles,
     so selection handles diamonds and overlapping multiple-path conflicts only. There is no reduced-FK or identity-value
     trigger fallback; see

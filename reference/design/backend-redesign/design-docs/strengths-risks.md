@@ -82,12 +82,15 @@ Mitigations / guidance:
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
 SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). DMS rejects identity
-cycles during provider-independent validation, then uses deterministic bounded global physical action selection for
-duplicate paths rather than disabling all cascades. Independent parents remain legal; diamonds and parallel conflicts are
-action choices. A mutable edge may use full-vector `NO ACTION` only when a retained native route has the same physical
-mutation origin, receiver row, complete-vector mapping, and structurally implied presence. The classifier uses a
-1,000,000-unit deterministic work budget. Proved infeasibility and work-limit exhaustion are distinct, and there is no
-reduced-FK or identity-value trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
+cycles during provider-independent validation, then tries the complete physical all-native graph, including fixed cascade
+edges. Only a conflicting graph enters deterministic bounded conflict-core search. Independent parents remain legal;
+diamonds and parallel conflicts are action choices. A mutable edge may use full-vector `NO ACTION` only when an on-demand
+search finds a retained native route with the same physical mutation origin, receiver row, complete-vector mapping, and
+structurally implied presence. The native-first selector returns the first valid deterministic assignment; minimum-prune
+optimization requires measured write-performance evidence. The classifier uses reusable linear-size state and a
+1,000,000-unit deterministic work budget that charges graph, mapping, correlation, and presence operations. Proved
+infeasibility and work-limit exhaustion are distinct, and there is no reduced-FK or identity-value trigger fallback. See
+[mssql-cascading.md](mssql-cascading.md).
 
 Risks:
 - extra derivation complexity (physical multigraph, exact carrier validation, deterministic bounded global selection),
