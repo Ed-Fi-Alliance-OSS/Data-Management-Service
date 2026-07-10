@@ -3,8 +3,11 @@ Feature: The Discovery API provides information about the application version, s
         @API-062
         @e2e-ci-shard-4
         Scenario: 01 GET / returns the root Discovery API document
+             Given a DMS client is provisioned with namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/"
+              And the oauth url from the discovery response is used to request a token
              Then it should respond with 200
+              And the DMS token should be available
               And the discovery API root response body is
                   """
                   {

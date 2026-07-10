@@ -9,8 +9,8 @@ using FluentAssertions;
 #pragma warning disable S1128 // RemoveUnusedUsings
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 #pragma warning restore S1128 // RemoveUnusedUsings
 using NUnit.Framework;
 
@@ -20,6 +20,29 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class DiscoveryEndpointModuleTests
 {
+    [Test]
+    public async Task When_SingleTenancy_Discovery_Advertises_Unqualified_Oauth_Proxy()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection => TestMockHelper.AddEssentialMocks(collection));
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/");
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonNode.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        json.Should().NotBeNull();
+        var oauth = json?["urls"]?["oauth"]?.ToString();
+        oauth.Should().Be("http://localhost/oauth/token");
+    }
+
     [Test]
     public async Task When_MultiTenancy_Enabled_Discovery_Advertises_Qualified_Oauth_Proxy()
     {

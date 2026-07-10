@@ -296,6 +296,32 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         discoveryClient.Dispose();
     }
 
+    [When("the oauth url from the discovery response is used to request a DMS token")]
+    public async Task WhenTheOauthUrlFromTheDiscoveryResponseIsUsedToRequestADmsToken()
+    {
+        context.LastResponse.Should().NotBeNull("Discovery response must be available");
+
+        var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
+        var responseDoc = JsonDocument.Parse(responseBody);
+        var oauthUrl = responseDoc.RootElement.GetProperty("urls").GetProperty("oauth").GetString();
+
+        oauthUrl.Should().NotBeNullOrWhiteSpace("Discovery must advertise an oauth url");
+        context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
+        context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
+
+        context.DmsToken = await TokenHelper.GetDmsTokenAsync(
+            oauthUrl!,
+            context.ClientKey!,
+            context.ClientSecret!
+        );
+    }
+
+    [Then("the DMS token should be available")]
+    public void ThenTheDmsTokenShouldBeAvailable()
+    {
+        context.DmsToken.Should().NotBeNullOrWhiteSpace();
+    }
+
     [Then("the urls should be")]
     public async Task ThenTheUrlsShouldBe(string expectedJson)
     {
