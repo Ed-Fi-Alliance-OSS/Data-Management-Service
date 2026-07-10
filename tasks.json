@@ -103,7 +103,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter 'FullyQualifiedName~GetByIdHandler'.",
       "Run ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'FullyQualifiedName~ETag'."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "documentation",

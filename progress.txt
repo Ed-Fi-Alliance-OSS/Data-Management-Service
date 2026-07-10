@@ -28,3 +28,8 @@
 - Files: EtagValue/GET comments/tests, precondition evaluator/resolver/checker/executor, relational unit/integration tests, tasks.json.
 - Verified: focused core 19; focused backend 31; full core 2697; full backend 1944; PostgreSQL/MSSQL integration projects build clean; diff clean.
 - Blockers/next: none.
+2026-07-09 - DMS-1264/DMS-1266 - Conditional GET test/helper consolidation
+- Decision: one parameterized successful-repository fixture retains 10 tag forms; If-None-Match GET alias delegates to generic header GET; all auth headers flow through one builder.
+- Files: GetByIdHandlerTests, E2E StepDefinitions, tasks.json.
+- Verified: GetByIdHandler 34; freshly compiled ETag E2E 22; descriptor conditional GET E2E 1; formatting/diff clean.
+- Blockers/next: direct ./build-dms.ps1 lacks executable bit; pwsh invocation passed. One documentation task remains.

@@ -462,12 +462,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
 
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var authHeader in GetWriteHeaders())
-            {
-                headers[authHeader.Key] = authHeader.Value;
-            }
-
+            var headers = GetWriteHeaders();
             headers[header] = value;
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
@@ -566,7 +561,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
 
-            ifMatch = ResolveIfMatchHeaderValue(ifMatch);
+            ifMatch = ResolveEtagHeaderValue(ifMatch);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                 new()
@@ -595,7 +590,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
 
-            ifNoneMatch = ifNoneMatch.Replace("{IfNoneMatch}", _etag).Replace("{IfMatch}", _etag);
+            ifNoneMatch = ResolveEtagHeaderValue(ifNoneMatch);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                 new()
@@ -810,13 +805,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .Replace("{id}", id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var authHeader in GetHeaders())
-            {
-                headers[authHeader.Key] = authHeader.Value;
-            }
+            _logger.log.Information($"GET url: {url}");
 
-            headers[header] = value;
+            var headers = GetHeaders(KeyValuePair.Create(header, ResolveEtagHeaderValue(value)));
 
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = headers })!
@@ -839,11 +830,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .Replace("{id}", _id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var authHeader in GetHeaders())
-            {
-                headers[authHeader.Key] = authHeader.Value;
-            }
+            var headers = GetHeaders();
 
             foreach (var row in headersTable.Rows)
             {
@@ -914,7 +901,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information($"DELETE url: {url}");
 
-            ifMatch = ResolveIfMatchHeaderValue(ifMatch);
+            ifMatch = ResolveEtagHeaderValue(ifMatch);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
                 new() { Headers = GetHeadersWithIfMatch(ifMatch) }
@@ -924,25 +911,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         [When("a GET if-none-match {string} request is made to {string}")]
-        public async Task WhenAGetIf_NoneMatchRequestIsMadeTo(string ifNoneMatch, string url)
-        {
-            string id = GetCurrentId();
-
-            url = AddDataPrefixIfNecessary(url)
-                .Replace("{id}", id)
-                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
-
-            _logger.log.Information($"GET url: {url}");
-
-            ifNoneMatch = ifNoneMatch.Replace("{IfNoneMatch}", _etag).Replace("{IfMatch}", _etag);
-
-            SetCurrentApiResponse(
-                await _playwrightContext.ApiRequestContext?.GetAsync(
-                    url,
-                    new() { Headers = GetHeadersWithIfNoneMatch(ifNoneMatch) }
-                )!
-            );
-        }
+        public async Task WhenAGetIf_NoneMatchRequestIsMadeTo(string ifNoneMatch, string url) =>
+            await WhenAGETRequestIsMadeToWithHeader(url, "If-None-Match", ifNoneMatch);
 
         [When("the lastModifiedDate is stored")]
         public async Task GivenTheLastModifiedDateIsStored()
@@ -1738,8 +1708,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 ? etag[1..^1]
                 : etag ?? string.Empty;
 
-        private string ResolveIfMatchHeaderValue(string ifMatch) =>
-            ifMatch
+        private string ResolveEtagHeaderValue(string value) =>
+            value
+                .Replace("{IfNoneMatch}", _etag)
                 .Replace("{IfMatch}", _etag)
                 .Replace("{IfMatchQuoted}", _rawEtag)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
@@ -1926,69 +1897,41 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private static partial Regex IdRegex();
 
         // Auth-only headers for requests without a body (GET/DELETE).
-        private IEnumerable<KeyValuePair<string, string>> GetHeaders()
+        private Dictionary<string, string> GetHeaders(params KeyValuePair<string, string>[] additionalHeaders)
         {
-            var list = new List<KeyValuePair<string, string>>
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                new("Authorization", GetDmsTokenFromContext()),
+                ["Authorization"] = GetDmsTokenFromContext(),
             };
-            return list;
+
+            foreach (var header in additionalHeaders)
+            {
+                headers[header.Key] = header.Value;
+            }
+
+            return headers;
         }
 
         // Headers for write requests (POST/PUT) carrying a JSON body. An explicit Content-Type is
         // required because Playwright defaults string/byte bodies to application/octet-stream, which
         // DMS rejects with 415 (DMS-1224). Read/delete requests have no body and use GetHeaders().
-        private IEnumerable<KeyValuePair<string, string>> GetWriteHeaders()
-        {
-            var list = new List<KeyValuePair<string, string>>
-            {
-                new("Authorization", GetDmsTokenFromContext()),
-                new("Content-Type", "application/json"),
-            };
-            return list;
-        }
+        private Dictionary<string, string> GetWriteHeaders() =>
+            GetHeaders(KeyValuePair.Create("Content-Type", "application/json"));
 
-        private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfMatch(string ifMatch)
-        {
-            var list = new List<KeyValuePair<string, string>>
-            {
-                new("Authorization", GetDmsTokenFromContext()),
-                new("If-Match", ifMatch),
-            };
-            return list;
-        }
+        private Dictionary<string, string> GetHeadersWithIfMatch(string ifMatch) =>
+            GetHeaders(KeyValuePair.Create("If-Match", ifMatch));
 
-        private IEnumerable<KeyValuePair<string, string>> GetWriteHeadersWithIfMatch(string ifMatch)
-        {
-            var list = new List<KeyValuePair<string, string>>
-            {
-                new("Authorization", GetDmsTokenFromContext()),
-                new("Content-Type", "application/json"),
-                new("If-Match", ifMatch),
-            };
-            return list;
-        }
+        private Dictionary<string, string> GetWriteHeadersWithIfMatch(string ifMatch) =>
+            GetHeaders(
+                KeyValuePair.Create("Content-Type", "application/json"),
+                KeyValuePair.Create("If-Match", ifMatch)
+            );
 
-        private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfNoneMatch(string ifNoneMatch)
-        {
-            var list = new List<KeyValuePair<string, string>>
-            {
-                new("Authorization", GetDmsTokenFromContext()),
-                new("If-None-Match", ifNoneMatch),
-            };
-            return list;
-        }
-
-        private IEnumerable<KeyValuePair<string, string>> GetWriteHeadersWithIfNoneMatch(string ifNoneMatch)
-        {
-            var list = new List<KeyValuePair<string, string>>
-            {
-                new("Authorization", GetDmsTokenFromContext()),
-                new("Content-Type", "application/json"),
-                new("If-None-Match", ifNoneMatch),
-            };
-            return list;
-        }
+        private Dictionary<string, string> GetWriteHeadersWithIfNoneMatch(string ifNoneMatch) =>
+            GetHeaders(
+                KeyValuePair.Create("Content-Type", "application/json"),
+                KeyValuePair.Create("If-None-Match", ifNoneMatch)
+            );
 
         [Then("the JWT token should contain the dataStoreIds claim")]
         public void ThenTheJwtTokenShouldContainTheDataStoreIdsClaim()
