@@ -43,9 +43,9 @@ Everything else must be introduced from a concrete failing fixture or measured p
 6. SQL Server alone performs error-1785 duplicate-path classification, selective pruning, and topology fail-fast.
 7. SQL Server selection is global and deterministic because overlapping diamonds and parallel conflicts may require
    backtracking.
-8. Every pruned SQL Server edge has a structural carrier with the same physical mutation origin, receiver row, and
-   complete-vector mapping; covered-edge presence implies carrier presence, and every carrier edge propagates natively
-   in the same SQL statement.
+8. Every pruned SQL Server edge has a structural carrier that starts at the covered edge's `CascadeSourceKey` and reaches
+   the same receiver row with the same complete-vector mapping; covered-edge presence implies carrier presence, and every
+   carrier edge propagates natively in the same SQL statement.
 9. The runtime supports every independently writable primitive component and subset, one or more reference-backed replacements,
    and mixed primitive/reference changes.
 10. SQL Server fails before DDL when exhaustive bounded analysis proves no safe diamond assignment; work-limit
@@ -130,16 +130,19 @@ deterministic DFS/backtracking over its decision edges. Use stable structural ed
 stop at the first valid assignment. Minimum-prune optimization is deferred unless DMS-1277 measures a material supported
 write-performance benefit.
 
-Validate each covered edge on demand in the current retained graph. The carrier DFS must prove the same physical origin
-and receiver row, identical complete-vector column mapping, finite presence implication, and native same-statement
-propagation. Do not store all carrier routes.
+Validate each covered edge on demand in the current retained graph. Every carrier DFS starts at the covered FK's
+`CascadeSourceKey`—its referenced table and ordered target propagation key—and must prove the same receiver row, identical
+complete-vector column mapping, finite presence implication, and native same-statement propagation. Traversal is
+prefix-state-sensitive: backtrack scratch composition, revisit a vertex reached through a different mapping, correlation,
+or presence state, and do not use vertex-only memoization. Do not store all carrier routes.
 
-The classifier has one deterministic budget of 1,000,000 work units per derived SQL Server schema. Charge every
-vertex/edge examination, decision assignment, ordered column-mapping composition/comparison, receiver-correlation
-comparison, presence-atom examination, and reusable-buffer slot initialization/reset. Use reusable linear-size buffers
-rather than route lists, per-branch mode-vector copies, or other search-sized allocations. The counter and traversal use
-structural order and never wall-clock time. Exhausting the budget yields
-`CascadeClassificationComplexityExceeded`.
+The classifier has one deterministic budget of 1,000,000 work units per derived SQL Server schema. Charge one unit only
+before assigning a mode to one conflict-core decision edge during DFS/backtracking or visiting one directed edge during
+cycle/topological, path-count, conflict-core, legality, or on-demand carrier DFS. Column-mapping comparisons, correlation
+elements, presence atoms, vertex initialization, and scratch-buffer resets do not define additional work-unit kinds.
+Graph checks and search draw from the same counter in structural order, never wall-clock time. A fixture that consumes
+exactly the last unit completes; attempting the next unit yields `CascadeClassificationComplexityExceeded`. Reusable
+buffers are an implementation optimization; implementations still must not enumerate or retain carrier-route arrays.
 
 Do not add memoization, canonical solver state, a general cost model, or serialized proof trees unless measured stock,
 extension, or adversarial fixtures exceed that bound.
@@ -160,10 +163,10 @@ Because cycles are not accepted, ordinary reference resolution is sufficient. PO
 true retargets all require normal pre-write resolution. DMS does not reuse a persisted target for a submitted identity
 that does not resolve, predict a future identity, or compile deferred existing-reference metadata.
 
-MetaEd must reject recursive authored identity definitions and may also emit a non-blocking semantic diamond warning as
-early author feedback. It does not run DMS's physical candidate search, carrier classification, or work-limit logic. DMS
-retains independent cycle validation and is the sole blocking authority for SQL Server realizability after canonical
-storage mapping.
+MetaEd must reject recursive authored identity definitions. That cycle rejection is the first and only METAED-1667
+delivery. A non-blocking semantic diamond warning is outside METAED-1667 and requires a separate ticket if still wanted.
+MetaEd does not run DMS's physical candidate search, carrier classification, or work-limit logic. DMS retains independent
+cycle validation and is the sole blocking authority for SQL Server realizability after canonical storage mapping.
 
 ### 5. Minimal artifact contract — accepted constraint
 

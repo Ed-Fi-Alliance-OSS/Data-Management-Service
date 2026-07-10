@@ -1720,13 +1720,14 @@ Normative guidance:
 - Do **not** introduce DB-level equality checks across two independently-cascaded stored columns as an alternative to
   unification. This design exists specifically to avoid that failure mode.
 - Before provider action assignment, group mutable physical FK candidates by writable receiver column. Multiple writers
-  are supported only when every possible write has the same physical mutation origin and reaches the receiver in the
-  same initiating statement. Otherwise fail derivation as `ConflictingUnifiedCascadeWritesNotSupported`. The initial
-  implementation does not split the unification class or require deferred constraints.
+  are supported only when validation succeeds independently for every possible `InitiatingOriginFact`—directly mutable
+  root, ordered root key, and statement boundary—and every writer is reached under that fact in the same initiating
+  statement. Otherwise fail derivation as `ConflictingUnifiedCascadeWritesNotSupported`. The initial implementation does
+  not split the unification class or require deferred constraints.
 - Concrete/abstract pairs are subject to the same rule. Abstract identity maintenance occurs in an `AFTER` trigger's
   later DML statement, so it cannot prove same-statement propagation for a column also written through a concrete FK.
-- DDL verification MUST include both a same-origin/same-statement fan-out that succeeds and independent-parent and
-  concrete/abstract shared-writer fixtures that fail provider-independent derivation.
+- DDL verification MUST include both a same-`InitiatingOriginFact`/same-statement fan-out that succeeds and
+  independent-parent and concrete/abstract shared-writer fixtures that fail provider-independent derivation.
 
 #### SQL Server (foreign-key pruning; native cascade on eligible edges)
 
@@ -1748,19 +1749,19 @@ rejected by the provider-independent value-flow validation before the SQL Server
 Normative rules:
 
 1. Reject self-loops and directed cycles in the semantic identity-reference graph before complete-vector derivation.
-   Build the physical cascade multigraph in propagation direction over identity-propagating candidates (target is abstract
-   or transitively mutable under the effective concrete/abstract closure), then reject any physical cycle introduced by
-   storage mapping or table collapse before provider action assignment.
+   Build the physical cascade multigraph in propagation direction over identity-propagating candidates whose targets are
+   mutable under the effective concrete/abstract mutability closure, then reject any physical cycle introduced by storage
+   mapping or table collapse before provider action assignment.
 2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
    ancestor), not raw in-degree. Independent parents whose FKs write disjoint receiver columns stay
    `ON UPDATE CASCADE` and are never pruned. Independent mutable parents that share a writable receiver column fail the
    provider-independent validation above. A candidate `NO ACTION` break for a diamond is admissible only when another
-   route has the same physical
-   mutation origin, receiver row, identical complete-vector column mapping, structural presence implication, and native
-   same-statement propagation. Candidate breaks are inputs to the deterministic bounded **global** selection defined in
-   [mssql-cascading.md](mssql-cascading.md), not local first-fit; overlapping diamonds and parallel conflicts can share
-   edges, so the winning breaks are chosen by global backtracking. Both survivor and pruned edges keep the complete
-   vector. Primitive/reference mutation combinations remain behavioral matrix tests, not classifier inputs.
+   route starts at the covered FK's `CascadeSourceKey`—its referenced table and ordered target propagation key—and
+   reaches the same receiver row with an identical complete-vector column mapping, structural presence implication, and
+   native same-statement propagation. Candidate breaks are inputs to the deterministic bounded **global** selection
+   defined in [mssql-cascading.md](mssql-cascading.md), not local first-fit; overlapping diamonds and parallel conflicts
+   can share edges, so the winning breaks are chosen by global backtracking. Both survivor and pruned edges keep the
+   complete vector. Primitive/reference mutation combinations remain behavioral matrix tests, not classifier inputs.
 3. Fail derivation only when bounded search proves no complete safe assignment; report deterministic work-limit
    exhaustion separately. There is no `DocumentId`-only FK and no identity-value propagation trigger.
 
@@ -2293,8 +2294,8 @@ semantics, or cascade correctness.
   - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
     per-origin duplicate reachability, not raw in-degree; identity cycles have already been rejected,
   - independent parents with disjoint receiver storage keep `ON UPDATE CASCADE`; multiple mutable FKs sharing one
-    writable receiver column must first prove the same physical mutation origin and same-statement propagation or fail
-    as `ConflictingUnifiedCascadeWritesNotSupported`,
+    writable receiver column must first pass validation for every possible `InitiatingOriginFact`, with every writer
+    reached under that fact in the same statement, or fail as `ConflictingUnifiedCascadeWritesNotSupported`,
   - a mutable edge uses `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
   - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
     target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,
