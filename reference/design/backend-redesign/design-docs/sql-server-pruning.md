@@ -80,6 +80,9 @@ The selector works on a directed physical multigraph after key unification:
 - A vertex is a physical table.
 - A candidate edge is a document-reference FK whose complete ordered target `*_RefKey` tuple is referenced and whose
   target identity is abstract or transitively mutable.
+- A concrete target is transitively mutable when its `TransitivelyAllowIdentityUpdates` value is true: it is seeded by
+  `allowIdentityUpdates=true`, or becomes mutable because a part-of-identity reference targets an abstract or
+  transitively mutable resource.
 - An edge is directed from referenced target to referencing receiver, matching `ON UPDATE CASCADE` propagation.
 - A mutable origin is a directly mutable concrete resource root or an abstract identity maintenance update that can change
   a referenced identity key.
