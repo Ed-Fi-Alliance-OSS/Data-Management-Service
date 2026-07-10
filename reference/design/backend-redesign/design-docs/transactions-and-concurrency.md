@@ -45,12 +45,9 @@ During POST/PUT processing, the backend:
 - Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) to a target `DocumentId` using an ApiSchema-derived “natural-key resolver”.
 - Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
 
-The sole proposed exception is an identity-changing PUT of an existing row with a compiled deferred-binding marker.
-Normal lookup still runs first and wins. After stored authorization and current-state loading, the executor may reuse only
-the persisted stable target `DocumentId` for an already-present binding whose target receives the submitted future
-identity through the selected initiating-statement cascade. It must rerun a fresh ordinary resolver after DML and require
-that identity to resolve to the same target before commit. This update-only workflow remains gated on the concrete DMS
-PUT POC in [mssql-cascading.md](mssql-cascading.md).
+All submitted references, including references on identity-changing PUTs, resolve normally before any DML. An unresolved
+submitted identity is an ordinary reference-resolution failure. DMS does not reuse a persisted target for a submitted
+future identity, compile a deferred-binding marker, or rerun resolution after DML.
 
 This is required because relational tables store **stable `DocumentId` foreign keys**, and we cannot write those without resolving them.
 
@@ -286,7 +283,8 @@ Engine considerations:
   validation still applies.
 - SQL Server rejects a table reached by multiple cascade paths (error 1785), so it uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child). Global bounded search
-  chooses a legal retained graph and proves every pruned edge has the same-row, same-value, same-boundary carrier.
+  chooses a legal retained graph and requires every pruned edge to have a retained route with the same physical mutation
+  origin, receiver row, complete-vector mapping, presence implication, and native same-statement propagation.
   Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
   propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 

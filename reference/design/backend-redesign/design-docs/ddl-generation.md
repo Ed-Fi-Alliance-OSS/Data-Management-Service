@@ -242,9 +242,10 @@ The DDL generator must emit document-reference columns and constraints that enab
     targets use `NO ACTION`. It is never pruned or classified for multiple paths. Provider-independent validation rejects
     identity cycles.
   - SQL Server consumes a globally selected action. Physical candidates are storage-mapped and deduplicated before
-    selection; every covered `NO ACTION` has an exact same-row, same-value, same-statement carrier. Provider-independent
-    validation rejects identity cycles, so selection handles diamonds and overlapping multiple-path conflicts only. There
-    is no reduced-FK or identity-value trigger fallback; see
+    selection; every covered `NO ACTION` has a retained native route with the same physical origin, receiver row,
+    complete-vector mapping, and structurally implied presence. Provider-independent validation rejects identity cycles,
+    so selection handles diamonds and overlapping multiple-path conflicts only. There is no reduced-FK or identity-value
+    trigger fallback; see
     [mssql-cascading.md](mssql-cascading.md).
 - Emit one required propagation-key UNIQUE constraint on the target so every incoming complete FK is legal:
   `(<IdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)`. Widen the existing `*_RefKey`; do not emit

@@ -35,8 +35,7 @@ Mapping packs are selected strictly by this 4-tuple:
 
 1. `EffectiveSchemaHash` (lowercase hex, 64 chars) — see `reference/design/backend-redesign/design-docs/data-model.md`
 2. `SqlDialect` (`PGSQL` or `MSSQL`)
-3. `RelationalMappingVersion` (DMS-controlled string constant; remains `v1` while the initial production contract is
-   being finalized, then bumps only for a breaking post-freeze mapping-rule change)
+3. `RelationalMappingVersion` (DMS-controlled string constant; `v2` for the complete-vector/provider-action mapping)
 4. `PackFormatVersion` (integer protocol/version gate; bump only for breaking serialization/envelope changes)
 
 Logical identity is therefore:
@@ -340,7 +339,7 @@ message MappingPackEnvelope {
   // Selection key (authoritative; file name is not trusted).
   string effective_schema_hash = 1;          // lowercase hex (64 chars)
   SqlDialect dialect = 2;
-  string relational_mapping_version = 3;     // e.g. "v1"
+  string relational_mapping_version = 3;     // e.g. "v2"
   uint32 pack_format_version = 4;            // must be 1 for this schema
 
   // Payload envelope.
@@ -778,17 +777,19 @@ Bump it only for breaking changes to:
 
 ### 9.2 `RelationalMappingVersion`
 
-After an initial production mapping contract is frozen, `RelationalMappingVersion` is bumped for breaking mapping-rule
-changes even if `ApiSchema.json` content is unchanged. The backend redesign is still finalizing its first production
-contract, so DMS-1129 and key-unification changes remain `v1` with no compatibility or migration mode.
+`RelationalMappingVersion` is bumped for breaking mapping-rule changes even if `ApiSchema.json` content is unchanged.
+DMS-1129 changes physical columns, keys, FK shapes, indexes, and provider actions, so the complete-vector mapping is
+`v2` with no compatibility or migration mode. Existing databases require fresh provisioning.
 
 It is expected to be included in `EffectiveSchemaHash` computation (see `reference/design/backend-redesign/design-docs/data-model.md`), and is also present in the envelope key for defense-in-depth.
 
-Key unification is part of `RelationalMappingVersion = v1` (not a `PackFormatVersion` change):
+Key unification plus complete-vector propagation is part of `RelationalMappingVersion = v2` (not a
+`PackFormatVersion` change):
 
-- Producers and consumers MUST agree on v1 and reject mismatches.
-- A v1 pack that omits required storage/key-unification metadata is invalid; consumers do not infer an older mode.
-- Future post-v1 breaking changes require an explicit new mapping version.
+- Producers and consumers MUST agree on `v2` and reject mismatches.
+- A `v2` pack that omits required storage, key-unification, complete-vector, or final-action metadata is invalid;
+  consumers do not infer an older mode.
+- Future breaking mapping changes require another explicit mapping version.
 
 Repository status note (non-normative): the pack payload is not yet implemented. DMS-1129 adds only the lineage-anchor
 binding needed to reconstruct the runtime complete-vector projection; it adds no classifier mode, proof, solver,

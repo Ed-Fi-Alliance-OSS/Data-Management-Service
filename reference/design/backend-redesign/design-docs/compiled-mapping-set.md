@@ -380,8 +380,9 @@ Notes:
   action and never reruns classification.
 - **Cycle boundary and diamond support.** Provider-independent validation rejects recursive identity definitions as
   `IdentityCascadeCycleNotSupported`. SQL Server modes are selected by deterministic bounded global search over the
-  remaining acyclic physical candidates to resolve duplicate-reachability conflicts. The stable search outcomes are
-  proved `NoSafeSqlServerAssignment` and distinct `CascadeClassificationComplexityExceeded`.
+  remaining acyclic physical candidates to resolve duplicate-reachability conflicts. Covered edges use the finite
+  structural carrier relation, and the shared deterministic work budget is 1,000,000 units. The stable search outcomes
+  are proved `NoSafeSqlServerAssignment` and distinct `CascadeClassificationComplexityExceeded`.
 - **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. Write
   plans contain ordinary reference and lineage-anchor bindings only; they do not serialize solver state, proof trees, or
   cycle-specific deferred-reference metadata.

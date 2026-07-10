@@ -216,7 +216,8 @@ All members of a class must share the exact same physical signature:
 
 - Relational-model manifests must include per-column `storage` metadata, per-table `key_unification_classes`, per-resource equality-constraint diagnostics (`applied`/`redundant`/`ignored`), and descriptor FK de-duplication reports.
 - Mapping-pack payloads (`.mpack`) carry only metadata an implemented AOT consumer needs. This pre-production design
-  finalizes `RelationalMappingVersion = v1`; no version bump or compatibility mode is introduced.
+  uses `RelationalMappingVersion = v2`; existing `v1` databases and packs require fresh provisioning/regeneration, with
+  no compatibility mode.
 - All metadata is represented structurally — no SQL text, no naming-convention inference.
 
 ## Worked Example: Synthetic Presence Flags

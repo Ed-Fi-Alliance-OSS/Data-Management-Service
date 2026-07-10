@@ -976,12 +976,13 @@ Pack producers and consumers MUST validate the following invariants at build/loa
 ##### Versioning (required)
 
 Adding proto fields is wire-compatible and does not require bumping `PackFormatVersion`. However, key unification is a
-semantic change to mapping behavior and is part of the initial pre-production relational contract:
+semantic change to mapping behavior. The complete-vector and provider-action work changes the already fingerprinted
+physical mapping contract:
 
-- `RelationalMappingVersion` remains `v1`; do not add an older-artifact compatibility mode or migration path.
-- Producers and consumers MUST require the same `v1` contract, including storage/unification metadata.
-- After the initial production v1 contract is frozen, a breaking mapping change requires a version bump. Missing
-  metadata must never be silently interpreted as an older mode by a v1 consumer.
+- `RelationalMappingVersion` is `v2`; do not add a `v1` compatibility mode or migration path.
+- Producers and consumers MUST require the same `v2` contract, including storage/unification metadata.
+- Missing metadata must never be silently interpreted as an older mode by a `v2` consumer. Existing `v1` databases must
+  be freshly provisioned.
 
 ## Deriving Unification Classes from ApiSchema
 
@@ -1748,11 +1749,12 @@ Normative rules:
    collapse before provider action assignment.
 2. Detect duplicate paths by **per-origin duplicate reachability** (two of a receiver's incoming edges share a cascade
    ancestor), not raw in-degree. Independent parents into a shared receiver stay `ON UPDATE CASCADE` and are never
-   pruned. A candidate `NO ACTION` break for a diamond is admissible only when every applicable complete-vector
-   change has an exact same-row, same-value, same-presence, same-statement carrier. Candidate breaks are inputs to the
-   deterministic bounded **global** selection defined in [mssql-cascading.md](mssql-cascading.md), not local first-fit;
-   overlapping diamonds and parallel conflicts can share edges, so the winning breaks are chosen by global
-   backtracking. Both survivor and pruned edges keep the complete vector.
+   pruned. A candidate `NO ACTION` break for a diamond is admissible only when another route has the same physical
+   mutation origin, receiver row, identical complete-vector column mapping, structural presence implication, and native
+   same-statement propagation. Candidate breaks are inputs to the deterministic bounded **global** selection defined in
+   [mssql-cascading.md](mssql-cascading.md), not local first-fit; overlapping diamonds and parallel conflicts can share
+   edges, so the winning breaks are chosen by global backtracking. Both survivor and pruned edges keep the complete
+   vector. Primitive/reference mutation combinations remain behavioral matrix tests, not classifier inputs.
 3. Fail derivation only when bounded search proves no complete safe assignment; report deterministic work-limit
    exhaustion separately. There is no `DocumentId`-only FK and no identity-value propagation trigger.
 

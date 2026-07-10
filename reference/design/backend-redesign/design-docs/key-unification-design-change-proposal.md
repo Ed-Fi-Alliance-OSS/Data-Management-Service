@@ -316,9 +316,8 @@ Versioning requirements:
 
 - This is a semantic change to derived maintenance and must be gated by `RelationalMappingVersion` (consistent with the
   key unification design’s versioning rules).
-- DLEP is being designed before the initial production contract is frozen, so enabling it in this work remains
-  `RelationalMappingVersion = v1` with no compatibility or migration mode. After v1 is frozen, a breaking mapping change
-  requires a version bump and consumers fail fast on mismatches.
+- The current complete-vector/provider-action contract is `RelationalMappingVersion = v2` with no compatibility or
+  migration mode. Any later breaking mapping change requires another version bump and consumers fail fast on mismatches.
 
 ### 6) SQL Server baseline parity fix (non-root reverse references)
 

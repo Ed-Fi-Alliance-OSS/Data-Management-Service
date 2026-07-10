@@ -2,7 +2,7 @@
 
 ## Status
 
-The design simplification reset is complete. The finalized v1 runtime implementation is not complete.
+The design simplification reset is complete. The finalized runtime implementation is not complete.
 
 This file is the scope-control and decision record. The authoritative technical design is
 [`reference/design/backend-redesign/design-docs/mssql-cascading.md`](reference/design/backend-redesign/design-docs/mssql-cascading.md).
@@ -19,7 +19,7 @@ The previous revision expanded foreign-key pruning into a generalized proof engi
 future-reference language, storage-variant system, mapping-pack certificate, and cross-repository conformance contract.
 Those mechanisms were not justified by executable failures or supported-schema measurements.
 
-The reset keeps only behavior required for v1 correctness:
+The reset keeps only behavior required for the supported release contract:
 
 - full-composite document-reference foreign keys;
 - complete identity propagation through native cascades;
@@ -32,19 +32,21 @@ Everything else must be introduced from a concrete failing fixture or measured p
 
 ## Irreducible Contract
 
-1. `RelationalMappingVersion` remains `v1`.
+1. The complete-vector storage and provider-action rules are `RelationalMappingVersion = v2`. Implementing them must
+   bump the DMS-owned constant and require fresh provisioning; there is no migration or `v1` compatibility mode.
 2. Every document-reference FK is full composite.
 3. Identity values propagate through native `ON UPDATE CASCADE`; there is no reduced-FK or identity-value propagation
    trigger fallback.
-4. Identity cycles are invalid for v1. Semantic cycles fail before vector derivation; physical cycles introduced by
+4. Identity cycles are invalid. Semantic cycles fail before vector derivation; physical cycles introduced by
    storage mapping fail before action selection. DMS does not cut or execute cycles.
 5. PostgreSQL receives actions mechanically and is never pruned or classified for multiple-path topology.
 6. SQL Server alone performs error-1785 duplicate-path classification, selective pruning, and topology fail-fast.
 7. SQL Server selection is global and deterministic because overlapping diamonds and parallel conflicts may require
    backtracking.
-8. Every pruned SQL Server edge has an exact same-row, same-value, same-statement-boundary carrier for every applicable
-   mutation.
-9. V1 supports every independently writable primitive component and subset, one or more reference-backed replacements,
+8. Every pruned SQL Server edge has a structural carrier with the same physical mutation origin, receiver row, and
+   complete-vector mapping; covered-edge presence implies carrier presence, and every carrier edge propagates natively
+   in the same SQL statement.
+9. The runtime supports every independently writable primitive component and subset, one or more reference-backed replacements,
    and mixed primitive/reference changes.
 10. SQL Server fails before DDL when exhaustive bounded analysis proves no safe diamond assignment; work-limit
     exhaustion is a distinct result.
@@ -103,25 +105,37 @@ concrete targets. It retains multiple paths. Identity cycles have already failed
 
 SQL Server constructs storage-mapped physical candidates, deduplicates identical candidates, and selects final update
 actions globally. The input graph is cycle-free by validation; the retained cascade multigraph must contain at most one
-path between every ordered table pair. Every covered `NO ACTION` edge must pass the exact-carrier obligations in the
-authoritative design.
+path between every ordered table pair. A covered `NO ACTION` edge must have a retained carrier route that passes the
+finite structural relation in the authoritative design. Whole-vector equality makes mutation powersets and symbolic
+value proofs unnecessary classifier inputs.
 
 The finalized relational model owns `OnUpdate`; DDL only renders it.
 
-### 3. Simple global SQL Server search — accepted direction, measurement open
+### 3. Simple global SQL Server search — accepted finite design, measurement open
 
-Start with deterministic iterative-deepening DFS/backtracking:
+Use deterministic iterative-deepening DFS/backtracking:
 
 1. minimize the number of covered `NO ACTION` edges; then
 2. choose the lexicographically smallest structural mode vector.
 
+Before mode search, enumerate structurally eligible carrier routes through the all-native acyclic graph. A route is
+eligible only when it has the same physical origin and receiver row as the covered edge, composes to the identical
+complete-vector column mapping, satisfies the finite presence implication, and consists entirely of native cascades in
+the selected mode vector.
+
+The classifier has one deterministic budget of 1,000,000 work units per derived SQL Server schema. One unit is charged
+whenever conflict-core derivation examines an edge, carrier-route DFS extends a route by one edge, mode DFS assigns one
+decision edge, graph validation examines one retained edge, or carrier validation examines one precomputed route. The
+counter and traversal use structural order and never wall-clock time. Exhausting the budget yields
+`CascadeClassificationComplexityExceeded`.
+
 Do not add memoization, canonical solver state, a general cost model, or serialized proof trees unless measured stock,
-extension, or adversarial fixtures exceed the selected work bound.
+extension, or adversarial fixtures exceed that bound.
 
-Selected-edge diagnostics retain only a concise structural carrier witness. Failure diagnostics name the first failed
-obligation. No universal hashes or proof certificates are public contracts.
+Selected-edge diagnostics retain only the covered edge and selected structural carrier route. Failure diagnostics name
+the first failed structural relation. No universal hashes or proof certificates are public contracts.
 
-### 4. Identity cycles and reference resolution — accepted
+### 4. Identity cycles, reference resolution, and MetaEd boundary — accepted
 
 MetaEd does not admit recursive identity definitions in the supported input contract. DMS independently validates the
 semantic identity-reference graph before complete-vector recursion so malformed, hand-built, or pack-loaded input cannot
@@ -131,6 +145,10 @@ self-loop or directed identity cycle fails with `IdentityCascadeCycleNotSupporte
 Because cycles are not accepted, ordinary reference resolution is sufficient. POST, PUT, newly present references, and
 true retargets all require normal pre-write resolution. DMS does not reuse a persisted target for a submitted identity
 that does not resolve, predict a future identity, or compile deferred existing-reference metadata.
+
+MetaEd continues to reject recursive authored identity definitions. It may also emit a non-blocking semantic diamond
+warning as early author feedback. It does not run DMS's physical candidate search, carrier classification, or work-limit
+logic. DMS is the sole blocking authority for SQL Server realizability after canonical storage mapping.
 
 ### 5. Minimal artifact contract — accepted constraint
 
@@ -148,7 +166,7 @@ not mapping/runtime contracts.
 | Gate | Status | Required consequence |
 |---|---|---|
 | Complete-vector measured screen | Passed | Keep one complete vector; retain full-schema physical qualification. |
-| Simple global search | Open until DMS-1258 implementation measurements | Add optimization only for an observed bound failure. |
+| Simple global search | Design-ready; implementation measurements remain DMS-1258/DMS-1277 work | Use the finite structural carrier relation and 1,000,000-unit deterministic bound; add optimization only for an observed bound failure. |
 | Minimal artifact contract | Accepted design constraint; implementation pending | Add fields only for concrete runtime/AOT consumers. |
 
 ## Delivery Slices
@@ -156,18 +174,19 @@ not mapping/runtime contracts.
 | Slice | Ownership | Exit condition |
 |---|---|---|
 | Database evidence and static feasibility | Complete | Computed complete-vector screen and maximum-value probes pass. |
-| Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented. |
-| Provider actions and SQL Server classifier | DMS-1258 | Generated DDL installs and diamond/value-flow fixtures produce deterministic outcomes. |
-| Manifest, AOT, and mapping-pack integration | DMS-1276 | Runtime and pack loading produce equivalent final models and behavior. |
-| Full-schema qualification | DMS-1277 | Stock, TPDM, extension, adversarial, concurrency, and performance evidence pass. |
+| Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented; the centralized mapping version is bumped to `v2`. |
+| Provider actions and SQL Server classifier | DMS-1258 | Generated DDL installs and structural-carrier diamond fixtures produce deterministic outcomes within the fixed work budget. |
+| Manifest, AOT, and mapping-pack integration | DMS-1276 | Runtime and `v2` pack loading produce equivalent final models and behavior. |
+| Full-schema qualification | DMS-1277 | Freshly provisioned `v2` stock, TPDM, extension, adversarial, concurrency, and performance evidence pass. |
 
-All slices are required before the v1 relational contract is complete.
+All slices are required before the `v2` relational contract is complete.
 
 ## Removed Scope
 
 The authoritative design no longer contains:
 
 - a universal semantic-hash or proof-artifact protocol;
+- mutation powersets, symbolic value origins, and generalized carrier proof obligations;
 - site-specific anchor-set fixed points or omission proofs;
 - serialized solver machinery or a provisional-feasible result;
 - a generalized predictive future-reference language;
@@ -175,10 +194,11 @@ The authoritative design no longer contains:
 - safe-cycle search, zero-hop cycle carriers, or cycle PUT protocols;
 - custom JSON recordset/correlation protocols without an accepted fixture;
 - SQL Server proof objects in runtime plans or mapping packs; or
+- a blocking MetaEd replica of DMS physical SQL Server classification; or
 - PostgreSQL topology classification or SQL Server compatibility failure.
 
 ## Verification Boundary
 
 The authoritative design owns the full fixture matrix. The reset is successful as a design exercise because it records a
-bounded architecture, evidence-backed decisions, explicit open gates, and independently testable delivery slices. The v1
+bounded architecture, evidence-backed decisions, explicit open gates, and independently testable delivery slices. The
 implementation is complete only when every remaining delivery slice passes.

@@ -84,9 +84,10 @@ Mitigations / guidance:
 SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). DMS rejects identity
 cycles during provider-independent validation, then uses deterministic bounded global physical action selection for
 duplicate paths rather than disabling all cascades. Independent parents remain legal; diamonds and parallel conflicts are
-action choices. A mutable edge may use full-vector `NO ACTION` only when every applicable mutation has an exact same-row,
-same-value, same-presence, same-boundary carrier. Proved infeasibility and work-limit exhaustion are distinct, and there
-is no reduced-FK or identity-value trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
+action choices. A mutable edge may use full-vector `NO ACTION` only when a retained native route has the same physical
+mutation origin, receiver row, complete-vector mapping, and structurally implied presence. The classifier uses a
+1,000,000-unit deterministic work budget. Proved infeasibility and work-limit exhaustion are distinct, and there is no
+reduced-FK or identity-value trigger fallback. See [mssql-cascading.md](mssql-cascading.md).
 
 Risks:
 - extra derivation complexity (physical multigraph, exact carrier validation, deterministic bounded global selection),

@@ -403,12 +403,12 @@ Canonical JSON contract (normative for `canonicalizeJson(...)`):
 
 `RelationalMappingVersion` contract:
 
-- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v1`).
+- `RelationalMappingVersion` is a single DMS-owned string constant (for example, `v2`).
 - The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
-- After the initial production `v1` contract is frozen, changing mapping rules requires bumping
-  `RelationalMappingVersion` (or, if the hash algorithm itself changes, the hash header/version). DMS-1129 is finalizing
-  that initial contract before production, so its full-vector and provider-action changes remain `v1`; they do not add
-  compatibility or migration behavior.
+- Changing mapping rules requires bumping `RelationalMappingVersion` (or, if the hash algorithm itself changes, the hash
+  header/version). DMS-1129 changes physical columns, keys, FK shapes, indexes, and provider actions, so those rules are
+  `v2`. The implementation must bump the centralized constant and require fresh provisioning; it does not interpret,
+  migrate, or run against a `v1` reduced-FK database.
 
 Algorithm (suggested):
 
@@ -420,7 +420,7 @@ Algorithm (suggested):
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
-   - a constant mapping version (e.g., `relationalMappingVersion=v1`)
+   - a constant mapping version (e.g., `relationalMappingVersion=v2`)
    - `ApiSchemaFormatVersion`
    - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
@@ -428,7 +428,7 @@ Pseudocode:
 
 ```text
 const HashVersion = "dms-effective-schema-hash:v1"
-const RelationalMappingVersion = "v1"
+const RelationalMappingVersion = "v2"
 
 projects = []
 apiSchemaFormatVersion = null
@@ -610,7 +610,8 @@ Typical structure:
       - SQL Server (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
         - constructs and deduplicates storage-mapped physical candidates before action selection;
         - globally selects `ON UPDATE CASCADE` or covered `ON UPDATE NO ACTION` for mutable edges so the retained graph is
-          error-1785 legal and every pruned edge has an exact same-row, same-value, same-statement carrier;
+          error-1785 legal and every pruned edge has a structural carrier with the same physical origin, receiver row,
+          complete-vector mapping, presence implication, and native same-statement propagation;
         - treats diamonds and parallel conflicts as action choices that may require backtracking; and
         - fails before DDL only when bounded search proves no safe assignment (or separately reaches its deterministic
           work limit). There is no `DocumentId`-only or trigger fallback.

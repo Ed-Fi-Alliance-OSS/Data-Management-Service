@@ -3,15 +3,17 @@
 ## Status
 
 This document is the authoritative DMS-1129 design after the simplification reset. It defines the smallest known
-architecture that preserves full referential integrity, correct SQL Server diamond handling, complete v1 identity-change
+architecture that preserves full referential integrity, correct SQL Server diamond handling, complete identity-change
 support, and the provider boundary between SQL Server and PostgreSQL. Genuine identity cycles are unsupported.
 
 The corrected transitive complete-vector measured screen has executable/reproducible evidence. Implementation and
-full-schema qualification remain open. The earlier reciprocal-cycle database POC is retained as historical evidence only;
-cycle execution is no longer part of the v1 contract.
+full-schema qualification remain open. The earlier reciprocal-cycle database POC is recorded as historical evidence only;
+cycle execution is not part of the supported contract.
 
-`RelationalMappingVersion` remains `v1`. This is the initial production relational contract; this work adds no mapping
-compatibility mode, legacy-schema interpretation, database migration, or version bump.
+The complete-vector storage and provider-action changes are `RelationalMappingVersion = v2`. The implementation slice
+must bump `SchemaHashConstants.RelationalMappingVersion` when these rules land so an unchanged ApiSchema cannot match a
+database provisioned with the older reduced-FK mapping. Operators must provision a fresh database; DMS adds no mapping
+compatibility mode, legacy-schema interpretation, or migration.
 
 ## 1. Settled Decisions and Non-Goals
 
@@ -29,9 +31,10 @@ compatibility mode, legacy-schema interpretation, database migration, or version
    `NO ACTION` edges, and fails before DDL when no safe diamond assignment exists.
 6. SQL Server selection is global and may backtrack. Local first-fit pruning is not correct for overlapping diamonds or
    parallel conflicts.
-7. Every covered `NO ACTION` edge has an exact same-row, same-value, same-statement-boundary carrier for every applicable
-   identity mutation.
-8. V1 covers every independently writable primitive component, every non-empty primitive subset, one or more
+7. Every covered `NO ACTION` edge has a structural carrier with the same physical mutation origin, receiver row, and
+   complete-vector mapping; covered-edge presence implies carrier presence, and the route propagates natively in the
+   same SQL statement.
+8. The runtime covers every independently writable primitive component, every non-empty primitive subset, one or more
    reference-backed replacements, multiple reference replacements, and mixed primitive/reference changes.
 9. The finalized relational model, not the DDL emitter, owns the chosen FK actions.
 
@@ -139,8 +142,8 @@ results are:
 The worst SQL Server and PostgreSQL vectors install, accept maximum-size test values, and cascade a maximum-width public
 value plus a lineage anchor. Complete anchors create no new crossing of the measured key/index column, declared-key
 payload, or table-column screens. This evidence does not measure total SQL Server row width or PostgreSQL tuple/index
-overhead, and it does not replace full generated-schema DDL qualification. It is sufficient for the v1 architecture
-choice, so site-minimal anchor closure is not part of v1.
+overhead, and it does not replace full generated-schema DDL qualification. It is sufficient for the architecture
+choice, so site-minimal anchor closure is not part of the supported contract.
 
 Mapping-pack size cannot yet be measured because the current pack payload is a stub. The conservative relational-manifest
 projection grows by 3.25/3.64 percent and generated SQL by 1.26/1.43 percent for DS 5.2/TPDM. Exact pack measurement
@@ -195,7 +198,8 @@ A candidate is identified by typed structural values:
 
 `OnUpdate`, generated constraint name, logical JSON path, and SQL Server mode are not part of candidate identity.
 Identical physical candidates are deduplicated while retaining every contributing logical site's provenance and presence
-predicate. Distinct parallel candidates remain distinct edges.
+predicate. Presence is normalized to the physical-row and optional-reference atoms used by the structural carrier
+relation. Distinct parallel candidates remain distinct edges.
 
 Internal equality and ordering use structural records and ordinal comparers. A durable hash is added only if a concrete
 artifact consumer later needs correlation outside the derivation process.
@@ -232,7 +236,7 @@ Provider-independent failures remain possible, including an identity cycle, unre
 mapping, mismatched vector arity, or ambiguous canonical-column mapping. Those are model failures, not SQL Server
 multiple-path classification.
 
-## 5. SQL Server Graph Legality and Carrier Safety
+## 5. SQL Server Graph Legality and Structural Carriers
 
 ### Physical cascade graph
 
@@ -245,37 +249,42 @@ subgraph must additionally contain at most one directed path between every order
 Raw incoming-edge count greater than one is not a multiple-path test. Independent parents with disjoint cascade ancestry
 are legal.
 
-### Mutation model
+### Finite structural carrier relation
 
-Identity changes are modeled as independently writable groups:
+For a mutable candidate edge `covered` from physical origin table/key `O` to receiver table/row `R`, a carrier is a
+directed path from `O` to `R` through other mutable physical candidates. The route is eligible only when all of these
+structural checks pass:
 
-- each independently writable primitive identity component is one group; and
-- each reference-backed replacement is one atomic group containing every public value and stable lineage anchor supplied
-  by that reference.
+1. **Same physical mutation origin.** The route starts at the same target table and ordered target propagation-key
+   columns as `covered`. Table reachability alone is insufficient.
+2. **Same receiver row.** The route terminates at the same physical receiver table and the composed row-correlation
+   mapping is identical to `covered`'s declared receiver-row identity. Correlation must use the same stable `DocumentId`
+   or the same complete declared row key; common ancestry is insufficient.
+3. **Identical complete-vector mapping.** Compose each path edge's ordered target-to-local column pairs and project the
+   composition to the columns originating in `covered`'s target vector. The result must equal `covered`'s complete
+   ordered target-to-receiver column mapping exactly, including public values, every lineage anchor, and terminal target
+   `DocumentId`; no covered receiver column may have a competing source. A route may carry unrelated columns in addition
+   to this identical mapping.
+4. **Presence implication.** Candidate derivation normalizes presence to a conjunction of canonical structural atoms:
+   physical-row presence identified by its correlation key and optional-reference presence identified by its stored
+   presence column. Required references add no atom. For every logical site retained on the deduplicated `covered`
+   candidate, the union of route atoms must be a subset of the covered site's atoms. This finite set-containment rule is
+   the only implication rule; an implication requiring Boolean inference is not a carrier.
+5. **Native same-statement propagation.** Every edge on the selected route is `NativeCascade`. SQL Server therefore
+   performs the complete write in the initiating statement. A trigger or later DML statement is never a carrier.
 
-A mutation case is any valid non-empty combination of groups. The analysis covers every primitive subset, each
-reference replacement, multiple reference replacements, and mixed combinations. It may represent cases symbolically,
-but it must not approximate “identity changed” as one indivisible event.
+Candidate derivation records ordered column mappings, receiver-row correlation keys, and canonical presence atoms, so
+these checks are equality and finite set-membership operations. The classifier does not construct mutation powersets,
+symbolic origins, value formulas, or subset-composition proofs. Whole-vector mapping equality covers every primitive
+subset, and atomic reference-vector replacement composes across one or multiple reference changes. Those mutation forms
+remain required behavioral tests, not solver input.
 
-Each symbolic value retains its mutation origin, origin row, component/lineage, and statement boundary. An AFTER trigger
-starts a later boundary and cannot repair an FK checked in the initiating statement.
+Before mode selection, enumerate eligible carrier routes in stable edge order through the all-native acyclic graph.
+Store each route as its ordered physical-edge identities. A `CoveredNoAction` edge is valid in a mode vector when at
+least one of its precomputed routes contains only edges selected as `NativeCascade`.
 
-### Exact carrier obligations
-
-For every complete action assignment and applicable mutation case, prove:
-
-1. **Changed target.** Every present reference to a changed target receives the same complete new vector before its FK is
-   checked.
-2. **Receiver validity.** A write to a unified receiver column leaves every other present FK reading that column valid.
-3. **Single value.** Competing writes to one receiver row/column carry the same symbolic value.
-4. **Origin-row correlation.** Changed-target and carrier routes originate from the same mutation row.
-5. **Receiver-row correlation.** The carrier reaches the exact receiver row using stable `DocumentId` or another complete
-   declared row identity.
-6. **Presence implication.** Whenever the covered edge is present, a complete carrier is present.
-7. **Statement boundary.** The carrier write is visible at the covered FK's constraint-check boundary.
-8. **Subset composition.** The proof remains valid for every supported simultaneous group combination.
-
-Reachability alone, common table ancestry, equality of old values, or success for one populated example is not a proof.
+Reachability alone, common table ancestry, equality of old values, or success for one populated example does not satisfy
+the relation.
 
 ## 6. Deterministic Bounded Global Selection
 
@@ -284,18 +293,27 @@ Every SQL Server physical document-reference FK receives one final mode:
 | Mode | Action | Meaning |
 |---|---|---|
 | `NativeCascade` | `ON UPDATE CASCADE` | The retained edge performs native propagation. |
-| `CoveredNoAction` | `ON UPDATE NO ACTION` | The mutable edge is pruned and every applicable mutation has an exact carrier. |
-| `ImmutableNoAction` | `ON UPDATE NO ACTION` | The target has no supported mutation origin; competing receiver writes are still validated. |
+| `CoveredNoAction` | `ON UPDATE NO ACTION` | The mutable edge is pruned and has a retained structural carrier route. |
+| `ImmutableNoAction` | `ON UPDATE NO ACTION` | The target has no supported identity mutation origin. |
 
-The selector uses deterministic bounded iterative-deepening DFS/backtracking. It introduces decision variables only for
-mutable candidates participating in an error-1785 conflict or a value-flow choice. Candidates use stable structural
+First compute the conflict core from the all-native graph: the decision set is the union of physical edges that
+participate in two distinct paths from one origin table to one receiver table, including parallel edges. Edges outside
+that set are fixed `NativeCascade`, because removing paths cannot create a new duplicate path.
+
+The selector then uses deterministic bounded iterative-deepening DFS/backtracking. Decision edges use stable structural
 order. For `coveredCount = 0..N`, enumerate mode vectors containing exactly that many `CoveredNoAction` values in
 lexicographic structural-edge order, with `NativeCascade` ordered before `CoveredNoAction`. Stop at the first valid
 complete assignment.
 
-For every complete assignment, the selector verifies graph legality, every carrier obligation, optional-reference
-presence, and unified-column value agreement. Partial assignments that already violate a monotone graph or carrier
-obligation are pruned.
+For every complete assignment:
+
+1. count paths in the retained DAG from each origin in structural order, capping each receiver count at two; reject the
+   vector when any receiver obtains a second path; and
+2. for each `CoveredNoAction` edge in structural order, require at least one precomputed eligible carrier route whose
+   edges are all `NativeCascade`.
+
+Partial assignments may be pruned only when the duplicate-path or missing-carrier result is monotone under every
+completion.
 
 This traversal makes the first valid assignment exactly the required objective:
 
@@ -305,8 +323,22 @@ This traversal makes the first valid assignment exactly the required objective:
 Selection is database-only. It neither invokes plan compilation nor duplicates write-plan logic. Plan compilation
 consumes the selected actions afterward.
 
+The classifier has a single DMS-owned limit of **1,000,000 work units per derived SQL Server schema**. One unit is
+charged for each of these deterministic operations:
+
+- extending carrier-route DFS by one physical edge;
+- assigning one decision edge during mode-vector DFS;
+- examining one physical edge while deriving the all-native conflict core;
+- examining one retained edge during duplicate-path validation; or
+- examining one precomputed carrier route while validating a covered edge.
+
+Charge the unit before performing the operation. Route enumeration, mode traversal, graph checks, and carrier checks all
+draw from the same counter in stable structural order. The bound is independent of wall-clock time, machine speed, and
+thread scheduling. A fixture that consumes exactly the last unit completes; attempting the next unit yields
+`CascadeClassificationComplexityExceeded` and no DDL.
+
 Do not add a general cost model. Add memoization or reachability-state canonicalization only when measured stock,
-extension, or adversarial fixtures exceed the selected work bound.
+extension, or adversarial fixtures exceed this bound.
 
 The selector emits no provisional feasible assignment. It distinguishes:
 
@@ -322,13 +354,13 @@ feasible assignment exists but its required optimum remains unproved.
 For each `CoveredNoAction` edge, keep the smallest auditable carrier witness:
 
 - the structural pruned FK;
-- mutation group or grouped cases;
-- retained changed-target route;
-- receiver carrier route;
-- complete receiver-row correlation key; and
-- statement boundary.
+- the selected ordered native carrier route;
+- the common physical origin key;
+- the common receiver-row correlation key;
+- the identical complete-vector column mapping; and
+- the presence relationship.
 
-A failure witness names the tables, columns, candidates, mutation origin, and first failed obligation in deterministic
+A failure witness names the tables, columns, candidates, physical origin, and first failed structural check in deterministic
 order. Exhaustive proof trees, omission proofs, canonical hash protocols, and solver-state serialization are not public
 contracts.
 
@@ -344,11 +376,12 @@ check to the physical cascade graph so table collapse cannot reintroduce a cycle
 stage and names one deterministic cycle in structural order.
 
 This validation is provider-independent. PostgreSQL's ability to install some physical cascade cycles does not expand the
-DMS v1 model. SQL Server never searches for a cycle cut, and the runtime never predicts or defers resolution of a future
+DMS model. SQL Server never searches for a cycle cut, and the runtime never predicts or defers resolution of a future
 identity. Every submitted reference must resolve normally before the write.
 
-The checked-in reciprocal provider tests remain useful evidence of database behavior, but they are not required DMS model
-or API fixtures and do not justify cycle-specific implementation.
+The reciprocal provider POC has been removed from the normal integration projects. A concise
+[historical observation](../evidence/dms-1129/reciprocal-cycle-poc.md) is retained; production fixtures must prove
+deterministic semantic and physical cycle rejection.
 
 ## 8. Errors and Minimal Public Contracts
 
@@ -387,10 +420,10 @@ Mapping packs also carry each reference site's lineage-anchor bindings so `Mappi
 runtime projection. They do not serialize classifier modes, solver state, exhaustive certificates, semantic hashes, or
 proof identifiers. Verify runtime/AOT semantic equivalence without adding cycle-specific metadata.
 
-MetaEd owns the authored identity-cycle prohibition and early feedback for SQL Server diamond realizability. DMS remains
-authoritative for provider-independent cycle validation, canonical storage, physical candidate deduplication, selected
-SQL Server actions, and provider provisioning. MetaEd may exchange authored semantic paths and outcome categories without
-reproducing DMS internal identifiers.
+MetaEd owns the authored identity-cycle prohibition. It may emit an early, non-blocking warning for a semantic diamond,
+but it does not classify SQL Server realizability, search mode vectors, prove carriers, or report DMS work-limit outcomes.
+DMS is the sole blocking authority after canonical storage mapping and owns physical candidate deduplication, physical
+cycle validation, selected SQL Server actions, and provider provisioning.
 
 ## 9. Verification and Delivery
 
@@ -400,8 +433,9 @@ Storage/candidate fixtures cover primitive identities, one and multiple referenc
 identity-alias mappings, optional presence, child/collection/extension sites, unified columns, physical deduplication,
 parallel candidates, and provider-limit failures.
 
-Mutation fixtures cover every primitive component and non-empty subset, each reference retarget, multiple retargets,
-primitive plus retargets, and all writable groups together.
+Behavioral mutation fixtures cover every primitive component and non-empty subset, each reference retarget, multiple
+retargets, primitive plus retargets, and all writable groups together. These are matrix tests of the whole-vector rule,
+not classifier search cases.
 
 SQL Server fixtures cover sole edges, independent parents, covered/uncovered and overlapping diamonds, parallel edges,
 optional-carrier failure, conflicting unified writes, no solution, deterministic work-limit exhaustion, and reversed-input
@@ -419,8 +453,7 @@ constraint validation. Provider-independent model fixtures cover deterministic s
 4. **Manifest/AOT/pack integration:** final actions and ordinary lineage-anchor bindings only.
 5. **Full-schema qualification:** stock, TPDM, extension, adversarial, concurrency, and performance evidence.
 
-All slices are required before the finalized v1 relational contract is complete. DMS-1258 must be narrowed or used as
-an umbrella with independently testable child stories.
+All slices are required before the finalized `v2` relational contract is complete.
 
 ### Current evidence gates
 
@@ -428,7 +461,7 @@ an umbrella with independently testable child stories.
 |---|---|---|
 | Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens, including maximum-value provider probes | Do not implement per-site minimal anchor closure; retain full-schema row/index qualification. |
 | Identity-cycle boundary | Settled: unsupported | Reject deterministically before vector recursion or provider action assignment; add no cycle runtime protocol. |
-| Simple global search | Open until the classifier exists and is measured | Search only diamond/parallel conflicts; add optimization only from evidence. |
+| Simple global search | Design-ready; implementation measurement open | Use the finite structural carrier relation and 1,000,000-unit deterministic budget; add optimization only from evidence. |
 | Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions and lineage bindings; do not add classifier/proof/hash protocols. |
 
 ## Relationship to Legacy ODS
