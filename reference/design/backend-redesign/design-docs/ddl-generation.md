@@ -245,10 +245,10 @@ The DDL generator must emit document-reference columns and constraints that enab
   - SQL Server consumes a globally selected action. Physical candidates are storage-mapped and deduplicated before
     selection, and every other physical `ON UPDATE CASCADE` FK participates as a fixed legality-graph edge. A legal
     all-native graph is accepted immediately; otherwise selection searches only the conflict core and checks exact
-    carriers on demand. Every covered `NO ACTION` has a retained native route with the same physical origin, receiver row,
-    complete-vector mapping, and structurally implied presence. Provider-independent validation rejects identity cycles,
-    so selection handles diamonds and overlapping multiple-path conflicts only. There is no reduced-FK or identity-value
-    trigger fallback; see
+    carriers on demand. Every covered `NO ACTION` has a retained native route from the same `CascadeSourceKey` with the
+    same receiver row, complete-vector mapping, and structurally implied presence. Provider-independent validation rejects
+    identity cycles, so selection handles diamonds and overlapping multiple-path conflicts only. There is no reduced-FK
+    or identity-value trigger fallback; see
     [mssql-cascading.md](mssql-cascading.md).
 - Emit one required propagation-key UNIQUE constraint on the target so every incoming complete FK is legal:
   `(<IdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)`. Widen the existing `*_RefKey`; do not emit

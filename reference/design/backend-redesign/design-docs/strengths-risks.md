@@ -84,11 +84,12 @@ Mitigations / guidance:
 SQL Server rejects retained FK action graphs with cycles or duplicate cascade paths (error 1785). DMS rejects identity
 cycles during provider-independent validation, then tries the complete physical all-native graph, including fixed cascade
 edges. Before either provider assigns actions, DMS also rejects multiple mutable FKs writing one canonical receiver
-column unless they prove the same physical mutation origin and same-statement propagation. Only a conflicting graph
-enters deterministic bounded conflict-core search. Independent parents with disjoint receiver storage remain legal;
-diamonds and parallel conflicts are action choices. A mutable edge may use full-vector `NO ACTION` only when an on-demand
-search finds a retained native route with the same physical mutation origin, receiver row, complete-vector mapping, and
-structurally implied presence. The native-first selector returns the first valid deterministic assignment; minimum-prune
+column unless every writer under each `InitiatingOriginFact` composes the same root storage column into the receiver in
+the same initiating statement. Only a conflicting graph enters deterministic bounded conflict-core search. Independent
+parents with disjoint receiver storage remain legal; diamonds and parallel conflicts are action choices. A mutable edge
+may use full-vector `NO ACTION` only when an on-demand search finds a retained native route from the same
+`CascadeSourceKey` with the same receiver row, complete-vector mapping, and structurally implied presence. The native-first
+selector returns the first valid deterministic assignment; minimum-prune
 optimization requires measured write-performance evidence. The classifier uses reusable linear-size state and a
 1,000,000-unit deterministic work budget that charges only decision assignments and directed-edge visits. Proved
 infeasibility and work-limit exhaustion are distinct, and there is no reduced-FK or identity-value trigger fallback. See

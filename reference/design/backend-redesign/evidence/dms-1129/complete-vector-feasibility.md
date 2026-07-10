@@ -9,7 +9,8 @@ The static result plus focused maximum-value provider probes pass Design Reset G
 screen for choosing one complete vector per target. Full generated Data Standard/TPDM DDL, the 27-column widest-count
 case, total SQL Server row width, PostgreSQL tuple/index overhead, actual supporting-index size, reference-resolution
 round trips, and write/cascade timing remain implementation qualification items; they are not evidence for retaining
-site-minimal anchor closure in the design.
+site-minimal anchor closure in the design. DMS-1274 must pass an early representative physical row/index and
+write-amplification gate before the `v2` storage shape is frozen; DMS-1277 retains exhaustive qualification.
 
 ## Reproduce
 
@@ -116,7 +117,9 @@ as four-byte UTF-8. That is below the prototype's 2,704-byte default-page screen
 
 This static screen does not calculate total SQL Server row width, actual target-unique or FK-supporting index size,
 PostgreSQL B-tree tuple overhead/compression, or physical storage at representative row counts. Those remain full
-generated-model qualification work.
+generated-model qualification work. DMS-1274 must run an early representative physical row/index and write-amplification
+gate before the `v2` storage shape is treated as fixed; DMS-1277 expands that gate to exhaustive supported-schema and
+adversarial qualification.
 
 Focused probes exercised the widest-declared-byte `SurveySectionResponse` shape rather than a narrower surrogate:
 
@@ -159,15 +162,17 @@ protocol changes until the runtime slice establishes the exact consumed fields.
 Gate 1's corrected transitive measured screen is passed for the architecture choice. The implementation slices must still:
 
 1. Implement the complete-vector prototype in relational-model derivation and emit real provider DDL.
-2. Install the full DS 5.2 and DS 5.2 plus TPDM DDL on both providers.
-3. Add maximum-value provider coverage for the 27-column widest-count vector, all five wide SQL Server vectors, and the
+2. During DMS-1274, measure representative high-volume target and FK-supporting indexes, total row size, and write
+   amplification before freezing the `v2` storage shape.
+3. Install the full DS 5.2 and DS 5.2 plus TPDM DDL on both providers.
+4. Add maximum-value provider coverage for the 27-column widest-count vector, all five wide SQL Server vectors, and the
    widest PostgreSQL vectors in the generated model.
-4. Measure actual row and target-unique/FK-supporting index sizes at representative row counts rather than this static
+5. Measure actual row and target-unique/FK-supporting index sizes at representative row counts rather than this static
    payload estimate.
-5. Measure reference-resolution database commands/round trips, including requests with several distinct anchor-bearing
+6. Measure reference-resolution database commands/round trips, including requests with several distinct anchor-bearing
    target groups; prefer a single batched/multi-result command where supported.
-6. Measure derivation time and representative write/cascade timing for stock and TPDM schemas.
-7. Measure mapping-pack size only after a real pack payload exists.
+7. Measure derivation time and representative write/cascade timing for stock and TPDM schemas.
+8. Measure mapping-pack size only after a real pack payload exists.
 
 If a provider probe fails because of complete anchors, preserve the concrete failing fixture and introduce only the
 smallest measured demand-reduction mechanism needed for that case. Do not retain the current generalized site-minimal

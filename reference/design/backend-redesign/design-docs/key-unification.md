@@ -1721,12 +1721,15 @@ Normative guidance:
   unification. This design exists specifically to avoid that failure mode.
 - Before provider action assignment, group mutable physical FK candidates by writable receiver column. Multiple writers
   are supported only when validation succeeds independently for every possible `InitiatingOriginFact`—directly mutable
-  root, ordered root key, and statement boundary—and every writer is reached under that fact in the same initiating
-  statement. Otherwise fail derivation as `ConflictingUnifiedCascadeWritesNotSupported`. The initial implementation does
-  not split the unification class or require deferred constraints.
+  root, ordered root key, and statement boundary—and every writer composes the same root storage column into the grouped
+  receiver column under that fact in the same initiating statement. Otherwise fail derivation as
+  `ConflictingUnifiedCascadeWritesNotSupported`. Same root key and statement are insufficient when writers map different
+  root-key components into one receiver column. The initial implementation does not split the unification class or require
+  deferred constraints.
 - Concrete/abstract pairs are subject to the same rule. Abstract identity maintenance occurs in an `AFTER` trigger's
   later DML statement, so it cannot prove same-statement propagation for a column also written through a concrete FK.
-- DDL verification MUST include both a same-`InitiatingOriginFact`/same-statement fan-out that succeeds and
+- DDL verification MUST include a same-`InitiatingOriginFact`/same-source-column/same-statement fan-out that succeeds, a
+  crossed-key-position fan-out with the same fact and statement but different source-column mappings that fails, and
   independent-parent and concrete/abstract shared-writer fixtures that fail provider-independent derivation.
 
 #### SQL Server (foreign-key pruning; native cascade on eligible edges)
@@ -2295,7 +2298,8 @@ semantics, or cascade correctness.
     per-origin duplicate reachability, not raw in-degree; identity cycles have already been rejected,
   - independent parents with disjoint receiver storage keep `ON UPDATE CASCADE`; multiple mutable FKs sharing one
     writable receiver column must first pass validation for every possible `InitiatingOriginFact`, with every writer
-    reached under that fact in the same statement, or fail as `ConflictingUnifiedCascadeWritesNotSupported`,
+    reached under that fact, composing the same root storage column into the receiver, and propagating in the same
+    statement, or fail as `ConflictingUnifiedCascadeWritesNotSupported`,
   - a mutable edge uses `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
   - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
     target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,

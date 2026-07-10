@@ -42,7 +42,8 @@ compatibility mode, legacy-schema interpretation, or migration.
     members in the effective schema is transitively mutable.
 11. Topology legality does not prove value-flow safety. Before either provider assigns actions, reject any canonical
     receiver column that multiple mutable FKs can write unless shared-receiver validation succeeds independently for
-    every possible `InitiatingOriginFact`, with every writer reached under that fact in the same database statement.
+    every possible `InitiatingOriginFact`, with every writer reached under that fact in the same database statement and
+    carrying the same root-key value into that receiver column.
 
 ### Non-goals
 
@@ -150,8 +151,9 @@ test values, and cascade a maximum-width public value plus a lineage anchor. The
 widest-count vector. Complete anchors create no new crossing of the measured key/index column, declared-key payload, or
 table-column screens. This evidence does not measure total SQL Server row width, PostgreSQL tuple/index overhead, actual
 target-unique or FK-supporting index sizes, or representative write/cascade timing. It does not replace full
-generated-schema DDL qualification. It is sufficient for the architecture choice, so site-minimal anchor closure is not
-part of the supported contract.
+generated-schema DDL qualification. It is sufficient to reject site-minimal anchor closure as unjustified complexity, but
+the `v2` storage shape is not frozen until DMS-1274 passes the early representative physical row/index and
+write-amplification gate.
 
 Mapping-pack size cannot yet be measured because the current pack payload is a stub. The conservative relational-manifest
 projection grows by 3.25/3.64 percent and generated SQL by 1.26/1.43 percent for DS 5.2/TPDM. Exact pack measurement
@@ -215,14 +217,14 @@ A candidate is identified by typed structural values:
  ordered local storage columns,
  target table,
  ordered target storage columns,
- delete action,
- semantic FK kind when otherwise-identical roles must remain distinct)
+ delete action)
 ```
 
 `OnUpdate`, generated constraint name, logical JSON path, and SQL Server mode are not part of candidate identity.
-Identical physical candidates are deduplicated while retaining every contributing logical site's provenance and presence
-predicate. Presence is normalized to the physical-row and optional-reference atoms used by the structural carrier
-relation. Distinct parallel candidates remain distinct edges.
+Semantic roles never split an otherwise-identical physical candidate. Identical physical candidates are deduplicated
+while retaining every contributing logical site's role, provenance, and presence predicate. Presence is normalized to
+the physical-row and optional-reference atoms used by the structural carrier relation. Parallel candidates remain
+distinct edges only when at least one physical identity component above differs.
 
 Internal equality and ordering use structural records and ordinal comparers. A durable hash is added only if a concrete
 artifact consumer later needs correlation outside the derivation process.
@@ -290,20 +292,28 @@ and [Primary and foreign key constraints](https://learn.microsoft.com/en-us/sql/
 An `InitiatingOriginFact` is the tuple `(directly mutable root table, ordered root key, statement boundary)` seeded by one
 directly authorized identity mutation. It is used only by shared-receiver value-flow validation. The validation is
 quantified independently over every possible `InitiatingOriginFact`; it must not substitute a common upstream fact for a
-target's own fact when that target is both directly and transitively mutable.
+target's own fact when that target is both directly and transitively mutable. The fact identifies the mutation scope; it
+does not by itself prove that two paths carry the same root-key component or value.
 
 After canonical storage mapping and effective mutability are known, group mutable physical FK candidates by writable
 receiver column. For each group with more than one candidate, enumerate every possible `InitiatingOriginFact` that can
 reach any candidate in the group. The group is valid only when derivation proves, for every such fact, that all writers:
 
 1. are reached from that same directly mutable root table and ordered root key; and
-2. propagate to the receiver as part of the same initiating database statement.
+2. compose the same root storage column through their native routes into the grouped receiver column; and
+3. propagate to the receiver as part of the same initiating database statement.
 
 Derive these facts from the same identity-mutability graph. Native cascades preserve an `InitiatingOriginFact`, while
 trigger maintenance starts a new statement boundary. For every fact that can reach any candidate in the shared-column
-group, every candidate must have a native route carrying that column to the receiver under that same fact. A missing
-candidate route, a different root key, or a crossed statement boundary fails validation. Do not reuse SQL Server's
-backtracking classifier for this check.
+group, every candidate must have a native route carrying the same root storage column to the receiver under that same
+fact. A missing candidate route, a different composed source-column mapping, a different root key, or a crossed statement
+boundary fails validation. Do not reuse SQL Server's backtracking classifier for this check.
+
+Same fact and statement are insufficient without source-column equality. For example, let `R(P, Q, DocumentId)` be a
+mutable root and let one receiver hold `FK1 (X, Y, D1) -> R(P, Q, DocumentId)` and
+`FK2 (Z, X, D2) -> R(P, Q, DocumentId)`. Both writers can share one fact and statement, but `FK1` maps `P` to `X` while
+`FK2` maps `Q` to `X`. When `P = Q` initially and only `P` changes, no final `X` can satisfy both FKs. This mapping fails
+provider-independent validation before PostgreSQL action assignment or SQL Server selection.
 
 Two paths do not share an `InitiatingOriginFact` merely because they have equal current values, logical ancestry, or
 naming. A target with its own supported identity update contributes its own fact, even if it is also transitively mutable
@@ -560,7 +570,7 @@ deduplication, physical cycle validation, selected SQL Server actions, and provi
 
 Storage/candidate fixtures cover primitive identities, one and multiple reference-backed identities, abstract-member and
 identity-alias mappings, optional presence, child/collection/extension sites, unified columns, physical deduplication,
-parallel candidates, and provider-limit failures.
+parallel candidates, semantic-role provenance collapsed into one physical candidate, and provider-limit failures.
 
 Behavioral mutation fixtures cover every primitive component and non-empty subset, each reference retarget, multiple
 retargets, primitive plus retargets, and all writable groups together. These are matrix tests of the whole-vector rule,
@@ -573,7 +583,8 @@ which two structural prefixes converge on the same intermediate table with diffe
 presence state and only the later prefix yields an eligible carrier. Provider-independent fixtures cover conflicting
 unified writes: independently mutable parents sharing one receiver column, including a concrete/abstract pair, fail as
 `ConflictingUnifiedCascadeWritesNotSupported` before either provider assigns actions or SQL Server takes the fast path;
-same-`InitiatingOriginFact`, same-statement writers remain valid.
+same-`InitiatingOriginFact`, same-source-column, same-statement writers remain valid. Include the crossed-key-position
+case above to prove that same-fact/same-statement writers with different source-column mappings fail.
 
 Provider/API fixtures cover errors 1785 and 547 for diamonds, ordinary reference-resolution failure, true retarget, stale
 version, rollback, hidden-profile-state preservation, stamping, referential-identity maintenance, change queries, and final
@@ -582,12 +593,13 @@ constraint validation. Provider-independent model fixtures cover deterministic s
 ### Delivery slices
 
 1. **Database evidence and static feasibility:** stock-schema vector measurements and maximum-value probes.
-2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, and limits.
+2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, limits, and
+   an early representative physical row/index and write-amplification gate before the `v2` storage shape is frozen.
 3. **Provider actions:** PostgreSQL fixed assignment and SQL Server bounded global diamond selection.
 4. **Manifest/AOT/pack integration:** final actions, target anchor-read records, and aligned local anchor columns only.
 5. **Full-schema qualification:** stock, TPDM, extension, and adversarial generated DDL; widest-count provider coverage;
-   actual row and target-unique/FK-supporting index sizes at representative row counts; reference-resolution round trips;
-   concurrency; and write/cascade timing.
+   exhaustive row and target-unique/FK-supporting index sizes at representative row counts; reference-resolution round
+   trips; concurrency; and write/cascade timing. This expands and confirms the early slice-2 physical-storage gate.
 
 All slices are required before the finalized `v2` relational contract is complete.
 
@@ -595,7 +607,7 @@ All slices are required before the finalized `v2` relational contract is complet
 
 | Gate | Current result | Consequence |
 |---|---|---|
-| Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens; the focused provider probe covers the nine-column widest-byte case, not the 27-column widest-count case | Do not implement per-site minimal anchor closure; retain full-schema row/index and widest-count qualification. |
+| Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens; the focused provider probe covers the nine-column widest-byte case, not the 27-column widest-count case | Do not implement per-site minimal anchor closure; require the early DMS-1274 representative physical-storage gate before freezing `v2`, then retain DMS-1277 full-schema row/index and widest-count qualification. |
 | Identity-cycle boundary | Settled: unsupported | Reject deterministically before vector recursion or provider action assignment; add no cycle runtime protocol. |
 | Stock all-native topology | Static reconstruction reports 22/23 candidates and no conflicts for DS 5.2/TPDM | Reproduce from implemented v2 candidates and return before conflict-core search. |
 | Simple global search | Design-ready; implementation measurement open | Use on-demand exact-carrier checks and the 1,000,000-unit budget counting only decision assignments and edge visits; add minimum-prune optimization only from performance evidence. |

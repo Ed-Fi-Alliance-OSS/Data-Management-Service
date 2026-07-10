@@ -283,8 +283,8 @@ Engine considerations:
   validation still applies.
 - SQL Server rejects a table reached by multiple cascade paths (error 1785), so it uses
   **foreign-key pruning** analyzed in propagation direction (referenced/parent → referrer/child). Global bounded search
-  chooses a legal retained graph and requires every pruned edge to have a retained route with the same physical mutation
-  origin, receiver row, complete-vector mapping, presence implication, and native same-statement propagation.
+  chooses a legal retained graph and requires every pruned edge to have a retained route from the same `CascadeSourceKey`
+  with the same receiver row, complete-vector mapping, presence implication, and native same-statement propagation.
   Every SQL Server reference FK keeps the full composite key — there is no `DocumentId`-only shape and no identity-value
   propagation trigger. See [mssql-cascading.md](mssql-cascading.md).
 

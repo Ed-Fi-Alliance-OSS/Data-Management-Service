@@ -51,7 +51,9 @@ Everything else must be introduced from a concrete failing fixture or measured p
 10. SQL Server fails before DDL when exhaustive bounded analysis proves no safe diamond assignment; work-limit
     exhaustion is a distinct result.
 11. Ordinary provider-independent model validation applies to both dialects.
-12. Abstractness is not mutability. An abstract target is mutable iff at least one effective-schema concrete member is
+12. Multiple FKs may write one canonical receiver column only when every writer under each `InitiatingOriginFact`
+    composes the same root storage column to that receiver in the same initiating statement.
+13. Abstractness is not mutability. An abstract target is mutable iff at least one effective-schema concrete member is
     transitively mutable.
 
 ## Decision Record
@@ -83,6 +85,9 @@ execute `ON UPDATE CASCADE`, and retain matching child rows for the nine-column 
 27-column widest-count case is not probed. Full generated-schema DDL, total SQL Server row width, PostgreSQL physical
 index overhead, actual target-unique/FK-supporting index sizes, reference-resolution round trips, representative row
 counts, write/cascade timing, and exact mapping-pack size remain implementation qualification.
+
+DMS-1274 owns an early representative physical row/index and write-amplification gate before the `v2` storage shape is
+treated as fixed. DMS-1277 retains exhaustive full-schema qualification across supported and adversarial schemas.
 
 Site-minimal demand closure, `AnchorSetId` variants, omission proofs, and multiple propagation keys per target are removed.
 If implementation later finds a provider failure caused by complete anchors, preserve that fixture and add only the
@@ -116,6 +121,10 @@ cycle-free by validation; the retained cascade multigraph must contain at most o
 A covered `NO ACTION` edge must have a retained carrier route that passes the finite structural relation in the
 authoritative design. Whole-vector equality makes mutation powersets and symbolic value proofs unnecessary classifier
 inputs.
+
+Before either provider assigns actions, shared-receiver validation requires every writer under each possible initiating
+fact to compose the same root storage column into the grouped receiver column in the same statement. Same root key and
+statement without the same composed source-column mapping is not safe.
 
 The finalized relational model owns `OnUpdate`; DDL only renders it.
 
@@ -183,7 +192,7 @@ not mapping/runtime contracts.
 
 | Gate | Status | Required consequence |
 |---|---|---|
-| Complete-vector measured screen | Passed as a capacity screen | Keep one complete vector; retain full-schema physical, widest-count, round-trip, and performance qualification. |
+| Complete-vector measured screen | Passed as a capacity screen | Keep one complete vector; require the early DMS-1274 representative physical-storage gate before freezing `v2`, then retain DMS-1277 full-schema, widest-count, round-trip, and performance qualification. |
 | Stock all-native topology | Static reconstruction reports 22/23 mutable candidates and no conflicts | Reproduce from implemented v2 candidates and return before conflict-core search. |
 | Simple global search | Design-ready; implementation measurements remain DMS-1258/DMS-1277 work | Use on-demand structural carriers and the 1,000,000-unit deterministic bound; add minimum-prune optimization only for measured write-performance benefit. |
 | Minimal artifact contract | Accepted design constraint; implementation pending | Add fields only for concrete runtime/AOT consumers. |
@@ -193,10 +202,10 @@ not mapping/runtime contracts.
 | Slice | Ownership | Exit condition |
 |---|---|---|
 | Database evidence and static feasibility | Complete | Computed capacity screen and focused widest-byte provider probes pass. |
-| Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented; the centralized mapping version is bumped to `v2`. |
+| Complete vectors and physical candidates | DMS-1274 | Deterministic full FK shapes and ordinary anchor-vector resolution are implemented; representative physical row/index size and write-amplification pass an early architecture gate; the centralized mapping version is bumped to `v2`. |
 | Provider actions and SQL Server classifier | DMS-1258 | Stock schemas take the all-native fast path; generated DDL installs and structural-carrier diamond fixtures produce deterministic first-feasible outcomes within the fixed work budget. |
 | Manifest, AOT, and mapping-pack integration | DMS-1276 | Runtime and `v2` pack loading produce equivalent final models and behavior. |
-| Full-schema qualification | DMS-1277 | Freshly provisioned `v2` stock, TPDM, extension, and adversarial DDL pass; actual row/index sizes, widest-count vectors, representative row counts, reference-resolution round trips, concurrency, and write/cascade timing pass. |
+| Full-schema qualification | DMS-1277 | Freshly provisioned `v2` stock, TPDM, extension, and adversarial DDL pass; exhaustive row/index sizes, widest-count vectors, representative row counts, reference-resolution round trips, concurrency, and write/cascade timing pass and confirm the early DMS-1274 gate. |
 
 All slices are required before the `v2` relational contract is complete.
 
