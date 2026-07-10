@@ -451,7 +451,10 @@ A feasibility spike confirmed that descriptors **are** subject to readable-profi
   > Descriptor `If-Match` is unaffected and remains profile-insensitive (the bullet above): the served
   > etag gains `profileCode`, but `EtagMatchProjection.Of` still drops it from every precondition
   > comparison.
-- `DescriptorVariantKey` is left in place: it remains the correct, still-used shorthand for the fixed "no profile, no links, JSON" variant in the descriptor *write*-side tests (`DescriptorWriteHandlerPreconditionTests`, `DescriptorWriteHandlerResponseEtagTests`), where the represented etag genuinely is always profile-insensitive. It is simply no longer invoked from descriptor *read* production code.
+- Descriptor read and write paths compose etags through `IServedEtagComposer` using a
+  `ServedEtagContext`. Callers provide the effective schema hash, JSON format, applicable profile
+  name, fixed descriptor link mode (`LinksEnabled: false`), `ContentVersion`, and response content
+  coding; there is no descriptor-specific variant-key abstraction.
 
 ### Scope of the code change
 

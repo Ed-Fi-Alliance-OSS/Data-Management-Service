@@ -572,8 +572,6 @@ public static class AspNetCoreFrontend
         string dmsPath
     )
     {
-        bool emittedEtag = false;
-
         if (frontendResponse.LocationHeaderPath != null)
         {
             string urlBeforeDmsPath = httpContext
@@ -595,7 +593,6 @@ public static class AspNetCoreFrontend
                 if (EtagValue.TryParseHeaderValue(header.Value, out var etagValue))
                 {
                     httpContext.Response.Headers.Append(header.Key, EtagValue.ToHeaderValue(etagValue));
-                    emittedEtag = true;
                 }
             }
             else
@@ -604,19 +601,22 @@ public static class AspNetCoreFrontend
             }
         }
 
-        // ETag-bearing GET responses select a validator by Accept-Encoding. A 304 has no body, so
-        // ResponseCompressionMiddleware never reaches its body-write hook where it normally adds
-        // this Vary value; add it at the serving boundary for both 200 and 304 responses.
+        // Successful resource GETs can vary by readable profile/media type. They can also vary by
+        // content coding when response compression is enabled, including query responses whose item
+        // etags carry the selected coding and 304 responses whose empty body bypasses compression
+        // middleware. Declare both request selectors at the serving boundary so caches never reuse a
+        // representation across incompatible Accept or Accept-Encoding values.
         if (
-            emittedEtag
-            && HttpMethods.IsGet(httpContext.Request.Method)
-            && GetResponseCompressionProvider(httpContext) is not null
-            && !httpContext
-                .Response.Headers.GetCommaSeparatedValues("Vary")
-                .Contains("Accept-Encoding", StringComparer.OrdinalIgnoreCase)
+            HttpMethods.IsGet(httpContext.Request.Method)
+            && frontendResponse.StatusCode is StatusCodes.Status200OK or StatusCodes.Status304NotModified
         )
         {
-            httpContext.Response.Headers.Append("Vary", "Accept-Encoding");
+            AppendVaryHeaderIfMissing(httpContext.Response, "Accept");
+
+            if (GetResponseCompressionProvider(httpContext) is not null)
+            {
+                AppendVaryHeaderIfMissing(httpContext.Response, "Accept-Encoding");
+            }
         }
 
         return Results.Content(
@@ -627,6 +627,18 @@ public static class AspNetCoreFrontend
             contentType: frontendResponse.ContentType,
             contentEncoding: Encoding.UTF8
         );
+    }
+
+    private static void AppendVaryHeaderIfMissing(HttpResponse response, string fieldName)
+    {
+        if (
+            !response
+                .Headers.GetCommaSeparatedValues("Vary")
+                .Contains(fieldName, StringComparer.OrdinalIgnoreCase)
+        )
+        {
+            response.Headers.Append("Vary", fieldName);
+        }
     }
 
     /// <summary>

@@ -73,13 +73,16 @@ public class Given_RelationalCurrentEtagPreconditionChecker
 
         result.Should().NotBeNull();
         result!.IsSatisfied.Should().BeTrue();
+        result.CurrentState.Should().NotBeNull();
         result.TargetContext.ObservedContentVersion.Should().Be(LockedContentVersion);
         _capturedLockCommand.CommandText.Should().Contain("FOR UPDATE");
         _capturedLockCommand.CommandText.Should().Contain("WHERE document.\"DocumentId\" = @documentId");
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
-        _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
+        _capturedCurrentStateLoadRequest
+            .TargetContext.ObservedContentVersion.Should()
+            .Be(LockedContentVersion);
     }
 
     [Test]
@@ -96,7 +99,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
         _capturedLockCommand.Parameters.Should().ContainSingle();
         _capturedLockCommand.Parameters[0].Name.Should().Be("@documentId");
         _capturedLockCommand.Parameters[0].Value.Should().Be(DocumentId);
-        _capturedCurrentStateLoadRequest.TargetContext.ObservedContentVersion.Should().Be(44L);
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
     }
 
     [Test]
@@ -132,6 +136,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
 
         result.Should().NotBeNull();
         result!.IsSatisfied.Should().BeFalse();
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
     }
 
     [Test]
@@ -150,6 +156,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
 
         result.Should().NotBeNull();
         result!.IsSatisfied.Should().BeFalse();
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
     }
 
     [Test]
@@ -201,6 +209,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
 
         result.Should().NotBeNull();
         result!.IsSatisfied.Should().BeFalse();
+        result.CurrentState.Should().BeNull();
+        CurrentStateShouldNotHaveBeenLoaded();
     }
 
     [Test]
@@ -232,6 +242,7 @@ public class Given_RelationalCurrentEtagPreconditionChecker
 
         result.Should().NotBeNull();
         result!.IsSatisfied.Should().BeTrue();
+        result.CurrentState.Should().NotBeNull();
     }
 
     private RelationalCurrentEtagPreconditionCheckRequest CreateRequest(
@@ -249,6 +260,18 @@ public class Given_RelationalCurrentEtagPreconditionChecker
             new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid, 44L),
             precondition
         );
+    }
+
+    private void CurrentStateShouldNotHaveBeenLoaded()
+    {
+        A.CallTo(() =>
+                _currentStateLoader.LoadAsync(
+                    A<RelationalWriteCurrentStateLoadRequest>._,
+                    _writeSession,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
     }
 
     // Composes a client-facing etag for the current row. The checker evaluates only its ContentVersion

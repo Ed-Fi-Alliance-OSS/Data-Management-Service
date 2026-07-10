@@ -326,6 +326,7 @@ public class GetByIdHandlerTests
             if (expectedStatusCode == 304)
             {
                 _requestInfo.FrontendResponse.Body.Should().BeNull();
+                _requestInfo.FrontendResponse.ContentType.Should().BeNull();
             }
             else
             {

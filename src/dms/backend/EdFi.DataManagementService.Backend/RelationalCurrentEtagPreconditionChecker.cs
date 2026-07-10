@@ -40,10 +40,11 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
 /// Result of the current-etag precondition check. <see cref="IsSatisfied"/> is whether the write may
 /// PROCEED under the precondition: for If-Match this means the tag matched; for If-None-Match the
 /// polarity is inverted (satisfied = the tag did NOT match). Computed by
-/// <see cref="EtagPreconditionEvaluator"/> so the inverted semantics live in one place.
+/// <see cref="EtagPreconditionEvaluator"/> so the inverted semantics live in one place. The
+/// <see cref="CurrentState"/> is loaded only when the precondition is satisfied.
 /// </summary>
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
-    RelationalWriteCurrentState CurrentState,
+    RelationalWriteCurrentState? CurrentState,
     RelationalWriteTargetContext.ExistingDocument TargetContext,
     bool IsSatisfied
 );
@@ -112,7 +113,8 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(writeSession);
 
-        var documentLocked = await TryLockDocumentAsync(
+        var lockedContentVersion = await RelationalWriteTargetLocking
+            .TryLockExistingTargetAsync(
                 request.MappingSet.Key.Dialect,
                 request.TargetContext.DocumentId,
                 writeSession,
@@ -120,18 +122,42 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             )
             .ConfigureAwait(false);
 
-        if (!documentLocked)
+        if (lockedContentVersion is null)
         {
             return null;
+        }
+
+        var lockedTargetContext = request.TargetContext with
+        {
+            ObservedContentVersion = lockedContentVersion.Value,
+        };
+
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfiedByCurrentState(
+            request.Precondition,
+            lockedContentVersion.Value,
+            request.MappingSet.Key.EffectiveSchemaHash
+        );
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "Etag precondition for document {DocumentId}: contentVersion={ContentVersion}, satisfied={IsSatisfied}",
+                request.TargetContext.DocumentId,
+                lockedContentVersion.Value,
+                isSatisfied
+            );
+        }
+
+        if (!isSatisfied)
+        {
+            return new RelationalCurrentEtagPreconditionCheckResult(null, lockedTargetContext, false);
         }
 
         var currentState = await _currentStateLoader
             .LoadAsync(
                 new RelationalWriteCurrentStateLoadRequest(
                     request.ReadPlan,
-                    request.TargetContext,
-                    // External-response ETag comparison always needs descriptor URI hydration when
-                    // the read plan serves descriptor-valued members, regardless of profile use.
+                    lockedTargetContext,
                     includeDescriptorProjection: true
                 ),
                 writeSession,
@@ -144,46 +170,11 @@ internal sealed class RelationalCurrentEtagPreconditionChecker(
             return null;
         }
 
-        var refreshedTargetContext = request.TargetContext with
+        var refreshedTargetContext = lockedTargetContext with
         {
             ObservedContentVersion = currentState.DocumentMetadata.ContentVersion,
         };
 
-        var isSatisfied = EtagPreconditionEvaluator.IsSatisfiedByCurrentState(
-            request.Precondition,
-            currentState.DocumentMetadata.ContentVersion,
-            request.MappingSet.Key.EffectiveSchemaHash
-        );
-
-        if (_logger.IsEnabled(LogLevel.Debug))
-        {
-            _logger.LogDebug(
-                "Etag precondition for document {DocumentId}: contentVersion={ContentVersion}, satisfied={IsSatisfied}",
-                request.TargetContext.DocumentId,
-                currentState.DocumentMetadata.ContentVersion,
-                isSatisfied
-            );
-        }
-
-        return new RelationalCurrentEtagPreconditionCheckResult(
-            currentState,
-            refreshedTargetContext,
-            isSatisfied
-        );
-    }
-
-    private static async Task<bool> TryLockDocumentAsync(
-        SqlDialect dialect,
-        long documentId,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var command = writeSession.CreateCommand(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, documentId)
-        );
-
-        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return scalarResult is not null and not DBNull;
+        return new RelationalCurrentEtagPreconditionCheckResult(currentState, refreshedTargetContext, true);
     }
 }

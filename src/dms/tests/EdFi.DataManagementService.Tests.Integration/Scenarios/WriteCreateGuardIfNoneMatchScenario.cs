@@ -160,7 +160,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         };
         // A stale, non-matching tag: the client's copy no longer reflects the current representation,
         // so If-None-Match is satisfied and the write proceeds normally.
-        nonMatchingRequest.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, "\"1-00000000.j._.n\"");
+        nonMatchingRequest.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, "\"1-00000000.j._.n.i\"");
 
         using HttpResponseMessage nonMatchingResponse = await harness.HttpClient.SendAsync(
             nonMatchingRequest
@@ -257,7 +257,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         };
         // RFC 9110 §13.1.2: a list precondition fails the write (412) when ANY member matches the
         // current representation. The matching tag is placed among stale tags to prove list iteration.
-        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n\", \"{etag}\"");
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n.i\", \"{etag}\"");
 
         using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
         string body = await response.Content.ReadAsStringAsync();
@@ -285,7 +285,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         // All members are stale, so If-None-Match is satisfied and the write proceeds normally.
         request.Headers.TryAddWithoutValidation(
             IfNoneMatchHeaderName,
-            "\"1-00000000.j._.n\", \"2-11111111.j._.n\""
+            "\"1-00000000.j._.n.i\", \"2-11111111.j._.n.i\""
         );
 
         using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);

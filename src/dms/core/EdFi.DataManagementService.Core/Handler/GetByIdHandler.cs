@@ -211,7 +211,8 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
         response = new FrontendResponse(
             StatusCode: 304,
             Body: null,
-            Headers: new() { ["etag"] = servedEtag }
+            Headers: new() { ["etag"] = servedEtag },
+            ContentType: null
         );
         return true;
     }

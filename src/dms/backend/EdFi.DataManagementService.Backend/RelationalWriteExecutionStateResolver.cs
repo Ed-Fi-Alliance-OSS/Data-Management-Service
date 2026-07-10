@@ -179,7 +179,10 @@ internal sealed class RelationalWriteExecutionStateResolver(
                 // the normal not-exists (404) result.
                 RelationalWriteOperationKind.Put => request.WritePrecondition
                     is WritePrecondition.IfMatch { IsWildcard: true }
-                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(request.OperationKind)
+                    ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        request.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    )
                     : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
             };

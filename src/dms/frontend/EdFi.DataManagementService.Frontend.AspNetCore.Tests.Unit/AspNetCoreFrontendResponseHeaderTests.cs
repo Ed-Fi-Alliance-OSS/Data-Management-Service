@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -120,6 +121,62 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         httpContext
             .Response.Headers.GetCommaSeparatedValues("Vary")
             .Should()
-            .ContainSingle("Accept-Encoding");
+            .BeEquivalentTo("Accept", "Accept-Encoding");
+    }
+
+    [Test]
+    public async Task It_varies_a_successful_get_without_a_response_etag_by_accept_and_accept_encoding()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Method = HttpMethods.Get;
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = "/data/testproject/widgets";
+        httpContext.RequestServices = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(A.Fake<IResponseCompressionProvider>())
+            .BuildServiceProvider();
+
+        var response = new FrontendResponse(StatusCode: 200, Body: new JsonArray(), Headers: []);
+
+        var toResultMethod =
+            typeof(AspNetCoreFrontend).GetMethod("ToResult", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Could not locate AspNetCoreFrontend.ToResult.");
+
+        var result =
+            (IResult?)toResultMethod.Invoke(null, [response, httpContext, "/data/testproject/widgets"])
+            ?? throw new InvalidOperationException("AspNetCoreFrontend.ToResult returned null.");
+
+        await result.ExecuteAsync(httpContext);
+
+        httpContext
+            .Response.Headers.GetCommaSeparatedValues("Vary")
+            .Should()
+            .BeEquivalentTo("Accept", "Accept-Encoding");
+    }
+
+    [Test]
+    public async Task It_varies_a_successful_get_by_accept_when_response_compression_is_disabled()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Method = HttpMethods.Get;
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = "/data/testproject/widgets";
+        httpContext.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+
+        var response = new FrontendResponse(StatusCode: 200, Body: new JsonArray(), Headers: []);
+
+        var toResultMethod =
+            typeof(AspNetCoreFrontend).GetMethod("ToResult", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Could not locate AspNetCoreFrontend.ToResult.");
+
+        var result =
+            (IResult?)toResultMethod.Invoke(null, [response, httpContext, "/data/testproject/widgets"])
+            ?? throw new InvalidOperationException("AspNetCoreFrontend.ToResult returned null.");
+
+        await result.ExecuteAsync(httpContext);
+
+        httpContext.Response.Headers.GetCommaSeparatedValues("Vary").Should().ContainSingle("Accept");
     }
 }
