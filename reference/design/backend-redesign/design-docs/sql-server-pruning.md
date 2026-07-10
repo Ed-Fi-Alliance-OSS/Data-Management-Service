@@ -13,8 +13,9 @@ multiple-cascade-path convergence.
 ## Settled Decisions
 
 1. Pruning is SQL Server-only. PostgreSQL behavior does not change.
-2. Every document-reference foreign key remains full composite: target public-identity storage columns followed by target
-   `DocumentId`. There is no `DocumentId`-only shape or identity-value propagation-trigger fallback.
+2. Every document-reference foreign key remains full composite: its ordered local public-identity storage columns and
+   local reference `DocumentId` are paired with the corresponding ordered target `*_RefKey` columns. There is no
+   `DocumentId`-only shape or identity-value propagation-trigger fallback.
 3. DMS, not MetaEd, makes the SQL Server physical pruning decision after reference binding and key unification.
 4. Detection is ODS-style and per directly mutable origin. Two independent parents of one receiver are not a diamond.
 5. At a convergence, DMS considers the conflicting incoming edges in stable order. It retains the first safe survivor;
@@ -55,8 +56,9 @@ composite reference FKs.
 This ticket deliberately does **not** implement a general propagation-analysis or graph-solving framework.
 
 - No complete or transitive propagation vectors, lineage `DocumentId` columns, origin facts, or route-proof artifacts.
-- No optional- or presence-sensitive carrier proofs. If equality of the receiver row or availability of the retained
-  carrier is not evident from the existing required document-reference bindings, that survivor is unsafe.
+- No optional- or presence-sensitive carrier proofs. The safety test recognizes only required-binding shapes that
+  directly establish its conditions; if they do not establish equality of the receiver row or availability of the
+  retained carrier, that survivor is unsafe.
 - No shared-writer, generalized storage-promotion, equality-flow, or arbitrary reference-retarget support.
 - No generalized topology validation over unrelated foreign-key classes. The selector considers only DMS
   document-reference candidate cascades. A non-document `ON UPDATE CASCADE` is outside this ticket's selector scope.
@@ -167,11 +169,12 @@ merely because it exists.
 ### Traverse per mutable origin
 
 Process mutable origins, receivers, and incoming edges in stable physical order. For each origin, walk the retained
-candidate graph while retaining the predecessor edge for each first arrival and a second-arrival trace when needed.
-Path counting is capped at two, but the traces identify the earliest receiver at which the two retained paths have
-distinct incoming physical edges. Only those incoming candidate edges are choices. If two paths arrive through the same
-incoming edge, their convergence is upstream and that receiver supplies no pruning choice. Incoming edges not on a
-duplicate path from that origin remain cascades.
+candidate graph while retaining the predecessor edge for each first arrival and a second-arrival trace when needed. Two
+arrivals are enough to establish that a receiver has a convergence, but they are not enough to select its cuts: at the
+earliest receiver with distinct incoming physical edges, collect every distinct incoming candidate edge that is
+reachable from that origin. Those, and only those, are the choices. If two paths arrive through the same incoming edge,
+their convergence is upstream and that receiver supplies no pruning choice. Incoming edges not on a duplicate path from
+that origin remain cascades.
 
 This is intentionally not global raw-in-degree pruning. Independent parents remain legal, and DMS does not reject an
 unrelated cascade component just because SQL Server might have a topology concern outside DMS-1129's candidate domain.
@@ -182,8 +185,10 @@ For the convergence, evaluate survivor choices in stable `PruningEdgeKey` order.
 survivor, cut the other conflicting incoming candidate edges, and apply the safe-cut test below.
 
 Commit the first safe choice unless a later convergence directly conflicts with an action already assigned to that same
-physical edge and cannot be resolved. In that case, restore that earlier decision and try its next stable survivor. The
-implementation may maintain a decision stack keyed by physical edge to identify the directly conflicting decision.
+physical edge and cannot be resolved. A direct conflict exists only when the later convergence requires that exact
+physical FK to have the opposite action; a failure merely reachable through an earlier decision is not a direct
+conflict. In that case, restore that earlier decision and try its next stable survivor. The implementation may maintain
+a decision stack keyed by physical edge to identify the directly conflicting decision.
 
 It must not turn this into a general constraint solver: it does not propose upstream edges, enumerate arbitrary graph
 assignments, retry merely transitively related decisions, or retry disjoint previously settled convergences. If the
@@ -195,15 +200,17 @@ Topology alone does not make a full-composite `NO ACTION` FK safe. A cut is safe
 updates the same values that the cut edge would have updated while SQL Server checks the constraint.
 
 For each tentative cut, establish all of the following for every mutable origin whose retained path reaches that
-physical edge, using the existing ordered FK column pairs, canonical storage mapping, and required document-reference
-bindings:
+physical edge, using only the existing ordered FK column pairs, canonical storage mapping, and required
+document-reference bindings. This is a deliberately structural, fail-closed test, not a general route or value-flow
+proof: the implementation recognizes only binding shapes that directly establish each condition below and rejects all
+other shapes.
 
 1. **Same receiver row.** The retained path and cut edge terminate at the same physical receiver row through the
    existing binding/parent correlation. Table equality alone is not enough. If this is not directly established by the
    normal physical binding shape, reject the survivor; do not derive a general row-correlation proof.
 2. **Same canonical local values.** Each local canonical identity column that the cut would change is updated by the
-   retained native path from the same source identity position. Equal current values or a merely similar logical path are
-   not proof.
+   retained native path through the same canonical source/target column pairing in the existing ordered bindings. Equal
+   current values or a merely similar logical path are not proof.
 3. **Complete correlation.** The cut's complete FK remains valid. An ordinary rename need not rewrite an unchanged
    `DocumentId`; if a reference-backed retarget would require the cut's local `DocumentId` to move, the retained path
    must update that same local anchor in the same native statement. Otherwise reject the survivor.
@@ -253,15 +260,16 @@ Unit coverage must include:
 1. a chain with no convergence;
 2. independent parents into one receiver;
 3. a covered direct-versus-indirect diamond;
-4. first stable survivor unsafe and second survivor safe;
-5. an interacting overlapping-diamond case that retries an earlier shared choice;
-6. a no-safe-survivor case;
-7. a self-loop and multi-table cycle;
-8. a canonical-column mismatch;
-9. a retarget requiring an uncarried `DocumentId` change;
-10. an optional/presence-sensitive carrier rejected as unsupported;
-11. parallel physical FKs and declaration-order determinism; and
-12. root, child/collection, and extension bindings.
+4. a convergence with three or more distinct incoming candidate edges from one origin;
+5. first stable survivor unsafe and second survivor safe;
+6. an interacting overlapping-diamond case that retries an earlier shared choice;
+7. a no-safe-survivor case;
+8. a self-loop and multi-table cycle;
+9. a canonical-column mismatch;
+10. a retarget requiring an uncarried `DocumentId` change;
+11. an optional/presence-sensitive carrier rejected as unsupported;
+12. parallel physical FKs and declaration-order determinism; and
+13. root, child/collection, and extension bindings.
 
 SQL Server integration coverage must prove generated DDL installs without error 1785, every document-reference FK is
 full composite, retained cascades perform renames, covered cuts remain valid, unsafe schemas fail before DDL, the old
