@@ -18,8 +18,8 @@ multiple-cascade-path convergence.
 3. DMS, not MetaEd, makes the SQL Server physical pruning decision after reference binding and key unification.
 4. Detection is ODS-style and per directly mutable origin. Two independent parents of one receiver are not a diamond.
 5. At a convergence, DMS considers the conflicting incoming edges in stable order. It retains the first safe survivor;
-   if a later convergence shares that choice and cannot be resolved, it retries the earlier survivor choices that share a
-   physical edge. It fails only after those relevant choices are exhausted.
+   if a later convergence directly conflicts with the action already assigned to that physical edge, it retries that
+   earlier survivor choice. It fails only after those directly relevant choices are exhausted.
 6. A cut is safe only when the retained path updates the same canonical local FK values for the same receiver row in the
    same native cascade statement. If the cut tuple's `DocumentId` must move, the retained path must carry that same move.
 7. Cycles and unsupported cuts fail derivation. DMS does not search arbitrary upstream cuts, optimize a cut set, or retain
@@ -58,10 +58,8 @@ This ticket deliberately does **not** implement a general propagation-analysis o
 - No optional- or presence-sensitive carrier proofs. If equality of the receiver row or availability of the retained
   carrier is not evident from the existing required document-reference bindings, that survivor is unsafe.
 - No shared-writer, generalized storage-promotion, equality-flow, or arbitrary reference-retarget support.
-- No generalized topology validation over unrelated foreign-key classes. The selector starts with DMS
-  document-reference candidate cascades. A non-document cascade participates only when a concrete DMS constraint is
-  already known to be `ON UPDATE CASCADE` and shares a reachable component with those candidates; it is fixed and never
-  becomes a pruning choice.
+- No generalized topology validation over unrelated foreign-key classes. The selector considers only DMS
+  document-reference candidate cascades. A non-document `ON UPDATE CASCADE` is outside this ticket's selector scope.
 - No arbitrary upstream cut, minimum-cut optimization, global graph transformation, or unbounded search for every
   theoretically feasible assignment.
 - No PostgreSQL topology rejection or changed PostgreSQL FK action.
@@ -78,7 +76,8 @@ retain their responsibilities. Only `MssqlIdentityPropagationTrigger` identity-v
 The selector works on a directed physical multigraph after key unification:
 
 - A vertex is a physical table.
-- A candidate edge is a full-composite document-reference FK whose target identity is abstract or transitively mutable.
+- A candidate edge is a document-reference FK whose complete ordered target `*_RefKey` tuple is referenced and whose
+  target identity is abstract or transitively mutable.
 - An edge is directed from referenced target to referencing receiver, matching `ON UPDATE CASCADE` propagation.
 - A mutable origin is a directly mutable concrete resource root or an abstract identity maintenance update that can change
   a referenced identity key.
@@ -162,15 +161,16 @@ logical reference provenance only for diagnostics during this pass; it is not ou
 constraints into one candidate, because one physical constraint has one action.
 
 Detect self-loops and cycles in the reachable candidate components before pruning. A cycle fails as
-`SqlServerCascadeCycleNotSupported`; DMS does not cut an arbitrary cycle edge. Do not scan unrelated FK topology merely
-because it exists. If a known fixed cascade edge participates in the same reachable component and makes the component
-cyclic or forces an unresolvable duplicate path, fail that component rather than broadening the selector.
+`SqlServerCascadeCycleNotSupported`; DMS does not cut an arbitrary cycle edge. DMS does not scan unrelated FK topology
+merely because it exists.
 
 ### Traverse per mutable origin
 
-Process mutable origins, receivers, and incoming edges in stable physical order. For each origin, walk the candidate
-graph and count paths to each receiver, capped at two. When a second path reaches a receiver, identify the distinct
-incoming edges of the first convergence. Only those incoming candidate edges are choices. Incoming edges not on a
+Process mutable origins, receivers, and incoming edges in stable physical order. For each origin, walk the retained
+candidate graph while retaining the predecessor edge for each first arrival and a second-arrival trace when needed.
+Path counting is capped at two, but the traces identify the earliest receiver at which the two retained paths have
+distinct incoming physical edges. Only those incoming candidate edges are choices. If two paths arrive through the same
+incoming edge, their convergence is upstream and that receiver supplies no pruning choice. Incoming edges not on a
 duplicate path from that origin remain cascades.
 
 This is intentionally not global raw-in-degree pruning. Independent parents remain legal, and DMS does not reject an
@@ -178,25 +178,25 @@ unrelated cascade component just because SQL Server might have a topology concer
 
 ### Select a survivor
 
-For the convergence, evaluate survivor choices in stable `PruningEdgeKey` order. A fixed edge, when one is already known
-to participate, is a forced survivor; two fixed conflicting incoming edges fail. For an ordinary candidate survivor,
-tentatively cut the other conflicting incoming candidate edges and apply the safe-cut test below.
+For the convergence, evaluate survivor choices in stable `PruningEdgeKey` order. Tentatively retain one candidate
+survivor, cut the other conflicting incoming candidate edges, and apply the safe-cut test below.
 
-Commit the first safe choice unless a later convergence that shares a chosen physical edge cannot be resolved. In that
-case, restore only the choices in that shared decision chain and try their next stable survivors. The implementation may
-maintain a decision stack keyed by physical edge to identify this chain.
+Commit the first safe choice unless a later convergence directly conflicts with an action already assigned to that same
+physical edge and cannot be resolved. In that case, restore that earlier decision and try its next stable survivor. The
+implementation may maintain a decision stack keyed by physical edge to identify the directly conflicting decision.
 
 It must not turn this into a general constraint solver: it does not propose upstream edges, enumerate arbitrary graph
-assignments, or retry disjoint previously settled convergences. If the relevant survivor choices are exhausted, fail as
-`NoSafeSqlServerForeignKeyPruning`.
+assignments, retry merely transitively related decisions, or retry disjoint previously settled convergences. If the
+directly relevant survivor choices are exhausted, fail as `NoSafeSqlServerForeignKeyPruning`.
 
 ## Safe-Cut Test
 
 Topology alone does not make a full-composite `NO ACTION` FK safe. A cut is safe only when the retained native cascade
 updates the same values that the cut edge would have updated while SQL Server checks the constraint.
 
-For each tentative cut, establish all of the following using the existing ordered FK column pairs, canonical storage
-mapping, and required document-reference bindings:
+For each tentative cut, establish all of the following for every mutable origin whose retained path reaches that
+physical edge, using the existing ordered FK column pairs, canonical storage mapping, and required document-reference
+bindings:
 
 1. **Same receiver row.** The retained path and cut edge terminate at the same physical receiver row through the
    existing binding/parent correlation. Table equality alone is not enough. If this is not directly established by the
