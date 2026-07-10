@@ -585,9 +585,9 @@ Typical structure:
   - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
 - Reference key columns → one **FK-supporting** propagation-key unique constraint over
-  `(<StorageIdentityParts...>, <IntrinsicLineageDocumentIds...>, DocumentId)` (the referenced key used by every incoming
-  composite reference FK; public identity storage first, one stable `DocumentId` for each independently replaceable
-  identity-contributing document reference, and the target's own `DocumentId` last — see
+  `(<StorageIdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)` (the referenced key used by every incoming
+  composite reference FK; public identity storage first, the finite transitive union of stable `DocumentId` anchors
+  exposed through identity-reference chains, and the target's own `DocumentId` last — see
   [mssql-cascading.md](mssql-cascading.md)).
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
 - Scalar columns for top-level non-collection properties
@@ -596,12 +596,12 @@ Typical structure:
     - `..._DocumentId BIGINT` (stable FK key part), and
     - one **binding/path** column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`).
       - Under key unification, these per-site columns remain in the table shape but may be generated/persisted `UnifiedAlias` columns of canonical storage columns; see `key-unification.md`.
-    - one stable lineage-anchor column for every identity-contributing document reference intrinsic to the target. A
+    - one stable lineage-anchor column for every structural path in the target's complete transitive lineage union. A
       local anchor may reuse an existing canonical `..._DocumentId` only when same-target-row and equivalent-presence
       correlation are proved; otherwise it is dedicated to the site.
   - Enforce a composite reference FK using only stored/writable **storage** columns:
     - `FOREIGN KEY (<StorageIdentityParts...>, <LineageAnchors...>, ..._DocumentId) REFERENCES <TargetRefKey>(<TargetStorageIdentityParts...>, <TargetLineageAnchors...>, DocumentId)`
-      (public identity storage first, complete intrinsic lineage anchors next, target `DocumentId` last)
+      (public identity storage first, complete transitive lineage anchors next, target `DocumentId` last)
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
       - PostgreSQL assigns actions mechanically: abstract or transitively mutable targets use `ON UPDATE CASCADE`, and
@@ -657,7 +657,8 @@ Some Ed-Fi references target **abstract resources** (polymorphic references), no
 - `GeneralStudentProgramAssociation` (e.g., `generalStudentProgramAssociationReference`)
 
 Abstract resources have **no physical root table**, but complete-vector FKs (and identity-update propagation) require a
-concrete FK target with the public identity columns, normalized intrinsic lineage anchors, and terminal `DocumentId`.
+concrete FK target with the public identity columns, normalized complete transitive lineage anchors, and terminal
+`DocumentId`.
 
 This redesign provisions an **identity table per abstract resource**:
 
@@ -665,15 +666,15 @@ This redesign provisions an **identity table per abstract resource**:
 - Columns:
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE)
   - abstract identity fields in `abstractResources[A].identityJsonPaths` order
-  - the normalized intrinsic lineage `DocumentId` anchors shared by every concrete member
+  - the normalized complete transitive lineage `DocumentId` anchors shared by every concrete member
   - `Discriminator` (NOT NULL; last; concrete member discriminator literal in `ProjectName:ResourceName` format; useful for diagnostics)
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on
-    insert/update of the concrete identity fields or intrinsic lineage anchors (including identity renames and
+    insert/update of the concrete identity fields or complete lineage anchors (including identity renames and
     reference-backed replacements).
 - FKs for abstract reference sites:
   - referencing tables use the abstract target's complete propagation vector and target
-    `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, <IntrinsicLineageDocumentIds...>, DocumentId)`.
+    `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, <CompleteLineageDocumentIds...>, DocumentId)`.
     PostgreSQL assigns its fixed full-vector action without topology classification. SQL Server includes these physical
     candidates in the same global error-1785/carrier selection as concrete targets, so a safely covered cycle may be
     broken and an unsafe assignment fails before DDL. Abstract identity tables remain trigger-maintained by
@@ -852,8 +853,8 @@ CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     EntryDate          date   NOT NULL,
     ExitWithdrawDate   date   NULL,
 
-    -- Composite reference FKs: public identity storage columns, intrinsic lineage anchors, then target DocumentId.
-    -- Student and School have no intrinsic lineage anchors, so these two vectors have only public value + DocumentId.
+    -- Composite reference FKs: public identity storage columns, complete transitive lineage anchors, then target DocumentId.
+    -- Student and School have no lineage anchors, so these two vectors have only public value + DocumentId.
     CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey FOREIGN KEY (Student_StudentUniqueId, Student_DocumentId)
         REFERENCES edfi.Student (StudentUniqueId, DocumentId),
     CONSTRAINT FK_StudentSchoolAssociation_School_RefKey FOREIGN KEY (School_SchoolId, School_DocumentId)
@@ -994,7 +995,7 @@ Object names are deterministic and derived from the owning table plus purpose to
 - Primary key constraints: `PK_{TableName}`
 - Unique constraints:
   - Natural key (API semantics; binding/path columns from `identityJsonPaths`): `UX_{TableName}_NK`
-  - Reference key (FK target; canonical public-identity storage columns, intrinsic lineage anchors, then target
+  - Reference key (FK target; canonical public-identity storage columns, complete transitive lineage anchors, then target
     `DocumentId`): `UX_{TableName}_RefKey`
   - Array uniqueness: `UX_{TableName}_{Tokens}` where tokens are the constrained column names with shared
     prefixes collapsed (e.g., `Assessment_DocumentId_AssessmentIdentifier_Namespace`)
@@ -1003,7 +1004,7 @@ Object names are deterministic and derived from the owning table plus purpose to
   - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
   - `{ReferenceBaseName}` for single-column reference FKs
   - `{ReferenceBaseName}_RefKey` for complete-vector reference FKs (canonical public-identity storage columns,
-    intrinsic lineage anchors, then target `DocumentId`)
+    complete transitive lineage anchors, then target `DocumentId`)
   - `{ParentTableName}` for parent/extension table links
 - All-or-none checks: `CK_{TableName}_{ReferenceBaseName}_AllNone`
 - Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)

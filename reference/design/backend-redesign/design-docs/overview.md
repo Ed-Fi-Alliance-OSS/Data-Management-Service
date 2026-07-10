@@ -22,7 +22,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
 4. **Bounded cascades with stable FKs**: Store relationships as full-composite vectors containing referenced identity
-   values, complete intrinsic lineage anchors, and stable target `DocumentId`. PostgreSQL assigns fixed actions
+   values, complete transitive lineage anchors, and stable target `DocumentId`. PostgreSQL assigns fixed actions
    mechanically and is never pruned, topology-classified, or failed because of cascade topology. SQL Server globally
    selects error-1785-legal actions and permits exact-carrier `NO ACTION` cuts for diamonds or safely breakable cycles.
    Every FK keeps the complete vector; there is no reduced-FK or identity-value trigger fallback (see

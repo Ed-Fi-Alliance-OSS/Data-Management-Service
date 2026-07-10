@@ -287,7 +287,7 @@ classDiagram
     }
 
     class ReferenceLineageAnchorBinding {
-        JsonPathExpression TargetIdentityReferencePath
+        IReadOnlyList~JsonPathExpression~ TargetIdentityReferencePathChain
         DbColumnName Column
     }
 
@@ -306,7 +306,7 @@ classDiagram
 **`DocumentReferenceBinding`** — records how a JSON reference object maps to:
 - a `..._DocumentId` FK column, plus
 - per-identity-part binding columns (e.g., `Student_StudentUniqueId`), plus
-- the target's complete intrinsic lineage-anchor inventory
+- the target's complete transitive lineage-anchor inventory
 
 **`ReferenceIdentityBinding`** — maps a single identity scalar within a reference to:
 - a `ReferenceJsonPath` locating the scalar in the JSON reference object

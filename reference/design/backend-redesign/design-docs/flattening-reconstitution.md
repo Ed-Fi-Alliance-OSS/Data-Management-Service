@@ -261,19 +261,20 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - For each abstract resource `A`, create a physical identity table `{schema}.{A}Identity` with:
      - `DocumentId` (PK; FK → `dms.Document(DocumentId)` ON DELETE CASCADE),
      - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
-     - the normalized intrinsic lineage `DocumentId` anchors shared by every concrete member,
+     - the normalized complete transitive lineage `DocumentId` anchors shared by every concrete member,
      - `Discriminator` (NOT NULL; last).
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of
-     identity columns or intrinsic lineage anchors).
+     identity columns or complete lineage anchors).
    - Use `{schema}.{A}Identity` as the complete-vector FK target for abstract reference sites. PostgreSQL assigns its
      fixed full-cascade action without topology classification. SQL Server includes abstract-target candidates in the
      same global error-1785/carrier selection as concrete targets, including safely breakable cycles (see
      [mssql-cascading.md](mssql-cascading.md)).
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
-8. After all resource models are available, derive one complete intrinsic propagation vector per target:
+8. After all resource models are available, derive one complete transitive propagation vector per target:
    - public identity storage columns in target order;
-   - one stable `DocumentId` anchor for every independently replaceable identity-contributing document reference; and
+   - for every direct identity-contributing reference `T -> U`, `U.DocumentId` followed recursively by `U`'s complete
+     lineage-anchor inventory in stable structural order; and
    - the target's own `DocumentId` last.
    Every incoming `DocumentReferenceBinding` receives local lineage-anchor bindings for that same vector. Reuse local
    storage only with exact same-target-row and equivalent-presence proof; otherwise add dedicated stored anchor columns.
@@ -434,7 +435,9 @@ reused; request ordinals never become persisted correlation identity.
 Immediately after resource DML, create a fresh session-bound ordinary resolver so a memoized pre-write miss cannot be
 reused. Resolve each submitted future identity again inside the transaction and require the same target `DocumentId`.
 Any miss, ambiguity, different target, stale state, failed FK, or marker mismatch rolls back all work. POST, newly
-present references, profile behavior not yet proven by the POC, and true retargets retain ordinary resolution.
+present references, and true retargets retain ordinary resolution. Profile-constrained PUT is part of this gate: use the
+normal Core-produced writable-profile and stored-state visibility contracts, preserve hidden rows/values, and defer only
+a visible writable binding already correlated to the persisted receiver row.
 
 The POC must determine the exact minimal marker, but it is bounded to owning binding/site, persisted target-id source,
 stable receiver-row locator, retained-route eligibility, and post-statement same-target verification. Do not introduce
@@ -943,7 +946,7 @@ In this redesign, identity fields inside reference objects are represented as lo
 - `..._DocumentId` (the referenced `DocumentId`; also the reference-site presence gate), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` binding columns used for query binding and reference reconstitution,
   plus
-- local stable `DocumentId` columns for every intrinsic reference-backed lineage in the target's complete vector.
+- local stable `DocumentId` columns for every structural lineage path in the target's complete transitive vector.
 
 Under key unification, public identity binding columns may be persisted generated `UnifiedAlias` columns of a canonical
 stored identity column. As a result:
@@ -956,7 +959,8 @@ SQL Server uses globally selected native cascades and exact-carrier `NO ACTION` 
 [mssql-cascading.md](mssql-cascading.md)).
 
 For polymorphic/abstract targets, referrers store the public abstract identity fields (for example,
-`EducationOrganizationId`), normalized intrinsic lineage anchors, and target `DocumentId`; a complete-vector FK to
+`EducationOrganizationId`), normalized complete transitive lineage anchors, and target `DocumentId`; a complete-vector
+FK to
 `{schema}.{AbstractResource}Identity` enforces membership.
 
 ### 6.4 JSON assembly (fast, shape-safe)
@@ -1376,7 +1380,7 @@ public abstract record TableConstraint
 /// fields must group such duplicates by <c>ReferenceJsonPath</c>.
 /// </param>
 /// <param name="LineageAnchorBindings">
-/// The target's complete intrinsic reference-backed lineage inventory mapped to local stable DocumentId storage.
+/// The target's complete transitive reference-backed lineage inventory mapped to local stable DocumentId storage.
 /// Every incoming site has the same ordered inventory. A local column may be shared with another exact same-row
 /// reference binding; there are no per-site anchor subsets or propagation-key variants.
 /// </param>
@@ -1404,10 +1408,10 @@ public sealed record ReferenceIdentityBinding(
 );
 
 /// <summary>
-/// Maps one intrinsic identity-contributing reference on the target to stable local DocumentId storage.
+/// Maps one structural identity-reference lineage path exposed by the target to stable local DocumentId storage.
 /// </summary>
 public sealed record ReferenceLineageAnchorBinding(
-    JsonPathExpression TargetIdentityReferencePath,
+    IReadOnlyList<JsonPathExpression> TargetIdentityReferencePathChain,
     DbColumnName Column
 );
 

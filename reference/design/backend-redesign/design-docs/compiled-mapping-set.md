@@ -368,9 +368,9 @@ public sealed record DerivedRelationalModelSet(
 Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
-- **Complete propagation vectors.** Each target has one vector: public identity storage columns, one stable
-  `DocumentId` anchor per independently replaceable identity-contributing document reference, and the target's own
-  `DocumentId`. Every incoming `DocumentReferenceBinding` maps that complete vector to local storage. The generic table,
+- **Complete propagation vectors.** Each target has one vector: public identity storage columns, the finite transitive
+  union of stable `DocumentId` anchors exposed through its identity-reference chains, and the target's own `DocumentId`.
+  Every incoming `DocumentReferenceBinding` maps that complete vector to local storage. The generic table,
   column, unique-constraint, FK, and write-binding models carry these values; there is no `AnchorSetId`, per-site key
   variant, omission proof, or cross-cutting hash protocol.
 - **Final provider actions.** `TableConstraint.ForeignKey` carries the complete ordered column lists and final
@@ -383,7 +383,7 @@ Notes:
   categories are proved `NoSafeSqlServerAssignment` and distinct
   `CascadeClassificationComplexityExceeded`.
 - **Runtime separation.** A SQL Server mode/carrier witness is diagnostic and is not a runtime write-plan contract. If the
-  deferred existing-reference PUT POC passes, the write plan adds only the binding/site, persisted target
+  unprofiled and profile-constrained deferred existing-reference PUT POC passes, the write plan adds only the binding/site, persisted target
   `DocumentId` source, stable receiver-row locator, retained-route eligibility marker, and post-statement same-target
   resolution requirement. It does not serialize solver state or proof trees.
 - **Failure convention.** Model derivation keeps the repository's exception-based convention with concise structural

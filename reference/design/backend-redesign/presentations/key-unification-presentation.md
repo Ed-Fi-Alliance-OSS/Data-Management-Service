@@ -67,7 +67,7 @@ This tells writers how to populate the canonical column from an API document whe
 
 - **Never** write `UnifiedAlias` columns.
 - **Always** write the canonical column, even though it has no `SourceJsonPath`.
-- Composite reference FKs target canonical public-identity storage columns, intrinsic lineage anchors, and terminal
+- Composite reference FKs target canonical public-identity storage columns, complete transitive lineage anchors, and terminal
   target `DocumentId`.
 - Descriptor FKs target canonical storage columns (de-duplicated per `(table, StorageColumn)`).
 - All-or-none constraints remain on alias columns plus local lineage anchors and target `DocumentId` (preserving

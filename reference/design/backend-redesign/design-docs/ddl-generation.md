@@ -219,16 +219,16 @@ The DDL generator must emit document-reference columns and constraints that enab
   - `..._DocumentId` (stored/writable), and
   - `{RefBaseName}_{IdentityPart}` per-site identity-part **binding columns** (API-bound path columns).
     - Under key unification, binding columns MAY be persisted/stored generated aliases of canonical storage columns (see “Key unification” below).
-  - one stable lineage-anchor `DocumentId` for every independently replaceable identity-contributing document reference
-    on the target. Every incoming site carries the target's same complete vector; exact same-row canonical anchors may be
-    reused, otherwise the site receives dedicated stored columns.
+  - the complete transitive lineage-anchor union: for every direct identity-contributing reference `T -> U`, include
+    `U.DocumentId` followed recursively by `U`'s complete lineage anchors. Every incoming site carries the target's same
+    complete vector; exact same-row canonical anchors may be reused, otherwise the site receives dedicated stored columns.
 - Enforce “all-or-none” for the reference group via a CHECK constraint (to avoid null-bypassing of composite FKs).
   - All-or-none constraints are defined over:
     - the reference group’s `..._DocumentId`, and
     - the per-site identity-part binding columns (even when those columns are generated aliases), and
     - every lineage-anchor column in the site's complete vector.
 - Enforce a composite FK over **storage columns only**. Column order is **public identity storage columns first, complete
-  intrinsic lineage anchors next, then the reference `..._DocumentId` / target `DocumentId` last**, and local/target
+  transitive lineage anchors next, then the reference `..._DocumentId` / target `DocumentId` last**, and local/target
   lists MUST be positionally aligned:
   - Local FK columns (in this order):
     - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`, then
@@ -236,7 +236,7 @@ The DDL generator must emit document-reference columns and constraints that enab
     - the reference group’s `..._DocumentId`.
   - Target columns (in the matching order):
     - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, then
-    - the target's intrinsic lineage-anchor columns, then
+    - the target's complete transitive lineage-anchor columns, then
     - `DocumentId`.
   - PostgreSQL assigns the fixed full-vector action mechanically: mutable/abstract targets cascade, immutable concrete
     targets use `NO ACTION`. It is never pruned, topology-classified, or failed because of cascade topology.
@@ -245,7 +245,7 @@ The DDL generator must emit document-reference columns and constraints that enab
     cycles are supported. There is no reduced-FK or identity-value trigger fallback; see
     [mssql-cascading.md](mssql-cascading.md).
 - Emit one required propagation-key UNIQUE constraint on the target so every incoming complete FK is legal:
-  `(<IdentityParts...>, <IntrinsicLineageDocumentIds...>, DocumentId)`. Widen the existing `*_RefKey`; do not emit
+  `(<IdentityParts...>, <CompleteLineageDocumentIds...>, DocumentId)`. Widen the existing `*_RefKey`; do not emit
   per-site anchor-set variants.
   - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).
 

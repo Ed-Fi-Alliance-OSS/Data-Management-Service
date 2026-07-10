@@ -8,9 +8,9 @@ This document defines how to reduce the current design to the simplest responsib
 required SQL Server cycle behavior, complete v1 identity-change support, and PostgreSQL provider policy.
 
 The documentation reset and collateral restoration are complete. Slice 0 now proves the reciprocal provider cycle and
-passes the measured complete-vector key-width/column-count screen for Data Standard 5.2 and TPDM. The actual DMS PUT gate
-remains open because the current production model still uses the superseded SQL Server reduced-FK/propagation-trigger
-path; a faithful HTTP POC
+passes the corrected transitive complete-vector key-width/column-count screen for Data Standard 5.2 and TPDM. The actual
+DMS PUT gate remains open because the current production model still uses the superseded SQL Server
+reduced-FK/propagation-trigger path; a faithful HTTP POC
 requires the narrow portions of delivery Slices 1 through 3. The reset therefore defines the bounded implementation
 direction without claiming the runtime cycle is already executable.
 
@@ -96,27 +96,30 @@ Every other mechanism must be justified by either a failing correctness fixture 
 
 The reproducible measurements in
 `reference/design/backend-redesign/evidence/dms-1129/complete-vector-feasibility.md` and focused maximum-value provider
-probes pass Gate 1's measured screen. Data Standard 5.2 reaches 13 columns and 1,284 declared SQL Server bytes; TPDM reaches 14 columns.
-The conservative model adds 152/176 anchor columns respectively, with a maximum per-table increase of eight `BIGINT`
-columns (64 bytes). No complete vector crosses a screened key-column, table-column, or nonclustered unique-key threshold
-because of its anchors, and the worst SQL Server and PostgreSQL vectors accept maximum-size values. This does not measure
-total SQL Server row width or PostgreSQL tuple/index overhead.
+probes pass Gate 1's corrected transitive screen. Data Standard 5.2 reaches 22 columns and 1,300 declared SQL Server
+bytes; TPDM reaches 27 columns. The conservative model adds 238/308 anchor columns respectively, with maximum per-table
+increases of 11/20 `BIGINT` columns (88/160 bytes). No complete vector crosses a screened key-column, table-column, or
+nonclustered unique-key threshold because of its anchors, and the worst SQL Server and PostgreSQL vectors accept
+maximum-size values. This does not measure total SQL Server row width or PostgreSQL tuple/index overhead.
 
 V1 therefore uses one complete vector per target. Site-minimal demand closure, `AnchorSetId` variants, and omission
 proofs are removed. Full generated-schema qualification remains an implementation-slice requirement.
 
 ### Proposal
 
-Use one complete intrinsic propagation vector per reference target instead of site-specific minimal anchor closure.
+Use one complete transitive propagation vector per reference target instead of site-specific minimal anchor closure.
 
 The vector contains, in order:
 
 1. the target's public identity values;
-2. one stable `DocumentId` anchor for every independently replaceable reference-backed identity lineage; and
+2. the finite transitive union of stable `DocumentId` anchors reachable through the target's identity-contributing
+   reference chains; and
 3. the target's own `DocumentId` last.
 
-Every incoming reference to that target carries the same vector. The target exposes one corresponding propagation key
-rather than one key variant per demanded anchor subset.
+For each direct target lineage `T -> U`, include `U.DocumentId` followed by every lineage anchor carried by `U`'s complete
+vector. Traverse recursively in stable structural reference order. Every incoming reference to the target carries that
+same vector. The target exposes one corresponding propagation key rather than one key variant per demanded anchor subset.
+This transitive union is what replaces site-demand closure; a direct-root-only inventory is not complete.
 
 ### What This Removes
 
@@ -132,9 +135,10 @@ If feasible, this eliminates:
 
 ### Correctness Rationale
 
-The complete vector preserves the important Session/CourseOffering behavior: when a reference-backed identity is
-retargeted, its public identity values and stable target `DocumentId` anchor propagate together. A downstream full FK
-therefore cannot combine the public values of one referenced row with the stable id of another.
+The complete vector preserves the important Session/CourseOffering behavior and its transitive generalization: when a
+reference-backed identity is retargeted, its public identity values and every stable lineage `DocumentId` reachable
+through that chain propagate together. A downstream full FK therefore cannot combine the public values of one referenced
+row with the stable id of another.
 
 This is intentionally a correctness-first storage model. Schema minimization is not a correctness requirement.
 
@@ -158,9 +162,11 @@ measured subsystem. Do not retain it preemptively merely because it produces nar
 
 ### Decision: Open and Bounded
 
-The current executor provides the intended transaction seam: stored authorization precedes normal lookup; an unprofiled
-missing reference already survives through current-state load and proposed authorization for precedence; and it is
-rejected immediately before DML. A fresh ordinary resolver can run after persistence and before commit.
+The current executor provides the intended unprofiled transaction seam: stored authorization precedes normal lookup; an
+unprofiled missing reference already survives through current-state load and proposed authorization for precedence; and
+it is rejected immediately before DML. A fresh ordinary resolver can run after persistence and before commit. The
+profile-constrained path currently rejects the miss earlier, so equivalent profile merge/authorization behavior is an
+explicit Gate 2 requirement.
 
 The POC has not passed. Current SQL Server derivation still strips identity columns from mutable reference FKs and emits
 identity-value propagation triggers, so an HTTP test would not exercise the reset architecture until the relevant parts
@@ -214,6 +220,8 @@ The POC must establish:
 - reference retargets that resolve normally are not mistaken for unchanged future-identity references;
 - full FKs reject a typo or non-correlated future identity;
 - after-statement ordinary resolution observes the new referential identity and the same target `DocumentId`;
+- profile-constrained PUT uses the normal Core-produced writable-profile/current-state contracts and preserves hidden
+  values and rows;
 - stamping, referential-identity maintenance, change queries, and no-op behavior remain correct; and
 - any failure rolls back all transactional work.
 
@@ -267,8 +275,10 @@ Symbolic values remain associated with their mutation origin, origin row, compon
 
 ### Search
 
-Use a deterministic, bounded global DFS/backtracking search over mutable candidates that participate in an error-1785
-conflict or a value-flow choice.
+Use deterministic, bounded iterative-deepening DFS/backtracking over mutable candidates that participate in an error-1785
+conflict or a value-flow choice. Enumerate assignments by increasing `CoveredNoAction` count and then by the stable
+structural edge-order mode vector, with `NativeCascade` ordered before `CoveredNoAction`. The first valid assignment is
+therefore the required optimum.
 
 For each complete assignment:
 
@@ -277,7 +287,8 @@ For each complete assignment:
 3. verify every pruned edge has an exact carrier for every applicable mutation case;
 4. verify the carrier reaches the same receiver row with the same complete vector in the same constraint-check boundary;
 5. verify optional-reference presence implications;
-6. verify competing writes to unified receiver columns carry the same symbolic value; and
+6. verify competing writes to unified receiver columns carry the same symbolic value.
+
 Cycle membership alone is never a failure condition. The selector does not call or anticipate write-plan compilation.
 
 ### Selection Objective
@@ -285,7 +296,7 @@ Cycle membership alone is never a failure condition. The selector does not call 
 Choose among valid assignments using:
 
 1. fewest `CoveredNoAction` mutable edges;
-2. a stable structural edge-order mode vector.
+2. the lexicographically smallest stable structural edge-order mode vector.
 
 This is deliberately database-only while Gate 2 is open. Plan compilation consumes the selected actions afterward. Gate
 2 must prove that the deterministic database-safe assignment is executable through DMS PUT. Only if that fixture fails
@@ -297,10 +308,10 @@ while another database-safe assignment could work may Slice 3 introduce a minima
 Start with the simplest deterministic bounded search. Add memoization, reachability-state canonicalization, or additional
 optimization only if measured fixtures require it.
 
-Keep these failures distinct:
+Never emit a provisional feasible assignment. Keep these failures distinct:
 
 - search exhausted with no safe assignment; and
-- deterministic work limit reached before feasibility was decided.
+- deterministic work limit reached before the final selection or infeasibility was proved.
 
 ### Diagnostics
 
@@ -425,7 +436,7 @@ screen. Runtime PUT feasibility is owned wholly by Slice 3.
 
 Deliverables:
 
-- intrinsic reference-backed lineage inventory;
+- direct reference-backed lineage inventory and its complete transitive union;
 - complete propagation vector per target;
 - reference-site anchor storage and write bindings;
 - target propagation keys;
@@ -461,6 +472,7 @@ Deliverables:
 - normal-lookup-first behavior;
 - stable target and receiver-row correlation;
 - authorization and locking rules;
+- unprofiled and profile-constrained PUT behavior with hidden-state preservation;
 - after-statement ordinary-resolution verification;
 - rollback on every mismatch;
 - primitive identity subsets;
@@ -549,6 +561,7 @@ Checked-in fixtures must cover at least:
 - SQL Server error-547 negative cases;
 - successful concrete cycle DDL and direct SQL mutation;
 - actual DMS PUT for the concrete cycle;
+- profile-constrained DMS PUT for the concrete cycle;
 - PostgreSQL full-cascade cycle behavior;
 - old-identity concurrent insert rejection;
 - typo/non-correlated future identity rejection;
@@ -562,10 +575,11 @@ Checked-in fixtures must cover at least:
 
 ### Gate 1: Complete Vector Measured Screen
 
-**Current result: Pass for the measured architecture screen.** The stock-schema key/index column counts, declared key
-payloads, table column counts, added fixed-width contribution, and focused maximum-value probes fit. Site-minimal anchor
-closure is removed from the authoritative design. Total SQL Server row width, PostgreSQL tuple/index overhead, and full
-generated-schema DDL remain Slice 5 qualification.
+**Current result: Pass for the corrected transitive architecture screen.** The stock-schema key/index column counts,
+declared key payloads, table column counts, added fixed-width contribution, and focused maximum-value probes fit after
+recursively including anchors inherited through identity-reference chains. Site-minimal anchor closure is removed from
+the authoritative design. Total SQL Server row width, PostgreSQL tuple/index overhead, and full generated-schema DDL
+remain Slice 5 qualification.
 
 - **Pass:** DS 5.2 and TPDM introduce no anchor-caused crossing in the measured screen. Remove minimal per-site anchor
   closure from the design.
@@ -573,25 +587,27 @@ generated-schema DDL remain Slice 5 qualification.
 
 ### Gate 2: Deferred Ordinary Resolution
 
-**Current result: Open.** The executor seam is confirmed, but the actual cycle has not executed through DMS PUT. The
-narrow hypothesis remains provisional and no generalized replacement protocol is accepted.
+**Current result: Open.** The unprofiled executor seam is confirmed, but the profile path rejects the same miss earlier
+and the actual cycle has not executed through either DMS PUT path. The narrow hypothesis remains provisional and no
+generalized replacement protocol is accepted.
 
 While open, SQL Server selection remains database-only. If the selected assignment cannot execute but another
 database-safe assignment can, define the smallest pre-selection `DeferredPutEligibility` input in Slice 3 and feed that
 fact into selection; do not make the classifier compile or duplicate write plans.
 
-- **Pass:** the actual DMS PUT cycle, authorization, locking, collection correlation, and post-statement resolution work
-  safely. Replace the generalized future-resolution protocol.
+- **Pass:** the actual unprofiled and profile-constrained DMS PUT cycle, authorization, locking, collection correlation,
+  hidden-state preservation, and post-statement resolution work safely. Replace the generalized future-resolution
+  protocol.
 - **Fail:** preserve the failing fixture and add only the missing correlation/prediction capability required by that
   fixture.
 
 ### Gate 3: Simple Global Search
 
-**Current result: Open until Slice 2.** Start with deterministic bounded DFS and measure it before adding solver
-infrastructure.
+**Current result: Open until Slice 2.** Start with deterministic bounded iterative-deepening DFS and measure it before
+adding solver infrastructure.
 
-- **Pass:** the deterministic DFS stays within selected state/work bounds on stock, extension, and adversarial fixtures.
-  Do not add memoization or solver infrastructure.
+- **Pass:** the deterministic iterative-deepening DFS stays within selected state/work bounds on stock, extension, and
+  adversarial fixtures. Do not add memoization or solver infrastructure.
 - **Fail:** optimize the observed bottleneck while preserving the same public contract and deterministic failure policy.
 
 ### Gate 4: Minimal Artifact Contract

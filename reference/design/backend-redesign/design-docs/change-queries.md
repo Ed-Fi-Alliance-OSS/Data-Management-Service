@@ -1762,7 +1762,7 @@ The live-table join used by `/deletes` intentionally does not specify the live r
 
 This makes the physical order of the `UX_<Table>_RefKey` key columns important. If the reference-key uniqueness remains ordered as `(DocumentId, <identity storage columns...>)`, the recreated-resource probe cannot use the index efficiently because the leading `DocumentId` value is not part of the predicate. The index is still valid for uniqueness and FK enforcement, but it is poorly shaped for queries whose predicate starts with the identity values.
 
-For DMS, emit `*_RefKey` as `(<public identity storage columns...>, <intrinsic lineage DocumentId anchors...>,
+For DMS, emit `*_RefKey` as `(<public identity storage columns...>, <complete transitive lineage DocumentId anchors...>,
 DocumentId)`. The composite reference FKs that target `*_RefKey` must use the same target-column ordering. Public
 identity values remain the leading seek prefix for `/deletes`; the stable lineage anchors precede only the terminal
 target `DocumentId`. This preserves both the uniqueness contract and a useful anti-join seek path.

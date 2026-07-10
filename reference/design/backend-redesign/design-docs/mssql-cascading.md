@@ -6,9 +6,10 @@ This document is the authoritative DMS-1129 design after the simplification rese
 architecture that preserves full referential integrity, safely breakable SQL Server cycles, complete v1 identity-change
 support, and the provider boundary between SQL Server and PostgreSQL.
 
-The direct database cycle and complete-vector measured screen have executable/reproducible evidence. The actual DMS PUT gate is
-still open: the current executor has a suitable transaction seam, but no accepted cycle has yet executed through the
-normal DMS API. Sections that depend on that gate say so explicitly.
+The direct database cycle and corrected transitive complete-vector measured screen have executable/reproducible evidence.
+The actual DMS PUT gate is still open: the current executor has a suitable unprofiled transaction seam, but no accepted
+cycle has yet executed through the normal DMS API and the profile path still rejects the pre-write miss. Sections that
+depend on that gate say so explicitly.
 
 `RelationalMappingVersion` remains `v1`. This is the initial production relational contract; this work adds no mapping
 compatibility mode, legacy-schema interpretation, database migration, or version bump.
@@ -53,21 +54,35 @@ statement about cascade topology.
 
 ## 2. Complete Propagation-Vector Storage
 
-### One intrinsic vector per target
+### One complete transitive vector per target
 
 For each reference target `T`, derive one ordered `CompletePropagationVector(T)`:
 
 1. every public identity storage value in target identity order;
-2. one stable `DocumentId` anchor for every independently replaceable reference-backed identity lineage on `T`, ordered
-   by the target's structural reference order; and
+2. the complete transitive lineage-anchor union described below; and
 3. `T.DocumentId` last.
 
-An identity-contributing document reference is one atomic lineage even when it supplies several public identity values.
-Its stable anchor is the referenced row's `DocumentId`. Descriptor values are not document-reference lineages.
+An identity-contributing document reference is one atomic direct lineage even when it supplies several public identity
+values. Its stable anchor is the referenced row's `DocumentId`. For each direct lineage `T -> U`, append that anchor and
+then every lineage anchor in `CompletePropagationVector(U)` in `U`'s order. Apply this recursively in the target's stable
+structural reference order. The result is the finite transitive union of stable rows whose public values can flow through
+`T`'s identity-reference chains. Exact duplicate storage may be reused only with the same-row and presence proof below;
+otherwise each structural lineage path receives dedicated storage. Recursive authored identity definitions that cannot
+produce a finite structural union fail provider-independent model validation. Descriptor values are not
+document-reference lineages.
+
+The transitive union is required even though only the direct references are independently replaceable on `T`. If `T`
+identifies through `U`, `U` identifies through `V`, and a receiver key-unifies `T`'s inherited `V` value with a direct
+`V` reference, a `U -> V` retarget must propagate both the new public value and `V.DocumentId` through `T`. A direct-only
+inventory would combine the new public value with the receiver's old `V.DocumentId` and invalidate that full FK.
 
 Every incoming reference to `T` carries the same vector, and `T` exposes one corresponding propagation-key unique
 constraint. The current single `*_RefKey` constraint is widened when anchors are present; DMS does not create one key
 variant per incoming site.
+
+An inherited anchor is stored once: the local lineage-anchor column carried by `T`'s direct identity reference to `U` is
+also the column `T` exposes in its own complete vector. Do not create a second target-only copy. An existing direct
+`..._DocumentId` on `T` may replace that column only when the exact reuse conditions below hold.
 
 The local vector uses canonical storage after key unification. A local anchor column may be reused only when structural
 metadata proves all of the following:
@@ -115,12 +130,12 @@ results are:
 | Incoming document-reference sites | 318 | 349 |
 | Referenced targets | 72 | 81 |
 | Widened target propagation keys | 43 | 51 |
-| Maximum anchors in one target vector | 3 | 3 |
-| Maximum vector columns | 13 | 14 |
-| Conservative added anchor occurrences | 152 | 176 |
-| Maximum added columns/bytes on one table | 8 / 64 | 8 / 64 |
-| Maximum SQL Server declared vector bytes | 1,284 | 1,284 |
-| Maximum PostgreSQL four-byte UTF-8 payload | 2,544 | 2,544 |
+| Maximum complete lineage anchors in one target vector | 11 | 15 |
+| Maximum vector columns | 22 | 27 |
+| Conservative added anchor occurrences | 238 | 308 |
+| Maximum added columns/bytes on one table | 11 / 88 | 20 / 160 |
+| Maximum SQL Server declared vector bytes | 1,300 | 1,300 |
+| Maximum PostgreSQL four-byte UTF-8 payload | 2,560 | 2,560 |
 | Additional unique constraints | 0 | 0 |
 
 The worst SQL Server and PostgreSQL vectors install and accept maximum-size test values. Complete anchors create no new
@@ -128,9 +143,9 @@ crossing of the measured key/index column, declared-key payload, or table-column
 total SQL Server row width or PostgreSQL tuple/index overhead, and it does not replace full generated-schema DDL
 qualification. It is sufficient for the v1 architecture choice, so site-minimal anchor closure is not part of v1.
 
-Mapping-pack size cannot yet be measured because the current pack payload is a stub. A conservative relational-manifest
-projection grows by about 2.5 percent and generated SQL by less than 1 percent. Exact pack measurement belongs to the
-slice that implements a real pack consumer.
+Mapping-pack size cannot yet be measured because the current pack payload is a stub. The conservative relational-manifest
+projection grows by 3.25/3.64 percent and generated SQL by 1.26/1.43 percent for DS 5.2/TPDM. Exact pack measurement
+belongs to the slice that implements a real pack consumer.
 
 ## 3. Physical Foreign-Key Candidate Derivation
 
@@ -253,15 +268,17 @@ Every SQL Server physical document-reference FK receives one final mode:
 | `CoveredNoAction` | `ON UPDATE NO ACTION` | The mutable edge is pruned and every applicable mutation has an exact carrier. |
 | `ImmutableNoAction` | `ON UPDATE NO ACTION` | The target has no supported mutation origin; competing receiver writes are still validated. |
 
-The selector starts with a deterministic bounded DFS/backtracking search. It introduces decision variables only for
-mutable candidates participating in an error-1785 conflict or a value-flow choice. Candidates and modes use stable
-structural order.
+The selector uses deterministic bounded iterative-deepening DFS/backtracking. It introduces decision variables only for
+mutable candidates participating in an error-1785 conflict or a value-flow choice. Candidates use stable structural
+order. For `coveredCount = 0..N`, enumerate mode vectors containing exactly that many `CoveredNoAction` values in
+lexicographic structural-edge order, with `NativeCascade` ordered before `CoveredNoAction`. Stop at the first valid
+complete assignment.
 
 For every complete assignment, the selector verifies graph legality, every carrier obligation, optional-reference
 presence, and unified-column value agreement. Partial assignments that already violate a monotone graph or carrier
 obligation are pruned.
 
-Select among valid assignments by:
+This traversal makes the first valid assignment exactly the required objective:
 
 1. fewest `CoveredNoAction` edges;
 2. lexicographically smallest structural edge-order mode vector.
@@ -275,10 +292,14 @@ plan contract.
 Do not add a general cost model. Add memoization or reachability-state canonicalization only when measured stock,
 extension, or adversarial fixtures exceed the selected work bound.
 
-The selector distinguishes:
+The selector emits no provisional feasible assignment. It distinguishes:
 
 - `NoSafeSqlServerAssignment`: bounded search completed and proved infeasibility; and
-- `CascadeClassificationComplexityExceeded`: the deterministic work bound was reached before feasibility was decided.
+- `CascadeClassificationComplexityExceeded`: the deterministic work bound was reached before the final selected
+  assignment or infeasibility was proved.
+
+Because a valid assignment ends its exact-cardinality/lexicographic iteration immediately, there is no state in which a
+feasible assignment exists but its required optimum remains unproved.
 
 Cycle membership never directly produces either result.
 
@@ -360,8 +381,8 @@ Normal pre-write lookup therefore misses even though the persisted binding still
 
 ### Required update-only workflow
 
-Normal lookup always wins. After stored-state authorization and current-state loading, one unresolved binding may defer
-only when compiled metadata proves all of these facts:
+Normal lookup always wins. After stored-state authorization and current-state loading, an unresolved binding may defer
+only when compiled metadata proves all of these facts for either an unprofiled or profile-constrained PUT:
 
 1. the operation is an identity-changing PUT of an existing document;
 2. the binding already exists on the persisted receiver row;
@@ -381,7 +402,10 @@ Before resource DML, the executor:
 - locks subject, receiver, and target rows in deterministic stable-id order;
 - rejects a new binding, missing persisted binding, ambiguity, stale row, value disagreement, or unsupported mutation;
   and
-- uses existing stable collection-row correlation for collection sites.
+- uses existing stable collection-row correlation for collection sites; and
+- for a profile-constrained PUT, applies the ordinary Core-produced writable-profile shape and stored-state visibility
+  context, preserves every hidden value/row, and proves that the deferred binding is visible and writable rather than
+  inferring it from the filtered body.
 
 After the identity-changing statement and before commit, the executor reruns the ordinary bulk referential-identity
 resolver inside the same transaction. The submitted future identity must resolve uniquely to the same persisted target
@@ -407,7 +431,9 @@ protocols, or custom verification SQL.
 
 The current write executor already opens one transaction, performs stored authorization, allows an unprofiled missing
 document reference to survive through current-state loading and proposed authorization, and fails it immediately before
-persist. That is the intended insertion point for this narrow workflow.
+persist. That is the intended insertion point for the unprofiled workflow. The profile-constrained path currently rejects
+the same miss before that seam; moving only an eligible existing binding through the normal profile merge/authorization
+path is required Gate 2 work, not an accepted non-goal.
 
 The audited seams are [`DefaultRelationalWriteExecutor`](../../../../src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs)
 and the request-scoped, miss-memoizing [`ReferenceResolver`](../../../../src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolver.cs).
@@ -416,9 +442,10 @@ The current reduced SQL Server FK and propagation-trigger behavior remains in
 and [`DeriveTriggerInventoryPass`](../../../../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs),
 which is why an HTTP test cannot yet exercise this reset design faithfully.
 
-The gate has not passed until the concrete cycle executes through a normal DMS PUT on both providers with typo,
-non-correlated, newly-present, stale, true-retarget, rollback, collection-correlation, stamping, and referential-identity
-controls. Until then, this section is a bounded implementation hypothesis, not evidence that the API path works.
+The gate has not passed until the concrete cycle executes through normal unprofiled and profile-constrained DMS PUTs on
+both providers with typo, non-correlated, newly-present, stale, true-retarget, rollback, collection-correlation,
+hidden-profile-state preservation, stamping, and referential-identity controls. Until then, this section is a bounded
+implementation hypothesis, not evidence that the API path works.
 
 Until that gate passes, failure to compile a `DeferredExistingReferenceBinding` is a Slice 3 plan-compilation result, not
 `NoSafeSqlServerAssignment`. The classifier remains database-only.
@@ -482,17 +509,18 @@ SQL Server fixtures cover sole edges, independent parents, covered/uncovered and
 safe and unsafe cycles, zero-hop carriers, optional-carrier failure, conflicting unified writes, no solution, deterministic
 work-limit exhaustion, and reversed-input determinism.
 
-Provider/API fixtures cover errors 1785 and 547, direct cycle SQL, actual cycle PUT, PostgreSQL full-cascade cycles,
-old-identity concurrency rejection, typo/future-identity rejection, true retarget, stale version, rollback, stamping,
-referential-identity maintenance, change queries, and final constraint validation.
+Provider/API fixtures cover errors 1785 and 547, direct cycle SQL, unprofiled and profile-constrained cycle PUTs,
+PostgreSQL full-cascade cycles, old-identity concurrency rejection, typo/future-identity rejection, true retarget, stale
+version, rollback, hidden-profile-state preservation, stamping, referential-identity maintenance, change queries, and
+final constraint validation.
 
 ### Delivery slices
 
 1. **Database evidence and static feasibility:** provider cycle and stock-schema vector measurements.
 2. **Complete vectors and candidates:** lineage inventory, storage, propagation keys, physical deduplication, and limits.
 3. **Provider actions:** PostgreSQL fixed assignment and SQL Server bounded global selection.
-4. **DMS PUT execution:** deferred-resolution POC, actual cycle PUT, narrow deferred existing bindings, and every v1
-   mutation form.
+4. **DMS PUT execution:** deferred-resolution POC, unprofiled and profile-constrained cycle PUTs, narrow deferred existing
+   bindings, and every v1 mutation form.
 5. **Manifest/AOT/pack integration:** only final state and implemented runtime metadata.
 6. **Full-schema qualification:** stock, TPDM, extension, adversarial, concurrency, and performance evidence.
 
@@ -503,10 +531,10 @@ an umbrella with independently testable child stories.
 
 | Gate | Current result | Consequence |
 |---|---|---|
-| Complete vector measured screen | Pass for DS 5.2 and TPDM key/column screens, including maximum-value provider probes | Do not implement per-site minimal anchor closure; retain full-schema row/index qualification. |
+| Complete vector measured screen | Pass for the transitive DS 5.2 and TPDM key/column screens, including maximum-value provider probes | Do not implement per-site minimal anchor closure; retain full-schema row/index qualification. |
 | Reciprocal database cycle | Pass on SQL Server and PostgreSQL | Retain zero-hop cycle breaking as a required classifier outcome. |
-| Deferred ordinary resolution | Open; executor seam identified, actual DMS PUT not yet executed | Do not freeze or claim the runtime protocol complete. |
-| Simple global search | Open until the classifier exists and is measured | Start with deterministic bounded DFS; add optimization only from evidence. |
+| Deferred ordinary resolution | Open; unprofiled executor seam identified, profile path and actual DMS PUT not yet proven | Do not freeze or claim the runtime protocol complete. |
+| Simple global search | Open until the classifier exists and is measured | Start with deterministic bounded iterative-deepening DFS; add optimization only from evidence. |
 | Minimal artifact contract | Design constraint; implementation validation pending | Carry final actions and lineage bindings; do not add classifier/proof/hash protocols. |
 
 ## Relationship to Legacy ODS

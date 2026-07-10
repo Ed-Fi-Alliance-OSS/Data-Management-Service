@@ -39,7 +39,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                 [ResponseIdentifier] nvarchar(60) NOT NULL,
                 [SectionTitle] nvarchar(255) NOT NULL,
                 [ResponseDocumentId] bigint NOT NULL,
+                [ResponseSurveyDocumentId] bigint NOT NULL,
                 [SectionDocumentId] bigint NOT NULL,
+                [SectionSurveyDocumentId] bigint NOT NULL,
                 [DocumentId] bigint NOT NULL,
                 CONSTRAINT [UX_WideVectorTarget_PropagationKey] UNIQUE
                 (
@@ -48,7 +50,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                     [ResponseIdentifier],
                     [SectionTitle],
                     [ResponseDocumentId],
+                    [ResponseSurveyDocumentId],
                     [SectionDocumentId],
+                    [SectionSurveyDocumentId],
                     [DocumentId]
                 )
             );
@@ -61,7 +65,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                 [ResponseIdentifier] nvarchar(60) NOT NULL,
                 [SectionTitle] nvarchar(255) NOT NULL,
                 [ResponseDocumentId] bigint NOT NULL,
+                [ResponseSurveyDocumentId] bigint NOT NULL,
                 [SectionDocumentId] bigint NOT NULL,
+                [SectionSurveyDocumentId] bigint NOT NULL,
                 [TargetDocumentId] bigint NOT NULL,
                 CONSTRAINT [FK_WideVectorChild_Target] FOREIGN KEY
                 (
@@ -70,7 +76,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                     [ResponseIdentifier],
                     [SectionTitle],
                     [ResponseDocumentId],
+                    [ResponseSurveyDocumentId],
                     [SectionDocumentId],
+                    [SectionSurveyDocumentId],
                     [TargetDocumentId]
                 )
                 REFERENCES [dbo].[WideVectorTarget]
@@ -80,7 +88,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                     [ResponseIdentifier],
                     [SectionTitle],
                     [ResponseDocumentId],
+                    [ResponseSurveyDocumentId],
                     [SectionDocumentId],
+                    [SectionSurveyDocumentId],
                     [DocumentId]
                 )
             );
@@ -94,7 +104,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                 REPLICATE(N'T', 255),
                 1,
                 2,
-                3
+                3,
+                4,
+                5
             );
 
             INSERT INTO [dbo].[WideVectorChild]
@@ -107,7 +119,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                 REPLICATE(N'T', 255),
                 1,
                 2,
-                3
+                3,
+                4,
+                5
             );
             """
         );
@@ -119,7 +133,7 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                 + DATALENGTH([SurveyIdentifier])
                 + DATALENGTH([ResponseIdentifier])
                 + DATALENGTH([SectionTitle])
-                + 24
+                + 40
             FROM [dbo].[WideVectorTarget];
             """
         );
@@ -133,7 +147,9 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
                AND target.[ResponseIdentifier] = child.[ResponseIdentifier]
                AND target.[SectionTitle] = child.[SectionTitle]
                AND target.[ResponseDocumentId] = child.[ResponseDocumentId]
+               AND target.[ResponseSurveyDocumentId] = child.[ResponseSurveyDocumentId]
                AND target.[SectionDocumentId] = child.[SectionDocumentId]
+               AND target.[SectionSurveyDocumentId] = child.[SectionSurveyDocumentId]
                AND target.[DocumentId] = child.[TargetDocumentId];
             """
         );
@@ -151,7 +167,7 @@ public class Given_The_Widest_Complete_Propagation_Vector_On_Sql_Server
     [Test]
     public void It_accepts_the_maximum_declared_full_vector_payload()
     {
-        _encodedPayloadBytes.Should().Be(1284);
+        _encodedPayloadBytes.Should().Be(1300);
         _matchingChildRows.Should().Be(1);
     }
 }

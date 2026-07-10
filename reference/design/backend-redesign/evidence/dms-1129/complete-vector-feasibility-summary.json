@@ -2,9 +2,9 @@
   "schema_version": 1,
   "generated_by": "reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js",
   "assumptions": {
-    "intrinsic_lineage": "One root identity-contributing document reference is one independently replaceable lineage. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
-    "propagation_vector": "Target public RefKey storage columns, every intrinsic lineage DocumentId anchor, then target DocumentId.",
-    "incoming_site_storage": "The conservative result allocates one BIGINT per incoming site and lineage. A sensitivity result reuses a required same-table direct-reference DocumentId only when every correlated canonical public column is identical.",
+    "lineage_closure": "One root identity-contributing document reference is one independently replaceable lineage. Each target vector includes the stable transitive union inherited through those identity-reference chains. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
+    "propagation_vector": "Target public RefKey storage columns, every complete transitive lineage DocumentId anchor, then target DocumentId.",
+    "incoming_site_storage": "The conservative result allocates one BIGINT per inherited target lineage, reuses that column on the identity site that supplies it, and allocates one BIGINT per other incoming site/lineage pair. A sensitivity result reuses a required same-table direct-reference DocumentId only when every correlated canonical public column is identical.",
     "mssql_strings": "nvarchar(n), two bytes per declared character.",
     "pgsql_strings": "Both ASCII and four-byte UTF-8 payload bounds are reported; B-tree tuple overhead and compression are not modeled.",
     "artifact_projection": "Adds only generic table columns and expanded FK, propagation-key, all-or-none, and FK-index arrays. It adds no proof, hash, solver, or generalized deferred-resolution protocol."
@@ -38,37 +38,37 @@
       "complete_vectors": {
         "referenced_targets": 72,
         "anchor_bearing_targets": 43,
-        "maximum_intrinsic_anchors": 3,
-        "maximum_vector_columns": 13,
+        "maximum_complete_lineage_anchors": 11,
+        "maximum_vector_columns": 22,
         "widest_by_columns": {
           "target": "Ed-Fi|Grade",
           "public_identity_columns": 10,
-          "anchors": 2,
-          "total_columns": 13
+          "anchors": 11,
+          "total_columns": 22
         },
-        "maximum_mssql_declared_bytes": 1284,
+        "maximum_mssql_declared_bytes": 1300,
         "widest_by_mssql_declared_bytes": {
           "target": "Ed-Fi|SurveySectionResponse",
           "baseline_declared_bytes": 1268,
-          "anchors": 2,
-          "complete_vector_declared_bytes": 1284,
-          "total_columns": 7
+          "anchors": 4,
+          "complete_vector_declared_bytes": 1300,
+          "total_columns": 9
         },
-        "maximum_pgsql_ascii_payload_bytes": 654,
-        "maximum_pgsql_four_byte_utf8_payload_bytes": 2544
+        "maximum_pgsql_ascii_payload_bytes": 674,
+        "maximum_pgsql_four_byte_utf8_payload_bytes": 2560
       },
       "anchor_storage": {
-        "target_anchor_columns_added": 3,
-        "dedicated_receiver_anchor_columns_added": 149,
-        "total_anchor_columns_added_conservative": 152,
+        "target_anchor_columns_added": 127,
+        "dedicated_receiver_anchor_columns_added": 111,
+        "total_anchor_columns_added_conservative": 238,
         "obvious_safe_receiver_reuses": 2,
-        "total_anchor_columns_added_after_obvious_reuse": 150,
+        "total_anchor_columns_added_after_obvious_reuse": 236,
         "maximum_table_growth_conservative": {
-          "table": "edfi|StudentAssessmentRegistration",
-          "baseline_column_count": 25,
-          "added_anchor_columns": 8,
-          "added_fixed_bytes": 64,
-          "final_column_count": 33
+          "table": "edfi|ReportCardGrade",
+          "baseline_column_count": 17,
+          "added_anchor_columns": 11,
+          "added_fixed_bytes": 88,
+          "final_column_count": 28
         },
         "maximum_final_table_column_count_conservative": 44,
         "reuse_sites": [
@@ -112,14 +112,14 @@
           {
             "target": "Ed-Fi|Grade",
             "baseline_declared_bytes": 973,
-            "complete_vector_declared_bytes": 989,
-            "vector_column_count": 13
+            "complete_vector_declared_bytes": 1061,
+            "vector_column_count": 22
           },
           {
             "target": "Ed-Fi|StudentAssessmentRegistration",
             "baseline_declared_bytes": 1228,
-            "complete_vector_declared_bytes": 1244,
-            "vector_column_count": 9
+            "complete_vector_declared_bytes": 1276,
+            "vector_column_count": 13
           },
           {
             "target": "Ed-Fi|SurveySection",
@@ -130,8 +130,8 @@
           {
             "target": "Ed-Fi|SurveySectionResponse",
             "baseline_declared_bytes": 1268,
-            "complete_vector_declared_bytes": 1284,
-            "vector_column_count": 7
+            "complete_vector_declared_bytes": 1300,
+            "vector_column_count": 9
           }
         ],
         "mssql_vectors_newly_crossing_900_due_to_anchors": [],
@@ -141,10 +141,10 @@
         "full_inventory_fails_where_minimal_demand_would_fit": []
       },
       "artifact_projection": {
-        "relational_manifest_delta_bytes": 153861,
-        "relational_manifest_delta_percent": 2.52,
-        "mssql_ddl_delta_bytes_rough": 48520,
-        "mssql_ddl_delta_percent_rough": 0.81,
+        "relational_manifest_delta_bytes": 198507,
+        "relational_manifest_delta_percent": 3.25,
+        "mssql_ddl_delta_bytes_rough": 76000,
+        "mssql_ddl_delta_percent_rough": 1.26,
         "mapping_pack_delta": "unavailable-not-implemented"
       }
     },
@@ -166,39 +166,39 @@
       "complete_vectors": {
         "referenced_targets": 81,
         "anchor_bearing_targets": 51,
-        "maximum_intrinsic_anchors": 3,
-        "maximum_vector_columns": 14,
+        "maximum_complete_lineage_anchors": 15,
+        "maximum_vector_columns": 27,
         "widest_by_columns": {
           "target": "TPDM|EvaluationObjectiveRating",
           "public_identity_columns": 11,
-          "anchors": 2,
-          "total_columns": 14
+          "anchors": 15,
+          "total_columns": 27
         },
-        "maximum_mssql_declared_bytes": 1284,
+        "maximum_mssql_declared_bytes": 1300,
         "widest_by_mssql_declared_bytes": {
           "target": "Ed-Fi|SurveySectionResponse",
           "baseline_declared_bytes": 1268,
-          "anchors": 2,
-          "complete_vector_declared_bytes": 1284,
-          "total_columns": 7
+          "anchors": 4,
+          "complete_vector_declared_bytes": 1300,
+          "total_columns": 9
         },
-        "maximum_pgsql_ascii_payload_bytes": 654,
-        "maximum_pgsql_four_byte_utf8_payload_bytes": 2544
+        "maximum_pgsql_ascii_payload_bytes": 674,
+        "maximum_pgsql_four_byte_utf8_payload_bytes": 2560
       },
       "anchor_storage": {
-        "target_anchor_columns_added": 3,
-        "dedicated_receiver_anchor_columns_added": 173,
-        "total_anchor_columns_added_conservative": 176,
+        "target_anchor_columns_added": 189,
+        "dedicated_receiver_anchor_columns_added": 119,
+        "total_anchor_columns_added_conservative": 308,
         "obvious_safe_receiver_reuses": 2,
-        "total_anchor_columns_added_after_obvious_reuse": 174,
+        "total_anchor_columns_added_after_obvious_reuse": 306,
         "maximum_table_growth_conservative": {
-          "table": "edfi|StudentAssessmentRegistration",
-          "baseline_column_count": 25,
-          "added_anchor_columns": 8,
-          "added_fixed_bytes": 64,
-          "final_column_count": 33
+          "table": "tpdm|EvaluationElementRating",
+          "baseline_column_count": 45,
+          "added_anchor_columns": 20,
+          "added_fixed_bytes": 160,
+          "final_column_count": 65
         },
-        "maximum_final_table_column_count_conservative": 48,
+        "maximum_final_table_column_count_conservative": 65,
         "reuse_sites": [
           {
             "owner": "Ed-Fi|CourseOffering",
@@ -240,14 +240,14 @@
           {
             "target": "Ed-Fi|Grade",
             "baseline_declared_bytes": 973,
-            "complete_vector_declared_bytes": 989,
-            "vector_column_count": 13
+            "complete_vector_declared_bytes": 1061,
+            "vector_column_count": 22
           },
           {
             "target": "Ed-Fi|StudentAssessmentRegistration",
             "baseline_declared_bytes": 1228,
-            "complete_vector_declared_bytes": 1244,
-            "vector_column_count": 9
+            "complete_vector_declared_bytes": 1276,
+            "vector_column_count": 13
           },
           {
             "target": "Ed-Fi|SurveySection",
@@ -258,8 +258,8 @@
           {
             "target": "Ed-Fi|SurveySectionResponse",
             "baseline_declared_bytes": 1268,
-            "complete_vector_declared_bytes": 1284,
-            "vector_column_count": 7
+            "complete_vector_declared_bytes": 1300,
+            "vector_column_count": 9
           }
         ],
         "mssql_vectors_newly_crossing_900_due_to_anchors": [],
@@ -269,10 +269,10 @@
         "full_inventory_fails_where_minimal_demand_would_fit": []
       },
       "artifact_projection": {
-        "relational_manifest_delta_bytes": 184863,
-        "relational_manifest_delta_percent": 2.66,
-        "mssql_ddl_delta_bytes_rough": 56200,
-        "mssql_ddl_delta_percent_rough": 0.82,
+        "relational_manifest_delta_bytes": 252867,
+        "relational_manifest_delta_percent": 3.64,
+        "mssql_ddl_delta_bytes_rough": 98400,
+        "mssql_ddl_delta_percent_rough": 1.43,
         "mapping_pack_delta": "unavailable-not-implemented"
       }
     }

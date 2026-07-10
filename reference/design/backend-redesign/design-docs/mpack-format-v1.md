@@ -138,8 +138,8 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
   - within `document_reference_bindings[*]`: `identity_bindings` preserve ApiSchema `referenceJsonPaths` order
     (identity field order); duplicate `reference_json_path` values are allowed only within one binding and represent a
     same-site flattened reference group
-  - within `document_reference_bindings[*]`: `lineage_anchor_bindings` preserve the target's intrinsic structural
-    reference order and MUST NOT be resorted
+  - within `document_reference_bindings[*]`: `lineage_anchor_bindings` preserve the target's transitive structural
+    lineage order and MUST NOT be resorted
   - within `key_unification_classes[*]`:
     - `member_path_columns` order is semantically significant and MUST NOT be sorted
     - producers MUST emit the list exactly as derived (used for deterministic write-time coalescing)
@@ -261,8 +261,8 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
        - `descriptor_edge_sources[*].descriptor_value_path` has no duplicates
        - `document_reference_bindings[*].identity_bindings[*].reference_json_path` MAY repeat only within one
          `document_reference_binding` and only to represent one same-site flattened reference group
-       - `document_reference_bindings[*].lineage_anchor_bindings[*].target_identity_reference_path` is distinct within
-         the binding, and each anchor column exists as writable storage on the binding table
+       - `document_reference_bindings[*].lineage_anchor_bindings[*].target_identity_reference_path_chain` is non-empty
+         and distinct within the binding, and each anchor column exists as writable storage on the binding table
      - all referenced tables/columns/bindings referenced by plans exist in the model
      - write/query binding invariants:
        - each `column_bindings[*].parameter_name` is present and unique case-insensitively within a statement
@@ -300,7 +300,7 @@ During step 7, consumers MUST fail fast with deterministic errors when any recon
 - duplicate canonical paths (`reference_object_path`, `descriptor_value_path`)
 - duplicate `reference_json_path` values in `read_plan.reference_identity_projection_table_plans[*].bindings_in_order[*].identity_field_ordinals_in_order`
 - duplicate `document_reference_bindings[*].identity_bindings[*].reference_json_path` values that are not confined to one same-site flattened reference group
-- duplicate lineage `target_identity_reference_path` values or unknown/non-writable lineage anchor columns
+- empty/duplicate lineage `target_identity_reference_path_chain` values or unknown/non-writable lineage anchor columns
 - duplicate/ambiguous parameter names where uniqueness is required
 - unsupported dialect values when deriving keyset table constants
 
@@ -567,7 +567,7 @@ message DocumentReferenceBinding {
   DbColumnName fk_column = 4;                            // "..._DocumentId"
   QualifiedResourceName target_resource = 5;
   repeated ReferenceIdentityBinding identity_bindings = 6; // identity field order; duplicate reference_json_path allowed only for same-site flattened reference groups
-  repeated ReferenceLineageAnchorBinding lineage_anchor_bindings = 7; // target intrinsic structural reference order
+  repeated ReferenceLineageAnchorBinding lineage_anchor_bindings = 7; // target transitive structural lineage order
 }
 
 message ReferenceIdentityBinding {
@@ -576,8 +576,8 @@ message ReferenceIdentityBinding {
 }
 
 message ReferenceLineageAnchorBinding {
-  string target_identity_reference_path = 1;               // intrinsic identity-contributing reference path on target
-  DbColumnName column = 2;                                 // local writable stable-DocumentId storage column
+  repeated string target_identity_reference_path_chain = 1; // non-empty outer-to-inner structural reference path chain
+  DbColumnName column = 2;                                  // local writable stable-DocumentId storage column
 }
 
 message DescriptorEdgeSource {

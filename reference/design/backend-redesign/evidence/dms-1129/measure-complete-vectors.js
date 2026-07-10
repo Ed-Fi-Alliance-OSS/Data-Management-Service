@@ -180,7 +180,7 @@ function measureFixture(configuration) {
     );
   }
 
-  const anchorsByTarget = new Map();
+  const directAnchorsByTarget = new Map();
 
   // Concrete target: each root-table identity-contributing document reference is one atomic
   // independently replaceable lineage. Its existing local DocumentId is the target anchor.
@@ -201,7 +201,7 @@ function measureFixture(configuration) {
         targetStorageAlreadyExists: true,
       }));
 
-    anchorsByTarget.set(targetKey, anchors);
+    directAnchorsByTarget.set(targetKey, anchors);
   }
 
   // Abstract target: normalize the identity-contributing reference lineages shared by every
@@ -243,6 +243,10 @@ function measureFixture(configuration) {
     if (members.length === 0) {
       throw new Error(`Abstract resource '${abstractKey}' has no concrete members.`);
     }
+
+    members.sort((left, right) =>
+      compareText(qualifiedResourceKey(left.resource), qualifiedResourceKey(right.resource)),
+    );
 
     const normalizedBySignature = new Map();
 
@@ -297,15 +301,102 @@ function measureFixture(configuration) {
             );
           }
         }
+
+        for (const signature of signaturesInMember) {
+          if (!normalizedBySignature.has(signature)) {
+            throw new Error(
+              `Abstract member '${qualifiedResourceKey(member.resource)}' supplies unexpected normalized lineage '${signature}'.`,
+            );
+          }
+        }
       }
     }
 
-    anchorsByTarget.set(
+    directAnchorsByTarget.set(
       abstractKey,
       [...normalizedBySignature.values()].sort((left, right) =>
         compareText(left.targetColumn, right.targetColumn),
       ),
     );
+  }
+
+  // A target can expose lineage anchors inherited through an identity-reference chain. For
+  // example, if T identifies through U and U identifies through V, T's full FK to U stores both
+  // U.DocumentId and V.DocumentId. A downstream receiver may need both values to keep a key-unified
+  // direct V reference valid. The complete-vector architecture therefore takes the transitive union
+  // in stable structural traversal order, rather than only the direct root references on T.
+  const anchorsByTarget = new Map();
+
+  function completeAnchors(targetKey, targetStack = []) {
+    const cached = anchorsByTarget.get(targetKey);
+
+    if (cached != null) {
+      return cached;
+    }
+
+    if (targetStack.includes(targetKey)) {
+      throw new Error(
+        `Identity-reference lineage cycle cannot be expanded for measurement: '${[
+          ...targetStack,
+          targetKey,
+        ].join(" -> ")}'.`,
+      );
+    }
+
+    const directAnchors = directAnchorsByTarget.get(targetKey) ?? [];
+    const complete = [];
+
+    for (const directAnchor of directAnchors) {
+      complete.push({
+        ...directAnchor,
+        lineagePath: directAnchor.referenceObjectPath,
+        lineageDepth: 1,
+      });
+
+      const nestedTargetKey = qualifiedResourceKey(directAnchor.targetResource);
+      const nestedAnchors = completeAnchors(nestedTargetKey, [...targetStack, targetKey]);
+
+      for (const nestedAnchor of nestedAnchors) {
+        complete.push({
+          targetResource: nestedAnchor.targetResource,
+          referenceObjectPath: directAnchor.referenceObjectPath,
+          lineagePath: `${directAnchor.referenceObjectPath} -> ${nestedAnchor.lineagePath}`,
+          lineageDepth: nestedAnchor.lineageDepth + 1,
+          targetColumn: null,
+          identityBindings: null,
+          targetStorageAlreadyExists: false,
+        });
+      }
+    }
+
+    const targetTable = targetTablesByResource.get(targetKey);
+    const usedColumnNames = new Set(targetTable?.columns.map(column => column.name) ?? []);
+
+    for (const [anchorIndex, anchor] of complete.entries()) {
+      if (anchor.targetColumn != null) {
+        usedColumnNames.add(anchor.targetColumn);
+        continue;
+      }
+
+      const baseName = `LineageAnchor_${anchorIndex + 1}_DocumentId`;
+      let targetColumn = baseName;
+      let suffix = 1;
+
+      while (usedColumnNames.has(targetColumn)) {
+        suffix += 1;
+        targetColumn = `${baseName}_${suffix}`;
+      }
+
+      anchor.targetColumn = targetColumn;
+      usedColumnNames.add(targetColumn);
+    }
+
+    anchorsByTarget.set(targetKey, complete);
+    return complete;
+  }
+
+  for (const targetKey of targetTablesByResource.keys()) {
+    completeAnchors(targetKey);
   }
 
   const incomingSitesByTarget = new Map();
@@ -334,7 +425,7 @@ function measureFixture(configuration) {
       "DocumentId",
     ];
 
-    // Abstract anchor columns are not in the current manifest, but they are always BIGINT.
+    // Abstract and inherited anchor columns are not in the current manifest, but they are always BIGINT.
     const columnType = columnName =>
       anchors.some(
         anchor =>
@@ -369,6 +460,10 @@ function measureFixture(configuration) {
   }
 
   function reusableLocalAnchor(site, anchor) {
+    if (anchor.identityBindings == null) {
+      return null;
+    }
+
     const receiverTable = tablesByKey.get(qualifiedTableKey(site.binding.table));
     const targetPathToLocalStorage = new Map(
       site.binding.identity_bindings.map(identity => [
@@ -418,6 +513,35 @@ function measureFixture(configuration) {
     return null;
   }
 
+  function targetBackedLocalAnchorColumn(site, nestedAnchor) {
+    if (!site.binding.is_identity_component) {
+      return null;
+    }
+
+    const ownerKey = qualifiedResourceKey(site.detail.resource);
+    const ownerRootTable = targetTablesByResource.get(ownerKey);
+
+    if (
+      ownerRootTable == null ||
+      qualifiedTableKey(site.binding.table) !== qualifiedTableKey(ownerRootTable)
+    ) {
+      return null;
+    }
+
+    const inheritedLineagePath = `${site.binding.reference_object_path} -> ${nestedAnchor.lineagePath}`;
+    const matches = (anchorsByTarget.get(ownerKey) ?? []).filter(
+      anchor => anchor.lineagePath === inheritedLineagePath,
+    );
+
+    if (matches.length !== 1) {
+      throw new Error(
+        `Expected one inherited target anchor for '${ownerKey}:${inheritedLineagePath}', found ${matches.length}.`,
+      );
+    }
+
+    return matches[0].targetColumn;
+  }
+
   const receiverGrowthDedicated = new Map();
   const reuseSites = [];
   let dedicatedReceiverAnchorColumns = 0;
@@ -426,16 +550,20 @@ function measureFixture(configuration) {
   for (const site of allReferenceSites) {
     const targetKey = qualifiedResourceKey(site.binding.target_resource);
     const anchors = anchorsByTarget.get(targetKey) ?? [];
+    const targetBackedAnchorColumns = anchors
+      .map(anchor => targetBackedLocalAnchorColumn(site, anchor))
+      .filter(columnName => columnName != null);
     const reuseColumns = anchors
       .map(anchor => reusableLocalAnchor(site, anchor))
       .filter(columnName => columnName != null);
     const receiverTableKey = qualifiedTableKey(site.binding.table);
+    const dedicatedAnchorCount = anchors.length - targetBackedAnchorColumns.length;
 
-    dedicatedReceiverAnchorColumns += anchors.length;
+    dedicatedReceiverAnchorColumns += dedicatedAnchorCount;
     safelyReusableReceiverAnchors += reuseColumns.length;
     receiverGrowthDedicated.set(
       receiverTableKey,
-      (receiverGrowthDedicated.get(receiverTableKey) ?? 0) + anchors.length,
+      (receiverGrowthDedicated.get(receiverTableKey) ?? 0) + dedicatedAnchorCount,
     );
     if (reuseColumns.length > 0) {
       reuseSites.push({
@@ -575,6 +703,12 @@ function measureFixture(configuration) {
     }
 
     const localAnchorNames = anchors.map((anchor, ordinal) => {
+      const targetBackedColumn = targetBackedLocalAnchorColumn(site, anchor);
+
+      if (targetBackedColumn != null) {
+        return targetBackedColumn;
+      }
+
       const name = allocateReceiverAnchorName(
         receiverTableKey,
         site.binding,
@@ -697,7 +831,7 @@ function measureFixture(configuration) {
     complete_vectors: {
       referenced_targets: vectorMeasurements.length,
       anchor_bearing_targets: anchorBearingVectors.length,
-      maximum_intrinsic_anchors: Math.max(
+      maximum_complete_lineage_anchors: Math.max(
         ...vectorMeasurements.map(vector => vector.anchorCount),
       ),
       maximum_vector_columns: widestByColumns.vectorColumnCount,
@@ -806,12 +940,12 @@ const summary = {
   generated_by:
     "reference/design/backend-redesign/evidence/dms-1129/measure-complete-vectors.js",
   assumptions: {
-    intrinsic_lineage:
-      "One root identity-contributing document reference is one independently replaceable lineage. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
+    lineage_closure:
+      "One root identity-contributing document reference is one independently replaceable lineage. Each target vector includes the stable transitive union inherited through those identity-reference chains. Abstract lineages are normalized across every concrete member. Descriptor references are excluded.",
     propagation_vector:
-      "Target public RefKey storage columns, every intrinsic lineage DocumentId anchor, then target DocumentId.",
+      "Target public RefKey storage columns, every complete transitive lineage DocumentId anchor, then target DocumentId.",
     incoming_site_storage:
-      "The conservative result allocates one BIGINT per incoming site and lineage. A sensitivity result reuses a required same-table direct-reference DocumentId only when every correlated canonical public column is identical.",
+      "The conservative result allocates one BIGINT per inherited target lineage, reuses that column on the identity site that supplies it, and allocates one BIGINT per other incoming site/lineage pair. A sensitivity result reuses a required same-table direct-reference DocumentId only when every correlated canonical public column is identical.",
     mssql_strings: "nvarchar(n), two bytes per declared character.",
     pgsql_strings:
       "Both ASCII and four-byte UTF-8 payload bounds are reported; B-tree tuple overhead and compression are not modeled.",

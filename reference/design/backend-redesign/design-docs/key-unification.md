@@ -77,7 +77,7 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_DocumentId` (stable key)
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
-Complete-vector FKs target public identity values, intrinsic lineage anchors, and target `DocumentId`. PostgreSQL assigns
+Complete-vector FKs target public identity values, complete transitive lineage anchors, and target `DocumentId`. PostgreSQL assigns
 fixed actions mechanically. SQL Server globally selects actions and may use an exact-carrier `NO ACTION` edge to break a
 diamond or cycle; see [mssql-cascading.md](mssql-cascading.md).
 
@@ -132,7 +132,7 @@ This preserves the invariant used by query compilation and reconstitution:
 
 - Composite reference FKs are defined over the target's complete propagation vector:
   - the **canonical physical columns** for its public identity values;
-  - the local stable `DocumentId` anchor for every intrinsic reference-backed identity lineage; and
+  - the local stable `DocumentId` anchor for every path in the complete transitive reference-backed lineage union; and
   - `{RefBaseName}_DocumentId` last.
 - “All-or-none” CHECK constraints are defined over:
   - `{RefBaseName}_DocumentId`, and
@@ -301,11 +301,11 @@ Semantics:
 
 **Constraint derivation (composite reference FKs)**
 
-- Derive the complete FK shape as public identity values, intrinsic lineage anchors, then target `DocumentId`.
+- Derive the complete FK shape as public identity values, complete transitive lineage anchors, then target `DocumentId`.
 - For each public identity column in the composite FK, use `DbColumnModel.Storage` to map:
   - local FK columns → canonical storage columns
   - referenced target columns → canonical storage columns
-- Append the corresponding local/target `LineageAnchorBindings` in stable intrinsic-lineage order and the terminal
+- Append the corresponding local/target `LineageAnchorBindings` in stable transitive-lineage order and the terminal
   target `DocumentId`.
 - Keep all-or-none constraints over the per-site aliases and local lineage-anchor columns, preserving the original
   meaning.
@@ -1615,18 +1615,18 @@ rewrite or emit reference FKs; it only mutates the derived model (columns + stor
 and adds `NullOrTrue` hardening constraints for synthetic presence flags.
 
 For a reference site, the composite FK uses the target's complete propagation vector. Column order is **public identity
-storage columns, intrinsic lineage anchors, then target `DocumentId`**, and the local and target lists MUST be
+storage columns, complete transitive lineage anchors, then target `DocumentId`**, and the local and target lists MUST be
 **positionally aligned** (FK pairing is positional: local column *i* pairs with target column *i*):
 
 - Local FK columns (in this order):
   - `<CanonicalPublicIdentityValues...>` (in the referenced target's identity path order; derived by mapping each identity
     part binding column through `DbColumnModel.Storage`)
-  - `<LocalIntrinsicLineageDocumentIdAnchors...>` (in stable target lineage order)
+  - `<LocalCompleteLineageDocumentIdAnchors...>` (in stable target lineage order)
   - `{RefBaseName}_DocumentId`
 - Target columns (in the matching order):
   - `<TargetPublicIdentityColumns...>` (derived by mapping each target identity binding column through
     `DbColumnModel.Storage`)
-  - `<TargetIntrinsicLineageDocumentIdAnchors...>`
+  - `<TargetCompleteLineageDocumentIdAnchors...>`
   - `DocumentId`
 
 Referential actions:
@@ -1818,8 +1818,8 @@ Authorization note:
 
 Composite foreign keys require the referenced column set to be UNIQUE. In this redesign, many composite FKs target:
 
-- `(<PublicIdentityValues...>, <IntrinsicLineageDocumentIds...>, DocumentId)` on a concrete root table, or
-- `(<AbstractPublicIdentityValues...>, <IntrinsicLineageDocumentIds...>, DocumentId)` on an abstract identity table.
+- `(<PublicIdentityValues...>, <CompleteLineageDocumentIds...>, DocumentId)` on a concrete root table, or
+- `(<AbstractPublicIdentityValues...>, <CompleteLineageDocumentIds...>, DocumentId)` on an abstract identity table.
 
 (Public identity storage columns first, lineage anchors next, and `DocumentId` last — see [change-queries.md](change-queries.md)
 § "*_RefKey index ordering for /deletes".)
@@ -1831,13 +1831,13 @@ the composite FK legal” MUST be defined over the same canonical storage column
 Normative rules:
 
 1. When deriving a referenced-key UNIQUE for a composite FK target, the target column list MUST be
-   ordered public identity storage columns first, intrinsic lineage anchors next, and `DocumentId` last — matching the local FK's column order so
+   ordered public identity storage columns first, complete transitive lineage anchors next, and `DocumentId` last — matching the local FK's column order so
    the FK and its referenced-key UNIQUE are positionally aligned (see
    [change-queries.md](change-queries.md) § "*_RefKey index ordering for /deletes"):
    - the target identity-part columns mapped to their **canonical storage columns**:
      - `Stored` → itself
      - `UnifiedAlias` → `UnifiedAlias.CanonicalColumn`
-   - every intrinsic lineage `DocumentId` anchor in stable target order
+   - every complete lineage `DocumentId` anchor in stable target order
    - followed by `DocumentId`
 2. If two or more identity parts map to the same canonical column (because the identity schema contains duplicated
    endpoints that are equality-constrained), the derivation MUST de-duplicate the repeated canonical column name
@@ -2263,7 +2263,7 @@ semantics, or cascade correctness.
   - canonical storage columns and any synthetic presence flag columns are emitted before dependent aliases.
 - Generated/computed alias column syntax is correct per dialect and matches `UnifiedAlias(Canonical, Presence)` rules.
 - No FK attempts to reference `UnifiedAlias` columns:
-  - composite reference FKs use canonical public-identity storage columns, intrinsic lineage anchors, and terminal
+  - composite reference FKs use canonical public-identity storage columns, complete transitive lineage anchors, and terminal
     target `DocumentId`,
   - descriptor FKs use canonical storage columns for unified descriptor parts.
 - Descriptor FK constraints:
@@ -2275,14 +2275,14 @@ semantics, or cascade correctness.
 - API-semantic UNIQUE constraints are defined over binding/path columns (aliases allowed) and do not collapse to
   canonicals.
 - FK-supporting referenced-key UNIQUE constraints are defined over canonical public-identity storage columns (after
-  mapping + de-dup), intrinsic lineage anchors, and target `DocumentId`.
+  mapping + de-dup), complete transitive lineage anchors, and target `DocumentId`.
 - FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
 - SQL Server propagation strategy (foreign-key pruning; see [mssql-cascading.md](mssql-cascading.md)):
   - the cascade graph is analyzed in propagation direction (referenced/parent → referrer/child); the 1785 test is
     per-origin duplicate reachability, not raw in-degree; cycles are searched for safe action cuts rather than rejected,
   - eligible edges (including independent parents into a shared receiver) keep `ON UPDATE CASCADE`; a mutable edge uses
     `ON UPDATE NO ACTION` only with exact complete-vector carrier coverage,
-  - every reference FK keeps the complete vector (public identity storage, intrinsic lineage anchors, and terminal
+  - every reference FK keeps the complete vector (public identity storage, complete transitive lineage anchors, and terminal
     target `DocumentId`); there is no `DocumentId`-only FK and no identity-value propagation trigger,
   - SQL Server reports proved no-solution separately from deterministic work-limit exhaustion.
 

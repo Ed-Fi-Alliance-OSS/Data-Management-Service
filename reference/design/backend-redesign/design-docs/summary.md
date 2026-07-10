@@ -27,7 +27,7 @@ Source documents:
 
 - Canonical storage is relational (root table per resource, child tables per collection) and is the source of truth.
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
-- Relationships use full-composite vectors containing referenced public identity values, complete intrinsic lineage
+- Relationships use full-composite vectors containing referenced public identity values, complete transitive lineage
   anchors, and stable target `DocumentId`. PostgreSQL assigns fixed actions mechanically and is never pruned,
   topology-classified, or failed because of cascade topology. SQL Server globally selects error-1785-legal actions;
   exact-carrier `NO ACTION` edges may safely break diamonds or cycles. There is no reduced-FK or identity-value trigger
@@ -112,7 +112,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
     - scalar identity elements become scalar columns,
     - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (stable), with referenced identity values bound at `{RefBaseName}_{IdentityPart}` columns for query/reconstitution (under key unification these may be presence-gated aliases of canonical stored columns; see `key-unification.md`).
   - Reference FK columns:
-    - for each document reference site: store public identity bindings, every target intrinsic lineage anchor, and terminal
+    - for each document reference site: store public identity bindings, every target transitive lineage anchor, and terminal
       target `..._DocumentId`; target the one complete propagation key. PostgreSQL uses fixed actions. SQL Server uses
       globally selected actions with exact carrier coverage and safe cycle breaking. Under key unification, FKs target
       canonical storage while path bindings may remain generated/persisted aliases.

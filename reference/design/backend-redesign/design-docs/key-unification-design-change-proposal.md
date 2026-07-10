@@ -127,7 +127,7 @@ unified key parts.
 1. **Cross-table propagation for equality constraints that cross root ↔ child scopes**, updating dependent child
    **storage/canonical** columns set-based by owning root `DocumentId`.
 2. **Reference-site retargeting when required**: if the dependent endpoint is inside a composite reference FK
-   (`<public identity values…>, <intrinsic lineage anchors…>, ..._DocumentId`), propagate the entire reference site (not
+   (`<public identity values…>, <complete transitive lineage anchors…>, ..._DocumentId`), propagate the entire reference site (not
    just the unified key part) so the full FK remains valid and the reference is effectively “retargeted” as ODS/API
    would do.
 3. ~~**SQL Server baseline parity fix**: include non-root reference sites when deriving
@@ -233,7 +233,7 @@ For a dependent endpoint that is a scalar or descriptor FK value stored in a can
 
 #### 3.2 Reference-site retargeting (composite FK endpoints)
 
-If the dependent endpoint sits inside a **complete-vector reference FK** (public identity values + intrinsic lineage
+If the dependent endpoint sits inside a **complete-vector reference FK** (public identity values + complete transitive lineage
 anchors + target `..._DocumentId`), ODS/API semantics are effectively “retarget the reference when the unified key part
 changes”.
 

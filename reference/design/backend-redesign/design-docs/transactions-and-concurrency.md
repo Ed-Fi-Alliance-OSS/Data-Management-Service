@@ -107,8 +107,7 @@ For each document reference site, the referencing table includes:
 - the stable `..._DocumentId` (stored/writable), and
 - the referenced resource’s identity natural-key fields as local per-site identity-part columns
   (`{RefBaseName}_{IdentityPart}`), and
-- one stable lineage-anchor `DocumentId` for every independently replaceable identity-contributing document reference
-  intrinsic to the target.
+- the complete transitive lineage-anchor union exposed through the target's identity-contributing reference chains.
 
 Under key unification, `{RefBaseName}_{IdentityPart}` columns are treated as **path/binding columns**. They may be
 stored (baseline redesign) or generated/persisted aliases of canonical storage columns (unified redesign), preserving
@@ -120,8 +119,8 @@ DDL generator requirements (derived from ApiSchema):
   - the per-site identity-part binding columns (aliases when unified), and
   - every complete lineage-anchor column.
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
-- Enforce a complete-vector FK over canonical storage: public identity values, all intrinsic lineage anchors, and target
-  `DocumentId`.
+- Enforce a complete-vector FK over canonical storage: public identity values, all complete transitive lineage anchors,
+  and target `DocumentId`.
   - PostgreSQL assigns full-vector actions mechanically from target mutability. It is never pruned,
     topology-classified, or failed because of cascade topology.
   - SQL Server globally selects physical actions that satisfy error 1785 and exact carrier safety. Diamonds, parallel
@@ -140,7 +139,7 @@ Descriptor references are stored as `..._DescriptorId` FKs to `dms.Descriptor` f
 
 #### How polymorphic (abstract) references work end-to-end
 
-Polymorphic references store a complete vector: public abstract identity values, normalized intrinsic lineage
+Polymorphic references store a complete vector: public abstract identity values, normalized complete transitive lineage
 `DocumentId` anchors, and a terminal `BIGINT` target `DocumentId`. The logical target is an *abstract* resource (for
 example, `EducationOrganization`) with one abstract identity shape.
 
@@ -152,7 +151,7 @@ The pieces fit together like this:
    - DMS computes the target `ReferentialId` for the abstract resource type + identity values and resolves `ReferentialId → DocumentId` in bulk via `dms.ReferentialIdentity`.
    - This works because each concrete subtype maintains superclass/abstract **alias** referential-id rows, so abstract references can resolve without per-subtype SQL.
 3. **Persist the complete abstract-target vector**:
-   - The referencing row stores the public abstract identity values, normalized intrinsic lineage anchors, and resolved
+   - The referencing row stores the public abstract identity values, normalized complete transitive lineage anchors, and resolved
      target `DocumentId`.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
    - The complete-vector FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses its fixed action and SQL
@@ -225,8 +224,10 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      - reference-bearing identities (kept current via cascades + per-resource triggers)
      - polymorphic/abstract identities via superclass/abstract alias rows in `dms.ReferentialIdentity`
    - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
-   - For an approved existing-binding future-identity miss on PUT, defer only the stable target id after stored-state
-     authorization/current-state correlation. Changing public values still come from submitted/origin bindings.
+   - For an approved existing-binding future-identity miss on an unprofiled or profile-constrained PUT, defer only the
+     stable target id after stored-state authorization/current-state correlation. Profile-constrained execution uses the
+     normal Core-produced writable-profile and stored-state visibility contracts and preserves hidden state. Changing
+     public values still come from submitted/origin bindings.
 3. Backend writes within a single transaction:
    - For update flows that already loaded the current document state, backend SHOULD compare the request-derived
      post-merge rowset to the current persisted rowset before issuing DML. If they are equal, treat the request as a successful
