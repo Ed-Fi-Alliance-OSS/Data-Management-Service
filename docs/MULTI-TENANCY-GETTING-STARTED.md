@@ -469,7 +469,7 @@ To tear down the environment:
 
 ```powershell
 cd eng/docker-compose
-pwsh ./bootstrap-local-dms.ps1 -d -v -EnvironmentFile "./.env.multitenancy"
+pwsh ./start-local-dms.ps1 -d -v -EnvironmentFile "./.env.multitenancy"
 ```
 
 ## Additional Resources
