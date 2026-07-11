@@ -55,7 +55,10 @@ else
   if [ "$explicit_dms" = true ] || [ "$ambiguous_opt" = true ]; then starts_dms=true; fi
   if [ "$gateway_named" = true ] && [ "$no_deps" != true ]; then starts_dms=true; fi
 fi
-if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json' 2>/dev/null | grep -q .; then
+# `-print -quit` (find exits after the first hit) keeps this SIGPIPE-safe: with a bare
+# `find | grep -q`, grep closes the pipe on first match and, under pipefail, find's SIGPIPE
+# (exit 141) would make this guard misfire as "schema missing" even when files are present.
+if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json' -print -quit 2>/dev/null | grep -q .; then
   echo "ERROR: .bootstrap/ApiSchema is missing or has no staged schema files, so the DMS services cannot start."
   echo "Stage it first: eng/docker-compose/prepare-dms-schema.ps1 writes eng/docker-compose/.bootstrap/ApiSchema;"
   echo "copy that folder to compose/.bootstrap/ApiSchema. See ../docs/infrastructure.md 'Provisioning method'."

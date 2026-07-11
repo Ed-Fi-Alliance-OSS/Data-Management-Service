@@ -7,9 +7,16 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-if git -C . rev-parse --git-dir >/dev/null 2>&1; then
+if [ "${SKIP_GIT:-0}" != "1" ] && git -C . rev-parse --git-dir >/dev/null 2>&1; then
   echo "Pulling latest repo config..."
-  git pull --ff-only || echo "WARNING: git pull skipped (local changes or detached HEAD)."
+  # Abort on a failed fast-forward: pulling newer :pre images (below) against stale compose/nginx
+  # config risks an incompatible mix. Resolve the divergence, or set SKIP_GIT=1 to refresh images
+  # only (e.g. when intentionally running local edits to the deployment files).
+  if ! git pull --ff-only; then
+    echo "ERROR: 'git pull --ff-only' failed (local changes or diverged history). Resolve it, or" >&2
+    echo "       re-run with SKIP_GIT=1 to pull images against the current checkout." >&2
+    exit 1
+  fi
 fi
 
 echo "Pulling latest images..."

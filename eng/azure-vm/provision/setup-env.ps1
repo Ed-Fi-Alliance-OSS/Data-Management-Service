@@ -37,7 +37,8 @@ param(
     [switch]$SkipBootstrap,
     [switch]$RotateSecrets,                                     # regenerate .env secrets even if .env exists (you MUST also reset dependent volumes/registrations)
     [switch]$Bootstrap,                                         # force bootstrap on a re-run (default: bootstrap runs until it has completed successfully once)
-    [switch]$StartDms                                           # start the DMS services (only after the relational schema is provisioned)
+    [switch]$StartDms,                                          # start the DMS services (only after the relational schema is provisioned)
+    [switch]$Force                                              # allow -RotateSecrets against existing volumes (only if you will recreate them)
 )
 $ErrorActionPreference = "Stop"
 
@@ -150,6 +151,18 @@ try {
     if ($hasPlaceholders -and -not $freshEnv) {
         Write-Warning ".env still holds placeholder (CHANGEME) secrets from an incomplete earlier run; regenerating all secrets."
     }
+    # Guard -RotateSecrets against EXISTING volumes: the Postgres data, Keycloak realm, and CMS-
+    # encrypted rows are keyed to the current secrets, so rotating them and then starting the same
+    # volumes (below) breaks DB auth / token auth / decryption. Require a full reset first.
+    if ($RotateSecrets -and -not $Force) {
+        docker volume inspect dms-security-review_dms-sec-postgres *> $null
+        if ($LASTEXITCODE -eq 0) {
+            throw ("-RotateSecrets would regenerate secrets that the EXISTING volumes (Postgres/" +
+                "Keycloak/CMS-encrypted state) are keyed to, breaking auth and decryption when they " +
+                "restart. Run ./down.sh -v first (drops ALL data, including Keycloak), then re-run -- " +
+                "or pass -Force to rotate anyway (only if the volumes will be recreated).")
+        }
+    }
     if ($freshEnv -or $RotateSecrets -or $hasPlaceholders) {
         Write-Output "Writing generated secrets to .env..."
         Set-EnvValue -File ".env" -Key "POSTGRES_PASSWORD" -Value (New-ComplexSecret)
@@ -184,7 +197,7 @@ try {
         Move-Item -Force ssl/server.key.tmp ssl/server.key
     }
     elseif (Test-Path "ssl/server.crt") {
-        Write-Output "Reusing existing self-signed certificate (delete ssl/server.crt to regenerate)."
+        Write-Output "Reusing existing certificate at ssl/server.crt (delete it to regenerate)."
     }
     else {
         Write-Output "No -LetsEncryptEmail: generating a self-signed certificate."
@@ -267,7 +280,9 @@ try {
             throw ("A previous bootstrap started but did not complete; the CMS config DB may hold " +
                 "partial vendors/applications/data stores that a retry would DUPLICATE. Run " +
                 "./reset.sh (clears partial CMS state, keeps the Keycloak realm), then re-run -- or " +
-                "pass -Bootstrap to force a re-run anyway (only safe against an empty config DB).")
+                "pass -Bootstrap to force a re-run anyway (only safe against an empty config DB). " +
+                "If the failure was during Keycloak client setup instead, reset.sh keeps the realm " +
+                "(including a half-created client) -- use ./down.sh -v for a full reset, then re-run.")
         }
         else {
             Write-Output "Running bootstrap (over loopback)..."

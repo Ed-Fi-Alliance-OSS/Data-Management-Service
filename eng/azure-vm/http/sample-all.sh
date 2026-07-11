@@ -17,14 +17,20 @@
 # Usage:
 #   FQDN=your-host ST_CREDS='key:secret' T1_CREDS='key:secret' T2_CREDS='key:secret' ./sample-all.sh
 #   INSECURE=1 FQDN=localhost ... ./sample-all.sh          # self-signed cert
+#   TENANT1=t1 TENANT2=t2 SCHOOL_YEAR=2025 ... ./sample-all.sh   # if you customized the MT names/year
 set -euo pipefail
 FQDN="${FQDN:-your-label.eastus.cloudapp.azure.com}"
 REALM="${REALM:-edfi}"
-# -k only when INSECURE=1; otherwise verify the chain (default).
-K=(); [ "${INSECURE:-0}" = "1" ] && K=(-k)
+# Common curl opts: per-request deadlines so a hung endpoint can't stall the sampler; add -k
+# only when INSECURE=1 (self-signed cert), otherwise verify the chain (default).
+K=(--connect-timeout 10 --max-time 60); [ "${INSECURE:-0}" = "1" ] && K+=(-k)
 ST_CREDS="${ST_CREDS:-REPLACE_ST_KEY:REPLACE_ST_SECRET}"
 T1_CREDS="${T1_CREDS:-REPLACE_TENANT1_KEY:REPLACE_TENANT1_SECRET}"
 T2_CREDS="${T2_CREDS:-REPLACE_TENANT2_KEY:REPLACE_TENANT2_SECRET}"
+# MT route qualifiers -- override if you changed MT_TENANT_1/MT_TENANT_2/MT_SCHOOL_YEAR in .env.
+TENANT1="${TENANT1:-tenant1}"
+TENANT2="${TENANT2:-tenant2}"
+SCHOOL_YEAR="${SCHOOL_YEAR:-2025}"
 
 # All three apps authenticate against the shared Keycloak realm. (Don't take the token URL from
 # /mt-dms discovery: it wrongly appends /{tenant}/{schoolYear} -- ../docs/infrastructure.md
@@ -92,14 +98,14 @@ if ! curl -sf "${K[@]}" -H "Authorization: Bearer $TOK" "$B/students?studentUniq
   FAILURES=$((FAILURES + 1))
 fi
 
-echo; echo "===== multi-tenant / tenant1 ====="
-TOK=$(token "$KC_TOKEN" "$T1_CREDS"); B="https://$FQDN/mt-dms/tenant1/2025/data/ed-fi"
-discovery "https://$FQDN/mt-dms/tenant1/2025/"
+echo; echo "===== multi-tenant / $TENANT1 ====="
+TOK=$(token "$KC_TOKEN" "$T1_CREDS"); B="https://$FQDN/mt-dms/$TENANT1/$SCHOOL_YEAR/data/ed-fi"
+discovery "https://$FQDN/mt-dms/$TENANT1/$SCHOOL_YEAR/"
 sample
 
-echo; echo "===== multi-tenant / tenant2 ====="
-TOK=$(token "$KC_TOKEN" "$T2_CREDS"); B="https://$FQDN/mt-dms/tenant2/2025/data/ed-fi"
-discovery "https://$FQDN/mt-dms/tenant2/2025/"
+echo; echo "===== multi-tenant / $TENANT2 ====="
+TOK=$(token "$KC_TOKEN" "$T2_CREDS"); B="https://$FQDN/mt-dms/$TENANT2/$SCHOOL_YEAR/data/ed-fi"
+discovery "https://$FQDN/mt-dms/$TENANT2/$SCHOOL_YEAR/"
 sample
 
 echo

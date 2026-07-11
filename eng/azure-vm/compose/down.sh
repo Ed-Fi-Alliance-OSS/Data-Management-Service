@@ -30,3 +30,10 @@ if [ "$wants_volumes" = true ] && [ "$FORCE" != true ]; then
 fi
 
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down "${ARGS[@]}"
+
+# If volumes were dropped (-v), the config + Keycloak state is gone, so bootstrap must run again.
+# Remove both bootstrap markers so a later setup-env.ps1 re-bootstraps instead of trusting a stale
+# "complete" marker against empty databases (matches reset.sh).
+if [ "$wants_volumes" = true ]; then
+  rm -f .bootstrap/bootstrap-attempted .bootstrap/bootstrap-complete
+fi

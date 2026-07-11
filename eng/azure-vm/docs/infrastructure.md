@@ -165,7 +165,10 @@ Order used to stand the environment up (and that a re-deploy should follow):
    run `grandbend.sh` here **instead of** `api-schema-tools` (see step 6).
 4. **`bootstrap/bootstrap.ps1`** creates the Keycloak realm + service clients, the CMS
    tenants / data stores, and the review applications. This **must run before the DMS
-   services start** (issue 3).
+   services start** (issue 3). **If you used `setup-env.ps1` in step 1 it already ran this
+   bootstrap — do not run `bootstrap.ps1` again** (its CMS creates are not idempotent and a
+   second run would duplicate vendors/applications/data stores). Run it standalone only when you
+   brought infrastructure up with the manual `docker compose … up` command.
 5. Start the DMS services (`./up.sh st-dms mt-dms`); each `/health` should return 200.
 6. **Seed data** — two mutually exclusive paths per DB:
    - **Provision-then-load** (step 3 already ran `api-schema-tools` on the DB): **single-tenant**

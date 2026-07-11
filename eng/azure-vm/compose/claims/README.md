@@ -15,7 +15,9 @@ Available out of the box (`DMS_CONFIG_CLAIMS_SOURCE=Embedded`). Confirm the live
 | `E2E-NameSpaceBasedClaimSet` | Namespace-based (vendor `namespacePrefixes`) |
 | `E2E-RelationshipsWithEdOrgsOnlyClaimSet` | **EdOrg relationships** — school/district-level access |
 | `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet` / `...OrInverted...` / `...MixedStrategy...` | EdOrg variants |
-| `SampleExtensionClaims`, `HomographExtensionClaims` | Extension samples |
+
+Extension claim sets (`SampleExtensionClaims`, `HomographExtensionClaims`) are **not** embedded —
+they ship only as filesystem fragments, so they are available only via **Hybrid** mode (below).
 
 ## School / district-level access
 
@@ -36,9 +38,12 @@ Two ways:
    admin token (see `http/multi-tenant.http`).
 
 2. **File-based:** set `DMS_CONFIG_CLAIMS_SOURCE=Hybrid` in `.env` and drop custom claim set
-   `*.json` files in this directory (mounted into both Config Services at
-   `/app/additional-claims`). Restart the `*-config` services (or use the management
-   reload). The JSON shape matches an `export` from the API — start from one.
+   fragments in this directory (mounted into both Config Services at `/app/additional-claims`).
+   Each file must be named `*-claimset.json` and hold `{ "name": "<ClaimSetName>",
+   "resourceClaims": [ ... ] }` — the fragment shape used by the built-in fragments under
+   `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. This is
+   **not** the API `export`/`import` shape (which uses `claimSetName`), so copy a fragment rather
+   than an API export. Restart the `*-config` services (or use the management reload).
 
-> Keep this directory free of partial/invalid `.json` while in Hybrid mode — a malformed
-> claim set can fail CMS startup. Files other than `*.json` (like this README) are ignored.
+> Keep this directory free of partial/invalid fragments while in Hybrid mode — a malformed
+> claim set can fail CMS startup. Files not named `*-claimset.json` (like this README) are ignored.

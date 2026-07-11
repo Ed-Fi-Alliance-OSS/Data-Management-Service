@@ -28,6 +28,10 @@ foreach ($p in $Ports) {
     netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$p 2>$null | Out-Null
     netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$p connectaddress=$wslIp connectport=$p | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "netsh portproxy add for port $p -> $wslIp failed ($LASTEXITCODE)." }
-    New-NetFirewallRule -DisplayName "DMS-sec-$p" -Direction Inbound -LocalPort $p -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+    # Create the inbound rule only if absent (idempotent across reboots) but let a real failure
+    # surface -- a blanket -ErrorAction SilentlyContinue would mask it before the success line below.
+    if (-not (Get-NetFirewallRule -DisplayName "DMS-sec-$p" -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -DisplayName "DMS-sec-$p" -Direction Inbound -LocalPort $p -Protocol TCP -Action Allow | Out-Null
+    }
 }
 Write-Output "portproxy active: Windows :$($Ports -join ', ') -> $wslIp"

@@ -61,7 +61,9 @@ networkingMode=mirrored
     }
 }
 foreach ($p in $Ports) {
-    New-NetFirewallRule -DisplayName "DMS-sec-$p" -Direction Inbound -LocalPort $p -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+    if (-not (Get-NetFirewallRule -DisplayName "DMS-sec-$p" -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -DisplayName "DMS-sec-$p" -Direction Inbound -LocalPort $p -Protocol TCP -Action Allow | Out-Null
+    }
 }
 
 # Apply config (restarts WSL); next invocation boots with systemd once wsl.conf is set below.
@@ -112,7 +114,9 @@ $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Highest
 if ($useProxy) {
     Copy-Item -Path (Join-Path $PSScriptRoot "portproxy.ps1") -Destination (Join-Path $StateDir "portproxy.ps1") -Force
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$StateDir\portproxy.ps1`" -Distro $Distro"
+    # Pass -Ports too, so custom ports survive a reboot (portproxy.ps1 otherwise defaults to 80,443).
+    $portList = $Ports -join ','
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$StateDir\portproxy.ps1`" -Distro $Distro -Ports $portList"
 }
 else {
     # Mirrored mode: just need WSL (and thus Docker) booted.

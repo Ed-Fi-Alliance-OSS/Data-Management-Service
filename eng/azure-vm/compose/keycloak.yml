@@ -38,7 +38,8 @@ services:
     # H2 migration across version bumps -- when changing the image pin above, wipe the
     # dms-sec-keycloak volume and re-run bootstrap.ps1 (or configure KC_DB against a real
     # database if realm durability across upgrades matters). Production-mode `start` without
-    # a real DB is deprecated upstream and slated to be refused in a future major (Keycloak 27 or 28).
+    # a real DB is deprecated upstream and slated to be refused in a future major release
+    # (Keycloak has not committed to a specific version).
     volumes:
       - dms-sec-keycloak:/opt/keycloak/data
     command: ["start"]

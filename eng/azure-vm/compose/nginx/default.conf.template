@@ -12,7 +12,9 @@ server {
     listen 80 default_server;
     server_name _;
     server_tokens off;
-    return 301 https://$host$request_uri;
+    # Redirect to the configured public host, not $host: a spoofed Host header on :80 would
+    # otherwise make this an open redirect (301 to an attacker-chosen host).
+    return 301 https://${PUBLIC_HOST}$request_uri;
 }
 
 server {
