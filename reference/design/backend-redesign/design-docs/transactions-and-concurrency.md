@@ -113,7 +113,7 @@ DDL generator requirements (derived from ApiSchema):
 - Enforce a composite FK anchored on canonical/storage identity-part columns:
   - PostgreSQL:
     - concrete target: `{schema}.{TargetResource}(DocumentId, <CanonicalIdentityParts...>)` using `ON UPDATE CASCADE`
-      only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`).
+      when the target is transitively mutable (otherwise `ON UPDATE NO ACTION`).
     - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <CanonicalIdentityParts...>)` using
       `ON UPDATE CASCADE`.
   - SQL Server:
@@ -125,7 +125,7 @@ DDL generator requirements (derived from ApiSchema):
 The SQL Server rules above supersede this document's earlier blanket `ON UPDATE NO ACTION` plus
 `MssqlIdentityPropagationTrigger` contract.
 
-When a referenced document’s identity changes (allowed only when `allowIdentityUpdates=true` for concrete targets), the
+When a directly mutable referenced document’s identity changes (`allowIdentityUpdates=true` for concrete targets), the
 database propagates updated identity values into all direct referrers' **canonical/storage columns** through retained
 native FK cascades. Any per-site binding aliases recompute automatically while preserving optional-reference presence
 semantics.
@@ -257,7 +257,7 @@ Integration points:
 
 This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key
 fields alongside every document reference. Composite-FK update behavior is dialect-specific:
-- PostgreSQL: `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true`
+- PostgreSQL: `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets
   (`ON UPDATE NO ACTION` otherwise).
 - SQL Server: full-composite reference FKs retain `ON UPDATE CASCADE` where legal and safe; selected convergence cuts use
   full-composite `ON UPDATE NO ACTION`. [sql-server-pruning.md](sql-server-pruning.md) is normative.

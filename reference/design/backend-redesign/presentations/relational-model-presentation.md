@@ -1,5 +1,9 @@
 # Derived Relational Model: Technical Presentation
 
+> **Superseded SQL Server propagation content:** references in this presentation to
+> `MssqlIdentityPropagationTrigger` predate DMS-1129. The current contract is
+> [SQL Server foreign-key pruning](../design-docs/sql-server-pruning.md).
+
 ---
 
 ## Agenda

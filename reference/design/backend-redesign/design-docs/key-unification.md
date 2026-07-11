@@ -77,8 +77,8 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_DocumentId` (stable key)
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
-Composite FKs target `(DocumentId, <IdentityParts...>)` on the referenced table, using `ON UPDATE CASCADE` only when the
-referenced target has `allowIdentityUpdates=true`.
+Composite FKs target `(DocumentId, <IdentityParts...>)` on the referenced table, using `ON UPDATE CASCADE` when the
+referenced target is abstract or transitively mutable.
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -1623,8 +1623,7 @@ For a reference site, the composite FK uses canonical storage columns for unifie
 Referential actions:
 
 - `ON UPDATE` is dialect-specific:
-  - PostgreSQL: for concrete targets, use `CASCADE` only when `allowIdentityUpdates=true`; otherwise `NO ACTION`. For
-    abstract targets, use `CASCADE`.
+  - PostgreSQL: use `CASCADE` for abstract and transitively mutable concrete targets; otherwise use `NO ACTION`.
   - SQL Server: keep every reference FK full composite and assign `ON UPDATE CASCADE` or a safe `ON UPDATE NO ACTION` cut
     under [sql-server-pruning.md](sql-server-pruning.md). No `MssqlIdentityPropagationTrigger` is emitted.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).

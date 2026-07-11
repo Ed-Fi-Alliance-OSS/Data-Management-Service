@@ -17,12 +17,13 @@ multiple-cascade-path convergence.
    local reference `DocumentId` are paired with the corresponding ordered target `*_RefKey` columns. There is no
    `DocumentId`-only shape or identity-value propagation-trigger fallback.
 3. DMS, not MetaEd, makes the SQL Server physical pruning decision after reference binding and key unification.
-4. Detection is ODS-style and per directly mutable origin. Two independent parents of one receiver are not a diamond.
+4. Detection is ODS-style and per mutable origin. Two independent parents of one receiver are not a diamond.
 5. At a convergence, DMS considers the conflicting incoming edges in stable order. It retains the first safe survivor;
    if a later convergence has no safe choice because of an earlier action on the same physical FK, it retries that
    earlier survivor choice. It fails only after those shared-FK choices are exhausted.
 6. A cut is safe only when the retained native cascade operation updates the same canonical local FK values on the same
-   physical receiver table. If the cut tuple's `DocumentId` must move, the retained path must carry that same move.
+   physical receiver table. A cut that requires its local `DocumentId` to move is unsupported: native cascades cannot
+   carry that move.
 7. Cycles and unsupported cuts fail derivation. DMS does not search arbitrary upstream cuts, optimize a cut set, or retain
    a weaker fallback.
 
@@ -282,18 +283,22 @@ Unit coverage must include:
 3. a covered direct-versus-indirect diamond;
 4. a convergence with three or more distinct incoming candidate edges from one origin;
 5. first stable survivor unsafe and second survivor safe;
-6. an interacting overlapping-diamond case that retries an earlier decision selecting the same physical FK;
-7. a no-safe-survivor case;
-8. a self-loop and multi-table cycle;
-9. a canonical-column mismatch;
-10. a retarget requiring an uncarried `DocumentId` change;
-11. an optional/presence-sensitive carrier rejected as unsupported;
-12. parallel physical FKs and declaration-order determinism; and
-13. root, child/collection, and extension bindings.
+6. paths arriving through the same incoming edge, confirming that their convergence is upstream and supplies no local
+   pruning choice;
+7. an interacting cross-origin overlapping-diamond case that retries an earlier decision selecting the same physical FK;
+8. a no-safe-survivor case;
+9. a self-loop and multi-table cycle;
+10. a canonical-column mismatch;
+11. a retarget requiring an uncarried `DocumentId` change;
+12. an optional/presence-sensitive carrier rejected as unsupported;
+13. parallel distinct physical FKs, identical physical-constraint collapse after key unification, and declaration-order
+    determinism; and
+14. root, child/collection, and extension bindings.
 
 SQL Server integration coverage must prove generated DDL installs without error 1785, every document-reference FK is
 full composite, retained cascades perform renames, covered cuts remain valid, unsafe schemas fail before DDL, the old
-identity-propagation trigger is absent, and existing stamping still observes cascaded child/extension updates.
+identity-propagation trigger is absent, existing stamping still observes cascaded child/extension updates, and the
+authoritative `sample`, `ds-5.2`, and `ds-5.2-tpdm` fixture surfaces derive and install successfully.
 
 PostgreSQL regression coverage must prove no action or FK-shape change. SQL Server-only failure fixtures continue to
 derive for PostgreSQL unless an independent existing validation rejects them.
