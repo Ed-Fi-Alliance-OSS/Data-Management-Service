@@ -339,7 +339,7 @@ else {
     }
 
     function Wait-MssqlReady {
-        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
         param(
             [Parameter(Mandatory)]
             [string]
@@ -357,7 +357,7 @@ else {
         # the same way the CI start-mssql-test-container action does, so the schema provision
         # phase that follows always finds a reachable server.
         for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-            docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $Password -Q "SELECT 1" -C -b *> $null
+            docker exec -e "SQLCMDPASSWORD=$Password" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q "SELECT 1" -C -b *> $null
             if ($LASTEXITCODE -eq 0) {
                 Write-Output "SQL Server is ready."
                 return
@@ -651,6 +651,38 @@ else {
                 }
             $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
 
+            # Resolve the data-store connection string stored in CMS for the DMS datastore. For
+            # MSSQL this is the SQL Server form pointing at the dms-mssql container; for PostgreSQL
+            # it is left empty so Add-DataStore builds its PostgreSQL connection string from the
+            # Postgres* values.
+            $dataStoreConnectionString = ""
+            if ($DatabaseEngine -eq "mssql") {
+                $mssqlPassword =
+                    if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
+                        "abcdefgh1!"
+                    }
+                    else {
+                        $envValues.MSSQL_SA_PASSWORD
+                    }
+                $mssqlDbName =
+                    if (-not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
+                        $DataStoreDatabaseName
+                    }
+                    elseif (-not [string]::IsNullOrWhiteSpace([string]$envValues.MSSQL_DB_NAME)) {
+                        [string]$envValues.MSSQL_DB_NAME
+                    }
+                    else {
+                        "edfi_datamanagementservice"
+                    }
+                $dataStoreConnectionString = New-DataStoreConnectionString `
+                    -DatabaseEngine "mssql" `
+                    -DbHost "dms-mssql" `
+                    -Port 1433 `
+                    -Username "sa" `
+                    -Password $mssqlPassword `
+                    -DatabaseName $mssqlDbName
+            }
+
             # Handle school year range data stores
             if ($SchoolYearRange) {
                 Write-Output "Creating data stores for school year range: $SchoolYearRange"
@@ -668,6 +700,7 @@ else {
                         -EndYear $endYear `
                         -PostgresCredential $postgresCredential `
                         -PostgresDbName $postgresDbName `
+                        -ConnectionString $dataStoreConnectionString `
                         -Tenant $tenant
 
                     Write-Output "Created $($dataStores.Count) school year data stores successfully"
@@ -681,7 +714,7 @@ else {
                 Write-Output "Creating initial data store..."
 
                 # Create data store using environment variables
-                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
+                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -ConnectionString $dataStoreConnectionString -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
             }

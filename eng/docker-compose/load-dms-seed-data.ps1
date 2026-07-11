@@ -343,7 +343,11 @@ function Resolve-SeedDataStandardRefTag {
     local-bootstrap overlays that bootstrap-wrapper.psm1 composes onto the effective environment
     file for -DataStandardVersion 5.2 / 6.1 (see New-DataStandardDerivedEnvFile in
     env-utility.psm1). Falls back to the historical v5.2.0 default when the key is absent or
-    unrecognized, so environments without an explicit Data Standard selection are unaffected.
+    blank, so environments without an explicit Data Standard selection are unaffected. Any other
+    value throws: the supported set is maintained here as well as in the entry-point ValidateSet
+    gates and overlay files, and a version added there but forgotten here must fail at this
+    decision point rather than silently materializing v5.2.0 sample XML and XSDs against a
+    different-version stack.
 
     .PARAMETER EnvValues
     Hashtable returned by ReadValuesFromEnvFile.
@@ -355,9 +359,12 @@ function Resolve-SeedDataStandardRefTag {
     $dataStandardVersion = (Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_DATA_STANDARD_VERSION" -DefaultValue "").Trim()
 
     switch ($dataStandardVersion) {
+        "" { return "v5.2.0" }
         "5.2" { return "v5.2.0" }
         "6.1" { return "v6.1.0" }
-        default { return "v5.2.0" }
+        default {
+            throw "Unsupported DMS_CONFIG_DATA_STANDARD_VERSION '$(Format-LogSafeText $dataStandardVersion)'. Supported values: 5.2, 6.1; leave blank for the v5.2.0 default."
+        }
     }
 }
 

@@ -617,7 +617,16 @@ function Invoke-SchemaWorkspaceStaging {
         # from the manifest-declared (contract-validated) asset paths instead of sibling
         # rediscovery; expert mode omits it, skipping the assertion and using sibling discovery.
         [hashtable]
-        $ExpectedIdentities
+        $ExpectedIdentities,
+
+        # Optional "<packageId>@<version>" identity list for the staged package set, recorded into
+        # the manifest schema section as selectedPackages. Standard mode supplies it (with the
+        # REQUESTED versions - the same values the env file or catalog declares - so the bootstrap
+        # wrapper can later compare a staged workspace against the effective SCHEMA_PACKAGES value
+        # by full package identity, not just extension tokens, without re-downloading anything).
+        # Expert -ApiSchemaPath mode omits it: a filesystem-staged workspace is not package-driven.
+        [string[]]
+        $SelectedPackages
     )
 
     $schemaProjects = @($SchemaSourceFiles | ForEach-Object { Read-ApiSchemaIdentity -Path $_ })
@@ -788,6 +797,9 @@ function Invoke-SchemaWorkspaceStaging {
             workspaceFingerprint = $workspaceFingerprint
             apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
         }
+        if ($null -ne $SelectedPackages) {
+            $schemaSection.Insert(2, "selectedPackages", @($SelectedPackages))
+        }
 
         $rootManifest = Read-BootstrapManifest
         if ($null -eq $rootManifest) {
@@ -926,7 +938,8 @@ function Invoke-StandardModeSchemaStaging {
         Invoke-SchemaWorkspaceStaging `
             -SchemaSourceFiles $schemaSourceFiles.ToArray() `
             -SelectionMode "Standard" `
-            -ExpectedIdentities $expectedIdentities
+            -ExpectedIdentities $expectedIdentities `
+            -SelectedPackages @("$($corePackage.Id)@$($corePackage.Version)")
     } finally {
         if (Test-Path -LiteralPath $extractionRoot) {
             Remove-Item -LiteralPath $extractionRoot -Recurse -Force
@@ -983,6 +996,7 @@ function Invoke-SchemaPackagesModeSchemaStaging {
     try {
         $schemaSourceFiles = [System.Collections.Generic.List[string]]::new()
         $expectedIdentities = @{}
+        $selectedPackages = [System.Collections.Generic.List[string]]::new()
 
         foreach ($schemaPackage in $schemaPackages) {
             $packageId = [string]$schemaPackage.name
@@ -1018,6 +1032,7 @@ function Invoke-SchemaPackagesModeSchemaStaging {
 
             $schemaSourceFiles.Add($validated.SchemaPath)
             $expectedIdentities[[System.IO.Path]::GetFullPath($validated.SchemaPath)] = $validated
+            $selectedPackages.Add("$packageId@$packageVersion")
         }
 
         # Stage the collected (core + extensions) schema files using the shared staging function.
@@ -1026,7 +1041,8 @@ function Invoke-SchemaPackagesModeSchemaStaging {
         Invoke-SchemaWorkspaceStaging `
             -SchemaSourceFiles $schemaSourceFiles.ToArray() `
             -SelectionMode "Standard" `
-            -ExpectedIdentities $expectedIdentities
+            -ExpectedIdentities $expectedIdentities `
+            -SelectedPackages $selectedPackages.ToArray()
     } finally {
         if (Test-Path -LiteralPath $extractionRoot) {
             Remove-Item -LiteralPath $extractionRoot -Recurse -Force

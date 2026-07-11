@@ -108,6 +108,7 @@ bootstrap manifest records stable prepared inputs and fingerprints only:
   "schema": {
     "selectionMode": "Standard",
     "selectedExtensions": [],
+    "selectedPackages": ["EdFi.DataStandard52.ApiSchema@1.0.333"],
     "effectiveSchemaHash": "...",
     "workspaceFingerprint": "...",
     "apiSchemaManifestPath": "ApiSchema/bootstrap-api-schema-manifest.json"
@@ -123,6 +124,11 @@ bootstrap manifest records stable prepared inputs and fingerprints only:
   }
 }
 ```
+
+`schema.selectedPackages` records the `<packageId>@<version>` identity of each package that produced a
+package-backed Standard-mode workspace (requested versions, never feed URLs); the bootstrap wrapper compares
+it against the effective `SCHEMA_PACKAGES` value to decide whether a staged workspace is still current.
+Expert `-ApiSchemaPath` staging omits the field.
 
 It does not include data store IDs, credentials, URLs, Docker or container state, seed file lists, phase
 progress, or resume checkpoints. Compose environment variables, absolute host paths, and mount-source values

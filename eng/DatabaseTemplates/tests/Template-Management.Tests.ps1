@@ -385,7 +385,7 @@ Describe "Invoke-DatabaseDump" {
 
                 $calls.Count | Should -Be 3
                 ($calls[0] -join '|') | Should -Be (@(
-                        'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-C', '-b', '-Q',
+                        'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-C', '-b', '-Q',
                         "BACKUP DATABASE [edfi_datamanagementservice] TO DISK = N'/var/opt/mssql/data/test.bak' WITH INIT;"
                     ) -join '|')
                 ($calls[1] -join '|') | Should -Be (@('cp', "dms-mssql:/var/opt/mssql/data/test.bak", (Join-Path $backupDir "test.bak")) -join '|')
@@ -409,7 +409,7 @@ Describe "Invoke-DatabaseDump" {
 
                 # BACKUP DATABASE has no per-schema equivalent to pg_dump -n, so the schema list plays no part in the command.
                 ($calls[0] -join '|') | Should -Be (@(
-                        'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-C', '-b', '-Q',
+                        'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-C', '-b', '-Q',
                         "BACKUP DATABASE [edfi_datamanagementservice] TO DISK = N'/var/opt/mssql/data/test2.bak' WITH INIT;"
                     ) -join '|')
             }
@@ -530,22 +530,22 @@ Describe "Restore-TemplatePackage" {
             $containerBakPath = ($copyDestination -split ':', 2)[1]
 
             ($calls[1] -join '|') | Should -Be (@(
-                    'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-d', 'master', '-C', '-b', '-h', '-1', '-W', '-Q',
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-h', '-1', '-W', '-Q',
                     "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'testdb') IS NOT NULL THEN 1 ELSE 0 END;"
                 ) -join '|')
 
             ($calls[2] -join '|') | Should -Be (@(
-                    'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-d', 'master', '-C', '-b', '-Q',
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-Q',
                     "ALTER DATABASE [testdb] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [testdb];"
                 ) -join '|')
 
             ($calls[3] -join '|') | Should -Be (@(
-                    'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-d', 'master', '-C', '-b', '-h', '-1', '-W', '-s', '|', '-Q',
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-h', '-1', '-W', '-s', '|', '-Q',
                     "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerBakPath';"
                 ) -join '|')
 
             ($calls[4] -join '|') | Should -Be (@(
-                    'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-d', 'master', '-C', '-b', '-Q',
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-Q',
                     "RESTORE DATABASE [testdb] FROM DISK = N'$containerBakPath' WITH MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf', MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf', REPLACE;"
                 ) -join '|')
 
@@ -578,6 +578,32 @@ Describe "Restore-TemplatePackage" {
             ($calls[4] -join ' ') | Should -Match '^exec dms-mssql rm -f /var/opt/mssql/data/template-restore-.*\.bak$'
         }
 
+        It "removes the transient in-container backup even when the restore fails" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @('MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY', 'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL')
+                }
+                if ($joined -match 'DB_ID') {
+                    return '0'
+                }
+                if ($joined -match 'RESTORE DATABASE') {
+                    $global:LASTEXITCODE = 1
+                }
+            }
+
+            { Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" } |
+                Should -Throw "*Restore of*failed*"
+
+            # Failed restores must not accumulate GUID-named .bak files in /var/opt/mssql/data.
+            ($calls[-1] -join ' ') | Should -Match '^exec dms-mssql rm -f /var/opt/mssql/data/template-restore-.*\.bak$'
+        }
+
         It "emits one MOVE clause per file for a multi-file backup (secondary data file, extra filegroup, multiple logs)" {
             New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
 
@@ -607,7 +633,7 @@ Describe "Restore-TemplatePackage" {
             # the single-file case); the secondary data file and second log get names suffixed with
             # their own logical name so every file lands at its own deterministic path.
             ($calls[3] -join '|') | Should -Be (@(
-                    'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-d', 'master', '-C', '-b', '-Q',
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-Q',
                     "RESTORE DATABASE [testdb] FROM DISK = N'$containerBakPath' WITH MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf', MOVE N'MyDb2' TO N'/var/opt/mssql/data/testdb_MyDb2.ndf', MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf', MOVE N'MyDb_log2' TO N'/var/opt/mssql/data/testdb_MyDb_log2.ldf', REPLACE;"
                 ) -join '|')
         }
@@ -711,7 +737,7 @@ Describe "Get-UserSchemaNames" {
             $schemas | Should -Be @('dms', 'edfi')
             $calls.Count | Should -Be 1
             ($calls[0] -join '|') | Should -Be (@(
-                    'exec', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P', 'abcdefgh1!', '-d', 'testdb', '-C', '-b', '-h', '-1', '-W', '-Q',
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'testdb', '-C', '-b', '-h', '-1', '-W', '-Q',
                     "SET NOCOUNT ON; SELECT name FROM sys.schemas WHERE name NOT IN ('dbo', 'guest', 'sys', 'INFORMATION_SCHEMA') AND name NOT LIKE 'db[_]%' ORDER BY name;"
                 ) -join '|')
         }

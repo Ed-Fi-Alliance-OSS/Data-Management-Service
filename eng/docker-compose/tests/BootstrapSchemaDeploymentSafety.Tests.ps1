@@ -2833,16 +2833,21 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
                 <#
                 .SYNOPSIS
                 Writes a Standard-mode (package-backed) .bootstrap/bootstrap-manifest.json carrying the
-                supplied schema.selectedExtensions, plus complete claims/seed sections so
-                Test-WrapperManifestClaimsStaged reports claims already staged - isolating the
-                schema-package revalidation as the only variable under test. -Malformed writes
-                unparsable JSON instead, to exercise the "cannot confirm current, re-stage" path.
+                supplied schema.selectedExtensions (and, when supplied, schema.selectedPackages), plus
+                complete claims/seed sections so Test-WrapperManifestClaimsStaged reports claims already
+                staged - isolating the schema-package revalidation as the only variable under test.
+                -Malformed writes unparsable JSON instead, to exercise the "cannot confirm current,
+                re-stage" path.
                 #>
                 param(
                     [Parameter(Mandatory)]
                     [string]$DockerComposeRoot,
 
                     [string[]]$SelectedExtensions = @(),
+
+                    # "<packageId>@<version>" identity strings; omitted from the manifest when not
+                    # supplied, modeling a workspace staged before selectedPackages was recorded.
+                    [string[]]$SelectedPackages = $null,
 
                     [switch]$Malformed
                 )
@@ -2875,6 +2880,9 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
                         extensionNamespacePrefixes = @()
                     }
                 }
+                if ($null -ne $SelectedPackages) {
+                    $manifest["schema"].Insert(2, "selectedPackages", @($SelectedPackages))
+                }
                 $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
                 return $manifestPath
             }
@@ -2884,7 +2892,9 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
             $fixture = script:New-WrapperRevalidationFixture
             try {
                 # The DS 5.2 default bootstrap overlay (.env.bootstrap.ds52) composes to
-                # core + TPDM, so a manifest already recording "tpdm" is current.
+                # core + TPDM, so a manifest already recording "tpdm" is current. No
+                # selectedPackages is recorded (a workspace staged before that field existed),
+                # pinning the extension-identity fallback tier.
                 script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -SelectedExtensions @("tpdm") |
                     Out-Null
 
@@ -2925,6 +2935,54 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
             }
         }
 
+        It "re-stages when the staged package versions no longer match the effective SCHEMA_PACKAGES despite an identical extension set" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                # Extension identity alone ("tpdm") still matches the DS 5.2 composition, so only
+                # the recorded package identity can expose the version drift.
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") `
+                    -SelectedPackages @(
+                        "EdFi.DataStandard52.ApiSchema@0.0.1",
+                        "EdFi.DataStandard52.TPDM.ApiSchema@0.0.1"
+                    ) | Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeTrue -Because "a staged workspace recording different package versions than the effective SCHEMA_PACKAGES must be re-staged even though its extension set still matches"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "reuses the staged workspace when the recorded package identities match the effective SCHEMA_PACKAGES exactly" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                # Derive the expected "<packageId>@<version>" set from the same DS 5.2 overlay the
+                # wrapper composes, so this spec keeps passing when the pinned versions bump.
+                $overlayContent = Get-Content -LiteralPath (Join-Path $fixture.DockerComposeRoot ".env.bootstrap.ds52") -Raw
+                $packagesJson = [regex]::Match($overlayContent, "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'").Groups["value"].Value
+                $overlayPackages = @(($packagesJson | ConvertFrom-Json) | ForEach-Object { "$($_.name)@$($_.version)" })
+                $overlayPackages.Count | Should -BeGreaterThan 0
+
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") `
+                    -SelectedPackages $overlayPackages | Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeFalse -Because "a manifest recording the exact effective package identities must be reused as-is"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It "re-stages via prepare-dms-schema.ps1 when the staged bootstrap manifest is malformed" {
             $fixture = script:New-WrapperRevalidationFixture
             try {
@@ -2938,6 +2996,58 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
             finally {
                 Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
             }
+        }
+    }
+
+    Context "E2E dedicated-database guard (engine-aware)" {
+        BeforeAll {
+            # Dot-source stops at the script's dot-source guard, exposing the guard functions
+            # without provisioning anything.
+            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
+        }
+
+        It "rejects a case-variant of the bootstrap database name" {
+            # SQL Server's default collation treats identifiers case-insensitively, so a
+            # case-variant of the protected name is the same physical database there.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "EDFI_DataManagementService"
+            } | Should -Throw "*must be dedicated*POSTGRES_DB_NAME*"
+        }
+
+        It "protects MSSQL_DB_NAME as a first-class database-name key" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "Edfi_DataManagementService"
+            } | Should -Throw "*MSSQL_DB_NAME*"
+        }
+
+        It "extracts the database name from an Initial Catalog connection-string segment" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice"
+            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "accepts a dedicated E2E database name" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        POSTGRES_DB_NAME                 = "edfi_datamanagementservice"
+                        MSSQL_DB_NAME                    = "edfi_datamanagementservice"
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_e2e"
+            } | Should -Not -Throw
         }
     }
 }

@@ -401,8 +401,8 @@ function Get-BulkLoadFailureClassification {
 #>
 function Invoke-DatabaseDump {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     param (
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
@@ -431,7 +431,7 @@ function Invoke-DatabaseDump {
         $containerBackupPath = "/var/opt/mssql/data/$BackupFileName"
 
         $backupSql = "BACKUP DATABASE [$DatabaseName] TO DISK = N'$containerBackupPath' WITH INIT;"
-        & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -C -b -Q $backupSql
+        & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q $backupSql
         if ($LASTEXITCODE -ne 0) { throw "BACKUP DATABASE of '$DatabaseName' failed in container '$ContainerName'." }
 
         & docker cp "$($ContainerName):$containerBackupPath" $backupPath
@@ -646,8 +646,8 @@ function Resolve-DataStoreIdForTemplate {
 #>
 function Get-UserSchemaNames {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function intentionally returns a collection of discovered database schema names.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     param (
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
@@ -666,7 +666,7 @@ function Get-UserSchemaNames {
         }
 
         $query = "SET NOCOUNT ON; SELECT name FROM sys.schemas WHERE name NOT IN ('dbo', 'guest', 'sys', 'INFORMATION_SCHEMA') AND name NOT LIKE 'db[_]%' ORDER BY name;"
-        $output = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d $DatabaseName -C -b -h -1 -W -Q $query
+        $output = & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -h -1 -W -Q $query
 
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to discover schemas in database '$DatabaseName'."
@@ -734,8 +734,8 @@ function Get-UserSchemaNames {
 #>
 function Restore-TemplatePackage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     param (
         [string]$PackageDirectory = ".",
 
@@ -763,6 +763,7 @@ function Restore-TemplatePackage {
     Write-Host "Restoring template package '$($package.Name)' into database '$DatabaseName'" -ForegroundColor Cyan
 
     $extractDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "template-restore-$([Guid]::NewGuid().ToString('N'))"
+    $containerBakPath = $null
 
     try {
         New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
@@ -783,19 +784,19 @@ function Restore-TemplatePackage {
             if ($LASTEXITCODE -ne 0) { throw "Failed to copy the backup into container '$ContainerName'." }
 
             $existsQuery = "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$DatabaseName') IS NOT NULL THEN 1 ELSE 0 END;"
-            $existsOutput = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -h -1 -W -Q $existsQuery
+            $existsOutput = & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -h -1 -W -Q $existsQuery
             if ($LASTEXITCODE -ne 0) { throw "Failed to check whether database '$DatabaseName' already exists." }
 
             $databaseExists = (@($existsOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1) -eq "1")
 
             if ($databaseExists) {
                 $dropSql = "ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$DatabaseName];"
-                & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -Q $dropSql | Out-Null
+                & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -Q $dropSql | Out-Null
                 if ($LASTEXITCODE -ne 0) { throw "Failed to drop existing database '$DatabaseName'." }
             }
 
             $fileListQuery = "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerBakPath';"
-            $fileListOutput = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -h -1 -W -s "|" -Q $fileListQuery
+            $fileListOutput = & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -h -1 -W -s "|" -Q $fileListQuery
             if ($LASTEXITCODE -ne 0) { throw "Failed to read the file list from backup '$($bakFile.Name)'." }
 
             # Collect every data (D) and log (L) row, not just the first of each: a multi-file backup
@@ -855,11 +856,8 @@ function Restore-TemplatePackage {
             }
 
             $restoreSql = "RESTORE DATABASE [$DatabaseName] FROM DISK = N'$containerBakPath' WITH $($moveClauses -join ', '), REPLACE;"
-            & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d master -C -b -Q $restoreSql | Out-Null
+            & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -Q $restoreSql | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Restore of '$($bakFile.Name)' into '$DatabaseName' failed." }
-
-            & docker exec $ContainerName rm -f $containerBakPath
-            if ($LASTEXITCODE -ne 0) { throw "Failed to remove transient backup '$containerBakPath' from container '$ContainerName' after the restore." }
 
             return $package.Name
         }
@@ -891,6 +889,15 @@ function Restore-TemplatePackage {
         return $package.Name
     }
     finally {
+        # The transient in-container backup is removed on failure paths too, or repeated failed
+        # restores accumulate GUID-named .bak files in /var/opt/mssql/data. Best-effort: a
+        # cleanup hiccup after a successful restore should not fail the restore itself.
+        if ($null -ne $containerBakPath) {
+            & docker exec $ContainerName rm -f $containerBakPath 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Could not remove transient backup '$containerBakPath' from container '$ContainerName'."
+            }
+        }
         if (Test-Path $extractDirectory) {
             Remove-Item $extractDirectory -Recurse -Force
         }
@@ -936,8 +943,8 @@ function Restore-TemplatePackage {
 #>
 function Build-TemplateNuGetPackage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     param (
         [Parameter(Mandatory = $true)]
         [string]$ConfigFilePath,

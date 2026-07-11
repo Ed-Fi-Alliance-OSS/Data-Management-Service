@@ -109,7 +109,7 @@ function Invoke-SqlcmdScalar {
         [string]$Query
     )
 
-    $value = & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MssqlPassword -d $DatabaseName -C -b -h -1 -W -Q $Query
+    $value = & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -h -1 -W -Q $Query
 
     if ($LASTEXITCODE -ne 0) {
         throw "Query failed against database '$DatabaseName': $Query"

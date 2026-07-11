@@ -28,6 +28,7 @@ Describe "Resolve-DatabaseEngineEnvironmentFile" {
 MSSQL_SA_PASSWORD=Abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
 DATABASE_CONNECTION_STRING=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
@@ -69,16 +70,33 @@ DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};Use
         $values["CUSTOM_KEY"] | Should -Be "custom-value" -Because "the overlay must land on top of a caller-supplied base file, not only the default env"
     }
 
-    It "is idempotent: returns the base file unchanged when DMS_DATASTORE=mssql is already composed" {
+    It "is idempotent: returns the base file unchanged when the full overlay signal is already composed" {
         # Mirrors an already-composed derived file (e.g. one the bootstrap wrapper produced and
         # forwarded to start-local-dms.ps1 via -EnvironmentFile): composing again must not
-        # produce a derived-of-derived file.
+        # produce a derived-of-derived file. The signal is the full overlay key set, not
+        # DMS_DATASTORE alone.
         $alreadyComposedPath = Join-Path $script:work ".env.derived"
-        Set-Content -LiteralPath $alreadyComposedPath -Value "DMS_DATASTORE=mssql`nMSSQL_SA_PASSWORD=Abcdefgh1!`n" -NoNewline
+        Set-Content -LiteralPath $alreadyComposedPath -Value "DMS_DATASTORE=mssql`nDMS_CONFIG_DATASTORE=mssql`nMSSQL_SA_PASSWORD=Abcdefgh1!`n" -NoNewline
 
         $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $alreadyComposedPath -DockerComposeRoot $script:composeRoot
 
         $result | Should -Be $alreadyComposedPath
+    }
+
+    It "composes the overlay onto a partial env carrying DMS_DATASTORE=mssql without the full overlay signal" {
+        # A hand-authored env with only DMS_DATASTORE=mssql must not be mistaken for a
+        # wrapper-composed file: it would miss the CMS SQL Server settings and credentials
+        # while mssql.yml starts no PostgreSQL container to fall back to.
+        $partialPath = Join-Path $script:work ".env.partial"
+        Set-Content -LiteralPath $partialPath -Value "DMS_DATASTORE=mssql`n" -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
+
+        $result | Should -Not -Be $partialPath
+        $values = ReadValuesFromEnvFile $result
+        $values["DMS_DATASTORE"] | Should -Be "mssql"
+        $values["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        $values["MSSQL_SA_PASSWORD"] | Should -Not -BeNullOrEmpty
     }
 
     It "fails fast when no .env.mssql overlay exists at the docker-compose root" {

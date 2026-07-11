@@ -29,9 +29,11 @@ services:
     hostname: dms-mssql
     healthcheck:
       # $$ defers expansion to the container shell so the password is read from the
-      # container environment rather than interpolated by docker compose. sqlcmd 18
-      # requires -C (trust server certificate) for the self-signed dev certificate.
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q \"SELECT 1\" -C -b || exit 1"]
+      # container environment rather than interpolated by docker compose. Handing it to
+      # sqlcmd via SQLCMDPASSWORD keeps it out of the sqlcmd argv in the container process
+      # list. sqlcmd 18 requires -C (trust server certificate) for the self-signed dev
+      # certificate.
+      test: ["CMD-SHELL", "SQLCMDPASSWORD=\"$$MSSQL_SA_PASSWORD\" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q \"SELECT 1\" -C -b || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 30

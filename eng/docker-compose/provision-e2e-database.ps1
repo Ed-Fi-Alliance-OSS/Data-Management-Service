@@ -174,7 +174,10 @@ function Get-DatabaseNameFromConnectionString {
     }
 
     foreach ($segment in ($ConnectionString -split ";")) {
-        $match = [Regex]::Match($segment, '^(?i)\s*database\s*=\s*(?<value>.+?)\s*$')
+        # "Initial Catalog" is the SQL Server alias for "Database" - this script's own
+        # Build-ConnectionString emits it for the mssql dialect - so both keys must be
+        # recognized or an Initial Catalog-form string bypasses the dedicated-database guard.
+        $match = [Regex]::Match($segment, '^(?i)\s*(?:database|initial\s+catalog)\s*=\s*(?<value>.+?)\s*$')
 
         if ($match.Success) {
             return Resolve-EnvironmentValueReference `
@@ -195,12 +198,19 @@ function Assert-E2EDatabaseIsDedicated {
 
     Assert-SafeDatabaseName -DatabaseName $E2EDatabaseName
 
-    $bootstrapDatabaseName = Resolve-EnvironmentValueReference `
-        -Value ([string]$EnvironmentValues["POSTGRES_DB_NAME"]) `
-        -EnvironmentValues $EnvironmentValues
+    # All comparisons are case-insensitive: SQL Server's default collation treats database
+    # identifiers case-insensitively, so a case-variant of a protected name IS the same database
+    # there and would still be dropped. PostgreSQL names are case-sensitive, so this is stricter
+    # than required on that engine - acceptable for a guard in front of DROP DATABASE, where a
+    # false positive costs a rename and a false negative drops shared state.
+    foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
+        $protectedDatabaseName = Resolve-EnvironmentValueReference `
+            -Value ([string]$EnvironmentValues[$databaseNameKey]) `
+            -EnvironmentValues $EnvironmentValues
 
-    if (-not [string]::IsNullOrWhiteSpace($bootstrapDatabaseName) -and $E2EDatabaseName -ceq $bootstrapDatabaseName) {
-        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match POSTGRES_DB_NAME."
+        if (-not [string]::IsNullOrWhiteSpace($protectedDatabaseName) -and $E2EDatabaseName -ieq $protectedDatabaseName) {
+            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
+        }
     }
 
     foreach ($connectionStringKey in @(
@@ -211,7 +221,7 @@ function Assert-E2EDatabaseIsDedicated {
             -ConnectionString ([string]$EnvironmentValues[$connectionStringKey]) `
             -EnvironmentValues $EnvironmentValues
 
-        if (-not [string]::IsNullOrWhiteSpace($connectionStringDatabaseName) -and $E2EDatabaseName -ceq $connectionStringDatabaseName) {
+        if (-not [string]::IsNullOrWhiteSpace($connectionStringDatabaseName) -and $E2EDatabaseName -ieq $connectionStringDatabaseName) {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
         }
     }
@@ -251,7 +261,7 @@ function Wait-ForPostgresql {
 }
 
 function Wait-ForMssql {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     param(
         [string]$ContainerName,
         [string]$SaPassword,
@@ -262,7 +272,7 @@ function Wait-ForMssql {
     # same way start-local-dms.ps1's Wait-MssqlReady does so the reset/provision steps that
     # follow always find a reachable server.
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $SaPassword -Q "SELECT 1" -C -b *> $null
+        docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q "SELECT 1" -C -b *> $null
 
         if ($LASTEXITCODE -eq 0) {
             Write-Information "SQL Server container is ready: $(Format-LogSafeText $ContainerName)" -InformationAction Continue
@@ -308,7 +318,7 @@ function Reset-E2EDatabase {
 }
 
 function Reset-E2EMssqlDatabase {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$ContainerName,
@@ -328,7 +338,7 @@ function Reset-E2EMssqlDatabase {
     $setSingleUserSql =
         "IF DB_ID(N'$DatabaseName') IS NOT NULL ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
 
-    & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $SaPassword -Q $setSingleUserSql -C -b
+    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $setSingleUserSql -C -b
 
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to terminate active connections for E2E database '$DatabaseName'."
@@ -336,7 +346,7 @@ function Reset-E2EMssqlDatabase {
 
     $dropDatabaseSql = "DROP DATABASE IF EXISTS [$DatabaseName];"
 
-    & docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $SaPassword -Q $dropDatabaseSql -C -b
+    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $dropDatabaseSql -C -b
 
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to drop E2E database '$DatabaseName'."
@@ -360,6 +370,10 @@ function Build-ConnectionString {
 
     return "Host=$ServerHost;Port=$Port;Username=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);Database=$DatabaseName;NoResetOnClose=true;"
 }
+
+# Dot-sourcing stops here so tests can exercise the functions above without provisioning
+# anything (same pattern as load-dms-seed-data.ps1).
+if ($MyInvocation.InvocationName -eq '.') { return }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $environmentFilePath = Resolve-ScriptRelativePath $EnvironmentFile

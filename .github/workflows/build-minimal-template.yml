@@ -40,10 +40,11 @@ on:
         required: false
         type: string
         default: "./.env.template"
-      # The built package's data dump is coupled to a specific engine image: the mssql .bak
-      # backup is coupled to the pinned mcr.microsoft.com/mssql/server:2022-latest image used to
-      # create and restore it, the same way the postgresql .sql dump is coupled to the
-      # PostgreSQL major version it was built and restored against.
+      # The built package's data dump is coupled to an engine image line: the mssql .bak
+      # backup is coupled to the mcr.microsoft.com/mssql/server:2022-latest image used to create
+      # and restore it (a moving tag tracking the latest SQL Server 2022 build; the coupling is
+      # at the SQL Server 2022 level, not an exact build), the same way the postgresql .sql dump
+      # is coupled to the PostgreSQL major version it was built and restored against.
       database_engine:
         description: "Database engine for the relational template datastore (postgresql or mssql)"
         required: false
@@ -107,8 +108,11 @@ jobs:
           # Minimal template package names are engine-dependent so a build cannot silently
           # publish an MSSQL dump under the PostgreSQL product name, or vice versa.
           $expectedPackagePrefix = if ($databaseEngine -eq 'mssql') { 'EdFi.Api.Minimal.Template.MsSql' } else { 'EdFi.Api.Minimal.Template.PostgreSql' }
-          if ($packageName -notlike "$expectedPackagePrefix*") {
-            throw "database_engine '$databaseEngine' requires a package_name with prefix '$expectedPackagePrefix'; got '$packageName'."
+          # Anchored to prefix + dotted numeric version: a prefix-only -like check lets a
+          # malformed name (e.g. an engine token with trailing junk) pass here and fail much
+          # later during artifact/SBOM lookup.
+          if ($packageName -notmatch "^$([regex]::Escape($expectedPackagePrefix))\.\d+(\.\d+)+$") {
+            throw "database_engine '$databaseEngine' requires a package_name of the form '$expectedPackagePrefix.<version>'; got '$packageName'."
           }
 
       - name: Checkout the repo
@@ -193,10 +197,11 @@ jobs:
           $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
           $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
 
-          # Add-DataStore always requires a PostgresCredential; for mssql it goes unused because
-          # -ConnectionString is supplied verbatim below. The Configuration Service backing store
-          # is always PostgreSQL regardless of database_engine, so $postgresCredential above is
-          # unaffected.
+          # Add-DataStore always requires a PostgresCredential; for mssql it goes unused
+          # because -ConnectionString is supplied verbatim below. On the mssql leg the
+          # Configuration Service also runs on SQL Server (shared-database topology; no
+          # PostgreSQL container exists), so the credential is a required-parameter placeholder
+          # there, built from env values that are present in the template env file either way.
           $dataStoreConnectionString = ""
           if ("${{ inputs.database_engine }}" -eq "mssql") {
             $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"

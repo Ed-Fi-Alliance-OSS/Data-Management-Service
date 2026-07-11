@@ -712,11 +712,14 @@ function Resolve-DatabaseEngineEnvironmentFile {
         store in CMS while the DMS container itself still starts on its postgresql default
         (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
 
-        Idempotency guard: when the base file already carries DMS_DATASTORE=mssql (an earlier
-        phase - typically the bootstrap wrapper - already composed the overlay onto it) the base
-        file is returned unchanged instead of composing a derived-of-derived file, unless its
-        DATABASE_TEMPLATE_PACKAGE still carries a stale PostgreSql engine token, in which case a
-        corrected derived file is materialized rather than mutating the caller's source file.
+        Idempotency guard: when the base file already carries the full overlay signal
+        (DMS_DATASTORE=mssql, DMS_CONFIG_DATASTORE=mssql, and a non-blank MSSQL_SA_PASSWORD -
+        an earlier phase, typically the bootstrap wrapper, already composed the overlay onto
+        it) the base file is returned unchanged instead of composing a derived-of-derived file,
+        unless its DATABASE_TEMPLATE_PACKAGE still carries a stale PostgreSql engine token, in
+        which case a corrected derived file is materialized rather than mutating the caller's
+        source file. DMS_DATASTORE=mssql alone is treated as a partial hand-authored env and
+        the overlay is composed on top to fill in the missing engine keys.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -749,7 +752,17 @@ function Resolve-DatabaseEngineEnvironmentFile {
     $templatePackage = Get-EnvValue -EnvValues $baseValues -Name "DATABASE_TEMPLATE_PACKAGE"
     $correctedTemplatePackage = Convert-TemplatePackageToken -PackageId $templatePackage -Engine "MsSql"
 
-    if ((Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql") {
+    # DMS_DATASTORE=mssql alone is not proof the overlay was composed: a hand-authored partial
+    # env can carry it while missing the CMS SQL Server settings and credentials, and would then
+    # run mssql.yml with PostgreSQL-shaped CMS settings and no PostgreSQL container to fall back
+    # to. Only the full overlay signal short-circuits; a partial env falls through to overlay
+    # composition, which fills in the missing engine keys.
+    $overlayAlreadyComposed =
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -and
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql" -and
+        -not [string]::IsNullOrWhiteSpace((Get-EnvValue -EnvValues $baseValues -Name "MSSQL_SA_PASSWORD"))
+
+    if ($overlayAlreadyComposed) {
         if ($correctedTemplatePackage -eq $templatePackage) {
             return $BaseEnvironmentFile
         }

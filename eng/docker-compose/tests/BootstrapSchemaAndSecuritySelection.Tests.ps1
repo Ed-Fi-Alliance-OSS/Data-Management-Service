@@ -511,6 +511,8 @@ exit $ExitCode
             $manifest.schema.selectedExtensions | Should -Contain "sample"
             $manifest.schema.effectiveSchemaHash | Should -Be $script:hashA
             $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+            # Expert filesystem staging is not package-driven, so no package identity is recorded.
+            $manifest.schema.PSObject.Properties['selectedPackages'] | Should -BeNullOrEmpty
         }
 
         It "copies optional schema-adjacent runtime content and preserves schema JSON payloads" {

@@ -419,7 +419,7 @@ else {
     }
 
     function Wait-MssqlReady {
-        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd -P, which only accepts plaintext; SecureString adds no protection across that boundary.')]
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
         param(
             [Parameter(Mandatory)]
             [string]
@@ -437,7 +437,7 @@ else {
         # the same way the CI start-mssql-test-container action does, so the schema provision
         # phase that follows always finds a reachable server.
         for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-            docker exec $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $Password -Q "SELECT 1" -C -b *> $null
+            docker exec -e "SQLCMDPASSWORD=$Password" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q "SELECT 1" -C -b *> $null
             if ($LASTEXITCODE -eq 0) {
                 Write-Output "SQL Server is ready."
                 return

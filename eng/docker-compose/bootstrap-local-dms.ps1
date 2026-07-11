@@ -58,10 +58,14 @@
     selects the target start script (`start-local-dms.ps1`).
 
     Staging: no manual prepare step is required for the standard happy path. When no workspace is
-    staged the wrapper stages core-only standard mode; an already-staged workspace (e.g. a manual
-    expert `-ApiSchemaPath` flow) is used as-is. There is no `-Extensions` parameter; extension or
-    custom schema sets are staged via expert `-ApiSchemaPath` before invoking the wrapper. All
-    staging is delegated to `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
+    staged the wrapper stages standard mode from the effective env's SCHEMA_PACKAGES value (core
+    plus any listed extensions; the catalog-pinned core-only default applies only when the env
+    carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
+    its recorded package identity still matches the effective SCHEMA_PACKAGES value - otherwise
+    it is re-staged; expert `-ApiSchemaPath` workspaces are reused as-is. There is no
+    `-Extensions` parameter; custom or unpublished schema sets are staged via expert
+    `-ApiSchemaPath` before invoking the wrapper. All staging is delegated to
+    `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
 
 .PARAMETER d
     Teardown switch. Stops the local DMS Docker stack instead of starting it, delegating to

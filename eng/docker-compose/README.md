@@ -156,7 +156,10 @@ image from source code.
 The stack can run the DMS datastore on SQL Server instead of PostgreSQL using the
 `-DatabaseEngine mssql` switch, on both the local-build and published-image workflows. Pass it to
 `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` (turnkey) or `start-local-dms.ps1` /
-`start-published-dms.ps1` (infrastructure) - no `-EnvironmentFile` is required:
+`start-published-dms.ps1` (infrastructure). No `-EnvironmentFile` is required for the wrapper
+entry points or `start-local-dms.ps1` (they seed `.env` from `.env.example` when absent); direct
+`start-published-dms.ps1` invocation expects an existing `.env` (or an explicit
+`-EnvironmentFile`):
 
 ```pwsh
 # Turnkey, local build: stand up SQL Server, provision the relational schema, and (optionally) load seed data
@@ -209,9 +212,11 @@ A few things are specific to the MSSQL path:
   `database_engine: mssql` to build and publish `EdFi.Api.Minimal.Template.MsSql.*` and
   `EdFi.Api.Populated.Template.MsSql.*` NuGet packages alongside the existing PostgreSQL ones.
   On MSSQL the package's data dump is a native `BACKUP DATABASE` `.bak` file (restored with
-  `RESTORE DATABASE`); that `.bak` is coupled to the pinned
-  `mcr.microsoft.com/mssql/server:2022-latest` image it was built and verified against, the same
-  way the PostgreSQL `.sql` dump is coupled to the PostgreSQL major version it was built against.
+  `RESTORE DATABASE`); that `.bak` is coupled to the
+  `mcr.microsoft.com/mssql/server:2022-latest` image line it was built and verified against
+  (a moving tag tracking the latest SQL Server 2022 build - the coupling is at the SQL Server
+  2022 level, not an exact build), the same way the PostgreSQL `.sql` dump is coupled to the
+  PostgreSQL major version it was built against.
   Every published package is restore-verified in CI
   (`eng/DatabaseTemplates/verify-template-restore.ps1`) before publishing. Base environment files'
   `DATABASE_TEMPLATE_PACKAGE` value (e.g. `EdFi.Api.Populated.Template.PostgreSql.5.2.0`) carries
@@ -276,9 +281,11 @@ same normalized `.bootstrap/ApiSchema/` workspace that downstream phases consume
 
 ### Standard mode (package-backed)
 
-Standard mode resolves the DS-qualified asset-only core ApiSchema NuGet package from the Ed-Fi
-package feed and stages it into the bootstrap workspace. This is the recommended path for most
-developers. It is package-backed core-only; extension or custom schema sets use Expert mode below.
+Standard mode resolves DS-qualified asset-only ApiSchema NuGet packages from the Ed-Fi package
+feed and stages them into the bootstrap workspace. This is the recommended path for most
+developers. It is driven by the effective env file's `SCHEMA_PACKAGES` value - core plus any
+listed extension packages (the DS 5.2 default stages core + TPDM); custom or unpublished schema
+sets use Expert mode below.
 
 > **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
 > CLI published as a native executable. Build it once before running the prepare command (the
@@ -294,8 +301,9 @@ dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOu
 $schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
 ```
 
-Standard mode (omit `-ApiSchemaPath`) resolves and stages the core Data Standard ApiSchema package
-only. There is no `-Extensions` parameter.
+Standard mode (omit `-ApiSchemaPath`) stages the packages listed by the env file's
+`SCHEMA_PACKAGES` value; invoked without `-EnvironmentFile` (as below) it falls back to the
+catalog-pinned core-only default. There is no `-Extensions` parameter.
 
 ```pwsh
 ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
@@ -308,19 +316,20 @@ infrastructure → configure → provision → DMS over the staged workspace), n
 `start-local-dms.ps1` — see the note under Expert mode below for why a bare start leaves
 the stack unconfigured.
 
-To bootstrap an **extension-containing** schema set, use Expert mode (`-ApiSchemaPath`) below; it
-stages core plus any extensions present in the supplied directory. Extension security metadata is
-bootstrap-managed for the built-in extensions: `prepare-dms-claims.ps1` auto-stages the Sample and
-Homograph claim fragments, and recognizes TPDM as already covered by the embedded DS 5.2 claims
-(no fragment is staged for TPDM). Only extensions that are **not** bootstrap-mapped (a custom
-extension you supply) require an additional `-ClaimsDirectoryPath` argument to
-`prepare-dms-claims.ps1`. TPDM is a Data Standard 5.2 extension, so it is bootstrapped through
-Expert `-ApiSchemaPath`, not package-backed standard mode (which is core-only).
+To bootstrap an **extension-containing** schema set, either list the published extension
+ApiSchema packages in `SCHEMA_PACKAGES` (standard mode - the DS 5.2 default already stages TPDM
+this way) or use Expert mode (`-ApiSchemaPath`) below, which stages core plus any extensions
+present in the supplied directory. Extension security metadata is bootstrap-managed for the
+built-in extensions: `prepare-dms-claims.ps1` auto-stages the Sample and Homograph claim
+fragments, and recognizes TPDM as already covered by the embedded DS 5.2 claims (no fragment is
+staged for TPDM). Only extensions that are **not** bootstrap-mapped (a custom extension you
+supply) require an additional `-ClaimsDirectoryPath` argument to `prepare-dms-claims.ps1`.
 
-**Wrapper shorthand:** `bootstrap-local-dms.ps1` stages core-only standard mode in-line (when no
-workspace is staged) and then starts the stack. It auto-discovers the `api-schema-tools` executable
-published to `.bootstrap/tools/api-schema-tools` in step 1 (or set `DMS_SCHEMA_TOOL_PATH` to point
-elsewhere).
+**Wrapper shorthand:** `bootstrap-local-dms.ps1` stages standard mode from the effective
+`SCHEMA_PACKAGES` in-line (when no workspace is staged, or when the staged workspace's recorded
+package identity no longer matches) and then starts the stack. It auto-discovers the
+`api-schema-tools` executable published to `.bootstrap/tools/api-schema-tools` in step 1 (or set
+`DMS_SCHEMA_TOOL_PATH` to point elsewhere).
 
 ```pwsh
 ./bootstrap-local-dms.ps1

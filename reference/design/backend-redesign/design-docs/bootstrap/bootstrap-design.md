@@ -494,6 +494,7 @@ prepare-dms-schema.ps1
   -> Write bootstrap-api-schema-manifest.json with manifest-relative schema/content paths
   -> Run `api-schema-tools hash <coreSchemaPath> <extensionSchemaPath...>` over the normalized schema files
   -> Write/update .bootstrap/bootstrap-manifest.json schema section with selection mode, selected extensions,
+     selected package identities (package-backed staging only, as "<packageId>@<version>" without feed URLs),
      EffectiveSchemaHash, ApiSchema workspace fingerprint, and the relative ApiSchema manifest path
   -> Docker-hosted DMS:
      -> bind-mount eng/docker-compose/.bootstrap/ApiSchema/ to /app/ApiSchema
@@ -1108,6 +1109,7 @@ Example shape:
   "schema": {
     "selectionMode": "Standard",
     "selectedExtensions": [],
+    "selectedPackages": ["EdFi.DataStandard52.ApiSchema@1.0.333"],
     "effectiveSchemaHash": "...",
     "workspaceFingerprint": "...",
     "apiSchemaManifestPath": "ApiSchema/bootstrap-api-schema-manifest.json"
@@ -1237,10 +1239,14 @@ If the package cannot be resolved, bootstrap fails before attempting any seed lo
 
 ### 6.4 Deprecation of Direct-SQL Path
 
-`setup-database-template.psm1` is deprecated by this design. DMS-1152 Phase 1 adds the API-based XML seed
-path while retaining the direct-SQL path as an operational bridge. The intended implementation switch is a
-hard cut-over of `-LoadSeedData` to the API-based path once the remaining verification gate closes; DMS-916
-does not introduce a second long-lived flag or parallel user-facing seed mode.
+`setup-database-template.psm1` is deprecated by this design. DMS-1152 Phase 1 added the API-based XML seed
+path while retaining the direct-SQL path as an operational bridge; DMS-916 does not introduce a second
+long-lived flag or parallel user-facing seed mode. The `-LoadSeedData` cut-over has since been executed:
+neither start script accepts the flag any longer (`start-local-dms.ps1` since DMS-1153,
+`start-published-dms.ps1` since DMS-1255), and the wrapper-level, API-based `-LoadSeedData` opt-in is the
+only seed delivery mode on both flows (see migration table row 6). The module itself remains in tree with no
+script consumer - GETTING_STARTED.md still documents importing it manually for the legacy database-template
+load - and its deletion remains gated below.
 
 Rationale: the direct-SQL path bypasses DMS API validation and serialization, which has caused discriminator column corruption and referential integrity violations in production ODS deployments. The risk of keeping both paths is higher than the cost of a hard cut-over.
 
@@ -1249,13 +1255,20 @@ Rationale: the direct-SQL path bypasses DMS API validation and serialization, wh
 > behavior. Phase 2 migration to JSONL remains gated on BulkLoadClient JSONL support (`--input-format jsonl`),
 > which is a cross-team dependency (see [Section 14.3](#143-blocking-cross-team-dependencies)).
 
-**Removal checklist (for implementation slice):**
+**Removal checklist (for the deletion slice; already-executed items are marked):**
 
 - Delete `eng/docker-compose/setup-database-template.psm1`.
-- Remove the `Import-Module ./setup-database-template.psm1` and `LoadSeedData` call from `start-local-dms.ps1` (lines 174–176).
-- Remove the `DATABASE_TEMPLATE_PACKAGE` variable from `.env.example`.
-- Replace with the BulkLoadClient invocation logic described in [Seed Delivery Phase Behavior](#631-seed-delivery-phase-behavior).
-- Update any developer-facing documentation that references the old SQL template package.
+- Executed: the `Import-Module ./setup-database-template.psm1` / `LoadSeedData` call sites are gone from both
+  start scripts (`start-local-dms.ps1` in DMS-1153, `start-published-dms.ps1` in DMS-1255).
+- `DATABASE_TEMPLATE_PACKAGE` stays in `.env.example`: it is retained as the template-package selector for
+  the CI template publish/verify workflows (the `.env.mssql` overlay rewrites its engine token to `MsSql`;
+  see `Convert-TemplatePackageToken` in `env-utility.psm1`) and for the planned template-restore flow
+  (DMS-1271). Do not remove it when deleting the module.
+- Executed: the BulkLoadClient invocation logic described in
+  [Seed Delivery Phase Behavior](#631-seed-delivery-phase-behavior) is the shipped seed path
+  (`load-dms-seed-data.ps1`).
+- Update any developer-facing documentation that references the old SQL template package (GETTING_STARTED.md
+  still documents the manual module import).
 
 ### 6.5 Performance Considerations
 

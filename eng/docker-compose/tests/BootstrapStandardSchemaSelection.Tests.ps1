@@ -447,6 +447,8 @@ exit $ExitCode
                 $manifest = script:Get-RootManifest
                 $manifest.schema.selectionMode | Should -Be "Standard"
                 @($manifest.schema.selectedExtensions) | Should -Contain "tpdm"
+                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.ApiSchema@1.0.333"
+                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.TPDM.ApiSchema@1.0.333"
 
                 $apiSchemaManifest = script:Get-ApiSchemaManifest
                 $projectEndpoints = @($apiSchemaManifest.projects | ForEach-Object { $_.projectEndpointName })
@@ -600,6 +602,10 @@ exit $ExitCode
             $manifest = script:Get-RootManifest
             $manifest.schema.selectionMode | Should -Be "Standard"
             $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
+            # The catalog-default staging records the pinned core package identity so the wrapper's
+            # package-tier revalidation stays available for later SCHEMA_PACKAGES-carrying envs.
+            @($manifest.schema.selectedPackages) | Should -HaveCount 1
+            @($manifest.schema.selectedPackages)[0] | Should -Match '^EdFi\.DataStandard52\.ApiSchema@\d+\.\d+\.\d+'
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
                 Should -BeTrue
         }
@@ -689,7 +695,7 @@ exit $ExitCode
     }
 
     Context "Given_StandardMode_ManifestCorrectness" {
-        It "It_does_not_record_package_IDs_or_feed_URLs_in_root_manifest_or_ApiSchema_manifest" {
+        It "It_records_package_identity_only_in_the_schema_section_and_never_feed_URLs" {
             $script:feedFolder = script:New-FixtureFeed
 
             script:Invoke-PrepareStandard -FeedFolder $script:feedFolder
@@ -697,12 +703,20 @@ exit $ExitCode
             $rootManifest = script:Get-RootManifest
             $apiSchemaManifest = script:Get-ApiSchemaManifest
 
-            # Root manifest schema section must not expose package IDs, versions, or feed URLs.
+            # The schema section records the staged package identity ("<packageId>@<version>") so
+            # the bootstrap wrapper can revalidate a staged workspace against the effective
+            # SCHEMA_PACKAGES value without re-downloading anything.
+            @($rootManifest.schema.selectedPackages) | Should -HaveCount 1
+            @($rootManifest.schema.selectedPackages)[0] | Should -Match '^EdFi\.DataStandard52\.ApiSchema@\d+\.\d+\.\d+'
+
+            # That identity lives ONLY in schema.selectedPackages - nowhere else in the root
+            # manifest - and feed URLs never participate in it.
             $rootManifestJson = $rootManifest | ConvertTo-Json -Depth 20
-            $rootManifestJson | Should -Not -Match "EdFi\.DataStandard"
-            $rootManifestJson | Should -Not -Match "1\.0\.329"
             $rootManifestJson | Should -Not -Match "pkgs\.dev\.azure\.com"
             $rootManifestJson | Should -Not -Match $script:feedFolder.Replace("\", "\\")
+            $rootManifestWithoutPackages = $rootManifestJson | ConvertFrom-Json
+            $rootManifestWithoutPackages.schema.PSObject.Properties.Remove('selectedPackages')
+            ($rootManifestWithoutPackages | ConvertTo-Json -Depth 20) | Should -Not -Match "EdFi\.DataStandard"
 
             # ApiSchema manifest projects must not expose package IDs, versions, or feed URLs.
             $apiSchemaManifestJson = $apiSchemaManifest | ConvertTo-Json -Depth 20

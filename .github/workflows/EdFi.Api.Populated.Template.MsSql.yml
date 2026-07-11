@@ -46,8 +46,8 @@ jobs:
           REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.standard_version || '' }}
         run: |
           legs='[
-            {"standard_version":"5.2.0","package_name":"EdFi.Api.Populated.Template.MsSql.5.2.0","provenance_file":"populated.template.intoto.jsonl","environment_file":"./.env.template"},
-            {"standard_version":"6.1.0","package_name":"EdFi.Api.Populated.Template.MsSql.6.1.0","provenance_file":"populated.template.6.1.0.intoto.jsonl","environment_file":"./.env.template.ds61"}
+            {"standard_version":"5.2.0","package_name":"EdFi.Api.Populated.Template.MsSql.5.2.0","provenance_file":"populated.template.mssql.intoto.jsonl","environment_file":"./.env.template"},
+            {"standard_version":"6.1.0","package_name":"EdFi.Api.Populated.Template.MsSql.6.1.0","provenance_file":"populated.template.mssql.6.1.0.intoto.jsonl","environment_file":"./.env.template.ds61"}
           ]'
           if [ -n "$REQUESTED_VERSION" ]; then
             include=$(jq -c --arg v "$REQUESTED_VERSION" '[.[] | select(.standard_version == $v)]' <<< "$legs")

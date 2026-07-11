@@ -36,11 +36,11 @@ jobs:
         include:
           - standard_version: "5.2.0"
             package_name: "EdFi.Api.Minimal.Template.MsSql.5.2.0"
-            provenance_file: "minimal.template.intoto.jsonl"
+            provenance_file: "minimal.template.mssql.intoto.jsonl"
             environment_file: "./.env.template"
           - standard_version: "6.1.0"
             package_name: "EdFi.Api.Minimal.Template.MsSql.6.1.0"
-            provenance_file: "minimal.template.6.1.0.intoto.jsonl"
+            provenance_file: "minimal.template.mssql.6.1.0.intoto.jsonl"
             environment_file: "./.env.template.ds61"
     uses: ./.github/workflows/build-minimal-template.yml
     with:

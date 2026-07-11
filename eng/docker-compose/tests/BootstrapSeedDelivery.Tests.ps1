@@ -768,9 +768,14 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v6.1.0"
         }
 
-        It "falls back to v5.2.0 when the Data Standard version is absent or unrecognized" {
+        It "falls back to v5.2.0 when the Data Standard version is absent or blank" {
             Resolve-SeedDataStandardRefTag -EnvValues @{} | Should -Be "v5.2.0"
-            Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = "9.9" } | Should -Be "v5.2.0"
+            Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = " " } | Should -Be "v5.2.0"
+        }
+
+        It "throws on an unrecognized non-blank Data Standard version instead of materializing v5.2.0 seeds" {
+            { Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = "9.9" } } |
+                Should -Throw "*DMS_CONFIG_DATA_STANDARD_VERSION*9.9*"
         }
     }
 
@@ -3016,6 +3021,7 @@ EdFi.BulkLoadClient.Console fake
 MSSQL_SA_PASSWORD=Abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
 DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
             }
