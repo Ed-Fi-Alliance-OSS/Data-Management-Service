@@ -80,7 +80,8 @@ echo "Template SQL: $(basename "$sql")"
 # --- GUARD: refuse the legacy document-store template on a relational backend ----------
 # A relational template creates per-resource edfi.* tables and the dms.EffectiveSchema
 # fingerprint table; the legacy document-store template has neither.
-if ! grep -qiE 'create schema edfi|create table edfi\.|effectiveschema' "$sql"; then
+if ! grep -qiE 'create schema edfi|create table edfi\.' "$sql" ||
+   ! grep -qi 'effectiveschema' "$sql"; then
   cat >&2 <<EOF
 ERROR: '$PKG_ID' $PKG_VER looks like the LEGACY DOCUMENT-STORE template (no edfi.* tables
        and no dms.EffectiveSchema). This stack runs the RELATIONAL backend, which rejects

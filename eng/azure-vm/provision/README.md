@@ -49,7 +49,8 @@ Record the generated credentials in your private deployment doc, then verify wit
 
 Re-running `setup-env.ps1` after a completed bootstrap is safe: secrets are preserved and a sentinel
 in `compose/.bootstrap/` prevents duplicate CMS objects. An interrupted bootstrap is deliberately
-not retried; run `reset.sh` first (or `down.sh -v` if Keycloak setup was partial). To rotate secrets,
+not retried; run `reset.sh` first — reset removes Keycloak state too, so partial or stale
+application clients cannot survive it. To rotate secrets,
 run `down.sh -v` **before** `setup-env.ps1 -RotateSecrets`; the script refuses to rotate while the
 PostgreSQL or Keycloak state volume exists. The `-StartDms` pass preserves every secret and skips
 bootstrap, so it only starts the DMS services.
@@ -72,11 +73,10 @@ bootstrap, so it only starts the DMS services.
   `cd ~/dms-src/eng/azure-vm/compose && ./update.sh`. The wrapper requires a fast-forward pull and
   routes container recreation through the ApiSchema-guarded `up.sh`; set `SKIP_GIT=1` only for an
   intentional image-only refresh against the current checkout.
-- **Keycloak image-pin change:** its H2 data cannot be migrated. From `compose/`, run
-  `docker compose -f keycloak.yml --env-file .env down -v` (removes the actual
-  `dms-security-review_dms-sec-keycloak` volume), pull/start Keycloak, then recreate only its realm
-  and clients without touching CMS state:
-  `docker compose -f keycloak.yml --env-file .env pull keycloak && docker compose -f keycloak.yml --env-file .env up -d keycloak && pwsh ./bootstrap/bootstrap.ps1 -KeycloakOnly -BaseUrl https://localhost -Insecure`.
+- **Keycloak image-pin change or lost Keycloak volume:** its H2 data cannot be migrated or rebuilt
+  independently after bootstrap. The review applications are Keycloak clients whose generated
+  secrets and UUIDs are referenced by CMS, so recreating only the three service clients would leave
+  every review API credential broken. Use the [clean redeploy runbook](REDEPLOY.md).
 - **Cert renewal:** `pwsh provision/renew-cert.ps1 -PublicHost <FQDN>`.
 - **Wipe + redeploy** (existing VM, fresh secrets/schema/data): [`REDEPLOY.md`](REDEPLOY.md).
 - **Teardown:** `provision/teardown-vm.ps1` (or delete the resource group in the Portal).

@@ -18,7 +18,6 @@
 #   pwsh ./bootstrap.ps1                 # uses ../.env
 #   pwsh ./bootstrap.ps1 -Insecure       # local self-signed cert
 #   pwsh ./bootstrap.ps1 -SkipKeycloak   # realm/clients already created
-#   pwsh ./bootstrap.ps1 -KeycloakOnly   # rebuild realm/clients after wiping only Keycloak H2
 [CmdletBinding()]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ClaimSetName', Justification = 'Consumed as the default value of the New-ReviewApplication -ClaimSet parameter; the analyzer does not track usage inside nested function parameter defaults.')]
 param(
@@ -29,12 +28,10 @@ param(
     # public-IP hairpin issues.
     [string]$BaseUrl = "",
     [switch]$SkipKeycloak,
-    [switch]$KeycloakOnly,
     [switch]$Insecure
 )
 
 $ErrorActionPreference = "Stop"
-if ($SkipKeycloak -and $KeycloakOnly) { throw "-SkipKeycloak and -KeycloakOnly cannot be used together." }
 # Reuse the repo's canonical management module (no vendored copy).
 Import-Module "$PSScriptRoot/../../../Dms-Management.psm1" -Force
 
@@ -89,6 +86,19 @@ $pgCredential  = ConvertTo-PostgresCredential -UserName $pgUser -Secret $pgPassw
 $schoolYear    = EnvVal "MT_SCHOOL_YEAR" "2025"
 $tenant1       = EnvVal "MT_TENANT_1" "tenant1"
 $tenant2       = EnvVal "MT_TENANT_2" "tenant2"
+$maximumTenantNameLength = 19
+foreach ($tenantName in @($tenant1, $tenant2)) {
+    if ($tenantName -notmatch '^[a-zA-Z0-9_-]+$') {
+        throw "Tenant name '$tenantName' is invalid. Use only letters, digits, underscores, and hyphens."
+    }
+    if ($tenantName.Length -gt $maximumTenantNameLength) {
+        throw ("Tenant name '$tenantName' is too long for the generated API-client name. " +
+            "MT_TENANT_1 and MT_TENANT_2 must contain at most $maximumTenantNameLength characters.")
+    }
+}
+if ($tenant1.Equals($tenant2, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "MT_TENANT_1 and MT_TENANT_2 must be distinct (case-insensitive)."
+}
 $adminClientId     = EnvVal "BOOTSTRAP_ADMIN_CLIENT_ID" "dms-bootstrap-admin"
 $adminClientSecret = EnvVal "BOOTSTRAP_ADMIN_CLIENT_SECRET"
 # The service client ids/scope MUST be the ones the compose services request: read them from
@@ -107,22 +117,19 @@ $mtConfig = "$publicBaseUrl/mt-config/"
 $created = [System.Collections.Generic.List[object]]::new()
 
 # Own CMS bootstrap state here, rather than in setup-env.ps1, so the documented direct invocation
-# and the wrapper follow the same recovery contract. -KeycloakOnly deliberately does not consult or
-# change these markers because it recreates no CMS objects.
+# and the wrapper follow the same recovery contract.
 $stateDirectory = Join-Path $PSScriptRoot "../.bootstrap"
 $bootstrapAttempted = Join-Path $stateDirectory "bootstrap-attempted"
 $bootstrapComplete = Join-Path $stateDirectory "bootstrap-complete"
-if (-not $KeycloakOnly) {
-    if (Test-Path $bootstrapComplete) {
-        throw "Bootstrap already completed. Refusing to duplicate CMS objects. Run ./reset.sh before bootstrapping again."
-    }
-    if (Test-Path $bootstrapAttempted) {
-        throw ("A previous bootstrap did not complete. Refusing to duplicate partial CMS objects. " +
-            "Run ./reset.sh, or ./down.sh -v if Keycloak setup was partial, before retrying.")
-    }
-    New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-    New-Item -ItemType File -Path $bootstrapAttempted -Force | Out-Null
+if (Test-Path $bootstrapComplete) {
+    throw "Bootstrap already completed. Refusing to duplicate CMS objects. Run ./reset.sh before bootstrapping again."
 }
+if (Test-Path $bootstrapAttempted) {
+    throw ("A previous bootstrap did not complete. Refusing to duplicate partial identity/CMS objects. " +
+        "Run ./reset.sh before retrying; reset removes both application and Keycloak state.")
+}
+New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+New-Item -ItemType File -Path $bootstrapAttempted -Force | Out-Null
 
 # --- 1. Keycloak realm + service clients ------------------------------------
 if (-not $SkipKeycloak) {
@@ -154,10 +161,6 @@ if (-not $SkipKeycloak) {
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $adminClientId -NewClientName "DMS Bootstrap Admin" `
         -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret -SkipRealmAdmin
-}
-if ($KeycloakOnly) {
-    Write-Output "Keycloak realm and service clients recreated; existing CMS state was not modified."
-    return
 }
 
 # --- Helper: provision one application and capture credentials --------------

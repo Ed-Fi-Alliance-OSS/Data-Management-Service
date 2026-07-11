@@ -14,9 +14,9 @@
 # the documented second pass (-StartDms, after schema provisioning) preserves every secret and
 # skips bootstrap. Regenerating secrets on a re-run would break the existing Postgres volume,
 # Keycloak realm/clients, and CMS-encrypted rows, which are all keyed to the first-run values.
-# An interrupted bootstrap must be recovered with reset.sh (or down.sh -v when Keycloak was
-# partially configured). The bootstrap script owns attempted/complete markers and refuses a blind
-# retry because its CMS creates are not idempotent.
+# An interrupted bootstrap must be recovered with reset.sh, which removes both CMS and Keycloak
+# state. The bootstrap script owns attempted/complete markers and refuses a blind retry because its
+# identity/CMS creates are not idempotent.
 #
 # !! GAP: by default this does NOT provision the relational schema (api-schema-tools), stage
 #    .bootstrap/ApiSchema, or seed data (-LoadGrandbend is the explicit single-tenant exception).
@@ -290,9 +290,7 @@ try {
         elseif (Test-Path $bootstrapAttempted) {
             throw ("A previous bootstrap started but did not complete; the CMS config DB may hold " +
                 "partial vendors/applications/data stores that a retry would DUPLICATE. Run " +
-                "./reset.sh (clears partial CMS state, keeps the Keycloak realm), then re-run. " +
-                "If the failure was during Keycloak client setup instead, reset.sh keeps the realm " +
-                "(including a half-created client) -- use ./down.sh -v for a full reset, then re-run.")
+                "./reset.sh (clears partial CMS and Keycloak state), then re-run.")
         }
         else {
             Write-Output "Running bootstrap (over loopback)..."

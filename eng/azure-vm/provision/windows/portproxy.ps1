@@ -7,9 +7,25 @@
 [CmdletBinding()]
 param(
     [string]$Distro = "Ubuntu",
-    [int[]]$Ports = @(80, 443)
+    # string[] rather than int[]: the startup task invokes this via `powershell.exe -File`, which
+    # passes "80,443" as ONE string argument -- an [int[]] parameter fails to bind it and the boot
+    # task dies before restoring connectivity. Accept both spellings (`-Ports 80,443` interactively
+    # binds two elements; the -File form binds one comma-joined element) and flatten below.
+    [string[]]$Ports = @("80", "443")
 )
 $ErrorActionPreference = "Stop"
+
+$portNumbers = [System.Collections.Generic.List[int]]::new()
+foreach ($portToken in ($Ports | ForEach-Object { "$_" -split ',' })) {
+    $trimmedToken = $portToken.Trim()
+    if (-not $trimmedToken) { continue }
+    $portNumber = 0
+    if (-not [int]::TryParse($trimmedToken, [ref]$portNumber) -or $portNumber -lt 1 -or $portNumber -gt 65535) {
+        throw "Invalid port '$trimmedToken'. Ports must be integers from 1 through 65535."
+    }
+    if (-not $portNumbers.Contains($portNumber)) { $portNumbers.Add($portNumber) }
+}
+if ($portNumbers.Count -eq 0) { throw "At least one TCP port is required." }
 
 # Boot WSL (starts systemd -> docker -> containers) and read its IP.
 wsl -d $Distro -u root -e true | Out-Null
@@ -24,7 +40,7 @@ if (-not $wslIp) {
 }
 if (-not $wslIp) { throw "Could not determine the WSL IP for '$Distro'." }
 
-foreach ($p in $Ports) {
+foreach ($p in $portNumbers) {
     # Delete only THIS port's mapping before re-adding (the WSL IP changes across reboots), rather
     # than `portproxy reset`, which would wipe every unrelated portproxy mapping on the host.
     netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$p 2>$null | Out-Null
@@ -36,4 +52,4 @@ foreach ($p in $Ports) {
         New-NetFirewallRule -DisplayName "DMS-sec-$p" -Direction Inbound -LocalPort $p -Protocol TCP -Action Allow | Out-Null
     }
 }
-Write-Output "portproxy active: Windows :$($Ports -join ', ') -> $wslIp"
+Write-Output "portproxy active: Windows :$($portNumbers -join ', ') -> $wslIp"
