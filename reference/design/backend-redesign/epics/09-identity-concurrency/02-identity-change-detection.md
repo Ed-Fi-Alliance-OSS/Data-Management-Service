@@ -12,7 +12,8 @@ Detect whether a write changes the document’s identity projection values, so t
 - `dms.ReferentialIdentity` is updated only when necessary,
 - and `IdentityVersion/IdentityLastModifiedAt` are stamped only on actual identity projection changes.
 
-Identity projection includes scalar identity parts and identity components sourced from references (via propagated identity columns maintained by FK cascades/triggers).
+Identity projection includes scalar identity parts and identity components sourced from references, whose propagated
+identity columns are maintained by native FK cascades.
 
 ## Acceptance Criteria
 

@@ -559,7 +559,7 @@ Within a single transaction:
    - collection/common-type extension scope rows keyed by the owning base row identity
    - extension child collections using the same merge strategy as core collections
 6. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and
+   - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); PostgreSQL uses `ON UPDATE CASCADE` for abstract or transitively mutable concrete targets, while SQL Server actions are selected under [sql-server-pruning.md](sql-server-pruning.md), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
@@ -755,7 +755,8 @@ In this redesign, identity fields inside reference objects are persisted as loca
 
 - `..._DocumentId` (stable FK), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
-  kept consistent via composite FKs (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
+  kept consistent via provider-specific composite FK actions: PostgreSQL uses `ON UPDATE CASCADE` for abstract or
+  transitively mutable concrete targets; SQL Server actions are selected under [sql-server-pruning.md](sql-server-pruning.md).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
 
@@ -899,7 +900,8 @@ Under key unification, these binding columns may be persisted generated `Unified
 - composite reference FKs and cascades target canonical storage columns (binding columns are read-only when unified), and
 - reference expansion during JSON writing reads the binding columns so optional reference sites remain absent when absent.
 
-Composite FKs keep the values consistent (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
+Composite FKs keep the values consistent: PostgreSQL uses `ON UPDATE CASCADE` for abstract or transitively mutable
+concrete targets; SQL Server actions are selected under [sql-server-pruning.md](sql-server-pruning.md).
 
 For polymorphic/abstract targets, referrers store the abstract identity fields (e.g., `EducationOrganizationId`) and enforce membership via a composite FK to `{schema}.{AbstractResource}Identity`.
 
@@ -2117,7 +2119,8 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
-    // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE when allowIdentityUpdates=true).
+    // (row-local referential-id recompute + version stamping; identity propagation via provider-specific full-composite FK actions;
+    // SQL Server pruning follows sql-server-pruning.md).
 
     await tx.CommitAsync(ct);
 }

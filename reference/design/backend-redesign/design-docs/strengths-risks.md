@@ -34,7 +34,10 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Full natural-key propagation for document references
 
-- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation updates to referrers’ canonical stored identity-part columns (PostgreSQL FK cascades; SQL Server `MssqlIdentityPropagationTrigger` triggers for eligible edges), with per-site binding columns available for query compilation and reconstitution.
+- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as database-driven propagation
+  updates to referrers’ canonical stored identity-part columns (PostgreSQL cascades and SQL Server native cascades/cuts
+  governed by [SQL Server foreign-key pruning](sql-server-pruning.md)), with per-site binding columns available for query
+  compilation and reconstitution.
 - Improves query compilation for reference-identity query parameters by enabling local predicates on per-site binding identity columns (no referenced-table subqueries).
 
 ### Key unification for equality-constrained identity parts (single source of truth)
@@ -64,7 +67,9 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via dialect-specific database propagation on canonical storage columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server `ON UPDATE NO ACTION` for all reference composite FKs plus `TriggerKindParameters.MssqlIdentityPropagationTrigger` triggers for eligible edges), and
+- identity values are propagated into direct referrers via dialect-specific database propagation on canonical storage
+  columns (PostgreSQL `ON UPDATE CASCADE` for eligible edges; SQL Server retained native cascades and safe
+  `ON UPDATE NO ACTION` cuts per [SQL Server foreign-key pruning](sql-server-pruning.md)), and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -79,17 +84,19 @@ Mitigations / guidance:
 
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
-SQL Server may reject FK graphs with “cycles or multiple cascade paths”. This is why the design does not use SQL Server update cascades for reference composite FKs. The DDL generator must:
-- emit `ON UPDATE NO ACTION` for all SQL Server reference composite FKs, and
-- emit deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` propagation for eligible edges (abstract targets and concrete targets with `allowIdentityUpdates=true`) that updates canonical storage columns (aliases recompute), without changing correctness semantics.
+SQL Server may reject FK graphs with “cycles or multiple cascade paths”. The pruning design keeps native SQL Server
+update cascades only where the physical carrier is safe and the topology permits them. The DDL generator must:
+- render the finalized actions produced by [SQL Server foreign-key pruning](sql-server-pruning.md): retain native
+  full-composite update cascades where safe, cut only safe convergences to `ON UPDATE NO ACTION`, and reject
+  unsupported cycles or pruning choices before DDL.
 
 Risks:
-- extra trigger complexity,
-- higher likelihood of engine-specific behavior and performance differences.
+- engine-specific cascade topology and performance differences,
+- conservative derivation failures for unsupported physical carrier shapes.
 - key unification can increase the chance of “multiple cascade paths”: shared canonical columns can participate in multiple composite FKs, creating multi-edge cascades.
 
 Mitigations:
-- Include SQL Server `ON UPDATE NO ACTION` + propagation-trigger emission checks in DDL generation verification.
+- Include SQL Server retained-cascade, safe-cut, and unsupported-topology checks in DDL generation verification.
 - Benchmark representative “hub” resources on both engines.
 
 ### Key unification complexity (Generated aliases + synthetic presence flags)

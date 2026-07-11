@@ -595,11 +595,16 @@ Typical structure:
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
       - PostgreSQL:
-        - concrete targets: `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise)
-        - abstract targets: `ON UPDATE CASCADE`
+        - abstract and transitively mutable concrete targets: `ON UPDATE CASCADE`
+        - immutable concrete targets: `ON UPDATE NO ACTION`
       - SQL Server:
-        - all reference composite FKs use `ON UPDATE NO ACTION` (concrete + abstract targets)
-        - eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`) are maintained by deterministic `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out on the referenced table, updating canonical/storage columns only
+        - immutable concrete targets use `ON UPDATE NO ACTION`
+        - abstract and transitively mutable concrete targets use native full-composite `ON UPDATE CASCADE` where
+          permitted; [SQL Server foreign-key pruning](sql-server-pruning.md) deterministically retains safe cascades,
+          changes only safe convergence cuts to `ON UPDATE NO ACTION`, and rejects unsupported topology
+        - the pruning selector considers only `ON UPDATE` candidate cascades. SQL Server evaluates cascade trees
+          initiated by `DELETE` and `UPDATE` statements separately; structural `ON DELETE CASCADE` paths remain
+          governed by the existing delete model.
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
@@ -656,7 +661,8 @@ This redesign provisions an **identity table per abstract resource**:
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)`.
     - PostgreSQL: `ON UPDATE CASCADE`.
-    - SQL Server: `ON UPDATE NO ACTION` and identity propagation via `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger fan-out (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
+    - SQL Server: native full-composite `ON UPDATE CASCADE` where retained by
+      [SQL Server foreign-key pruning](sql-server-pruning.md), otherwise a safe `ON UPDATE NO ACTION` cut.
 
 Required: `{schema}.{AbstractResource}_View` union view
 
@@ -669,7 +675,9 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 Usage:
 
 - Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
-- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades, SQL Server `MssqlIdentityPropagationTrigger` triggers).
+- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and
+  kept consistent via database propagation: PostgreSQL cascades and SQL Server native cascades/cuts governed by
+  [SQL Server foreign-key pruning](sql-server-pruning.md)).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
 DDL generation requirement:
@@ -981,7 +989,7 @@ Object names are deterministic and derived from the owning table plus purpose to
 - All-or-none checks: `CK_{TableName}_{ReferenceBaseName}_AllNone`
 - Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)
 - Triggers: `TR_{TableName}_{Purpose}`
-  - `Purpose` is a small stable token such as `Stamp`, `Journal`, `ReferentialIdentity`, `AbstractIdentity`, `PropagateIdentity`
+  - `Purpose` is a small stable token such as `Stamp`, `Journal`, `ReferentialIdentity`, `AbstractIdentity`
   - PostgreSQL trigger functions (when used): `TF_{TableName}_{Purpose}`
 
 Uniqueness scope (dialect-specific):

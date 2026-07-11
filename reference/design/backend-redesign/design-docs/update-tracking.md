@@ -27,7 +27,9 @@ The backend redesign needs resource-state-sensitive metadata:
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
 
 - persisting referenced identity values as local columns alongside every `..._DocumentId` reference, and
-- using `ON UPDATE CASCADE` (or trigger-based propagation where required) only when the referenced target allows identity updates (`allowIdentityUpdates=true`); otherwise `ON UPDATE NO ACTION`.
+- using provider-specific full-composite FK actions: PostgreSQL uses `ON UPDATE CASCADE` for abstract or transitively
+  mutable concrete targets (otherwise `ON UPDATE NO ACTION`); SQL Server retains native cascades and applies safe
+  full-composite `ON UPDATE NO ACTION` convergence cuts under [sql-server-pruning.md](sql-server-pruning.md).
 
 Those referrer updates naturally trigger the same stamping rules as “direct” writes.
 

@@ -9,7 +9,8 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1000
 
 Ensure any caches used for identity resolution (`ReferentialId → DocumentId`) remain correct after identity changes:
 
-- Identity updates can fan out via cascades/triggers and change referential ids for more than the directly written document.
+- Identity updates can fan out through native FK cascades and row-local maintenance triggers, changing referential ids
+  for more than the directly written document.
 - Cache entries must be updated/evicted after commit for impacted keys, or the cache must be short-TTL/disabled for correctness.
 
 ## Acceptance Criteria
@@ -18,7 +19,7 @@ Ensure any caches used for identity resolution (`ReferentialId → DocumentId`) 
 - Cache invalidation covers:
   - primary referential ids,
   - superclass alias referential ids,
-  - any affected dependents whose identities change due to cascades/triggers.
+  - any affected dependents whose identities change due to cascades and row-local maintenance triggers.
 - Cache invalidation is performed after commit (no population from uncommitted state).
 
 ## Tasks

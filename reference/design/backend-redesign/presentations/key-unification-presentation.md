@@ -1,5 +1,9 @@
 # Key Unification Design Summary
 
+> **Superseded SQL Server propagation content:** references in this presentation to
+> `MssqlIdentityPropagationTrigger` predate DMS-1129. The current contract is
+> [SQL Server foreign-key pruning](../design-docs/sql-server-pruning.md).
+
 ## What Problem Does This Solve?
 
 The DMS backend redesign stores reference identity parts as independent physical columns per reference site (e.g., `StudentSchoolAssociation_StudentUniqueId` and `StudentEducationOrganizationAssociation_StudentUniqueId`). When two reference sites carry the same logical identity value, ApiSchema `equalityConstraints` declare they must be equal — but the database has two separate writable columns that can drift apart via direct SQL writes, bugs, or partial updates.

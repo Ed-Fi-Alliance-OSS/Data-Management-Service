@@ -225,13 +225,14 @@ The DDL generator must emit document-reference columns and constraints that enab
     - the per-site identity-part binding columns (even when those columns are generated aliases).
 - Enforce a composite FK over **storage columns only**:
   - Local FK columns:
-    - the reference group’s `..._DocumentId`, and
-    - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`.
+    - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`, and
+    - the reference group’s `..._DocumentId` (identity storage columns first, `DocumentId` last).
   - Target columns:
-    - `DocumentId`, and
-    - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`.
-  - Use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and use `ON DELETE NO ACTION`.
-- Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(DocumentId, <IdentityParts...>)` because `DocumentId` is already unique).
+    - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`, and
+    - `DocumentId` (identity storage columns first, `DocumentId` last).
+  - PostgreSQL uses `ON UPDATE CASCADE` for abstract or transitively mutable concrete targets (otherwise `ON UPDATE NO ACTION`).
+    SQL Server assigns the final action under [sql-server-pruning.md](sql-server-pruning.md). Both providers use `ON DELETE NO ACTION`.
+- Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(<IdentityParts...>, DocumentId)` because `DocumentId` is already unique).
   - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).
 
 **Link injection and DDL (V1 note)**

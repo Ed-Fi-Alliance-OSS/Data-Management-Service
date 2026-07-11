@@ -30,7 +30,8 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   - absent optional paths MUST reconstitute as absent (`NULL` at the binding column), and
   - predicates against a per-path column MUST continue to imply that the path was present.
 - **Remain compatible with identity propagation** via composite FKs and dialect-specific propagation mechanics
-  (PostgreSQL `ON UPDATE CASCADE`; SQL Server `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`).
+  (PostgreSQL `ON UPDATE CASCADE`; SQL Server native cascades with safe convergence cuts selected by
+  [sql-server-pruning.md](sql-server-pruning.md)).
 - **Support both PostgreSQL and SQL Server** with deterministic DDL generation.
 
 ## Non-Goals
@@ -76,8 +77,8 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_DocumentId` (stable key)
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
-Composite FKs target `(DocumentId, <IdentityParts...>)` on the referenced table, using `ON UPDATE CASCADE` only when the
-referenced target has `allowIdentityUpdates=true`.
+Composite FKs target `(DocumentId, <IdentityParts...>)` on the referenced table, using `ON UPDATE CASCADE` when the
+referenced target is abstract or transitively mutable.
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
 does not prevent drift between duplicated identity parts created by per-site propagation.
@@ -355,7 +356,7 @@ Any consumer that needs a column for **DML/DDL that targets writable storage** M
 
 - Writes (flattening / parameter binding): write only storage columns.
 - Foreign key derivation + emission: define FKs only over storage columns.
-- Identity propagation (PostgreSQL cascades and SQL Server `MssqlIdentityPropagationTrigger`): update storage columns only.
+- Identity propagation through native FK cascades: update storage columns only.
 - FK-supporting index derivation: index the final FK column list after storage mapping and de-duplication.
 
 Any consumer that needs a column for **API-path semantics** MUST continue to use binding columns:
@@ -1622,10 +1623,9 @@ For a reference site, the composite FK uses canonical storage columns for unifie
 Referential actions:
 
 - `ON UPDATE` is dialect-specific:
-  - PostgreSQL: for concrete targets, use `CASCADE` only when `allowIdentityUpdates=true`; otherwise `NO ACTION`. For
-    abstract targets, use `CASCADE`.
-  - SQL Server: always emit `ON UPDATE NO ACTION` for reference composite FKs. Identity propagation for eligible edges
-    is provided by `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger inventory.
+  - PostgreSQL: use `CASCADE` for abstract and transitively mutable concrete targets; otherwise use `NO ACTION`.
+  - SQL Server: keep every reference FK full composite and assign `ON UPDATE CASCADE` or a safe `ON UPDATE NO ACTION` cut
+    under [sql-server-pruning.md](sql-server-pruning.md). No `MssqlIdentityPropagationTrigger` is emitted.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1705,31 +1705,12 @@ Normative guidance:
   paths that reach the same referrer table whose composite FKs share unified canonical columns, and MUST validate the
   identity update succeeds (no transient FK violations and no mid-cascade check failures).
 
-#### SQL Server (always `ON UPDATE NO ACTION` + `MssqlIdentityPropagationTrigger`)
+#### SQL Server (superseded baseline)
 
-SQL Server reference composite FKs are emitted with `ON UPDATE NO ACTION` for deterministic behavior and to avoid
-engine cascade-path limitations. Identity propagation is represented explicitly as
-`TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger inventory.
-
-Normative rules:
-
-1. The DDL generator MUST emit `ON UPDATE NO ACTION` for every SQL Server reference composite FK (concrete and
-   abstract targets).
-2. For eligible propagation targets (abstract targets or concrete targets with `allowIdentityUpdates=true`), trigger
-   inventory MUST emit one deterministic, set-based `TriggerKindParameters.MssqlIdentityPropagationTrigger` trigger per referenced
-   table (`DbTriggerInfo.Table`) with referrer fan-out actions.
-3. Each propagation referrer action MUST update the referrer table’s **canonical/storage** identity-part columns
-   (never alias/binding columns), because aliases are computed/read-only.
-
-Required correctness properties for `MssqlIdentityPropagationTrigger`:
-
-- Set-based: handle multi-row updates of the referenced table and update all impacted referrers in one trigger
-  execution.
-- Old→new mapping: join `inserted`/`deleted` to map the referenced old composite key to the referenced new composite
-  key, and update referrers that still match the old key.
-- Idempotent under convergence: when multiple paths could update the same canonical value on a referrer, the trigger
-  predicate SHOULD match on the old key values so rows already updated to the new canonical values are not updated
-  redundantly.
+The former blanket `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` rules in this section are superseded by
+[sql-server-pruning.md](sql-server-pruning.md), which is normative for SQL Server reference-FK shape, update actions,
+convergence handling, and propagation. Key unification still supplies the canonical storage columns consumed by that
+design; it does not independently choose SQL Server referential actions.
 
 ### All-or-none nullability constraints
 
@@ -1815,8 +1796,7 @@ Rationale:
 
 - The composite FK must not reference read-only alias columns.
 - The composite FK and its required referenced-key UNIQUE must agree on the same physical key shape to avoid
-  mismatches and to keep identity propagation (FK cascades on PostgreSQL; `MssqlIdentityPropagationTrigger` triggers on SQL Server) anchored on
-  the canonical writable columns.
+  mismatches and to keep native FK-cascade identity propagation anchored on the canonical writable columns.
 
 #### Index inventory (constraints imply indexes)
 
@@ -1890,7 +1870,7 @@ unified member’s value is the **presence-gated expression** derived from `Colu
 
 This makes identity change detection robust to:
 
-- FK-cascade updates (or SQL Server `MssqlIdentityPropagationTrigger` triggers) that update canonical storage columns, and
+- FK-cascade updates that update canonical storage columns, and
 - presence changes that gate an alias between `NULL` and a canonical value.
 
 In derived trigger inventory contracts, this compare set is carried by `DbTriggerInfo.IdentityProjectionColumns` and is
@@ -1916,8 +1896,8 @@ These triggers must use the same value-diff gating:
   values differ between `inserted` and `deleted` (null-safe).
 - For unified identity members, the identity value is the presence-gated canonical expression above.
 
-This guarantees that cascades / `MssqlIdentityPropagationTrigger` updates to canonical columns correctly cause referential-id and
-abstract-identity maintenance, even though alias columns are read-only.
+This guarantees that cascade updates to canonical columns correctly cause referential-id and abstract-identity
+maintenance, even though alias columns are read-only.
 
 Design note (applies to `07-index-and-trigger-inventory.md` and any DDL emission docs):
 
@@ -2240,11 +2220,10 @@ semantics, or cascade correctness.
 - FK-supporting referenced-key UNIQUE constraints are defined over canonical storage columns (after mapping + de-dup).
 - FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
 - SQL Server propagation strategy:
-  - every reference composite FK uses `ON UPDATE NO ACTION`,
-  - eligible propagation targets (abstract or `allowIdentityUpdates=true`) emit deterministic
-    `TriggerKindParameters.MssqlIdentityPropagationTrigger` inventory as one trigger per referenced table with referrer fan-out
-    actions,
-  - trigger actions update canonical/storage columns only (never aliases).
+  - every reference FK remains full composite,
+  - `ON UPDATE CASCADE` is retained where legal and safe, and convergence cuts use full-composite `ON UPDATE NO ACTION`,
+  - no `MssqlIdentityPropagationTrigger` is emitted, and
+  - action selection and failure cases conform to [sql-server-pruning.md](sql-server-pruning.md).
 
 ### Write planning + flattening
 
@@ -2288,8 +2267,7 @@ semantics, or cascade correctness.
 - Triggers do not rely on “updated column” checks for alias columns (aliases are read-only).
 - Identity-change detection uses value diffs between old/new row images:
   - unified members use the presence-gated canonical expression, not the alias column name.
-- Cascades and SQL Server `MssqlIdentityPropagationTrigger` triggers that update canonicals still trigger correct stamping and
-  maintenance behavior (no missed recomputes).
+- Cascades that update canonical columns still trigger correct stamping and maintenance behavior (no missed recomputes).
 - SQL Server trigger implementations are set-based and correct under multi-row statements.
 
 ### AOT mapping pack + manifests
