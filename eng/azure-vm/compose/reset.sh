@@ -25,6 +25,10 @@ fi
 echo "Dropping app + database volumes (Keycloak realm is preserved)..."
 docker compose -f docker-compose.yml --env-file .env down -v
 
+# The config DB was just dropped, so bootstrap must run again: remove the completion sentinel
+# so a setup-env.ps1 re-run re-bootstraps (matching the manual step printed below).
+rm -f .bootstrap/bootstrap-complete
+
 # Restart infra + CMS + gateway ONLY -- NOT st-dms/mt-dms. After a -v reset the data DBs are empty
 # and the relational schema is gone, so the DMS services would crash-loop on boot (they fail fast
 # against an unprovisioned data DB / a CMS with no data stores). They must come up LAST, after
@@ -35,7 +39,9 @@ docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-
 
 echo
 echo "Reset complete. The Keycloak realm + clients survived; finish the rebuild in order:"
-echo "  1. Re-create CMS clients/tenants/data stores (Keycloak is already set up):"
+echo "  1. Re-create CMS clients/tenants/data stores (Keycloak is already set up). Wait until"
+echo "     https://localhost/st-config/health and /mt-config/health return 200 (the CMS"
+echo "     containers were just recreated), then:"
 echo "         pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure"
 echo "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2"
 echo "     (api-schema-tools; see docs/infrastructure.md \"Provisioning method\")."

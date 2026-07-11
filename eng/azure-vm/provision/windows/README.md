@@ -10,20 +10,23 @@ parts need care that the plain Linux VM doesn't:
 
 1. **Inbound 443/80 cross the WSL boundary.** WSL2 has its own NAT'd IP, so the public
    port has to reach the service inside WSL. Two ways:
-   - **WSL mirrored networking** (clean, no port mapping) — needs **Windows Server 2025**
-     (or Windows 11 22H2+). **Recommended.**
-   - **`netsh portproxy`** (for **Windows Server 2022**) — forwards Windows:443 → the WSL IP,
-     and must be refreshed on boot because the WSL IP changes (handled by `portproxy.ps1`
-     + a startup task).
+   - **WSL mirrored networking** (clean, no port mapping) — a **Windows 11 (22H2+)** feature.
+     On Windows Server — **including 2025** — enabling it currently fails and WSL silently
+     stays NAT'd (open bug, [microsoft/WSL#11154](https://github.com/microsoft/WSL/issues/11154)).
+     The setup script attempts it, verifies whether it applied, and falls back automatically.
+   - **`netsh portproxy`** — the **expected path on any Windows Server host**: forwards
+     Windows:443 → the WSL IP, and must be refreshed on boot because the WSL IP changes
+     (handled by `portproxy.ps1` + a startup task).
 2. **Headless autostart.** WSL/Docker don't start on boot by themselves. We add a startup
    task; if containers don't return after a Start, RDP in and run `wsl` once.
 
 Also: a Windows VM costs more (license + a larger size), and WSL2 itself needs **nested
 virtualization**, which constrains the VM: create it with **Security type: Standard** (the
 portal's Trusted Launch default blocks nested virtualization on these sizes) and a size that
-supports it — **B-series never does**. **Recommend Windows Server 2025 + mirrored networking +
-Standard_D8s_v4 (8 vCPU / 32 GiB)** to match the reference ODS box (a lighter Standard_D4s_v4 /
-16 GiB also runs the DMS stack fine if cost matters). Deallocate when idle so the larger size
+supports it — **B-series never does**. **Recommend Windows Server 2025 + Standard_D8s_v4
+(8 vCPU / 32 GiB)** to match the reference ODS box (a lighter Standard_D4s_v4 / 16 GiB also
+runs the DMS stack fine if cost matters), and **expect portproxy networking** — the script
+attempts mirrored mode and falls back automatically. Deallocate when idle so the larger size
 only costs you during sessions. This path has more to validate than the Linux VM; smoke-test
 before handoff.
 
@@ -69,8 +72,9 @@ VM → **Networking → Add inbound port rule** (note **RDP**, not SSH):
 > 3389 is fully internet-reachable (bots scan Azure ranges within minutes; the static IP + DNS
 > label are targetable whenever the VM is up). Safer options, same workflow:
 > - admins on stable IPs → set the **Source** to their CIDRs;
-> - rotating admin IPs → use **Just-in-Time VM access** (Defender for Cloud) — opens 3389 on
->   demand to the requester's current IP only — or **Bastion**.
+> - rotating admin IPs → use **Just-in-Time VM access** (Defender for Cloud; requires a paid
+>   Defender for Servers plan) — opens 3389 on demand to the requester's current IP only — or
+>   **Bastion**.
 >
 > If you keep it open to match the reference, use a strong, unique local-admin password and leave
 > Network Level Authentication (NLA) enabled.
@@ -80,7 +84,9 @@ VM → **Networking → Add inbound port rule** (note **RDP**, not SSH):
 Connect with your RDP tool to the FQDN using the **Windows local admin username/password** you
 set at VM creation — that *is* the host credential (the reference uses native RDP this way).
 For multiple admins, either share that local admin login (what the reference effectively does),
-or give each person their own: add local Windows users, or enable **Entra ID** login —
+or give each person their own: add local Windows users, or enable **Entra ID** login — first
+`az vm identity assign -g rg-dms-security-review -n dms-sec-vm` (the extension requires a
+system-assigned managed identity and fails without it), then
 `az vm extension set --publisher Microsoft.Azure.ActiveDirectory --name AADLoginForWindows -g rg-dms-security-review --vm-name dms-sec-vm`
 plus the *Virtual Machine Administrator Login* role per admin (per-user, MFA, revocable).
 Testers never RDP — they reach the app only over HTTPS.
@@ -109,10 +115,11 @@ drive redirection, or install Git for Windows and clone). Then, from that folder
 elevated PowerShell:
 
 ```powershell
-# Windows Server 2025 (mirrored networking — recommended):
+# Default: attempts WSL mirrored networking, verifies whether it applied, and falls back to
+# portproxy automatically (the expected outcome on Windows Server, incl. 2025 — see above):
 .\setup-windows-host.ps1
 
-# Windows Server 2022 (portproxy fallback):
+# Skip the mirrored attempt and go straight to portproxy:
 .\setup-windows-host.ps1 -UsePortProxy
 ```
 

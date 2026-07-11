@@ -26,7 +26,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."   # -> compose/
 [ -f .env ] || { echo "ERROR: .env not found."; exit 1; }
 # `|| true`: under `set -o pipefail` a no-match grep exits 1 and would abort the assignment
 # before the caller's `${VAR:-default}` fallback can apply. Swallow it so absent keys fall back.
-val() { grep -E "^$1=" .env | head -1 | cut -d= -f2- || true ; }
+# Also strip matching surrounding quotes to parse .env values the way docker compose does.
+val() {
+  v="$(grep -E "^$1=" .env | head -1 | cut -d= -f2- || true)"
+  case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
+  printf '%s' "$v"
+}
 PG_CONTAINER="${PG_CONTAINER:-dms-sec-postgres}"
 PG_USER="$(val POSTGRES_USER)"; PG_USER="${PG_USER:-postgres}"
 
@@ -38,15 +43,17 @@ echo "Source: $SOURCE  ->  Targets: ${TARGETS[*]}"
 for db in "${TARGETS[@]}"; do
   [ "$db" = "$SOURCE" ] && { echo "SKIP $db (== source)"; continue; }
   echo "== Cloning $SOURCE -> $db =="
-  # Clear existing documents in the target (keep the provisioned schema + fingerprint).
-  docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$db" -c \
-    'TRUNCATE dms."Document", dms."Descriptor", dms."ReferentialIdentity", dms."DocumentCache" CASCADE;'
+  # Truncate + reload in ONE transaction (--single-transaction): if the dump/restore fails, the
+  # TRUNCATE rolls back too, so the target keeps its prior data instead of being left empty or
+  # half-loaded. The TRUNCATE is prepended to the same stream the restore reads.
   # Copy data only; exclude provisioning/fingerprint tables already present in the target.
-  docker exec "$PG_CONTAINER" pg_dump -U "$PG_USER" -d "$SOURCE" --data-only --disable-triggers \
+  {
+    printf 'TRUNCATE dms."Document", dms."Descriptor", dms."ReferentialIdentity", dms."DocumentCache" CASCADE;\n'
+    docker exec "$PG_CONTAINER" pg_dump -U "$PG_USER" -d "$SOURCE" --data-only --disable-triggers \
       --exclude-table='dms."ResourceKey"' \
       --exclude-table='dms."EffectiveSchema"' \
-      --exclude-table='dms."SchemaComponent"' \
-    | docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$db" -q
+      --exclude-table='dms."SchemaComponent"'
+  } | docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -q
   echo "   done."
 done
 echo "Clone complete. Restart the multi-tenant DMS to clear its data-store cache if enabled."

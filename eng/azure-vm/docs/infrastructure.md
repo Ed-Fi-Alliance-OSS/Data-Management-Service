@@ -106,10 +106,13 @@ Scope: **single-tenant + two isolated tenants** = three apps.
 | multi-tenant / tenant2 | `E2E-NoFurtherAuthRequiredClaimSet` | `edfi_mt_t2` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
 
 Token endpoint (HTTP Basic `key:secret`, `grant_type=client_credentials`): the shared Keycloak
-realm at `…/auth/realms/edfi/protocol/openid-connect/token`, which each stack's Discovery API
-advertises as `urls.oauth`. The DMS `…/st-dms/oauth/token` / `…/mt-dms/oauth/token` proxy forwards
-to the same endpoint (needs a publicly-trusted cert). A ready sampler that tokens + reads a spread
-of resources for all three is [`http/sample-all.sh`](../http/sample-all.sh).
+realm at `…/auth/realms/edfi/protocol/openid-connect/token`. `/st-dms` Discovery advertises this
+correctly as `urls.oauth`; **`/mt-dms` Discovery advertises a broken value** (it appends
+`/{tenant}/{schoolYear}` — upstream `DMS-1262`, see issue 11 below), so authenticate against the
+realm URL above directly, not the advertised MT value. The DMS `…/st-dms/oauth/token` /
+`…/mt-dms/oauth/token` proxy forwards to the same endpoint (needs a publicly-trusted cert). A
+ready sampler that tokens + reads a spread of resources for all three is
+[`http/sample-all.sh`](../http/sample-all.sh).
 
 ## Network configuration
 

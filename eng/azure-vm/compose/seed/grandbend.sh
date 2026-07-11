@@ -19,7 +19,7 @@
 #
 # Restore into a FRESH, EMPTY database (no 'dms' schema yet), BEFORE starting DMS. Do NOT
 # pre-provision the target with api-schema-tools for this path — the template creates the schema.
-# (DMS is pinned to AppSettings__DeployDatabaseOnStartup=false in docker-compose.yml.)
+# (The DMS never deploys schema on startup; it validates the restored dms.EffectiveSchema.)
 #
 # To seed the OTHER data DBs from an ALREADY-seeded one (how multi-tenant was populated
 # here), use seed/clone-data.sh instead.
@@ -34,7 +34,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."   # -> compose/
 [ -f .env ] || { echo "ERROR: .env not found."; exit 1; }
 # `|| true`: under `set -o pipefail` a no-match grep exits 1 and would abort the assignment
 # before the caller's `${VAR:-default}` fallback can apply. Swallow it so absent keys fall back.
-val() { grep -E "^$1=" .env | head -1 | cut -d= -f2- || true ; }
+# Also strip matching surrounding quotes: docker compose strips them from .env values, so a
+# hand-quoted value must parse identically here or the two consumers diverge.
+val() {
+  v="$(grep -E "^$1=" .env | head -1 | cut -d= -f2- || true)"
+  case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
+  printf '%s' "$v"
+}
 
 PG_CONTAINER="${PG_CONTAINER:-dms-sec-postgres}"
 PG_USER="$(val POSTGRES_USER)"; PG_USER="${PG_USER:-postgres}"
@@ -60,7 +66,9 @@ python3 - "$work/tmpl.nupkg" "$work/pkg" <<'PY'
 import sys, zipfile
 zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
 PY
-sql="$(find "$work/pkg" -iname '*.sql' | head -1)"
+# -print -quit (stop at first match) instead of `| head -1`: under pipefail, head exiting
+# early SIGPIPEs find (exit 141) and would abort a valid run when the package has several .sql.
+sql="$(find "$work/pkg" -iname '*.sql' -print -quit)"
 [ -n "$sql" ] || { echo "ERROR: no .sql found in package."; exit 1; }
 echo "Template SQL: $(basename "$sql")"
 
@@ -86,6 +94,9 @@ for db in "${DBS[@]}"; do
     continue
   fi
   echo "Restoring Grand Bend (relational) into $db ..."
-  docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$db" -f /tmp/grandbend.sql
+  # --single-transaction: an interrupted/failed restore rolls back entirely, so the DB is left
+  # with NO 'dms' schema. That keeps the skip-guard above honest -- a failed attempt is retried,
+  # not silently skipped as "already seeded" on the next run.
+  docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -f /tmp/grandbend.sql
 done
-echo "Done. (DMS is pinned to DeployDatabaseOnStartup=false; start the DMS services now.)"
+echo "Done. (The DMS never deploys schema on startup; start the DMS services now.)"

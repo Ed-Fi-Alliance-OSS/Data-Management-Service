@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Sets up the DMS security-review environment ON the VM:
-#   1. (optional) clone the private repo
+#   1. (optional) clone the repo
 #   2. create .env with strong generated secrets + the public host
 #   3. obtain a TLS cert (Let's Encrypt if -LetsEncryptEmail given, else self-signed)
-#   4. start identity + CMS (everything EXCEPT the DMS services)
-#   5. wait for identity/CMS health, then run bootstrap (clients, tenants, data stores)
+#   4. (with -LoadGrandbend) restore the populated template into edfi_st
+#   5. start identity + CMS (everything EXCEPT the DMS services), wait for health, then
+#      run bootstrap (clients, tenants, data stores)
 #   6. (with -StartDms, after the relational schema is provisioned) start the DMS services
 #
 # Idempotent re-runs: secrets are written only when .env is first created (or with -RotateSecrets);
@@ -35,7 +36,7 @@ param(
     [switch]$LoadGrandbend,                                     # load the Grand Bend populated template
     [switch]$SkipBootstrap,
     [switch]$RotateSecrets,                                     # regenerate .env secrets even if .env exists (you MUST also reset dependent volumes/registrations)
-    [switch]$Bootstrap,                                         # force bootstrap on a re-run (default: bootstrap runs only when .env is first created)
+    [switch]$Bootstrap,                                         # force bootstrap on a re-run (default: bootstrap runs until it has completed successfully once)
     [switch]$StartDms                                           # start the DMS services (only after the relational schema is provisioned)
 )
 $ErrorActionPreference = "Stop"
@@ -126,7 +127,10 @@ try {
     # keys. Copy-Item / Set-Content inherit the shell umask (typically 0644 on Linux/WSL), which
     # would leave secrets world-readable to other local users/processes. Run every invocation
     # (idempotent); Set-Content below preserves the mode of the existing file.
-    if ($IsLinux -or $IsMacOS) { chmod 600 .env }
+    if ($IsLinux -or $IsMacOS) {
+        chmod 600 .env
+        if ($LASTEXITCODE -ne 0) { throw "chmod 600 .env failed ($LASTEXITCODE); refusing to continue with potentially world-readable secrets." }
+    }
 
     # Host / base URL are deterministic from -PublicHost, so they are safe to (re)write every run.
     Write-Output "Writing .env host values..."
@@ -138,7 +142,15 @@ try {
     # the documented '-StartDms' second pass) would break DB auth / token auth / decryption against
     # the existing volumes. Generate only when .env is first created, or on an explicit
     # -RotateSecrets (which implies you will also reset the dependent volumes/registrations).
-    if ($freshEnv -or $RotateSecrets) {
+    # An interrupted first run can create .env (line above) and die before this block, leaving
+    # placeholder CHANGEME secrets. $freshEnv would then be false on the retry, so also
+    # (re)generate whenever any placeholder remains -- otherwise the retry starts Compose below
+    # with the .env.example placeholders (that path never passes through up.sh's CHANGEME guard).
+    $hasPlaceholders = [bool](Select-String -Path ".env" -Pattern '=.*CHANGEME' -Quiet)
+    if ($hasPlaceholders -and -not $freshEnv) {
+        Write-Warning ".env still holds placeholder (CHANGEME) secrets from an incomplete earlier run; regenerating all secrets."
+    }
+    if ($freshEnv -or $RotateSecrets -or $hasPlaceholders) {
         Write-Output "Writing generated secrets to .env..."
         Set-EnvValue -File ".env" -Key "POSTGRES_PASSWORD" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "KEYCLOAK_ADMIN_PASSWORD" -Value (New-ComplexSecret)
@@ -161,10 +173,15 @@ try {
         $live = "/etc/letsencrypt/live/$PublicHost"
         # install (not cp) sets the destination mode atomically: the private key stays owner-only
         # (a bare cp inherits the shell umask, often leaving the key group/other-readable).
-        sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt
-        if ($LASTEXITCODE -ne 0) { throw "installing fullchain.pem -> ssl/server.crt failed ($LASTEXITCODE)." }
-        sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key
-        if ($LASTEXITCODE -ne 0) { throw "installing privkey.pem -> ssl/server.key failed ($LASTEXITCODE)." }
+        # Stage BOTH files, then move them into place together -- installing directly could
+        # leave a mismatched cert/key pair if the second install fails, and nginx refuses a
+        # mismatched pair on its next start.
+        sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt.tmp
+        if ($LASTEXITCODE -ne 0) { throw "staging fullchain.pem failed ($LASTEXITCODE)." }
+        sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key.tmp
+        if ($LASTEXITCODE -ne 0) { throw "staging privkey.pem failed ($LASTEXITCODE)." }
+        Move-Item -Force ssl/server.crt.tmp ssl/server.crt
+        Move-Item -Force ssl/server.key.tmp ssl/server.key
     }
     elseif (Test-Path "ssl/server.crt") {
         Write-Output "Reusing existing self-signed certificate (delete ssl/server.crt to regenerate)."
@@ -173,6 +190,13 @@ try {
         Write-Output "No -LetsEncryptEmail: generating a self-signed certificate."
         ./ssl/generate-certificate.sh $PublicHost
         if ($LASTEXITCODE -ne 0) { throw "generate-certificate.sh failed ($LASTEXITCODE)." }
+    }
+
+    # Belt-and-suspenders: never start Compose with placeholder secrets. This script starts
+    # Compose directly below (not via up.sh, which has its own guard), so re-assert here after
+    # the secret/cert steps and before the first `docker compose up`.
+    if (Select-String -Path ".env" -Pattern '=.*CHANGEME' -Quiet) {
+        throw ".env still contains CHANGEME placeholder secrets after secret generation. Refusing to start Compose. Re-run with -RotateSecrets, or replace every CHANGEME value manually."
     }
 
     # --- 4. (optional) Grand Bend sample data -------------------------------
@@ -213,25 +237,31 @@ try {
         Start-Sleep -Seconds 10
         $healthy = $true
         foreach ($p in @("st-config", "mt-config")) {
-            $code = (curl -s -k -o /dev/null -w "%{http_code}" "https://localhost/$p/health")
+            $code = (curl -s -k --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "https://localhost/$p/health")
             if ($code -ne "200") { $healthy = $false }
         }
-        $kcCode = (curl -s -k -o /dev/null -w "%{http_code}" "https://localhost/auth/realms/master")
+        $kcCode = (curl -s -k --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "https://localhost/auth/realms/master")
         if ($kcCode -ne "200") { $healthy = $false }
     } while (-not $healthy -and (Get-Date) -lt $deadline)
     if ($healthy) { Write-Output "Identity + config services healthy." }
-    else { throw "Identity/config services did not report healthy within 8 minutes. Check './logs.sh', then re-run (re-runs preserve secrets and skip bootstrap)." }
+    else { throw "Identity/config services did not report healthy within 8 minutes. Check './logs.sh', then re-run (re-runs preserve secrets; bootstrap re-runs until it completes successfully)." }
 
-    # Bootstrap on first stand-up only. On a re-run (e.g. the '-StartDms' second pass) the realm,
-    # clients, tenants, and data stores already exist; re-running would also fail on the now-existing
-    # bootstrap admin client. So bootstrap runs only for a fresh .env unless -Bootstrap forces it.
-    $runBootstrap = (-not $SkipBootstrap) -and ($freshEnv -or $Bootstrap)
+    # Bootstrap completion is tracked with a sentinel file, NOT .env existence: a first run can
+    # die after .env is created but before bootstrap succeeds (cert failure, health timeout),
+    # and keying off .env would then skip bootstrap forever on the retry. The sentinel is only
+    # written after bootstrap.ps1 returns without throwing; reset.sh removes it (the config DB
+    # it re-creates must be re-bootstrapped).
+    $bootstrapSentinel = Join-Path $composeDir ".bootstrap/bootstrap-complete"
+    $runBootstrap = (-not $SkipBootstrap) -and (-not (Test-Path $bootstrapSentinel) -or $Bootstrap)
     if ($runBootstrap) {
         Write-Output "Running bootstrap (over loopback)..."
         & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
+        # NOTE: forcing -Bootstrap against an intact, already-bootstrapped config DB duplicates
+        # data stores/vendors/apps -- force it only after reset.sh (which empties the config DB).
+        New-Item -ItemType File -Path $bootstrapSentinel -Force | Out-Null
     }
     elseif (-not $SkipBootstrap) {
-        Write-Output "Skipping bootstrap: .env already exists (pass -Bootstrap to force re-bootstrap)."
+        Write-Output "Skipping bootstrap: already completed once (reset.sh removes the sentinel; -Bootstrap forces)."
     }
 
     # --- 6. relational schema (MANUAL) + start the DMS services -------------
@@ -262,7 +292,7 @@ try {
             Start-Sleep -Seconds 10
             $healthy = $true
             foreach ($p in @("st-dms", "mt-dms")) {
-                $code = (curl -s -k -o /dev/null -w "%{http_code}" "https://localhost/$p/health")
+                $code = (curl -s -k --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "https://localhost/$p/health")
                 if ($code -ne "200") { $healthy = $false }
             }
         } while (-not $healthy -and (Get-Date) -lt $deadline)

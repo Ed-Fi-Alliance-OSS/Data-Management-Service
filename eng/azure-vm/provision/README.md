@@ -48,15 +48,18 @@ while `compose/.bootstrap/ApiSchema` is unstaged.
 Record the generated credentials in your private deployment doc, then verify with [`../http/`](../http/).
 
 Re-running `setup-env.ps1` is safe: secrets are written only when `.env` is first created (pass
-`-RotateSecrets` to force-rotate — and then reset the dependent volumes), and bootstrap runs only
-on first stand-up (pass `-Bootstrap` to force). The `-StartDms` pass preserves every secret and
-skips bootstrap, so it only starts the DMS services.
+`-RotateSecrets` to force-rotate — and then reset the dependent volumes), and bootstrap re-runs
+until it has completed successfully once (a sentinel in `compose/.bootstrap/` tracks this; pass
+`-Bootstrap` to force after `reset.sh`). The `-StartDms` pass preserves every secret and skips
+bootstrap, so it only starts the DMS services.
 
-> **The relational schema provisioning and Grand Bend seeding are manual** — `setup-env.ps1` does
-> not do them. See [`../docs/infrastructure.md`](../docs/infrastructure.md#provisioning-method-as-deployed)
-> for the order: provision each data DB with `api-schema-tools` (or restore the relational populated
-> template), bootstrap, start, then seed (single-tenant via bulk-load; the tenants via
-> [`../compose/seed/clone-data.sh`](../compose/seed/clone-data.sh)).
+> **Relational schema provisioning and seeding are not part of the default run** —
+> `setup-env.ps1` provisions no schema, and its only seeding hook is the optional
+> `-LoadGrandbend` switch (restores the populated template into `edfi_st`). See
+> [`../docs/infrastructure.md`](../docs/infrastructure.md#provisioning-method-as-deployed)
+> for the order: provision each data DB with `api-schema-tools` (or restore the relational
+> populated template), bootstrap, start, then seed (single-tenant via bulk-load or
+> `-LoadGrandbend`; the tenants via [`../compose/seed/clone-data.sh`](../compose/seed/clone-data.sh)).
 
 ## On/off, update, teardown
 
@@ -66,6 +69,8 @@ skips bootstrap, so it only starts the DMS services.
   always on, ≈ \$5–10/mo mostly deallocated (a Windows host costs more).
 - **Update (in WSL / on the VM):**
   `cd ~/dms-src/eng/azure-vm/compose && git pull && docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull && docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d`
+  (If the **Keycloak** image pin changed, wipe the `dms-sec-keycloak` volume and re-run
+  `bootstrap.ps1` — Keycloak does not support migrating its default H2 database across versions.)
 - **Cert renewal:** `pwsh provision/renew-cert.ps1 -PublicHost <FQDN>`.
 - **Wipe + redeploy** (existing VM, fresh secrets/schema/data): [`REDEPLOY.md`](REDEPLOY.md).
 - **Teardown:** `provision/teardown-vm.ps1` (or delete the resource group in the Portal).
@@ -81,7 +86,7 @@ skips bootstrap, so it only starts the DMS services.
   copy that folder to `compose/.bootstrap/ApiSchema`). `-StartDms` and `up.sh` refuse to start the
   DMS services while it is unstaged — Docker would otherwise mount it empty and DMS would fail
   startup/health even with the databases provisioned.
-- **Relational schema** — the DMS runs `DeployDatabaseOnStartup=false`; provision each data DB with
+- **Relational schema** — the DMS never deploys schema on startup; provision each data DB with
   `api-schema-tools` (published as the `EdFi.Api.SchemaTools` .NET tool — **DMS-1242**; on the
   no-.NET VM hosts, build it self-contained in a container instead, see
   [`REDEPLOY.md`](REDEPLOY.md) Part C), **or** restore the relational populated template

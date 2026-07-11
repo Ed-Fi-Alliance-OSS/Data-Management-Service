@@ -13,7 +13,8 @@ characters REST Client treats as variables (`{{ }}`) or if your client does not 
 raw form.
 
 > Self-signed certificate: in VS Code set `"rest-client.verifySsl": false` (or trust the
-> cert) before running these.
+> cert) before running these. For `sample-all.sh`, pass `INSECURE=1` (it verifies TLS by
+> default, since it sends key/secret and bearer tokens).
 
 - `single-tenant.http` — Discovery, token, and data requests against `/st-dms`.
 - `multi-tenant.http` — token + tenant/route-qualifier data request against `/mt-dms`,

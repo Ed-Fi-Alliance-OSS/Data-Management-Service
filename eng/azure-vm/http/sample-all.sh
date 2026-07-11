@@ -3,18 +3,25 @@
 #
 # Reusable API smoke sampler for an ST + MT (tenant1/tenant2) DMS deployment. Tokens each
 # environment and reads a spread of resources, then prints discovery + a keyed query.
-# Self-signed cert -> curl -k. Read-only (token + GET); makes no changes.
+# Read-only (token + GET); makes no changes.
 # Exits nonzero if any token, discovery, or resource read fails (bad HTTP status or non-JSON
 # body), so it doubles as a handoff check.
+#
+# TLS is VERIFIED by default -- this script sends API key:secret and bearer tokens, so it must
+# not skip verification on a real (Let's Encrypt) cert. For a self-signed cert (local testing),
+# set INSECURE=1 to add curl -k.
 #
 # Fill the FQDN + the three key:secret pairs below, or export them. The live values for a
 # specific deployment live in that deployment's PRIVATE credentials doc / vault, NOT here.
 #
 # Usage:
 #   FQDN=your-host ST_CREDS='key:secret' T1_CREDS='key:secret' T2_CREDS='key:secret' ./sample-all.sh
+#   INSECURE=1 FQDN=localhost ... ./sample-all.sh          # self-signed cert
 set -euo pipefail
 FQDN="${FQDN:-your-label.eastus.cloudapp.azure.com}"
 REALM="${REALM:-edfi}"
+# -k only when INSECURE=1; otherwise verify the chain (default).
+K=(); [ "${INSECURE:-0}" = "1" ] && K=(-k)
 ST_CREDS="${ST_CREDS:-REPLACE_ST_KEY:REPLACE_ST_SECRET}"
 T1_CREDS="${T1_CREDS:-REPLACE_TENANT1_KEY:REPLACE_TENANT1_SECRET}"
 T2_CREDS="${T2_CREDS:-REPLACE_TENANT2_KEY:REPLACE_TENANT2_SECRET}"
@@ -32,7 +39,7 @@ token() {
   local tok
   # python stderr silenced: on failure the explicit ERROR below aborts the run, so the
   # JSONDecodeError traceback from an empty/non-JSON response adds nothing.
-  tok=$(curl -skf -X POST "$1" -u "$2" -d grant_type=client_credentials \
+  tok=$(curl -sf "${K[@]}" -X POST "$1" -u "$2" -d grant_type=client_credentials \
     | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])' 2>/dev/null) || {
     echo "ERROR: token request failed at $1 (check credentials and that the stack is up)" >&2
     exit 1
@@ -47,7 +54,7 @@ sample() {
   local r resp code body row
   for r in localEducationAgencies schools students staffs courses sections \
            studentSchoolAssociations studentSectionAssociations grades gradeLevelDescriptors; do
-    if ! resp=$(curl -sk -w '\n%{http_code}' -H "Authorization: Bearer $TOK" "$B/$r?limit=3"); then
+    if ! resp=$(curl -s "${K[@]}" -w '\n%{http_code}' -H "Authorization: Bearer $TOK" "$B/$r?limit=3"); then
       printf '%-30s %s\n' "$r" "ERROR (request failed)"
       FAILURES=$((FAILURES + 1))
       continue
@@ -67,7 +74,7 @@ sample() {
 # Discovery document (pretty-printed, truncated).  discovery <url>
 discovery() {
   local body
-  if body=$(curl -skf "$1") && printf '%s\n' "$body" | python3 -m json.tool | sed -n '1,20p'; then
+  if body=$(curl -sf "${K[@]}" "$1") && printf '%s\n' "$body" | python3 -m json.tool | sed -n '1,20p'; then
     :
   else
     echo "ERROR: discovery failed or returned non-JSON at $1"
@@ -80,7 +87,7 @@ TOK=$(token "$KC_TOKEN" "$ST_CREDS"); B="https://$FQDN/st-dms/data/ed-fi"
 discovery "https://$FQDN/st-dms/"
 sample
 echo "-- keyed query: students?studentUniqueId=604821 --"
-if ! curl -skf -H "Authorization: Bearer $TOK" "$B/students?studentUniqueId=604821" | python3 -m json.tool; then
+if ! curl -sf "${K[@]}" -H "Authorization: Bearer $TOK" "$B/students?studentUniqueId=604821" | python3 -m json.tool; then
   echo "ERROR: keyed query failed"
   FAILURES=$((FAILURES + 1))
 fi

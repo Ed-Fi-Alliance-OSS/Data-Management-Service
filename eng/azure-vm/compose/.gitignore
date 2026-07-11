@@ -4,3 +4,7 @@ ssl/server.crt
 ssl/server.key
 ssl/*.pem
 ssl/dhparam.pem
+ssl/*.tmp
+
+# Per-deployment state: staged ApiSchema workspace + bootstrap-complete sentinel.
+.bootstrap/

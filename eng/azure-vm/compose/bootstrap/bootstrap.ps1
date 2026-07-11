@@ -62,7 +62,14 @@ foreach ($line in Get-Content $EnvFile) {
     if ($trimmed -eq "" -or $trimmed.StartsWith("#")) { continue }
     $idx = $trimmed.IndexOf("=")
     if ($idx -lt 1) { continue }
-    $envValues[$trimmed.Substring(0, $idx).Trim()] = $trimmed.Substring($idx + 1).Trim()
+    $value = $trimmed.Substring($idx + 1).Trim()
+    # Strip matching surrounding quotes: docker compose strips them from .env values, so a
+    # hand-quoted value must parse identically here (e.g. a quoted POSTGRES_PASSWORD would
+    # otherwise carry literal quotes into the data-store connection strings).
+    if ($value.Length -ge 2 -and (($value[0] -eq '"' -and $value[-1] -eq '"') -or ($value[0] -eq "'" -and $value[-1] -eq "'"))) {
+        $value = $value.Substring(1, $value.Length - 2)
+    }
+    $envValues[$trimmed.Substring(0, $idx).Trim()] = $value
 }
 function EnvVal([string]$key, [string]$default = "") {
     if ($envValues.ContainsKey($key) -and $envValues[$key]) { return $envValues[$key] }
@@ -173,7 +180,16 @@ $mtToken = Get-CmsToken -CmsUrl $mtConfig -ClientId $adminClientId -ClientSecret
 foreach ($t in @($tenant1, $tenant2)) {
     Write-Output "  - tenant '$t'"
     try { Add-Tenant -CmsUrl $mtConfig -AccessToken $mtToken -TenantName $t | Out-Null }
-    catch { Write-Warning "    tenant '$t' may already exist: $($_.Exception.Message)" }
+    catch {
+        # Swallow only a genuine duplicate; anything else (auth failure, 5xx) must stop the
+        # run -- continuing would create data stores against a tenant that never existed.
+        $status = 0
+        try { $status = [int]$_.Exception.Response.StatusCode } catch { $status = 0 }
+        if ($status -eq 409 -or $_.Exception.Message -match '(?i)exist') {
+            Write-Warning "    tenant '$t' already exists; continuing."
+        }
+        else { throw }
+    }
 
     # Physical per-tenant isolation: each tenant gets its OWN data database, provisioned
     # and seeded separately. tenant1 -> edfi_mt, tenant2 -> edfi_mt_t2. The schoolYear

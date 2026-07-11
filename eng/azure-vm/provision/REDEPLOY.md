@@ -20,7 +20,7 @@ is at `~/dms-src` and a public `FQDN` for the VM. Replace `<FQDN>` throughout.
 
 ```bash
 cd ~/dms-src/eng/azure-vm/compose
-./down.sh -v || true                        # stop containers + drop ALL volumes (incl. Keycloak realm)
+./down.sh -v -y || true                     # stop containers + drop ALL volumes (incl. Keycloak realm)
 docker network rm dms-sec 2>/dev/null || true
 rm -f .env ssl/server.crt ssl/server.key    # force fresh secrets + cert on next run
 rm -rf .bootstrap                            # force fresh ApiSchema staging

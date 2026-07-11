@@ -11,8 +11,8 @@
 # Mirrored mode is VERIFIED after WSL restarts; when it did not apply (older build), the
 # script falls back to portproxy automatically.
 #
-#   .\setup-windows-host.ps1                 # Windows Server 2025 (mirrored networking)
-#   .\setup-windows-host.ps1 -UsePortProxy   # Windows Server 2022 (portproxy)
+#   .\setup-windows-host.ps1                 # attempt mirrored networking, auto-fallback to portproxy
+#   .\setup-windows-host.ps1 -UsePortProxy   # skip the attempt (the expected path on Windows Server)
 [CmdletBinding()]
 param(
     [string]$Distro = "Ubuntu",
@@ -42,9 +42,10 @@ networkingMode=mirrored
 
     # Mirrored networking is gated by the HYPER-V firewall, not (only) the classic Windows
     # firewall below: without an explicit Hyper-V allowance, inbound 80/443 never reaches WSL
-    # (the Let's Encrypt HTTP-01 challenge and the gateway both time out). The Hyper-V firewall
-    # cmdlets ship on the builds that support mirrored mode; when they are missing, mirrored
-    # mode will not work either -- fall back to portproxy.
+    # (the Let's Encrypt HTTP-01 challenge and the gateway both time out). Cmdlet presence does
+    # NOT guarantee mirrored mode works (Windows Server 2025 ships the cmdlets while mirrored
+    # still fails to apply -- open microsoft/WSL#11154); the wslinfo verification below is
+    # authoritative. Missing cmdlets DO mean an old build -- fall back immediately.
     if (Get-Command New-NetFirewallHyperVRule -ErrorAction SilentlyContinue) {
         $wslVmCreatorId = '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}'   # WSL's Hyper-V VM creator
         foreach ($p in $Ports) {
@@ -55,7 +56,7 @@ networkingMode=mirrored
         }
     }
     else {
-        Write-Warning "Hyper-V firewall cmdlets not found (pre-Server-2025 build?); mirrored networking cannot receive inbound traffic here. Falling back to portproxy."
+        Write-Warning "Hyper-V firewall cmdlets not found; mirrored networking cannot receive inbound traffic here. Falling back to portproxy."
         $useProxy = $true
     }
 }
@@ -93,9 +94,10 @@ docker --version && pwsh --version
 wsl -d $Distro -u root -- bash -lc $bash
 if ($LASTEXITCODE -ne 0) { throw "WSL provisioning (Docker/pwsh/git/certbot install) failed ($LASTEXITCODE)." }
 
-# Verify mirrored networking actually applied (needs Windows Server 2025 / Windows 11 22H2+).
-# On unsupported builds WSL silently stays NAT'd, so inbound 80/443 would never arrive --
-# detect that here and fall back to portproxy instead of handing over a broken host.
+# Verify mirrored networking actually applied. It is currently a Windows 11 (22H2+) feature:
+# Windows Server builds -- including 2025 -- commonly fail to enable it and WSL silently stays
+# NAT'd (open microsoft/WSL#11154), so inbound 80/443 would never arrive. Detect that here and
+# fall back to portproxy instead of handing over a broken host.
 if (-not $useProxy) {
     $netMode = (wsl -d $Distro -- wslinfo --networking-mode 2>$null | Out-String).Trim()
     if ($netMode -ne "mirrored") {

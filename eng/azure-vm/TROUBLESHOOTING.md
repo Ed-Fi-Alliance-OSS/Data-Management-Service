@@ -33,7 +33,7 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 | **401 / invalid token** from DMS | Keycloak issuer mismatch behind the proxy. Decode the token; its `iss` must equal `JwtAuthentication__Authority` (`https://<FQDN>/auth/realms/edfi`). Check `KC_HOSTNAME` and `KC_HOSTNAME_BACKCHANNEL_DYNAMIC` in `keycloak.yml`. |
 | **403** on a resource with an EdOrg-scoped client | Expected — the client's claim set (`E2E-RelationshipsWithEdOrgsOnlyClaimSet`) only authorizes its `educationOrganizationIds`. Use the full-access client or add the EdOrg. |
 | Bootstrap fails **"claim set not found"** | The `claimSetName` doesn't exist. `GET /<config>/v3/claimSets` for valid names; pass `-ClaimSetName` to `bootstrap.ps1`. |
-| Grand Bend restore **skipped** | `grandbend.sh` only loads into a fresh DB. If `dms` schema already exists (startup deploy ran), `./reset.sh`, set `DMS_DEPLOY_DATABASE_ON_STARTUP=false`, then re-run `seed/grandbend.sh`. |
+| Grand Bend restore **skipped** | `grandbend.sh` only loads into a fresh DB. If the `dms` schema already exists (the DB was already provisioned with `api-schema-tools` or previously seeded), reset the data volumes (`./reset.sh`) and re-run `seed/grandbend.sh` against the fresh, empty DB. |
 | **404** on a data store | The data store / route context isn't configured for that tenant+qualifier. Check `GET /<config>/v3/dataStores` (with `Tenant` header for multi-tenant). |
 | Gateway **502/504** | Upstream container not healthy yet. `docker compose ... ps`; tail that service's logs. |
 | Cert / TLS errors during setup | Self-signed locally (use `-k` / `-Insecure`); Let's Encrypt on the VM needs port 80 reachable and DNS resolving to the VM. |
@@ -47,5 +47,5 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 
 ```bash
 ./reset.sh
-pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure
+pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
 ```

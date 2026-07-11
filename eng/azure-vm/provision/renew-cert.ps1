@@ -27,10 +27,15 @@ try {
 
         $live = "/etc/letsencrypt/live/$PublicHost"
         # install (not cp) keeps the private key owner-only (cp would inherit the shell umask).
-        sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt
-        if ($LASTEXITCODE -ne 0) { throw "installing fullchain.pem -> ssl/server.crt failed ($LASTEXITCODE)." }
-        sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key
-        if ($LASTEXITCODE -ne 0) { throw "installing privkey.pem -> ssl/server.key failed ($LASTEXITCODE)." }
+        # Stage BOTH files, then move them into place together -- installing directly could
+        # leave a mismatched cert/key pair if the second install fails, and the finally block
+        # below would restart the gateway onto that mismatch (nginx refuses to start).
+        sudo install -m 644 -o "$(whoami)" "$live/fullchain.pem" ssl/server.crt.tmp
+        if ($LASTEXITCODE -ne 0) { throw "staging fullchain.pem failed ($LASTEXITCODE)." }
+        sudo install -m 600 -o "$(whoami)" "$live/privkey.pem"  ssl/server.key.tmp
+        if ($LASTEXITCODE -ne 0) { throw "staging privkey.pem failed ($LASTEXITCODE)." }
+        Move-Item -Force ssl/server.crt.tmp ssl/server.crt
+        Move-Item -Force ssl/server.key.tmp ssl/server.key
     }
     finally {
         # Bring the gateway back even when renewal failed: serving the previous certificate
@@ -38,9 +43,13 @@ try {
         # original renewal error.)
         Write-Output "Restarting gateway..."
         docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d gateway
-        if ($LASTEXITCODE -ne 0) { Write-Warning "gateway restart failed ($LASTEXITCODE); run ./up.sh gateway." }
+        $script:gatewayUp = ($LASTEXITCODE -eq 0)
+        if (-not $script:gatewayUp) { Write-Warning "gateway restart failed ($LASTEXITCODE); run ./up.sh gateway." }
     }
-    Write-Output "Certificate renewed."
+    # Only claim success if the renewed cert is actually being served -- otherwise the message
+    # would contradict the gateway-restart warning above.
+    if ($script:gatewayUp) { Write-Output "Certificate renewed and gateway restarted." }
+    else { Write-Warning "Certificate renewed, but the gateway is NOT running -- start it with ./up.sh gateway." }
 }
 finally {
     Pop-Location

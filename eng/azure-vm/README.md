@@ -31,6 +31,7 @@ security review; generic enough for any ST + MT-behind-a-gateway VM deployment.
 ## Quick start
 
 See `provision/README.md` (canonical host: Windows + WSL2). In short: provision the VM →
-WSL2 + Docker → copy this folder onto the VM → `provision/setup-env.ps1` (secrets, cert,
+WSL2 + Docker → clone this repo onto the VM (`bootstrap.ps1` imports `eng/` modules outside
+this folder, so the folder alone is not enough) → `provision/setup-env.ps1` (secrets, cert,
 identity/CMS, bootstrap; the DMS services start after schema provisioning) → exercise the API
 with `http/`. Capture the generated credentials in your private deployment doc.

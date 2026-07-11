@@ -4,14 +4,23 @@
 # Start the security-review environment. With NO args this starts the FULL stack (both DMS+CMS
 # stacks + Keycloak + gateway) -- correct for a restart/update once bootstrap + the relational
 # schema already exist. For a FIRST-TIME stand-up the DMS services must start AFTER bootstrap +
-# schema, so use provision/setup-env.ps1 (or pass an explicit subset:
-#   ./up.sh postgres keycloak st-config mt-config pgadmin gateway   # then bootstrap + schema
-#   ./up.sh st-dms mt-dms                                           # finally the DMS services
+# schema, so use provision/setup-env.ps1 (or pass an explicit subset -- note --no-deps, without
+# which `gateway` pulls the DMS services up via depends_on):
+#   ./up.sh --no-deps postgres keycloak st-config mt-config pgadmin gateway   # then bootstrap + schema
+#   ./up.sh st-dms mt-dms                                                      # finally the DMS services
 # Extra args are passed through to `docker compose up` (e.g. a single service name).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 [ -f .env ] || { echo "ERROR: .env not found. Copy .env.example to .env and customize."; exit 1; }
+
+# Refuse to deploy the .env.example placeholder secrets: they satisfy the complexity checks,
+# so nothing downstream would reject them, and 443 is Internet-open on the VM.
+if grep -qE '=.*CHANGEME' .env; then
+  echo "ERROR: .env still contains CHANGEME placeholder secrets. Run ../provision/setup-env.ps1"
+  echo "(generates strong secrets on first run) or replace every CHANGEME value, then retry."
+  exit 1
+fi
 
 # External network shared by docker-compose.yml and keycloak.yml.
 docker network inspect dms-sec >/dev/null 2>&1 || docker network create dms-sec
@@ -30,14 +39,21 @@ starts_dms=false
 if [ "$#" -eq 0 ]; then
   starts_dms=true   # no args -> full stack, DMS included
 else
+  explicit_dms=false; gateway_named=false; no_deps=false; ambiguous_opt=false
   for arg in "$@"; do
     case "$arg" in
-      st-dms | mt-dms) starts_dms=true ;;
-      # A compose option makes the started set ambiguous (`./up.sh --wait` starts everything,
-      # and option values look like service names) -- be conservative and require the schema.
-      -*) starts_dms=true ;;
+      st-dms | mt-dms) explicit_dms=true ;;
+      gateway) gateway_named=true ;;
+      --no-deps) no_deps=true ;;
+      # Any other option makes the started set ambiguous (`./up.sh --wait` starts everything,
+      # and option values can look like service names) -- be conservative and require the schema.
+      -*) ambiguous_opt=true ;;
     esac
   done
+  # DMS starts if named directly, if an ambiguous option might start the full stack, or if the
+  # gateway is requested WITHOUT --no-deps (its depends_on then pulls st-dms/mt-dms up too).
+  if [ "$explicit_dms" = true ] || [ "$ambiguous_opt" = true ]; then starts_dms=true; fi
+  if [ "$gateway_named" = true ] && [ "$no_deps" != true ]; then starts_dms=true; fi
 fi
 if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json' 2>/dev/null | grep -q .; then
   echo "ERROR: .bootstrap/ApiSchema is missing or has no staged schema files, so the DMS services cannot start."

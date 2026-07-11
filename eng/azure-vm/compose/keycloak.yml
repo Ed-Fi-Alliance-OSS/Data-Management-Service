@@ -25,7 +25,6 @@ services:
       # Public base URL; with the relative path below the issuer becomes
       # ${PUBLIC_BASE_URL}/auth/realms/<realm>.
       KC_HOSTNAME: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth"
-      KC_HOSTNAME_STRICT: "false"
       # Allow internal (in-network) access via the request host so DMS/CMS can
       # fetch JWKS at http://dms-keycloak:8080/auth/... while tokens keep the
       # public issuer.
@@ -35,6 +34,11 @@ services:
       KC_PROXY_HEADERS: "xforwarded"
       KC_HEALTH_ENABLED: "true"
       KC_LOG_CONSOLE_LEVEL: "${KEYCLOAK_LOG_LEVEL:-info}"
+    # The volume persists Keycloak's default dev-file H2 database. Keycloak does NOT support
+    # H2 migration across version bumps -- when changing the image pin above, wipe the
+    # dms-sec-keycloak volume and re-run bootstrap.ps1 (or configure KC_DB against a real
+    # database if realm durability across upgrades matters). Production-mode `start` without
+    # a real DB is deprecated upstream and slated to be refused at Keycloak 27.
     volumes:
       - dms-sec-keycloak:/opt/keycloak/data
     command: ["start"]

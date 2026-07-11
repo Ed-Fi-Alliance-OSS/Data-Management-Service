@@ -20,8 +20,9 @@ ADMIN_CIDR=$(curl -s ifconfig.me)/32   # your workstation IP for SSH
 APP_CIDR=Internet                    # who can reach 80/443 (Internet for a pen test)
 ```
 
-Prereqs: `az login` done, an SSH key at `~/.ssh/id_rsa.pub` (`ssh-keygen -t ed25519` if not),
-and PowerShell 7 on the workstation.
+Prereqs: `az login` done, an SSH key at `~/.ssh/id_rsa.pub` (create one with `ssh-keygen` if you
+don't have it), and PowerShell 7 on the workstation. (If you use a different key type/path, e.g.
+`~/.ssh/id_ed25519.pub`, substitute it in the `--ssh-key-values` argument below.)
 
 ---
 
@@ -38,6 +39,7 @@ az group create -n "$RG" -l "$LOCATION" -o table
 Render cloud-init with your admin user, then create the VM:
 
 ```bash
+cd eng/azure-vm/provision   # cloud-init.yaml lives here
 sed "s/__ADMIN_USER__/$ADMIN_USER/" cloud-init.yaml > /tmp/dms-cloud-init.yaml
 
 az vm create \

@@ -3,8 +3,8 @@
 #
 # Runs once on first PostgreSQL startup (empty data volume). Creates the empty
 # per-stack databases. The DMS *data* DBs use the relational backend and are
-# provisioned OUT OF BAND by the api-schema-tools tool (the DMS services run with
-# DeployDatabaseOnStartup=false); the CMS DBs deploy their schema on startup.
+# provisioned OUT OF BAND by the api-schema-tools tool (the DMS never deploys schema
+# on startup); the CMS DBs deploy their schema on startup.
 #
 #   edfi_st         single-tenant DMS data
 #   edfi_st_config  single-tenant Config Service
