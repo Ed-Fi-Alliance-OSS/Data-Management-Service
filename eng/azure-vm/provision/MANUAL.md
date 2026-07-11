@@ -122,7 +122,6 @@ FQDN=<paste-the-FQDN-from-step-3>    # e.g. your-label.eastus.cloudapp.azure.com
 # Helper recipes (each meets the client-secret complexity rules):
 gen()  { echo "$(openssl rand -hex 16)Aa1!"; }   # 36 chars: lower+upper+digit+special
 key32(){ openssl rand -hex 16; }                 # exactly 32 chars
-b64()  { openssl rand -base64 32; }
 
 # Write values (edit with nano instead if you prefer):
 sed -i "s#^PUBLIC_BASE_URL=.*#PUBLIC_BASE_URL=https://$FQDN#"                 .env
@@ -134,7 +133,6 @@ sed -i "s#^CONFIG_SERVICE_CLIENT_SECRET=.*#CONFIG_SERVICE_CLIENT_SECRET=$(gen)#"
 sed -i "s#^BOOTSTRAP_ADMIN_CLIENT_SECRET=.*#BOOTSTRAP_ADMIN_CLIENT_SECRET=$(gen)#"         .env
 sed -i "s#^PGADMIN_DEFAULT_PASSWORD=.*#PGADMIN_DEFAULT_PASSWORD=$(gen)#"       .env
 sed -i "s#^DMS_CONFIG_DATABASE_ENCRYPTION_KEY=.*#DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$(key32)#" .env
-sed -i "s#^DMS_CONFIG_IDENTITY_ENCRYPTION_KEY=.*#DMS_CONFIG_IDENTITY_ENCRYPTION_KEY=$(b64)#"   .env
 
 grep -E '^(PUBLIC_|POSTGRES_PASSWORD|.*SECRET|.*ENCRYPTION_KEY)' .env   # sanity check
 ```
@@ -181,7 +179,7 @@ for p in st-config mt-config; do
 done
 curl -sk -o /dev/null -w "keycloak %{http_code}\n" "https://localhost/auth/realms/master"
 # st-config/mt-config and keycloak should reach 200. The DMS services are intentionally not
-# started yet — see provision/README.md "What setup-env.ps1 does NOT do".
+# started yet — see ../provision/README.md "What setup-env.ps1 does NOT do".
 ```
 
 ---
@@ -196,10 +194,11 @@ pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure
 ```
 
 It prints the **API key/secret** for the single-tenant app and each tenant — record them in your
-**private** vault / credentials doc, **never** in this repo (`docs/infrastructure.md` is tracked).
+**private** vault / credentials doc, **never** in this repo
+([`infrastructure.md`](../docs/infrastructure.md) is tracked).
 
 After bootstrap, stage the ApiSchema workspace into `compose/.bootstrap/ApiSchema` and provision
-the relational schema (api-schema-tools; see `provision/README.md` "What `setup-env.ps1` does NOT do"),
+the relational schema (api-schema-tools; see [`README.md`](README.md#what-setup-envps1-does-not-do-provisioning-notes)),
 then start the DMS services: `./up.sh st-dms mt-dms` (it refuses while the workspace is unstaged).
 They reach `/health` 200 once the schema exists.
 
@@ -234,16 +233,16 @@ and TLS cert all survive, and no re-bootstrap is needed.
 
 ```bash
 # Update in place (on the VM):
-cd ~/dms-src/eng/azure-vm/compose && git pull && \
-  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull && \
-  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d
+cd ~/dms-src/eng/azure-vm/compose
+./update.sh              # fast-forward pull + image pull + ApiSchema-guarded recreation
+# SKIP_GIT=1 ./update.sh # image-only refresh against the current checkout
 
 # Data reset, keep Keycloak realm (on the VM). reset.sh drops the data and restarts infra/CMS only
 # (NOT the DMS services -- after a -v reset they must start after bootstrap + schema, like a first
 # stand-up), then prints the remaining steps:
 ./reset.sh
 pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
-# provision the relational schema (api-schema-tools; see docs/infrastructure.md), then:
+# provision the relational schema (api-schema-tools; see ../docs/infrastructure.md), then:
 ./up.sh st-dms mt-dms
 
 # Tear everything down (workstation):

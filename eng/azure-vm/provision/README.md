@@ -47,10 +47,11 @@ workspace and provision the relational schema (below), then start them with
 while `compose/.bootstrap/ApiSchema` is unstaged.
 Record the generated credentials in your private deployment doc, then verify with [`../http/`](../http/).
 
-Re-running `setup-env.ps1` is safe: secrets are written only when `.env` is first created (pass
-`-RotateSecrets` to force-rotate — and then reset the dependent volumes), and bootstrap re-runs
-until it has completed successfully once (a sentinel in `compose/.bootstrap/` tracks this; pass
-`-Bootstrap` to force after `reset.sh`). The `-StartDms` pass preserves every secret and skips
+Re-running `setup-env.ps1` after a completed bootstrap is safe: secrets are preserved and a sentinel
+in `compose/.bootstrap/` prevents duplicate CMS objects. An interrupted bootstrap is deliberately
+not retried; run `reset.sh` first (or `down.sh -v` if Keycloak setup was partial). To rotate secrets,
+run `down.sh -v` **before** `setup-env.ps1 -RotateSecrets`; the script refuses to rotate while the
+PostgreSQL or Keycloak state volume exists. The `-StartDms` pass preserves every secret and skips
 bootstrap, so it only starts the DMS services.
 
 > **Relational schema provisioning and seeding are not part of the default run** —
@@ -68,9 +69,14 @@ bootstrap, so it only starts the DMS services.
   startup task boots WSL→Docker; if not, RDP in and run `wsl`). Rough cost: B2ms ≈ \$60/mo if
   always on, ≈ \$5–10/mo mostly deallocated (a Windows host costs more).
 - **Update (in WSL / on the VM):**
-  `cd ~/dms-src/eng/azure-vm/compose && git pull && docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull && docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d`
-  (If the **Keycloak** image pin changed, wipe the `dms-sec-keycloak` volume and re-run
-  `bootstrap.ps1` — Keycloak does not support migrating its default H2 database across versions.)
+  `cd ~/dms-src/eng/azure-vm/compose && ./update.sh`. The wrapper requires a fast-forward pull and
+  routes container recreation through the ApiSchema-guarded `up.sh`; set `SKIP_GIT=1` only for an
+  intentional image-only refresh against the current checkout.
+- **Keycloak image-pin change:** its H2 data cannot be migrated. From `compose/`, run
+  `docker compose -f keycloak.yml --env-file .env down -v` (removes the actual
+  `dms-security-review_dms-sec-keycloak` volume), pull/start Keycloak, then recreate only its realm
+  and clients without touching CMS state:
+  `docker compose -f keycloak.yml --env-file .env pull keycloak && docker compose -f keycloak.yml --env-file .env up -d keycloak && pwsh ./bootstrap/bootstrap.ps1 -KeycloakOnly -BaseUrl https://localhost -Insecure`.
 - **Cert renewal:** `pwsh provision/renew-cert.ps1 -PublicHost <FQDN>`.
 - **Wipe + redeploy** (existing VM, fresh secrets/schema/data): [`REDEPLOY.md`](REDEPLOY.md).
 - **Teardown:** `provision/teardown-vm.ps1` (or delete the resource group in the Portal).

@@ -77,12 +77,13 @@ wsl --shutdown
 
 Write-Output "Installing Docker, PowerShell, git, certbot inside WSL (a few minutes)..."
 $bash = @'
-set -e
+set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y ca-certificates curl wget git apt-transport-https certbot
-# Docker Engine + compose plugin (no Docker Desktop license needed)
-curl -fsSL https://get.docker.com | sh
+# Docker Engine + compose plugin (download first so a fetch failure cannot be masked by `sh`)
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+sh /tmp/get-docker.sh
 usermod -aG docker __WSLUSER__
 # PowerShell 7 from the Microsoft apt repo
 . /etc/os-release

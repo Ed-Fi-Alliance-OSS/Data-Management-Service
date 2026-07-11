@@ -62,9 +62,15 @@ Invoke-Az @(
 )
 Remove-Item $tmpCloudInit -ErrorAction SilentlyContinue
 
-# Discover the NSG created for the VM and add inbound rules.
-$nsgName = az network nsg list -g $ResourceGroup --query "[0].name" -o tsv
-if (-not $nsgName) { throw "Could not find the VM's network security group." }
+# Resolve the NSG through the VM's attached NIC. Selecting the first NSG in the resource group
+# can configure an unrelated VM when the caller reuses a nonempty resource group.
+$nicId = Invoke-Az @("vm", "show", "-g", $ResourceGroup, "-n", $VmName,
+    "--query", "networkProfile.networkInterfaces[0].id", "-o", "tsv")
+if (-not $nicId) { throw "Could not find the VM's attached network interface." }
+$nsgId = Invoke-Az @("network", "nic", "show", "--ids", $nicId,
+    "--query", "networkSecurityGroup.id", "-o", "tsv")
+if (-not $nsgId) { throw "Could not find the network security group attached to VM '$VmName'." }
+$nsgName = Split-Path -Leaf $nsgId
 Write-Output "Adding NSG rules to '$nsgName'..."
 
 Invoke-Az @("network","nsg","rule","create","-g",$ResourceGroup,"--nsg-name",$nsgName,"-n","allow-ssh",
@@ -91,6 +97,6 @@ Write-Output "  SSH  : ssh $AdminUsername@$fqdn"
 Write-Output "`nNext steps:"
 Write-Output "  1. Wait ~2-3 min for cloud-init to finish (Docker/pwsh/git/certbot install)."
 Write-Output "     Verify:  ssh $AdminUsername@$fqdn 'cloud-init status --wait && docker --version && pwsh --version'"
-Write-Output "  2. Get the repo onto the VM (deploy key clone or scp - see provision/README.md)."
+Write-Output "  2. Get the repo onto the VM (deploy key clone or scp - see $PSScriptRoot/README.md)."
 Write-Output "  3. On the VM:  pwsh ~/dms-src/eng/azure-vm/provision/setup-env.ps1 -PublicHost $fqdn -LetsEncryptEmail you@org.tld"
 Write-Output "`nCost control: ./stop-vm.ps1 to deallocate when idle; ./start-vm.ps1 before a session."

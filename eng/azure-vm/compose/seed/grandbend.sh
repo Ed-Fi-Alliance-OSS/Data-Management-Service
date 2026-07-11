@@ -52,6 +52,8 @@ PKG_VER="$(val DATABASE_TEMPLATE_PACKAGE_VERSION)"; PKG_VER="${PKG_VER:-latest}"
 FEED="https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3"
 
 DBS=("$@"); [ ${#DBS[@]} -eq 0 ] && DBS=(edfi_st)
+RESTORED=()
+SKIPPED=()
 idlower="$(echo "$PKG_ID" | tr '[:upper:]' '[:lower:]')"
 
 if [ "$PKG_VER" = "latest" ]; then
@@ -84,7 +86,7 @@ ERROR: '$PKG_ID' $PKG_VER looks like the LEGACY DOCUMENT-STORE template (no edfi
        and no dms.EffectiveSchema). This stack runs the RELATIONAL backend, which rejects
        it. Use an EdFi.Api.Populated.Template.* build (the document-store dumps shipped
        under the retired EdFi.Dms.* ids) or seed via API bulk-load + seed/clone-data.sh.
-       See docs/infrastructure.md.
+       See ../docs/infrastructure.md.
 EOF
   exit 2
 fi
@@ -94,6 +96,7 @@ for db in "${DBS[@]}"; do
   exists="$(docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$db" -tAc "SELECT 1 FROM pg_namespace WHERE nspname='dms'" 2>/dev/null || true)"
   if [ "$exists" = "1" ]; then
     echo "SKIP $db: 'dms' schema already present (reset volumes to reseed)."
+    SKIPPED+=("$db")
     continue
   fi
   echo "Restoring Grand Bend (relational) into $db ..."
@@ -101,7 +104,9 @@ for db in "${DBS[@]}"; do
   # with NO 'dms' schema. That keeps the skip-guard above honest -- a failed attempt is retried,
   # not silently skipped as "already seeded" on the next run.
   docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -f /tmp/grandbend.sql
+  RESTORED+=("$db")
 done
-echo "Done: restored ${DBS[*]}. (The DMS never deploys schema on startup.)"
-echo "Start only the DMS service(s) whose data DB you restored: st-dms needs edfi_st;"
-echo "mt-dms needs BOTH edfi_mt and edfi_mt_t2 (restore or clone-data.sh them first)."
+if [ ${#RESTORED[@]} -gt 0 ]; then echo "Restored this run: ${RESTORED[*]}."; fi
+if [ ${#SKIPPED[@]} -gt 0 ]; then echo "Skipped this run: ${SKIPPED[*]}."; fi
+echo "The DMS never deploys schema on startup. Start only services whose required databases contain"
+echo "the intended schema/data: st-dms needs edfi_st; mt-dms needs BOTH edfi_mt and edfi_mt_t2."

@@ -14,15 +14,18 @@
 # the documented second pass (-StartDms, after schema provisioning) preserves every secret and
 # skips bootstrap. Regenerating secrets on a re-run would break the existing Postgres volume,
 # Keycloak realm/clients, and CMS-encrypted rows, which are all keyed to the first-run values.
-# Use -Bootstrap to force a re-bootstrap on an existing .env (e.g. after reset.sh).
+# An interrupted bootstrap must be recovered with reset.sh (or down.sh -v when Keycloak was
+# partially configured). The bootstrap script owns attempted/complete markers and refuses a blind
+# retry because its CMS creates are not idempotent.
 #
-# !! GAP: this does NOT provision the relational schema (api-schema-tools), stage
-#    .bootstrap/ApiSchema, or seed data. Because of that it bootstraps but does NOT start the
+# !! GAP: by default this does NOT provision the relational schema (api-schema-tools), stage
+#    .bootstrap/ApiSchema, or seed data (-LoadGrandbend is the explicit single-tenant exception).
+#    Because of that it bootstraps but does NOT start the
 #    DMS services by default (a DMS booted against an unprovisioned data DB won't pass /health):
 #    stage the ApiSchema workspace, provision the schema, then start them with -StartDms (or
 #    `./up.sh st-dms mt-dms`) -- both refuse to start the DMS services while
 #    compose/.bootstrap/ApiSchema is unstaged, since Docker would silently mount it empty.
-#    See provision/README.md "What setup-env.ps1 does NOT do" and docs/infrastructure.md
+#    See README.md "What setup-env.ps1 does NOT do" and ../docs/infrastructure.md
 #    "Provisioning method".
 #
 # Run after cloud-init has finished and the repo is on the VM. Example:
@@ -36,7 +39,6 @@ param(
     [switch]$LoadGrandbend,                                     # load the Grand Bend populated template
     [switch]$SkipBootstrap,
     [switch]$RotateSecrets,                                     # regenerate .env secrets even if .env exists (you MUST also reset dependent volumes/registrations)
-    [switch]$Bootstrap,                                         # force bootstrap on a re-run (default: bootstrap runs until it has completed successfully once)
     [switch]$StartDms,                                          # start the DMS services (only after the relational schema is provisioned)
     [switch]$Force                                              # allow -RotateSecrets against existing volumes (only if you will recreate them)
 )
@@ -77,13 +79,6 @@ function New-Key32 {
     $a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     -join (1..32 | ForEach-Object { Get-SecureChar $a })
 }
-function New-Base64Key {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates an in-memory key string; no system state changes and no -WhatIf surface.')]
-    param()
-    $b = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($b)
-    [Convert]::ToBase64String($b)
-}
 function Set-EnvValue {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Rewrites one key in the local .env working file during setup; a -WhatIf surface adds no value in this one-shot deployment script.')]
     param([string]$File, [string]$Key, [string]$Value)
@@ -94,10 +89,16 @@ function Set-EnvValue {
     if (-not $found) { $out += "$Key=$Value" }
     Set-Content -Path $File -Value $out
 }
+function Remove-EnvValue {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Removes one obsolete key from the local .env working file during setup; a -WhatIf surface adds no value in this one-shot deployment script.')]
+    param([string]$File, [string]$Key)
+    $out = Get-Content $File | Where-Object { $_ -notmatch "^\s*$([regex]::Escape($Key))=" }
+    Set-Content -Path $File -Value $out
+}
 
 # --- 1. repo ----------------------------------------------------------------
 if (-not (Test-Path $RepoDir)) {
-    if (-not $RepoUrl) { throw "RepoDir '$RepoDir' not found and no -RepoUrl provided. Clone the repo first (see provision/README.md)." }
+    if (-not $RepoUrl) { throw "RepoDir '$RepoDir' not found and no -RepoUrl provided. Clone the repo first (see '$RepoDir/provision/README.md')." }
     # $RepoDir is the eng/azure-vm folder INSIDE the repo, so the clone target is the repo root
     # above it. Cloning straight into $RepoDir would nest this folder at $RepoDir/eng/azure-vm
     # and the compose-dir check below would fail.
@@ -137,6 +138,9 @@ try {
     Write-Output "Writing .env host values..."
     Set-EnvValue -File ".env" -Key "PUBLIC_BASE_URL" -Value "https://$PublicHost"
     Set-EnvValue -File ".env" -Key "PUBLIC_HOST" -Value $PublicHost
+    # Removed from this Keycloak-only stack: it was consumed only by self-contained OpenIddict.
+    # Clean legacy .env files too, particularly ones that still carry a CHANGEME placeholder.
+    Remove-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY"
 
     # Secrets are persisted state: the Postgres volume, the Keycloak realm/clients, and the
     # CMS-encrypted rows are all keyed to the FIRST-run values. Regenerating them on a re-run (e.g.
@@ -155,11 +159,19 @@ try {
     # encrypted rows are keyed to the current secrets, so rotating them and then starting the same
     # volumes (below) breaks DB auth / token auth / decryption. Require a full reset first.
     if ($RotateSecrets -and -not $Force) {
-        docker volume inspect dms-security-review_dms-sec-postgres *> $null
-        if ($LASTEXITCODE -eq 0) {
+        $existingStateVolumes = [System.Collections.Generic.List[string]]::new()
+        foreach ($volumeName in @(
+                "dms-security-review_dms-sec-postgres",
+                "dms-security-review_dms-sec-keycloak"
+            )) {
+            docker volume inspect $volumeName *> $null
+            if ($LASTEXITCODE -eq 0) { $existingStateVolumes.Add($volumeName) }
+        }
+        if ($existingStateVolumes.Count -gt 0) {
             throw ("-RotateSecrets would regenerate secrets that the EXISTING volumes (Postgres/" +
                 "Keycloak/CMS-encrypted state) are keyed to, breaking auth and decryption when they " +
-                "restart. Run ./down.sh -v first (drops ALL data, including Keycloak), then re-run -- " +
+                "restart. Existing state: $($existingStateVolumes -join ', '). Run ./down.sh -v first " +
+                "(drops ALL data, including Keycloak), then re-run -- " +
                 "or pass -Force to rotate anyway (only if the volumes will be recreated).")
         }
     }
@@ -172,7 +184,6 @@ try {
         Set-EnvValue -File ".env" -Key "BOOTSTRAP_ADMIN_CLIENT_SECRET" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "PGADMIN_DEFAULT_PASSWORD" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
-        Set-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY" -Value (New-Base64Key)
     }
     else {
         Write-Output "Preserving existing secrets in .env (pass -RotateSecrets to regenerate)."
@@ -232,7 +243,7 @@ try {
 
     # --- 5. start identity + CMS (NOT the DMS services yet) -----------------
     # The DMS eagerly loads its data stores from the CMS on boot and fail-fasts if the Keycloak
-    # realm / clients / data stores don't yet exist (docs/infrastructure.md issue 3). So bring up
+    # realm / clients / data stores don't yet exist (../docs/infrastructure.md issue 3). So bring up
     # everything EXCEPT st-dms/mt-dms, bootstrap, and only then start the DMS services.
     docker network inspect dms-sec *> $null
     if ($LASTEXITCODE -ne 0) { docker network create dms-sec | Out-Null }
@@ -268,33 +279,30 @@ try {
     #                                              (would duplicate); tell the user to reset first.
     #   - neither                               -> safe to run (fresh, or a prior run died BEFORE
     #                                              bootstrap was reached, e.g. cert/health failure).
-    # "attempted" is written immediately before invoking bootstrap; "complete" only after it
-    # returns without throwing. reset.sh (which empties the config DB) removes both.
+    # bootstrap.ps1 writes "attempted" immediately before its first mutation and "complete" only
+    # after every create succeeds. reset.sh (which empties the config DB) removes both.
     $bootstrapAttempted = Join-Path $composeDir ".bootstrap/bootstrap-attempted"
     $bootstrapComplete  = Join-Path $composeDir ".bootstrap/bootstrap-complete"
     if (-not $SkipBootstrap) {
         if (Test-Path $bootstrapComplete) {
-            Write-Output "Skipping bootstrap: already completed (reset.sh clears this; -Bootstrap forces)."
+            Write-Output "Skipping bootstrap: already completed (reset.sh clears this after it empties the config DB)."
         }
-        elseif ((Test-Path $bootstrapAttempted) -and -not $Bootstrap) {
+        elseif (Test-Path $bootstrapAttempted) {
             throw ("A previous bootstrap started but did not complete; the CMS config DB may hold " +
                 "partial vendors/applications/data stores that a retry would DUPLICATE. Run " +
-                "./reset.sh (clears partial CMS state, keeps the Keycloak realm), then re-run -- or " +
-                "pass -Bootstrap to force a re-run anyway (only safe against an empty config DB). " +
+                "./reset.sh (clears partial CMS state, keeps the Keycloak realm), then re-run. " +
                 "If the failure was during Keycloak client setup instead, reset.sh keeps the realm " +
                 "(including a half-created client) -- use ./down.sh -v for a full reset, then re-run.")
         }
         else {
             Write-Output "Running bootstrap (over loopback)..."
-            New-Item -ItemType File -Path $bootstrapAttempted -Force | Out-Null
             & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
-            New-Item -ItemType File -Path $bootstrapComplete -Force | Out-Null
         }
     }
 
     # --- 6. relational schema (MANUAL) + start the DMS services -------------
     # The DMS data DBs use the relational backend and are provisioned OUT OF BAND with the
-    # api-schema-tools tool (docs/infrastructure.md "Provisioning method", step 3). This script does
+    # api-schema-tools tool (../docs/infrastructure.md "Provisioning method", step 3). This script does
     # NOT provision schema, so by default it does not start the DMS services -- a DMS booted
     # against an unprovisioned data DB will not pass /health. Provision the schema, then re-run
     # with -StartDms (or `./up.sh st-dms mt-dms`).
@@ -309,7 +317,7 @@ try {
         if (-not $apiSchemaStaged) {
             throw ("ApiSchema workspace not staged: '$apiSchemaDir' is missing or has no *.json files. " +
                 "Stage it first (eng/docker-compose/prepare-dms-schema.ps1 writes eng/docker-compose/.bootstrap/ApiSchema; " +
-                "copy that folder here), then re-run with -StartDms. See docs/infrastructure.md 'Provisioning method'.")
+                "copy that folder here), then re-run with -StartDms. See ../docs/infrastructure.md 'Provisioning method'.")
         }
         Write-Output "Starting DMS services..."
         docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d st-dms mt-dms
@@ -325,14 +333,14 @@ try {
             }
         } while (-not $healthy -and (Get-Date) -lt $deadline)
         if ($healthy) { Write-Output "DMS services healthy." }
-        else { throw "DMS services did not report healthy within 8 minutes. Is the relational schema provisioned? See docs/infrastructure.md, then re-run with -StartDms." }
+        else { throw "DMS services did not report healthy within 8 minutes. Is the relational schema provisioned? See ../docs/infrastructure.md, then re-run with -StartDms." }
     }
     else {
         Write-Output "`nNext steps (manual):"
         Write-Output "  1. Stage the ApiSchema workspace into compose/.bootstrap/ApiSchema (eng/docker-compose/prepare-dms-schema.ps1"
         Write-Output "     writes eng/docker-compose/.bootstrap/ApiSchema -- copy that folder here; the DMS services mount it read-only)."
         Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged"
-        Write-Output "     workspace; see docs/infrastructure.md)."
+        Write-Output "     workspace; see ../docs/infrastructure.md)."
         Write-Output "  3. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
     }
 
@@ -340,7 +348,7 @@ try {
     Write-Output "Public URL: https://$PublicHost"
     Write-Output "Secrets were written to compose/.env (gitignored). Record the generated values and"
     Write-Output "the API key/secret pairs above in your PRIVATE vault / credentials doc -- never commit"
-    Write-Output "them to this repo (docs/infrastructure.md is tracked and must stay secret-free)."
+    Write-Output "them to this repo (../docs/infrastructure.md is tracked and must stay secret-free)."
 }
 finally {
     Pop-Location

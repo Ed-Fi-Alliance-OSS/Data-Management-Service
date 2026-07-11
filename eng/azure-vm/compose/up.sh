@@ -66,4 +66,4 @@ if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json
 fi
 
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d "$@"
-echo "Started. For first-time stand-up order (bootstrap + schema before the DMS services), see provision/README.md."
+echo "Started. For first-time stand-up order (bootstrap + schema before the DMS services), see ../provision/README.md."

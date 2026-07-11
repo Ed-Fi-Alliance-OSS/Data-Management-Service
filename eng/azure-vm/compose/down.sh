@@ -9,16 +9,24 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 FORCE=false
+wants_volumes=false
 ARGS=()
 for arg in "$@"; do
   case "$arg" in
     -y | --yes | --force) FORCE=true ;;
+    -v | --volumes)
+      wants_volumes=true
+      ARGS+=("$arg")
+      ;;
+    -v=* | --volumes=*)
+      # Docker's boolean parser accepts these truthy spellings. Mirror it so no accepted
+      # volume-removal form can bypass confirmation or bootstrap-marker cleanup.
+      volume_value="${arg#*=}"
+      case "$volume_value" in 1 | t | T | true | TRUE | True) wants_volumes=true ;; esac
+      ARGS+=("$arg")
+      ;;
     *) ARGS+=("$arg") ;;
   esac
-done
-wants_volumes=false
-for arg in "${ARGS[@]}"; do
-  case "$arg" in -v | --volumes) wants_volumes=true ;; esac
 done
 if [ "$wants_volumes" = true ] && [ "$FORCE" != true ]; then
   if [ -t 0 ]; then
@@ -29,7 +37,13 @@ if [ "$wants_volumes" = true ] && [ "$FORCE" != true ]; then
   fi
 fi
 
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down "${ARGS[@]}"
+# Bash 3.2 with `set -u` treats an empty-array expansion as an unbound variable. Keep the
+# no-argument path explicit so the wrapper also works with the macOS system Bash.
+if [ ${#ARGS[@]} -eq 0 ]; then
+  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down
+else
+  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down "${ARGS[@]}"
+fi
 
 # If volumes were dropped (-v), the config + Keycloak state is gone, so bootstrap must run again.
 # Remove both bootstrap markers so a later setup-env.ps1 re-bootstraps instead of trusting a stale

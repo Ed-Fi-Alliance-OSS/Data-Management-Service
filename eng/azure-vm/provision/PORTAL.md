@@ -62,13 +62,20 @@ Search **Virtual machines** → **+ Create** → **Azure virtual machine**.
     - git
     - apt-transport-https
   runcmd:
-    - curl -fsSL https://get.docker.com | sh
-    - usermod -aG docker edfi
-    - systemctl enable --now docker
-    - snap install powershell --classic
-    - snap install certbot --classic
-    - ln -sf /snap/bin/certbot /usr/local/bin/certbot
-    - touch /var/lib/cloud/dms-sec-provisioned
+    - - bash
+      - -euo
+      - pipefail
+      - -c
+      - |
+        # Keep this fail-fast block synchronized with cloud-init.yaml.
+        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+        sh /tmp/get-docker.sh
+        usermod -aG docker edfi
+        systemctl enable --now docker
+        snap install powershell --classic
+        snap install certbot --classic
+        ln -sf /snap/bin/certbot /usr/local/bin/certbot
+        touch /var/lib/cloud/dms-sec-provisioned
   ```
 
   > If your admin username isn't `edfi`, change it in the `usermod` line.

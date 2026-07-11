@@ -1,6 +1,7 @@
 # Troubleshooting
 
-SSH into the Linux VM (`ssh edfi@<FQDN>`), then `cd ~/dms-src/eng/azure-vm/compose`.
+On Linux, SSH into the VM (`ssh edfi@<FQDN>`). On the canonical Windows host, RDP in and open
+Ubuntu/WSL. In either case, run `cd ~/dms-src/eng/azure-vm/compose` before the commands below.
 
 ## Status, logs, health
 
@@ -52,6 +53,6 @@ and the DMS start all have to run again (`reset.sh` prints these same steps on e
 ./reset.sh
 pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
 # provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2
-# (api-schema-tools, or restore the populated template; see docs/infrastructure.md), then:
+# (api-schema-tools, or restore the populated template; see ../docs/infrastructure.md), then:
 ./up.sh st-dms mt-dms
 ```

@@ -18,6 +18,7 @@
 #   pwsh ./bootstrap.ps1                 # uses ../.env
 #   pwsh ./bootstrap.ps1 -Insecure       # local self-signed cert
 #   pwsh ./bootstrap.ps1 -SkipKeycloak   # realm/clients already created
+#   pwsh ./bootstrap.ps1 -KeycloakOnly   # rebuild realm/clients after wiping only Keycloak H2
 [CmdletBinding()]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ClaimSetName', Justification = 'Consumed as the default value of the New-ReviewApplication -ClaimSet parameter; the analyzer does not track usage inside nested function parameter defaults.')]
 param(
@@ -28,10 +29,12 @@ param(
     # public-IP hairpin issues.
     [string]$BaseUrl = "",
     [switch]$SkipKeycloak,
+    [switch]$KeycloakOnly,
     [switch]$Insecure
 )
 
 $ErrorActionPreference = "Stop"
+if ($SkipKeycloak -and $KeycloakOnly) { throw "-SkipKeycloak and -KeycloakOnly cannot be used together." }
 # Reuse the repo's canonical management module (no vendored copy).
 Import-Module "$PSScriptRoot/../../../Dms-Management.psm1" -Force
 
@@ -103,6 +106,24 @@ $mtConfig = "$publicBaseUrl/mt-config/"
 
 $created = [System.Collections.Generic.List[object]]::new()
 
+# Own CMS bootstrap state here, rather than in setup-env.ps1, so the documented direct invocation
+# and the wrapper follow the same recovery contract. -KeycloakOnly deliberately does not consult or
+# change these markers because it recreates no CMS objects.
+$stateDirectory = Join-Path $PSScriptRoot "../.bootstrap"
+$bootstrapAttempted = Join-Path $stateDirectory "bootstrap-attempted"
+$bootstrapComplete = Join-Path $stateDirectory "bootstrap-complete"
+if (-not $KeycloakOnly) {
+    if (Test-Path $bootstrapComplete) {
+        throw "Bootstrap already completed. Refusing to duplicate CMS objects. Run ./reset.sh before bootstrapping again."
+    }
+    if (Test-Path $bootstrapAttempted) {
+        throw ("A previous bootstrap did not complete. Refusing to duplicate partial CMS objects. " +
+            "Run ./reset.sh, or ./down.sh -v if Keycloak setup was partial, before retrying.")
+    }
+    New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+    New-Item -ItemType File -Path $bootstrapAttempted -Force | Out-Null
+}
+
 # --- 1. Keycloak realm + service clients ------------------------------------
 if (-not $SkipKeycloak) {
     Write-Output "== Configuring Keycloak realm '$realm' and service clients =="
@@ -133,6 +154,10 @@ if (-not $SkipKeycloak) {
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $adminClientId -NewClientName "DMS Bootstrap Admin" `
         -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret -SkipRealmAdmin
+}
+if ($KeycloakOnly) {
+    Write-Output "Keycloak realm and service clients recreated; existing CMS state was not modified."
+    return
 }
 
 # --- Helper: provision one application and capture credentials --------------
@@ -201,7 +226,7 @@ foreach ($t in @($tenant1, $tenant2)) {
     # Physical per-tenant isolation: each tenant gets its OWN data database, provisioned
     # and seeded separately. tenant1 -> edfi_mt, tenant2 -> edfi_mt_t2. The schoolYear
     # route context still qualifies the DMS data path. (Isolation verified -- see
-    # docs/infrastructure.md.)
+    # ../docs/infrastructure.md.)
     $mtDb = @{ $tenant1 = "edfi_mt"; $tenant2 = "edfi_mt_t2" }[$t]
     if (-not $mtDb) { $mtDb = "edfi_mt" }
     $dsId = Add-DataStore -CmsUrl $mtConfig -AccessToken $mtToken -Name "MT Data Store ($t $schoolYear)" `
@@ -222,3 +247,4 @@ Write-Output "DMS endpoints:"
 Write-Output "  single-tenant: $publicBaseUrl/st-dms/data/ed-fi/..."
 Write-Output "  multi-tenant : $publicBaseUrl/mt-dms/{tenant}/$schoolYear/data/ed-fi/...   (tenant in PATH: $tenant1 or $tenant2)"
 Write-Output "Token endpoint: $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). /st-dms Discovery advertises this; /mt-dms Discovery advertises a broken value (DMS-1262) -- use the URL above directly. The <dms-base>/oauth/token proxy also forwards here (add curl -k / trust the cert if the gateway cert is self-signed)."
+New-Item -ItemType File -Path $bootstrapComplete -Force | Out-Null

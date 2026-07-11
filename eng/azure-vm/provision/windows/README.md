@@ -21,9 +21,8 @@ parts need care that the plain Linux VM doesn't:
    task; if containers don't return after a Start, RDP in and run `wsl` once.
 
 Also: a Windows VM costs more (license + a larger size), and WSL2 itself needs **nested
-virtualization**, which constrains the VM: create it with **Security type: Standard** (on the
-recommended Dsv4 sizes the portal's Trusted Launch default blocks nested virtualization — newer
-v5+ families do support nested virt under Trusted Launch, but the reference box is Dsv4) and a
+virtualization**, which constrains the VM: create it with **Security type: Standard** (the
+recommended Dsv4 reference sizes require this rather than the portal's Trusted Launch default) and a
 size that supports nested virt — **B-series never does**. **Recommend Windows Server 2025 + Standard_D8s_v4
 (8 vCPU / 32 GiB)** to match the reference ODS box (a lighter Standard_D4s_v4 / 16 GiB also
 runs the DMS stack fine if cost matters), and **expect portproxy networking** — the script
@@ -89,7 +88,9 @@ or give each person their own: add local Windows users, or enable **Entra ID** l
 `az vm identity assign -g rg-dms-security-review -n dms-sec-vm` (the extension requires a
 system-assigned managed identity and fails without it), then
 `az vm extension set --publisher Microsoft.Azure.ActiveDirectory --name AADLoginForWindows -g rg-dms-security-review --vm-name dms-sec-vm`
-plus the *Virtual Machine Administrator Login* role per admin (per-user, MFA, revocable).
+plus the *Virtual Machine Administrator Login* role per admin. This makes access per-user and
+revocable; MFA is enforced only when the VM sign-in application is covered by an appropriate
+Conditional Access policy and the client supplies an MFA claim.
 Testers never RDP — they reach the app only over HTTPS.
 
 ## 5. Install WSL2 + Ubuntu (elevated PowerShell on the VM)
@@ -162,9 +163,9 @@ this works on your build**; if not, RDP in and run `wsl` once (and `portproxy.ps
 
 ```bash
 # inside WSL:
-cd ~/dms-src/eng/azure-vm/compose && git pull && \
-  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull && \
-  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d
+cd ~/dms-src/eng/azure-vm/compose
+./update.sh              # fast-forward pull + image pull + ApiSchema-guarded recreation
+# SKIP_GIT=1 ./update.sh # image-only refresh against the current checkout
 ```
 
 Teardown: Portal → delete the resource group.

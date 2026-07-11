@@ -109,11 +109,11 @@ x-cms-common-env: &cms-common-env
   IdentitySettings__ClientSecretValidation__MaximumLength: "128"
   IdentitySettings__RequireHttpsMetadata: "false"
   IdentitySettings__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
-  IdentitySettings__EncryptionKey: "${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:?set DMS_CONFIG_IDENTITY_ENCRYPTION_KEY in .env}"
   # Embedded claim sets include E2E-NoFurtherAuthRequiredClaimSet (full access),
   # E2E-NameSpaceBasedClaimSet, and E2E-RelationshipsWithEdOrgsOnlyClaimSet (school/district-level).
-  # Set DMS_CONFIG_CLAIMS_SOURCE=Hybrid to also load custom claim set JSON dropped into ./claims
-  # (mounted below). Custom claim sets can also be created at runtime via POST/import /v3/claimSets.
+  # Set DMS_CONFIG_CLAIMS_SOURCE=Hybrid to also load *-claimset.json fragments dropped into
+  # ./claims (mounted below). Custom claim sets can also be created at runtime via
+  # POST/import /v3/claimSets.
   ClaimsOptions__ClaimsSource: "${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}"
   ClaimsOptions__ClaimsDirectory: "/app/additional-claims"
   # Enables POST /management/reload-claims (re-seeds the claim-set catalog from the

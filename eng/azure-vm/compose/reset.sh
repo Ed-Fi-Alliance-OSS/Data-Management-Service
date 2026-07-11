@@ -44,5 +44,5 @@ echo "     https://localhost/st-config/health and /mt-config/health return 200 (
 echo "     containers were just recreated), then:"
 echo "         pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure"
 echo "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2"
-echo "     (api-schema-tools; see docs/infrastructure.md \"Provisioning method\")."
+echo "     (api-schema-tools; see ../docs/infrastructure.md \"Provisioning method\")."
 echo "  3. Start the DMS services:  ./up.sh st-dms mt-dms"

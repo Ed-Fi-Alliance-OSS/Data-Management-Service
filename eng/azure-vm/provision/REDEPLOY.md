@@ -136,6 +136,7 @@ Use the key/secret pairs from Part D.
 
 ---
 
-**Windows + WSL, lost connectivity after a reboot:** re-run
-`pwsh ~/dms-src/eng/azure-vm/provision/windows/portproxy.ps1` (or confirm the startup task ran)
-to re-point Windows :80/:443 at WSL's current IP.
+**Windows + WSL, lost connectivity after a reboot:** from an **elevated Windows PowerShell**
+(not `pwsh` inside WSL), run
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\dms-sec\portproxy.ps1`
+(or confirm the `DMS-Start-WSL` startup task ran) to re-point Windows :80/:443 at WSL's current IP.

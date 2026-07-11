@@ -110,7 +110,8 @@ realm at `…/auth/realms/edfi/protocol/openid-connect/token`. `/st-dms` Discove
 correctly as `urls.oauth`; **`/mt-dms` Discovery advertises a broken value** (it appends
 `/{tenant}/{schoolYear}` — upstream `DMS-1262`, see issue 11 below), so authenticate against the
 realm URL above directly, not the advertised MT value. The DMS `…/st-dms/oauth/token` /
-`…/mt-dms/oauth/token` proxy forwards to the same endpoint (needs a publicly-trusted cert). A
+`…/mt-dms/oauth/token` proxy forwards to the same endpoint (the containers trust either the
+mounted self-signed gateway certificate or the public CA chain). A
 ready sampler that tokens + reads a spread of resources for all three is
 [`http/sample-all.sh`](../http/sample-all.sh).
 
@@ -211,7 +212,7 @@ Order used to stand the environment up (and that a re-deploy should follow):
    `dotnet tool install --global EdFi.Api.SchemaTools --source <Ed-Fi feed>` — this needs a
    .NET 10 SDK on the host. The VM hosts install no .NET, so build it self-contained in a
    container instead: `dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools
-   -r linux-x64 --self-contained` (see `provision/REDEPLOY.md` Part C).
+   -r linux-x64 --self-contained` (see [`REDEPLOY.md`](../provision/REDEPLOY.md) Part C).
 6. **Populated template must be RELATIONAL.** `seed/grandbend.sh` restores
    `EdFi.Api.Populated.Template.PostgreSql.5.2.0`; every build under that id postdates the
    relational cutover (`DMS-1159`, 2026-06-09). The legacy document-store dumps shipped under
@@ -225,7 +226,7 @@ Order used to stand the environment up (and that a re-deploy should follow):
 8. **Claim sets.** Defaults use the embedded `E2E-NoFurtherAuthRequiredClaimSet` (full
    access) and `E2E-RelationshipsWithEdOrgsOnlyClaimSet` (EdOrg-scoped). Confirm the live
    list with `GET /st-config/v3/claimSets`; add custom claim sets via the API or Hybrid mode
-   (see `compose/claims`).
+   (see [`compose/claims`](../compose/claims/)).
 9. **MFA is intentionally disabled** in Keycloak so credentials can be shared with the review
    team. Enforce MFA for any real deployment.
 10. **Secrets.** Replace every `CHANGEME` value in `.env` before deployment.
