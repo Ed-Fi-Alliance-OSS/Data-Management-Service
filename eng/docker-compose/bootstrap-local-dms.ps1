@@ -21,9 +21,9 @@
     TEARDOWN: this entry point stops the local stack as well as starting it. `-d` stops the
     services and keeps volumes (delegating to `start-local-dms.ps1 -d`); `-d -v` also deletes
     data volumes and removes the `.bootstrap/` workspace (delegating to
-    `start-local-dms.ps1 -d -v -RemoveBootstrap`). When the compose teardown fails, the
-    workspace is preserved (services may still be running against it) and the wrapper raises
-    the failure. Teardown short-circuits to that delegation and
+    `start-local-dms.ps1 -d -v -RemoveBootstrap`). When the compose teardown fails,
+    `start-local-dms.ps1` throws before removing the workspace (services may still be running
+    against it) and the failure propagates. Teardown short-circuits to that delegation and
     returns before any staging, configure, provision, DMS-startup, or seed orchestration. Only the
     options that shape the Docker compose set (`-EnvironmentFile`, `-IdentityProvider`,
     `-EnableKafkaUI`, `-EnableSwaggerUI`, `-DatabaseEngine`) are forwarded to teardown; pass the
@@ -283,11 +283,8 @@ if ($d) {
         }
     }
 
-    $global:LASTEXITCODE = 0
+    # start-local-dms.ps1 throws when the compose teardown fails; the error propagates here.
     & "$PSScriptRoot/start-local-dms.ps1" @teardownArgs
-    if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-        throw "start-local-dms.ps1 teardown failed with exit code $LASTEXITCODE."
-    }
     return
 }
 

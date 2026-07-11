@@ -284,9 +284,9 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
             # RemoveBootstrap=True apart from RemoveBootstrap=False (switch defaults to False when
             # the caller omits it). Anything outside the forwarded whitelist lands in the trailing
             # Rest= field via ValueFromRemainingArguments, so a test can assert excluded options
-            # (seed, configure, IDE, -DataStandardVersion) never reach teardown. ExitCode models a
-            # failed teardown (non-zero exit) so the entry script's exit-code propagation branch can
-            # be exercised.
+            # (seed, configure, IDE, -DataStandardVersion) never reach teardown. FailureMessage
+            # models a failed teardown (the real start scripts throw when compose down fails) so
+            # the entry script's error propagation can be exercised.
             param(
                 [Parameter(Mandatory)]
                 [string]$Directory,
@@ -294,9 +294,10 @@ Add-Content -LiteralPath '$CallLogPath' -Value "prepare-claims"
                 [Parameter(Mandatory)]
                 [string]$CallLogPath,
 
-                [int]$ExitCode = 0
+                [string]$FailureMessage
             )
 
+            $failureStatement = if ($FailureMessage) { "throw '$FailureMessage'" } else { "" }
             $scriptPath = Join-Path $Directory "start-local-dms.ps1"
             @"
 param(
@@ -311,7 +312,7 @@ param(
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
-exit $ExitCode
+$failureStatement
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
@@ -355,11 +356,11 @@ exit $ExitCode
         }
 
         function script:Invoke-RealStartScriptTeardown {
-            # Runs a REAL start script's `-d -v -RemoveBootstrap` teardown branch with `docker`
-            # shadowed by a call-recording function. The stub sets $global:LASTEXITCODE the same
-            # way a native docker call would, so the script's post-down workspace-removal gate
-            # sees the configured compose outcome. Returns the final $LASTEXITCODE and the
-            # captured warning stream; the sentinel pre-set proves the stub actually ran.
+            # Runs a REAL start script's teardown branch (`-d -v -RemoveBootstrap`, or plain `-d`
+            # with -StopOnly) with `docker` shadowed by a call-recording function. The stub sets
+            # $global:LASTEXITCODE the same way a native docker call would, so the script's
+            # post-down failure check sees the configured compose outcome. Returns the terminating
+            # error the script raised (null on success).
             param(
                 [Parameter(Mandatory)]
                 [string]$StartScriptName,
@@ -367,7 +368,9 @@ exit $ExitCode
                 [Parameter(Mandatory)]
                 [string]$DockerLogPath,
 
-                [int]$DockerExitCode = 0
+                [int]$DockerExitCode = 0,
+
+                [switch]$StopOnly
             )
 
             $stub = {
@@ -376,17 +379,25 @@ exit $ExitCode
             }.GetNewClosure()
             Set-Item -Path function:script:docker -Value $stub
 
-            $global:LASTEXITCODE = 111
+            $teardownArgs = @{ d = $true }
+            if (-not $StopOnly) {
+                $teardownArgs.v = $true
+                $teardownArgs.RemoveBootstrap = $true
+            }
             try {
-                & (Join-Path $script:repo.DockerComposeRoot $StartScriptName) `
-                    -EnvironmentFile $script:repo.EnvFile `
-                    -d -v -RemoveBootstrap `
-                    -WarningVariable capturedWarnings -WarningAction SilentlyContinue |
-                    Out-Null
+                $teardownError = $null
+                try {
+                    & (Join-Path $script:repo.DockerComposeRoot $StartScriptName) `
+                        -EnvironmentFile $script:repo.EnvFile `
+                        @teardownArgs |
+                        Out-Null
+                }
+                catch {
+                    $teardownError = $_
+                }
 
                 return [pscustomobject]@{
-                    ExitCode = $global:LASTEXITCODE
-                    Warnings = @($capturedWarnings | ForEach-Object { [string]$_ })
+                    Error = $teardownError
                 }
             }
             finally {
@@ -1211,8 +1222,9 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
     #   The turnkey entry point stops the stack (-d) and optionally deletes
     #   volumes + removes the .bootstrap workspace (-d -v) by delegating to
     #   start-local-dms.ps1, short-circuiting before any staging/configure/
-    #   provision/DMS/seed orchestration. Direct start-local-dms.ps1 -d [-v] is
-    #   unchanged; the published wrapper gains no teardown flags (local-only).
+    #   provision/DMS/seed orchestration. start-local-dms.ps1 still owns
+    #   -d/-v/-RemoveBootstrap; the published wrapper gains no teardown flags
+    #   (local-only).
     # =========================================================================
     Context "bootstrap-local-dms.ps1 teardown parameter surface (DMS-1272)" {
         It "bootstrap-local-dms.ps1 declares -d and -v" {
@@ -1231,7 +1243,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $params | Should -Not -Contain "v"
         }
 
-        It "start-local-dms.ps1 still owns -d, -v, and -RemoveBootstrap (direct teardown unchanged)" {
+        It "start-local-dms.ps1 still owns -d, -v, and -RemoveBootstrap" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             )
@@ -1258,15 +1270,16 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $delegation | Should -Match "RemoveBootstrap=True" -Because "-d -v must remove the .bootstrap workspace via delegation"
         }
 
-        It "-d raises when the start-local-dms.ps1 teardown delegation exits non-zero" {
+        It "-d propagates the failure when the start-local-dms.ps1 teardown delegation throws" {
             $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-exit.txt"
-            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ExitCode 3 | Out-Null
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog `
+                -FailureMessage "Failed to shut down Docker environment. Exit code 3" | Out-Null
 
             {
                 & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -d
-            } | Should -Throw "*teardown failed with exit code 3*"
+            } | Should -Throw "*Failed to shut down Docker environment. Exit code 3*"
 
-            # The delegation must have run and recorded before the entry script raised on its exit code.
+            # The delegation must have run and recorded before it threw.
             (@(Get-Content -LiteralPath $callLog))[0] | Should -Match "^teardown "
         }
 
@@ -1296,10 +1309,22 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             # Guards the teardown forwarding whitelist. Options that do not change the compose-file set
             # must never reach the delegation; the stub records anything outside the whitelist in Rest=,
             # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
-            # Binds every parameter the entry script declares outside the whitelist (the teardown
-            # short-circuit returns before the wrapper's option-validation rules run, so all of them
-            # can be bound in one invocation); an unbound option would slip through the loop's
-            # ContainsKey gate unnoticed.
+            $forwarded = @('EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine')
+            $excluded = @(
+                'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
+                'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
+                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials'
+            )
+
+            # Completeness guard: every parameter the entry script declares must be classified here
+            # as a teardown switch, forwarded, or excluded (and bound below), so a new parameter
+            # fails this assertion and forces an explicit forwarding decision.
+            $declared = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
+            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded) | Sort-Object)
+
+            # Binds every excluded parameter (the teardown short-circuit returns before the wrapper's
+            # option-validation rules run, so all of them can be bound in one invocation); an unbound
+            # option would slip through the forwarding loop's ContainsKey gate unnoticed.
             $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-no-overforward.txt"
             New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
 
@@ -1323,11 +1348,6 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 
             $log.Count | Should -Be 1
             $log[0] | Should -Match 'Rest=$' -Because "no argument outside the compose-shape whitelist may reach start-local-dms.ps1 teardown"
-            foreach ($excluded in 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
-                'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
-                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials') {
-                $log[0] | Should -Not -Match $excluded -Because "$excluded is not a compose-shape option and must not be forwarded to teardown"
-            }
         }
     }
 
@@ -1373,14 +1393,15 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
     }
 
     # =========================================================================
-    # DMS-1272 - start-script teardown workspace-removal gating
-    #   `-d -v -RemoveBootstrap` must remove the .bootstrap workspace only after
-    #   `docker compose down` succeeds: a failed down can leave services running
-    #   against the bind-mounted schema and claims, and the wrapper's teardown
-    #   failure check reads the compose exit code only after the start script
-    #   returns. These tests run the REAL start scripts against a stubbed docker.
+    # DMS-1272 - start-script teardown failure handling
+    #   A failed `docker compose down` must throw before any .bootstrap
+    #   workspace removal: a failed down can leave services running against the
+    #   bind-mounted schema and claims, and a silent exit reads as success to
+    #   direct/CI teardown consumers and to the bootstrap wrapper, which relies
+    #   on the thrown error propagating. These tests run the REAL start scripts
+    #   against a stubbed docker.
     # =========================================================================
-    Context "start-script teardown workspace-removal gating (DMS-1272)" {
+    Context "start-script teardown failure handling (DMS-1272)" {
         BeforeEach {
             foreach ($fileName in @(
                 "start-local-dms.ps1",
@@ -1393,7 +1414,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
         }
 
-        It "start-local-dms.ps1 preserves the workspace and the exit code when compose down fails" {
+        It "start-local-dms.ps1 throws and preserves the workspace when compose down fails" {
             $dockerLog = Join-Path $script:repo.RepoRoot "docker-log-local-fail.txt"
 
             $result = Invoke-RealStartScriptTeardown -StartScriptName "start-local-dms.ps1" -DockerLogPath $dockerLog -DockerExitCode 7
@@ -1402,8 +1423,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $log | Should -HaveCount 1 -Because "teardown must issue exactly one docker compose invocation"
             $log[0] | Should -Match '-p dms-local down --remove-orphans -v$'
             Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeTrue -Because "a failed down can leave services running against the bind-mounted workspace"
-            $result.ExitCode | Should -Be 7 -Because "the wrapper's teardown-failure check reads the compose exit code after delegation"
-            ($result.Warnings -join ' ') | Should -Match "Skipping .bootstrap workspace removal"
+            $result.Error | Should -Not -BeNullOrEmpty -Because "a failed down must fail loudly for direct/CI teardown consumers"
+            $result.Error.Exception.Message | Should -Match 'Failed to shut down Docker environment\. Exit code 7'
         }
 
         It "start-local-dms.ps1 still removes the workspace when compose down succeeds" {
@@ -1413,10 +1434,22 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 
             @(Get-Content -LiteralPath $dockerLog)[0] | Should -Match '-p dms-local down --remove-orphans -v$'
             Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeFalse -Because "a clean -d -v -RemoveBootstrap teardown must remove the workspace"
-            $result.ExitCode | Should -Be 0
+            $result.Error | Should -BeNullOrEmpty
         }
 
-        It "start-published-dms.ps1 preserves the workspace and the exit code when compose down fails" {
+        It "start-local-dms.ps1 throws on a plain -d stop when compose down fails" {
+            # Pins the throw on the volume-less branch too: the bootstrap wrapper's -d delegation
+            # has no exit-code check of its own, so it relies on this error to propagate.
+            $dockerLog = Join-Path $script:repo.RepoRoot "docker-log-local-stop-fail.txt"
+
+            $result = Invoke-RealStartScriptTeardown -StartScriptName "start-local-dms.ps1" -DockerLogPath $dockerLog -DockerExitCode 7 -StopOnly
+
+            @(Get-Content -LiteralPath $dockerLog)[0] | Should -Match '-p dms-local down --remove-orphans$'
+            $result.Error | Should -Not -BeNullOrEmpty -Because "a failed down must fail loudly for direct/CI teardown consumers"
+            $result.Error.Exception.Message | Should -Match 'Failed to shut down Docker environment\. Exit code 7'
+        }
+
+        It "start-published-dms.ps1 throws and preserves the workspace when compose down fails" {
             $dockerLog = Join-Path $script:repo.RepoRoot "docker-log-published-fail.txt"
 
             $result = Invoke-RealStartScriptTeardown -StartScriptName "start-published-dms.ps1" -DockerLogPath $dockerLog -DockerExitCode 7
@@ -1425,8 +1458,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $log | Should -HaveCount 1 -Because "teardown must issue exactly one docker compose invocation"
             $log[0] | Should -Match '-p dms-published down --remove-orphans -v$'
             Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeTrue -Because "a failed down can leave services running against the bind-mounted workspace"
-            $result.ExitCode | Should -Be 7
-            ($result.Warnings -join ' ') | Should -Match "Skipping .bootstrap workspace removal"
+            $result.Error | Should -Not -BeNullOrEmpty -Because "a failed down must fail loudly for direct/CI teardown consumers"
+            $result.Error.Exception.Message | Should -Match 'Failed to shut down Docker environment\. Exit code 7'
         }
 
         It "start-published-dms.ps1 still removes the workspace when compose down succeeds" {
@@ -1436,7 +1469,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 
             @(Get-Content -LiteralPath $dockerLog)[0] | Should -Match '-p dms-published down --remove-orphans -v$'
             Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeFalse -Because "a clean -d -v -RemoveBootstrap teardown must remove the workspace"
-            $result.ExitCode | Should -Be 0
+            $result.Error | Should -BeNullOrEmpty
         }
     }
 }

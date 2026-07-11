@@ -89,7 +89,7 @@ param (
 
     # Remove the .bootstrap workspace during teardown (-d -v). Off by default so a prepared
     # workspace is preserved when the caller (e.g. build-dms.ps1) does not intend to wipe it.
-    # Removal is skipped when the compose teardown fails, so a still-running stack keeps its
+    # A failed compose teardown throws before removal, so a still-running stack keeps its
     # bind-mounted schema and claims workspace.
     [Switch]
     $RemoveBootstrap,
@@ -246,22 +246,19 @@ if ($d) {
     if ($v) {
         $downArgs += "-v"
         Write-Output "Shutting down with volume delete"
-        docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
-
-        # Remove the workspace only after a clean teardown: a failed down can leave services
-        # running against the bind-mounted .bootstrap schema and claims, so deleting the
-        # workspace here would pull it out from under a live stack. The non-zero exit code is
-        # left in $LASTEXITCODE for callers.
-        if ($LASTEXITCODE -eq 0) {
-            Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
-        }
-        elseif ($RemoveBootstrap) {
-            Write-Warning "Skipping .bootstrap workspace removal: docker compose down exited with code $LASTEXITCODE, so services may still be running against the staged workspace. Resolve the teardown failure and rerun teardown."
-        }
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
+    }
+    docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs
+    # Fail before workspace removal: a failed down can leave services running against the
+    # bind-mounted .bootstrap schema and claims, so removing the workspace would pull it
+    # out from under a live stack.
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to shut down Docker environment. Exit code $LASTEXITCODE"
+    }
+    if ($v) {
+        Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap
     }
 }
 else {
