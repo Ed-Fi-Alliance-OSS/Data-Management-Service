@@ -244,24 +244,37 @@ try {
         if ($kcCode -ne "200") { $healthy = $false }
     } while (-not $healthy -and (Get-Date) -lt $deadline)
     if ($healthy) { Write-Output "Identity + config services healthy." }
-    else { throw "Identity/config services did not report healthy within 8 minutes. Check './logs.sh', then re-run (re-runs preserve secrets; bootstrap re-runs until it completes successfully)." }
+    else { throw "Identity/config services did not report healthy within 8 minutes. Check './logs.sh', then re-run (re-runs preserve secrets; bootstrap has not been attempted yet, so the retry runs it cleanly)." }
 
-    # Bootstrap completion is tracked with a sentinel file, NOT .env existence: a first run can
-    # die after .env is created but before bootstrap succeeds (cert failure, health timeout),
-    # and keying off .env would then skip bootstrap forever on the retry. The sentinel is only
-    # written after bootstrap.ps1 returns without throwing; reset.sh removes it (the config DB
-    # it re-creates must be re-bootstrapped).
-    $bootstrapSentinel = Join-Path $composeDir ".bootstrap/bootstrap-complete"
-    $runBootstrap = (-not $SkipBootstrap) -and (-not (Test-Path $bootstrapSentinel) -or $Bootstrap)
-    if ($runBootstrap) {
-        Write-Output "Running bootstrap (over loopback)..."
-        & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
-        # NOTE: forcing -Bootstrap against an intact, already-bootstrapped config DB duplicates
-        # data stores/vendors/apps -- force it only after reset.sh (which empties the config DB).
-        New-Item -ItemType File -Path $bootstrapSentinel -Force | Out-Null
-    }
-    elseif (-not $SkipBootstrap) {
-        Write-Output "Skipping bootstrap: already completed once (reset.sh removes the sentinel; -Bootstrap forces)."
+    # Bootstrap state is tracked with TWO markers, not .env existence: bootstrap.ps1's
+    # data-store/vendor/application creates are NOT idempotent, so a bootstrap that dies partway
+    # leaves partial CMS objects that a blind retry would DUPLICATE. So distinguish three states:
+    #   - "complete" marker present            -> already bootstrapped; skip.
+    #   - "attempted" present, "complete" not   -> a prior bootstrap died mid-way; the config DB
+    #                                              may hold partial objects. Refuse to auto-retry
+    #                                              (would duplicate); tell the user to reset first.
+    #   - neither                               -> safe to run (fresh, or a prior run died BEFORE
+    #                                              bootstrap was reached, e.g. cert/health failure).
+    # "attempted" is written immediately before invoking bootstrap; "complete" only after it
+    # returns without throwing. reset.sh (which empties the config DB) removes both.
+    $bootstrapAttempted = Join-Path $composeDir ".bootstrap/bootstrap-attempted"
+    $bootstrapComplete  = Join-Path $composeDir ".bootstrap/bootstrap-complete"
+    if (-not $SkipBootstrap) {
+        if (Test-Path $bootstrapComplete) {
+            Write-Output "Skipping bootstrap: already completed (reset.sh clears this; -Bootstrap forces)."
+        }
+        elseif ((Test-Path $bootstrapAttempted) -and -not $Bootstrap) {
+            throw ("A previous bootstrap started but did not complete; the CMS config DB may hold " +
+                "partial vendors/applications/data stores that a retry would DUPLICATE. Run " +
+                "./reset.sh (clears partial CMS state, keeps the Keycloak realm), then re-run -- or " +
+                "pass -Bootstrap to force a re-run anyway (only safe against an empty config DB).")
+        }
+        else {
+            Write-Output "Running bootstrap (over loopback)..."
+            New-Item -ItemType File -Path $bootstrapAttempted -Force | Out-Null
+            & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
+            New-Item -ItemType File -Path $bootstrapComplete -Force | Out-Null
+        }
     }
 
     # --- 6. relational schema (MANUAL) + start the DMS services -------------

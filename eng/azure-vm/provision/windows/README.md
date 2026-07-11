@@ -21,9 +21,10 @@ parts need care that the plain Linux VM doesn't:
    task; if containers don't return after a Start, RDP in and run `wsl` once.
 
 Also: a Windows VM costs more (license + a larger size), and WSL2 itself needs **nested
-virtualization**, which constrains the VM: create it with **Security type: Standard** (the
-portal's Trusted Launch default blocks nested virtualization on these sizes) and a size that
-supports it — **B-series never does**. **Recommend Windows Server 2025 + Standard_D8s_v4
+virtualization**, which constrains the VM: create it with **Security type: Standard** (on the
+recommended Dsv4 sizes the portal's Trusted Launch default blocks nested virtualization — newer
+v5+ families do support nested virt under Trusted Launch, but the reference box is Dsv4) and a
+size that supports nested virt — **B-series never does**. **Recommend Windows Server 2025 + Standard_D8s_v4
 (8 vCPU / 32 GiB)** to match the reference ODS box (a lighter Standard_D4s_v4 / 16 GiB also
 runs the DMS stack fine if cost matters), and **expect portproxy networking** — the script
 attempts mirrored mode and falls back automatically. Deallocate when idle so the larger size

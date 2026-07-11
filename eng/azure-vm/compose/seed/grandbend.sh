@@ -25,9 +25,12 @@
 # here), use seed/clone-data.sh instead.
 #
 # Usage (from compose/):
+#   docker network create dms-sec 2>/dev/null || true   # the compose network is external
 #   docker compose --env-file .env up -d postgres
-#   ./seed/grandbend.sh                    # restore into edfi_st
-#   ./seed/grandbend.sh edfi_st edfi_mt    # specific database(s)
+#   ./seed/grandbend.sh                    # restore into edfi_st ONLY (single-tenant)
+#   ./seed/grandbend.sh edfi_st edfi_mt edfi_mt_t2   # all three data DBs
+# NOTE: the no-arg form seeds edfi_st only; the multi-tenant DBs (edfi_mt, edfi_mt_t2) still
+# need their own restore (list them above) or a clone-data.sh copy before mt-dms is usable.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."   # -> compose/
 
@@ -99,4 +102,6 @@ for db in "${DBS[@]}"; do
   # not silently skipped as "already seeded" on the next run.
   docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -f /tmp/grandbend.sql
 done
-echo "Done. (The DMS never deploys schema on startup; start the DMS services now.)"
+echo "Done: restored ${DBS[*]}. (The DMS never deploys schema on startup.)"
+echo "Start only the DMS service(s) whose data DB you restored: st-dms needs edfi_st;"
+echo "mt-dms needs BOTH edfi_mt and edfi_mt_t2 (restore or clone-data.sh them first)."

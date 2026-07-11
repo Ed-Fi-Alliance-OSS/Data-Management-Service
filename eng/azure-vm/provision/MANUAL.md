@@ -17,7 +17,9 @@ VM=dms-sec-vm
 DNS_LABEL=your-label          # must be unique within the region
 ADMIN_USER=edfi
 ADMIN_CIDR=$(curl -s ifconfig.me)/32   # your workstation IP for SSH
-APP_CIDR=Internet                    # who can reach 80/443 (Internet for a pen test)
+APP_CIDR=Internet                    # who can reach 443 (Internet for a pen test). Port 80 is
+                                     # always Internet-open regardless (Let's Encrypt HTTP-01 +
+                                     # the 301->443 redirect need it).
 ```
 
 Prereqs: `az login` done, an SSH key at `~/.ssh/id_rsa.pub` (create one with `ssh-keygen` if you

@@ -221,4 +221,4 @@ $created | Format-List
 Write-Output "DMS endpoints:"
 Write-Output "  single-tenant: $publicBaseUrl/st-dms/data/ed-fi/..."
 Write-Output "  multi-tenant : $publicBaseUrl/mt-dms/{tenant}/$schoolYear/data/ed-fi/...   (tenant in PATH: $tenant1 or $tenant2)"
-Write-Output "Token endpoint (advertised in Discovery): $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). The <dms-base>/oauth/token proxy forwards here but needs a publicly-trusted cert."
+Write-Output "Token endpoint: $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). /st-dms Discovery advertises this; /mt-dms Discovery advertises a broken value (DMS-1262) -- use the URL above directly. The <dms-base>/oauth/token proxy also forwards here (add curl -k / trust the cert if the gateway cert is self-signed)."

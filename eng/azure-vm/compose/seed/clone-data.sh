@@ -40,20 +40,30 @@ SOURCE="${1:-edfi_st}"
 TARGETS=("$@"); [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(edfi_mt edfi_mt_t2)
 
 echo "Source: $SOURCE  ->  Targets: ${TARGETS[*]}"
+
+# Dump the source to a file inside the container FIRST, and only proceed if pg_dump succeeds.
+# Do NOT pipe pg_dump straight into psql: a mid-dump pg_dump failure just closes the pipe, which
+# psql cannot distinguish from a normal end-of-input, so psql would COMMIT the TRUNCATE plus the
+# partial data and pipefail would report the failure only afterwards -- destroying the target.
+# Dumping to a file makes a dump failure abort here (set -e), before any target is touched.
+DUMP=/tmp/clone-data.$$.sql
+trap 'docker exec "$PG_CONTAINER" rm -f "$DUMP" 2>/dev/null || true' EXIT
+echo "Dumping $SOURCE ..."
+docker exec "$PG_CONTAINER" pg_dump -U "$PG_USER" -d "$SOURCE" --data-only --disable-triggers \
+    --exclude-table='dms."ResourceKey"' \
+    --exclude-table='dms."EffectiveSchema"' \
+    --exclude-table='dms."SchemaComponent"' \
+    -f "$DUMP"
+
 for db in "${TARGETS[@]}"; do
   [ "$db" = "$SOURCE" ] && { echo "SKIP $db (== source)"; continue; }
   echo "== Cloning $SOURCE -> $db =="
-  # Truncate + reload in ONE transaction (--single-transaction): if the dump/restore fails, the
-  # TRUNCATE rolls back too, so the target keeps its prior data instead of being left empty or
-  # half-loaded. The TRUNCATE is prepended to the same stream the restore reads.
-  # Copy data only; exclude provisioning/fingerprint tables already present in the target.
-  {
-    printf 'TRUNCATE dms."Document", dms."Descriptor", dms."ReferentialIdentity", dms."DocumentCache" CASCADE;\n'
-    docker exec "$PG_CONTAINER" pg_dump -U "$PG_USER" -d "$SOURCE" --data-only --disable-triggers \
-      --exclude-table='dms."ResourceKey"' \
-      --exclude-table='dms."EffectiveSchema"' \
-      --exclude-table='dms."SchemaComponent"'
-  } | docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -q
+  # TRUNCATE + restore in ONE transaction: any error (incl. \i failing) rolls back the truncate
+  # too, so a failed clone leaves the target's prior data intact instead of empty/half-loaded.
+  docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -q <<SQL
+TRUNCATE dms."Document", dms."Descriptor", dms."ReferentialIdentity", dms."DocumentCache" CASCADE;
+\i $DUMP
+SQL
   echo "   done."
 done
 echo "Clone complete. Restart the multi-tenant DMS to clear its data-store cache if enabled."

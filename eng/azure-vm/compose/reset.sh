@@ -25,9 +25,9 @@ fi
 echo "Dropping app + database volumes (Keycloak realm is preserved)..."
 docker compose -f docker-compose.yml --env-file .env down -v
 
-# The config DB was just dropped, so bootstrap must run again: remove the completion sentinel
-# so a setup-env.ps1 re-run re-bootstraps (matching the manual step printed below).
-rm -f .bootstrap/bootstrap-complete
+# The config DB was just dropped, so bootstrap must run again: remove both bootstrap markers so a
+# setup-env.ps1 re-run re-bootstraps cleanly (matching the manual step printed below).
+rm -f .bootstrap/bootstrap-attempted .bootstrap/bootstrap-complete
 
 # Restart infra + CMS + gateway ONLY -- NOT st-dms/mt-dms. After a -v reset the data DBs are empty
 # and the relational schema is gone, so the DMS services would crash-loop on boot (they fail fast
