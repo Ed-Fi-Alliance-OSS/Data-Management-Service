@@ -114,9 +114,14 @@ if (-not $SkipKeycloak) {
         -NewClientId $cmsClientId -NewClientName "DMS Configuration Service" `
         -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret (EnvVal "DMS_CONFIG_IDENTITY_CLIENT_SECRET")
 
+    # -SkipRealmAdmin: the read-only client only reads config from the CMS Admin API and must
+    # never be a Keycloak realm administrator. Pass it explicitly rather than relying on
+    # setup-keycloak.ps1's built-in client-id name check -- otherwise a customized
+    # CONFIG_SERVICE_CLIENT_ID (documented as changeable) would stop matching that literal and
+    # the read-only client would be granted realm-admin.
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $roClientId -NewClientName "CMS ReadOnly Access" `
-        -ClientScopeName $roClientScope -NewClientSecret (EnvVal "CONFIG_SERVICE_CLIENT_SECRET")
+        -ClientScopeName $roClientScope -NewClientSecret (EnvVal "CONFIG_SERVICE_CLIENT_SECRET") -SkipRealmAdmin
 
     # Bootstrap admin client -- created directly in Keycloak (full_access scope + cms-client role)
     # so we never rely on the CMS public self-registration endpoint (/connect/register), which is
@@ -183,9 +188,11 @@ foreach ($t in @($tenant1, $tenant2)) {
     catch {
         # Swallow only a genuine duplicate; anything else (auth failure, 5xx) must stop the
         # run -- continuing would create data stores against a tenant that never existed.
-        $status = 0
-        try { $status = [int]$_.Exception.Response.StatusCode } catch { $status = 0 }
-        if ($status -eq 409 -or $_.Exception.Message -match '(?i)exist') {
+        # The CMS returns 400 with the duplicate message in the response BODY (not the exception
+        # status line), so read it via the module's Get-HttpErrorResponse -- mirroring the
+        # module's own Test-IsDuplicateCmsClientRegistrationError.
+        $errorResponse = Get-HttpErrorResponse -ErrorRecord $_
+        if ($errorResponse.StatusCode -eq 400 -and $errorResponse.Body -match "(?i)tenant name already exists") {
             Write-Warning "    tenant '$t' already exists; continuing."
         }
         else { throw }

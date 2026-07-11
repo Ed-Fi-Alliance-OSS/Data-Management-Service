@@ -16,6 +16,9 @@ echo "Pulling latest images..."
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull
 
 echo "Recreating changed containers..."
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d
+# Route through up.sh so the ApiSchema-staged guard applies: a full-stack `up -d` here (gateway
+# depends_on pulls the DMS services) would otherwise crash-loop st-dms/mt-dms against an empty
+# /app/ApiSchema on an environment that was provisioned but never had its schema staged.
+./up.sh
 
 echo "Update complete."

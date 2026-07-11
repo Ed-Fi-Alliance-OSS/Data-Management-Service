@@ -13,7 +13,13 @@ $ErrorActionPreference = "Stop"
 
 # Boot WSL (starts systemd -> docker -> containers) and read its IP.
 wsl -d $Distro -u root -e true | Out-Null
-$wslIp = ((wsl -d $Distro -- hostname -I) -split '\s+' | Where-Object { $_ })[0]
+# Prefer eth0's address explicitly. `hostname -I` returns ALL non-loopback IPs and, once the
+# Docker bridge exists, includes 172.17.0.1 -- taking [0] could forward to docker0 instead of
+# eth0. Fall back to the first hostname -I entry only if eth0 can't be read.
+$wslIp = (wsl -d $Distro -- sh -c "ip -4 -o addr show eth0 2>/dev/null | awk '{print `$4}' | cut -d/ -f1" | Select-Object -First 1).Trim()
+if (-not $wslIp) {
+    $wslIp = ((wsl -d $Distro -- hostname -I) -split '\s+' | Where-Object { $_ })[0]
+}
 if (-not $wslIp) { throw "Could not determine the WSL IP for '$Distro'." }
 
 foreach ($p in $Ports) {

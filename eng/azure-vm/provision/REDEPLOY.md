@@ -52,7 +52,10 @@ cd ~/dms-src/eng/docker-compose
 # 1. Build the api-schema-tools tool (self-contained; runs in WSL without a host .NET runtime).
 #    --user keeps the bind-mounted output owned by you: published as root, .bootstrap/ would be
 #    root-owned on a clean clone and the host-side prepare step below could not write into it.
-docker run --rm --user "$(id -u):$(id -g)" -e DOTNET_CLI_HOME=/tmp -e NUGET_PACKAGES=/tmp/nuget \
+#    HOME=/tmp: a --user UID with no /etc/passwd entry has HOME=/ (unwritable); NuGet's migration
+#    runner writes under $HOME (XDG), so point HOME at a writable dir alongside the tool/pkg dirs.
+docker run --rm --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e DOTNET_CLI_HOME=/tmp -e NUGET_PACKAGES=/tmp/nuget \
   -v ~/dms-src:/src -w /src/eng/docker-compose mcr.microsoft.com/dotnet/sdk:10.0 \
   dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
   -c Release -r linux-x64 --self-contained -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools

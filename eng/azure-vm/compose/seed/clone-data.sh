@@ -28,7 +28,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."   # -> compose/
 # before the caller's `${VAR:-default}` fallback can apply. Swallow it so absent keys fall back.
 # Also strip matching surrounding quotes to parse .env values the way docker compose does.
 val() {
-  v="$(grep -E "^$1=" .env | head -1 | cut -d= -f2- || true)"
+  v="$(grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true)"
   case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
   printf '%s' "$v"
 }

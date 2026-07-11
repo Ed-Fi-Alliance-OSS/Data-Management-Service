@@ -27,6 +27,8 @@ server {
 
     ssl_protocols TLSv1.2 TLSv1.3;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
 
     client_max_body_size 20M;
     server_tokens off;   # don't leak the nginx version in headers / error pages
@@ -36,7 +38,9 @@ server {
     # at the edge for /st-config/connect/register and /mt-config/connect/register (and subpaths).
     # Regex locations take precedence over the prefix routes below, so this wins for that path
     # while /connect/token, /connect/introspect, and /connect/revoke continue to pass through.
-    location ~ ^/(st|mt)-config/connect/register {
+    # Case-insensitive (~*): ASP.NET routing is case-insensitive, so /connect/Register must be
+    # blocked at the edge too (the app-level AllowRegistration=false still backs this either way).
+    location ~* ^/(st|mt)-config/connect/register {
         return 403;
     }
 

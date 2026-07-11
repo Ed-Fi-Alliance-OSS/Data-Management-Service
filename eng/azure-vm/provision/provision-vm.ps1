@@ -80,7 +80,9 @@ Invoke-Az @("network","nsg","rule","create","-g",$ResourceGroup,"--nsg-name",$ns
     "--destination-port-ranges","443","--source-address-prefixes",$AppSourceCidr,"-o","none")
 
 $fqdn = az vm show -d -g $ResourceGroup -n $VmName --query fqdns -o tsv
+if ($LASTEXITCODE -ne 0 -or -not $fqdn) { Write-Warning "Could not read the VM FQDN (az vm show failed); the VM was created. Check the Portal."; $fqdn = "<vm-fqdn>" }
 $ip   = az vm show -d -g $ResourceGroup -n $VmName --query publicIps -o tsv
+if ($LASTEXITCODE -ne 0 -or -not $ip) { $ip = "<vm-ip>" }
 
 Write-Output "`n== VM provisioned =="
 Write-Output "  FQDN : $fqdn"

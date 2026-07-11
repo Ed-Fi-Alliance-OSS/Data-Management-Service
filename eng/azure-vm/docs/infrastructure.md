@@ -60,7 +60,7 @@ Base: `https://<PUBLIC_HOST>`
 |-----------|-----|
 | Landing page | `/` |
 | Single-tenant DMS — Discovery | `/st-dms` |
-| OAuth token (both stacks) | `/auth/realms/edfi/protocol/openid-connect/token` (advertised in each Discovery `urls.oauth`; the `/{st,mt}-dms/oauth/token` proxy also forwards here, with a trusted cert) |
+| OAuth token (both stacks) | `/auth/realms/edfi/protocol/openid-connect/token` (`/st-dms` Discovery advertises this as `urls.oauth`; **`/mt-dms` Discovery advertises a broken value** — see issue 11. The `/{st,mt}-dms/oauth/token` proxy also forwards here, with a trusted cert) |
 | Single-tenant DMS — data | `/st-dms/data/ed-fi/{resource}` |
 | Single-tenant Config Service | `/st-config` (Swagger at `/st-config/swagger` if enabled) |
 | Multi-tenant DMS — Discovery | `/mt-dms` |

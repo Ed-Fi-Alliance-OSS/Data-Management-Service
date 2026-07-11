@@ -41,7 +41,8 @@ Search **Virtual machines** → **+ Create** → **Azure virtual machine**.
 
 ### Disks
 - **OS disk type:** **Standard SSD (locally-redundant)** (cheaper; fine for this workload)
-- OS disk size: default (~30 GiB) is enough; bump if you want headroom.
+- OS disk size: **64 GiB** (matches the scripted path in `provision-vm.ps1` / `MANUAL.md`;
+  gives headroom for images, the ApiSchema workspace, and the populated template).
 
 ### Networking
 - **Virtual network / Subnet:** accept the auto-created defaults.

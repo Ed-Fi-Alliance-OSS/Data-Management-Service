@@ -45,7 +45,13 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 
 ## Reset (keep the Keycloak realm)
 
+A `-v` reset empties the data DBs, so — like a first stand-up — bootstrap, schema provisioning,
+and the DMS start all have to run again (`reset.sh` prints these same steps on exit):
+
 ```bash
 ./reset.sh
 pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
+# provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2
+# (api-schema-tools, or restore the populated template; see docs/infrastructure.md), then:
+./up.sh st-dms mt-dms
 ```

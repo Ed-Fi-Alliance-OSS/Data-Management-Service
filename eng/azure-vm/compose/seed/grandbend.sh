@@ -37,7 +37,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."   # -> compose/
 # Also strip matching surrounding quotes: docker compose strips them from .env values, so a
 # hand-quoted value must parse identically here or the two consumers diverge.
 val() {
-  v="$(grep -E "^$1=" .env | head -1 | cut -d= -f2- || true)"
+  v="$(grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true)"
   case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
   printf '%s' "$v"
 }
