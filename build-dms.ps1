@@ -460,6 +460,10 @@ function Stop-DockerEnvironment {
         [string]
         $IdentityProvider,
 
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine = "postgresql",
+
         [switch]
         $RemoveBootstrap,
 
@@ -471,10 +475,10 @@ function Stop-DockerEnvironment {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
             Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$RemoveBootstrap
             }
             Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+                ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$RemoveBootstrap
             }
         }
         finally {
@@ -880,6 +884,13 @@ function Start-BootstrapDockerEnvironment {
     )
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+    $effectiveDatabaseEngine =
+        if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) {
+            "postgresql"
+        }
+        else {
+            $DatabaseEngine
+        }
 
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
@@ -887,7 +898,8 @@ function Start-BootstrapDockerEnvironment {
 
     Stop-DockerEnvironment `
         -EnvironmentFilePath $environmentFilePath `
-        -IdentityProvider $IdentityProvider
+        -IdentityProvider $IdentityProvider `
+        -DatabaseEngine $effectiveDatabaseEngine
 
     Invoke-Execute {
         try {

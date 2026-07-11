@@ -810,6 +810,14 @@ $failureStatement
             $startScript | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]'
         }
 
+        It "start-local-dms.ps1 exposes -Rebuild as an alias for -r" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match '\[Alias\("Rebuild"\)\]\s*\[Switch\]\s*\$r'
+        }
+
         It "start-local-dms.ps1 swaps the database compose file by engine (single db service)" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
@@ -1726,6 +1734,18 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             ) -Raw
 
             $buildScript | Should -Match '(?s)if \(\$DatabaseEngine\) \{\s*\$bootstrapArgs\.DatabaseEngine = \$DatabaseEngine\s*\}'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards the effective database engine to teardown" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)\$effectiveDatabaseEngine\s*=.*?if \(\[string\]::IsNullOrWhiteSpace\(\$DatabaseEngine\)\).*?"postgresql"'
+            $buildScript | Should -Match '(?s)Stop-DockerEnvironment\s+`\s*-EnvironmentFilePath \$environmentFilePath\s+`\s*-IdentityProvider \$IdentityProvider\s+`\s*-DatabaseEngine \$effectiveDatabaseEngine'
+            $buildScript | Should -Match '(?s)function Stop-DockerEnvironment.*?\[ValidateSet\("postgresql", "mssql"\)\].*?\$DatabaseEngine = "postgresql"'
+            $buildScript | Should -Match 'start-local-dms\.ps1 .*?-DatabaseEngine \$DatabaseEngine -d -v'
+            $buildScript | Should -Match 'start-published-dms\.ps1 .*?-DatabaseEngine \$DatabaseEngine -d -v'
         }
 
         It "Start-BootstrapDockerEnvironment forwards -DataStandardVersion to the bootstrap wrapper only when the caller explicitly supplied it" {

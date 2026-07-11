@@ -9,6 +9,33 @@
 
 param()
 
+Describe "Test-NativeCommandWithTimeout" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+        $script:pwshPath = (Get-Process -Id $PID).Path
+    }
+
+    It "returns true when the native command exits successfully" {
+        Test-NativeCommandWithTimeout `
+            -FilePath $script:pwshPath `
+            -ArgumentList @("-NoProfile", "-Command", "exit 0") `
+            -TimeoutSeconds 5 | Should -BeTrue
+    }
+
+    It "returns false and terminates a native command that exceeds the timeout" {
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $result = Test-NativeCommandWithTimeout `
+            -FilePath $script:pwshPath `
+            -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 30") `
+            -TimeoutSeconds 1
+        $stopwatch.Stop()
+
+        $result | Should -BeFalse
+        $stopwatch.Elapsed.TotalSeconds | Should -BeLessThan 5
+    }
+}
+
 Describe "Resolve-DatabaseEngineEnvironmentFile" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -160,5 +187,18 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         $script:overlayValues.ContainsKey("KEYCLOAK_OAUTH_TOKEN_ENDPOINT") | Should -BeFalse
         $script:overlayValues.ContainsKey("SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT") | Should -BeFalse
         $script:overlayValues.ContainsKey("OAUTH_TOKEN_ENDPOINT") | Should -BeFalse
+    }
+}
+
+Describe "The .env.example MSSQL hint block" {
+    BeforeAll {
+        $dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $script:exampleEnvironment = Get-Content -LiteralPath (Join-Path $dockerComposeRoot ".env.example") -Raw
+    }
+
+    It "defines every variable referenced by the commented CMS SQL Server connection string" {
+        $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_DB_NAME=edfi_datamanagementservice$'
+        $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_SA_PASSWORD=abcdefgh1!$'
+        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_CONNECTION_STRING=.*\$\{MSSQL_DB_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
     }
 }

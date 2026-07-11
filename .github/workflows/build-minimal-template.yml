@@ -4,8 +4,8 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # Reusable build pipeline for the Minimal database template package. Mirrors
-# build-populated-template.yml so the thin caller (EdFi.Api.Minimal.Template.PostgreSQL.yml)
-# can run one matrix leg per Ed-Fi Data Standard version with per-version outputs (package,
+# build-populated-template.yml so the thin engine-specific PostgreSQL and MSSQL callers can run
+# one matrix leg per Ed-Fi Data Standard version with per-version outputs (package,
 # SBOM, provenance) staying correlated within a single reusable-workflow run. The minimal
 # template is relational backend only and loads only the descriptor (minimal) sample data.
 
@@ -279,15 +279,13 @@ jobs:
       - name: Gate on descriptor content before packaging
         env:
           DATABASE_ENGINE: ${{ inputs.database_engine }}
-          ENVIRONMENT_FILE: ${{ inputs.environment_file }}
         run: |
-          Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile $env:ENVIRONMENT_FILE
-
           if ($env:DATABASE_ENGINE -eq "mssql") {
-            $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
             $query = "SET NOCOUNT ON; SELECT COUNT(*) FROM [dms].[Descriptor];"
-            $rawOutput = & docker exec dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $mssqlPassword -d $env:RELATIONAL_DB_NAME -C -b -h -1 -W -Q $query
+            # Read MSSQL_SA_PASSWORD from the container environment so the gate uses the exact
+            # credential Docker Compose started SQL Server with, without placing it in host or
+            # container process arguments.
+            $rawOutput = & docker exec dms-mssql /bin/bash -c 'export SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"; exec "$@"' -- /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $env:RELATIONAL_DB_NAME -C -b -h -1 -W -Q $query
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to query dms.Descriptor row count from database '$($env:RELATIONAL_DB_NAME)'."
             }
@@ -411,7 +409,7 @@ jobs:
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
           sbom_hash=$(sha256sum ./${{ inputs.manifest_file }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   generate-package-provenance:
     name: Create Minimal Template Provenance

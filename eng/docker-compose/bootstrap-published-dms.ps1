@@ -83,7 +83,7 @@
 
 .EXAMPLE
     pwsh ./bootstrap-published-dms.ps1
-    Standard mode, core only. Stages the core ApiSchema package and claims in-line (when no
+    Standard mode. Stages the effective SCHEMA_PACKAGES set and matching claims in-line (when no
     workspace is staged), then starts the published stack and provisions schemas. No seed loading.
 
 .EXAMPLE

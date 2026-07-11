@@ -3,6 +3,74 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+function Test-NativeCommandWithTimeout {
+    <#
+    .SYNOPSIS
+        Runs a native command with a hard timeout and returns whether it exited successfully.
+
+    .DESCRIPTION
+        Uses ProcessStartInfo.ArgumentList so every argument retains its exact boundary. When the
+        timeout expires, the process tree is terminated before the function returns false. Output
+        is captured and discarded because this helper is intended for readiness probes.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]]$ArgumentList,
+
+        [ValidateRange(1, 300)]
+        [int]$TimeoutSeconds = 10
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $ArgumentList) {
+        $null = $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+
+    try {
+        if (-not $process.Start()) {
+            return $false
+        }
+
+        $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+        $standardErrorTask = $process.StandardError.ReadToEndAsync()
+
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            try {
+                $process.Kill($true)
+            }
+            catch [System.InvalidOperationException] {
+                Write-Debug "The process exited between the timeout result and Kill()."
+            }
+            $process.WaitForExit()
+            $null = $standardOutputTask.GetAwaiter().GetResult()
+            $null = $standardErrorTask.GetAwaiter().GetResult()
+            return $false
+        }
+
+        $null = $standardOutputTask.GetAwaiter().GetResult()
+        $null = $standardErrorTask.GetAwaiter().GetResult()
+        return $process.ExitCode -eq 0
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 function ReadValuesFromEnvFile {
     param (
         [string]$EnvironmentFile

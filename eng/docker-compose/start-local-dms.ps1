@@ -94,6 +94,7 @@ param (
     $EnvironmentFile = "",
 
     # Force a rebuild
+    [Alias("Rebuild")]
     [Switch]
     $r,
 
@@ -430,23 +431,32 @@ else {
             $Password,
 
             [int]
-            $MaxAttempts = 40
+            $TimeoutSeconds = 120
         )
 
         # SQL Server can take 30+ seconds to accept connections on a cold start. Poll sqlcmd
         # the same way the CI start-mssql-test-container action does, so the schema provision
         # phase that follows always finds a reachable server.
-        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-            docker exec -e "SQLCMDPASSWORD=$Password" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q "SELECT 1" -C -b *> $null
-            if ($LASTEXITCODE -eq 0) {
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while ([datetime]::UtcNow -lt $deadline) {
+            $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+            $probeTimeoutSeconds = [math]::Min(10, $remainingSeconds)
+            $probeArguments = @(
+                "exec", "-e", "SQLCMDPASSWORD=$Password", $ContainerName,
+                "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa",
+                "-Q", "SELECT 1", "-C", "-b"
+            )
+            if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds $probeTimeoutSeconds) {
                 Write-Output "SQL Server is ready."
                 return
             }
 
-            Start-Sleep -Seconds 3
+            if ([datetime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds ([math]::Min(3, [math]::Max(1, [math]::Floor(($deadline - [datetime]::UtcNow).TotalSeconds))))
+            }
         }
 
-        throw "SQL Server ($(Format-LogSafeText $ContainerName)) did not become ready within the timeout period."
+        throw "SQL Server ($(Format-LogSafeText $ContainerName)) did not become ready within $TimeoutSeconds seconds."
     }
 
     function Wait-PostgresqlReady {
@@ -456,25 +466,27 @@ else {
             $ContainerName,
 
             [int]
-            $MaxAttempts = 40
+            $TimeoutSeconds = 120
         )
 
         # PostgreSQL can take a few seconds to accept connections on a cold start. Poll
         # pg_isready inside the container so the schema provision phase that follows
         # always finds a reachable server.
-        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-            docker exec $ContainerName pg_isready -U postgres *> $null
-            if ($LASTEXITCODE -eq 0) {
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while ([datetime]::UtcNow -lt $deadline) {
+            $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+            $probeArguments = @("exec", $ContainerName, "pg_isready", "-U", "postgres")
+            if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds ([math]::Min(10, $remainingSeconds))) {
                 Write-Output "PostgreSQL is ready."
                 return
             }
 
-            if ($attempt -lt $MaxAttempts) {
-                Start-Sleep -Seconds 3
+            if ([datetime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds ([math]::Min(3, [math]::Max(1, [math]::Floor(($deadline - [datetime]::UtcNow).TotalSeconds))))
             }
         }
 
-        throw "PostgreSQL ($(Format-LogSafeText $ContainerName)) did not become ready within the timeout period."
+        throw "PostgreSQL ($(Format-LogSafeText $ContainerName)) did not become ready within $TimeoutSeconds seconds."
     }
 
     if ($DmsOnly) {

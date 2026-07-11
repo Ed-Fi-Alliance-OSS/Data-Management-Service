@@ -135,8 +135,9 @@
 
 .EXAMPLE
     pwsh ./bootstrap-local-dms.ps1
-    Standard mode, core only. Stages the core ApiSchema package and claims in-line (when no
-    workspace is staged), then starts the stack. No manual prepare step and no seed loading.
+    Standard mode. Stages the effective SCHEMA_PACKAGES set and matching claims in-line (when no
+    workspace is staged), then starts the stack. The default DS 5.2 profile is core + TPDM.
+    No manual prepare step and no seed loading.
 
 .EXAMPLE
     pwsh ./bootstrap-local-dms.ps1 -d
@@ -147,12 +148,12 @@
     Stop the local DMS stack, delete data volumes, and remove the .bootstrap workspace.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.bootstrap.ds52 -SchemaToolPath $schemaToolExe
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
-    Standard mode, core only - manual prepare flow. Stage the core schema and claims
-    workspaces first, then start the local stack. Use this flow when you want to inspect
-    or validate the staged workspace before starting infrastructure.
+    Standard-mode manual prepare flow. Stage the same default DS 5.2 core + TPDM package set the
+    wrapper will use, then stage claims and start the local stack. Use this flow when you want to
+    inspect or validate the staged workspace before starting infrastructure.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe

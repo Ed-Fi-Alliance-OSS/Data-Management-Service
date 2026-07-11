@@ -194,9 +194,10 @@ A few things are specific to the MSSQL path:
 * **It is single-engine.** SQL Server hosts everything: the DMS datastore, the Configuration
   Service (CMS SQL Server backend), and the self-contained (OpenIddict) identity stores.
   `mssql.yml` swaps in for `postgresql.yml` - both define the same `db` service that
-  `local-config.yml` health-gates on - and no PostgreSQL container runs. The shared database is
-  created by the provision phase; CMS deploys its `dmscs` schema into that same database on
-  startup (see "Database topology" above).
+  `local-config.yml` health-gates on - and no PostgreSQL container runs. In the default
+  self-contained flow, `setup-openiddict.ps1 -InitDb` creates the shared database during the
+  infrastructure phase; CMS then deploys its `dmscs` schema before the provision phase deploys
+  the DMS relational schema into that database (see "Database topology" above).
 * **Relational backend only.** MSSQL is supported through the relational backend
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
@@ -689,8 +690,8 @@ When you make requests to:
 **Route qualifiers not being parsed:**
 
 * Check that `ROUTE_QUALIFIER_SEGMENTS` is set correctly in the `.env` file (comma-separated format)
-* Verify the environment variable in the container: `docker exec docker-compose-dms-1 printenv | grep ROUTE`
-* Verify the DMS logs: `docker logs docker-compose-dms-1`
+* Verify the environment variable in the container: `docker exec ed-fi-api printenv | rg ROUTE`
+* Verify the DMS logs: `docker logs ed-fi-api`
 
 **404 - No database data store found or "No candidates found for the request path":**
 
@@ -698,7 +699,7 @@ When you make requests to:
 * Verify DMS loaded all data stores by checking the logs:
 
   ```powershell
-  docker logs docker-compose-dms-1 | grep "Successfully fetched"
+  docker logs ed-fi-api | rg "Successfully fetched"
   # Should show: "Successfully fetched 4 data stores" (or your expected count)
   ```
 
@@ -716,13 +717,13 @@ When you make requests to:
 **Check DMS logs:**
 
 ```powershell
-docker logs docker-compose-dms-1 --follow
+docker logs ed-fi-api --follow
 ```
 
 **Check Config Service logs:**
 
 ```powershell
-docker logs ed-fi-api-config --follow
+docker logs ed-fi-api-config-service --follow
 ```
 
 ### Cleanup
@@ -731,7 +732,7 @@ To tear down the environment:
 
 ```powershell
 cd eng/docker-compose
-pwsh teardown-local-dms.ps1
+pwsh ./start-local-dms.ps1 -d -v
 ```
 
 ## Kafka UI

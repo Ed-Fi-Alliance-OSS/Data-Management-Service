@@ -315,15 +315,13 @@ jobs:
       - name: Gate on populated content before packaging
         env:
           DATABASE_ENGINE: ${{ inputs.database_engine }}
-          ENVIRONMENT_FILE: ${{ inputs.environment_file }}
         run: |
-          Import-Module ./env-utility.psm1 -Force
-          $envValues = ReadValuesFromEnvFile $env:ENVIRONMENT_FILE
-
           if ($env:DATABASE_ENGINE -eq "mssql") {
-            $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
             $query = "SET NOCOUNT ON; SELECT COUNT(*) FROM [edfi].[School];"
-            $rawOutput = & docker exec -e "SQLCMDPASSWORD=$mssqlPassword" dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $env:TEMPLATE_DB_NAME -C -b -h -1 -W -Q $query
+            # Read MSSQL_SA_PASSWORD from the container environment so the gate uses the exact
+            # credential Docker Compose started SQL Server with, without placing it in host or
+            # container process arguments.
+            $rawOutput = & docker exec dms-mssql /bin/bash -c 'export SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"; exec "$@"' -- /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $env:TEMPLATE_DB_NAME -C -b -h -1 -W -Q $query
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to query edfi.School row count from database '$($env:TEMPLATE_DB_NAME)'."
             }

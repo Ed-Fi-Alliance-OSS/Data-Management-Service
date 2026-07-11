@@ -2588,10 +2588,10 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "bootstrap-local-dms.ps1 auto-stages core-only standard mode when no workspace is pre-staged" {
+        It "bootstrap-local-dms.ps1 auto-stages package-backed standard mode when no workspace is pre-staged" {
             # bootstrap-design.md Section 9.4.1: the thin wrapper requires no manual prepare
             # step. With no -Extensions and no pre-staged .bootstrap/bootstrap-manifest.json, the wrapper
-            # stages core-only standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before the
+            # stages package-backed standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before the
             # start phase, then reaches start (and the seed phase under -LoadSeedData) without throwing.
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             $tmpRoot = New-TestDirectory
@@ -2606,8 +2606,8 @@ EdFi.BulkLoadClient.Console fake
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
 
-            # prepare-dms-schema.ps1 stub records that the core-only prepare phase ran and asserts no
-            # -Extensions were forwarded (core-only path).
+            # prepare-dms-schema.ps1 stub records that package-backed preparation ran and asserts no
+            # removed -Extensions parameter was forwarded.
             "param([string[]]`$Extensions, [Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$prepareProbe' -Value (`"extensions=`$(`$Extensions -join ',')`") -Encoding utf8" |
                 Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-schema.ps1") -Encoding utf8
             "param([Parameter(ValueFromRemainingArguments)]`$rest)" |
@@ -2623,14 +2623,14 @@ EdFi.BulkLoadClient.Console fake
             # prepare phase stages the workspace first, then start and seed run.
             { & $wrapperCopy -LoadSeedData } | Should -Not -Throw
 
-            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "core-only auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
+            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "package-backed auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
             Test-Path -LiteralPath $startProbe | Should -BeTrue -Because "start phase must run after core-only staging"
             Test-Path -LiteralPath $seedProbe | Should -BeTrue -Because "seed phase must run when -LoadSeedData is supplied"
 
-            # The no-argument core-only happy path also stages and starts (no seed).
+            # The no-argument package-backed happy path also stages and starts (no seed).
             Remove-Item -LiteralPath $prepareProbe, $startProbe, $seedProbe -Force -ErrorAction SilentlyContinue
             & $wrapperCopy
-            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "no-argument wrapper must auto-stage core-only"
+            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "the no-argument wrapper must auto-stage its effective package set"
             Test-Path -LiteralPath $startProbe | Should -BeTrue
             Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run without -LoadSeedData"
 
@@ -2863,10 +2863,10 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "bootstrap-published-dms.ps1 auto-stages core-only standard mode when no workspace is pre-staged" {
+        It "bootstrap-published-dms.ps1 auto-stages package-backed standard mode when no workspace is pre-staged" {
             # bootstrap-design.md Section 9.4.1: like the local wrapper, the published thin wrapper requires
             # no manual prepare step. With no -Extensions and no pre-staged .bootstrap/bootstrap-manifest.json,
-            # it must stage core-only standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before
+            # it must stage package-backed standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before
             # the start phase, then reach start (and the seed phase under -LoadSeedData) without throwing.
             # The other published-wrapper tests pre-stage a fake manifest, which bypasses this auto-stage path.
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
@@ -2882,8 +2882,8 @@ EdFi.BulkLoadClient.Console fake
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
 
-            # prepare-dms-schema.ps1 stub records that the core-only prepare phase ran and asserts no
-            # -Extensions were forwarded (core-only path).
+            # prepare-dms-schema.ps1 stub records that package-backed preparation ran and asserts no
+            # removed -Extensions parameter was forwarded.
             "param([string[]]`$Extensions, [Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$prepareProbe' -Value (`"extensions=`$(`$Extensions -join ',')`") -Encoding utf8" |
                 Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-schema.ps1") -Encoding utf8
             "param([Parameter(ValueFromRemainingArguments)]`$rest)" |
@@ -2899,14 +2899,14 @@ EdFi.BulkLoadClient.Console fake
             # prepare phase stages the workspace first, then start and seed run.
             { & $wrapperCopy -LoadSeedData } | Should -Not -Throw
 
-            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "core-only auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
+            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "package-backed auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
             Test-Path -LiteralPath $startProbe | Should -BeTrue -Because "start phase must run after core-only staging"
             Test-Path -LiteralPath $seedProbe | Should -BeTrue -Because "seed phase must run when -LoadSeedData is supplied"
 
-            # The no-argument core-only happy path also stages and starts (no seed).
+            # The no-argument package-backed happy path also stages and starts (no seed).
             Remove-Item -LiteralPath $prepareProbe, $startProbe, $seedProbe -Force -ErrorAction SilentlyContinue
             & $wrapperCopy
-            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "no-argument wrapper must auto-stage core-only"
+            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "the no-argument wrapper must auto-stage its effective package set"
             Test-Path -LiteralPath $startProbe | Should -BeTrue
             Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run without -LoadSeedData"
 

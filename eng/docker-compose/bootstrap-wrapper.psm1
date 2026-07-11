@@ -700,7 +700,8 @@ function Invoke-BootstrapWrapper {
         }
 
         # The schema/claims staging phase below guarantees a Standard-mode manifest exists before any
-        # Docker or CMS state is created: when no workspace is staged it stages core-only standard mode,
+        # Docker or CMS state is created: when no workspace is staged it stages package-backed standard mode
+        # from the effective SCHEMA_PACKAGES set (or the catalog core-only fallback when the env has no set),
         # for which -SeedTemplate is valid, so there is nothing to pre-validate. Only when a manifest
         # ALREADY exists (a manual/expert pre-stage flow) do the ApiSchemaPath seed-source rules apply;
         # they are checked here so a known-bad -LoadSeedData invocation fails fast before the start phase.

@@ -83,6 +83,57 @@ function Resolve-ScriptRelativePath {
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $Path))
 }
 
+function ConvertFrom-ComposeEnvironmentValue {
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $Value
+    }
+
+    $trimmedValue = $Value.Trim()
+    $firstCharacter = $trimmedValue[0]
+
+    if ($firstCharacter -in @("'", '"')) {
+        $closingQuoteIndex = -1
+        $escaped = $false
+
+        for ($index = 1; $index -lt $trimmedValue.Length; $index++) {
+            $character = $trimmedValue[$index]
+
+            if ($character -eq "\" -and -not $escaped) {
+                $escaped = $true
+                continue
+            }
+
+            if ($character -eq $firstCharacter -and -not $escaped) {
+                $closingQuoteIndex = $index
+                break
+            }
+
+            $escaped = $false
+        }
+
+        if ($closingQuoteIndex -gt 0) {
+            $trailingContent = $trimmedValue.Substring($closingQuoteIndex + 1).Trim()
+            if ([string]::IsNullOrEmpty($trailingContent) -or $trailingContent.StartsWith("#")) {
+                $unquotedValue = $trimmedValue.Substring(1, $closingQuoteIndex - 1)
+                if ($firstCharacter -eq "'") {
+                    return $unquotedValue.Replace("\'", "'")
+                }
+
+                return $unquotedValue.Replace('\"', '"').Replace('\\', '\')
+            }
+        }
+    }
+
+    # Docker Compose treats a # preceded by whitespace as an inline comment for an unquoted
+    # value. A # without leading whitespace remains part of the value.
+    return ($trimmedValue -replace '[ \t]+#.*$', '').Trim()
+}
+
 function Get-EnvironmentValueMap {
     param([string]$EnvironmentFilePath)
 
@@ -100,7 +151,7 @@ function Get-EnvironmentValueMap {
         }
 
         $key = $line.Substring(0, $separatorIndex).Trim()
-        $value = $line.Substring($separatorIndex + 1).Trim()
+        $value = ConvertFrom-ComposeEnvironmentValue -Value $line.Substring($separatorIndex + 1)
         $environmentValues[$key] = $value
     }
 
@@ -144,6 +195,8 @@ function Resolve-EnvironmentValueReference {
         [hashtable]$EnvironmentValues
     )
 
+    $Value = ConvertFrom-ComposeEnvironmentValue -Value $Value
+
     if ([string]::IsNullOrWhiteSpace($Value)) {
         return $Value
     }
@@ -160,7 +213,7 @@ function Resolve-EnvironmentValueReference {
         return $Value
     }
 
-    return $resolvedValue
+    return ConvertFrom-ComposeEnvironmentValue -Value $resolvedValue
 }
 
 function Get-DatabaseNameFromConnectionString {
@@ -169,21 +222,29 @@ function Get-DatabaseNameFromConnectionString {
         [hashtable]$EnvironmentValues
     )
 
+    $ConnectionString = ConvertFrom-ComposeEnvironmentValue -Value $ConnectionString
+
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         return $null
     }
 
-    foreach ($segment in ($ConnectionString -split ";")) {
-        # "Initial Catalog" is the SQL Server alias for "Database" - this script's own
-        # Build-ConnectionString emits it for the mssql dialect - so both keys must be
-        # recognized or an Initial Catalog-form string bypasses the dedicated-database guard.
-        $match = [Regex]::Match($segment, '^(?i)\s*(?:database|initial\s+catalog)\s*=\s*(?<value>.+?)\s*$')
+    try {
+        $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        # DbConnectionStringBuilder implements IDictionary, so PowerShell's adapted view treats
+        # `.ConnectionString = ...` as an item named "ConnectionString". PSBase selects the real
+        # CLR property and exposes the parsed keys/items.
+        $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
 
-        if ($match.Success) {
-            return Resolve-EnvironmentValueReference `
-                -Value $match.Groups["value"].Value.Trim() `
-                -EnvironmentValues $EnvironmentValues
+        foreach ($key in $connectionStringBuilder.PSBase.Keys) {
+            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
+                return Resolve-EnvironmentValueReference `
+                    -Value ([string]$connectionStringBuilder.PSBase.get_Item($key)) `
+                    -EnvironmentValues $EnvironmentValues
+            }
         }
+    }
+    catch {
+        throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
     }
 
     return $null
@@ -217,11 +278,23 @@ function Assert-E2EDatabaseIsDedicated {
             "DATABASE_CONNECTION_STRING_ADMIN",
             "DMS_CONFIG_DATABASE_CONNECTION_STRING"
         )) {
-        $connectionStringDatabaseName = Get-DatabaseNameFromConnectionString `
-            -ConnectionString ([string]$EnvironmentValues[$connectionStringKey]) `
+        $connectionString = Resolve-EnvironmentValueReference `
+            -Value ([string]$EnvironmentValues[$connectionStringKey]) `
             -EnvironmentValues $EnvironmentValues
 
-        if (-not [string]::IsNullOrWhiteSpace($connectionStringDatabaseName) -and $E2EDatabaseName -ieq $connectionStringDatabaseName) {
+        if ([string]::IsNullOrWhiteSpace($connectionString)) {
+            continue
+        }
+
+        $connectionStringDatabaseName = Get-DatabaseNameFromConnectionString `
+            -ConnectionString $connectionString `
+            -EnvironmentValues $EnvironmentValues
+
+        if ([string]::IsNullOrWhiteSpace($connectionStringDatabaseName)) {
+            throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
+        }
+
+        if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
         }
     }
@@ -231,33 +304,33 @@ function Wait-ForPostgresql {
     param(
         [string]$ContainerName,
         [string]$PostgresUsername,
-        [int]$MaxAttempts = 30
+        [int]$TimeoutSeconds = 150
     )
 
-    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        $containerStatus = docker ps --filter "name=^/${ContainerName}$" --format "{{.Status}}"
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $attempt = 0
+    while ([datetime]::UtcNow -lt $deadline) {
+        $attempt++
+        $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+        $probeArguments = @("exec", $ContainerName, "psql", "-U", $PostgresUsername, "-d", "postgres", "-c", "SELECT 1;")
 
-        if (-not [string]::IsNullOrWhiteSpace($containerStatus)) {
-            docker exec $ContainerName psql -U $PostgresUsername -d postgres -c "SELECT 1;" 2>$null | Out-Null
-
-            if ($LASTEXITCODE -eq 0) {
-                Write-Information "PostgreSQL container is ready: $ContainerName" -InformationAction Continue
-                return
-            }
+        if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds ([math]::Min(10, $remainingSeconds))) {
+            Write-Information "PostgreSQL container is ready: $ContainerName" -InformationAction Continue
+            return
         }
 
         if ($attempt -eq 1 -or $attempt % 10 -eq 0) {
             Write-Information "Waiting for PostgreSQL container '$ContainerName' to become ready..." -InformationAction Continue
-            docker ps -a --filter "name=^/${ContainerName}$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-            docker logs --tail 10 $ContainerName 2>$null
+            $null = Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList @("ps", "-a", "--filter", "name=^/${ContainerName}$", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}") -TimeoutSeconds ([math]::Min(10, $remainingSeconds))
+            $null = Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList @("logs", "--tail", "10", $ContainerName) -TimeoutSeconds ([math]::Min(10, $remainingSeconds))
         }
 
-        if ($attempt -lt $MaxAttempts) {
-            Start-Sleep -Seconds 5
+        if ([datetime]::UtcNow -lt $deadline) {
+            Start-Sleep -Seconds ([math]::Min(5, [math]::Max(1, [math]::Floor(($deadline - [datetime]::UtcNow).TotalSeconds))))
         }
     }
 
-    throw "PostgreSQL container '$ContainerName' did not become ready after $MaxAttempts attempts."
+    throw "PostgreSQL container '$ContainerName' did not become ready within $TimeoutSeconds seconds."
 }
 
 function Wait-ForMssql {
@@ -265,26 +338,31 @@ function Wait-ForMssql {
     param(
         [string]$ContainerName,
         [string]$SaPassword,
-        [int]$MaxAttempts = 40
+        [int]$TimeoutSeconds = 120
     )
 
     # SQL Server can take 30+ seconds to accept connections on a cold start. Poll sqlcmd the
     # same way start-local-dms.ps1's Wait-MssqlReady does so the reset/provision steps that
     # follow always find a reachable server.
-    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q "SELECT 1" -C -b *> $null
-
-        if ($LASTEXITCODE -eq 0) {
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([datetime]::UtcNow -lt $deadline) {
+        $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+        $probeArguments = @(
+            "exec", "-e", "SQLCMDPASSWORD=$SaPassword", $ContainerName,
+            "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa",
+            "-Q", "SELECT 1", "-C", "-b"
+        )
+        if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds ([math]::Min(10, $remainingSeconds))) {
             Write-Information "SQL Server container is ready: $(Format-LogSafeText $ContainerName)" -InformationAction Continue
             return
         }
 
-        if ($attempt -lt $MaxAttempts) {
-            Start-Sleep -Seconds 3
+        if ([datetime]::UtcNow -lt $deadline) {
+            Start-Sleep -Seconds ([math]::Min(3, [math]::Max(1, [math]::Floor(($deadline - [datetime]::UtcNow).TotalSeconds))))
         }
     }
 
-    throw "SQL Server container '$(Format-LogSafeText $ContainerName)' did not become ready after $MaxAttempts attempts."
+    throw "SQL Server container '$(Format-LogSafeText $ContainerName)' did not become ready within $TimeoutSeconds seconds."
 }
 
 function Reset-E2EDatabase {

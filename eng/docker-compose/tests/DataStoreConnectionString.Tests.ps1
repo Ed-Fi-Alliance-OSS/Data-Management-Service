@@ -137,3 +137,27 @@ Describe "start-published-dms.ps1 MSSQL data-store wiring (DMS-1255)" {
         $script:startPublishedSource | Should -Match 'MSSQL_DB_NAME'
     }
 }
+
+Describe "Template workflow MSSQL content gates" {
+    BeforeAll {
+        $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
+        $script:minimalWorkflow = Get-Content -LiteralPath (Join-Path $repoRoot ".github/workflows/build-minimal-template.yml") -Raw
+        $script:populatedWorkflow = Get-Content -LiteralPath (Join-Path $repoRoot ".github/workflows/build-populated-template.yml") -Raw
+    }
+
+    It "does not pass the SQL Server password through sqlcmd or host docker arguments" {
+        foreach ($workflow in @($script:minimalWorkflow, $script:populatedWorkflow)) {
+            $workflow | Should -Not -Match 'sqlcmd[^\r\n]*\s-P\s'
+            $workflow | Should -Not -Match 'docker exec -e "SQLCMDPASSWORD='
+        }
+    }
+
+    It "uses the password from the running SQL Server container in both gates" {
+        $containerCredentialPattern = [regex]::Escape('/bin/bash -c ''export SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"; exec "$@"'' -- /opt/mssql-tools18/bin/sqlcmd')
+
+        $script:minimalWorkflow | Should -Match $containerCredentialPattern
+        $script:populatedWorkflow | Should -Match $containerCredentialPattern
+        $script:minimalWorkflow | Should -Not -Match 'ENVIRONMENT_FILE: \$\{\{ inputs\.environment_file \}\}'
+        $script:populatedWorkflow | Should -Not -Match 'ENVIRONMENT_FILE: \$\{\{ inputs\.environment_file \}\}'
+    }
+}

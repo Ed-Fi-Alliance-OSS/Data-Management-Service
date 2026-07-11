@@ -3037,6 +3037,37 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
             } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
         }
 
+        It "rejects a Compose-quoted connection string that targets the E2E database" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DMS_CONFIG_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING*"
+        }
+
+        It "rejects a Compose-quoted database-name key that matches the E2E database" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "'shared' # local database" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*MSSQL_DB_NAME*"
+        }
+
+        It "fails closed when a configured protected connection string has no database name" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DMS_CONFIG_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*could not determine a database name*"
+        }
+
         It "accepts a dedicated E2E database name" {
             {
                 Assert-E2EDatabaseIsDedicated `
