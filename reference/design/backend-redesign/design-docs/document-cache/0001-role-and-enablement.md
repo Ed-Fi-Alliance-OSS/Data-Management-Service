@@ -67,17 +67,36 @@ Starting Kafka UI must not imply `KafkaCdc:Enabled`.
 
 `DocumentJson` contains the caller-agnostic, pre-profile, full API resource body emitted
 by the same reconstitution/materialization path used for GET/query responses. It
-includes the top-level server-generated fields `id`, `_etag`, and `_lastModifiedDate`.
-When link injection is compiled into the read plan, the cached document also includes
-reference `link` subtrees.
+includes stable top-level server-generated fields `id` and `_lastModifiedDate`. It does
+not store one reusable `_etag`; `_etag` is composed from `ContentVersion` and the active
+`variantKey` at the serving or stream-shaping boundary. When link injection is compiled
+into the read plan, the cached document also includes reference `link` subtrees.
 
 Readable-profile projection and `DataManagement:ResourceLinks:Enabled` stripping happen
-after cache retrieval. They do not create separate cache rows and do not change the
-cached/full-resource `_etag`.
+after cache retrieval. They do not create separate cache rows.
 
-The cache row also stores `DocumentUuid`, `Etag`, and `LastModifiedAt` as relational
-columns for freshness checks, diagnostics, indexing, and CDC metadata. Those column
-values must match the corresponding values embedded in `DocumentJson`.
+The cache row also stores `DocumentUuid`, `ContentVersion`, and `LastModifiedAt` as
+relational columns for freshness checks, diagnostics, indexing, and CDC metadata.
+`DocumentUuid` and `LastModifiedAt` must match the corresponding values embedded in
+`DocumentJson`.
+
+DMS should expose a dedicated cache-projection materialization contract instead of
+letting the projector reuse an arbitrary GET/query response object. The contract returns
+one coherent projection result: `DocumentUuid`, project/resource identifiers,
+`ContentVersion`, `LastModifiedAt`, and `DocumentJson`. `DocumentJson` is the full
+external API-shaped document after stable server metadata injection, but before `_etag`
+composition, readable-profile projection, and response-only link stripping. The
+relational columns are derived from the same source metadata and formatted values as the
+embedded JSON fields.
+
+Before writing `dms.DocumentCache`, DMS must validate the metadata invariant:
+
+- `DocumentJson.id == DocumentUuid`,
+- `DocumentJson._lastModifiedDate == formatted LastModifiedAt`.
+
+If the invariant fails, the projector treats the attempt as a projection failure and
+must not write a cache row. This prevents Kafka envelope fields, cache columns, and the
+embedded API document from drifting apart.
 
 The cache row stores the metadata needed by reads, diagnostics, indexing, and CDC:
 
@@ -86,7 +105,6 @@ The cache row stores the metadata needed by reads, diagnostics, indexing, and CD
 - `ResourceName`
 - `ResourceVersion`
 - `ContentVersion`
-- `Etag`
 - `LastModifiedAt`
 - `DocumentJson`
 - `ComputedAt`

@@ -135,18 +135,19 @@ Recommended logical transform order:
    - `ResourceName` -> `resourceName`
    - `ResourceVersion` -> `resourceVersion`
    - `ContentVersion` -> `contentVersion`
-   - `Etag` -> `etag`
    - `LastModifiedAt` -> `lastModifiedAt`
    - `DocumentJson` -> `document`
-5. Remove internal or operational fields from the public value:
+5. Compose public `etag` from `contentVersion` and the Kafka document-state `variantKey`.
+6. Inject the composed `etag` into `document._etag`.
+7. Remove internal or operational fields from the public value:
    - `DocumentId`
    - `ComputedAt`
-6. Add `contractVersion = 1`.
-7. Expand `document` into structured JSON using the Ed-Fi expand-JSON SMT from DMS-1240
+8. Add `contractVersion = 1`.
+9. Expand `document` into structured JSON using the Ed-Fi expand-JSON SMT from DMS-1240
    when Debezium emits the JSON column as an escaped string.
-8. Simplify the Kafka key from the Debezium key struct to the lowercase `DocumentUuid`
+10. Simplify the Kafka key from the Debezium key struct to the lowercase `DocumentUuid`
    string.
-9. Route the physical Debezium topic to
+11. Route the physical Debezium topic to
    `<topic-prefix>.instance.<instance-key>.documents.v1`.
 
 All value-shaping transforms must pass null tombstone values through unchanged. Key

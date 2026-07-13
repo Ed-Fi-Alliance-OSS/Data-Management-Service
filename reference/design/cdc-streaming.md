@@ -94,15 +94,17 @@ Create/update/snapshot values have this public shape:
 
 The published value does not include `DocumentId`, `ComputedAt`, authorization arrays,
 EdOrg hierarchy arrays, API client identity, or readable-profile-specific projections.
-The `etag` value is the current DMS API `_etag`: base64-encoded `SHA-256` over canonical
-resource-state JSON, 44 characters including padding.
+The `etag` value is the DMS API `_etag` for the Kafka document-state variant. It is
+derived from `contentVersion` and the stream `variantKey`, not read from
+`dms.DocumentCache`.
 
-The `document` field is the caller-agnostic, pre-profile, full API resource body stored
-in `dms.DocumentCache.DocumentJson`, including top-level `id`, `_etag`, and
-`_lastModifiedDate`. If link injection is compiled into the read plan, the cached
-document includes reference `link` subtrees. DMS does not maintain a second link-free
-Kafka projection. Envelope `documentUuid`, `etag`, and `lastModifiedAt` values must match
-the embedded metadata fields in `document`.
+The `document` field is produced from the caller-agnostic, pre-profile, full API
+resource body stored in `dms.DocumentCache.DocumentJson`. The stream shaper injects
+`_etag` from the envelope `etag`, so the published document includes top-level `id`,
+`_etag`, and `_lastModifiedDate`. If link injection is compiled into the read plan, the
+cached document includes reference `link` subtrees. DMS does not maintain a second
+link-free Kafka projection. Envelope `documentUuid`, `etag`, and `lastModifiedAt` values
+must match the embedded metadata fields in `document`.
 
 Deletes publish:
 

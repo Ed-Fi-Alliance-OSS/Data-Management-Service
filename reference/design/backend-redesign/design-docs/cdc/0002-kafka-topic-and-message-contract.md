@@ -129,7 +129,7 @@ For creates, updates, and initial snapshots, the value is a JSON object:
   "resourceName": "Student",
   "resourceVersion": "5.2.0",
   "contentVersion": 123456,
-  "etag": "TZZ7bIyeL9XIpH4/Cm250PS5u1x8MMGk4x3Uwh8qASM=",
+  "etag": "123456-kafka-document-v1",
   "lastModifiedAt": "2026-07-06T15:30:45.1234567Z",
   "document": {
     "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
@@ -147,7 +147,7 @@ Field meanings:
 | `resourceName` | `dms.DocumentCache.ResourceName` | Resource name, such as `Student`. |
 | `resourceVersion` | `dms.DocumentCache.ResourceVersion` | Project/schema resource version copied from `dms.ResourceKey`. |
 | `contentVersion` | `dms.DocumentCache.ContentVersion` | Representation version applied by the projector. |
-| `etag` | `dms.DocumentCache.Etag` | Full-resource `_etag` value for the cached representation: base64-encoded `SHA-256` over canonical resource-state JSON. |
+| `etag` | derived from `dms.DocumentCache.ContentVersion` and the Kafka document-state `variantKey` | Opaque DMS API `_etag` value for the published document-state representation. |
 | `lastModifiedAt` | `dms.DocumentCache.LastModifiedAt` | Full-resource `_lastModifiedDate` source value, serialized as a UTC RFC 3339 / ISO-8601 string with up to seven fractional second digits and a trailing `Z`. |
 | `document` | `dms.DocumentCache.DocumentJson` | Expanded structured full API resource body, not an escaped JSON string. |
 
@@ -157,19 +157,20 @@ Pascal case. Connector transforms should rename columns after Debezium unwrap.
 `contractVersion` is a JSON number. `contentVersion` is a JSON number and consumers must
 treat it as a signed 64-bit integer. `documentUuid` must match the Kafka key exactly.
 
-`document` is exactly the cached caller-agnostic, pre-profile, full API resource body. It
-includes top-level `id`, `_etag`, and `_lastModifiedDate`; is not profile-filtered; and
-does not include authorization arrays or EdOrg hierarchy JSON. When the read plan
-includes link injection, `document` contains reference `link` subtrees. DMS does not
-maintain a second link-free Kafka projection.
+`document` is produced from the cached caller-agnostic, pre-profile, full API resource
+body. The value-shaping transform injects the stream-bound `_etag` from the envelope
+`etag`, so the published document includes top-level `id`, `_etag`, and
+`_lastModifiedDate`; is not profile-filtered; and does not include authorization arrays
+or EdOrg hierarchy JSON. When the read plan includes link injection, `document` contains
+reference `link` subtrees. DMS does not maintain a second link-free Kafka projection.
 
 The envelope values for `documentUuid`, `etag`, and `lastModifiedAt` are authoritative
 stream metadata and must match the embedded `id`, `_etag`, and `_lastModifiedDate` values
 inside `document`.
 
-The `etag` value is the DMS API `_etag` string as emitted today, not a hex digest and
-not an HTTP quoted entity-tag wrapper. For `SHA-256`, the encoded value is 44 base64
-characters including `=` padding.
+The `etag` value is the DMS API `_etag` string for the Kafka document-state variant. It
+is not a hex digest and not an HTTP quoted entity-tag wrapper. Consumers must treat it as
+an opaque string and use `contentVersion` for stale-write ordering.
 
 ## JSON Expansion
 

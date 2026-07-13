@@ -81,7 +81,7 @@ captures it as the document-state source.
 | --- | --- |
 | 18-00 | CDC/read-cache configuration boundaries for 17-00 and 17-03. |
 | 18-01 | Provisioned source table, projector companion state, and DDL inventory for 17-00 and 17-01. |
-| 18-02 | Canonical `DocumentJson`, `Etag`, and `LastModifiedAt` materialization for 17-04 fixtures and 17-05 E2E assertions. |
+| 18-02 | Canonical `DocumentJson`, `ContentVersion`, and `LastModifiedAt` materialization for 17-04 fixtures and 17-05 E2E assertions. |
 | 18-03 | Ongoing projection behavior and lag semantics for 17-00, 17-05, and 17-06. |
 | 18-04 | Bounded initial backfill epoch completion signal for 17-00 and 17-03. |
 | 18-05 | Optional cache read behavior; no hard CDC dependency, but documents the non-CDC fallback boundary used by 17-06. |

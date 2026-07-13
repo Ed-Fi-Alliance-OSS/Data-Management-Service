@@ -39,10 +39,10 @@ DocumentCache.ContentVersion == Document.ContentVersion
 AND DocumentCache.LastModifiedAt == Document.ContentLastModifiedAt
 ```
 
-`Etag` is stored with the cache row and must correspond to the cached full-resource
-representation and embedded `DocumentJson._etag`, but it is not the primary freshness
-comparator. `ComputedAt` is operational metadata only; it must not affect API response
-semantics, `_etag`, `_lastModifiedDate`, Change Queries, or the Kafka value contract.
+`_etag` is not stored with the cache row. It is composed from `ContentVersion` and the
+active `variantKey` at the serving or stream-shaping boundary. `ComputedAt` is
+operational metadata only; it must not affect API response semantics, `_etag`,
+`_lastModifiedDate`, Change Queries, or the Kafka value contract.
 
 When a cache row is missing or stale:
 
@@ -62,10 +62,17 @@ The hosted projector should:
 1. Scan `dms.Document` in `ContentVersion` order.
 2. Find documents whose cache row is missing or whose cached freshness stamp differs from
    the current `dms.Document` stamp.
-3. Reconstitute the caller-agnostic full resource document from relational tables.
-4. Compute the full-resource `_etag` and `_lastModifiedDate` using the update-tracking
-   rules.
-5. Upsert `dms.DocumentCache` only when the target row is still current.
+3. Use the dedicated cache-projection materializer to reconstitute the caller-agnostic
+   full resource document from relational tables.
+4. Compute `_lastModifiedDate` using the update-tracking rules and return a coherent
+   projection result containing both cache columns and `DocumentJson`.
+5. Validate that `DocumentJson.id` and `DocumentJson._lastModifiedDate` match
+   `DocumentUuid` and `LastModifiedAt`.
+6. Upsert `dms.DocumentCache` only when the target row is still current.
+
+The metadata invariant check is part of projection correctness, not an optional
+diagnostic. If embedded server metadata and cache columns disagree, the projector records
+a projection failure and does not write `dms.DocumentCache`.
 
 The upsert must be guarded by the current `dms.Document` stamp. If the document's current
 `ContentVersion` or `ContentLastModifiedAt` no longer matches the work item, the

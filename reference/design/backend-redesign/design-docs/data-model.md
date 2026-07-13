@@ -493,8 +493,10 @@ For the relational CDC source and Kafka contract, see [cdc/0001-document-cache-c
 and [cdc/0002-kafka-topic-and-message-contract.md](cdc/0002-kafka-topic-and-message-contract.md).
 
 The cached `DocumentJson` is the caller-agnostic, pre-profile, full API resource body
-emitted by reconstitution. It includes top-level `id`, `_etag`, and `_lastModifiedDate`,
-with `link` subtrees already present when link injection is compiled into the read plan.
+emitted by reconstitution. It includes top-level `id` and `_lastModifiedDate`, with
+`link` subtrees already present when link injection is compiled into the read plan. It
+does not store one reusable `_etag`; `_etag` is composed for the served representation
+from `ContentVersion` and the request's `variantKey`.
 Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
 strip pass runs on the projected document immediately before serialization. The served `_etag` is
 then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
@@ -504,8 +506,11 @@ participate in the request's `variantKey` (see
 Update tracking note: `dms.DocumentCache` stores the `ContentVersion` and `LastModifiedAt`
 associated with the cached document, not one reusable `_etag`. Cache reads validate freshness
 against the current `dms.Document.ContentVersion` and `ContentLastModifiedAt`; the server composes
-`_etag` per request from that version and the request's `variantKey`. `LastModifiedAt` remains
-denormalized for the materialized projection and CDC/indexing consumers.
+`_etag` per request from that version and the request's `variantKey`. The cached
+`DocumentUuid` and `LastModifiedAt` columns must match the embedded `id` and
+`_lastModifiedDate` values in `DocumentJson`. Projection must validate this invariant
+before writing `dms.DocumentCache`; a mismatch is a projection failure, not a writable
+cache row.
 
 Denormalized resource naming:
 

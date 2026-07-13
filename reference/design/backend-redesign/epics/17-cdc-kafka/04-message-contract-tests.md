@@ -22,7 +22,8 @@ write path for every case.
   - value bytes as a UTF-8 JSON object produced without a Kafka Connect `schema` / `payload` wrapper,
   - `contractVersion = 1`,
   - lower-camel metadata envelope,
-  - `etag` as a 44-character base64-encoded `SHA-256` value, not a 64-character hex digest,
+  - `etag` as an opaque DMS API `_etag` value derived from `contentVersion` and the Kafka
+    document-state `variantKey`,
   - `lastModifiedAt` as a UTC RFC 3339 / ISO-8601 string with trailing `Z`,
   - expanded structured `document`,
   - no public `DocumentId`,
@@ -41,6 +42,8 @@ write path for every case.
 - Tests include at least one realistic Ed-Fi document with nested arrays and a reference `link` subtree so JSON
   expansion and caller-agnostic projection shape are exercised.
 - Tests assert that readable-profile filtering and authorization metadata are absent from the stream contract.
+- Tests assert that envelope `documentUuid`, `etag`, and `lastModifiedAt` match embedded `document.id`,
+  `document._etag`, and `document._lastModifiedDate`.
 
 ## Tasks
 
@@ -52,9 +55,11 @@ write path for every case.
 5. Add regression coverage that null tombstone values pass through value-shaping transforms unchanged.
 6. Add provider smoke or fixture coverage for the pre-delete materialization path that creates the cache source
    row before `ON DELETE CASCADE` removes it.
-7. Add regression coverage that `etag` preserves the DMS API base64 `_etag` string from `DocumentCache.Etag`.
+7. Add regression coverage that `etag` is derived from `contentVersion` and the Kafka document-state
+   `variantKey`, not from a `DocumentCache.Etag` column.
 8. Add regression coverage that `DocumentJson` is published as structured JSON, not an escaped string.
-9. Add regression coverage that schema wrappers, JSON-quoted keys, Debezium envelopes, and Avro/Protobuf-style
+9. Add regression coverage that envelope metadata matches embedded `DocumentJson` server metadata.
+10. Add regression coverage that schema wrappers, JSON-quoted keys, Debezium envelopes, and Avro/Protobuf-style
    schema-registry payloads are not part of the v1 public topic.
 
 ## Out of Scope

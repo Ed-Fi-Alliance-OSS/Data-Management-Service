@@ -33,6 +33,8 @@ and upserts `dms.DocumentCache` only when the target version is still current.
 - The projector can also accept queued/enqueued work from write/read paths for specific `(DocumentId,
   ContentVersion)` targets.
 - The projector materializes documents through the shared materialization service.
+- The projector does not write cache rows when the materialized `DocumentJson` server metadata disagrees with
+  the cache columns; it records the attempt as a projection failure.
 - The projector writes `dms.DocumentCache` through the stale-write guarded upsert path.
 - The projector updates projection state for scanned/projected versions and last successful projection time.
 - The projector skips work for deleted documents without recreating cache rows.
@@ -45,8 +47,9 @@ and upserts `dms.DocumentCache` only when the target version is still current.
 2. Implement candidate scanning over `dms.Document` and stale/missing cache detection.
 3. Add an internal enqueue API for targeted projection work.
 4. Call the shared materializer and guarded cache upsert.
-5. Persist projector progress in `dms.DocumentCacheProjectionState`.
-6. Add provider integration tests for PostgreSQL and SQL Server.
+5. Surface materializer invariant failures through the projection failure path.
+6. Persist projector progress in `dms.DocumentCacheProjectionState`.
+7. Add provider integration tests for PostgreSQL and SQL Server.
 
 ## Out of Scope
 

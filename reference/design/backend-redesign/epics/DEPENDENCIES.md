@@ -140,7 +140,7 @@ DMS-1246 DocumentCache implementation epic. It does not regenerate the full depe
 | --- | --- |
 | 18-00 | CDC/read-cache configuration boundaries for 17-00 and 17-03. |
 | 18-01 | Source/state DDL for 17-00 and 17-01. |
-| 18-02 | Materialized `DocumentJson`, `Etag`, and `LastModifiedAt` source data for 17-04 and 17-05. |
+| 18-02 | Materialized `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for 17-04 and 17-05. |
 | 18-03 | Ongoing projection and lag semantics for 17-00, 17-05, and 17-06. |
 | 18-04 | Bounded initial backfill epoch completion signal for 17-00 and 17-03. |
 | 18-05 | Optional cache read behavior; no hard CDC dependency. |

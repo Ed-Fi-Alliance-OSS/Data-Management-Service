@@ -27,7 +27,7 @@ metadata envelopes, expanded `document` payloads, and Kafka tombstones for delet
   - value bytes are a JSON object with no Kafka Connect `schema` / `payload` wrapper,
   - value has `contractVersion = 1`,
   - value has `resourceName`,
-  - value has `etag` in the current DMS API base64 `SHA-256` format,
+  - value has `etag` in the current opaque DMS API `_etag` format,
   - value has expanded `document`.
 - Update scenario observes a later value for the same `DocumentUuid` with a higher `contentVersion`.
 - Delete scenario observes a Kafka record-level tombstone for the same `DocumentUuid`, not JSON `null`.

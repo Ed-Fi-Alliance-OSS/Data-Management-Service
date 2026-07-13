@@ -50,7 +50,7 @@ Logical `dms.DocumentCacheProjectionFailure` fields:
 | `DocumentUuid` | Stable diagnostic key; retained even if the document is later deleted. |
 | `ResourceKeyId` | Resource type for diagnostics and grouping. |
 | `TargetContentVersion` | Projection work item version that failed. |
-| `FailureKind` | Stable category such as `Reconstitution`, `Etag`, `DatabaseWrite`, or `Unexpected`. |
+| `FailureKind` | Stable category such as `Reconstitution`, `MetadataInvariant`, `DatabaseWrite`, or `Unexpected`. |
 | `ErrorMessage` | Sanitized operator-facing failure summary. |
 | `AttemptCount` | Number of attempts for this failure key. |
 | `FirstFailedAt` | UTC timestamp for first failure. |
@@ -125,7 +125,6 @@ The existing `dms.DocumentCache` columns remain the projected row contract:
 - `ResourceName`
 - `ResourceVersion`
 - `ContentVersion`
-- `Etag`
 - `LastModifiedAt`
 - `DocumentJson`
 - `ComputedAt`

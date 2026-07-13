@@ -39,7 +39,8 @@ row guarantee; operators should treat failures in that path as write-path blocki
   - topic-per-instance ACLs,
   - compacted topic behavior,
   - tombstone retention,
-  - `etag` as the DMS API base64 `SHA-256` string stored in `dms.DocumentCache.Etag`,
+  - `etag` as the opaque DMS API `_etag` derived from `contentVersion` and the Kafka
+    document-state `variantKey`,
   - consumer stale-write handling with `contentVersion`.
 - Documentation explains the CDC-mode `dms.DocumentCache` guarantees:
   - bounded initial backfill before CDC readiness,

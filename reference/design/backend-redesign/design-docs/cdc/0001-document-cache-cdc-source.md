@@ -67,9 +67,11 @@ streaming design.
   - `ResourceName`
   - `ResourceVersion`
   - `ContentVersion`
-  - `Etag` (base64-encoded `SHA-256` API `_etag`)
   - `LastModifiedAt`
   - `DocumentJson`
+- The public Kafka `etag` is derived from `ContentVersion` plus the Kafka document-state
+  `variantKey` during value shaping; it is not read from a `dms.DocumentCache.Etag`
+  column.
 - `DocumentId` may be useful for connector mechanics, ordering diagnostics, and internal
   correlation, but it should not be the public document identity in the Kafka contract.
   The public stable document identifier is `DocumentUuid`.
