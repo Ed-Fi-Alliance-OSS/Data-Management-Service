@@ -77,7 +77,9 @@ Tests invalid claims upload:
 - Verifies 400 response with validation errors
 
 ### Scenario 6: Security
-Verifies endpoints require dynamic claims loading to be enabled
+Verifies the endpoints enforce security in two layers:
+- A valid CMS bearer token is required (`ServicePolicy` plus an admin scope for `upload-claims` and `reload-claims`, or a read-only-or-admin scope for `current-claims`). Requests without a valid token return 401 regardless of the flag below, and a valid token with an insufficient scope returns 403.
+- Dynamic claims loading must be enabled (`DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true`); otherwise an authorized request returns 404.
 
 ## Troubleshooting
 
