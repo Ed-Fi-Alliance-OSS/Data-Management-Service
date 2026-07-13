@@ -199,7 +199,9 @@ public static class AuthorizationDataProvider
     /// This token is required for authenticating API requests to the Data Management Service.
     /// </summary>
     /// <returns>A valid OAuth access token as a string</returns>
-    public static async Task<string> GetToken()
+    public static Task<string> GetToken() => GetToken("oauth/token");
+
+    public static async Task<string> GetToken(string tokenUrl)
     {
         var formData = new FormUrlEncodedContent(
             new[] { new KeyValuePair<string, string>("grant_type", "client_credentials") }
@@ -211,7 +213,7 @@ public static class AuthorizationDataProvider
         );
 
         _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue($"Basic", basicB64);
-        var tokenResponse = await _dmsClient.PostAsync("oauth/token", formData);
+        var tokenResponse = await _dmsClient.PostAsync(tokenUrl, formData);
         var jsonString = await tokenResponse.Content.ReadAsStringAsync();
 
         if (!tokenResponse.IsSuccessStatusCode)

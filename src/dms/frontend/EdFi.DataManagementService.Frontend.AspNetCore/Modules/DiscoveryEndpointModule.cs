@@ -141,7 +141,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             {
                 ["dependencies"] = $"{rootUrl}{routeQualifierPrefix}/metadata/dependencies",
                 ["openApiMetadata"] = $"{rootUrl}{routeQualifierPrefix}/metadata/specifications",
-                ["oauth"] = BuildOAuthUrl(appSettings.Value.AuthenticationService, routeQualifierPrefix),
+                ["oauth"] = $"{rootUrl}{routeQualifierPrefix}/oauth/token",
                 ["tokenInfo"] = $"{rootUrl}{routeQualifierPrefix}/oauth/token_info",
                 ["dataManagementApi"] = $"{rootUrl}{routeQualifierPrefix}/data",
                 ["changeQueries"] = $"{rootUrl}{routeQualifierPrefix}/changeQueries/v1/",
@@ -227,15 +227,5 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         }
 
         return "/" + string.Join("/", prefixSegments);
-    }
-
-    /// <summary>
-    /// Builds the OAuth URL by appending route qualifier prefix to the authentication service URL.
-    /// </summary>
-    private static string BuildOAuthUrl(string authenticationService, string routeQualifierPrefix)
-    {
-        // Remove trailing slash from authentication service URL if present
-        string baseUrl = authenticationService.TrimEnd('/');
-        return $"{baseUrl}{routeQualifierPrefix}";
     }
 }
