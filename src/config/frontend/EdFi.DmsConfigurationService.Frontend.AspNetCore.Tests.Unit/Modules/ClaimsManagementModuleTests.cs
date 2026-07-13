@@ -23,37 +23,61 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
 /// Verifies that the /management/* claims endpoints require CMS bearer authorization
-/// (ServicePolicy + an AuthorizationScopePolicies scope) in addition to the existing
-/// DangerouslyEnableUnrestrictedClaimsLoading flag check.
+/// (SecurityConstants.ServicePolicy plus an AuthorizationScopePolicies scope) in addition to
+/// the existing DangerouslyEnableUnrestrictedClaimsLoading flag check.
 /// </summary>
-[TestFixture]
-public class ClaimsManagementModuleTests
+public abstract class ClaimsManagementModuleTests
 {
-    private const string ReloadClaimsRoute = "/management/reload-claims";
-    private const string UploadClaimsRoute = "/management/upload-claims";
-    private const string CurrentClaimsRoute = "/management/current-claims";
+    protected const string ReloadClaimsRoute = "/management/reload-claims";
+    protected const string UploadClaimsRoute = "/management/upload-claims";
+    protected const string CurrentClaimsRoute = "/management/current-claims";
+
+    // A role the TestAuthHandler principal never carries; used to prove ServicePolicy is enforced.
+    protected const string RoleTheTokenDoesNotHave = "unassigned-configuration-service-role";
 
     private readonly IClaimsUploadService _claimsUploadService = A.Fake<IClaimsUploadService>();
     private readonly IClaimsProvider _claimsProvider = A.Fake<IClaimsProvider>();
-    private readonly List<WebApplicationFactory<Program>> _factories = [];
+
+    private WebApplicationFactory<Program> _factory = null!;
+    protected HttpClient Client = null!;
 
     [TearDown]
-    public void TearDown()
+    public void DisposeClientAndFactory()
     {
-        foreach (var factory in _factories)
-        {
-            factory.Dispose();
-        }
+        Client?.Dispose();
+        _factory?.Dispose();
+    }
 
-        _factories.Clear();
+    protected static StringContent EmptyJsonBody() => new("{}", Encoding.UTF8, "application/json");
+
+    protected void ArrangeUnauthenticatedClient(bool dangerousFlagEnabled)
+    {
+        _factory = CreateFactory(
+            addTestAuthentication: false,
+            dangerousFlagEnabled,
+            requiredServiceRole: null
+        );
+        Client = _factory.CreateClient();
+    }
+
+    protected void ArrangeAuthenticatedClient(
+        string scope,
+        bool dangerousFlagEnabled,
+        string? requiredServiceRole = null
+    )
+    {
+        _factory = CreateFactory(addTestAuthentication: true, dangerousFlagEnabled, requiredServiceRole);
+        Client = _factory.CreateClient();
+        Client.DefaultRequestHeaders.Add("X-Test-Scope", scope);
     }
 
     private WebApplicationFactory<Program> CreateFactory(
         bool addTestAuthentication,
-        bool dangerousFlagEnabled
+        bool dangerousFlagEnabled,
+        string? requiredServiceRole
     )
     {
-        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -70,12 +94,14 @@ public class ClaimsManagementModuleTests
                             .Get<IdentitySettings>()!;
                         collection.AddAuthorization(options =>
                         {
+                            // requiredServiceRole lets a test require a role the principal lacks,
+                            // proving the route enforces ServicePolicy (patterned after ActionModuleTests).
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
                                 policy =>
                                     policy.RequireClaim(
                                         identitySettings.RoleClaimType,
-                                        identitySettings.ConfigServiceRole
+                                        requiredServiceRole ?? identitySettings.ConfigServiceRole
                                     )
                             );
                             AuthorizationScopePolicies.Add(options);
@@ -92,142 +118,198 @@ public class ClaimsManagementModuleTests
                 }
             );
         });
-
-        _factories.Add(factory);
-        return factory;
     }
 
-    private HttpClient CreateUnauthenticatedClient(bool dangerousFlagEnabled) =>
-        CreateFactory(addTestAuthentication: false, dangerousFlagEnabled).CreateClient();
-
-    private HttpClient CreateAuthenticatedClient(string scope, bool dangerousFlagEnabled)
+    /// <summary>
+    /// Authentication is evaluated before the dangerous-flag check, so a request without a token
+    /// returns 401 even when the flag is enabled.
+    /// </summary>
+    [TestFixture]
+    public class Given_no_bearer_token_and_the_dangerous_flag_is_enabled : ClaimsManagementModuleTests
     {
-        var client = CreateFactory(addTestAuthentication: true, dangerousFlagEnabled).CreateClient();
-        client.DefaultRequestHeaders.Add("X-Test-Scope", scope);
-        return client;
+        [SetUp]
+        public void Setup() => ArrangeUnauthenticatedClient(dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_should_reject_reload_claims_with_401()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public async Task It_should_reject_upload_claims_with_401()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public async Task It_should_reject_current_claims_with_401()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
     }
 
-    private static StringContent EmptyJsonBody() => new("{}", Encoding.UTF8, "application/json");
-
-    // Authentication is evaluated before the dangerous-flag check, so a request without a token
-    // returns 401 whether the flag is enabled or disabled.
-
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task Reload_claims_without_a_token_returns_401(bool dangerousFlagEnabled)
+    /// <summary>
+    /// Authentication is evaluated before the dangerous-flag check, so a request without a token
+    /// returns 401 even when the flag is disabled.
+    /// </summary>
+    [TestFixture]
+    public class Given_no_bearer_token_and_the_dangerous_flag_is_disabled : ClaimsManagementModuleTests
     {
-        using var client = CreateUnauthenticatedClient(dangerousFlagEnabled);
+        [SetUp]
+        public void Setup() => ArrangeUnauthenticatedClient(dangerousFlagEnabled: false);
 
-        var response = await client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+        [Test]
+        public async Task It_should_reject_reload_claims_with_401()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        [Test]
+        public async Task It_should_reject_upload_claims_with_401()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public async Task It_should_reject_current_claims_with_401()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
     }
 
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task Upload_claims_without_a_token_returns_401(bool dangerousFlagEnabled)
+    /// <summary>
+    /// A read-only token lacks the admin scope required by the write endpoints (403) but is
+    /// accepted by the read endpoint's ReadOnlyOrAdmin policy.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_read_only_token : ClaimsManagementModuleTests
     {
-        using var client = CreateUnauthenticatedClient(dangerousFlagEnabled);
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.ReadOnlyScope.Name, dangerousFlagEnabled: false);
 
-        var response = await client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+        [Test]
+        public async Task It_should_reject_reload_claims_with_403()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        [Test]
+        public async Task It_should_reject_upload_claims_with_403()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        [Test]
+        public async Task It_should_authorize_current_claims_and_return_404_when_flag_disabled()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
     }
 
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task Current_claims_without_a_token_returns_401(bool dangerousFlagEnabled)
+    /// <summary>
+    /// A fully authorized request still returns 404 while the dangerous flag is disabled, proving
+    /// authorization does not bypass the flag gate.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_full_access_token_and_the_dangerous_flag_is_disabled : ClaimsManagementModuleTests
     {
-        using var client = CreateUnauthenticatedClient(dangerousFlagEnabled);
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: false);
 
-        var response = await client.GetAsync(CurrentClaimsRoute);
+        [Test]
+        public async Task It_should_return_404_for_reload_claims()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        [Test]
+        public async Task It_should_return_404_for_upload_claims()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_should_return_404_for_current_claims()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
     }
 
-    // A valid CMS token with an insufficient scope (read-only) cannot call the write endpoints.
-
-    [Test]
-    public async Task Reload_claims_with_a_read_only_token_returns_403()
+    /// <summary>
+    /// An authenticated principal that carries an allowed scope but fails the configuration-service
+    /// role requirement must be rejected with 403 on every endpoint, proving each route enforces
+    /// ServicePolicy. The dangerous flag is disabled so a route missing ServicePolicy would instead
+    /// reach the handler and return 404, which the 403 assertion distinguishes.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_without_the_configuration_service_role : ClaimsManagementModuleTests
     {
-        using var client = CreateAuthenticatedClient(
-            AuthorizationScopes.ReadOnlyScope.Name,
-            dangerousFlagEnabled: false
-        );
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(
+                AuthorizationScopes.AdminScope.Name,
+                dangerousFlagEnabled: false,
+                requiredServiceRole: RoleTheTokenDoesNotHave
+            );
 
-        var response = await client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+        [Test]
+        public async Task It_should_reject_reload_claims_with_403()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        [Test]
+        public async Task It_should_reject_upload_claims_with_403()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        [Test]
+        public async Task It_should_reject_current_claims_with_403()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
     }
 
-    [Test]
-    public async Task Upload_claims_with_a_read_only_token_returns_403()
+    /// <summary>
+    /// The read endpoint uses MapSecuredGet (ReadOnlyOrAdmin), not the broader MapLimitedAccess
+    /// policy, so a valid token whose only scope is the auth-metadata read-only scope must be
+    /// rejected with 403.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_with_an_unsupported_scope_for_the_read_endpoint : ClaimsManagementModuleTests
     {
-        using var client = CreateAuthenticatedClient(
-            AuthorizationScopes.ReadOnlyScope.Name,
-            dangerousFlagEnabled: false
-        );
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(
+                AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name,
+                dangerousFlagEnabled: false
+            );
 
-        var response = await client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
-
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    // A read-only token is authorized for the read endpoint (not 403); with the flag disabled
-    // the handler still returns 404.
-
-    [Test]
-    public async Task Current_claims_with_a_read_only_token_is_authorized_and_returns_404_when_flag_disabled()
-    {
-        using var client = CreateAuthenticatedClient(
-            AuthorizationScopes.ReadOnlyScope.Name,
-            dangerousFlagEnabled: false
-        );
-
-        var response = await client.GetAsync(CurrentClaimsRoute);
-
-        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    // A full-access token is authorized; with the flag disabled every endpoint still returns 404.
-
-    [Test]
-    public async Task Reload_claims_with_a_full_access_token_returns_404_when_flag_disabled()
-    {
-        using var client = CreateAuthenticatedClient(
-            AuthorizationScopes.AdminScope.Name,
-            dangerousFlagEnabled: false
-        );
-
-        var response = await client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Test]
-    public async Task Upload_claims_with_a_full_access_token_returns_404_when_flag_disabled()
-    {
-        using var client = CreateAuthenticatedClient(
-            AuthorizationScopes.AdminScope.Name,
-            dangerousFlagEnabled: false
-        );
-
-        var response = await client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Test]
-    public async Task Current_claims_with_a_full_access_token_returns_404_when_flag_disabled()
-    {
-        using var client = CreateAuthenticatedClient(
-            AuthorizationScopes.AdminScope.Name,
-            dangerousFlagEnabled: false
-        );
-
-        var response = await client.GetAsync(CurrentClaimsRoute);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        [Test]
+        public async Task It_should_reject_current_claims_with_403()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
     }
 }
