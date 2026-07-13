@@ -32,7 +32,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
         context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
 
-        var tokenUrl = await ResolveDmsTokenUrlAsync();
+        var tokenUrl = await ResolveDmsTokenUrlAsync(context.CurrentTenant);
 
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(
             tokenUrl,
@@ -57,7 +57,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var (key, secret) = context.CredentialsByTenant[tenantName];
 
-        var tokenUrl = await ResolveDmsTokenUrlAsync();
+        var tokenUrl = await ResolveDmsTokenUrlAsync(tenantName);
 
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(tokenUrl, key, secret);
 
@@ -312,38 +312,63 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         );
     }
 
-    private async Task<string> ResolveDmsTokenUrlAsync()
+    private async Task<string> ResolveDmsTokenUrlAsync(string? tenantName)
     {
-        if (context.LastResponse is not null)
-        {
-            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+        var route = tenantName is null
+            ? null
+            : context
+                .RouteQualifierToDataStoreId.Where(route =>
+                    context.DataStoreIdToTenant.TryGetValue(route.Value, out var owner) && owner == tenantName
+                )
+                .Select(route => route.Key)
+                .FirstOrDefault();
 
-            if (!string.IsNullOrWhiteSpace(responseBody))
+        if (route is not null)
+        {
+            using var discoveryClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+            using var discoveryResponse = await discoveryClient.GetDiscoveryWithRouteAsync(
+                $"{tenantName}/{route}"
+            );
+
+            if (discoveryResponse.IsSuccessStatusCode)
             {
-                try
+                var responseBody = await discoveryResponse.Content.ReadAsStringAsync();
+                if (!string.IsNullOrWhiteSpace(responseBody))
                 {
-                    var responseDoc = JsonDocument.Parse(responseBody);
-                    if (
-                        responseDoc.RootElement.TryGetProperty("urls", out var urls)
-                        && urls.TryGetProperty("oauth", out var oauth)
-                    )
+                    try
                     {
-                        var oauthUrl = oauth.GetString();
+                        using var responseDoc = JsonDocument.Parse(responseBody);
+                        var oauthUrl = ExtractOauthUrl(responseDoc.RootElement);
                         if (!string.IsNullOrWhiteSpace(oauthUrl))
                         {
                             return oauthUrl;
                         }
                     }
-                }
-                catch (JsonException)
-                {
-                    // Fall back to the legacy direct token endpoint when the previous response
-                    // was not a discovery payload.
+                    catch (JsonException)
+                    {
+                        // Fall back to the direct token endpoint when discovery is unavailable.
+                    }
                 }
             }
         }
 
         return "http://localhost:8081/connect/token/";
+    }
+
+    internal static string? ExtractOauthUrl(JsonElement discoveryDocument)
+    {
+        if (
+            discoveryDocument.ValueKind is not JsonValueKind.Object
+            || !discoveryDocument.TryGetProperty("urls", out var urls)
+            || urls.ValueKind is not JsonValueKind.Object
+            || !urls.TryGetProperty("oauth", out var oauth)
+            || oauth.ValueKind is not JsonValueKind.String
+        )
+        {
+            return null;
+        }
+
+        return oauth.GetString();
     }
 
     [Then("the DMS token should be available")]
