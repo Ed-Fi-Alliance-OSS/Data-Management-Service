@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> 'b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> 'ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61';
         END IF;
     END IF;
 END $$;
@@ -869,7 +869,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', 'b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810', 2, '\x3F4100845FD234C31689525E02A344E042EC3E11C81EF4405143942137997C00'::bytea)
+VALUES (1, '1.0.0', 'ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61', 2, '\x3F4100845FD234C31689525E02A344E042EC3E11C81EF4405143942137997C00'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -897,7 +897,7 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810', 'ed-fi', 'Ed-Fi', '1.0.0', false)
+VALUES ('ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61', 'ed-fi', 'Ed-Fi', '1.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -907,14 +907,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61';
     IF _actual_count <> 1 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 1, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = 'b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810'
+    WHERE sc."EffectiveSchemaHash" = 'ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '1.0.0', false)
@@ -929,7 +929,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = 'b2f94938fc758230fc8cf8b75a483cfe39b39558365fa15c8b711ff16fdff810'
+            WHERE sc."EffectiveSchemaHash" = 'ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '1.0.0', false)

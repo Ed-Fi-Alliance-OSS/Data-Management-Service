@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> 'fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61';
         END IF;
     END IF;
 END $$;
@@ -73193,7 +73193,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', 'fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c', 358, '\xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4'::bytea)
+VALUES (1, '1.0.0', '53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61', 358, '\xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -73221,10 +73221,10 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c', 'ed-fi', 'Ed-Fi', '5.2.0', false)
+VALUES ('53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61', 'ed-fi', 'Ed-Fi', '5.2.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c', 'sample', 'Sample', '1.0.0', true)
+VALUES ('53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61', 'sample', 'Sample', '1.0.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -73234,14 +73234,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = 'fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c'
+    WHERE sc."EffectiveSchemaHash" = '53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '5.2.0', false),
@@ -73257,7 +73257,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = 'fdb21d0c393eb9e97a344a9cdc63c135ffe4a1d53826592d296891e5d7b40a7c'
+            WHERE sc."EffectiveSchemaHash" = '53ba4ec6718cfdeb81c2c7e1c37932eaada4b858586fe504e2bb00a99e2f5f61'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '5.2.0', false),

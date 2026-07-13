@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d';
         END IF;
     END IF;
 END $$;
@@ -777,7 +777,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735', 1, '\xAA4516A2188A393B97F346BD6483E8A82E57AB430F5377D00B6409E307A812DC'::bytea)
+VALUES (1, '1.0.0', '32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d', 1, '\xAA4516A2188A393B97F346BD6483E8A82E57AB430F5377D00B6409E307A812DC'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -805,10 +805,10 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735', 'aligned', 'Aligned', '1.0.0', true)
+VALUES ('32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d', 'aligned', 'Aligned', '1.0.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735', 'ed-fi', 'Ed-Fi', '1.0.0', false)
+VALUES ('32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d', 'ed-fi', 'Ed-Fi', '1.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -818,14 +818,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735'
+    WHERE sc."EffectiveSchemaHash" = '32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('aligned', 'Aligned', '1.0.0', true),
@@ -841,7 +841,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '4a28a3d0642632e319d9bf420d51e31bdfe7ac340462e26bf12d629827907735'
+            WHERE sc."EffectiveSchemaHash" = '32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('aligned', 'Aligned', '1.0.0', true),
