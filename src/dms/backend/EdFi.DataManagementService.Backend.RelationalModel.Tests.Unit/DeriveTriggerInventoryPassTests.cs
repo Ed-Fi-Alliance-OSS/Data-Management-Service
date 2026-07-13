@@ -504,16 +504,6 @@ public class Given_Trigger_Inventory_Without_Identity_Propagation
     }
 
     /// <summary>
-    /// It should emit no identity-value propagation trigger on either dialect.
-    /// </summary>
-    [Test]
-    public void It_should_emit_no_identity_propagation_trigger_on_either_dialect()
-    {
-        _mssqlTriggers.Should().NotContain(t => t.Name.Value.Contains("PropagateIdentity"));
-        _pgsqlTriggers.Should().NotContain(t => t.Name.Value.Contains("PropagateIdentity"));
-    }
-
-    /// <summary>
     /// It should keep the stamping, referential-identity, and shared descriptor triggers.
     /// </summary>
     [Test]

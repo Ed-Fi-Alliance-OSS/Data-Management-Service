@@ -750,7 +750,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_stamp_indirect_Identity_propagation_changes_via_mssql_trigger_fallback_without_disabling_constraints()
+    public async Task It_should_stamp_indirect_Identity_propagation_changes_via_native_fk_cascades_without_disabling_constraints()
     {
         const string updatedSessionName = "Fall Updated";
 
@@ -860,8 +860,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         // The renamed Session and the cascade-updated CourseOffering each insert
         // exactly one key-change row. Survey's session reference is NOT part of its
-        // identity projection (Namespace + SurveyIdentifier), so the trigger-fallback
-        // rewrite must not produce a Survey key-change row.
+        // identity projection (Namespace + SurveyIdentifier), so the native FK
+        // cascade must not produce a Survey key-change row.
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Session", sessionDocumentUuid))
             .Should()
             .Be(sessionTrackedBefore + 1);
@@ -901,6 +901,88 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             .ToInt64(courseOfferingTrackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
             .Should()
             .Be(afterCourseOffering.ContentVersion);
+
+        // Cut FKs must stay valid through the cascaded rename: the pruned
+        // CourseOffering -> School edge shares SchoolId_Unified storage with the retained
+        // Session cascade, and no constraint was disabled to let the rename through.
+        await AssertForeignKeysEnabledTrustedAndValidAsync("edfi", "CourseOffering");
+        await AssertForeignKeysEnabledTrustedAndValidAsync("edfi", "Survey");
+    }
+
+    [Test]
+    public async Task It_should_install_full_composite_reference_fks_with_pruned_update_actions()
+    {
+        var courseOfferingForeignKeys = await _database.GetForeignKeyMetadataAsync("edfi", "CourseOffering");
+
+        // Retained survivor edge: full-composite (identity storage columns then DocumentId)
+        // with the native cascade that replaced the identity-propagation trigger.
+        var sessionForeignKey = courseOfferingForeignKeys.Single(foreignKey =>
+            foreignKey.ConstraintName == "FK_CourseOffering_Session_RefKey"
+        );
+        sessionForeignKey
+            .Columns.Should()
+            .Equal("SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "Session_DocumentId");
+        sessionForeignKey.ReferencedSchema.Should().Be("edfi");
+        sessionForeignKey.ReferencedTable.Should().Be("Session");
+        sessionForeignKey
+            .ReferencedColumns.Should()
+            .Equal("School_SchoolId", "SchoolYear_SchoolYear", "SessionName", "DocumentId");
+        sessionForeignKey.DeleteAction.Should().Be("NO ACTION");
+        sessionForeignKey.UpdateAction.Should().Be("CASCADE");
+
+        // Cut edge at the covered School diamond: still full-composite, but pruned to
+        // NO ACTION because the retained Session cascade carries SchoolId_Unified.
+        var schoolForeignKey = courseOfferingForeignKeys.Single(foreignKey =>
+            foreignKey.ConstraintName == "FK_CourseOffering_School_RefKey"
+        );
+        schoolForeignKey.Columns.Should().Equal("SchoolId_Unified", "School_DocumentId");
+        schoolForeignKey.ReferencedSchema.Should().Be("edfi");
+        schoolForeignKey.ReferencedTable.Should().Be("School");
+        schoolForeignKey.ReferencedColumns.Should().Equal("SchoolId", "DocumentId");
+        schoolForeignKey.DeleteAction.Should().Be("NO ACTION");
+        schoolForeignKey.UpdateAction.Should().Be("NO ACTION");
+
+        var surveyForeignKeys = await _database.GetForeignKeyMetadataAsync("edfi", "Survey");
+        var surveySessionForeignKey = surveyForeignKeys.Single(foreignKey =>
+            foreignKey.ConstraintName == "FK_Survey_Session_RefKey"
+        );
+        surveySessionForeignKey
+            .Columns.Should()
+            .Equal("Session_SchoolId", "SchoolYear_Unified", "Session_SessionName", "Session_DocumentId");
+        surveySessionForeignKey.ReferencedSchema.Should().Be("edfi");
+        surveySessionForeignKey.ReferencedTable.Should().Be("Session");
+        surveySessionForeignKey
+            .ReferencedColumns.Should()
+            .Equal("School_SchoolId", "SchoolYear_SchoolYear", "SessionName", "DocumentId");
+        surveySessionForeignKey.DeleteAction.Should().Be("NO ACTION");
+        surveySessionForeignKey.UpdateAction.Should().Be("CASCADE");
+    }
+
+    private async Task AssertForeignKeysEnabledTrustedAndValidAsync(string schemaName, string tableName)
+    {
+        var compromisedForeignKeys = await _database.QueryRowsAsync(
+            """
+            SELECT foreign_keys.name AS [ConstraintName]
+            FROM sys.foreign_keys foreign_keys
+            INNER JOIN sys.tables tables ON tables.object_id = foreign_keys.parent_object_id
+            INNER JOIN sys.schemas schemas ON schemas.schema_id = tables.schema_id
+            WHERE schemas.name = @schemaName
+              AND tables.name = @tableName
+              AND (foreign_keys.is_disabled = 1 OR foreign_keys.is_not_trusted = 1);
+            """,
+            new SqlParameter("@schemaName", schemaName),
+            new SqlParameter("@tableName", tableName)
+        );
+        compromisedForeignKeys
+            .Should()
+            .BeEmpty($"every FK on [{schemaName}].[{tableName}] must remain enabled and trusted");
+
+        var constraintViolations = await _database.QueryRowsAsync(
+            $"DBCC CHECKCONSTRAINTS ('[{schemaName}].[{tableName}]') WITH ALL_CONSTRAINTS;"
+        );
+        constraintViolations
+            .Should()
+            .BeEmpty($"no constraint on [{schemaName}].[{tableName}] may be violated after the cascade");
     }
 
     [Test]

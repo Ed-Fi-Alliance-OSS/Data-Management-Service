@@ -12,15 +12,14 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
-/// Runtime proof that the MSSQL identity-propagation trigger emitted for an upstream
-/// resource (<c>ClassPeriod</c>) reaches stored child-collection bindings and that the
-/// child stamp triggers then bump the owning root document's <c>ContentVersion</c>.
-/// Exercises two different child-collection referrers of the same
-/// <c>TR_ClassPeriod_PropagateIdentity</c> trigger
-/// (<c>BellScheduleClassPeriod</c> with owning root <c>BellSchedule</c>, and
-/// <c>SectionClassPeriod</c> with owning root <c>Section</c>) to demonstrate that the
-/// propagation fan-out is general across multiple child-collection referrers of the
-/// same target, not hardcoded to a single binding.
+/// Runtime proof that a rename of an upstream resource's identity (<c>ClassPeriod</c>)
+/// reaches stored child-collection bindings through the native <c>ON UPDATE CASCADE</c>
+/// foreign keys and that the child stamp triggers then bump the owning root document's
+/// <c>ContentVersion</c>. Exercises two different child-collection referrers cascading
+/// from the same target (<c>BellScheduleClassPeriod</c> with owning root
+/// <c>BellSchedule</c>, and <c>SectionClassPeriod</c> with owning root <c>Section</c>)
+/// to demonstrate that the cascade fan-out is general across multiple child-collection
+/// referrers of the same target, not hardcoded to a single binding.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -124,20 +123,20 @@ public class MssqlChildBindingIdentityPropagationTests
             new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId)
         );
 
-        // Assert — propagation updated the projected identity column on the child row
+        // Assert — the cascade updated the projected identity column on the child row
         var childRow = await QuerySingleBellScheduleClassPeriodAsync(bellScheduleDocumentId);
         Convert
             .ToString(childRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
             .Should()
             .Be(NewClassPeriodName);
 
-        // Row count must be unchanged — propagation is an UPDATE, not an INSERT/DELETE
+        // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE
         var childRowsAfter = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
         childRowsAfter
             .Should()
             .Be(
                 childRowsBefore,
-                "propagation must update projected identity columns, not insert/delete rows"
+                "the cascade must update projected identity columns, not insert/delete rows"
             );
 
         // FK anchor (ClassPeriod_DocumentId) must NOT change — propagation should only
@@ -147,17 +146,17 @@ public class MssqlChildBindingIdentityPropagationTests
             .Should()
             .Be(
                 childAnchorBefore,
-                "ClassPeriod_DocumentId is the reference anchor and must not change during identity propagation"
+                "ClassPeriod_DocumentId is the reference anchor and must not change during an identity cascade"
             );
 
         // The child stamp trigger (TR_BellScheduleClassPeriod_Stamp) must fire from the
-        // propagation UPDATE and bump the owning BellSchedule root's ContentVersion.
+        // cascade UPDATE and bump the owning BellSchedule root's ContentVersion.
         var finalContentVersion = await QueryDocumentContentVersionAsync(bellScheduleDocumentId);
         finalContentVersion
             .Should()
             .BeGreaterThan(
                 initialContentVersion,
-                "child stamp trigger must fire from the propagation UPDATE and bump the owning root ContentVersion"
+                "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
     }
 
@@ -166,13 +165,14 @@ public class MssqlChildBindingIdentityPropagationTests
     {
         // Arrange — seed a School document, a ClassPeriod referencing that School, a
         // synthetic Section root, and a SectionClassPeriod child binding referencing both
-        // Section and ClassPeriod. The Section row is seeded with FK_Section_CourseOffering
-        // temporarily disabled and Section's own triggers disabled, which bypasses the deep
-        // upstream chain rooted at CourseOffering. None of that chain is needed to exercise
-        // the ClassPeriod identity-propagation fan-out into SectionClassPeriod, which is the
-        // behaviour under test. This exercises a different child-collection referrer of
-        // TR_ClassPeriod_PropagateIdentity than the BellScheduleClassPeriod case — proving
-        // the propagation fan-out works for any child binding to ClassPeriod.
+        // Section and ClassPeriod. The Section row is seeded with
+        // FK_Section_CourseOffering_RefKey temporarily disabled and Section's own triggers
+        // disabled, which bypasses the deep upstream chain rooted at CourseOffering. None of
+        // that chain is needed to exercise the ClassPeriod cascade fan-out into
+        // SectionClassPeriod, which is the behaviour under test. This exercises a different
+        // child-collection referrer cascading from ClassPeriod than the
+        // BellScheduleClassPeriod case — proving the cascade fan-out works for any child
+        // binding to ClassPeriod.
         const int SchoolId = 100;
         const string OldClassPeriodName = "Period 1";
         const string NewClassPeriodName = "Period 1A";
@@ -212,20 +212,20 @@ public class MssqlChildBindingIdentityPropagationTests
             new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId)
         );
 
-        // Assert — propagation updated the projected identity column on the child row
+        // Assert — the cascade updated the projected identity column on the child row
         var childRow = await QuerySingleSectionClassPeriodAsync(sectionDocumentId);
         Convert
             .ToString(childRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
             .Should()
             .Be(NewClassPeriodName);
 
-        // Row count must be unchanged — propagation is an UPDATE, not an INSERT/DELETE.
+        // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE.
         var childRowsAfter = await QuerySectionClassPeriodRowCountAsync(sectionDocumentId);
         childRowsAfter
             .Should()
             .Be(
                 childRowsBefore,
-                "propagation must update projected identity columns, not insert/delete rows"
+                "the cascade must update projected identity columns, not insert/delete rows"
             );
 
         // FK anchor (ClassPeriod_DocumentId) must NOT change — propagation should only
@@ -235,18 +235,18 @@ public class MssqlChildBindingIdentityPropagationTests
             .Should()
             .Be(
                 childAnchorBefore,
-                "ClassPeriod_DocumentId is the reference anchor and must not change during identity propagation"
+                "ClassPeriod_DocumentId is the reference anchor and must not change during an identity cascade"
             );
 
         // The child stamp trigger (TR_SectionClassPeriod_Stamp) must fire from the
-        // propagation UPDATE and bump the owning Section root's ContentVersion via
+        // cascade UPDATE and bump the owning Section root's ContentVersion via
         // the Section_DocumentId locator.
         var finalContentVersion = await QueryDocumentContentVersionAsync(sectionDocumentId);
         finalContentVersion
             .Should()
             .BeGreaterThan(
                 initialContentVersion,
-                "child stamp trigger must fire from the propagation UPDATE and bump the owning root ContentVersion"
+                "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
     }
 
@@ -458,13 +458,13 @@ public class MssqlChildBindingIdentityPropagationTests
         // Section requires a non-null CourseOffering FK and a non-null SchoolId_Unified
         // plus the all-or-none CourseOffering CHECK columns. Seeding the full upstream
         // CourseOffering → Course + Session + School(again) chain just to exercise the
-        // ClassPeriod → SectionClassPeriod propagation is out of scope for this smoke,
-        // so we temporarily disable FK_Section_CourseOffering and Section's own triggers
-        // to insert a synthetic Section. The propagation behaviour under test fires from
-        // ClassPeriod's trigger and stamps Section via SectionClassPeriod — none of that
+        // ClassPeriod → SectionClassPeriod cascade is out of scope for this smoke, so we
+        // temporarily disable FK_Section_CourseOffering_RefKey and Section's own triggers
+        // to insert a synthetic Section. The behaviour under test cascades from
+        // ClassPeriod's FK and stamps Section via SectionClassPeriod — none of that
         // depends on real CourseOffering rows being present.
         await _database.ExecuteNonQueryAsync(
-            "ALTER TABLE [edfi].[Section] NOCHECK CONSTRAINT [FK_Section_CourseOffering];"
+            "ALTER TABLE [edfi].[Section] NOCHECK CONSTRAINT [FK_Section_CourseOffering_RefKey];"
         );
         await _database.ExecuteNonQueryAsync("DISABLE TRIGGER ALL ON [edfi].[Section];");
 
@@ -505,7 +505,7 @@ public class MssqlChildBindingIdentityPropagationTests
         {
             await _database.ExecuteNonQueryAsync("ENABLE TRIGGER ALL ON [edfi].[Section];");
             await _database.ExecuteNonQueryAsync(
-                "ALTER TABLE [edfi].[Section] CHECK CONSTRAINT [FK_Section_CourseOffering];"
+                "ALTER TABLE [edfi].[Section] CHECK CONSTRAINT [FK_Section_CourseOffering_RefKey];"
             );
         }
 

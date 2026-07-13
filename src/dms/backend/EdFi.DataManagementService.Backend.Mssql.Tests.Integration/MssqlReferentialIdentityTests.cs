@@ -631,8 +631,8 @@ public class MssqlReferentialIdentityTests
         await DelayForDistinctTimestampsAsync();
 
         // Act — open an explicit transaction, UPDATE the parent identity, then
-        // observe the cascade (driven by the MssqlIdentityPropagationTrigger trigger
-        // on SQL Server) through the same connection BEFORE COMMIT.
+        // observe the cascade (driven by the native ON UPDATE CASCADE reference
+        // foreign keys on SQL Server) through the same connection BEFORE COMMIT.
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
@@ -761,8 +761,8 @@ public class MssqlReferentialIdentityTests
     [Test]
     public async Task Cascaded_identity_update_rolls_back_with_parent_transaction()
     {
-        // SQL Server cascade is driven by the MssqlIdentityPropagationTrigger trigger rather than an FK
-        // cascade, so explicitly assert the trigger-side recompute reverts on parent rollback.
+        // SQL Server cascade is driven by native ON UPDATE CASCADE reference foreign keys,
+        // so explicitly assert the cascaded recompute reverts on parent rollback.
         const string OldStudentUniqueId = "STU-RBK-OLD";
         const string NewStudentUniqueId = "STU-RBK-NEW";
 

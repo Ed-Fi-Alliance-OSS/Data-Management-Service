@@ -337,7 +337,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
     }
 
     [Test]
-    public async Task It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback()
+    public async Task It_should_keep_runtime_written_rows_participating_in_native_identity_cascades()
     {
         var beforeCascade = await ReadPersistedStateAsync(SurveyDocumentUuid.Value);
         var metadataBeforeCascade = await ReadDocumentMetadataAsync(SurveyDocumentUuid.Value);
