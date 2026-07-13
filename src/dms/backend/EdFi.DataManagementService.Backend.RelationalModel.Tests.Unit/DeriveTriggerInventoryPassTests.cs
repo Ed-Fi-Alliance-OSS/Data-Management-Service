@@ -461,244 +461,74 @@ public class Given_Descriptor_Resources_For_Trigger_Derivation
 }
 
 /// <summary>
-/// Test fixture verifying MssqlIdentityPropagationTrigger triggers are not emitted on Pgsql,
-/// even for schemas that have references qualifying for cascade propagation.
+/// Test fixture verifying no identity-value propagation trigger is emitted on either dialect:
+/// SQL Server identity propagation is handled by native cascades under FK pruning, while the
+/// stamping, referential-identity, and shared descriptor triggers remain unchanged.
 /// </summary>
 [TestFixture]
-public class Given_MssqlIdentityPropagationTrigger_On_Pgsql
+public class Given_Trigger_Inventory_Without_Identity_Propagation
 {
-    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+    private IReadOnlyList<DbTriggerInfo> _mssqlTriggers = default!;
+    private IReadOnlyList<DbTriggerInfo> _pgsqlTriggers = default!;
 
     /// <summary>
-    /// Sets up the test fixture.
+    /// Sets up the test fixture with a schema whose mutable School reference previously produced
+    /// the MSSQL propagation trigger fallback.
     /// </summary>
     [SetUp]
     public void Setup()
     {
-        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
-        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            coreProjectSchema,
-            isExtensionProject: false
-        );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
-        var builder = new DerivedRelationalModelSetBuilder(
+        static EffectiveSchemaSet BuildSchemaSet()
+        {
+            var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+                ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema(),
+                isExtensionProject: false
+            );
+
+            return EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        }
+
+        var mssqlBuilder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
+        _mssqlTriggers = mssqlBuilder
+            .Build(BuildSchemaSet(), SqlDialect.Mssql, new MssqlDialectRules())
+            .TriggersInCreateOrder;
 
-        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
-        _triggers = result.TriggersInCreateOrder;
-    }
-
-    /// <summary>
-    /// It should not emit any MssqlIdentityPropagationTrigger triggers on Pgsql.
-    /// </summary>
-    [Test]
-    public void It_should_not_emit_any_MssqlIdentityPropagationTrigger_triggers_on_Pgsql()
-    {
-        var fallbackTriggers = _triggers.Where(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-        );
-
-        fallbackTriggers.Should().BeEmpty();
-    }
-}
-
-/// <summary>
-/// Test fixture for MssqlIdentityPropagationTrigger triggers on MSSQL dialect with concrete
-/// reference targets (allowIdentityUpdates).
-/// </summary>
-[TestFixture]
-public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Concrete_Targets
-{
-    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
-
-    /// <summary>
-    /// Sets up the test fixture.
-    /// </summary>
-    [SetUp]
-    public void Setup()
-    {
-        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
-        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            coreProjectSchema,
-            isExtensionProject: false
-        );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
-        var builder = new DerivedRelationalModelSetBuilder(
+        var pgsqlBuilder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
-
-        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
-        _triggers = result.TriggersInCreateOrder;
+        _pgsqlTriggers = pgsqlBuilder
+            .Build(BuildSchemaSet(), SqlDialect.Pgsql, new PgsqlDialectRules())
+            .TriggersInCreateOrder;
     }
 
     /// <summary>
-    /// It should emit propagation trigger on referenced resource.
+    /// It should emit no identity-value propagation trigger on either dialect.
     /// </summary>
     [Test]
-    public void It_should_emit_propagation_trigger_on_referenced_resource()
+    public void It_should_emit_no_identity_propagation_trigger_on_either_dialect()
     {
-        var schoolPropagation = _triggers.SingleOrDefault(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-
-        schoolPropagation.Should().NotBeNull();
-        schoolPropagation!.Table.Name.Should().Be("School");
+        _mssqlTriggers.Should().NotContain(t => t.Name.Value.Contains("PropagateIdentity"));
+        _pgsqlTriggers.Should().NotContain(t => t.Name.Value.Contains("PropagateIdentity"));
     }
 
     /// <summary>
-    /// It should not emit propagation trigger for non-updatable target.
+    /// It should keep the stamping, referential-identity, and shared descriptor triggers.
     /// </summary>
     [Test]
-    public void It_should_not_emit_propagation_trigger_for_non_updatable_target()
+    public void It_should_keep_maintenance_and_stamping_triggers_unchanged()
     {
-        var studentPropagation = _triggers.SingleOrDefault(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_Student_PropagateIdentity"
-        );
-
-        studentPropagation.Should().BeNull();
-    }
-
-    /// <summary>
-    /// It should use DocumentId as key column on referenced table.
-    /// </summary>
-    [Test]
-    public void It_should_use_DocumentId_as_key_column()
-    {
-        var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-
-        schoolPropagation.KeyColumns.Should().ContainSingle();
-        schoolPropagation.KeyColumns[0].Value.Should().Be("DocumentId");
-    }
-
-    /// <summary>
-    /// It should include identity projection columns from referenced table.
-    /// </summary>
-    [Test]
-    public void It_should_include_identity_projection_columns()
-    {
-        var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-
-        schoolPropagation
-            .IdentityProjectionColumns.Select(c => c.Value)
+        _mssqlTriggers.Should().Contain(t => t.Parameters is TriggerKindParameters.DocumentStamping);
+        _mssqlTriggers
             .Should()
-            .Contain("EducationOrganizationId")
-            .And.Contain("SchoolId");
-    }
+            .Contain(t => t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance);
+        _mssqlTriggers.Should().Contain(t => t.Name.Value == "TR_Descriptor_Stamp_Document");
 
-    /// <summary>
-    /// It should include referrer updates for Enrollment.
-    /// </summary>
-    [Test]
-    public void It_should_include_referrer_updates()
-    {
-        var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-
-        var propagationParams =
-            schoolPropagation.Parameters as TriggerKindParameters.MssqlIdentityPropagationTrigger;
-        propagationParams.Should().NotBeNull();
-        propagationParams!.ReferrerUpdates.Should().ContainSingle();
-
-        var referrerUpdate = propagationParams.ReferrerUpdates[0];
-        referrerUpdate.ReferrerTable.Name.Should().Be("Enrollment");
-        referrerUpdate.ReferrerFkColumn.Value.Should().Be("School_DocumentId");
-        referrerUpdate
-            .ColumnMappings.Select(m => m.TargetColumn.Value)
+        _mssqlTriggers
+            .Select(t => (t.Table.Name, t.Name.Value))
             .Should()
-            .Contain("School_EducationOrganizationId")
-            .And.Contain("School_SchoolId");
-    }
-}
-
-/// <summary>
-/// Test fixture for MssqlIdentityPropagationTrigger triggers on MSSQL dialect with abstract
-/// reference targets.
-/// </summary>
-[TestFixture]
-public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Abstract_Targets
-{
-    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
-
-    /// <summary>
-    /// Sets up the test fixture.
-    /// </summary>
-    [SetUp]
-    public void Setup()
-    {
-        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildAbstractReferenceProjectSchema();
-        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            coreProjectSchema,
-            isExtensionProject: false
-        );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
-        var builder = new DerivedRelationalModelSetBuilder(
-            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
-        );
-
-        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
-        _triggers = result.TriggersInCreateOrder;
-    }
-
-    /// <summary>
-    /// It should emit propagation trigger on abstract identity table.
-    /// </summary>
-    [Test]
-    public void It_should_emit_propagation_trigger_on_abstract_identity_table()
-    {
-        var propagation = _triggers.SingleOrDefault(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
-        );
-
-        propagation.Should().NotBeNull();
-        propagation!.Table.Name.Should().Be("EducationOrganizationIdentity");
-    }
-
-    /// <summary>
-    /// It should include referrer updates for Enrollment.
-    /// </summary>
-    [Test]
-    public void It_should_include_referrer_updates_for_enrollment()
-    {
-        var propagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
-        );
-
-        var propagationParams =
-            propagation.Parameters as TriggerKindParameters.MssqlIdentityPropagationTrigger;
-        propagationParams.Should().NotBeNull();
-        propagationParams!.ReferrerUpdates.Should().ContainSingle();
-
-        var referrerUpdate = propagationParams.ReferrerUpdates[0];
-        referrerUpdate.ReferrerTable.Name.Should().Be("Enrollment");
-        referrerUpdate.ReferrerFkColumn.Value.Should().Be("EducationOrganization_DocumentId");
-    }
-
-    /// <summary>
-    /// It should use DocumentId as key column for abstract identity table.
-    /// </summary>
-    [Test]
-    public void It_should_use_DocumentId_as_key_column_for_abstract_identity_table()
-    {
-        var propagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
-        );
-
-        propagation.KeyColumns.Should().ContainSingle();
-        propagation.KeyColumns[0].Value.Should().Be("DocumentId");
+            .Equal(_pgsqlTriggers.Select(t => (t.Table.Name, t.Name.Value)));
     }
 }
 
@@ -953,7 +783,6 @@ public class Given_Deterministic_Trigger_Ordering
                 TriggerKindParameters.DocumentStamping => "DocumentStamping",
                 TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
                 TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
-                TriggerKindParameters.MssqlIdentityPropagationTrigger => "MssqlIdentityPropagationTrigger",
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(p),
                     "Unsupported trigger kind parameters type."
@@ -1347,374 +1176,6 @@ file sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelS
         throw new InvalidOperationException(
             "Test fixture requires at least one unified alias with a presence gate."
         );
-    }
-}
-
-/// <summary>
-/// Test fixture for MssqlIdentityPropagationTrigger on MSSQL with a child-collection
-/// reference binding (in addition to the existing root-table binding). Verifies
-/// that child collection referrers must appear as PropagationReferrerTarget
-/// entries on the referenced resource's propagation trigger.
-/// </summary>
-[TestFixture]
-public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Child_Collection_Referrer
-{
-    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
-
-    /// <summary>
-    /// Sets up the test fixture.
-    /// </summary>
-    [SetUp]
-    public void Setup()
-    {
-        var coreProjectSchema =
-            ConstraintDerivationTestSchemaBuilder.BuildChildReferenceProjectSchemaForTriggerDerivation();
-        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            coreProjectSchema,
-            isExtensionProject: false
-        );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
-        var builder = new DerivedRelationalModelSetBuilder(
-            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
-        );
-
-        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
-        _triggers = result.TriggersInCreateOrder;
-    }
-
-    /// <summary>
-    /// It should emit one propagation trigger on School.
-    /// </summary>
-    [Test]
-    public void It_should_emit_one_propagation_trigger_on_School()
-    {
-        var schoolPropagations = _triggers
-            .Where(t =>
-                t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-                && t.Name.Value == "TR_School_PropagateIdentity"
-            )
-            .ToArray();
-
-        schoolPropagations.Should().ContainSingle();
-        schoolPropagations[0].Table.Name.Should().Be("School");
-    }
-
-    /// <summary>
-    /// It should include child table referrer alongside root referrer.
-    /// </summary>
-    [Test]
-    public void It_should_include_child_table_referrer_alongside_root_referrer()
-    {
-        var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
-            schoolPropagation.Parameters;
-
-        // Existing root-table referrer (Enrollment) must still be present.
-        propagationParams.ReferrerUpdates.Should().Contain(r => r.ReferrerTable.Name == "Enrollment");
-
-        // New: child-collection referrer (BusRouteAddress) must be present.
-        propagationParams
-            .ReferrerUpdates.Should()
-            .Contain(
-                r => r.ReferrerTable.Name == "BusRouteAddress",
-                "child collection bindings must be included in MssqlIdentityPropagationTrigger"
-            );
-    }
-
-    /// <summary>
-    /// It should resolve child referrer target columns against the child table model.
-    /// </summary>
-    [Test]
-    public void It_should_resolve_child_referrer_target_columns_against_the_child_table_model()
-    {
-        var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
-            schoolPropagation.Parameters;
-
-        var childReferrer = propagationParams.ReferrerUpdates.Single(r =>
-            r.ReferrerTable.Name == "BusRouteAddress"
-        );
-
-        childReferrer.ReferrerFkColumn.Value.Should().Be("School_DocumentId");
-
-        var targetColumns = childReferrer.ColumnMappings.Select(m => m.TargetColumn.Value).ToArray();
-        targetColumns.Should().Contain("School_EducationOrganizationId").And.Contain("School_SchoolId");
-    }
-}
-
-/// <summary>
-/// Test fixture for MssqlIdentityPropagationTrigger on MSSQL with a resource-extension
-/// reference binding (an <c>_ext</c>-scoped reference defined by an extension project that
-/// targets a core resource). Verifies that the extension table appears as a
-/// PropagationReferrerTarget on the referenced resource's propagation trigger; without the
-/// fix, the extension table's projected identity columns go stale on identity updates and
-/// its own stamp trigger never fires.
-/// </summary>
-[TestFixture]
-public class Given_MssqlIdentityPropagationTrigger_On_Mssql_With_Extension_Referrer
-{
-    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
-
-    /// <summary>
-    /// Sets up the test fixture.
-    /// </summary>
-    [SetUp]
-    public void Setup()
-    {
-        var coreProjectSchema = BuildCoreProjectSchemaForExtensionReferrer();
-        var extensionProjectSchema = BuildExtensionProjectSchemaForExtensionReferrer();
-        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            coreProjectSchema,
-            isExtensionProject: false
-        );
-        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            extensionProjectSchema,
-            isExtensionProject: true
-        );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
-            coreProject,
-            extensionProject,
-        ]);
-        var builder = new DerivedRelationalModelSetBuilder(
-            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
-        );
-
-        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
-        _triggers = result.TriggersInCreateOrder;
-    }
-
-    /// <summary>
-    /// It should emit one propagation trigger on School.
-    /// </summary>
-    [Test]
-    public void It_should_emit_one_propagation_trigger_on_School()
-    {
-        var schoolPropagations = _triggers
-            .Where(t =>
-                t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-                && t.Name.Value == "TR_School_PropagateIdentity"
-            )
-            .ToArray();
-
-        schoolPropagations.Should().ContainSingle();
-        schoolPropagations[0].Table.Name.Should().Be("School");
-    }
-
-    /// <summary>
-    /// It should include the extension table referrer.
-    /// </summary>
-    [Test]
-    public void It_should_include_the_extension_table_referrer()
-    {
-        var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
-            schoolPropagation.Parameters;
-
-        propagationParams
-            .ReferrerUpdates.Should()
-            .Contain(
-                r => r.ReferrerTable.Name == "ContactExtension",
-                "_ext-scoped reference bindings must be included in MssqlIdentityPropagationTrigger"
-            );
-    }
-
-    /// <summary>
-    /// It should resolve extension referrer target columns against the extension table model.
-    /// </summary>
-    [Test]
-    public void It_should_resolve_extension_referrer_target_columns_against_the_extension_table_model()
-    {
-        var schoolPropagation = _triggers.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-            && t.Name.Value == "TR_School_PropagateIdentity"
-        );
-        var propagationParams = (TriggerKindParameters.MssqlIdentityPropagationTrigger)
-            schoolPropagation.Parameters;
-
-        var extensionReferrer = propagationParams.ReferrerUpdates.Single(r =>
-            r.ReferrerTable.Name == "ContactExtension"
-        );
-
-        extensionReferrer.ReferrerFkColumn.Value.Should().Be("School_DocumentId");
-
-        var targetColumns = extensionReferrer.ColumnMappings.Select(m => m.TargetColumn.Value).ToArray();
-        targetColumns.Should().Contain("School_EducationOrganizationId").And.Contain("School_SchoolId");
-    }
-
-    private static JsonObject BuildCoreProjectSchemaForExtensionReferrer()
-    {
-        return new JsonObject
-        {
-            ["projectName"] = "Ed-Fi",
-            ["projectEndpointName"] = "ed-fi",
-            ["projectVersion"] = "1.0.0",
-            ["resourceSchemas"] = new JsonObject
-            {
-                ["contacts"] = BuildContactBaseSchemaForExtensionReferrer(),
-                ["schools"] = BuildSchoolTargetSchemaForExtensionReferrer(),
-            },
-        };
-    }
-
-    private static JsonObject BuildExtensionProjectSchemaForExtensionReferrer()
-    {
-        return new JsonObject
-        {
-            ["projectName"] = "Sample",
-            ["projectEndpointName"] = "sample",
-            ["projectVersion"] = "1.0.0",
-            ["resourceSchemas"] = new JsonObject
-            {
-                ["contacts"] = BuildContactExtensionWithSchoolReferenceSchema(),
-            },
-        };
-    }
-
-    private static JsonObject BuildContactBaseSchemaForExtensionReferrer()
-    {
-        var jsonSchemaForInsert = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["contactUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
-            },
-            ["required"] = new JsonArray("contactUniqueId"),
-        };
-
-        return new JsonObject
-        {
-            ["resourceName"] = "Contact",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.contactUniqueId" },
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["ContactUniqueId"] = new JsonObject
-                {
-                    ["isReference"] = false,
-                    ["path"] = "$.contactUniqueId",
-                },
-            },
-            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
-        };
-    }
-
-    private static JsonObject BuildSchoolTargetSchemaForExtensionReferrer()
-    {
-        var jsonSchemaForInsert = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["schoolId"] = new JsonObject { ["type"] = "integer" },
-                ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
-            },
-            ["required"] = new JsonArray("schoolId", "educationOrganizationId"),
-        };
-
-        return new JsonObject
-        {
-            ["resourceName"] = "School",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = true,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.schoolId" },
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["EducationOrganizationId"] = new JsonObject
-                {
-                    ["isReference"] = false,
-                    ["path"] = "$.educationOrganizationId",
-                },
-                ["SchoolId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.schoolId" },
-            },
-            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
-        };
-    }
-
-    private static JsonObject BuildContactExtensionWithSchoolReferenceSchema()
-    {
-        var jsonSchemaForInsert = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["_ext"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["sample"] = new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["schoolReference"] = new JsonObject
-                                {
-                                    ["type"] = "object",
-                                    ["properties"] = new JsonObject
-                                    {
-                                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
-                                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        };
-
-        return new JsonObject
-        {
-            ["resourceName"] = "Contact",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = true,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray(),
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["School"] = new JsonObject
-                {
-                    ["isReference"] = true,
-                    ["isDescriptor"] = false,
-                    ["isRequired"] = false,
-                    ["projectName"] = "Ed-Fi",
-                    ["resourceName"] = "School",
-                    ["referenceJsonPaths"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.educationOrganizationId",
-                            ["referenceJsonPath"] = "$._ext.sample.schoolReference.educationOrganizationId",
-                        },
-                        new JsonObject
-                        {
-                            ["identityJsonPath"] = "$.schoolId",
-                            ["referenceJsonPath"] = "$._ext.sample.schoolReference.schoolId",
-                        },
-                    },
-                },
-            },
-            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
-        };
     }
 }
 
@@ -2356,21 +1817,6 @@ public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
             .ToArray();
     }
 
-    private static IReadOnlyList<(string Source, string Target)> PropagationMappings(
-        IReadOnlyList<DbTriggerInfo> triggers
-    )
-    {
-        var trigger = triggers.Single(t =>
-            t.Table.Name == "School" && t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-        );
-        var parameters = (TriggerKindParameters.MssqlIdentityPropagationTrigger)trigger.Parameters;
-
-        return parameters
-            .ReferrerUpdates.Single(r => r.ReferrerTable.Name == "EnrollmentSchoolCarrier")
-            .ColumnMappings.Select(m => (m.SourceColumn.Value, m.TargetColumn.Value))
-            .ToArray();
-    }
-
     /// <summary>
     /// The abstract identity maintenance trigger must be derived for the grouped-duplicate subclass: the
     /// two identity-part columns bound to <c>$.schoolReference.schoolId</c> converge to one stored column
@@ -2384,38 +1830,19 @@ public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
     }
 
     /// <summary>
-    /// Identity propagation must pair the referrer target column with the source column for its own target
-    /// identity path. The duplicate bindings share <c>$.schoolReference.schoolId</c> but map to distinct
-    /// target identity fields; the surviving mapping must use the <c>SchoolId</c> source (its identity
-    /// path), never the <c>LocalEducationAgencyId</c> source that a reference-path-collapsed lookup would
-    /// apply to every binding.
-    /// </summary>
-    [Test]
-    public void It_should_pair_propagation_source_with_its_own_identity_path()
-    {
-        PropagationMappings(_triggers)
-            .Select(m => m.Source)
-            .Should()
-            .OnlyContain(source => source == "SchoolId")
-            .And.NotContain("LocalEducationAgencyId");
-    }
-
-    /// <summary>
     /// Reversing the duplicate reference binding order must not change the emitted trigger source columns.
     /// The field-name-matched binding is chosen deterministically (the same rule that names abstract
-    /// identity columns), so both propagation and abstract identity maintenance keep the SchoolId-derived
-    /// source rather than the value-equal LocalEducationAgencyId one a binding-order-sensitive selection
-    /// would emit under the reversed order.
+    /// identity columns), so abstract identity maintenance keeps the SchoolId-derived source rather than
+    /// the value-equal LocalEducationAgencyId one a binding-order-sensitive selection would emit under the
+    /// reversed order.
     /// </summary>
     [Test]
     public void It_should_derive_trigger_sources_independent_of_duplicate_binding_order()
     {
         var reversed = BuildTriggers(reverseDuplicateReferenceBindings: true);
 
-        PropagationMappings(reversed).Should().Equal(PropagationMappings(_triggers));
         AbstractMaintenanceMappings(reversed).Should().Equal(AbstractMaintenanceMappings(_triggers));
 
-        PropagationMappings(reversed).Select(m => m.Source).Should().NotContain("LocalEducationAgencyId");
         AbstractMaintenanceMappings(reversed)
             .Select(m => m.Source)
             .Should()
@@ -2483,143 +1910,5 @@ public class Given_AbstractIdentityMaintenance_Trigger_With_Overridden_Member_Re
             .TargetColumnMappings.Select(m => (m.SourceColumn.Value, m.TargetColumn.Value))
             .Should()
             .Contain(("SchoolBase_CampusId", "SchoolBase_SchoolId"));
-    }
-}
-
-/// <summary>
-/// Wiring tests proving <see cref="DeriveTriggerInventoryPass.BuildPropagationColumnMappings"/> invokes the
-/// source-equivalence guard for a real grouped target-binding collapse: two identity bindings whose stored
-/// referrer column unifies into one SET target. The natural pass pipeline cannot produce a divergent group
-/// (key unification makes collapsed sources equivalent), so this drives the latent guard branch directly.
-/// The two cases share one builder and differ only in the second binding's source value — equivalent vs
-/// non-equivalent — so the guard is demonstrably what flips the outcome.
-/// </summary>
-[TestFixture]
-public class Given_Propagation_Column_Mappings_With_Collapsed_Target_Bindings
-{
-    private static readonly DbSchemaName _schema = new("edfi");
-    private static readonly QualifiedResourceName _target = new("Ed-Fi", "CourseOffering");
-    private static readonly QualifiedResourceName _referrer = new("Ed-Fi", "Section");
-
-    private static DbColumnModel Stored(string name) =>
-        new(
-            new DbColumnName(name),
-            ColumnKind.Scalar,
-            new RelationalScalarType(ScalarKind.Int64),
-            IsNullable: false,
-            SourceJsonPath: null,
-            TargetResource: null
-        );
-
-    private static DbColumnModel SourceAlias(string name, string canonical, string sourcePath) =>
-        new(
-            new DbColumnName(name),
-            ColumnKind.Scalar,
-            new RelationalScalarType(ScalarKind.Int64),
-            IsNullable: true,
-            SourceJsonPath: JsonPathExpressionCompiler.Compile(sourcePath),
-            TargetResource: null,
-            new ColumnStorage.UnifiedAlias(new DbColumnName(canonical), PresenceColumn: null)
-        );
-
-    // Trigger (referenced) table: two aliases over SchoolId_Unified plus one over a different canonical,
-    // each keyed by the target identity path that resolves it.
-    private static DbTableModel TriggerTable() =>
-        new(
-            new DbTableName(_schema, "CourseOffering"),
-            JsonPathExpressionCompiler.Compile("$"),
-            new TableKey(
-                "PK_CourseOffering",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.Scalar)]
-            ),
-            [
-                Stored("SchoolId_Unified"),
-                Stored("OtherId_Unified"),
-                SourceAlias("School_SchoolId", "SchoolId_Unified", "$.schoolReference.schoolId"),
-                SourceAlias("Session_SchoolId", "SchoolId_Unified", "$.sessionReference.schoolId"),
-                SourceAlias("Other_SchoolId", "OtherId_Unified", "$.otherReference.schoolId"),
-            ],
-            []
-        );
-
-    // Referrer (binding) table: both identity bindings store into one unified column, so they collapse onto
-    // a single SET target column.
-    private static DbTableModel BindingTable() =>
-        new(
-            new DbTableName(_schema, "Section"),
-            JsonPathExpressionCompiler.Compile("$"),
-            new TableKey("PK_Section", [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.Scalar)]),
-            [Stored("SchoolId_Unified")],
-            []
-        );
-
-    private static DocumentReferenceBinding Binding(string secondIdentityPath) =>
-        new(
-            IsIdentityComponent: true,
-            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.courseOfferingReference"),
-            Table: new DbTableName(_schema, "Section"),
-            FkColumn: new DbColumnName("CourseOffering_DocumentId"),
-            TargetResource: _target,
-            IdentityBindings:
-            [
-                new ReferenceIdentityBinding(
-                    IdentityJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
-                    ReferenceJsonPath: JsonPathExpressionCompiler.Compile(
-                        "$.courseOfferingReference.schoolId"
-                    ),
-                    Column: new DbColumnName("SchoolId_Unified")
-                ),
-                new ReferenceIdentityBinding(
-                    IdentityJsonPath: JsonPathExpressionCompiler.Compile(secondIdentityPath),
-                    ReferenceJsonPath: JsonPathExpressionCompiler.Compile(
-                        "$.courseOfferingReference.secondSchoolId"
-                    ),
-                    Column: new DbColumnName("SchoolId_Unified")
-                ),
-            ]
-        );
-
-    private static IReadOnlyList<TriggerColumnMapping> Build(string secondIdentityPath) =>
-        DeriveTriggerInventoryPass.BuildPropagationColumnMappings(
-            Binding(secondIdentityPath),
-            _referrer,
-            BindingTable(),
-            TriggerTable(),
-            _target
-        );
-
-    /// <summary>
-    /// Two bindings that collapse onto one referrer column but read value-equivalent sources
-    /// (School_SchoolId and Session_SchoolId, both over SchoolId_Unified) must produce a single mapping
-    /// using the deterministic representative source.
-    /// </summary>
-    [Test]
-    public void It_should_collapse_value_equivalent_bindings_to_the_representative_source()
-    {
-        var mappings = Build("$.sessionReference.schoolId");
-
-        mappings.Should().HaveCount(1);
-        mappings[0].SourceColumn.Value.Should().Be("School_SchoolId");
-        mappings[0].TargetColumn.Value.Should().Be("SchoolId_Unified");
-    }
-
-    /// <summary>
-    /// Two bindings that collapse onto one referrer column but read non-equivalent sources (School_SchoolId
-    /// over SchoolId_Unified vs Other_SchoolId over OtherId_Unified) must fail derivation rather than emit
-    /// one representative that silently drops the other binding's value.
-    /// </summary>
-    [Test]
-    public void It_should_throw_when_collapsed_bindings_read_non_equivalent_sources()
-    {
-        var act = () => Build("$.otherReference.schoolId");
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*CourseOffering*")
-            .WithMessage("*Section*")
-            .WithMessage("*SchoolId_Unified*")
-            .WithMessage("*OtherId_Unified*")
-            .WithMessage("*School_SchoolId*")
-            .WithMessage("*Other_SchoolId*");
     }
 }

@@ -809,7 +809,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var mssqlTriggerEvent = trigger.Parameters switch
         {
             TriggerKindParameters.DocumentStamping => "AFTER INSERT, UPDATE, DELETE",
-            TriggerKindParameters.MssqlIdentityPropagationTrigger => "AFTER UPDATE",
             _ => "AFTER INSERT, UPDATE",
         };
         writer.AppendLine(mssqlTriggerEvent);
@@ -975,16 +974,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     );
                 }
                 EmitAbstractIdentityBody(writer, trigger, abstractIdTableModel, abstractId);
-                break;
-            case TriggerKindParameters.MssqlIdentityPropagationTrigger propagation:
-                if (!tableModelsByTableName.TryGetValue(trigger.Table, out var propagationTableModel))
-                {
-                    throw new InvalidOperationException(
-                        $"MssqlIdentityPropagationTrigger trigger '{trigger.Name.Value}' requires a table model for '{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
-                    );
-                }
-
-                EmitIdentityPropagationBody(writer, trigger, propagationTableModel, propagation);
                 break;
             case TriggerKindParameters.AuthHierarchyMaintenance:
                 // Auth triggers are handled by dedicated scaffolding methods
@@ -2402,149 +2391,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits the MSSQL identity-propagation trigger body that cascades
-    /// identity column updates to referrer tables when <c>ON UPDATE CASCADE</c> is not available.
-    /// The trigger is placed on the referenced entity and propagates to all referrers.
-    /// </summary>
-    private void EmitIdentityPropagationBody(
-        SqlWriter writer,
-        DbTriggerInfo trigger,
-        DbTableModel tableModel,
-        TriggerKindParameters.MssqlIdentityPropagationTrigger propagation
-    )
-    {
-        if (_dialect.Rules.Dialect != SqlDialect.Mssql)
-        {
-            throw new InvalidOperationException(
-                $"Identity-propagation triggers are only supported for MSSQL, but dialect is {_dialect.Rules.Dialect}."
-            );
-        }
-
-        if (propagation.ReferrerUpdates.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "MssqlIdentityPropagationTrigger trigger was created with zero referrer updates. "
-                    + "This indicates a bug in DeriveTriggerInventoryPass — triggers with no "
-                    + "referrers should be skipped."
-            );
-        }
-
-        var documentIdCol = Quote(DocumentIdColumn);
-
-        // AFTER UPDATE trigger: SQL Server has already applied the owning row update by
-        // the time this body runs. We propagate identity-column changes to referrer
-        // tables. The ON UPDATE NO ACTION FKs are emitted as DocumentId-only on MSSQL
-        // (identity columns excluded), so the parent UPDATE does not violate the FK,
-        // and the referrer UPDATE that follows reconciles the stored projected
-        // identity columns.
-        //
-        // Guard: the trigger fires on every UPDATE statement against the owning table,
-        // including the abstract-identity upsert's zero-row UPDATE phase. Without a
-        // value-diff gate, each referrer UPDATE below would itself fire any
-        // identity-propagation triggers on the referrer's table and cascade through
-        // the schema, easily exceeding SQL Server's 32-level trigger nesting limit.
-        // The IF EXISTS short-circuits the entire body when no identity column
-        // actually changed, which makes the inner UPDATEs (and their cascades) run
-        // only when there is real work to do.
-        writer.Append("IF (");
-        EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
-        writer.AppendLine(")");
-        writer.AppendLine("AND EXISTS (");
-        using (writer.Indent())
-        {
-            writer.Append("SELECT 1 FROM inserted i INNER JOIN deleted d ON i.");
-            writer.Append(documentIdCol);
-            writer.Append(" = d.");
-            writer.AppendLine(documentIdCol);
-            writer.Append("WHERE ");
-            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
-            {
-                if (i > 0)
-                {
-                    writer.Append(" OR ");
-                }
-                EmitMssqlColumnValueDiffPredicate(
-                    writer,
-                    tableModel,
-                    "i",
-                    "d",
-                    trigger.IdentityProjectionColumns[i]
-                );
-            }
-            writer.AppendLine();
-        }
-        writer.AppendLine(")");
-        writer.AppendLine("BEGIN");
-
-        using (writer.Indent())
-        {
-            // Emit an UPDATE statement for each referrer table.
-            foreach (var referrer in propagation.ReferrerUpdates)
-            {
-                var referrerTable = Quote(referrer.ReferrerTable);
-                var fkColumn = Quote(referrer.ReferrerFkColumn);
-
-                writer.AppendLine("UPDATE r");
-                writer.Append("SET ");
-                for (int i = 0; i < referrer.ColumnMappings.Count; i++)
-                {
-                    if (i > 0)
-                    {
-                        writer.Append(", ");
-                    }
-                    // TargetColumn = referrer's stored identity column (e.g., School_SchoolId)
-                    // SourceColumn = trigger table's identity column (e.g., SchoolId)
-                    writer.Append("r.");
-                    writer.Append(Quote(referrer.ColumnMappings[i].TargetColumn));
-                    writer.Append(" = i.");
-                    writer.Append(Quote(referrer.ColumnMappings[i].SourceColumn));
-                }
-                writer.AppendLine();
-
-                writer.Append("FROM ");
-                writer.Append(referrerTable);
-                writer.AppendLine(" r");
-
-                // Join referrer to deleted via FK column pointing to DocumentId.
-                writer.Append("INNER JOIN deleted d ON r.");
-                writer.Append(fkColumn);
-                writer.Append(" = d.");
-                writer.AppendLine(documentIdCol);
-
-                // Correlate old/new rows by DocumentId (the universal PK of the trigger's owning table).
-                writer.Append("INNER JOIN inserted i ON i.");
-                writer.Append(documentIdCol);
-                writer.Append(" = d.");
-                writer.AppendLine(documentIdCol);
-
-                // Only update if identity columns actually changed.
-                writer.Append("WHERE (");
-                for (int i = 0; i < referrer.ColumnMappings.Count; i++)
-                {
-                    if (i > 0)
-                    {
-                        writer.Append(" OR ");
-                    }
-                    EmitMssqlColumnValueDiffPredicate(
-                        writer,
-                        tableModel,
-                        "i",
-                        "d",
-                        referrer.ColumnMappings[i].SourceColumn
-                    );
-                }
-                writer.AppendLine(")");
-                writer.Append("AND ");
-                EmitMssqlPropagationOldValueConjunction(writer, referrer.ColumnMappings);
-                writer.AppendLine(";");
-                writer.AppendLine();
-            }
-        }
-
-        writer.AppendLine("END");
-    }
-
-    /// <summary>
     /// Emits a PostgreSQL <c>OLD.col IS DISTINCT FROM NEW.col</c> disjunction for identity
     /// projection columns, used as a value-diff guard in trigger bodies.
     /// </summary>
@@ -2632,33 +2478,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             EmitMssqlColumnValueDiffPredicate(writer, tableModel, "i", "d", identityProjectionColumns[i]);
         }
         writer.AppendLine(";");
-    }
-
-    private static void EmitMssqlNullSafeEqual(
-        SqlWriter writer,
-        string leftAlias,
-        string quotedColumn,
-        string rightAlias,
-        string rightQuotedColumn
-    )
-    {
-        writer.Append("((");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" = ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(") OR (");
-        writer.Append(leftAlias);
-        writer.Append(".");
-        writer.Append(quotedColumn);
-        writer.Append(" IS NULL AND ");
-        writer.Append(rightAlias);
-        writer.Append(".");
-        writer.Append(rightQuotedColumn);
-        writer.Append(" IS NULL))");
     }
 
     /// <summary>
@@ -3243,24 +3062,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         return columnModel.ScalarType?.Kind;
-    }
-
-    private void EmitMssqlPropagationOldValueConjunction(
-        SqlWriter writer,
-        IReadOnlyList<TriggerColumnMapping> columnMappings
-    )
-    {
-        for (int i = 0; i < columnMappings.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(" AND ");
-            }
-
-            var targetColumn = Quote(columnMappings[i].TargetColumn);
-            var sourceColumn = Quote(columnMappings[i].SourceColumn);
-            EmitMssqlNullSafeEqual(writer, "r", targetColumn, "d", sourceColumn);
-        }
     }
 
     /// <summary>

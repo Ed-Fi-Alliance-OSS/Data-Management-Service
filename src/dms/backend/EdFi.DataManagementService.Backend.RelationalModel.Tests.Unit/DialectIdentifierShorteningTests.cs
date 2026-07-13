@@ -634,21 +634,6 @@ public class Given_Trigger_Parameter_Column_Shortening
     }
 
     [Test]
-    public void It_should_shorten_identity_propagation_fallback_referrer_updates()
-    {
-        var trigger = _result.TriggersInCreateOrder.Single(t =>
-            t.Parameters is TriggerKindParameters.MssqlIdentityPropagationTrigger
-        );
-        var parameters = (TriggerKindParameters.MssqlIdentityPropagationTrigger)trigger.Parameters;
-        var referrer = parameters.ReferrerUpdates.Single();
-        var mapping = referrer.ColumnMappings.Single();
-
-        referrer.ReferrerFkColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.FkColumn));
-        mapping.SourceColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.SourceColumn));
-        mapping.TargetColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.TargetColumn));
-    }
-
-    [Test]
     public void It_should_shorten_referential_identity_maintenance_identity_elements()
     {
         var trigger = _result.TriggersInCreateOrder.Single(t =>
@@ -679,7 +664,6 @@ public class Given_Trigger_Parameter_Column_Shortening
 internal sealed record TriggerParameterColumnIdentifiers(
     string SourceColumn,
     string TargetColumn,
-    string FkColumn,
     string IdentityColumn,
     string AliasColumn
 )
@@ -689,7 +673,6 @@ internal sealed record TriggerParameterColumnIdentifiers(
         return new TriggerParameterColumnIdentifiers(
             SourceColumn: BuildLong("SourceCol", length),
             TargetColumn: BuildLong("TargetCol", length),
-            FkColumn: BuildLong("FkCol", length),
             IdentityColumn: BuildLong("IdentityCol", length),
             AliasColumn: BuildLong("AliasCol", length)
         );
@@ -731,27 +714,6 @@ file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdenti
                     ],
                     "School"
                 )
-            )
-        );
-
-        context.TriggerInventory.Add(
-            new DbTriggerInfo(
-                new DbTriggerName("TR_Propagation"),
-                table,
-                [],
-                [],
-                new TriggerKindParameters.MssqlIdentityPropagationTrigger([
-                    new PropagationReferrerTarget(
-                        targetTable,
-                        new DbColumnName(identifiers.FkColumn),
-                        [
-                            new TriggerColumnMapping(
-                                new DbColumnName(identifiers.SourceColumn),
-                                new DbColumnName(identifiers.TargetColumn)
-                            ),
-                        ]
-                    ),
-                ])
             )
         );
 
