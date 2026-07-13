@@ -48,6 +48,10 @@ public static class RelationalModelSetPasses
             new ArrayUniquenessConstraintPass(),
             new StableCollectionConstraintPass(),
             new DescriptorForeignKeyConstraintPass(),
+            // SQL Server FK pruning assigns final reference-FK ON UPDATE actions and must run
+            // after all FK-producing passes and before constraint hashing, because the
+            // dialect-hashed constraint name includes the ON UPDATE action.
+            new MssqlForeignKeyPruningPass(),
             new ApplyConstraintDialectHashingPass(),
             new ValidateForeignKeyStorageInvariantPass(),
             // Synthesize the change-version mirror columns on resource roots before index/trigger
