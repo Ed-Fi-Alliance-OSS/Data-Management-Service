@@ -67,6 +67,30 @@ exit 0
         Test-Path -LiteralPath $script:dockerLog | Should -BeFalse
     }
 
+    It "refuses the deprecated --volume alias without confirmation" {
+        $output = & bash (Join-Path $script:composeRoot "down.sh") --volume 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $output | Out-String | Should -Match "refusing to drop all volumes"
+        Test-Path -LiteralPath $script:dockerLog | Should -BeFalse
+    }
+
+    It "honors Compose last-value semantics for repeated volume flags" {
+        $attempted = Join-Path $script:composeRoot ".bootstrap/bootstrap-attempted"
+        $complete = Join-Path $script:composeRoot ".bootstrap/bootstrap-complete"
+        New-Item -ItemType File -Path $attempted, $complete -Force | Out-Null
+
+        # Compose resolves `-v --volumes=false` to FALSE (last value wins), so the wrapper must
+        # neither prompt nor clear the markers -- the volumes are preserved.
+        & bash (Join-Path $script:composeRoot "down.sh") -v --volumes=false
+
+        $LASTEXITCODE | Should -Be 0
+        Get-Content -LiteralPath $script:dockerLog -Raw | Should -Match "compose .* down -v --volumes=false"
+        Test-Path -LiteralPath $attempted | Should -BeTrue
+        Test-Path -LiteralPath $complete | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeFalse
+    }
+
     It "clears bootstrap markers for a forced bundled volume drop" {
         $attempted = Join-Path $script:composeRoot ".bootstrap/bootstrap-attempted"
         $complete = Join-Path $script:composeRoot ".bootstrap/bootstrap-complete"
@@ -126,7 +150,8 @@ exit 17
     It "drops Keycloak with application state during reset" {
         $attempted = Join-Path $script:composeRoot ".bootstrap/bootstrap-attempted"
         $complete = Join-Path $script:composeRoot ".bootstrap/bootstrap-complete"
-        New-Item -ItemType File -Path $attempted, $complete -Force | Out-Null
+        $keycloakRef = Join-Path $script:composeRoot ".bootstrap/keycloak-image"
+        New-Item -ItemType File -Path $attempted, $complete, $keycloakRef -Force | Out-Null
 
         & bash (Join-Path $script:composeRoot "reset.sh") --force
 
@@ -137,6 +162,8 @@ exit 17
         Test-Path -LiteralPath $attempted | Should -BeFalse
         Test-Path -LiteralPath $complete | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeFalse
+        # The volume the recorded Keycloak image reference described is gone with the reset.
+        Test-Path -LiteralPath $keycloakRef | Should -BeFalse
     }
 
     It "retains the reset sentinel when the destructive reset fails" {

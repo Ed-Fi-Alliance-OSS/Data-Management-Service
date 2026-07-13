@@ -222,6 +222,16 @@ try {
     if (Select-String -Path ".env" -Pattern '=.*CHANGEME' -Quiet) {
         throw ".env still contains CHANGEME placeholder secrets after secret generation. Refusing to start Compose. Re-run with -RotateSecrets, or replace every CHANGEME value manually."
     }
+    # Same gate for '$' in values, BEFORE any persistent service is initialized: docker compose
+    # interpolates $VAR/${VAR} inside .env, so the containers would be keyed to interpolated
+    # credentials while every script reads the literal value (bootstrap also refuses, but by then
+    # Postgres/Keycloak/CMS state would already exist under the interpolated secrets).
+    $dollarKeys = @(Get-Content ".env" | Where-Object { $_ -match '^\s*[^#\s][^=]*=' -and ($_ -split '=', 2)[1] -match '\$' } |
+            ForEach-Object { (($_ -split '=', 2)[0]).Trim() } | Sort-Object)
+    if ($dollarKeys.Count -gt 0) {
+        throw (".env values contain '$', which docker compose interpolates differently than the " +
+            "deployment scripts read it: $($dollarKeys -join ', '). Use values without '$'.")
+    }
 
     # --- 4. (optional) Grand Bend sample data -------------------------------
     if ($LoadGrandbend) {

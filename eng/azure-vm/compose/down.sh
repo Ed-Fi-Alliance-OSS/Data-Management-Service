@@ -13,15 +13,19 @@ ARGS=()
 for arg in "$@"; do
   case "$arg" in
     -y | --yes | --force) FORCE=true ;;
-    -v | --volumes)
+    -v | --volumes | --volume)   # --volume is Compose's deprecated (but accepted) alias
       wants_volumes=true
       ARGS+=("$arg")
       ;;
-    -v=* | --volumes=*)
-      # Docker's boolean parser accepts these truthy spellings. Mirror it so no accepted
-      # volume-removal form can bypass confirmation or bootstrap-marker cleanup.
+    -v=* | --volumes=* | --volume=*)
+      # Docker's boolean parser accepts these spellings, and a REPEATED flag uses the last
+      # value (`-v --volumes=false` preserves volumes). Assign per occurrence -- never latch --
+      # so the wrapper's effective value matches what Compose will actually do.
       volume_value="${arg#*=}"
-      case "$volume_value" in 1 | t | T | true | TRUE | True) wants_volumes=true ;; esac
+      case "$volume_value" in
+        1 | t | T | true | TRUE | True) wants_volumes=true ;;
+        0 | f | F | false | FALSE | False) wants_volumes=false ;;
+      esac
       ARGS+=("$arg")
       ;;
     --*) ARGS+=("$arg") ;;   # other long flags (e.g. --remove-orphans) never remove volumes
@@ -65,7 +69,8 @@ else
   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down "${ARGS[@]}"
 fi
 
-# The destructive down completed; clear the sentinel so bootstrap may run again.
+# The destructive down completed; clear the sentinel so bootstrap may run again, and the
+# recorded Keycloak image reference (update.sh's pin guard) -- the volume it described is gone.
 if [ "$wants_volumes" = true ]; then
-  rm -f .bootstrap/reset-pending
+  rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
 fi

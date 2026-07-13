@@ -71,16 +71,18 @@ foreach ($line in Get-Content $EnvFile) {
     }
     $envValues[$trimmed.Substring(0, $idx).Trim()] = $value
 }
+# Validate the WHOLE file up front -- before any Keycloak/CMS mutation and before the attempted
+# marker is written, so a bad value can never strand a half-bootstrapped environment. docker
+# compose interpolates $VAR/${VAR} inside .env, but this script reads the file literally: a '$'
+# in any value means the containers and this script would disagree on it (e.g. Keycloak gets one
+# client secret, the CMS/DMS containers another).
+$dollarKeys = @($envValues.Keys | Where-Object { $envValues[$_] -match '\$' } | Sort-Object)
+if ($dollarKeys.Count -gt 0) {
+    throw (".env values contain '$', which docker compose interpolates differently than the " +
+        "deployment scripts read it: $($dollarKeys -join ', '). Use values without '$'.")
+}
 function EnvVal([string]$key, [string]$default = "") {
-    if ($envValues.ContainsKey($key) -and $envValues[$key]) {
-        # docker compose interpolates $VAR/${VAR} inside .env, but this script reads the file
-        # literally -- a '$' in a value means the containers and this script would disagree on it
-        # (e.g. Keycloak gets one client secret, the CMS/DMS containers another). Refuse outright.
-        if ($envValues[$key] -match '\$') {
-            throw ".env value '$key' contains '$', which docker compose interpolates. Use a value without '$'."
-        }
-        return $envValues[$key]
-    }
+    if ($envValues.ContainsKey($key) -and $envValues[$key]) { return $envValues[$key] }
     return $default
 }
 

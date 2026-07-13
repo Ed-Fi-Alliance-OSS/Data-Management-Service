@@ -34,7 +34,9 @@ mkdir -p .bootstrap
 : > .bootstrap/reset-pending
 rm -f .bootstrap/bootstrap-attempted .bootstrap/bootstrap-complete
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down -v
-rm -f .bootstrap/reset-pending
+# Volumes are gone: clear the sentinel and the recorded Keycloak image reference (update.sh's
+# pin guard) -- a fresh volume may be created under any pin.
+rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
 
 # Restart infra + CMS + gateway ONLY -- NOT st-dms/mt-dms. After a -v reset the data DBs are empty
 # and the relational schema is gone, so the DMS services would crash-loop on boot (they fail fast
