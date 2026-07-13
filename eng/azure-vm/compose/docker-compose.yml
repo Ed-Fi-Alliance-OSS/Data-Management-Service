@@ -1,0 +1,311 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# DMS security-review environment.
+#
+# One Docker network hosting TWO independent DMS+CMS stacks behind a single
+# NGINX gateway (TLS + path routing), modeled on the Ed-Fi
+# AdminApp-v4-security-review deployment:
+#
+#   /st-dms     single-tenant  Data Management Service API
+#   /st-config  single-tenant  Configuration Service (admin API)
+#   /mt-dms     multi-tenant   Data Management Service API
+#   /mt-config  multi-tenant   Configuration Service (admin API)
+#   /auth       Keycloak (shared identity provider, see keycloak.yml)
+#   /pgadmin    pgAdmin (direct database access for the review team)
+#
+# The two stacks are byte-identical images differing only by the multitenancy
+# flags, path base, and per-stack database. Keycloak lives in keycloak.yml so its lifecycle can be
+# managed explicitly; destructive reset includes it so stale review clients cannot survive CMS.
+#
+# NOT FOR PRODUCTION. Contains review-only default secrets.
+
+name: dms-security-review
+
+# ---------------------------------------------------------------------------
+# Shared DMS API environment. Per-stack services override path base, tenancy,
+# database, and the Configuration Service URL.
+# ---------------------------------------------------------------------------
+x-dms-common-env: &dms-common-env
+  ASPNETCORE_HTTP_PORTS: "8080"
+  # Advertised OAuth token endpoint: DMS echoes this value verbatim into the Discovery API
+  # (urls.oauth) and the OpenAPI security scheme (tokenUrl), so it MUST be reachable by external
+  # clients -- hence the PUBLIC Keycloak URL via the gateway /auth route, not an internal hostname.
+  # It is also the /oauth/token proxy's forward target; that forward resolves in-network (the
+  # gateway carries a ${PUBLIC_HOST} network alias) and trusts the gateway cert via SSL_CERT_FILE
+  # below, so it works with the self-signed cert too. JWT validation is unaffected (it uses
+  # JwtAuthentication__MetadataAddress).
+  AppSettings__AuthenticationService: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}/protocol/openid-connect/token"
+  Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
+  AppSettings__MaskRequestBodyInLogs: "true"
+  AppSettings__MaximumPageSize: "500"
+  # Forwarded headers are honored only from the trusted sources below (DMS-1067). Trust the
+  # Docker container address pools: the dms-sec network subnet is assigned dynamically, and the
+  # gateway is this stack's only published ingress, so in-network spoofing is not part of the
+  # threat model for this review environment.
+  AppSettings__ReverseProxy__UseForwardedHeaders: "true"
+  AppSettings__ReverseProxy__KnownNetworks: "172.16.0.0/12,192.168.0.0/16"
+  AppSettings__Datastore: "postgresql"
+  DatabaseOptions__IsolationLevel: "ReadCommitted"
+  AppSettings__UseApiSchemaPath: "true"
+  AppSettings__ApiSchemaPath: "/app/ApiSchema"
+  # The staged ApiSchema workspace (.bootstrap/ApiSchema, produced by the official
+  # prepare-dms-schema.ps1) is mounted read-only at /app/ApiSchema in each DMS service below,
+  # so the image's effective-schema hash matches exactly what 'api-schema-tools ddl provision' wrote.
+  # Opt-in for troubleshooting / claim-set iteration (default off).
+  AppSettings__EnableManagementEndpoints: "${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}"
+  AppSettings__EnableClaimsetReload: "${DMS_ENABLE_CLAIMSET_RELOAD:-false}"
+  ConfigurationServiceSettings__ClientId: "${CONFIG_SERVICE_CLIENT_ID:-CMSReadOnlyAccess}"
+  ConfigurationServiceSettings__Scope: "${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}"
+  ConfigurationServiceSettings__ClientSecret: "${CONFIG_SERVICE_CLIENT_SECRET:?set CONFIG_SERVICE_CLIENT_SECRET in .env}"
+  ConfigurationServiceSettings__EncryptionKey: "${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:?set DMS_CONFIG_DATABASE_ENCRYPTION_KEY in .env}"
+  # JWT validation. Authority = public issuer (must match token `iss`);
+  # MetadataAddress = internal so DMS never has to trust the gateway cert.
+  JwtAuthentication__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
+  JwtAuthentication__MetadataAddress: "http://dms-keycloak:8080/auth/realms/${KEYCLOAK_REALM:-edfi}/.well-known/openid-configuration"
+  JwtAuthentication__Audience: "${DMS_JWT_AUDIENCE:-account}"
+  JwtAuthentication__RequireHttpsMetadata: "false"
+  JwtAuthentication__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+  JwtAuthentication__ClientRole: "dms-client"
+  JwtAuthentication__ClockSkewSeconds: "30"
+  # Trust the (possibly self-signed) gateway cert for the /oauth/token proxy forward above;
+  # see the note on the same variable in the CMS block.
+  SSL_CERT_FILE: "/gateway-tls/server.crt"
+
+# ---------------------------------------------------------------------------
+# Shared Configuration Service environment.
+# ---------------------------------------------------------------------------
+x-cms-common-env: &cms-common-env
+  ASPNETCORE_HTTP_PORTS: "8081"
+  AppSettings__Datastore: "postgresql"
+  DatabaseSettings__EncryptionKey: "${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:?set DMS_CONFIG_DATABASE_ENCRYPTION_KEY in .env}"
+  AppSettings__DeployDatabaseOnStartup: "true"
+  # Keycloak-only: the DMS/CMS token endpoints, JWT authority, and metadata addresses in
+  # these env blocks are all wired to the shared Keycloak realm, so an alternative identity
+  # provider cannot work here. For self-contained OpenIddict identity use the official
+  # eng/docker-compose local stack instead.
+  AppSettings__IdentityProvider: "keycloak"
+  # Same trusted-forwarded-headers model as the DMS block above (DMS-1067).
+  AppSettings__ReverseProxy__UseForwardedHeaders: "true"
+  AppSettings__ReverseProxy__KnownNetworks: "172.16.0.0/12,192.168.0.0/16"
+  # Public self-registration is DISABLED. With it on, the anonymous /connect/register endpoint
+  # mints a CMS client with admin scope -- an unauthenticated admin-takeover path on a gateway-
+  # exposed config service. The bootstrap admin client is instead created directly in Keycloak
+  # (bootstrap.ps1), so registration is never needed; the gateway also denies the route.
+  IdentitySettings__AllowRegistration: "false"
+  IdentitySettings__ConfigServiceRole: "cms-client"
+  IdentitySettings__ClientRole: "dms-client"
+  # CMS derives BOTH its JWT metadata address and its Keycloak backchannel base URL (token +
+  # admin API calls) from this Authority -- unlike DMS there is no internal-metadata override,
+  # and it must stay the PUBLIC URL because token issuer validation compares it to the `iss`
+  # Keycloak mints from KC_HOSTNAME. So the public URL has to be reachable AND trusted from
+  # inside the CMS containers: the gateway's ${PUBLIC_HOST} network alias resolves it in-network,
+  # and SSL_CERT_FILE (below) trusts the gateway cert even when it is self-signed. Without both,
+  # CMS token validation and Keycloak admin calls fail before bootstrap can create anything.
+  IdentitySettings__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
+  IdentitySettings__Audience: "${DMS_JWT_AUDIENCE:-account}"
+  IdentitySettings__ClientId: "${DMS_CONFIG_IDENTITY_CLIENT_ID:-DmsConfigurationService}"
+  IdentitySettings__ClientSecret: "${DMS_CONFIG_IDENTITY_CLIENT_SECRET:?set DMS_CONFIG_IDENTITY_CLIENT_SECRET in .env}"
+  IdentitySettings__ClientSecretValidation__MinimumLength: "32"
+  IdentitySettings__ClientSecretValidation__MaximumLength: "128"
+  IdentitySettings__RequireHttpsMetadata: "false"
+  IdentitySettings__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+  # Embedded claim sets include E2E-NoFurtherAuthRequiredClaimSet (full access),
+  # E2E-NameSpaceBasedClaimSet, and E2E-RelationshipsWithEdOrgsOnlyClaimSet (school/district-level).
+  # Set DMS_CONFIG_CLAIMS_SOURCE=Hybrid to also load *-claimset.json fragments dropped into
+  # ./claims (mounted below). Custom claim sets can also be created at runtime via
+  # POST/import /v3/claimSets.
+  ClaimsOptions__ClaimsSource: "${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}"
+  ClaimsOptions__ClaimsDirectory: "/app/additional-claims"
+  # Enables POST /management/reload-claims (re-seeds the claim-set catalog from the
+  # configured source into an already-populated config DB). Keep "false" for the review;
+  # flip to "true" only to refresh claims (e.g. after pulling a newer image), then back.
+  ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: "${DMS_CONFIG_ENABLE_CLAIMS_RELOAD:-false}"
+  # OpenSSL (and therefore .NET) adds this file as an extra CA anchor without displacing the
+  # image's default CA directory, so the self-signed gateway cert is trusted for the in-network
+  # calls to https://${PUBLIC_HOST}/auth/... described above. Harmless with a Let's Encrypt cert.
+  SSL_CERT_FILE: "/gateway-tls/server.crt"
+  Serilog__MinimumLevel__Default: "${DMS_CONFIG_LOG_LEVEL:-Information}"
+
+x-app-defaults: &app-defaults
+  restart: unless-stopped
+  networks: [dms-sec]
+  # Prevent privilege escalation via setuid/setgid binaries inside the container.
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  # =========================================================================
+  # Shared data store. One PostgreSQL server; init script creates per-stack
+  # databases (see postgres/init-databases.sh).
+  # =========================================================================
+  postgres:
+    image: postgres:16.14-alpine
+    hostname: postgres
+    container_name: dms-sec-postgres
+    command: ["postgres", "-c", "max_locks_per_transaction=256"]
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+    volumes:
+      - dms-sec-postgres:/var/lib/postgresql/data
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [dms-sec]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+
+  # =========================================================================
+  # Single-tenant stack
+  # =========================================================================
+  st-dms:
+    <<: *app-defaults
+    image: edfialliance/ed-fi-api:${DMS_IMAGE_TAG:-pre}
+    hostname: st-dms
+    container_name: dms-sec-st-dms
+    environment:
+      <<: *dms-common-env
+      AppSettings__PathBase: "st-dms"
+      AppSettings__MultiTenancy: "false"
+      AppSettings__RouteQualifierSegments: ""
+      DATABASE_CONNECTION_STRING_ADMIN: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_st;"
+      ConfigurationServiceSettings__BaseUrl: "http://st-config:8081"
+    volumes:
+      - ./.bootstrap/ApiSchema:/app/ApiSchema:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/st-dms/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+
+  st-config:
+    <<: *app-defaults
+    image: edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}
+    hostname: st-config
+    container_name: dms-sec-st-config
+    environment:
+      <<: *cms-common-env
+      AppSettings__PathBase: "st-config"
+      AppSettings__MultiTenancy: "false"
+      DatabaseSettings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_st_config;"
+    volumes:
+      - ./claims:/app/additional-claims:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8081/st-config/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+
+  # =========================================================================
+  # Multi-tenant stack
+  # =========================================================================
+  mt-dms:
+    <<: *app-defaults
+    image: edfialliance/ed-fi-api:${DMS_IMAGE_TAG:-pre}
+    hostname: mt-dms
+    container_name: dms-sec-mt-dms
+    environment:
+      <<: *dms-common-env
+      AppSettings__PathBase: "mt-dms"
+      AppSettings__MultiTenancy: "true"
+      AppSettings__RouteQualifierSegments: "${ROUTE_QUALIFIER_SEGMENTS:-schoolYear}"
+      DATABASE_CONNECTION_STRING_ADMIN: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_mt;"
+      ConfigurationServiceSettings__BaseUrl: "http://mt-config:8081"
+    volumes:
+      - ./.bootstrap/ApiSchema:/app/ApiSchema:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/mt-dms/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+
+  mt-config:
+    <<: *app-defaults
+    image: edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}
+    hostname: mt-config
+    container_name: dms-sec-mt-config
+    environment:
+      <<: *cms-common-env
+      AppSettings__PathBase: "mt-config"
+      AppSettings__MultiTenancy: "true"
+      DatabaseSettings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_mt_config;"
+    volumes:
+      - ./claims:/app/additional-claims:ro
+      - ./ssl/server.crt:/gateway-tls/server.crt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8081/mt-config/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+
+  # =========================================================================
+  # pgAdmin — data-level "make changes" surface for the review team.
+  # Reachable at /pgadmin (lock down via NSG, see provision/ runbook).
+  # =========================================================================
+  pgadmin:
+    <<: *app-defaults
+    # Keep this pin CURRENT before each deployment: pgAdmin is a public, DB-privileged
+    # surface and ships security fixes frequently (https://www.pgadmin.org/security/).
+    image: dpage/pgadmin4:9.16
+    hostname: pgadmin
+    container_name: dms-sec-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_DEFAULT_EMAIL:-admin@example.org}"
+      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_DEFAULT_PASSWORD:?set PGADMIN_DEFAULT_PASSWORD in .env}"
+      SCRIPT_NAME: "/pgadmin"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # =========================================================================
+  # NGINX gateway — TLS termination + path routing (single public hostname).
+  # =========================================================================
+  gateway:
+    image: nginx:1.30-alpine
+    hostname: gateway
+    container_name: dms-sec-gateway
+    environment:
+      PUBLIC_HOST: "${PUBLIC_HOST:-localhost}"
+      EXTERNAL_PORT: "${EXTERNAL_PORT:-443}"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./ssl:/ssl:ro
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    depends_on:
+      - st-dms
+      - st-config
+      - mt-dms
+      - mt-config
+    # Alias the public hostname to the gateway INSIDE the Docker network: CMS/DMS backchannel
+    # calls to https://${PUBLIC_HOST}/auth/... resolve straight to the gateway instead of
+    # hairpinning through the VM's public IP, and local names that don't resolve externally
+    # still work in-network. (Inert for PUBLIC_HOST=localhost -- /etc/hosts wins there; see
+    # the note in .env.example.)
+    networks:
+      dms-sec:
+        aliases:
+          - "${PUBLIC_HOST:-localhost}"
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+
+networks:
+  dms-sec:
+    external: true
+    name: dms-sec
+
+volumes:
+  dms-sec-postgres:

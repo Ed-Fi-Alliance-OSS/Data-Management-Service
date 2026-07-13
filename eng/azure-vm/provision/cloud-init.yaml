@@ -1,0 +1,35 @@
+#cloud-config
+# Bootstraps a fresh Ubuntu VM with Docker, PowerShell, git, and certbot.
+# __ADMIN_USER__ is replaced by provision-vm.ps1 at deploy time.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - apt-transport-https
+runcmd:
+  # Run all provisioning as ONE fail-fast script (list form = argv, no intermediate shell):
+  # `set -euo pipefail` aborts on the first failure BEFORE the success marker is written, and a
+  # failed runcmd makes `cloud-init status --wait` return nonzero. A `curl ... | sh` list entry
+  # would instead mask a failed download (sh exits 0 on empty input) and still write the marker,
+  # falsely signalling a good provision.
+  - - bash
+    - -euo
+    - pipefail
+    - -c
+    - |
+      # Docker Engine + Compose plugin (download then run, so a failed fetch aborts here)
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+      usermod -aG docker __ADMIN_USER__
+      systemctl enable --now docker
+      # PowerShell 7 (for bootstrap + setup scripts)
+      snap install powershell --classic
+      # certbot (Let's Encrypt)
+      snap install certbot --classic
+      ln -sf /snap/bin/certbot /usr/local/bin/certbot
+      # No .NET SDK installed: api-schema-tools (the relational provisioner, published as the
+      # EdFi.Api.SchemaTools .NET tool) needs a .NET 10 SDK on the host, so build it self-contained
+      # in a container or restore a relational populated template (DMS-1159) instead -- see
+      # REDEPLOY.md Part C and ../docs/infrastructure.md "Known issues" #5.
+      touch /var/lib/cloud/dms-sec-provisioned

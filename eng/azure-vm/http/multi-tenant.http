@@ -1,0 +1,53 @@
+@base = https://your-label.eastus.cloudapp.azure.com
+@realm = edfi
+@tenant = tenant1
+@schoolYear = 2025
+
+# API client credentials (from bootstrap.ps1 output). The raw `Basic key:secret` form below is
+# base64-encoded automatically by VS Code REST Client. Pre-encode it instead (set
+# @basic = base64(key:secret), use `Authorization: Basic {{basic}}`) if a secret contains
+# characters REST Client treats as variables ({{ }}) or your client does not auto-encode the
+# raw form. To test tenant2, set @tenant = tenant2 and its creds.
+@key = REPLACE_WITH_TENANT_KEY
+@secret = REPLACE_WITH_TENANT_SECRET
+
+# Bootstrap admin client (from .env) for Configuration Service calls.
+@adminKey = dms-bootstrap-admin
+@adminSecret = REPLACE_WITH_BOOTSTRAP_ADMIN_SECRET
+
+### Discovery (no auth)
+# NOTE: do NOT follow urls.oauth from this response -- for /mt-dms the DMS wrongly appends
+# /{tenant}/{schoolYear} to the token URL (docs/infrastructure.md issue 11). Use the token
+# request below instead.
+GET {{base}}/mt-dms
+
+### DMS app token -- shared Keycloak realm
+# @name token
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{key}}:{{secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+### List schools — tenant + schoolYear are PATH segments for DMS
+GET {{base}}/mt-dms/{{tenant}}/{{schoolYear}}/data/ed-fi/schools
+Authorization: Bearer {{token.response.body.access_token}}
+
+# ---------------------------------------------------------------------------
+# Configuration Service — tenant is a HEADER (not a path segment) here
+# ---------------------------------------------------------------------------
+
+### CMS admin token
+# @name cmsToken
+# client_secret is sent form-urlencoded below: '+' decodes to a space and '%' starts an escape,
+# so if the secret contains either (possible in .env files generated before setup-env.ps1
+# dropped them from its special-character set), percent-encode those characters in this body.
+POST {{base}}/mt-config/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{adminKey}}&client_secret={{adminSecret}}&grant_type=client_credentials&scope=edfi_admin_api/full_access
+
+### List data stores for the tenant
+GET {{base}}/mt-config/v3/dataStores
+Authorization: Bearer {{cmsToken.response.body.access_token}}
+Tenant: {{tenant}}
