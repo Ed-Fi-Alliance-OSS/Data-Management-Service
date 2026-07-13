@@ -1,0 +1,79 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "isExtensionProject": false,
+    "description": "Self-referencing identity-mutable resource: SQL Server derivation fails with SqlServerCascadeCycleNotSupported before any DDL is emitted; PostgreSQL derives it unchanged",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "loopers": "loopers"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "Looper": "loopers"
+    },
+    "resourceSchemas": {
+      "loopers": {
+        "resourceName": "Looper",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": true,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.loopKey"
+        ],
+        "documentPathsMapping": {
+          "LoopKey": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.loopKey"
+          },
+          "ParentLooper": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "Looper",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.loopKey",
+                "referenceJsonPath": "$.parentLooperReference.loopKey"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "loopKey": {
+              "type": "integer"
+            },
+            "parentLooperReference": {
+              "type": "object",
+              "properties": {
+                "loopKey": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "loopKey"
+              ]
+            }
+          },
+          "required": [
+            "loopKey",
+            "parentLooperReference"
+          ]
+        }
+      }
+    }
+  }
+}
