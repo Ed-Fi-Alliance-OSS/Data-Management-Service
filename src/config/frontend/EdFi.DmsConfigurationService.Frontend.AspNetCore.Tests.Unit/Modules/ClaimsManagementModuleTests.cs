@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.DataModel;
@@ -35,6 +36,9 @@ public abstract class ClaimsManagementModuleTests
     // A role the TestAuthHandler principal never carries; used to prove ServicePolicy is enforced.
     protected const string RoleTheTokenDoesNotHave = "unassigned-configuration-service-role";
 
+    // A syntactically invalid (non-JWT) bearer value that the production JWT handler rejects.
+    protected const string InvalidBearerToken = "not-a-valid-jwt";
+
     private readonly IClaimsUploadService _claimsUploadService = A.Fake<IClaimsUploadService>();
     private readonly IClaimsProvider _claimsProvider = A.Fake<IClaimsProvider>();
 
@@ -58,6 +62,20 @@ public abstract class ClaimsManagementModuleTests
             requiredServiceRole: null
         );
         Client = _factory.CreateClient();
+    }
+
+    protected void ArrangeClientWithInvalidBearerToken(bool dangerousFlagEnabled)
+    {
+        _factory = CreateFactory(
+            addTestAuthentication: false,
+            dangerousFlagEnabled,
+            requiredServiceRole: null
+        );
+        Client = _factory.CreateClient();
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InvalidBearerToken
+        );
     }
 
     protected void ArrangeAuthenticatedClient(
@@ -161,6 +179,71 @@ public abstract class ClaimsManagementModuleTests
     {
         [SetUp]
         public void Setup() => ArrangeUnauthenticatedClient(dangerousFlagEnabled: false);
+
+        [Test]
+        public async Task It_should_reject_reload_claims_with_401()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public async Task It_should_reject_upload_claims_with_401()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public async Task It_should_reject_current_claims_with_401()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    /// <summary>
+    /// A malformed (non-JWT) bearer token is rejected by the production JWT handler with 401
+    /// before the dangerous-flag check, even when the flag is enabled.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_invalid_bearer_token_and_the_dangerous_flag_is_enabled : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() => ArrangeClientWithInvalidBearerToken(dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_should_reject_reload_claims_with_401()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public async Task It_should_reject_upload_claims_with_401()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public async Task It_should_reject_current_claims_with_401()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    /// <summary>
+    /// A malformed (non-JWT) bearer token is rejected by the production JWT handler with 401
+    /// before the dangerous-flag check, even when the flag is disabled.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_invalid_bearer_token_and_the_dangerous_flag_is_disabled
+        : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() => ArrangeClientWithInvalidBearerToken(dangerousFlagEnabled: false);
 
         [Test]
         public async Task It_should_reject_reload_claims_with_401()
