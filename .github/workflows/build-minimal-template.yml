@@ -276,7 +276,7 @@ jobs:
       # here, before the package is uploaded or published, so an empty bulk load cannot slip
       # through as a "minimal" template. Minimal templates load only descriptor sample data
       # (no sample entities), so dms.Descriptor is the content this template type owns.
-      - name: Gate on descriptor content before packaging
+      - name: Gate on descriptor content before upload
         env:
           DATABASE_ENGINE: ${{ inputs.database_engine }}
         run: |

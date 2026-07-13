@@ -312,7 +312,7 @@ jobs:
       # here, before the package is uploaded or published, so an empty bulk load cannot slip
       # through as a "populated" template. This runs unconditionally (unlike the opt-in
       # verify-restore step below, which validates the restored package instead).
-      - name: Gate on populated content before packaging
+      - name: Gate on populated content before upload
         env:
           DATABASE_ENGINE: ${{ inputs.database_engine }}
         run: |

@@ -353,6 +353,38 @@ Describe "Get-BulkLoadFailureClassification" {
     }
 }
 
+Describe "Get-TemplateBulkLoadTuning" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "uses conservative relational-backend limits for mssql" {
+        InModuleScope Template-Management {
+            $tuning = Get-TemplateBulkLoadTuning -DatabaseEngine mssql
+
+            $tuning.Count | Should -Be 4
+            $tuning.MaxConcurrentConnections | Should -Be 5
+            $tuning.MaxSimultaneousRequests | Should -Be 5
+            $tuning.MaxBufferedTasks | Should -Be 2
+            $tuning.RetryCount | Should -Be 5
+        }
+    }
+
+    It "leaves postgresql on Invoke-BulkLoad's established defaults" {
+        InModuleScope Template-Management {
+            $tuning = Get-TemplateBulkLoadTuning -DatabaseEngine postgresql
+            $tuning.Count | Should -Be 0
+        }
+    }
+}
+
 Describe "Invoke-DatabaseDump" {
     BeforeAll {
         # The module imports sibling modules with paths relative to its own directory, so import
@@ -372,6 +404,7 @@ Describe "Invoke-DatabaseDump" {
         It "runs BACKUP DATABASE ... WITH INIT, copies the .bak out, and removes the transient in-container file" {
             InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
                 param($backupDir)
+                $backupDirectory = $backupDir
                 $calls = [System.Collections.Generic.List[object]]::new()
                 Mock docker {
                     $calls.Add(@($args))
@@ -381,7 +414,7 @@ Describe "Invoke-DatabaseDump" {
                     $global:LASTEXITCODE = 0
                 }
 
-                Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDir -BackupFileName "test.bak" -MssqlPassword "abcdefgh1!"
+                Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "test.bak" -MssqlPassword "abcdefgh1!"
 
                 $calls.Count | Should -Be 3
                 ($calls[0] -join '|') | Should -Be (@(
@@ -390,6 +423,89 @@ Describe "Invoke-DatabaseDump" {
                     ) -join '|')
                 ($calls[1] -join '|') | Should -Be (@('cp', "dms-mssql:/var/opt/mssql/data/test.bak", (Join-Path $backupDir "test.bak")) -join '|')
                 ($calls[2] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', '/var/opt/mssql/data/test.bak') -join '|')
+            }
+        }
+
+        It "removes a partial in-container backup when BACKUP DATABASE fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock docker {
+                    $calls.Add(@($args))
+                    $global:LASTEXITCODE = if ($args -contains '/opt/mssql-tools18/bin/sqlcmd') { 1 } else { 0 }
+                }
+
+                {
+                    Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "backup-failure.bak" -MssqlPassword "abcdefgh1!"
+                } | Should -Throw "*BACKUP DATABASE*failed*"
+
+                $calls.Count | Should -Be 2
+                ($calls[-1] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', '/var/opt/mssql/data/backup-failure.bak') -join '|')
+            }
+        }
+
+        It "removes the in-container backup when docker cp fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock docker {
+                    $calls.Add(@($args))
+                    $global:LASTEXITCODE = if ($args[0] -eq 'cp') { 1 } else { 0 }
+                }
+
+                {
+                    Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "copy-failure.bak" -MssqlPassword "abcdefgh1!"
+                } | Should -Throw "*Failed to copy backup*"
+
+                $calls.Count | Should -Be 3
+                ($calls[-1] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', '/var/opt/mssql/data/copy-failure.bak') -join '|')
+            }
+        }
+
+        It "does not mask a backup failure when transient cleanup also fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                Mock docker {
+                    $global:LASTEXITCODE = 1
+                }
+
+                $previousWarningPreference = $WarningPreference
+                try {
+                    $WarningPreference = "Stop"
+                    {
+                        Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "double-failure.bak" -MssqlPassword "abcdefgh1!"
+                    } | Should -Throw "*BACKUP DATABASE*failed*"
+                }
+                finally {
+                    $WarningPreference = $previousWarningPreference
+                }
+            }
+        }
+
+        It "warns without failing a successful dump when transient cleanup fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock Write-Warning {}
+                Mock docker {
+                    $calls.Add(@($args))
+                    if ($args[0] -eq 'cp') {
+                        New-Item -ItemType File -Path $args[-1] -Force | Out-Null
+                    }
+                    $global:LASTEXITCODE = if ($args.Count -gt 2 -and $args[2] -eq 'rm') { 1 } else { 0 }
+                }
+
+                {
+                    Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "cleanup-failure.bak" -MssqlPassword "abcdefgh1!"
+                } | Should -Not -Throw
+
+                Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                    $Message -like "*Could not remove transient backup*cleanup-failure.bak*"
+                }
             }
         }
 

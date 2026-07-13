@@ -364,6 +364,36 @@ function Get-BulkLoadFailureClassification {
 
 <#
 .SYNOPSIS
+    Returns engine-specific BulkLoadClient tuning for template generation.
+
+.DESCRIPTION
+    PostgreSQL keeps Invoke-BulkLoad's established defaults. MSSQL uses conservative
+    relational-backend settings so a populated load stays below DMS's fixed-window rate limiter
+    without creating enough concurrent writes to deadlock SQL Server dimension inserts. Extra
+    retries cover the remaining transient relational conflicts without cascading failures into
+    unresolved references or authorization errors.
+#>
+function Get-TemplateBulkLoadTuning {
+    param (
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql"
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return @{
+            MaxConcurrentConnections = 5
+            MaxSimultaneousRequests   = 5
+            MaxBufferedTasks          = 2
+            RetryCount                = 5
+        }
+    }
+
+    # An empty splat preserves Invoke-BulkLoad's PostgreSQL defaults byte-for-byte.
+    return @{}
+}
+
+<#
+.SYNOPSIS
     Dumps the specified database to a file.
 
 .DESCRIPTION
@@ -430,15 +460,28 @@ function Invoke-DatabaseDump {
 
         $containerBackupPath = "/var/opt/mssql/data/$BackupFileName"
 
-        $backupSql = "BACKUP DATABASE [$DatabaseName] TO DISK = N'$containerBackupPath' WITH INIT;"
-        & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q $backupSql
-        if ($LASTEXITCODE -ne 0) { throw "BACKUP DATABASE of '$DatabaseName' failed in container '$ContainerName'." }
+        try {
+            $backupSql = "BACKUP DATABASE [$DatabaseName] TO DISK = N'$containerBackupPath' WITH INIT;"
+            & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q $backupSql
+            if ($LASTEXITCODE -ne 0) { throw "BACKUP DATABASE of '$DatabaseName' failed in container '$ContainerName'." }
 
-        & docker cp "$($ContainerName):$containerBackupPath" $backupPath
-        if ($LASTEXITCODE -ne 0) { throw "Failed to copy backup '$containerBackupPath' out of container '$ContainerName'." }
-
-        & docker exec $ContainerName rm -f $containerBackupPath
-        if ($LASTEXITCODE -ne 0) { throw "Failed to remove transient backup '$containerBackupPath' from container '$ContainerName' after copying it out." }
+            & docker cp "$($ContainerName):$containerBackupPath" $backupPath
+            if ($LASTEXITCODE -ne 0) { throw "Failed to copy backup '$containerBackupPath' out of container '$ContainerName'." }
+        }
+        finally {
+            # BACKUP DATABASE can leave a complete or partial file behind even when sqlcmd or
+            # docker cp fails. Always make a best-effort cleanup without masking the primary
+            # backup/copy failure (the restore path follows the same cleanup contract).
+            try {
+                & docker exec $ContainerName rm -f $containerBackupPath 2>$null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "Could not remove transient backup '$containerBackupPath' from container '$ContainerName'." -WarningAction Continue
+                }
+            }
+            catch {
+                Write-Warning "Could not remove transient backup '$containerBackupPath' from container '$ContainerName': $($_.Exception.Message)" -WarningAction Continue
+            }
+        }
 
         Write-Host
         Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
@@ -1291,6 +1334,7 @@ function Build-Template {
     Invoke-SchoolYearLoader -DmsUrl $DmsUrl -DmsToken $dmsToken
 
     $bulkLoadClientPaths = Initialize-BulkLoad
+    $bulkLoadTuning = Get-TemplateBulkLoadTuning -DatabaseEngine $DatabaseEngine
 
     Invoke-BulkLoad -BaseUrl $DmsUrl `
         -Key $bootstrapApp.Key `
@@ -1299,7 +1343,8 @@ function Build-Template {
         -Extension $Extension `
         -BulkLoadClientPaths $bulkLoadClientPaths `
         -ForceReloadData `
-        -ForceReloadMetadata
+        -ForceReloadMetadata `
+        @bulkLoadTuning
 
     if ($TemplateType -eq [TemplateType]::Populated) {
 
@@ -1357,7 +1402,8 @@ function Build-Template {
             -BulkLoadClientPaths $bulkLoadClientPaths `
             -ForceReloadData `
             -ForceReloadMetadata `
-            -AllowUnresolvedReferences:$educatorPrepFiltered
+            -AllowUnresolvedReferences:$educatorPrepFiltered `
+            @bulkLoadTuning
     }
 
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
