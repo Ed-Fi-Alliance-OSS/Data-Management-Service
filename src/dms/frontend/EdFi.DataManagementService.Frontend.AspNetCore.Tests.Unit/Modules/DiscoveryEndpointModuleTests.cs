@@ -18,10 +18,10 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 [TestFixture]
 [NonParallelizable]
-public class DiscoveryEndpointModuleTests
+public class Given_DiscoveryEndpointModule
 {
     [Test]
-    public async Task When_SingleTenancy_Discovery_Advertises_Unqualified_Oauth_Proxy()
+    public async Task It_advertises_an_unqualified_oauth_proxy_when_single_tenancy_is_enabled()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -44,7 +44,7 @@ public class DiscoveryEndpointModuleTests
     }
 
     [Test]
-    public async Task When_MultiTenancy_Enabled_Discovery_Advertises_Qualified_Oauth_Proxy()
+    public async Task It_advertises_the_qualified_oauth_proxy_when_multi_tenancy_is_enabled()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>

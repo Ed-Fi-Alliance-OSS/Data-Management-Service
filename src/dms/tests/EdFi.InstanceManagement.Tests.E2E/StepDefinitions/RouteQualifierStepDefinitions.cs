@@ -32,11 +32,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
         context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
 
-        // TODO: Update once Config Service supports route qualifiers in OAuth endpoint
-        // The discovery API returns OAuth URLs with route qualifiers (e.g., /connect/token/{districtId}/{schoolYear})
-        // but the Config Service doesn't yet support this pattern. Once it does, we should get the URL from
-        // discovery API instead of hardcoding it here.
-        var tokenUrl = "http://localhost:8081/connect/token/";
+        var tokenUrl = await ResolveDmsTokenUrlAsync();
 
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(
             tokenUrl,
@@ -61,7 +57,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var (key, secret) = context.CredentialsByTenant[tenantName];
 
-        var tokenUrl = "http://localhost:8081/connect/token/";
+        var tokenUrl = await ResolveDmsTokenUrlAsync();
 
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(tokenUrl, key, secret);
 
@@ -314,6 +310,40 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             context.ClientKey!,
             context.ClientSecret!
         );
+    }
+
+    private async Task<string> ResolveDmsTokenUrlAsync()
+    {
+        if (context.LastResponse is not null)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+
+            if (!string.IsNullOrWhiteSpace(responseBody))
+            {
+                try
+                {
+                    var responseDoc = JsonDocument.Parse(responseBody);
+                    if (
+                        responseDoc.RootElement.TryGetProperty("urls", out var urls)
+                        && urls.TryGetProperty("oauth", out var oauth)
+                    )
+                    {
+                        var oauthUrl = oauth.GetString();
+                        if (!string.IsNullOrWhiteSpace(oauthUrl))
+                        {
+                            return oauthUrl;
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Fall back to the legacy direct token endpoint when the previous response
+                    // was not a discovery payload.
+                }
+            }
+        }
+
+        return "http://localhost:8081/connect/token/";
     }
 
     [Then("the DMS token should be available")]
