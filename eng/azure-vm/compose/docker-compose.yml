@@ -14,8 +14,8 @@
 #   /pgadmin    pgAdmin (direct database access for the review team)
 #
 # The two stacks are byte-identical images differing only by the multitenancy
-# flags, path base, and per-stack database. Keycloak lives in keycloak.yml so its
-# realm/clients survive `reset.sh` (which drops only the app+db volumes).
+# flags, path base, and per-stack database. Keycloak lives in keycloak.yml so its lifecycle can be
+# managed explicitly; destructive reset includes it so stale review clients cannot survive CMS.
 #
 # NOT FOR PRODUCTION. Contains review-only default secrets.
 

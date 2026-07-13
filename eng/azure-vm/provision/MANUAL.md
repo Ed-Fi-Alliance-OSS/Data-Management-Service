@@ -66,7 +66,12 @@ az vm create \
 ## Step 3 — NSG inbound rules (workstation)
 
 ```bash
-NSG=$(az network nsg list -g "$RG" --query "[0].name" -o tsv)
+# Resolve the NSG actually attached to THIS VM's NIC -- "first NSG in the resource group"
+# targets the wrong NSG as soon as the group holds more than one.
+NIC_ID=$(az vm show -g "$RG" -n "$VM" --query "networkProfile.networkInterfaces[0].id" -o tsv)
+NSG_ID=$(az network nic show --ids "$NIC_ID" --query "networkSecurityGroup.id" -o tsv)
+NSG=${NSG_ID##*/}
+[ -n "$NSG" ] || { echo "ERROR: the VM NIC has no attached NSG" >&2; exit 1; }
 
 az network nsg rule create -g "$RG" --nsg-name "$NSG" -n allow-ssh \
   --priority 1000 --access Allow --protocol Tcp --direction Inbound \
@@ -237,11 +242,15 @@ cd ~/dms-src/eng/azure-vm/compose
 ./update.sh              # fast-forward pull + image pull + ApiSchema-guarded recreation
 # SKIP_GIT=1 ./update.sh # image-only refresh against the current checkout
 
-# Data reset, keep Keycloak realm (on the VM). reset.sh drops the data and restarts infra/CMS only
-# (NOT the DMS services -- after a -v reset they must start after bootstrap + schema, like a first
-# stand-up), then prints the remaining steps:
+# State reset (on the VM). reset.sh drops data plus Keycloak so stale review credentials are
+# revoked, then restarts infra/CMS only (NOT the DMS services -- they start after bootstrap +
+# schema, like a first stand-up), then prints the remaining steps:
 ./reset.sh
-pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
+# Wait for the freshly recreated identity/CMS services before bootstrap writes its attempted marker.
+until curl -skf https://localhost/auth/realms/master >/dev/null \
+  && curl -skf https://localhost/st-config/health >/dev/null \
+  && curl -skf https://localhost/mt-config/health >/dev/null; do sleep 5; done
+pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure
 # provision the relational schema (api-schema-tools; see ../docs/infrastructure.md), then:
 ./up.sh st-dms mt-dms
 

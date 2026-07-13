@@ -63,21 +63,16 @@ VM → **Networking → Add inbound port rule** (note **RDP**, not SSH):
 
 | Name | Source | Port | Priority |
 |------|--------|------|----------|
-| allow-rdp | Any (see note) | 3389 | 1000 |
+| allow-rdp | Admin public IP/CIDR (see note) | 3389 | 1000 |
 | allow-http | Any | 80 | 1010 |
 | allow-https | Any | 443 | 1020 |
 
-> **RDP exposure.** The reference ODS VM leaves 3389 open any→any, relying on the VM being
-> deallocated except during sessions. That caps *total* exposure, but during an on-window an open
-> 3389 is fully internet-reachable (bots scan Azure ranges within minutes; the static IP + DNS
-> label are targetable whenever the VM is up). Safer options, same workflow:
-> - admins on stable IPs → set the **Source** to their CIDRs;
-> - rotating admin IPs → use **Just-in-Time VM access** (Defender for Cloud; requires a paid
->   Defender for Servers plan) — opens 3389 on demand to the requester's current IP only — or
->   **Bastion**.
->
-> If you keep it open to match the reference, use a strong, unique local-admin password and leave
-> Network Level Authentication (NLA) enabled.
+> **RDP exposure.** Scope 3389 to the administrators' CIDRs — an any→any 3389 is fully
+> internet-reachable whenever the VM is up (bots scan Azure ranges within minutes; the static IP +
+> DNS label are targetable). For rotating admin IPs, use **Just-in-Time VM access** (Defender for
+> Cloud; requires a paid Defender for Servers plan) — opens 3389 on demand to the requester's
+> current IP only — or **Bastion**. Either way, use a strong, unique local-admin password and
+> leave Network Level Authentication (NLA) enabled.
 
 ## 4. RDP in (admin access)
 

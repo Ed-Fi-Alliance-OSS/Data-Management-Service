@@ -18,7 +18,6 @@
 #   pwsh ./bootstrap.ps1                 # uses ../.env
 #   pwsh ./bootstrap.ps1 -Insecure       # local self-signed cert
 #   pwsh ./bootstrap.ps1 -SkipKeycloak   # realm/clients already created
-#   pwsh ./bootstrap.ps1 -KeycloakOnly   # rebuild realm/clients after wiping only Keycloak H2
 [CmdletBinding()]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ClaimSetName', Justification = 'Consumed as the default value of the New-ReviewApplication -ClaimSet parameter; the analyzer does not track usage inside nested function parameter defaults.')]
 param(
@@ -29,12 +28,10 @@ param(
     # public-IP hairpin issues.
     [string]$BaseUrl = "",
     [switch]$SkipKeycloak,
-    [switch]$KeycloakOnly,
     [switch]$Insecure
 )
 
 $ErrorActionPreference = "Stop"
-if ($SkipKeycloak -and $KeycloakOnly) { throw "-SkipKeycloak and -KeycloakOnly cannot be used together." }
 # Reuse the repo's canonical management module (no vendored copy).
 Import-Module "$PSScriptRoot/../../../Dms-Management.psm1" -Force
 
@@ -74,6 +71,16 @@ foreach ($line in Get-Content $EnvFile) {
     }
     $envValues[$trimmed.Substring(0, $idx).Trim()] = $value
 }
+# Validate the WHOLE file up front -- before any Keycloak/CMS mutation and before the attempted
+# marker is written, so a bad value can never strand a half-bootstrapped environment. docker
+# compose interpolates $VAR/${VAR} inside .env, but this script reads the file literally: a '$'
+# in any value means the containers and this script would disagree on it (e.g. Keycloak gets one
+# client secret, the CMS/DMS containers another).
+$dollarKeys = @($envValues.Keys | Where-Object { $envValues[$_] -match '\$' } | Sort-Object)
+if ($dollarKeys.Count -gt 0) {
+    throw (".env values contain '$', which docker compose interpolates differently than the " +
+        "deployment scripts read it: $($dollarKeys -join ', '). Use values without '$'.")
+}
 function EnvVal([string]$key, [string]$default = "") {
     if ($envValues.ContainsKey($key) -and $envValues[$key]) { return $envValues[$key] }
     return $default
@@ -89,6 +96,19 @@ $pgCredential  = ConvertTo-PostgresCredential -UserName $pgUser -Secret $pgPassw
 $schoolYear    = EnvVal "MT_SCHOOL_YEAR" "2025"
 $tenant1       = EnvVal "MT_TENANT_1" "tenant1"
 $tenant2       = EnvVal "MT_TENANT_2" "tenant2"
+$maximumTenantNameLength = 19
+foreach ($tenantName in @($tenant1, $tenant2)) {
+    if ($tenantName -notmatch '^[a-zA-Z0-9_-]+$') {
+        throw "Tenant name '$tenantName' is invalid. Use only letters, digits, underscores, and hyphens."
+    }
+    if ($tenantName.Length -gt $maximumTenantNameLength) {
+        throw ("Tenant name '$tenantName' is too long for the generated API-client name. " +
+            "MT_TENANT_1 and MT_TENANT_2 must contain at most $maximumTenantNameLength characters.")
+    }
+}
+if ($tenant1.Equals($tenant2, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "MT_TENANT_1 and MT_TENANT_2 must be distinct (case-insensitive)."
+}
 $adminClientId     = EnvVal "BOOTSTRAP_ADMIN_CLIENT_ID" "dms-bootstrap-admin"
 $adminClientSecret = EnvVal "BOOTSTRAP_ADMIN_CLIENT_SECRET"
 # The service client ids/scope MUST be the ones the compose services request: read them from
@@ -107,22 +127,26 @@ $mtConfig = "$publicBaseUrl/mt-config/"
 $created = [System.Collections.Generic.List[object]]::new()
 
 # Own CMS bootstrap state here, rather than in setup-env.ps1, so the documented direct invocation
-# and the wrapper follow the same recovery contract. -KeycloakOnly deliberately does not consult or
-# change these markers because it recreates no CMS objects.
+# and the wrapper follow the same recovery contract.
 $stateDirectory = Join-Path $PSScriptRoot "../.bootstrap"
 $bootstrapAttempted = Join-Path $stateDirectory "bootstrap-attempted"
 $bootstrapComplete = Join-Path $stateDirectory "bootstrap-complete"
-if (-not $KeycloakOnly) {
-    if (Test-Path $bootstrapComplete) {
-        throw "Bootstrap already completed. Refusing to duplicate CMS objects. Run ./reset.sh before bootstrapping again."
-    }
-    if (Test-Path $bootstrapAttempted) {
-        throw ("A previous bootstrap did not complete. Refusing to duplicate partial CMS objects. " +
-            "Run ./reset.sh, or ./down.sh -v if Keycloak setup was partial, before retrying.")
-    }
-    New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-    New-Item -ItemType File -Path $bootstrapAttempted -Force | Out-Null
+$resetPending = Join-Path $stateDirectory "reset-pending"
+if (Test-Path $resetPending) {
+    # reset.sh / down.sh -v clear the markers before the destructive down and remove this sentinel
+    # only after it succeeds. While it exists the volumes may still hold live identity/CMS state,
+    # and this script's creates are not idempotent.
+    throw "A destructive reset did not finish. Re-run ./reset.sh (or ./down.sh -v) until it succeeds before bootstrapping."
 }
+if (Test-Path $bootstrapComplete) {
+    throw "Bootstrap already completed. Refusing to duplicate CMS objects. Run ./reset.sh before bootstrapping again."
+}
+if (Test-Path $bootstrapAttempted) {
+    throw ("A previous bootstrap did not complete. Refusing to duplicate partial identity/CMS objects. " +
+        "Run ./reset.sh before retrying; reset removes both application and Keycloak state.")
+}
+New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+New-Item -ItemType File -Path $bootstrapAttempted -Force | Out-Null
 
 # --- 1. Keycloak realm + service clients ------------------------------------
 if (-not $SkipKeycloak) {
@@ -154,10 +178,6 @@ if (-not $SkipKeycloak) {
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $adminClientId -NewClientName "DMS Bootstrap Admin" `
         -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret $adminClientSecret -SkipRealmAdmin
-}
-if ($KeycloakOnly) {
-    Write-Output "Keycloak realm and service clients recreated; existing CMS state was not modified."
-    return
 }
 
 # --- Helper: provision one application and capture credentials --------------
@@ -196,9 +216,10 @@ Write-Output "== Bootstrapping single-tenant stack ($stConfig) =="
 $stToken = Get-CmsToken -CmsUrl $stConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
 $stDataStoreId = Add-DataStore -CmsUrl $stConfig -AccessToken $stToken -Name "Single-Tenant Data Store" `
     -DataStoreType "Review" -PostgresHost "postgres" -PostgresDbName "edfi_st" -PostgresCredential $pgCredential
-# Full-access single-tenant client. (Scope: single-tenant + two isolated tenants.)
+# Full-access single-tenant client. Uses the same -ClaimSetName as the multi-tenant apps (default
+# E2E-NoFurtherAuthRequiredClaimSet) so an override applies consistently across all three.
 New-ReviewApplication -CmsUrl $stConfig -Label "single-tenant/full" -Token $stToken `
-    -DataStoreIds @([long]$stDataStoreId) -ClaimSet "E2E-NoFurtherAuthRequiredClaimSet"
+    -DataStoreIds @([long]$stDataStoreId)
 # To demo school/district-level authorization, add an EdOrg-scoped client via the CMS, e.g.
 # New-ReviewApplication ... -ClaimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" -EducationOrganizationIds @([long]255901)
 

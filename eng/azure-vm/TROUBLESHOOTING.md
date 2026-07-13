@@ -44,14 +44,19 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 | Bulk-load **`invalid_client` / 401** with a fresh key | `DMS-1231`, fixed in `:pre` ≥ 2026-06-24 (#1047) — generated secrets are now Basic-safe. On an older image the secret may contain `+`/`%`; re-mint until `+`/`%`/space-free, or URL-encode it in the Basic header. |
 | Bulk-load **429 / "circuit is now open"** mid-run | Rate limiter + circuit breaker (`FAILURE_RATIO=0.01`) tripped by parallel load. Load descriptors first, raise the rate limit, then resources; or use `seed/clone-data.sh`. |
 
-## Reset (keep the Keycloak realm)
+## Reset deployment state
 
-A `-v` reset empties the data DBs, so — like a first stand-up — bootstrap, schema provisioning,
-and the DMS start all have to run again (`reset.sh` prints these same steps on exit):
+A reset empties the data DBs and the Keycloak realm, so old review credentials are revoked. Like a
+first stand-up, bootstrap, schema provisioning, and the DMS start all have to run again
+(`reset.sh` prints these same steps on exit):
 
 ```bash
 ./reset.sh
-pwsh ./bootstrap/bootstrap.ps1 -SkipKeycloak -BaseUrl https://localhost -Insecure
+# wait for the freshly recreated identity/CMS services before bootstrap writes its attempted marker:
+until curl -skf https://localhost/auth/realms/master >/dev/null \
+  && curl -skf https://localhost/st-config/health >/dev/null \
+  && curl -skf https://localhost/mt-config/health >/dev/null; do sleep 5; done
+pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure
 # provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2
 # (api-schema-tools, or restore the populated template; see ../docs/infrastructure.md), then:
 ./up.sh st-dms mt-dms

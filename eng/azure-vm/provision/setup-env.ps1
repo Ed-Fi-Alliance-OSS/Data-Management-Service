@@ -14,9 +14,9 @@
 # the documented second pass (-StartDms, after schema provisioning) preserves every secret and
 # skips bootstrap. Regenerating secrets on a re-run would break the existing Postgres volume,
 # Keycloak realm/clients, and CMS-encrypted rows, which are all keyed to the first-run values.
-# An interrupted bootstrap must be recovered with reset.sh (or down.sh -v when Keycloak was
-# partially configured). The bootstrap script owns attempted/complete markers and refuses a blind
-# retry because its CMS creates are not idempotent.
+# An interrupted bootstrap must be recovered with reset.sh, which removes both CMS and Keycloak
+# state. The bootstrap script owns attempted/complete markers and refuses a blind retry because its
+# identity/CMS creates are not idempotent.
 #
 # !! GAP: by default this does NOT provision the relational schema (api-schema-tools), stage
 #    .bootstrap/ApiSchema, or seed data (-LoadGrandbend is the explicit single-tenant exception).
@@ -222,6 +222,16 @@ try {
     if (Select-String -Path ".env" -Pattern '=.*CHANGEME' -Quiet) {
         throw ".env still contains CHANGEME placeholder secrets after secret generation. Refusing to start Compose. Re-run with -RotateSecrets, or replace every CHANGEME value manually."
     }
+    # Same gate for '$' in values, BEFORE any persistent service is initialized: docker compose
+    # interpolates $VAR/${VAR} inside .env, so the containers would be keyed to interpolated
+    # credentials while every script reads the literal value (bootstrap also refuses, but by then
+    # Postgres/Keycloak/CMS state would already exist under the interpolated secrets).
+    $dollarKeys = @(Get-Content ".env" | Where-Object { $_ -match '^\s*[^#\s][^=]*=' -and ($_ -split '=', 2)[1] -match '\$' } |
+            ForEach-Object { (($_ -split '=', 2)[0]).Trim() } | Sort-Object)
+    if ($dollarKeys.Count -gt 0) {
+        throw (".env values contain '$', which docker compose interpolates differently than the " +
+            "deployment scripts read it: $($dollarKeys -join ', '). Use values without '$'.")
+    }
 
     # --- 4. (optional) Grand Bend sample data -------------------------------
     if ($LoadGrandbend) {
@@ -290,9 +300,7 @@ try {
         elseif (Test-Path $bootstrapAttempted) {
             throw ("A previous bootstrap started but did not complete; the CMS config DB may hold " +
                 "partial vendors/applications/data stores that a retry would DUPLICATE. Run " +
-                "./reset.sh (clears partial CMS state, keeps the Keycloak realm), then re-run. " +
-                "If the failure was during Keycloak client setup instead, reset.sh keeps the realm " +
-                "(including a half-created client) -- use ./down.sh -v for a full reset, then re-run.")
+                "./reset.sh (clears partial CMS and Keycloak state), then re-run.")
         }
         else {
             Write-Output "Running bootstrap (over loopback)..."
@@ -339,8 +347,15 @@ try {
         Write-Output "`nNext steps (manual):"
         Write-Output "  1. Stage the ApiSchema workspace into compose/.bootstrap/ApiSchema (eng/docker-compose/prepare-dms-schema.ps1"
         Write-Output "     writes eng/docker-compose/.bootstrap/ApiSchema -- copy that folder here; the DMS services mount it read-only)."
-        Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged"
-        Write-Output "     workspace; see ../docs/infrastructure.md)."
+        if ($LoadGrandbend) {
+            Write-Output "  2. edfi_st was restored by grandbend.sh (schema AND data) -- do NOT run api-schema-tools on it."
+            Write-Output "     Provision only edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged workspace;"
+            Write-Output "     see ../docs/infrastructure.md)."
+        }
+        else {
+            Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged"
+            Write-Output "     workspace; see ../docs/infrastructure.md)."
+        }
         Write-Output "  3. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
     }
 

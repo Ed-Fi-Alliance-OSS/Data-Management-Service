@@ -2,8 +2,8 @@
 #
 # Shared Keycloak identity provider for the security-review environment.
 #
-# Kept in a separate compose file (as in AdminApp-v4-security-review) so its
-# realm + clients survive `reset.sh`, which drops only the app/database volumes.
+# Kept in a separate compose file (as in AdminApp-v4-security-review) so identity lifecycle remains
+# explicit. reset.sh includes this file and drops the realm so stale review credentials are revoked.
 # Reachable through the gateway at /auth.
 #
 # Realm + service clients are created by bootstrap/bootstrap.ps1 (which imports the
@@ -35,10 +35,10 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_LOG_CONSOLE_LEVEL: "${KEYCLOAK_LOG_LEVEL:-info}"
     # The volume persists Keycloak's default dev-file H2 database. Keycloak does NOT support
-    # H2 migration across version bumps -- when changing the image pin above, remove the
-    # dms-security-review_dms-sec-keycloak volume and run bootstrap.ps1 -KeycloakOnly (or configure
-    # KC_DB against a real database if realm durability across upgrades matters). Production-mode
-    # `start` without
+    # H2 migration across version bumps -- when changing the image pin above, perform a clean
+    # redeploy (provision/REDEPLOY.md); recreating only the service clients would not restore the
+    # review-application clients referenced by CMS. Alternatively, configure KC_DB against a real
+    # database if realm durability across upgrades matters. Production-mode `start` without
     # a real DB is deprecated upstream and slated to be refused in a future major release
     # (Keycloak has not committed to a specific version).
     volumes:

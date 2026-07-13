@@ -20,10 +20,25 @@ is at `~/dms-src` and a public `FQDN` for the VM. Replace `<FQDN>` throughout.
 
 ```bash
 cd ~/dms-src/eng/azure-vm/compose
-./down.sh -v -y || true                     # stop containers + drop ALL volumes (incl. Keycloak realm)
+# A pasted block keeps running after a failure, so every destructive step below is gated
+# explicitly. First make sure the daemon is reachable at all -- otherwise the teardown AND the
+# volume checks below would fail in a way that is indistinguishable from "volume absent".
+docker info >/dev/null || { echo "ERROR: Docker daemon unreachable; cannot verify volume state." >&2; exit 1; }
+# [ -f .env ] keeps the runbook idempotent on a box that never deployed; the explicit exit stops
+# the sequence when a real teardown fails.
+if [ -f .env ]; then ./down.sh -v -y || { echo "ERROR: teardown failed; keep .env and resolve first." >&2; exit 1; }; fi
 docker network rm dms-sec 2>/dev/null || true
+# Verify the state volumes are actually gone BEFORE deleting the credentials they are keyed to:
+# if either survives, a later fresh .env would generate new secrets against the old state.
+# (The daemon check above makes an inspect failure here mean "absent", not "docker unavailable".)
+for v in dms-security-review_dms-sec-postgres dms-security-review_dms-sec-keycloak; do
+  ! docker volume inspect "$v" >/dev/null 2>&1 || { echo "ERROR: $v survived teardown; keep .env and resolve the failure first." >&2; exit 1; }
+done
 rm -f .env ssl/server.crt ssl/server.key    # force fresh secrets + cert on next run
 rm -rf .bootstrap                            # force fresh ApiSchema staging
+# Part C stages through eng/docker-compose/.bootstrap, which is gitignored and therefore survives
+# the Part B checkout -- a stale workspace from an earlier redeploy must not leak into this one:
+rm -rf ~/dms-src/eng/docker-compose/.bootstrap
 # drop old images so the current (renamed) ones are pulled fresh:
 docker image rm edfialliance/ed-fi-api:pre edfialliance/ed-fi-api-configuration-service:pre 2>/dev/null || true
 docker image rm edfialliance/data-management-service:pre edfialliance/dms-configuration-service:pre 2>/dev/null || true
@@ -39,6 +54,10 @@ git fetch origin --tags
 git switch --detach "$REF"
 git log -1 --oneline
 ```
+
+> A detached checkout cannot use `./update.sh`'s config pull (`git pull --ff-only` fails off a
+> branch). For a later in-place refresh, run `SKIP_GIT=1 ./update.sh` (images only, against the
+> current checkout) or repeat this Part to move the checkout to a newer ref first.
 
 ## Part C — Build the schema tool + stage ApiSchema  [bash]
 
@@ -60,8 +79,11 @@ docker run --rm --user "$(id -u):$(id -g)" \
   dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
   -c Release -r linux-x64 --self-contained -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
 
-# 2. Stage the DS 5.2 core ApiSchema workspace (downloads the ApiSchema package from the Ed-Fi feed):
-pwsh ./prepare-dms-schema.ps1 -SchemaToolPath ./.bootstrap/tools/api-schema-tools/api-schema-tools
+# 2. Stage the ApiSchema workspace (downloads the ApiSchema packages from the Ed-Fi feed).
+#    -EnvironmentFile .env.template stages the SAME package surface the populated template is
+#    built from (DS 5.2 core + TPDM). Without it the script stages its core-only default, and the
+#    template-restored databases (Part E) would fail the DMS EffectiveSchema check at startup.
+pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.template -SchemaToolPath ./.bootstrap/tools/api-schema-tools/api-schema-tools
 
 # 3. Copy the staged workspace into the azure-vm deployment:
 mkdir -p ~/dms-src/eng/azure-vm/compose/.bootstrap
