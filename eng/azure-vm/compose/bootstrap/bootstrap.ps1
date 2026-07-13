@@ -72,7 +72,15 @@ foreach ($line in Get-Content $EnvFile) {
     $envValues[$trimmed.Substring(0, $idx).Trim()] = $value
 }
 function EnvVal([string]$key, [string]$default = "") {
-    if ($envValues.ContainsKey($key) -and $envValues[$key]) { return $envValues[$key] }
+    if ($envValues.ContainsKey($key) -and $envValues[$key]) {
+        # docker compose interpolates $VAR/${VAR} inside .env, but this script reads the file
+        # literally -- a '$' in a value means the containers and this script would disagree on it
+        # (e.g. Keycloak gets one client secret, the CMS/DMS containers another). Refuse outright.
+        if ($envValues[$key] -match '\$') {
+            throw ".env value '$key' contains '$', which docker compose interpolates. Use a value without '$'."
+        }
+        return $envValues[$key]
+    }
     return $default
 }
 
@@ -121,6 +129,13 @@ $created = [System.Collections.Generic.List[object]]::new()
 $stateDirectory = Join-Path $PSScriptRoot "../.bootstrap"
 $bootstrapAttempted = Join-Path $stateDirectory "bootstrap-attempted"
 $bootstrapComplete = Join-Path $stateDirectory "bootstrap-complete"
+$resetPending = Join-Path $stateDirectory "reset-pending"
+if (Test-Path $resetPending) {
+    # reset.sh / down.sh -v clear the markers before the destructive down and remove this sentinel
+    # only after it succeeds. While it exists the volumes may still hold live identity/CMS state,
+    # and this script's creates are not idempotent.
+    throw "A destructive reset did not finish. Re-run ./reset.sh (or ./down.sh -v) until it succeeds before bootstrapping."
+}
 if (Test-Path $bootstrapComplete) {
     throw "Bootstrap already completed. Refusing to duplicate CMS objects. Run ./reset.sh before bootstrapping again."
 }
@@ -199,9 +214,10 @@ Write-Output "== Bootstrapping single-tenant stack ($stConfig) =="
 $stToken = Get-CmsToken -CmsUrl $stConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
 $stDataStoreId = Add-DataStore -CmsUrl $stConfig -AccessToken $stToken -Name "Single-Tenant Data Store" `
     -DataStoreType "Review" -PostgresHost "postgres" -PostgresDbName "edfi_st" -PostgresCredential $pgCredential
-# Full-access single-tenant client. (Scope: single-tenant + two isolated tenants.)
+# Full-access single-tenant client. Uses the same -ClaimSetName as the multi-tenant apps (default
+# E2E-NoFurtherAuthRequiredClaimSet) so an override applies consistently across all three.
 New-ReviewApplication -CmsUrl $stConfig -Label "single-tenant/full" -Token $stToken `
-    -DataStoreIds @([long]$stDataStoreId) -ClaimSet "E2E-NoFurtherAuthRequiredClaimSet"
+    -DataStoreIds @([long]$stDataStoreId)
 # To demo school/district-level authorization, add an EdOrg-scoped client via the CMS, e.g.
 # New-ReviewApplication ... -ClaimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" -EducationOrganizationIds @([long]255901)
 

@@ -24,6 +24,14 @@ for arg in "$@"; do
       case "$volume_value" in 1 | t | T | true | TRUE | True) wants_volumes=true ;; esac
       ARGS+=("$arg")
       ;;
+    --*) ARGS+=("$arg") ;;   # other long flags (e.g. --remove-orphans) never remove volumes
+    -*v*)
+      # Docker bundles single-dash short flags (pflag): `-vt 0` means `-v -t 0`. Treat any
+      # short-flag cluster containing 'v' as a volume drop so bundling cannot bypass the
+      # confirmation or the marker/sentinel handling below.
+      wants_volumes=true
+      ARGS+=("$arg")
+      ;;
     *) ARGS+=("$arg") ;;
   esac
 done
@@ -39,8 +47,13 @@ fi
 # A volume drop (-v) means the config + Keycloak state is going away, so bootstrap must run again.
 # Remove both bootstrap markers BEFORE the down: if the down is interrupted after removing some
 # volumes, a surviving stale "complete" marker would make setup-env.ps1 skip bootstrap against
-# wiped databases (matches reset.sh).
+# wiped databases. The reset-pending sentinel covers the opposite failure: if the down fails with
+# the volumes still INTACT, absent markers alone would let a re-run bootstrap duplicate the
+# still-live identity/CMS objects -- bootstrap.ps1 refuses while the sentinel exists, and it is
+# removed only after the down succeeds (matches reset.sh).
 if [ "$wants_volumes" = true ]; then
+  mkdir -p .bootstrap
+  : > .bootstrap/reset-pending
   rm -f .bootstrap/bootstrap-attempted .bootstrap/bootstrap-complete
 fi
 
@@ -50,4 +63,9 @@ if [ ${#ARGS[@]} -eq 0 ]; then
   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down
 else
   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down "${ARGS[@]}"
+fi
+
+# The destructive down completed; clear the sentinel so bootstrap may run again.
+if [ "$wants_volumes" = true ]; then
+  rm -f .bootstrap/reset-pending
 fi

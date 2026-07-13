@@ -19,6 +19,18 @@ if [ "${SKIP_GIT:-0}" != "1" ] && git -C . rev-parse --git-dir >/dev/null 2>&1; 
   fi
 fi
 
+# Keycloak's persisted dev-file H2 database cannot cross image-pin changes (see keycloak.yml).
+# If the pull above brought a compose config with a different Keycloak pin, recreating the
+# container below would apply it to the unmigratable volume -- refuse and point at the redeploy.
+configured_keycloak="$(docker compose -f docker-compose.yml -f keycloak.yml --env-file .env config --images | grep -m1 -i 'keycloak' || true)"
+current_keycloak="$(docker inspect --format '{{.Config.Image}}' dms-sec-keycloak 2>/dev/null || true)"
+if [ -n "$current_keycloak" ] && [ -n "$configured_keycloak" ] && [ "$current_keycloak" != "$configured_keycloak" ]; then
+  echo "ERROR: this update changes the Keycloak image ($current_keycloak -> $configured_keycloak)," >&2
+  echo "       but the persisted H2 realm volume cannot be migrated across Keycloak images." >&2
+  echo "       No containers were recreated. Follow provision/REDEPLOY.md for a clean redeploy." >&2
+  exit 1
+fi
+
 echo "Pulling latest images..."
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull
 

@@ -26,9 +26,15 @@ fi
 echo "Dropping app/database volumes and the Keycloak realm..."
 # Clear the markers BEFORE the destructive attempt: if the down is interrupted after removing some
 # volumes, a surviving "complete" marker would make setup-env.ps1 skip bootstrap against wiped
-# state. A cleared marker on an intact deployment only costs a refused (not duplicated) bootstrap.
+# state. The reset-pending sentinel covers the opposite failure: if the down fails with the
+# volumes still INTACT, absent markers alone would let a re-run bootstrap duplicate the still-live
+# identity/CMS objects -- bootstrap.ps1 refuses while the sentinel exists, and it is removed only
+# after the down succeeds (matches down.sh -v).
+mkdir -p .bootstrap
+: > .bootstrap/reset-pending
 rm -f .bootstrap/bootstrap-attempted .bootstrap/bootstrap-complete
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down -v
+rm -f .bootstrap/reset-pending
 
 # Restart infra + CMS + gateway ONLY -- NOT st-dms/mt-dms. After a -v reset the data DBs are empty
 # and the relational schema is gone, so the DMS services would crash-loop on boot (they fail fast

@@ -20,8 +20,15 @@ is at `~/dms-src` and a public `FQDN` for the VM. Replace `<FQDN>` throughout.
 
 ```bash
 cd ~/dms-src/eng/azure-vm/compose
-./down.sh -v -y || true                     # stop containers + drop ALL volumes (incl. Keycloak realm)
+# [ -f .env ] keeps the runbook idempotent on a box that never deployed WITHOUT swallowing a real
+# teardown failure (a failing down.sh exits non-zero and must stop this sequence).
+if [ -f .env ]; then ./down.sh -v -y; fi    # stop containers + drop ALL volumes (incl. Keycloak realm)
 docker network rm dms-sec 2>/dev/null || true
+# Verify the state volumes are actually gone BEFORE deleting the credentials they are keyed to:
+# if either survives, a later fresh .env would generate new secrets against the old state.
+for v in dms-security-review_dms-sec-postgres dms-security-review_dms-sec-keycloak; do
+  ! docker volume inspect "$v" >/dev/null 2>&1 || { echo "ERROR: $v survived teardown; keep .env and resolve the failure first." >&2; exit 1; }
+done
 rm -f .env ssl/server.crt ssl/server.key    # force fresh secrets + cert on next run
 rm -rf .bootstrap                            # force fresh ApiSchema staging
 # drop old images so the current (renamed) ones are pulled fresh:
@@ -39,6 +46,10 @@ git fetch origin --tags
 git switch --detach "$REF"
 git log -1 --oneline
 ```
+
+> A detached checkout cannot use `./update.sh`'s config pull (`git pull --ff-only` fails off a
+> branch). For a later in-place refresh, run `SKIP_GIT=1 ./update.sh` (images only, against the
+> current checkout) or repeat this Part to move the checkout to a newer ref first.
 
 ## Part C — Build the schema tool + stage ApiSchema  [bash]
 
@@ -60,8 +71,11 @@ docker run --rm --user "$(id -u):$(id -g)" \
   dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
   -c Release -r linux-x64 --self-contained -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
 
-# 2. Stage the DS 5.2 core ApiSchema workspace (downloads the ApiSchema package from the Ed-Fi feed):
-pwsh ./prepare-dms-schema.ps1 -SchemaToolPath ./.bootstrap/tools/api-schema-tools/api-schema-tools
+# 2. Stage the ApiSchema workspace (downloads the ApiSchema packages from the Ed-Fi feed).
+#    -EnvironmentFile .env.template stages the SAME package surface the populated template is
+#    built from (DS 5.2 core + TPDM). Without it the script stages its core-only default, and the
+#    template-restored databases (Part E) would fail the DMS EffectiveSchema check at startup.
+pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.template -SchemaToolPath ./.bootstrap/tools/api-schema-tools/api-schema-tools
 
 # 3. Copy the staged workspace into the azure-vm deployment:
 mkdir -p ~/dms-src/eng/azure-vm/compose/.bootstrap

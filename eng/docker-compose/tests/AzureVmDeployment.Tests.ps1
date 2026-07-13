@@ -59,6 +59,27 @@ exit 0
         Test-Path -LiteralPath $script:dockerLog | Should -BeFalse
     }
 
+    It "refuses a bundled short-flag cluster containing -v without confirmation" {
+        $output = & bash (Join-Path $script:composeRoot "down.sh") -vt 0 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $output | Out-String | Should -Match "refusing to drop all volumes"
+        Test-Path -LiteralPath $script:dockerLog | Should -BeFalse
+    }
+
+    It "clears bootstrap markers for a forced bundled volume drop" {
+        $attempted = Join-Path $script:composeRoot ".bootstrap/bootstrap-attempted"
+        $complete = Join-Path $script:composeRoot ".bootstrap/bootstrap-complete"
+        New-Item -ItemType File -Path $attempted, $complete -Force | Out-Null
+
+        & bash (Join-Path $script:composeRoot "down.sh") -vt 0 --force
+
+        $LASTEXITCODE | Should -Be 0
+        Get-Content -LiteralPath $script:dockerLog -Raw | Should -Match "compose .* down -vt 0"
+        Test-Path -LiteralPath $attempted | Should -BeFalse
+        Test-Path -LiteralPath $complete | Should -BeFalse
+    }
+
     It "clears bootstrap markers for a forced equals-form volume drop" {
         $attempted = Join-Path $script:composeRoot ".bootstrap/bootstrap-attempted"
         $complete = Join-Path $script:composeRoot ".bootstrap/bootstrap-complete"
@@ -70,6 +91,7 @@ exit 0
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Match "compose .* down -v=true"
         Test-Path -LiteralPath $attempted | Should -BeFalse
         Test-Path -LiteralPath $complete | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeFalse
     }
 
     It "clears bootstrap markers before a failing destructive volume attempt" {
@@ -89,6 +111,9 @@ exit 17
         $LASTEXITCODE | Should -Be 17
         Test-Path -LiteralPath $attempted | Should -BeFalse
         Test-Path -LiteralPath $complete | Should -BeFalse
+        # The sentinel must survive the failed attempt: the volumes may still hold live state, and
+        # bootstrap.ps1 refuses to run (and duplicate identity/CMS objects) while it exists.
+        Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeTrue
     }
 
     It "supports an empty argument list under nounset" {
@@ -111,6 +136,22 @@ exit 17
         $calls | Should -Match 'compose -f docker-compose\.yml -f keycloak\.yml --env-file \.env up -d --no-deps'
         Test-Path -LiteralPath $attempted | Should -BeFalse
         Test-Path -LiteralPath $complete | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeFalse
+    }
+
+    It "retains the reset sentinel when the destructive reset fails" {
+        $dockerStub = Join-Path $script:binRoot "docker"
+        Set-Content -LiteralPath $dockerStub -Value @'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+exit 17
+'@ -NoNewline
+        & chmod +x $dockerStub
+
+        & bash (Join-Path $script:composeRoot "reset.sh") --force 2>&1 | Out-Null
+
+        $LASTEXITCODE | Should -Be 17
+        Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeTrue
     }
 
     It "refuses a non-interactive reset without an explicit force flag" {

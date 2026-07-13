@@ -337,8 +337,15 @@ try {
         Write-Output "`nNext steps (manual):"
         Write-Output "  1. Stage the ApiSchema workspace into compose/.bootstrap/ApiSchema (eng/docker-compose/prepare-dms-schema.ps1"
         Write-Output "     writes eng/docker-compose/.bootstrap/ApiSchema -- copy that folder here; the DMS services mount it read-only)."
-        Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged"
-        Write-Output "     workspace; see ../docs/infrastructure.md)."
+        if ($LoadGrandbend) {
+            Write-Output "  2. edfi_st was restored by grandbend.sh (schema AND data) -- do NOT run api-schema-tools on it."
+            Write-Output "     Provision only edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged workspace;"
+            Write-Output "     see ../docs/infrastructure.md)."
+        }
+        else {
+            Write-Output "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2 (api-schema-tools, against the same staged"
+            Write-Output "     workspace; see ../docs/infrastructure.md)."
+        }
         Write-Output "  3. Start the DMS services:  ./up.sh st-dms mt-dms   (or re-run this script with -StartDms)."
     }
 
