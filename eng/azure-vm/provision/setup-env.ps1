@@ -265,6 +265,13 @@ try {
         postgres keycloak st-config mt-config pgadmin gateway
     if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
+    # Persist the image that ACTUALLY created/started the Keycloak H2 realm. A later plain
+    # down.sh removes the container but preserves its volume; update.sh then needs this reference
+    # to prove that the configured pin has not changed. Record immediately after Compose succeeds,
+    # before any later readiness/bootstrap failure can leave an unversioned realm volume behind.
+    bash ./record-keycloak-image.sh
+    if ($LASTEXITCODE -ne 0) { throw "record-keycloak-image.sh failed ($LASTEXITCODE)." }
+
     Write-Output "Waiting for Keycloak + config services to report healthy..."
     $deadline = (Get-Date).AddMinutes(8)
     do {

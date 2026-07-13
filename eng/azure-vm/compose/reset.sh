@@ -45,6 +45,7 @@ rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
 # the DMS services) from pulling them up early; it resolves upstreams at request time.
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps \
   postgres keycloak st-config mt-config pgadmin gateway
+./record-keycloak-image.sh
 
 echo
 echo "Reset complete. All prior review credentials were revoked with the Keycloak realm; rebuild in order:"

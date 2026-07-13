@@ -57,11 +57,7 @@ echo "Recreating changed containers..."
 # /app/ApiSchema on an environment that was provisioned but never had its schema staged.
 ./up.sh
 
-# Record the now-deployed Keycloak reference so the pin guard above still works after a plain
-# ./down.sh removes the container while keeping the H2 volume.
-if [ -n "$configured_keycloak" ]; then
-  mkdir -p .bootstrap
-  printf '%s\n' "$configured_keycloak" > "$keycloak_ref_file"
-fi
+# up.sh records the image from the now-deployed Keycloak container (rather than trusting the
+# configured string) before it starts the DMS services. That reference survives a plain down.
 
 echo "Update complete."
