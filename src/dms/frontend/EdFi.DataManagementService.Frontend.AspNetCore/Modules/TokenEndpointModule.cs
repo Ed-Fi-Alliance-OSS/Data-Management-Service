@@ -16,13 +16,23 @@ public class TokenEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        // Build the fixed route pattern prefix for root-level endpoints (may be empty)
         var appSettings = endpoints.ServiceProvider.GetRequiredService<IOptions<AppSettings>>();
+        bool multiTenancy = appSettings.Value.MultiTenancy;
         string routePattern = FixedRoutePattern.Build(
             appSettings.Value.GetRouteQualifierSegmentsArray(),
-            appSettings.Value.MultiTenancy
+            multiTenancy
         );
 
+        if (multiTenancy)
+        {
+            MapTokenEndpoints(endpoints, string.Empty);
+        }
+
+        MapTokenEndpoints(endpoints, routePattern);
+    }
+
+    private static void MapTokenEndpoints(IEndpointRouteBuilder endpoints, string routePattern)
+    {
         endpoints
             .MapPost($"{routePattern}/oauth/token", HandleFormData)
             .Accepts<TokenRequest>(contentType: "application/x-www-form-urlencoded")

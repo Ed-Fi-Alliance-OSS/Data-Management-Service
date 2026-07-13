@@ -183,6 +183,85 @@ public class TokenEndpointModuleTests
     }
 
     [TestFixture]
+    public class When_Posting_To_The_Internal_Token_Endpoint_With_Multi_Tenancy_Enabled
+        : TokenEndpointModuleTests
+    {
+        private JsonNode? _jsonContent;
+        private HttpResponseMessage? _response;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // Arrange
+            var oAuthManager = A.Fake<IOAuthManager>();
+            var json =
+                """{"status_code":200, "body":{"token":"fake_access_token","token_type":"bearer","expires_in":300}}""";
+            JsonNode _fake_responseJson = JsonNode.Parse(json)!;
+            var _fake_response_200 = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
+            };
+
+            A.CallTo(() =>
+                    oAuthManager.GetAccessTokenAsync(
+                        A<IHttpClientWrapper>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<TraceId>.Ignored
+                    )
+                )
+                .Returns(_fake_response_200);
+
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        TestMockHelper.AddEssentialMocks(collection);
+                        collection.AddTransient((x) => oAuthManager);
+                        collection.Configure<AppSettings>(opts =>
+                        {
+                            opts.MultiTenancy = true;
+                            opts.RouteQualifierSegments = "schoolYear";
+                        });
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+            var requestContent = """{"grant_type":"client_credentials"}""";
+            var proxyRequest = ProxyRequest(requestContent, "application/json");
+
+            // Act
+            _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
+            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
+        }
+
+        [TearDown]
+        public void TearDownAttribute()
+        {
+            _response?.Dispose();
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_code()
+        {
+            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_body()
+        {
+            _jsonContent!["status_code"]!.GetValue<int>().Should().Be(200);
+            _jsonContent["body"]!["token"]!.ToString().Should().Be("fake_access_token");
+            _jsonContent["body"]!["expires_in"]!.GetValue<int>().Should().Be(300);
+            _jsonContent["body"]!["token_type"]!.ToString().Should().Be("bearer");
+        }
+    }
+
+    [TestFixture]
     public class When_Posting_To_Qualified_Internal_Token_Endpoint_With_Json_Content
         : TokenEndpointModuleTests
     {
