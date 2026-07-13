@@ -399,12 +399,20 @@ This flag enables:
 
 ### Endpoint Authentication
 
-The `/management/*` claims endpoints require a valid CMS bearer token in addition to the flag above:
+Every `/management/*` claims endpoint requires a valid CMS bearer token that satisfies **both** of the following, in addition to the dangerous flag above:
 
-- `POST /management/upload-claims` and `POST /management/reload-claims` require an admin scope.
-- `GET /management/current-claims` requires a read-only or admin scope.
+1. **The configuration-service role** — enforced by `SecurityConstants.ServicePolicy`. The token must carry the configured configuration-service role (the same role every other CMS management endpoint requires); a token for a different role is rejected even when its scope would otherwise be sufficient.
+2. **The endpoint-appropriate scope:**
+   - `POST /management/upload-claims` and `POST /management/reload-claims` require the **admin** scope.
+   - `GET /management/current-claims` requires the **read-only or admin** scope.
 
-Requests without a valid token return `401` regardless of the flag, and a valid token with an insufficient scope returns `403`. The `Authorization: Bearer $TOKEN` header shown in the examples above is enforced.
+Status behavior:
+
+- Missing or invalid bearer token → `401`.
+- Authenticated token that lacks the required configuration-service role or scope → `403`.
+- Fully authorized request while dynamic claims loading is disabled → `404`.
+
+The `Authorization: Bearer $TOKEN` header shown in the examples above is enforced.
 
 ## Troubleshooting
 
