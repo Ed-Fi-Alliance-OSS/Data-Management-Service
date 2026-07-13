@@ -76,10 +76,15 @@ Tests invalid claims upload:
 - Sends malformed claims
 - Verifies 400 response with validation errors
 
-### Scenario 6: Security
-Verifies the endpoints enforce security in two layers:
-- A valid CMS bearer token is required (`ServicePolicy` plus an admin scope for `upload-claims` and `reload-claims`, or a read-only-or-admin scope for `current-claims`). Requests without a valid token return 401 regardless of the flag below, and a valid token with an insufficient scope returns 403.
-- Dynamic claims loading must be enabled (`DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true`); otherwise an authorized request returns 404.
+## Authorization Coverage
+
+This feature's `Background` obtains a **full-access** CMS token (`Given valid credentials` / `And token received`) and sends it on every request, so scenarios 01–05 exercise only the **authenticated happy path** (including the 400 validation case in scenario 05). The feature does **not** contain a negative-authorization scenario.
+
+The negative authorization behavior of the `/management/*` claims endpoints is covered by the focused in-process unit tests in `ClaimsManagementModuleTests` (project `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit`), not by this E2E feature:
+
+- **401** — a request without a bearer token, with the dangerous flag both enabled and disabled.
+- **403** — a valid token that is not authorized: a read-only scope on the write endpoints, an unsupported scope on the read endpoint, or a principal lacking the configuration-service role.
+- **404** — an authorized request while `DangerouslyEnableUnrestrictedClaimsLoading` is disabled.
 
 ## Troubleshooting
 
