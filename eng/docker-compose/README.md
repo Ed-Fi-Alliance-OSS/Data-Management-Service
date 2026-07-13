@@ -64,6 +64,21 @@ also append `-v`. Examples:
 ./start-local-dms.ps1 -d -v
 ```
 
+The turnkey `bootstrap-local-dms.ps1` entry point accepts the same teardown flags, so the
+documented start command also stops the stack. `bootstrap-local-dms.ps1 -d [-v]` delegates to
+`start-local-dms.ps1 -d [-v -RemoveBootstrap]`; `-d -v` additionally removes the staged
+`.bootstrap/` workspace. Pass the same infrastructure flags you started with so teardown targets
+the same compose shape — in particular the same `-DatabaseEngine`, otherwise `-d -v` selects the
+default (PostgreSQL) compose file and will not remove the other engine's named data volume.
+
+```pwsh
+# Stop the turnkey stack, keeping volumes
+./bootstrap-local-dms.ps1 -d
+
+# Stop the turnkey stack, delete volumes, and remove the .bootstrap workspace
+./bootstrap-local-dms.ps1 -d -v
+```
+
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
@@ -146,8 +161,8 @@ The local stack can run the DMS datastore on SQL Server instead of PostgreSQL us
 # Turnkey: stand up SQL Server, provision the relational schema, and (optionally) load seed data
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -EnableSwaggerUI -LoadSeedData
 
-# Tear down (delete volumes)
-./start-local-dms.ps1 -DatabaseEngine mssql -d -v
+# Tear down (delete volumes and remove the .bootstrap workspace)
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v
 ```
 
 `mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
@@ -212,9 +227,18 @@ Notes:
   `bootstrap-published-dms.ps1` composes the overlay **only when `-DataStandardVersion` is
   explicitly passed**; otherwise the base env file's own `SCHEMA_PACKAGES` drives the run
   unchanged.
-* **Always tear down (`-d -v -RemoveBootstrap`) before switching Data Standard versions** — the
-  provisioned database and staged workspace are version-specific, and DMS refuses to start
-  against a database whose effective schema hash does not match.
+* **Always tear down before switching Data Standard versions** — the provisioned database and
+  staged workspace are version-specific, and DMS refuses to start against a database whose
+  effective schema hash does not match. For local bootstraps, tear down with
+  `bootstrap-local-dms.ps1 -d -v` **and the same `-DatabaseEngine` you started with**, so the
+  provisioned database volume is actually removed — teardown selects the compose file (and
+  therefore the named volume) by engine, so a mismatched engine leaves that volume behind. For the
+  MSSQL examples above: `bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v` (it delegates to
+  `start-local-dms.ps1 -d -v -RemoveBootstrap`, removing both the SQL Server volume and the staged
+  `.bootstrap/` workspace). For published bootstraps (`bootstrap-published-dms.ps1`), tear down
+  with `start-published-dms.ps1 -d -v -RemoveBootstrap` instead — the published stack runs as a
+  separate compose project (`dms-published`), which `bootstrap-local-dms.ps1 -d -v` does not
+  touch.
 
 ## Schema Selection
 
@@ -346,15 +370,34 @@ unintentionally.
 
 If `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
 fingerprint-mismatch teardown-guidance error after a branch switch or input
-change, recover by running `./start-local-dms.ps1 -d -v -RemoveBootstrap`
-(which removes the local `.bootstrap/` workspace) or the matching E2E
-`teardown-local-dms.ps1` script, then rerun the prepare commands.
+change, recover by running `./bootstrap-local-dms.ps1 -d -v` (which removes the
+local `.bootstrap/` workspace by delegating to
+`start-local-dms.ps1 -d -v -RemoveBootstrap`) or the matching E2E
+`teardown-local-dms.ps1` script, then rerun the prepare commands. Add the same
+`-DatabaseEngine` you started with (e.g. `-DatabaseEngine mssql`) so teardown
+also removes that engine's data volume; the workspace removal itself is
+engine-independent. If you started the stack with `start-local-dms.ps1`
+directly, `./start-local-dms.ps1 -d -v -RemoveBootstrap` with the same flags
+you started with remains the equivalent direct recovery — including options
+the bootstrap wrapper does not accept, such as `-EnableKafka`.
 
-> **Note on `-RemoveBootstrap`:** By default, `./start-local-dms.ps1 -d -v`
-> and `./start-published-dms.ps1 -d -v` do **not** delete the `.bootstrap/`
-> workspace on teardown. Pass `-RemoveBootstrap` explicitly when you want the
-> workspace wiped (e.g. after a branch switch). The E2E teardown wrappers
-> always remove it unconditionally.
+These recovery commands target the `dms-local` stack. The prepare commands and
+the `.bootstrap/` workspace are shared with the published-image flow
+(`bootstrap-published-dms.ps1`), so if the running stack is `dms-published`,
+recover with `./start-published-dms.ps1 -d -v -RemoveBootstrap` plus the same
+compose-shaping options you started with (e.g. `-IdentityProvider keycloak`,
+`-EnableKafka`, `-EnableSwaggerUI`); the published wrapper itself has no
+teardown flags. Running the `dms-local` recovery instead would leave the
+published stack up while deleting the workspace its containers bind-mount.
+
+> **Note on `-RemoveBootstrap`:** `./bootstrap-local-dms.ps1 -d -v` removes the
+> `.bootstrap/` workspace for you — it delegates to
+> `start-local-dms.ps1 -d -v -RemoveBootstrap`. Invoking the start scripts
+> directly is different: by default `./start-local-dms.ps1 -d -v` and
+> `./start-published-dms.ps1 -d -v` do **not** delete the `.bootstrap/`
+> workspace. Pass `-RemoveBootstrap` explicitly when you want the workspace
+> wiped (e.g. after a branch switch). The E2E teardown wrappers always remove
+> it unconditionally.
 
 ## IDE Debugging Workflow
 

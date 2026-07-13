@@ -334,8 +334,8 @@ Those static assets are runtime content inputs, not a second schema authority fo
 On same-checkout reruns, bootstrap treats this staged schema workspace as immutable while a running DMS
 process or already-provisioned database may still depend on it. If the intended staged schema set matches
 the existing workspace exactly, bootstrap reuses it as-is. If it differs, bootstrap fails fast and requires
-`start-local-dms.ps1 -d -v` or equivalent environment reset rather than rewriting live schema files in
-place.
+`bootstrap-local-dms.ps1 -d -v` or equivalent environment reset rather than rewriting live schema files
+in place.
 
 Package names, package versions, and developer-supplied source directories are only selection inputs. They
 are not themselves the hashed artifact. Package-backed selection is a later input-materialization path that
@@ -1703,7 +1703,9 @@ pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
 # Infrastructure phase with Keycloak and Swagger UI
 pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -EnableSwaggerUI -IdentityProvider keycloak
 
-# Teardown stack and volumes
+# Teardown stack and volumes — default compose shape. Repeat the compose-shaping flags used
+# at start (e.g. -IdentityProvider keycloak -EnableSwaggerUI above) so `down -v` targets the
+# same compose-file set and its volumes.
 pwsh eng/docker-compose/start-local-dms.ps1 -d -v
 ```
 
@@ -1847,8 +1849,14 @@ pwsh eng/docker-compose/bootstrap-local-dms.ps1 -InfraOnly
 # Wrapper IDE continuation: configure/provision first, then wait for IDE DMS to report healthy
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198"
 
-# Teardown stack and volumes
-pwsh eng/docker-compose/start-local-dms.ps1 -d -v
+# Teardown stack and volumes (also removes the .bootstrap workspace) — default compose shape.
+# Repeat the compose-shaping flags used at start so `down -v` targets the same compose-file
+# set and its volumes; a bare teardown after a non-default start (e.g. the keycloak-backed
+# examples above) leaves that service's containers and named volumes behind.
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v
+
+# Teardown matching the keycloak-backed examples above
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -IdentityProvider keycloak -d -v
 ```
 
 No shell/session preparation is required before invoking the wrapper. Direct phase-command invocation is
@@ -2054,7 +2062,7 @@ The workspace is scratch-only bootstrap state; it must be excluded from source c
   flags.
 - The seed directory is deleted and recreated from scratch only when seed delivery runs.
 - The seed directory is deleted on successful completion of the seed step and left in place on failure for debugging.
-- `start-local-dms.ps1 -d -v` removes the entire `eng/docker-compose/.bootstrap/` tree.
+- `bootstrap-local-dms.ps1 -d -v` removes the entire `eng/docker-compose/.bootstrap/` tree (it delegates to `start-local-dms.ps1 -d -v -RemoveBootstrap`); `start-local-dms.ps1 -d -v` on its own keeps the workspace unless `-RemoveBootstrap` is also passed.
 - Story 00 adds `eng/docker-compose/.bootstrap/` to `.gitignore` before staging writes generated artifacts; staged schema, claims, and seed files must never be committed.
 - Concurrent bootstrap runs against the same workspace are not supported because they would share the same staged directories.
 - DMS-916 does not define a same-workspace lock file or locking protocol. If parallel bootstrap runs are required in CI or local automation, use separate repository checkouts or isolated workspaces instead.
