@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -22,13 +23,13 @@ public class ClaimsManagementModule : IEndpointModule
 
         // Reload Claims endpoint
         managementEndpoints
-            .MapPost("/reload-claims", ReloadClaims)
+            .MapSecuredPost("/reload-claims", ReloadClaims)
             .WithName("ReloadClaims")
             .WithSummary("Reloads the Claims from the configured source");
 
         // Upload Claims endpoint
         managementEndpoints
-            .MapPost("/upload-claims", UploadClaims)
+            .MapSecuredPost("/upload-claims", UploadClaims)
             .WithName("UploadClaims")
             .WithSummary("Uploads Claims from request body")
             .Accepts<UploadClaimsRequest>("application/json")
@@ -39,7 +40,7 @@ public class ClaimsManagementModule : IEndpointModule
 
         // Get Current Claims endpoint
         managementEndpoints
-            .MapGet("/current-claims", GetCurrentClaims)
+            .MapSecuredGet("/current-claims", GetCurrentClaims)
             .WithName("GetCurrentClaims")
             .WithSummary("Retrieves the currently loaded claims in their original format")
             .Produces<JsonNode>(200)
