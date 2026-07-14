@@ -3,29 +3,29 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Pkg EdFi.Api.Minimal.Template.PostgreSQL
+name: Pkg EdFi.Api.Minimal.Template.MsSql
 on:
   pull_request:
     # Template packages are intentionally expensive integration builds. Scope them to their
     # pipeline/orchestration, database composition, and relational-schema implementation; the
     # existing DMS/Config CI workflows own general application-source validation.
     paths:
-      - ".github/workflows/EdFi.Api.Minimal.Template.PostgreSQL.yml"
+      - ".github/workflows/EdFi.Api.Minimal.Template.MsSql.yml"
       - ".github/workflows/build-minimal-template.yml"
       - "eng/DatabaseTemplates/**"
       - "eng/Dms-Management.psm1"
       - "eng/Package-Management.psm1"
       - "eng/SchoolYear-Loader.psm1"
       - "eng/schema-package-utility.psm1"
+      - "eng/docker-compose/.env.mssql"
       - "eng/docker-compose/.env.template*"
       - "eng/docker-compose/bootstrap-claims-gate.psm1"
       - "eng/docker-compose/bootstrap-manifest.psm1"
       - "eng/docker-compose/env-utility.psm1"
       - "eng/docker-compose/local-config.yml"
       - "eng/docker-compose/local-dms.yml"
+      - "eng/docker-compose/mssql.yml"
       - "eng/docker-compose/OpenIddict-Crypto.psm1"
-      - "eng/docker-compose/postgresql.yml"
-      - "eng/docker-compose/postgresql-init.sh"
       - "eng/docker-compose/provision-dms-schema.ps1"
       - "eng/docker-compose/provision-e2e-database.ps1"
       - "eng/docker-compose/setup-openiddict.ps1"
@@ -38,7 +38,7 @@ on:
       - "src/dms/Directory.Build.targets"
       - "src/dms/Dockerfile"
       - "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/**"
-      - "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/**"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
       - "src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/**"
       - "src/dms/clis/EdFi.DataManagementService.SchemaTools/**"
       - "src/dms/run.sh"
@@ -83,12 +83,12 @@ jobs:
       matrix:
         include:
           - standard_version: "5.2.0"
-            package_name: "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
-            provenance_file: "minimal.template.intoto.jsonl"
+            package_name: "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            provenance_file: "minimal.template.mssql.intoto.jsonl"
             environment_file: "./.env.template"
           - standard_version: "6.1.0"
-            package_name: "EdFi.Api.Minimal.Template.PostgreSql.6.1.0"
-            provenance_file: "minimal.template.6.1.0.intoto.jsonl"
+            package_name: "EdFi.Api.Minimal.Template.MsSql.6.1.0"
+            provenance_file: "minimal.template.mssql.6.1.0.intoto.jsonl"
             environment_file: "./.env.template.ds61"
     uses: ./.github/workflows/build-minimal-template.yml
     with:
@@ -98,6 +98,7 @@ jobs:
       provenance_file: ${{ matrix.provenance_file }}
       publish_package: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}
       environment_file: ${{ matrix.environment_file }}
+      database_engine: mssql
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
       AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}

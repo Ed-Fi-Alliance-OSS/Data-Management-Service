@@ -352,3 +352,709 @@ Describe "Get-BulkLoadFailureClassification" {
         $result.UnresolvedReferenceCount | Should -Be 0
     }
 }
+
+Describe "Get-TemplateBulkLoadTuning" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "uses conservative relational-backend limits for mssql" {
+        InModuleScope Template-Management {
+            $tuning = Get-TemplateBulkLoadTuning -DatabaseEngine mssql
+
+            $tuning.Count | Should -Be 4
+            $tuning.MaxConcurrentConnections | Should -Be 5
+            $tuning.MaxSimultaneousRequests | Should -Be 5
+            $tuning.MaxBufferedTasks | Should -Be 2
+            $tuning.RetryCount | Should -Be 5
+        }
+    }
+
+    It "leaves postgresql on Invoke-BulkLoad's established defaults" {
+        InModuleScope Template-Management {
+            $tuning = Get-TemplateBulkLoadTuning -DatabaseEngine postgresql
+            $tuning.Count | Should -Be 0
+        }
+    }
+}
+
+Describe "Invoke-DatabaseDump" {
+    BeforeAll {
+        # The module imports sibling modules with paths relative to its own directory, so import
+        # it with that directory as the working directory (matching how the template workflow
+        # invokes it). The dump function is not exported, so it is reached via InModuleScope.
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    Context "when -DatabaseEngine is mssql" {
+        It "runs BACKUP DATABASE ... WITH INIT, copies the .bak out, and removes the transient in-container file" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock docker {
+                    $calls.Add(@($args))
+                    if ($args[0] -eq 'cp') {
+                        New-Item -ItemType File -Path $args[-1] -Force | Out-Null
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+
+                Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "test.bak" -MssqlPassword "abcdefgh1!"
+
+                $calls.Count | Should -Be 3
+                ($calls[0] -join '|') | Should -Be (@(
+                        'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-C', '-b', '-Q',
+                        "BACKUP DATABASE [edfi_datamanagementservice] TO DISK = N'/var/opt/mssql/data/test.bak' WITH INIT;"
+                    ) -join '|')
+                ($calls[1] -join '|') | Should -Be (@('cp', "dms-mssql:/var/opt/mssql/data/test.bak", (Join-Path $backupDir "test.bak")) -join '|')
+                ($calls[2] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', '/var/opt/mssql/data/test.bak') -join '|')
+            }
+        }
+
+        It "removes a partial in-container backup when BACKUP DATABASE fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock docker {
+                    $calls.Add(@($args))
+                    $global:LASTEXITCODE = if ($args -contains '/opt/mssql-tools18/bin/sqlcmd') { 1 } else { 0 }
+                }
+
+                {
+                    Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "backup-failure.bak" -MssqlPassword "abcdefgh1!"
+                } | Should -Throw "*BACKUP DATABASE*failed*"
+
+                $calls.Count | Should -Be 2
+                ($calls[-1] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', '/var/opt/mssql/data/backup-failure.bak') -join '|')
+            }
+        }
+
+        It "removes the in-container backup when docker cp fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock docker {
+                    $calls.Add(@($args))
+                    $global:LASTEXITCODE = if ($args[0] -eq 'cp') { 1 } else { 0 }
+                }
+
+                {
+                    Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "copy-failure.bak" -MssqlPassword "abcdefgh1!"
+                } | Should -Throw "*Failed to copy backup*"
+
+                $calls.Count | Should -Be 3
+                ($calls[-1] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', '/var/opt/mssql/data/copy-failure.bak') -join '|')
+            }
+        }
+
+        It "does not mask a backup failure when transient cleanup also fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                Mock docker {
+                    $global:LASTEXITCODE = 1
+                }
+
+                $previousWarningPreference = $WarningPreference
+                try {
+                    $WarningPreference = "Stop"
+                    {
+                        Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "double-failure.bak" -MssqlPassword "abcdefgh1!"
+                    } | Should -Throw "*BACKUP DATABASE*failed*"
+                }
+                finally {
+                    $WarningPreference = $previousWarningPreference
+                }
+            }
+        }
+
+        It "warns without failing a successful dump when transient cleanup fails" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $backupDirectory = $backupDir
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock Write-Warning {}
+                Mock docker {
+                    $calls.Add(@($args))
+                    if ($args[0] -eq 'cp') {
+                        New-Item -ItemType File -Path $args[-1] -Force | Out-Null
+                    }
+                    $global:LASTEXITCODE = if ($args.Count -gt 2 -and $args[2] -eq 'rm') { 1 } else { 0 }
+                }
+
+                {
+                    Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -BackupDirectory $backupDirectory -BackupFileName "cleanup-failure.bak" -MssqlPassword "abcdefgh1!"
+                } | Should -Not -Throw
+
+                Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                    $Message -like "*Could not remove transient backup*cleanup-failure.bak*"
+                }
+            }
+        }
+
+        It "ignores -DatabaseSchemas because a .bak is always a full-database artifact" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock docker {
+                    $calls.Add(@($args))
+                    if ($args[0] -eq 'cp') {
+                        New-Item -ItemType File -Path $args[-1] -Force | Out-Null
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+
+                Invoke-DatabaseDump -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms", "edfi") -BackupDirectory $backupDir -BackupFileName "test2.bak" -MssqlPassword "abcdefgh1!"
+
+                # BACKUP DATABASE has no per-schema equivalent to pg_dump -n, so the schema list plays no part in the command.
+                ($calls[0] -join '|') | Should -Be (@(
+                        'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-C', '-b', '-Q',
+                        "BACKUP DATABASE [edfi_datamanagementservice] TO DISK = N'/var/opt/mssql/data/test2.bak' WITH INIT;"
+                    ) -join '|')
+            }
+        }
+    }
+
+    Context "when -DatabaseEngine is postgresql (the default)" {
+        It "runs pg_dump scoped to the requested schemas, in order, and precedes the dump with a pgcrypto preamble" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $calls = [System.Collections.Generic.List[object]]::new()
+                Mock docker {
+                    $calls.Add(@($args))
+                    $global:LASTEXITCODE = 0
+                }
+
+                Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms", "edfi") -BackupDirectory $backupDir -BackupFileName "test.sql"
+
+                $calls.Count | Should -Be 1
+                ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'pg_dump', '-U', 'postgres', 'edfi_datamanagementservice', '-n', 'dms', '-n', 'edfi') -join '|')
+
+                # Schema-scoped pg_dump never emits CREATE EXTENSION, but the dumped dms.uuidv5()
+                # function requires pgcrypto's digest(), so the preamble must precede the dump.
+                $content = Get-Content -LiteralPath (Join-Path $backupDir "test.sql") -Raw
+                $content | Should -Match ([regex]::Escape('CREATE EXTENSION IF NOT EXISTS "pgcrypto";'))
+            }
+        }
+
+        It "produces byte-identical pg_dump arguments whether or not -DatabaseEngine is supplied" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                $explicitCalls = [System.Collections.Generic.List[object]]::new()
+                Mock docker { $explicitCalls.Add(@($args)); $global:LASTEXITCODE = 0 }
+                Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms") -BackupDirectory $backupDir -BackupFileName "explicit.sql"
+
+                $defaultCalls = [System.Collections.Generic.List[object]]::new()
+                Mock docker { $defaultCalls.Add(@($args)); $global:LASTEXITCODE = 0 }
+                Invoke-DatabaseDump -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms") -BackupDirectory $backupDir -BackupFileName "default.sql"
+
+                $defaultCalls.Count | Should -Be $explicitCalls.Count
+                ($defaultCalls[0] -join '|') | Should -Be ($explicitCalls[0] -join '|')
+            }
+        }
+    }
+}
+
+Describe "Restore-TemplatePackage" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+
+        # Restore-TemplatePackage only cares that the package directory contains exactly one
+        # .nupkg (a zip archive) with exactly one artifact file inside it, so a minimal package
+        # is built directly rather than driving the real dotnet pack/csproj pipeline.
+        function script:New-FakeTemplatePackage {
+            param(
+                [Parameter(Mandatory = $true)]
+                [string]$Directory,
+
+                [Parameter(Mandatory = $true)]
+                [string]$ArtifactFileName,
+
+                [string]$PackageFileName = "FakeTemplate.nupkg"
+            )
+
+            $stagingDir = Join-Path $Directory "staging"
+            New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+            $artifactPath = Join-Path $stagingDir $ArtifactFileName
+            Set-Content -LiteralPath $artifactPath -Value "fake artifact content"
+
+            $zipPath = Join-Path $Directory "package.zip"
+            Compress-Archive -Path $artifactPath -DestinationPath $zipPath -Force
+            $nupkgPath = Join-Path $Directory $PackageFileName
+            Copy-Item -LiteralPath $zipPath -Destination $nupkgPath -Force
+
+            return $nupkgPath
+        }
+    }
+
+    BeforeEach {
+        $script:packageDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:packageDir -Force | Out-Null
+    }
+
+    Context "when -DatabaseEngine is mssql" {
+        It "drops an existing target database, then restores via RESTORE DATABASE ... WITH MOVE ..., REPLACE" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @('MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY', 'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL')
+                }
+                if ($joined -match 'DB_ID') {
+                    return '1'
+                }
+            }
+
+            $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!"
+
+            $result | Should -Be "MyTemplate.nupkg"
+            $calls.Count | Should -Be 6
+
+            # [0] docker cp copies the extracted .bak into the container at a generated path;
+            # capture that path so the later RESTORE FROM DISK clause can be pinned against it.
+            $calls[0][0] | Should -Be 'cp'
+            $copyDestination = $calls[0][2]
+            $copyDestination | Should -Match '^dms-mssql:/var/opt/mssql/data/template-restore-.*\.bak$'
+            $containerBakPath = ($copyDestination -split ':', 2)[1]
+
+            ($calls[1] -join '|') | Should -Be (@(
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-h', '-1', '-W', '-Q',
+                    "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'testdb') IS NOT NULL THEN 1 ELSE 0 END;"
+                ) -join '|')
+
+            ($calls[2] -join '|') | Should -Be (@(
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-Q',
+                    "ALTER DATABASE [testdb] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [testdb];"
+                ) -join '|')
+
+            ($calls[3] -join '|') | Should -Be (@(
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-h', '-1', '-W', '-s', '|', '-Q',
+                    "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerBakPath';"
+                ) -join '|')
+
+            ($calls[4] -join '|') | Should -Be (@(
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-Q',
+                    "RESTORE DATABASE [testdb] FROM DISK = N'$containerBakPath' WITH MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf', MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf', REPLACE;"
+                ) -join '|')
+
+            # The transient in-container backup is removed once the restore succeeds.
+            ($calls[5] -join '|') | Should -Be (@('exec', 'dms-mssql', 'rm', '-f', $containerBakPath) -join '|')
+        }
+
+        It "skips the DROP DATABASE step when the target database does not already exist" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @('MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY', 'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL')
+                }
+                if ($joined -match 'DB_ID') {
+                    return '0'
+                }
+            }
+
+            Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" | Out-Null
+
+            $calls.Count | Should -Be 5
+            ($calls | Where-Object { ($_ -join ' ') -match 'SET SINGLE_USER' }).Count | Should -Be 0
+            ($calls[2] -join ' ') | Should -Match 'RESTORE FILELISTONLY'
+            ($calls[3] -join ' ') | Should -Match 'RESTORE DATABASE \[testdb\]'
+            ($calls[4] -join ' ') | Should -Match '^exec dms-mssql rm -f /var/opt/mssql/data/template-restore-.*\.bak$'
+        }
+
+        It "removes the transient in-container backup even when the restore fails" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @('MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY', 'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL')
+                }
+                if ($joined -match 'DB_ID') {
+                    return '0'
+                }
+                if ($joined -match 'RESTORE DATABASE') {
+                    $global:LASTEXITCODE = 1
+                }
+            }
+
+            { Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" } |
+                Should -Throw "*Restore of*failed*"
+
+            # Failed restores must not accumulate GUID-named .bak files in /var/opt/mssql/data.
+            ($calls[-1] -join ' ') | Should -Match '^exec dms-mssql rm -f /var/opt/mssql/data/template-restore-.*\.bak$'
+        }
+
+        It "emits one MOVE clause per file for a multi-file backup (secondary data file, extra filegroup, multiple logs)" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @(
+                        'MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY',
+                        'MyDb2|/var/opt/mssql/data/MyDb2.ndf|D|SECONDARY',
+                        'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL',
+                        'MyDb_log2|/var/opt/mssql/data/MyDb_log2.ldf|L|NULL'
+                    )
+                }
+                if ($joined -match 'DB_ID') {
+                    return '0'
+                }
+            }
+
+            Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" | Out-Null
+
+            $containerBakPath = ($calls[0][2] -split ':', 2)[1]
+
+            # The primary data file and first log keep the plain $DatabaseName-derived names (matching
+            # the single-file case); the secondary data file and second log get names suffixed with
+            # their own logical name so every file lands at its own deterministic path.
+            ($calls[3] -join '|') | Should -Be (@(
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'master', '-C', '-b', '-Q',
+                    "RESTORE DATABASE [testdb] FROM DISK = N'$containerBakPath' WITH MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf', MOVE N'MyDb2' TO N'/var/opt/mssql/data/testdb_MyDb2.ndf', MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf', MOVE N'MyDb_log2' TO N'/var/opt/mssql/data/testdb_MyDb_log2.ldf', REPLACE;"
+                ) -join '|')
+        }
+
+        It "throws when an additional file's logical name contains characters unsafe for a physical path" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "backup.bak" -PackageFileName "MyTemplate.nupkg" | Out-Null
+
+            Mock docker -ModuleName Template-Management {
+                $joined = $args -join ' '
+                $global:LASTEXITCODE = 0
+                if ($joined -match 'RESTORE FILELISTONLY') {
+                    return @(
+                        'MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY',
+                        "MyDb'; DROP TABLE x --|/var/opt/mssql/data/MyDb2.ndf|D|SECONDARY",
+                        'MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL'
+                    )
+                }
+                if ($joined -match 'DB_ID') {
+                    return '0'
+                }
+            }
+
+            { Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine mssql -ContainerName "dms-mssql" -MssqlPassword "abcdefgh1!" } |
+                Should -Throw "*contains unsupported characters*"
+        }
+    }
+
+    Context "when -DatabaseEngine is postgresql (the default)" {
+        It "drops and recreates the database, copies the dump in, and restores via psql -f" {
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "dump.sql" -PackageFileName "MyPgTemplate.nupkg" | Out-Null
+
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $global:LASTEXITCODE = 0
+            }
+
+            $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine postgresql -ContainerName "dms-postgresql"
+
+            $result | Should -Be "MyPgTemplate.nupkg"
+            $calls.Count | Should -Be 5
+            ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'testdb' AND pid <> pg_backend_pid();") -join '|')
+            ($calls[1] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'DROP DATABASE IF EXISTS testdb;') -join '|')
+            ($calls[2] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE DATABASE testdb;') -join '|')
+            $calls[3][0] | Should -Be 'cp'
+            ($calls[4] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-v', 'ON_ERROR_STOP=1', '-f', '/tmp/template-restore.sql') -join '|')
+        }
+
+        It "produces byte-identical restore arguments whether or not -DatabaseEngine is supplied" {
+            $explicitDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $explicitDir -Force | Out-Null
+            New-FakeTemplatePackage -Directory $explicitDir -ArtifactFileName "dump.sql" -PackageFileName "Explicit.nupkg" | Out-Null
+
+            $defaultDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null
+            New-FakeTemplatePackage -Directory $defaultDir -ArtifactFileName "dump.sql" -PackageFileName "Default.nupkg" | Out-Null
+
+            $explicitCalls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management { $explicitCalls.Add(@($args)); $global:LASTEXITCODE = 0 }
+            Restore-TemplatePackage -PackageDirectory $explicitDir -DatabaseName "paritydb" -DatabaseEngine postgresql -ContainerName "dms-postgresql" | Out-Null
+
+            $defaultCalls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management { $defaultCalls.Add(@($args)); $global:LASTEXITCODE = 0 }
+            Restore-TemplatePackage -PackageDirectory $defaultDir -DatabaseName "paritydb" -ContainerName "dms-postgresql" | Out-Null
+
+            # Each call is extracted into its own randomly named temp directory, so normalize that
+            # GUID segment out of the local-side source path before comparing call shapes.
+            $normalizeGuid = { param($callArgs) @($callArgs | ForEach-Object { $_ -replace 'template-restore-[0-9a-fA-F]{32}', 'template-restore-<guid>' }) }
+
+            $defaultCalls.Count | Should -Be $explicitCalls.Count
+            for ($i = 0; $i -lt $explicitCalls.Count; $i++) {
+                ((& $normalizeGuid $defaultCalls[$i]) -join '|') | Should -Be ((& $normalizeGuid $explicitCalls[$i]) -join '|')
+            }
+        }
+    }
+}
+
+Describe "Get-UserSchemaNames" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    Context "when -DatabaseEngine is mssql" {
+        It "queries sys.schemas, excluding the built-in schemas and the db_* fixed-role schemas" {
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $global:LASTEXITCODE = 0
+                return @('dms', 'edfi')
+            }
+
+            $schemas = Get-UserSchemaNames -DatabaseEngine mssql -ContainerName "dms-mssql" -DatabaseName "testdb" -MssqlPassword "abcdefgh1!"
+
+            $schemas | Should -Be @('dms', 'edfi')
+            $calls.Count | Should -Be 1
+            ($calls[0] -join '|') | Should -Be (@(
+                    'exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'testdb', '-C', '-b', '-h', '-1', '-W', '-Q',
+                    "SET NOCOUNT ON; SELECT name FROM sys.schemas WHERE name NOT IN ('dbo', 'guest', 'sys', 'INFORMATION_SCHEMA') AND name NOT LIKE 'db[_]%' ORDER BY name;"
+                ) -join '|')
+        }
+    }
+
+    Context "when -DatabaseEngine is postgresql (the default)" {
+        It "queries pg_namespace, excluding pg_* system schemas, information_schema, and public" {
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management {
+                $calls.Add(@($args))
+                $global:LASTEXITCODE = 0
+                return @('dms', 'edfi')
+            }
+
+            $schemas = Get-UserSchemaNames -ContainerName "dms-postgresql" -DatabaseName "testdb"
+
+            $schemas | Should -Be @('dms', 'edfi')
+            $calls.Count | Should -Be 1
+            ($calls[0] -join '|') | Should -Be (@(
+                    'exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'testdb', '-tA', '-c',
+                    "SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ('information_schema', 'public') ORDER BY nspname;"
+                ) -join '|')
+        }
+
+        It "issues the identical query whether or not -DatabaseEngine is supplied" {
+            $explicitCalls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management { $explicitCalls.Add(@($args)); $global:LASTEXITCODE = 0; return @('dms') }
+            Get-UserSchemaNames -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "testdb" | Out-Null
+
+            $defaultCalls = [System.Collections.Generic.List[object]]::new()
+            Mock docker -ModuleName Template-Management { $defaultCalls.Add(@($args)); $global:LASTEXITCODE = 0; return @('dms') }
+            Get-UserSchemaNames -ContainerName "dms-postgresql" -DatabaseName "testdb" | Out-Null
+
+            $defaultCalls.Count | Should -Be $explicitCalls.Count
+            ($defaultCalls[0] -join '|') | Should -Be ($explicitCalls[0] -join '|')
+        }
+    }
+
+    It "throws when no user schemas are discovered, regardless of engine" {
+        Mock docker -ModuleName Template-Management { $global:LASTEXITCODE = 0; return @() }
+
+        { Get-UserSchemaNames -ContainerName "dms-postgresql" -DatabaseName "testdb" } | Should -Throw "*does not appear to be provisioned*"
+    }
+}
+
+Describe "Add-TemplateDataStore engine dispatch" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "registers an MSSQL connection string when an MSSQL build finds no existing data store" {
+        InModuleScope Template-Management {
+            $credential = [System.Management.Automation.PSCredential]::new(
+                "postgres",
+                [System.Security.SecureString]::new()
+            )
+            Mock ConvertTo-PostgresCredential { return $credential }
+            Mock New-DataStoreConnectionString { return "mssql-connection-string" }
+            Mock Add-DataStore { return 42 }
+
+            $result = Add-TemplateDataStore `
+                -CmsUrl "http://cms" `
+                -AccessToken "cms-token" `
+                -DatabaseName "template_db" `
+                -DatabaseEngine "mssql" `
+                -PostgresPassword "pg-secret" `
+                -MssqlPassword "mssql-secret"
+
+            $result | Should -Be 42
+            Should -Invoke ConvertTo-PostgresCredential -Times 1 -Exactly -ParameterFilter {
+                $UserName -eq "postgres" -and $Secret -eq "pg-secret"
+            }
+            Should -Invoke New-DataStoreConnectionString -Times 1 -Exactly -ParameterFilter {
+                $DatabaseEngine -eq "mssql" -and
+                $DbHost -eq "dms-mssql" -and
+                $Port -eq 1433 -and
+                $Username -eq "sa" -and
+                $Password -eq "mssql-secret" -and
+                $DatabaseName -eq "template_db"
+            }
+            Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter {
+                $CmsUrl -eq "http://cms" -and
+                $AccessToken -eq "cms-token" -and
+                $PostgresCredential -eq $credential -and
+                $PostgresDbName -eq "template_db" -and
+                $ConnectionString -eq "mssql-connection-string"
+            }
+        }
+    }
+
+    It "preserves the PostgreSQL registration path when the engine is omitted" {
+        InModuleScope Template-Management {
+            $credential = [System.Management.Automation.PSCredential]::new(
+                "postgres",
+                [System.Security.SecureString]::new()
+            )
+            Mock ConvertTo-PostgresCredential { return $credential }
+            Mock New-DataStoreConnectionString { throw "PostgreSQL registration must not build an explicit MSSQL connection string." }
+            Mock Add-DataStore { return 84 }
+
+            $result = Add-TemplateDataStore `
+                -CmsUrl "http://cms" `
+                -AccessToken "cms-token" `
+                -DatabaseName "template_db" `
+                -PostgresPassword "pg-secret" `
+                -MssqlPassword "unused"
+
+            $result | Should -Be 84
+            Should -Invoke New-DataStoreConnectionString -Times 0 -Exactly
+            Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter {
+                $CmsUrl -eq "http://cms" -and
+                $AccessToken -eq "cms-token" -and
+                $PostgresCredential -eq $credential -and
+                $PostgresDbName -eq "template_db" -and
+                [string]::IsNullOrWhiteSpace($ConnectionString)
+            }
+        }
+    }
+}
+
+Describe "Build-TemplateNuGetPackage package identity derivation" {
+    BeforeAll {
+        # Package identity derivation (engine token + artifact extension substitution) is internal
+        # to Build-TemplateNuGetPackage, so it is exercised through the real, repo-shipped .psd1
+        # settings files with the heavy externals (dump, csproj authoring, dotnet pack) mocked out.
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "derives the <Engine> package Id/Title/Description/PackageProjectName and <Extension> DatabaseBackupName for <TemplateType>/<StandardVersion>" -ForEach @(
+        @{ TemplateType = 'Minimal'; StandardVersion = '5.2.0'; Engine = 'postgresql'; EngineToken = 'PostgreSql'; Extension = 'sql' }
+        @{ TemplateType = 'Minimal'; StandardVersion = '5.2.0'; Engine = 'mssql'; EngineToken = 'MsSql'; Extension = 'bak' }
+        @{ TemplateType = 'Minimal'; StandardVersion = '6.1.0'; Engine = 'postgresql'; EngineToken = 'PostgreSql'; Extension = 'sql' }
+        @{ TemplateType = 'Minimal'; StandardVersion = '6.1.0'; Engine = 'mssql'; EngineToken = 'MsSql'; Extension = 'bak' }
+        @{ TemplateType = 'Populated'; StandardVersion = '5.2.0'; Engine = 'postgresql'; EngineToken = 'PostgreSql'; Extension = 'sql' }
+        @{ TemplateType = 'Populated'; StandardVersion = '5.2.0'; Engine = 'mssql'; EngineToken = 'MsSql'; Extension = 'bak' }
+        @{ TemplateType = 'Populated'; StandardVersion = '6.1.0'; Engine = 'postgresql'; EngineToken = 'PostgreSql'; Extension = 'sql' }
+        @{ TemplateType = 'Populated'; StandardVersion = '6.1.0'; Engine = 'mssql'; EngineToken = 'MsSql'; Extension = 'bak' }
+    ) {
+        $configPath = Join-Path $script:templatesDir "${TemplateType}TemplateSettings.psd1"
+
+        InModuleScope Template-Management -Parameters @{
+            configPath      = $configPath
+            templateType    = $TemplateType
+            standardVersion = $StandardVersion
+            engine          = $Engine
+            engineToken     = $EngineToken
+            extension       = $Extension
+        } {
+            param($configPath, $templateType, $standardVersion, $engine, $engineToken, $extension)
+
+            Mock Invoke-DatabaseDump {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Build-NuGetPackage {}
+
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion $standardVersion -PackageVersion "1.0.0" -DatabaseEngine $engine
+
+            $expectedId = "EdFi.Api.$templateType.Template.$engineToken.$standardVersion"
+            $expectedBackupName = "EdFi.Api.$templateType.Template.$engineToken.$standardVersion.$extension"
+            $expectedProjectName = "EdFi.Api.$templateType.Template.$engineToken.$standardVersion.csproj"
+            $expectedDescription = "EdFi Dms $templateType Template Database for $engineToken"
+
+            Should -Invoke New-DatabaseTemplateCsproj -Times 1 -Exactly -ParameterFilter {
+                $Config.Id -eq $expectedId -and
+                $Config.Title -eq $expectedId -and
+                $Config.Description -eq $expectedDescription -and
+                $Config.DatabaseBackupName -eq $expectedBackupName -and
+                $Config.PackageProjectName -eq $expectedProjectName
+            }
+        }
+    }
+
+    It "defaults -DatabaseEngine to postgresql, producing the PostgreSql token and .sql extension, when the parameter is omitted" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path $script:templatesDir "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+            Mock Invoke-DatabaseDump {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Build-NuGetPackage {}
+
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0"
+
+            Should -Invoke New-DatabaseTemplateCsproj -Times 1 -Exactly -ParameterFilter {
+                $Config.Id -eq 'EdFi.Api.Minimal.Template.PostgreSql.5.2.0' -and
+                $Config.DatabaseBackupName -eq 'EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql'
+            }
+
+            # The dump must also see the default resolved to postgresql, not left blank/unset.
+            Should -Invoke Invoke-DatabaseDump -Times 1 -Exactly -ParameterFilter { $DatabaseEngine -eq 'postgresql' }
+        }
+    }
+}

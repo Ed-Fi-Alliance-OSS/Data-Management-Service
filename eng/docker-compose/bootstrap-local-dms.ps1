@@ -58,10 +58,16 @@
     selects the target start script (`start-local-dms.ps1`).
 
     Staging: no manual prepare step is required for the standard happy path. When no workspace is
-    staged the wrapper stages core-only standard mode; an already-staged workspace (e.g. a manual
-    expert `-ApiSchemaPath` flow) is used as-is. There is no `-Extensions` parameter; extension or
-    custom schema sets are staged via expert `-ApiSchemaPath` before invoking the wrapper. All
-    staging is delegated to `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
+    staged the wrapper stages standard mode from the effective env's SCHEMA_PACKAGES value (core
+    plus any listed extensions; the catalog-pinned core-only default applies only when the env
+    carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
+    its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
+    stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
+    remove `eng/docker-compose/.bootstrap`; guarded automatic replacement belongs to DMS-1271.
+    Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
+    `-Extensions` parameter; custom or unpublished schema sets are staged via expert
+    `-ApiSchemaPath` before invoking the wrapper. All staging is delegated to
+    `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
 
 .PARAMETER d
     Teardown switch. Stops the local DMS Docker stack instead of starting it, delegating to
@@ -131,8 +137,9 @@
 
 .EXAMPLE
     pwsh ./bootstrap-local-dms.ps1
-    Standard mode, core only. Stages the core ApiSchema package and claims in-line (when no
-    workspace is staged), then starts the stack. No manual prepare step and no seed loading.
+    Standard mode. Stages the effective SCHEMA_PACKAGES set and matching claims in-line (when no
+    workspace is staged), then starts the stack. The default DS 5.2 profile is core + TPDM.
+    No manual prepare step and no seed loading.
 
 .EXAMPLE
     pwsh ./bootstrap-local-dms.ps1 -d
@@ -143,12 +150,12 @@
     Stop the local DMS stack, delete data volumes, and remove the .bootstrap workspace.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.bootstrap.ds52 -SchemaToolPath $schemaToolExe
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
-    Standard mode, core only - manual prepare flow. Stage the core schema and claims
-    workspaces first, then start the local stack. Use this flow when you want to inspect
-    or validate the staged workspace before starting infrastructure.
+    Standard-mode manual prepare flow. Stage the same default DS 5.2 core + TPDM package set the
+    wrapper will use, then stage claims and start the local stack. Use this flow when you want to
+    inspect or validate the staged workspace before starting infrastructure.
 
 .EXAMPLE
     pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe

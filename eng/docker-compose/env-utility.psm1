@@ -3,6 +3,74 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+function Test-NativeCommandWithTimeout {
+    <#
+    .SYNOPSIS
+        Runs a native command with a hard timeout and returns whether it exited successfully.
+
+    .DESCRIPTION
+        Uses ProcessStartInfo.ArgumentList so every argument retains its exact boundary. When the
+        timeout expires, the process tree is terminated before the function returns false. Output
+        is captured and discarded because this helper is intended for readiness probes.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]]$ArgumentList,
+
+        [ValidateRange(1, 300)]
+        [int]$TimeoutSeconds = 10
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $ArgumentList) {
+        $null = $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+
+    try {
+        if (-not $process.Start()) {
+            return $false
+        }
+
+        $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+        $standardErrorTask = $process.StandardError.ReadToEndAsync()
+
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            try {
+                $process.Kill($true)
+            }
+            catch [System.InvalidOperationException] {
+                Write-Debug "The process exited between the timeout result and Kill()."
+            }
+            $process.WaitForExit()
+            $null = $standardOutputTask.GetAwaiter().GetResult()
+            $null = $standardErrorTask.GetAwaiter().GetResult()
+            return $false
+        }
+
+        $null = $standardOutputTask.GetAwaiter().GetResult()
+        $null = $standardErrorTask.GetAwaiter().GetResult()
+        return $process.ExitCode -eq 0
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 function ReadValuesFromEnvFile {
     param (
         [string]$EnvironmentFile
@@ -650,6 +718,174 @@ function Resolve-DataStandardEnvironmentFile {
         -TargetPath $derivedPath
 }
 
+function Convert-TemplatePackageToken {
+    <#
+    .SYNOPSIS
+        Rewrites the engine segment of a DATABASE_TEMPLATE_PACKAGE-shaped package id, leaving
+        every other segment (including the template and version) untouched.
+
+    .DESCRIPTION
+        Package ids follow the shape <prefix>.<template>.Template.<engine>.<version>, e.g.
+        EdFi.Api.Populated.Template.PostgreSql.5.2.0 or EdFi.Dms.Minimal.Template.MsSql.6.1.0.
+        <prefix> varies (EdFi.Api, EdFi.Dms, ...) and is preserved verbatim, as are the
+        template segment (Minimal/Populated/Smoke) and <version>. When PackageId does not
+        match the expected shape (blank, or an unrecognized format), it is returned unchanged.
+
+    .PARAMETER PackageId
+        The package id to rewrite.
+
+    .PARAMETER Engine
+        Target engine token ("PostgreSql" or "MsSql") to replace the existing engine segment.
+
+    .OUTPUTS
+        [string] The rewritten package id, or PackageId unchanged when it is blank or does not
+        match the expected <template>.Template.<engine>.<version> shape.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$PackageId,
+        [Parameter(Mandatory)]
+        [ValidateSet("PostgreSql", "MsSql")]
+        [string]$Engine
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PackageId)) {
+        return $PackageId
+    }
+
+    $match = [regex]::Match($PackageId, '^(?<prefix>.+)\.(?<template>Minimal|Populated|Smoke)\.Template\.(?<engine>PostgreSql|MsSql)\.(?<version>.+)$')
+    if (-not $match.Success) {
+        return $PackageId
+    }
+
+    return "$($match.Groups['prefix'].Value).$($match.Groups['template'].Value).Template.$Engine.$($match.Groups['version'].Value)"
+}
+
+function Test-MssqlConnectionStringValue {
+    param(
+        [AllowEmptyString()]
+        [string]$ConnectionString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return $false
+    }
+
+    # Require a SQL Server data-source keyword at a connection-string segment boundary.
+    # This distinguishes SQL Server values from the PostgreSQL host=... strings carried by
+    # the shared base env files while accepting the standard SqlClient aliases.
+    return [regex]::IsMatch(
+        $ConnectionString,
+        '(?:^|;)\s*(?:Server|Data Source|Address|Addr|Network Address)\s*=',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+}
+
+function Resolve-MssqlDatabaseNameReference {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value,
+
+        [Parameter(Mandatory)]
+        [hashtable]$EnvValues,
+
+        [System.Collections.Generic.HashSet[string]]$VisitedKeys
+    )
+
+    $resolvedValue = $Value.Trim()
+    if (
+        $resolvedValue.Length -ge 2 -and
+        $resolvedValue[0] -in @("'", '"') -and
+        $resolvedValue[-1] -eq $resolvedValue[0]
+    ) {
+        $resolvedValue = $resolvedValue.Substring(1, $resolvedValue.Length - 2)
+    }
+
+    $referenceMatch = [regex]::Match($resolvedValue, '^\$\{(?<key>[A-Za-z_][A-Za-z0-9_]*)\}$')
+    if (-not $referenceMatch.Success) {
+        if ($resolvedValue -match '\$\{') {
+            throw "MSSQL database name '$resolvedValue' uses an unsupported environment expression. Use a literal name or a simple `${NAME} reference."
+        }
+
+        return $resolvedValue
+    }
+
+    $referencedKey = $referenceMatch.Groups["key"].Value
+    if (-not $EnvValues.ContainsKey($referencedKey)) {
+        throw "MSSQL database name reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is absent from the effective environment."
+    }
+
+    $referencedValue = [string]$EnvValues[$referencedKey]
+    if ([string]::IsNullOrWhiteSpace($referencedValue)) {
+        throw "MSSQL database name reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is blank."
+    }
+
+    if ($null -eq $VisitedKeys) {
+        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
+    if (-not $VisitedKeys.Add($referencedKey)) {
+        throw "MSSQL database name reference '`${$referencedKey}' is cyclic."
+    }
+
+    try {
+        return Resolve-MssqlDatabaseNameReference `
+            -Value $referencedValue `
+            -EnvValues $EnvValues `
+            -VisitedKeys $VisitedKeys
+    }
+    finally {
+        $null = $VisitedKeys.Remove($referencedKey)
+    }
+}
+
+function Assert-MssqlCmsDatabaseIsShared {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ConnectionString,
+
+        [Parameter(Mandatory)]
+        [hashtable]$EnvValues
+    )
+
+    $expectedDatabaseName = Resolve-MssqlDatabaseNameReference `
+        -Value (Get-EnvValue -EnvValues $EnvValues -Name "MSSQL_DB_NAME") `
+        -EnvValues $EnvValues
+    if ([string]::IsNullOrWhiteSpace($expectedDatabaseName)) {
+        throw "MSSQL_DB_NAME must be non-blank when preserving a caller-authored CMS MSSQL connection string."
+    }
+
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    try {
+        $builder.set_ConnectionString($ConnectionString)
+    }
+    catch {
+        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING is not a valid connection string."
+    }
+
+    $databaseValues = @(
+        foreach ($key in $builder.get_Keys()) {
+            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
+                [string]$builder.get_Item($key)
+            }
+        }
+    )
+    if ($databaseValues.Count -eq 0) {
+        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING must include Database or Initial Catalog and target MSSQL_DB_NAME ('$expectedDatabaseName')."
+    }
+
+    foreach ($databaseValue in $databaseValues) {
+        $actualDatabaseName = Resolve-MssqlDatabaseNameReference -Value $databaseValue -EnvValues $EnvValues
+        if (-not [string]::Equals(
+            $actualDatabaseName,
+            $expectedDatabaseName,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+            throw "MSSQL shared-database configuration mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets '$actualDatabaseName', but MSSQL_DB_NAME resolves to '$expectedDatabaseName'. DMS-1255 requires CMS and OpenIddict to share MSSQL_DB_NAME; align the values. Separate CMS database support is tracked by DMS-1270."
+        }
+    }
+}
+
 function Resolve-DatabaseEngineEnvironmentFile {
     <#
     .SYNOPSIS
@@ -657,7 +893,10 @@ function Resolve-DatabaseEngineEnvironmentFile {
         default "postgresql" engine the base file is returned unchanged. With "mssql" the
         .env.mssql overlay (DMS_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server admin
         connection string) is composed onto the base into a derived file under
-        <DockerComposeRoot>/.derived/ and that path is returned.
+        <DockerComposeRoot>/.derived/ and that path is returned. DATABASE_TEMPLATE_PACKAGE
+        (inherited from the base file - .env.mssql never carries it, so DS-version and
+        Minimal/Populated variance keep coming from the base file) is rewritten from its
+        PostgreSql engine token to MsSql in the returned file.
 
     .DESCRIPTION
         Reuses New-DataStandardDerivedEnvFile's generic base+overlay composition (it is not
@@ -667,9 +906,20 @@ function Resolve-DatabaseEngineEnvironmentFile {
         store in CMS while the DMS container itself still starts on its postgresql default
         (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
 
-        Idempotency guard: when the base file already carries DMS_DATASTORE=mssql (an earlier
-        phase - typically the bootstrap wrapper - already composed the overlay onto it) the base
-        file is returned unchanged instead of composing a derived-of-derived file.
+        Idempotency guard: when the base file already carries every non-blank key from the current
+        .env.mssql overlay, with both datastore discriminators set to mssql, the base file is
+        returned unchanged instead of composing a derived-of-derived file. Reading the required
+        key set from the overlay keeps this proof current when the overlay gains a new engine-owned
+        setting. If DATABASE_TEMPLATE_PACKAGE still carries a stale PostgreSql engine token, a
+        corrected derived file is materialized rather than mutating the caller's source file.
+
+        A partial hand-authored MSSQL env is completed from the overlay. Non-blank custom MSSQL
+        credentials, database names, and ports are preserved. Connection strings are preserved only
+        when they contain a SQL Server data-source keyword; PostgreSQL-shaped values inherited from
+        a partially edited base file are replaced by the MSSQL overlay. A caller-authored CMS MSSQL
+        connection string must resolve to MSSQL_DB_NAME so CMS and self-contained OpenIddict cannot
+        silently target different databases; a mismatch fails before any derived file is written.
+        DMS_DATASTORE and DMS_CONFIG_DATASTORE are always forced to mssql.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -680,11 +930,17 @@ function Resolve-DatabaseEngineEnvironmentFile {
     .PARAMETER DockerComposeRoot
         Directory holding .env.mssql and the .derived output. Defaults to this module's
         directory (eng/docker-compose).
+
+    .PARAMETER SkipMssqlCmsDatabaseValidation
+        Skips the CMS/OpenIddict shared-database invariant only for a dedicated database-only
+        diagnostic startup or teardown, where neither CMS nor OpenIddict is initialized. Full-stack,
+        configure, provision, and wrapper startup flows must leave this off.
     #>
     param(
         [string]$DatabaseEngine = "postgresql",
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
-        [string]$DockerComposeRoot
+        [string]$DockerComposeRoot,
+        [switch]$SkipMssqlCmsDatabaseValidation
     )
 
     if ($DatabaseEngine -ne "mssql") {
@@ -695,21 +951,115 @@ function Resolve-DatabaseEngineEnvironmentFile {
         $DockerComposeRoot = $PSScriptRoot
     }
 
-    $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
-    if ((Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql") {
-        return $BaseEnvironmentFile
-    }
+    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).mssql"
+    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
 
     $overlayPath = Join-Path $DockerComposeRoot ".env.mssql"
     if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
         throw "Resolve-DatabaseEngineEnvironmentFile: no MSSQL engine overlay found (expected '$overlayPath')."
     }
 
-    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).mssql"
-    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
+    $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
+    $overlayValues = ReadValuesFromEnvFile $overlayPath
+    $templatePackage = Get-EnvValue -EnvValues $baseValues -Name "DATABASE_TEMPLATE_PACKAGE"
+    $correctedTemplatePackage = Convert-TemplatePackageToken -PackageId $templatePackage -Engine "MsSql"
+    $baseDeclaresMssql =
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
 
-    return New-DataStandardDerivedEnvFile `
+    if ($baseDeclaresMssql -and -not $SkipMssqlCmsDatabaseValidation) {
+        $baseCmsConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+        if (Test-MssqlConnectionStringValue -ConnectionString $baseCmsConnectionString) {
+            # Overlay values establish defaults; caller values then win, matching the actual
+            # composition order used below. Validate the resulting shared-database identity before
+            # either the idempotent return or partial-value preservation can accept this string.
+            $effectiveMssqlValues = @{}
+            foreach ($entry in $overlayValues.GetEnumerator()) {
+                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
+            }
+            foreach ($entry in $baseValues.GetEnumerator()) {
+                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
+            }
+
+            Assert-MssqlCmsDatabaseIsShared `
+                -ConnectionString $baseCmsConnectionString `
+                -EnvValues $effectiveMssqlValues
+        }
+    }
+
+    # A fixed three-key signal can become stale when .env.mssql gains another required setting.
+    # Prove that every current overlay key exists and is non-blank before treating a file as an
+    # already-composed handoff from an earlier phase.
+    $overlayAlreadyComposed =
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -and
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
+    if ($overlayAlreadyComposed) {
+        foreach ($overlayKey in $overlayValues.Keys) {
+            $overlayKeyName = [string]$overlayKey
+            $baseValue = Get-EnvValue -EnvValues $baseValues -Name $overlayKeyName
+            $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
+            if (
+                [string]::IsNullOrWhiteSpace($baseValue) -or
+                ($isConnectionString -and -not (Test-MssqlConnectionStringValue -ConnectionString $baseValue))
+            ) {
+                $overlayAlreadyComposed = $false
+                break
+            }
+        }
+    }
+
+    if ($overlayAlreadyComposed) {
+        if ($correctedTemplatePackage -eq $templatePackage) {
+            return $BaseEnvironmentFile
+        }
+
+        Write-DerivedEnvFile `
+            -BaseEnvironmentFile $BaseEnvironmentFile `
+            -TargetPath $derivedPath `
+            -KeyOverrides @{ DATABASE_TEMPLATE_PACKAGE = $correctedTemplatePackage }
+
+        return $derivedPath
+    }
+
+    # Preserve caller-authored MSSQL values when completing a partial MSSQL file. Connection
+    # strings require an MSSQL shape so a base file with only one edited discriminator cannot
+    # retain its PostgreSQL admin/CMS targets. The overlay still owns both engine discriminators.
+    $keyOverrides = @{}
+    if ($baseDeclaresMssql) {
+        foreach ($overlayKey in $overlayValues.Keys) {
+            $overlayKeyName = [string]$overlayKey
+            if ($overlayKeyName -in @("DMS_DATASTORE", "DMS_CONFIG_DATASTORE")) {
+                continue
+            }
+
+            $baseValue = Get-EnvValue -EnvValues $baseValues -Name $overlayKeyName
+            $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
+            if (
+                -not [string]::IsNullOrWhiteSpace($baseValue) -and
+                (-not $isConnectionString -or (Test-MssqlConnectionStringValue -ConnectionString $baseValue))
+            ) {
+                $keyOverrides[$overlayKeyName] = $baseValue
+            }
+        }
+    }
+
+    $composedPath = New-DataStandardDerivedEnvFile `
         -BaseEnvironmentFile $BaseEnvironmentFile `
         -OverlayEnvironmentFile $overlayPath `
         -TargetPath $derivedPath
+
+    # The overlay never carries DATABASE_TEMPLATE_PACKAGE (see .env.mssql's header), so the
+    # composed file's value is still exactly the base file's value at this point.
+    if ($correctedTemplatePackage -ne $templatePackage) {
+        $keyOverrides["DATABASE_TEMPLATE_PACKAGE"] = $correctedTemplatePackage
+    }
+
+    if ($keyOverrides.Count -gt 0) {
+        Write-DerivedEnvFile `
+            -BaseEnvironmentFile $composedPath `
+            -TargetPath $composedPath `
+            -KeyOverrides $keyOverrides
+    }
+
+    return $composedPath
 }
