@@ -364,9 +364,30 @@ public class RegisterEndpointTests
             new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
         ]);
         var response = await client.PostAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var actualResponse = JsonNode.Parse(content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The request could not be processed. See 'errors' for details.",
+              "type": "urn:ed-fi:api:security:authorization",
+              "title": "Authorization Failed",
+              "status": 403,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+                "Registration is disabled."
+              ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [Test]
