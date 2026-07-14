@@ -868,6 +868,53 @@ public abstract class ClaimsManagementModuleTests
 
             await AssertInternalServerErrorContract(response);
         }
+
+        [Test]
+        public async Task It_returns_a_compliant_400_when_the_service_throws_argument_exception()
+        {
+            const string sensitive = "secret argument detail host=db.internal;Password=sup3rsecret";
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Throws(new ArgumentException(sensitive));
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            string rawBody = await response.Content.ReadAsStringAsync();
+            rawBody.Should().NotContain("sup3rsecret");
+            rawBody.Should().NotContain("secret argument detail");
+            await AssertBadRequestContract(response, "The claims upload request was invalid.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_bad_request_400_for_argument_error_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [new ClaimsFailure("ArgumentError", "Invalid claims data provided for upload")]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertBadRequestContract(response, "The claims upload request was invalid.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_500_for_unknown_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [new ClaimsFailure("Unknown", "Unexpected result type: SomethingUnexpected")]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertInternalServerErrorContract(response);
+        }
     }
 
     /// <summary>
