@@ -5,10 +5,53 @@
 
 name: Pkg EdFi.Api.Populated.Template.MsSql
 on:
+  pull_request:
+    # Template packages are intentionally expensive integration builds. Scope them to their
+    # pipeline/orchestration, database composition, and relational-schema implementation; the
+    # existing DMS/Config CI workflows own general application-source validation.
+    paths:
+      - ".github/workflows/EdFi.Api.Populated.Template.MsSql.yml"
+      - ".github/workflows/build-populated-template.yml"
+      - "eng/DatabaseTemplates/**"
+      - "eng/Dms-Management.psm1"
+      - "eng/Package-Management.psm1"
+      - "eng/SchoolYear-Loader.psm1"
+      - "eng/schema-package-utility.psm1"
+      - "eng/docker-compose/.env.mssql"
+      - "eng/docker-compose/.env.template*"
+      - "eng/docker-compose/bootstrap-claims-gate.psm1"
+      - "eng/docker-compose/bootstrap-manifest.psm1"
+      - "eng/docker-compose/env-utility.psm1"
+      - "eng/docker-compose/local-config.yml"
+      - "eng/docker-compose/local-dms.yml"
+      - "eng/docker-compose/mssql.yml"
+      - "eng/docker-compose/OpenIddict-Crypto.psm1"
+      - "eng/docker-compose/provision-dms-schema.ps1"
+      - "eng/docker-compose/provision-e2e-database.ps1"
+      - "eng/docker-compose/setup-openiddict.ps1"
+      - "eng/docker-compose/start-local-dms.ps1"
+      - "package-helpers.psm1"
+      - "src/.editorconfig"
+      - "src/Directory.Packages.props"
+      - "src/nuget.config"
+      - "src/dms/Directory.Build.props"
+      - "src/dms/Directory.Build.targets"
+      - "src/dms/Dockerfile"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/**"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/**"
+      - "src/dms/clis/EdFi.DataManagementService.SchemaTools/**"
+      - "src/dms/run.sh"
+  # Stable releases promote packages previously built and published by the v-tag run.
+  # GitHub prerelease events are excluded; prerelease packages are produced by main pushes.
   release:
     types:
       - released
+  # Main publishes the latest MinVer prerelease packages for cross-ticket testing. Version tags
+  # publish tagged packages; the later stable release event promotes them to the release view.
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -16,7 +59,7 @@ on:
       publish_package:
         description: "Publish the built template package to the Azure Artifacts feed"
         type: boolean
-        default: false
+        default: true
       standard_version:
         description: "Build only this Data Standard version (e.g. 5.2.0 or 6.1.0). Leave blank to build every version in the matrix."
         type: string
@@ -27,6 +70,10 @@ permissions:
   actions: read
   id-token: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Builds the version matrix once so a manual dispatch can narrow the run to a single Data
   # Standard version (standard_version input) without spending compute on the other legs.
@@ -35,6 +82,7 @@ jobs:
   # docs/DATA-STANDARD-VERSIONS.md. DS 5.2 is the default.
   configure-matrix:
     name: Configure matrix
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
     runs-on: ubuntu-latest
     outputs:
       include: ${{ steps.build-matrix.outputs.include }}
@@ -64,6 +112,7 @@ jobs:
   build-populated-template:
     name: Build Populated Template ${{ matrix.standard_version }}
     needs: configure-matrix
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
     # Each leg invokes the whole reusable build/SBOM/provenance pipeline, so per-version outputs
     # stay correlated. The matrix is computed by configure-matrix (filterable on dispatch).
     strategy:
@@ -76,7 +125,7 @@ jobs:
       package_name: ${{ matrix.package_name }}
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: ${{ matrix.provenance_file }}
-      publish_package: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
+      publish_package: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}
       environment_file: ${{ matrix.environment_file }}
       verify_restore: true
       require_populated_data: true

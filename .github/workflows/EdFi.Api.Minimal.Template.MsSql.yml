@@ -5,10 +5,53 @@
 
 name: Pkg EdFi.Api.Minimal.Template.MsSql
 on:
+  pull_request:
+    # Template packages are intentionally expensive integration builds. Scope them to their
+    # pipeline/orchestration, database composition, and relational-schema implementation; the
+    # existing DMS/Config CI workflows own general application-source validation.
+    paths:
+      - ".github/workflows/EdFi.Api.Minimal.Template.MsSql.yml"
+      - ".github/workflows/build-minimal-template.yml"
+      - "eng/DatabaseTemplates/**"
+      - "eng/Dms-Management.psm1"
+      - "eng/Package-Management.psm1"
+      - "eng/SchoolYear-Loader.psm1"
+      - "eng/schema-package-utility.psm1"
+      - "eng/docker-compose/.env.mssql"
+      - "eng/docker-compose/.env.template*"
+      - "eng/docker-compose/bootstrap-claims-gate.psm1"
+      - "eng/docker-compose/bootstrap-manifest.psm1"
+      - "eng/docker-compose/env-utility.psm1"
+      - "eng/docker-compose/local-config.yml"
+      - "eng/docker-compose/local-dms.yml"
+      - "eng/docker-compose/mssql.yml"
+      - "eng/docker-compose/OpenIddict-Crypto.psm1"
+      - "eng/docker-compose/provision-dms-schema.ps1"
+      - "eng/docker-compose/provision-e2e-database.ps1"
+      - "eng/docker-compose/setup-openiddict.ps1"
+      - "eng/docker-compose/start-local-dms.ps1"
+      - "package-helpers.psm1"
+      - "src/.editorconfig"
+      - "src/Directory.Packages.props"
+      - "src/nuget.config"
+      - "src/dms/Directory.Build.props"
+      - "src/dms/Directory.Build.targets"
+      - "src/dms/Dockerfile"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/**"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/**"
+      - "src/dms/clis/EdFi.DataManagementService.SchemaTools/**"
+      - "src/dms/run.sh"
+  # Stable releases promote packages previously built and published by the v-tag run.
+  # GitHub prerelease events are excluded; prerelease packages are produced by main pushes.
   release:
     types:
       - released
+  # Main publishes the latest MinVer prerelease packages for cross-ticket testing. Version tags
+  # publish tagged packages; the later stable release event promotes them to the release view.
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -16,16 +59,21 @@ on:
       publish_package:
         description: "Publish the built template package to the Azure Artifacts feed"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
   actions: read
   id-token: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-minimal-template:
     name: Build Minimal Template ${{ matrix.standard_version }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
     # One leg per supported Ed-Fi Data Standard version. Each leg invokes the whole reusable
     # build/SBOM/provenance pipeline, so per-version outputs stay correlated. To add or drop a
     # version, add or remove an `include` entry below (and its matching schema artifacts /
@@ -48,7 +96,7 @@ jobs:
       package_name: ${{ matrix.package_name }}
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: ${{ matrix.provenance_file }}
-      publish_package: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
+      publish_package: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}
       environment_file: ${{ matrix.environment_file }}
       database_engine: mssql
     secrets:

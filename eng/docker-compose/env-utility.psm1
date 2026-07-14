@@ -760,6 +760,27 @@ function Convert-TemplatePackageToken {
     return "$($match.Groups['prefix'].Value).$($match.Groups['template'].Value).Template.$Engine.$($match.Groups['version'].Value)"
 }
 
+function Test-MssqlConnectionStringValue {
+    param(
+        [AllowEmptyString()]
+        [string]$ConnectionString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return $false
+    }
+
+    # Require a SQL Server data-source keyword at a connection-string segment boundary.
+    # This distinguishes SQL Server values from the PostgreSQL host=... strings carried by
+    # the shared base env files while accepting the standard SqlClient aliases.
+    return [regex]::IsMatch(
+        $ConnectionString,
+        '(?:^|;)\s*(?:Server|Data Source|Address|Addr|Network Address)\s*=',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+}
+
 function Resolve-DatabaseEngineEnvironmentFile {
     <#
     .SYNOPSIS
@@ -788,8 +809,10 @@ function Resolve-DatabaseEngineEnvironmentFile {
         corrected derived file is materialized rather than mutating the caller's source file.
 
         A partial hand-authored MSSQL env is completed from the overlay. Non-blank custom MSSQL
-        credentials, database names, ports, and connection strings already present in that file are
-        preserved, while DMS_DATASTORE and DMS_CONFIG_DATASTORE are forced to mssql.
+        credentials, database names, and ports are preserved. Connection strings are preserved only
+        when they contain a SQL Server data-source keyword; PostgreSQL-shaped values inherited from
+        a partially edited base file are replaced by the MSSQL overlay. DMS_DATASTORE and
+        DMS_CONFIG_DATASTORE are always forced to mssql.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -836,7 +859,13 @@ function Resolve-DatabaseEngineEnvironmentFile {
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
     if ($overlayAlreadyComposed) {
         foreach ($overlayKey in $overlayValues.Keys) {
-            if ([string]::IsNullOrWhiteSpace((Get-EnvValue -EnvValues $baseValues -Name ([string]$overlayKey)))) {
+            $overlayKeyName = [string]$overlayKey
+            $baseValue = Get-EnvValue -EnvValues $baseValues -Name $overlayKeyName
+            $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
+            if (
+                [string]::IsNullOrWhiteSpace($baseValue) -or
+                ($isConnectionString -and -not (Test-MssqlConnectionStringValue -ConnectionString $baseValue))
+            ) {
                 $overlayAlreadyComposed = $false
                 break
             }
@@ -856,22 +885,27 @@ function Resolve-DatabaseEngineEnvironmentFile {
         return $derivedPath
     }
 
-    # Preserve caller-authored MSSQL values when completing a partial MSSQL file. The overlay still
-    # owns both engine discriminators, which prevents a contradictory partial file from routing DMS
-    # or CMS back to PostgreSQL on the single-engine stack.
+    # Preserve caller-authored MSSQL values when completing a partial MSSQL file. Connection
+    # strings require an MSSQL shape so a base file with only one edited discriminator cannot
+    # retain its PostgreSQL admin/CMS targets. The overlay still owns both engine discriminators.
     $baseDeclaresMssql =
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
     $keyOverrides = @{}
     if ($baseDeclaresMssql) {
         foreach ($overlayKey in $overlayValues.Keys) {
-            if ($overlayKey -in @("DMS_DATASTORE", "DMS_CONFIG_DATASTORE")) {
+            $overlayKeyName = [string]$overlayKey
+            if ($overlayKeyName -in @("DMS_DATASTORE", "DMS_CONFIG_DATASTORE")) {
                 continue
             }
 
-            $baseValue = Get-EnvValue -EnvValues $baseValues -Name ([string]$overlayKey)
-            if (-not [string]::IsNullOrWhiteSpace($baseValue)) {
-                $keyOverrides[[string]$overlayKey] = $baseValue
+            $baseValue = Get-EnvValue -EnvValues $baseValues -Name $overlayKeyName
+            $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
+            if (
+                -not [string]::IsNullOrWhiteSpace($baseValue) -and
+                (-not $isConnectionString -or (Test-MssqlConnectionStringValue -ConnectionString $baseValue))
+            ) {
+                $keyOverrides[$overlayKeyName] = $baseValue
             }
         }
     }

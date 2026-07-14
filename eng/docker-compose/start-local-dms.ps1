@@ -197,8 +197,13 @@ if ($DbOnly -and $r) {
     throw "Parameter -r/-Rebuild is not valid with -DbOnly. Database-only mode starts and waits for the database without building application images."
 }
 
-Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
-Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
+$databaseOnlyStartup = $DbOnly -and -not $d
+if (-not $databaseOnlyStartup) {
+    # Database-only startup must not depend on bootstrap module loading or workspace state.
+    # Teardown keeps the normal full-stack behavior, including bootstrap cleanup support.
+    Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+    Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
+}
 $originalLocation = Get-Location
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
 if (-not [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
@@ -213,14 +218,21 @@ else {
     # teardown - work on a clean checkout with no hand-created .env, matching the phase commands.
     $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $PSScriptRoot
 }
-$bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
+if (-not $databaseOnlyStartup) {
+    $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
+}
 Push-Location $PSScriptRoot
 try {
-$bootstrapMode = Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
-$bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
+$bootstrapMode = $false
+$bootstrapManifestPresent = $false
+if (-not $databaseOnlyStartup) {
+    # Database-only startup is deliberately independent of bootstrap state. A stale or
+    # incomplete workspace must not block the diagnostic database + readiness phase, and
+    # no bootstrap environment values or compose mounts may leak into that phase.
+    $bootstrapMode = Invoke-BootstrapStartupConfiguration -IsTeardown:$d -AddExtensionSecurityMetadata:$AddExtensionSecurityMetadata
+    $bootstrapManifestPresent = Test-Path -LiteralPath (Join-Path (Get-BootstrapRoot) "bootstrap-manifest.json") -PathType Leaf
+}
 
-# Identity provider configuration
-Import-Module ./env-utility.psm1 -Force
 # Compose the data-standard overlay onto the base env file when a version is requested; with no
 # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
 $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $DataStandardVersion -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
@@ -230,29 +242,33 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
-$identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
-$cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
-$dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
-# Shared local-settings contract: explicit -IdentityProvider wins, then the env file's
-# DMS_CONFIG_IDENTITY_PROVIDER, then self-contained (Resolve-IdentityProvider treats an
-# empty override as "not supplied").
-$IdentityProvider = Resolve-IdentityProvider -EnvValues $envValues -OverrideProvider $IdentityProvider
-$env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
-Write-Output "Identity Provider $IdentityProvider"
+if (-not $databaseOnlyStartup) {
+    # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
+    # unrelated malformed identity value cannot block the database + readiness diagnostic slice.
+    $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
+    $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
+    $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
+    # Shared local-settings contract: explicit -IdentityProvider wins, then the env file's
+    # DMS_CONFIG_IDENTITY_PROVIDER, then self-contained (Resolve-IdentityProvider treats an
+    # empty override as "not supplied").
+    $IdentityProvider = Resolve-IdentityProvider -EnvValues $envValues -OverrideProvider $IdentityProvider
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    Write-Output "Identity Provider $IdentityProvider"
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+    }
+    elseif ($IdentityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+    }
+}
 Write-Output "Database Engine $DatabaseEngine"
-if($IdentityProvider -eq "keycloak")
-{
-    $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
-    $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
-    $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
-    $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
-}
-elseif ($IdentityProvider -eq "self-contained") {
-    $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
-    $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
-    $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
-    $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
-}
 
 if (-not $d) {
     if ($InfraOnly -and $DmsOnly) {
@@ -302,54 +318,54 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
     $files += @("-f", $postgresqlTmpfsComposeFile)
 }
 
-$files += @(
-    "-f",
-    "local-dms.yml"
-)
+if (-not $databaseOnlyStartup) {
+    $files += @(
+        "-f",
+        "local-dms.yml"
+    )
 
-$enableDotnetDiagnostics = [string]::Equals(
-    (Get-EnvValue -EnvValues $envValues -Name "DMS_ENABLE_DOTNET_DIAGNOSTICS" -DefaultValue "false"),
-    "true",
-    [System.StringComparison]::OrdinalIgnoreCase
-)
-if ($enableDotnetDiagnostics) {
-    Write-Output "Using .NET diagnostics Docker Compose override."
-    $files += @("-f", "local-dms-diagnostics.yml")
-}
+    $enableDotnetDiagnostics = [string]::Equals(
+        (Get-EnvValue -EnvValues $envValues -Name "DMS_ENABLE_DOTNET_DIAGNOSTICS" -DefaultValue "false"),
+        "true",
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+    if ($enableDotnetDiagnostics) {
+        Write-Output "Using .NET diagnostics Docker Compose override."
+        $files += @("-f", "local-dms-diagnostics.yml")
+    }
 
-# Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
-# -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
-# from SQL and registers no connector, so Kafka is omitted.
-$enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
-    $files += @("-f", "kafka.yml")
-}
+    # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
+    # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
+    # from SQL and registers no connector, so Kafka is omitted.
+    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
+    if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+        $files += @("-f", "kafka.yml")
+    }
 
-if ($IdentityProvider -eq "keycloak") {
-    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
-    $files += @("-f", "keycloak.yml")
-}
+    if ($IdentityProvider -eq "keycloak") {
+        # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
+        $files += @("-f", "keycloak.yml")
+    }
 
-if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
-    $files += @("-f", "kafka-ui.yml")
-}
+    if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+        $files += @("-f", "kafka-ui.yml")
+    }
 
-# Config Service is always included in the managed compose set.
-# Every non-teardown bootstrap run starts Config Service, including keycloak-backed runs.
-# -EnableConfig is retained for backward compatibility but is no longer a meaningful opt-out
-# (per the bootstrap entry-point spec, DMS-1153). Teardown uses the same $files list so that
-# follow-up up/down calls operate on the full environment (same pattern as keycloak.yml above).
-$files += @("-f", "local-config.yml")
+    # Config Service is always included in the managed compose set outside the dedicated
+    # database-only diagnostic phase. Every non-teardown bootstrap run starts Config Service,
+    # including keycloak-backed runs. -EnableConfig is retained for backward compatibility.
+    $files += @("-f", "local-config.yml")
 
-if ($bootstrapMode) {
-    # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate
-    # on the full environment (same pattern as keycloak.yml above). This mounts the staged
-    # .bootstrap/ApiSchema workspace into the DMS container at /app/ApiSchema:ro.
-    $files += @("-f", "bootstrap-dms.yml")
-}
+    if ($bootstrapMode) {
+        # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate
+        # on the full environment (same pattern as keycloak.yml above). This mounts the staged
+        # .bootstrap/ApiSchema workspace into the DMS container at /app/ApiSchema:ro.
+        $files += @("-f", "bootstrap-dms.yml")
+    }
 
-if ($EnableSwaggerUI) {
-    $files += @("-f", "swagger-ui.yml")
+    if ($EnableSwaggerUI) {
+        $files += @("-f", "swagger-ui.yml")
+    }
 }
 
 if ($d) {
@@ -378,10 +394,12 @@ else {
         docker network create dms
     }
 
-    $upArgs = @(
-        "--detach",
-        "--remove-orphans"
-    )
+    $upArgs = @("--detach")
+    if (-not $databaseOnlyStartup) {
+        # The DbOnly compose set intentionally contains only the database definition. Passing
+        # --remove-orphans there would remove already-running DMS/CMS containers from this project.
+        $upArgs += "--remove-orphans"
+    }
     if ($r) {
         Write-Output "Building images with no cache (this may take a few minutes)..."
         docker compose $files --env-file $EnvironmentFile -p dms-local build --no-cache
@@ -712,6 +730,8 @@ else {
     Start-Sleep 20
 }
 } finally {
-    Restore-BootstrapEnvSnapshot -Snapshot $bootstrapEnvSnapshot
+    if (-not $databaseOnlyStartup) {
+        Restore-BootstrapEnvSnapshot -Snapshot $bootstrapEnvSnapshot
+    }
     Pop-Location
 }

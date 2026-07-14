@@ -766,16 +766,17 @@ $failureStatement
     #   compatibility only and is no longer a meaningful opt-out.
     # =========================================================================
     Context "Config Service always included in compose set" {
-        It "start-local-dms.ps1 includes local-config.yml unconditionally (no if-guard)" {
+        It "start-local-dms.ps1 includes local-config.yml for every non-DbOnly compose set" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # The unconditional assignment must be present.
+            # Config Service is unconditional within the full application compose set. The
+            # outer databaseOnlyStartup guard keeps the dedicated database diagnostic isolated.
             $startScript | Should -Match '\$files\s*\+=\s*@\("-f",\s*"local-config\.yml"\)'
+            $startScript | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?\$files\s*\+=\s*@\("-f",\s*"local-config\.yml"\)'
 
-            # There must be NO conditional guard wrapping the local-config.yml inclusion.
-            # Verify by asserting the old conditional pattern is absent.
+            # There must be no feature-switch guard wrapping the local-config.yml inclusion.
             $startScript | Should -Not -Match 'if\s*\([^)]*EnableConfig[^)]*\)[^{]*\{[^}]*local-config\.yml' -Because "local-config.yml must be included unconditionally, not gated on -EnableConfig"
             $startScript | Should -Not -Match 'if\s*\(\$EnableConfig\s*-or' -Because "the old conditional guard must have been removed"
         }
@@ -1624,10 +1625,9 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
     Context "Bootstrap -DbOnly parameter surface and mutual exclusivity" {
         BeforeAll {
             # Isolated fixture carrying only what the target start script needs to reach its own
-            # -DbOnly/-InfraOnly/-DmsOnly mutual-exclusion guard: the real start script plus its
-            # bootstrap-manifest.psm1/bootstrap-claims-gate.psm1/env-utility.psm1 dependencies and a
-            # minimal env file, so the guard throws without any Docker or CMS side effect and without
-            # depending on the real repo's ambient .bootstrap/.env state.
+            # -DbOnly/-InfraOnly/-DmsOnly mutual-exclusion guard. Its deliberately malformed
+            # bootstrap manifest proves DbOnly bypasses workspace validation before reaching that
+            # guard, without any Docker or CMS side effect.
             function script:New-StartScriptGuardRepo {
                 param(
                     [Parameter(Mandatory)]
@@ -1655,9 +1655,16 @@ POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_IDENTITY_PROVIDER=unsupported-for-db-only
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+# Deliberately invalid application-only settings. DbOnly parameter guards must still be reached,
+# proving the database slice does not parse identity configuration before returning.
+DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $bootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Value '{ malformed' -NoNewline
 
                 return [pscustomobject]@{
                     RepoRoot    = $repoRoot
@@ -1673,6 +1680,45 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                     Join-Path $script:sourceDockerComposeRoot $name
                 )
                 $params | Should -Contain "DbOnly"
+            }
+        }
+
+        It "both start scripts bypass bootstrap activation and manifest inspection for database-only startup" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $source = Get-Content -LiteralPath (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                ) -Raw
+
+                $source | Should -Match '\$databaseOnlyStartup\s*=\s*\$DbOnly\s*-and\s*-not\s*\$d'
+                $source | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?Import-Module .*?bootstrap-manifest\.psm1.*?bootstrap-claims-gate\.psm1'
+                $source | Should -Match '(?s)\$bootstrapMode\s*=\s*\$false.*?\$bootstrapManifestPresent\s*=\s*\$false.*?if \(-not \$databaseOnlyStartup\) \{.*?Invoke-BootstrapStartupConfiguration.*?Get-BootstrapRoot'
+                $source | Should -Match '(?s)\$envValues\s*=\s*ReadValuesFromEnvFile.*?if \(-not \$databaseOnlyStartup\) \{.*?Resolve-IdentityClientSecretConfiguration'
+            }
+        }
+
+        It "both start scripts keep application and bootstrap compose files out of database-only startup" {
+            foreach ($case in @(
+                @{ Name = "start-local-dms.ps1"; ApplicationFile = "local-dms.yml"; ConfigFile = "local-config.yml" },
+                @{ Name = "start-published-dms.ps1"; ApplicationFile = "published-dms.yml"; ConfigFile = "published-config.yml" }
+            )) {
+                $source = Get-Content -LiteralPath (
+                    Join-Path $script:sourceDockerComposeRoot $case.Name
+                ) -Raw
+                $applicationComposeFileIndex = $source.IndexOf('"' + $case.ApplicationFile + '"')
+                $applicationComposeGuardIndex = $source.LastIndexOf(
+                    'if (-not $databaseOnlyStartup) {',
+                    $applicationComposeFileIndex
+                )
+
+                $applicationComposeFileIndex | Should -BeGreaterThan -1
+                $applicationComposeGuardIndex | Should -BeGreaterThan -1
+                $applicationComposeFileIndex | Should -BeGreaterThan $applicationComposeGuardIndex
+                $source.IndexOf('"' + $case.ConfigFile + '"', $applicationComposeGuardIndex) |
+                    Should -BeGreaterThan $applicationComposeGuardIndex
+                $source.IndexOf('"bootstrap-dms.yml"', $applicationComposeGuardIndex) |
+                    Should -BeGreaterThan $applicationComposeGuardIndex
+                $source | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(?:local|published) up \$upArgs db'
+                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly must not remove already-running application containers omitted from its reduced compose set"
             }
         }
 

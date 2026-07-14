@@ -177,6 +177,59 @@ CUSTOM_KEY=preserved
         $values["CUSTOM_KEY"] | Should -Be "preserved"
     }
 
+    It "replaces PostgreSQL connection strings when only one datastore discriminator was changed to MSSQL" {
+        $partialPath = Join-Path $script:work ".env.partial-from-postgresql"
+        $postgresqlTemplate = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot ".env.template") -Raw
+        $partialContent = $postgresqlTemplate.Replace("DMS_DATASTORE=postgresql", "DMS_DATASTORE=mssql")
+        Set-Content -LiteralPath $partialPath -Value $partialContent -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
+        $values = ReadValuesFromEnvFile $result
+
+        $values["DMS_DATASTORE"] | Should -Be "mssql"
+        $values["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match '^Server='
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Match '^Server='
+        $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -Match '(?i)(?:^|;)\s*host\s*='
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Not -Match '(?i)(?:^|;)\s*host\s*='
+    }
+
+    It "does not short-circuit a fully populated MSSQL-marked file carrying PostgreSQL connection strings" {
+        $contradictoryPath = Join-Path $script:work ".env.contradictory"
+        $contradictoryContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
+            Replace(
+                'Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
+                'host=dms-postgresql;port=5432;database=postgres;username=postgres;password=postgres;'
+            ).
+            Replace(
+                'Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
+                'host=dms-postgresql;port=5432;database=edfi_datamanagementservice;username=postgres;password=postgres;'
+            )
+        Set-Content -LiteralPath $contradictoryPath -Value $contradictoryContent -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $contradictoryPath -DockerComposeRoot $script:composeRoot
+        $values = ReadValuesFromEnvFile $result
+
+        $result | Should -Not -Be $contradictoryPath
+        $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match '^Server='
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Match '^Server='
+    }
+
+    It "preserves valid caller-authored MSSQL connection strings while completing a partial file" {
+        $partialPath = Join-Path $script:work ".env.partial-custom-connections"
+        Set-Content -LiteralPath $partialPath -Value @"
+DMS_CONFIG_DATASTORE=mssql
+DATABASE_CONNECTION_STRING_ADMIN=Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=custom_database;User Id=custom;Password=secret;
+"@ -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
+        $values = ReadValuesFromEnvFile $result
+
+        $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Be "Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;"
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be "Server=custom-cms,1444;Database=custom_database;User Id=custom;Password=secret;"
+    }
+
     It "requires every current overlay key before short-circuiting composition" {
         $overlayPath = Join-Path $script:composeRoot ".env.mssql"
         $overlayValues = ReadValuesFromEnvFile $overlayPath

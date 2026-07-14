@@ -475,7 +475,7 @@ jobs:
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event_name == 'release'  }}
+    if: ${{ github.event_name == 'release' && github.event.action == 'released' }}
     runs-on: ubuntu-latest
     defaults:
       run:
