@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -16,12 +17,41 @@ internal static class FailureResults
 
     public static IResult Unknown(string correlationId)
     {
-        return Results.Json(FailureResponse.ForUnknown(correlationId), statusCode: 500);
+        return Results.Json(
+            FailureResponse.ForUnknown(correlationId),
+            contentType: _errorContentType,
+            statusCode: 500
+        );
     }
 
     public static IResult NotFound(string detail, string correlationId)
     {
-        return Results.Json(FailureResponse.ForNotFound(detail, correlationId), statusCode: 404);
+        return Results.Json(
+            FailureResponse.ForNotFound(detail, correlationId),
+            contentType: _errorContentType,
+            statusCode: 404
+        );
+    }
+
+    public static IResult BadRequest(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForBadRequest(detail, correlationId),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
+    }
+
+    public static IResult DataValidation(
+        IEnumerable<ValidationFailure> validationFailures,
+        string correlationId
+    )
+    {
+        return Results.Json(
+            FailureResponse.ForDataValidation(validationFailures, correlationId),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
     }
 
     public static IResult BadGateway(string detail, string correlationId)
@@ -57,6 +87,18 @@ internal static class FailureResults
     public static IResult Forbidden(string detail, string correlationId)
     {
         var errors = GetIdentityErrorDetails(detail, "Forbidden");
+        return Results.Json(
+            FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 403
+        );
+    }
+
+    // Authorization failure with caller-supplied error messages. Unlike the identity-provider
+    // overload above, the errors are used verbatim (no "Forbidden. " prefix or JSON parsing),
+    // so endpoints and authorization handling can surface a clean, specific message.
+    public static IResult Forbidden(string[] errors, string correlationId)
+    {
         return Results.Json(
             FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
             contentType: _errorContentType,
