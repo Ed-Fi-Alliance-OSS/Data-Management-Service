@@ -61,6 +61,24 @@ internal static class FailureResults
         );
     }
 
+    public static IResult MethodNotAllowed(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForMethodNotAllowed(detail, correlationId),
+            contentType: _errorContentType,
+            statusCode: 405
+        );
+    }
+
+    public static IResult UnsupportedMediaType(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForUnsupportedMediaType(detail, correlationId),
+            contentType: _errorContentType,
+            statusCode: 415
+        );
+    }
+
     public static IResult DataValidation(
         IEnumerable<ValidationFailure> validationFailures,
         string correlationId

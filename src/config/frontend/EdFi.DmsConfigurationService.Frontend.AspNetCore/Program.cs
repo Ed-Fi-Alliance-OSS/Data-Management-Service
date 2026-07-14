@@ -74,19 +74,35 @@ if (!ReportInvalidConfiguration(app))
 
     app.UseExceptionHandler(o => { });
 
-    // Give an unmatched-route 404 the Ed-Fi not-found Problem Details contract. This runs only when the
-    // response is otherwise empty, so it never replaces bodies already produced (OAuth responses, the
-    // authorization handler's 401/403, endpoint error responses) and does not change successful/204
-    // responses. Only 404 is rewritten; other framework status codes (e.g. 405/415) are left intact so
-    // content-type/method negotiation behavior is preserved.
+    // Give framework-generated non-success responses that would otherwise be empty (unmatched-route
+    // 404, method-not-allowed 405, unsupported-media-type 415) the Ed-Fi Problem Details contract.
+    // UseStatusCodePages runs only when the response has no body, so it never replaces bodies already
+    // produced (OAuth responses, the authorization handler's 401/403, endpoint error responses) and
+    // does not touch successful/204 responses. Only the body is written, so the original status code
+    // and any framework headers (e.g. Allow on 405, WWW-Authenticate) are preserved.
     app.UseStatusCodePages(async statusCodeContext =>
     {
         HttpContext context = statusCodeContext.HttpContext;
-        if (context.Response.StatusCode == StatusCodes.Status404NotFound)
+        IResult? problemDetails = context.Response.StatusCode switch
         {
-            await FailureResults
-                .NotFound("The requested resource was not found.", context.TraceIdentifier)
-                .ExecuteAsync(context);
+            StatusCodes.Status404NotFound => FailureResults.NotFound(
+                "The requested resource was not found.",
+                context.TraceIdentifier
+            ),
+            StatusCodes.Status405MethodNotAllowed => FailureResults.MethodNotAllowed(
+                "The request method is not allowed for this resource.",
+                context.TraceIdentifier
+            ),
+            StatusCodes.Status415UnsupportedMediaType => FailureResults.UnsupportedMediaType(
+                "The request content type is not supported.",
+                context.TraceIdentifier
+            ),
+            _ => null,
+        };
+
+        if (problemDetails is not null)
+        {
+            await problemDetails.ExecuteAsync(context);
         }
     });
 
