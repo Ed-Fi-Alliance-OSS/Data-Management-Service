@@ -130,11 +130,36 @@ internal class TenantResolutionMiddlewareTests
             return httpContext;
         }
 
-        private static async Task<JsonNode> ReadResponseBody(HttpContext httpContext)
+        private static async Task<string> ReadRawResponseBody(HttpContext httpContext)
         {
             httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
-            string content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
-            return JsonNode.Parse(content)!;
+            return await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+        }
+
+        private static async Task<JsonNode> ReadResponseBody(HttpContext httpContext) =>
+            JsonNode.Parse(await ReadRawResponseBody(httpContext))!;
+
+        /// <summary>
+        /// Asserts the response status, application/problem+json content type, a non-empty
+        /// correlationId, and that the body exactly matches the expected Ed-Fi Problem Details JSON
+        /// (with {correlationId} substituted from the actual response).
+        /// </summary>
+        private static async Task AssertProblemDetails(
+            HttpContext httpContext,
+            int expectedStatus,
+            string expectedJsonTemplate
+        )
+        {
+            httpContext.Response.StatusCode.Should().Be(expectedStatus);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+
+            var body = await ReadResponseBody(httpContext);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+            var expected = JsonNode.Parse(
+                expectedJsonTemplate.Replace("{correlationId}", body["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(body, expected).Should().BeTrue();
         }
 
         [Test]
@@ -154,16 +179,23 @@ internal class TenantResolutionMiddlewareTests
             );
 
             // Assert
-            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-            httpContext.Response.ContentType.Should().Be("application/problem+json");
-            var body = await ReadResponseBody(httpContext);
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
-            body["status"]!.GetValue<int>().Should().Be(400);
-            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            body["validationErrors"]!["Tenant"]!.AsArray()[0]!
-                .GetValue<string>()
-                .Should()
-                .Be("The 'Tenant' header is required when multi-tenancy is enabled.");
+            await AssertProblemDetails(
+                httpContext,
+                StatusCodes.Status400BadRequest,
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Tenant": ["The 'Tenant' header is required when multi-tenancy is enabled."]
+                  },
+                  "errors": []
+                }
+                """
+            );
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -184,14 +216,23 @@ internal class TenantResolutionMiddlewareTests
             );
 
             // Assert
-            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-            httpContext.Response.ContentType.Should().Be("application/problem+json");
-            var body = await ReadResponseBody(httpContext);
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
-            body["validationErrors"]!["Tenant"]!.AsArray()[0]!
-                .GetValue<string>()
-                .Should()
-                .Be("The 'Tenant' header is required when multi-tenancy is enabled.");
+            await AssertProblemDetails(
+                httpContext,
+                StatusCodes.Status400BadRequest,
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Tenant": ["The 'Tenant' header is required when multi-tenancy is enabled."]
+                  },
+                  "errors": []
+                }
+                """
+            );
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -215,16 +256,21 @@ internal class TenantResolutionMiddlewareTests
             );
 
             // Assert
-            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-            httpContext.Response.ContentType.Should().Be("application/problem+json");
-            var body = await ReadResponseBody(httpContext);
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
-            body["status"]!.GetValue<int>().Should().Be(400);
-            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            body["validationErrors"]!["Tenant"]!.AsArray()[0]!
-                .GetValue<string>()
-                .Should()
-                .Be("Invalid tenant: nonexistent-tenant");
+            await AssertProblemDetails(
+                httpContext,
+                StatusCodes.Status400BadRequest,
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": { "Tenant": ["Invalid tenant: nonexistent-tenant"] },
+                  "errors": []
+                }
+                """
+            );
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -247,17 +293,24 @@ internal class TenantResolutionMiddlewareTests
                 _logger
             );
 
-            // Assert
-            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
-            httpContext.Response.ContentType.Should().Be("application/problem+json");
-            var body = await ReadResponseBody(httpContext);
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
-            body["status"]!.GetValue<int>().Should().Be(500);
-            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            // The upstream failure message must not leak into the response.
-            body["error"].Should().BeNull();
-            body["message"].Should().BeNull();
-            JsonNode.DeepEquals(body["validationErrors"], new JsonObject()).Should().BeTrue();
+            // Assert - the upstream failure message ("Database error") must not leak into the response.
+            string rawBody = await ReadRawResponseBody(httpContext);
+            rawBody.Should().NotContain("Database error");
+            await AssertProblemDetails(
+                httpContext,
+                StatusCodes.Status500InternalServerError,
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:internal-server-error",
+                  "title": "Internal Server Error",
+                  "status": 500,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """
+            );
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -372,13 +425,21 @@ internal class TenantResolutionMiddlewareTests
             );
 
             // Assert
-            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-            httpContext.Response.ContentType.Should().Be("application/problem+json");
-            var body = await ReadResponseBody(httpContext);
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
-            body["detail"]!.GetValue<string>().Should().Be("Failed to validate tenant.");
-            body["status"]!.GetValue<int>().Should().Be(400);
-            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            await AssertProblemDetails(
+                httpContext,
+                StatusCodes.Status400BadRequest,
+                """
+                {
+                  "detail": "Failed to validate tenant.",
+                  "type": "urn:ed-fi:api:bad-request",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """
+            );
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 

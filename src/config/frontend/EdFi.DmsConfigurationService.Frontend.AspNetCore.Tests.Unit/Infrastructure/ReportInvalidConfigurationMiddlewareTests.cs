@@ -36,15 +36,29 @@ internal class ReportInvalidConfigurationMiddlewareTests
 
         httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
         string content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
-        var body = JsonNode.Parse(content)!;
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
-        body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
-        body["status"]!.GetValue<int>().Should().Be(500);
-        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-        JsonNode.DeepEquals(body["validationErrors"], new JsonObject()).Should().BeTrue();
-        JsonNode.DeepEquals(body["errors"], new JsonArray()).Should().BeTrue();
 
-        // The configuration errors are logged server-side, not exposed in the response body.
+        // The configuration error messages are logged server-side, never exposed in the response body.
+        content.Should().NotContain("AppSettings:Foo is required");
+        content.Should().NotContain("IdentitySettings:Bar is invalid");
+
+        var actual = JsonNode.Parse(content);
+        actual!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expected = JsonNode.Parse(
+            """
+            {
+              "detail": "",
+              "type": "urn:ed-fi:api:internal-server-error",
+              "title": "Internal Server Error",
+              "status": 500,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{correlationId}", actual!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actual, expected).Should().BeTrue();
+
+        // The configuration errors are logged (LogCritical -> ILogger.Log), once per error.
         A.CallTo(logger).Where(call => call.Method.Name == "Log").MustHaveHappenedTwiceExactly();
         A.CallTo(() => next(httpContext)).MustNotHaveHappened();
     }
