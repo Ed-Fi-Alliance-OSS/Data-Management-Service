@@ -467,4 +467,126 @@ internal class TenantResolutionMiddlewareTests
             A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
         }
     }
+
+    [TestFixture("/health")]
+    [TestFixture("/HEALTH")]
+    [TestFixture("/health/")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Health_Path(string path)
+    {
+        private RequestDelegate _next = null!;
+        private IOptions<AppSettings> _appSettings = null!;
+        private ITenantContextProvider _tenantContextProvider = null!;
+        private ITenantRepository _tenantRepository = null!;
+        private ILogger<TenantResolutionMiddleware> _logger = null!;
+        private DefaultHttpContext _httpContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _next = A.Fake<RequestDelegate>();
+            _tenantContextProvider = new TenantContextProvider();
+            _tenantRepository = A.Fake<ITenantRepository>();
+            _logger = A.Fake<ILogger<TenantResolutionMiddleware>>();
+            _appSettings = Options.Create(
+                new AppSettings
+                {
+                    MultiTenancy = true,
+                    Datastore = "postgresql",
+                    IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
+                }
+            );
+
+            var middleware = new TenantResolutionMiddleware(_next);
+            _httpContext = new DefaultHttpContext();
+            _httpContext.Request.Path = path;
+            _httpContext.Response.Body = new MemoryStream();
+            // No Tenant header
+
+            await middleware.Invoke(
+                _httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            A.CallTo(() => _next(_httpContext)).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_does_not_look_up_tenant()
+        {
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_leaves_tenant_context_not_multitenant()
+        {
+            _tenantContextProvider.Context.Should().BeOfType<TenantContext.NotMultitenant>();
+        }
+    }
+
+    [TestFixture("/healthcheck")]
+    [TestFixture("/healthy")]
+    [TestFixture("/health/foo")]
+    [TestFixture("/v3/health")]
+    [TestFixture("/health//")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Health_Lookalike_Path(string path)
+    {
+        private RequestDelegate _next = null!;
+        private IOptions<AppSettings> _appSettings = null!;
+        private ITenantContextProvider _tenantContextProvider = null!;
+        private ITenantRepository _tenantRepository = null!;
+        private ILogger<TenantResolutionMiddleware> _logger = null!;
+        private DefaultHttpContext _httpContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _next = A.Fake<RequestDelegate>();
+            _tenantContextProvider = new TenantContextProvider();
+            _tenantRepository = A.Fake<ITenantRepository>();
+            _logger = A.Fake<ILogger<TenantResolutionMiddleware>>();
+            _appSettings = Options.Create(
+                new AppSettings
+                {
+                    MultiTenancy = true,
+                    Datastore = "postgresql",
+                    IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
+                }
+            );
+
+            var middleware = new TenantResolutionMiddleware(_next);
+            _httpContext = new DefaultHttpContext();
+            _httpContext.Request.Path = path;
+            _httpContext.Response.Body = new MemoryStream();
+            // No Tenant header
+
+            await middleware.Invoke(
+                _httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+        }
+
+        [Test]
+        public void It_returns_400()
+        {
+            _httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            A.CallTo(() => _next(_httpContext)).MustNotHaveHappened();
+        }
+    }
 }
