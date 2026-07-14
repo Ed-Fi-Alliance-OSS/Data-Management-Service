@@ -877,7 +877,7 @@ public class TokenEndpointTests
     }
 
     [Test]
-    public async Task When_grant_type_is_not_client_credentials()
+    public async Task It_returns_ed_fi_data_validation_for_an_unsupported_grant_type()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -931,10 +931,10 @@ public class TokenEndpointTests
 }
 
 [TestFixture]
-public class IntrospectEndpointTests
+public class Given_An_Introspect_Request_Without_A_Token
 {
     [Test]
-    public async Task When_token_is_missing_it_returns_ed_fi_data_validation()
+    public async Task It_returns_ed_fi_data_validation()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -974,10 +974,10 @@ public class IntrospectEndpointTests
 }
 
 [TestFixture]
-public class RevokeEndpointTests
+public class Given_A_Revoke_Request_Without_A_Token
 {
     [Test]
-    public async Task When_token_is_missing_it_returns_ed_fi_data_validation()
+    public async Task It_returns_ed_fi_data_validation()
     {
         // Arrange
         var tokenManager = A.Fake<ITokenManager>();

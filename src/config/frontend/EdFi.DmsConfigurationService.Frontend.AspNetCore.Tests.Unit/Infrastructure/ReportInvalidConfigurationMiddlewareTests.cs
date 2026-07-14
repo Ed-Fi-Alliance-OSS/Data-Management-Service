@@ -13,7 +13,6 @@ using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
-[TestFixture]
 internal class ReportInvalidConfigurationMiddlewareTests
 {
     [TestFixture]

@@ -22,7 +22,6 @@ using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 
-[TestFixture]
 public class StatusCodePagesPipelineTests
 {
     /// <summary>

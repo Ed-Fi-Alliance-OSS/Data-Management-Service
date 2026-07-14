@@ -12,7 +12,6 @@ using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
-[TestFixture]
 public class FailureResultsTests
 {
     /// <summary>

@@ -16,7 +16,6 @@ using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 
-[TestFixture]
 internal class TenantResolutionExceptionPipelineTests
 {
     /// <summary>
