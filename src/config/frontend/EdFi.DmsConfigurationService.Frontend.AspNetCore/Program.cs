@@ -59,38 +59,44 @@ if (useReverseProxyHeaders)
 app.UseMiddleware<SecurityHeadersMiddleware>();
 
 app.UseMiddleware<RequestLoggingMiddleware>();
-app.UseMiddleware<TenantResolutionMiddleware>();
 
+// When configuration is invalid, ReportInvalidConfiguration registers a middleware that short-circuits
+// every request with a structured 500. In that case skip the rest of the pipeline: tenant resolution
+// and several endpoint modules resolve validated options (AppSettings.Value), which would otherwise
+// throw at startup (endpoint mapping) or upstream of the reporting middleware. Security headers and
+// request logging are already registered, so they still apply to the error response.
 if (!ReportInvalidConfiguration(app))
 {
     InitializeDatabase(app);
     await InitializeClaimsData(app);
-}
 
-app.UseExceptionHandler(o => { });
+    app.UseMiddleware<TenantResolutionMiddleware>();
 
-// Give an unmatched-route 404 the Ed-Fi not-found Problem Details contract. This runs only when the
-// response is otherwise empty, so it never replaces bodies already produced (OAuth responses, the
-// authorization handler's 401/403, endpoint error responses) and does not change successful/204
-// responses. Only 404 is rewritten; other framework status codes (e.g. 405/415) are left intact so
-// content-type/method negotiation behavior is preserved.
-app.UseStatusCodePages(async statusCodeContext =>
-{
-    HttpContext context = statusCodeContext.HttpContext;
-    if (context.Response.StatusCode == StatusCodes.Status404NotFound)
+    app.UseExceptionHandler(o => { });
+
+    // Give an unmatched-route 404 the Ed-Fi not-found Problem Details contract. This runs only when the
+    // response is otherwise empty, so it never replaces bodies already produced (OAuth responses, the
+    // authorization handler's 401/403, endpoint error responses) and does not change successful/204
+    // responses. Only 404 is rewritten; other framework status codes (e.g. 405/415) are left intact so
+    // content-type/method negotiation behavior is preserved.
+    app.UseStatusCodePages(async statusCodeContext =>
     {
-        await FailureResults
-            .NotFound("The requested resource was not found.", context.TraceIdentifier)
-            .ExecuteAsync(context);
-    }
-});
+        HttpContext context = statusCodeContext.HttpContext;
+        if (context.Response.StatusCode == StatusCodes.Status404NotFound)
+        {
+            await FailureResults
+                .NotFound("The requested resource was not found.", context.TraceIdentifier)
+                .ExecuteAsync(context);
+        }
+    });
 
-app.UseRouting();
-app.UseCors("AllowSwaggerUI");
-app.UseAuthentication();
-app.UseAuthorization();
-app.MapRouteEndpoints();
-app.MapOpenApi();
+    app.UseRouting();
+    app.UseCors("AllowSwaggerUI");
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapRouteEndpoints();
+    app.MapOpenApi();
+}
 
 await app.RunAsync();
 
