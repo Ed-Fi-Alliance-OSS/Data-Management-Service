@@ -190,6 +190,6 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1270` — Align Local Database Topology Across Engines with an Optional Separate CMS Database — `reference/design/backend-redesign/epics/17-mssql-gap-closure/01-local-database-topology-parity.md`
   - `DMS-1271` — Add a Database-Template Restore Branch to Bootstrap — `reference/design/backend-redesign/epics/17-mssql-gap-closure/02-database-template-restore-workflow.md`
   - `DMS-1279` — Adopt SQL Server 2025 and Evaluate Native JSON Document Storage — `reference/design/backend-redesign/epics/17-mssql-gap-closure/03-sql-server-2025-and-native-json.md`
-  - `DMS-1284` — Run the DMS Docker E2E Suite Against MSSQL — `reference/design/backend-redesign/epics/17-mssql-gap-closure/04-mssql-docker-e2e.md`
+  - `DMS-1284` — Run the DMS and Instance Management Docker E2E Suites Against MSSQL — `reference/design/backend-redesign/epics/17-mssql-gap-closure/04-mssql-docker-e2e.md`
   - `DMS-1285` — Close MSSQL Relational Write-Path Correctness and Resilience Coverage Gaps — `reference/design/backend-redesign/epics/17-mssql-gap-closure/05-mssql-write-path-coverage.md`
   - `DMS-1286` — Add Real-MSSQL Integration Coverage for NamespaceBased CRUD Authorization — `reference/design/backend-redesign/epics/17-mssql-gap-closure/06-mssql-namespace-authorization-coverage.md`

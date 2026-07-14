@@ -26,7 +26,7 @@ cross-cutting local and CI workflows that do not have another active home.
   bootstrap workflow
 - `DMS-1279` — `03-sql-server-2025-and-native-json.md` — Adopt the SQL Server 2025 runtime and evaluate the
   native `json` storage transition
-- `DMS-1284` — `04-mssql-docker-e2e.md` — Run the DMS Docker E2E suite against MSSQL
+- `DMS-1284` — `04-mssql-docker-e2e.md` — Run the DMS and Instance Management Docker E2E suites against MSSQL
 - `DMS-1285` — `05-mssql-write-path-coverage.md` — Close relational write-path correctness and resilience
   coverage gaps
 - `DMS-1286` — `06-mssql-namespace-authorization-coverage.md` — Add real-MSSQL integration coverage for
@@ -38,17 +38,22 @@ cross-cutting local and CI workflows that do not have another active home.
   to a follow-up story.
 - `DMS-1255` supplies the database-template packages and `-DbOnly` startup slice required by `DMS-1270`,
   `DMS-1271`, and `DMS-1279`. It remains tracked under its existing bootstrap ownership.
+- `DMS-1258` retains implementation ownership for the SQL Server foreign-key-pruning design. It may proceed in
+  parallel with workflow work, but the MSSQL gap inventory cannot be considered closed while it remains
+  pending.
 - `DMS-1270` and `DMS-1271` meet at one topology seam: restore always targets a DMS datastore. In shared mode,
-  restore occurs before CMS initialization touches that database; in separate mode, restore must not target
-  the CMS database. `DMS-1271` also owns the narrow package-producer extension and consumer validation for an
-  external restore manifest; general template publication remains with `DMS-1255`.
+  a scratch-validated DMS-only package is restored before CMS initialization touches that database; in
+  separate mode, restore must not target the CMS database. `DMS-1271` also owns the narrow package-producer
+  extension and consumer validation for an external restore manifest; general template publication remains
+  with `DMS-1255`.
 - `DMS-1279` separates the required SQL Server 2025 runtime upgrade from a conditional native `json` storage
   change. A recorded defer decision does not block the runtime upgrade. Adoption applies to the optional
   `DocumentCache` column, uses direct provider coverage unless a production cache path is separately assigned,
-  and requires reprovisioned databases/templates plus physical-type validation rather than an implicit
-  migration.
-- `DMS-1284` owns the public HTTP and Docker-stack boundary. Backend defects found there should be linked to
-  their owning implementation or provider-integration story rather than absorbed into the E2E harness.
+  and requires a distinct MSSQL physical-schema version, reprovisioned databases/templates, and catalog-type
+  validation rather than an implicit migration or a PostgreSQL-affecting relational mapping-version bump.
+- `DMS-1284` owns the public HTTP and Docker-stack boundary for both the standard DMS E2E suite and the separate
+  multi-datastore Instance Management E2E suite. Backend defects found there should be linked to their owning
+  implementation or provider-integration story rather than absorbed into the E2E harness.
 - `DMS-1285` reuses the shared fixtures and scenario names owned by `DMS-1023`; it owns real-MSSQL write-path
   execution for the remaining uncovered scenarios.
 - `DMS-1286` owns the real-MSSQL NamespaceBased provider boundary. `DMS-1284` owns representative public E2E
@@ -62,6 +67,8 @@ cross-cutting local and CI workflows that do not have another active home.
 - `DMS-1127` — SQL Server native-cascade update-tracking validation, governed by
   [`sql-server-pruning.md`](../../design-docs/sql-server-pruning.md) and
   [`update-tracking.md`](../../design-docs/update-tracking.md)
+- `DMS-1258` — SQL Server foreign-key-pruning implementation governed by
+  [`sql-server-pruning.md`](../../design-docs/sql-server-pruning.md)
 
 ## Scope Guardrails
 

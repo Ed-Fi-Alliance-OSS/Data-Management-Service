@@ -22,7 +22,7 @@ fixes only defects required to preserve that existing contract.
 | GET-by-id | Deny mismatches and uninitialized stored namespaces before hydration or document exposure. |
 | POST create | Authorize the proposed namespace and write no document, descriptor, or resource rows on denial. |
 | PUT / POST-as-update | Authorize stored values before proposed values and before precondition/mutation handling; preserve all rows on denial. |
-| DELETE | Authorize the stored namespace before deletion and preserve all rows on denial. |
+| DELETE | Authorize the stored namespace before `If-Match` evaluation or deletion and preserve all rows on denial. |
 | Descriptors | Apply the same proposed/stored NamespaceBased contract for supported descriptor operations. |
 | Mixed strategies | Compose NamespaceBased as an AND condition around the relationship-strategy OR group. |
 
@@ -48,7 +48,11 @@ mutation. Do not introduce a namespace-prefix TVP as part of this coverage story
   PUT, POST-as-update, and DELETE.
 - Ordinary resources and descriptors are represented for the operation families they support.
 - Authorization filtering precedes paging and `totalCount`; single-record denial precedes hydration.
-- Stored authorization precedes proposed authorization and precondition/mutation work for update operations.
+- Stored authorization precedes proposed authorization and precondition/mutation work for update operations;
+  stored DELETE authorization precedes `If-Match` evaluation and deletion.
+- For both ordinary resources and descriptors, an existing DELETE target for which NamespaceBased
+  authorization and `If-Match` would both fail returns 403 rather than 412. After authorization succeeds, the
+  normal `If-Match` result is preserved. Collision tests cover both orderings against real SQL Server.
 - Every denied write leaves `dms.Document`, descriptor, root, child, extension, identity, and tracking state
   unchanged.
 - Mixed NamespaceBased/relationship authorization uses the established AND/OR composition.

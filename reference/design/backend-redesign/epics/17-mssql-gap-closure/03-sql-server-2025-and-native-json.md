@@ -45,14 +45,38 @@ Before enabling native storage:
    - without a production `DocumentCache` path, validate generated DDL and direct `DocumentCache` provider
      round trips; or
    - explicitly add the cache projector/read path to an owning ticket before requiring DMS CRUD/query coverage.
-4. Change `MssqlDialect.JsonColumnType`, regenerate provisioned-schema goldens and relational-model manifests,
-   and update the authoritative data-model DDL. Replace the current string-based
+4. Establish and bump the MSSQL physical-schema identity described below, change
+   `MssqlDialect.JsonColumnType`, regenerate provisioned-schema goldens and relational-model manifests, and
+   update the authoritative data-model DDL. Replace the current string-based
    `LEFT(LTRIM(DocumentJson), 1)` object check, because native `json` does not allow implicit string conversion;
    use a native-compatible root-object constraint such as `ISJSON(DocumentJson, OBJECT) = 1` and cover it.
 5. In direct real-SQL-Server integration tests, verify table creation, object-only validation, explicit and
    inferred provider parameter binding, insert/select round trips, `OPENJSON`, `JSON_VALUE`, supported bulk
    operations, schema inspection, and result materialization against the native column.
 6. Rebuild and republish MSSQL database-template packages after the generated schema changes.
+
+### Artifact and Schema Identity
+
+`EffectiveSchemaHash` and `RelationalMappingVersion` remain the shared logical mapping identity. Do not bump
+the global relational mapping version for this provider-only optional-cache storage change: doing so would
+change PostgreSQL fingerprints and generated seed DDL even though PostgreSQL mapping and storage are
+unchanged.
+
+Instead, generated MSSQL artifacts have a DMS-owned `MssqlPhysicalSchemaVersion`:
+
+- The `nvarchar(max)` baseline is version `v1`; native `json` adoption introduces `v2`.
+- MSSQL DDL records the version in a SQL Server-only singleton `dms.MssqlPhysicalSchema` metadata table. A
+  legacy database without the table is recognized as `v1` only when catalog inspection also finds the legacy
+  `nvarchar(max)` shape; absence can never imply the native baseline.
+- MSSQL DDL artifact identity and determinism use `(ApiSchema set, mssql, RelationalMappingVersion,
+  MssqlPhysicalSchemaVersion)`. Update the authoritative DDL-generation contract and diagnostic manifests to
+  include that final component. PostgreSQL keeps its existing identity tuple and byte-for-byte DDL.
+- The database-template restore manifest from `DMS-1271` records `MssqlPhysicalSchemaVersion` beside the
+  physical `DocumentJson` type. Package production, scratch restore, SchemaTools verification, and any future
+  cache startup path require the version marker and live catalog type to agree.
+- This physical version does not key ordinary mapping packs while `DocumentCache` has no production read/write
+  path. If such a path is introduced, its owning design must either add the version to the relevant compiled
+  artifact key or prove that the existing physical-type startup gate is the only required discriminator.
 
 ### Existing Database Transition
 
@@ -62,9 +86,10 @@ uses mandatory reprovisioning rather than an in-place migration:
 
 - Phase 1 continues to support existing SQL Server 2022-created databases with `nvarchar(max)` unchanged.
 - An environment or template may claim the native-JSON baseline only after it is recreated from newly
-  generated DDL or a newly published template package.
+  generated `v2` DDL or a newly published `v2` template package.
 - Schema/template verification must inspect the actual SQL Server column type and reject an `nvarchar(max)`
-  `DocumentJson` when native JSON is expected, with drop/reprovision guidance.
+  `DocumentJson` when native JSON is expected. It must also reject a missing or mismatched
+  `MssqlPhysicalSchemaVersion`, with drop/reprovision guidance.
 - Do not enable a future cache writer, reader, or `SqlDbType.Json` binding path without a startup compatibility
   gate that verifies the physical type. `EffectiveSchemaHash` alone is insufficient for this provider-specific
   storage decision.
@@ -81,8 +106,8 @@ the mechanism that enables native JSON.
 - Validate the forward path from SQL Server 2022-built backups to the 2025 runtime before republishing.
 - Once packages are built against SQL Server 2025/native JSON, document that they are not expected to restore
   to SQL Server 2022.
-- Image, compatibility-level, generated-schema, and package metadata must identify the supported baseline
-  consistently.
+- Image, compatibility-level, generated-schema, MSSQL physical-schema version, and package metadata must
+  identify the supported baseline consistently.
 
 ## Acceptance Criteria
 
@@ -101,14 +126,18 @@ the mechanism that enables native JSON.
 These criteria apply only when the decision is adopt:
 
 - Generated DDL, authoritative data-model DDL, goldens, manifests, and newly built template packages use native
-  `json` consistently, including a native-compatible object-only constraint.
+  `json` and `MssqlPhysicalSchemaVersion=v2` consistently, including a native-compatible object-only
+  constraint.
+- SQL Server `v1` and `v2` outputs have distinct physical artifact identities. PostgreSQL
+  `EffectiveSchemaHash`, mapping identity, generated DDL, goldens, and runtime behavior remain byte-for-byte
+  unchanged by the adoption commit.
 - Real-SQL-Server integration tests exercise direct `DocumentCache` DDL and provider round trips for parameter
   binding, object validation, insert/select, JSON functions, supported bulk operations, schema inspection, and
   result materialization. DMS CRUD/query coverage is required only if a production cache path is explicitly
   added to scope.
 - Existing databases are not silently treated as converted: native-baseline validation rejects
-  `nvarchar(max)` with reprovisioning guidance, and any future runtime cache path has a physical-type startup
-  gate.
+  `nvarchar(max)` or missing/mismatched MSSQL physical-version metadata with reprovisioning guidance, and any
+  future runtime cache path has a physical-type startup gate.
 - Newly rebuilt Minimal and Populated MSSQL templates pass physical-type and served-data verification.
 
 ## Non-Goals
