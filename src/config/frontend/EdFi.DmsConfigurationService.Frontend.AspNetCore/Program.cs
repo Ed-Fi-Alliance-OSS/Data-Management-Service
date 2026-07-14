@@ -70,8 +70,10 @@ if (!ReportInvalidConfiguration(app))
     InitializeDatabase(app);
     await InitializeClaimsData(app);
 
-    app.UseMiddleware<TenantResolutionMiddleware>();
-
+    // The global exception handler is registered before tenant resolution and routing so it wraps
+    // them: exceptions thrown during tenant lookup (e.g. a database connection failure in
+    // TenantRepository) are converted to the standardized Ed-Fi internal-server-error response
+    // instead of escaping as a bare, unhandled 500.
     app.UseExceptionHandler(o => { });
 
     // Give framework-generated non-success responses that would otherwise be empty (unmatched-route
@@ -105,6 +107,8 @@ if (!ReportInvalidConfiguration(app))
             await problemDetails.ExecuteAsync(context);
         }
     });
+
+    app.UseMiddleware<TenantResolutionMiddleware>();
 
     app.UseRouting();
     app.UseCors("AllowSwaggerUI");
