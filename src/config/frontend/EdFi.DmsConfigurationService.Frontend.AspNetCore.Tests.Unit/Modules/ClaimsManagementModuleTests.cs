@@ -722,13 +722,19 @@ public abstract class ClaimsManagementModuleTests
         }
 
         [Test]
-        public async Task It_returns_a_compliant_data_validation_400_with_grouped_failures()
+        public async Task It_returns_a_compliant_data_validation_400_for_validation_failures()
         {
             A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
                 .Returns(
                     new ClaimsLoadStatus(
                         false,
-                        [new ClaimsFailure("SchemaError", "Invalid claim set.", "$.claimSets[0]")]
+                        [
+                            new ClaimsFailure(
+                                "Validation",
+                                "Claim set name is required.",
+                                "$.claimSets[0].claimSetName"
+                            ),
+                        ]
                     )
                 );
 
@@ -736,14 +742,110 @@ public abstract class ClaimsManagementModuleTests
 
             var body = await AssertDataValidationContract(response);
             var validationErrors = body["validationErrors"]!.AsObject();
-            validationErrors["$.claimSets[0]"]!.AsArray()[0]!
+            validationErrors["$.claimSets[0].claimSetName"]!.AsArray()[0]!
                 .GetValue<string>()
                 .Should()
-                .Be("Invalid claim set.");
+                .Be("Claim set name is required.");
         }
 
         [Test]
-        public async Task It_returns_a_compliant_400_on_json_exception()
+        public async Task It_returns_a_compliant_data_validation_400_for_structure_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [new ClaimsFailure("Structure", "Missing required 'claimSets' property")]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            var body = await AssertDataValidationContract(response);
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors["Structure"]!.AsArray()[0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Missing required 'claimSets' property");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_bad_request_400_for_malformed_input_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [new ClaimsFailure("JsonError", "Invalid JSON format in uploaded claims document")]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertBadRequestContract(response, "The claims upload request was invalid.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_500_for_database_failures_without_leaking_details()
+        {
+            const string sensitive =
+                "Npgsql connection host=db.internal;Password=sup3rsecret failed executing SELECT * FROM dmscs.claimset";
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(new ClaimsLoadStatus(false, [new ClaimsFailure("Database", sensitive)]));
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            string rawBody = await response.Content.ReadAsStringAsync();
+            rawBody.Should().NotContain("sup3rsecret");
+            rawBody.Should().NotContain("SELECT");
+            rawBody.Should().NotContain("db.internal");
+            await AssertInternalServerErrorContract(response);
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_500_for_unexpected_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [
+                            new ClaimsFailure(
+                                "Unexpected",
+                                "Object reference not set to an instance of an object."
+                            ),
+                        ]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertInternalServerErrorContract(response);
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_500_for_operation_error_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [
+                            new ClaimsFailure(
+                                "OperationError",
+                                "Invalid operation occurred during claims upload"
+                            ),
+                        ]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertInternalServerErrorContract(response);
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_400_when_the_service_throws_json_exception()
         {
             A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
                 .Throws(new JsonException("secret parse detail"));
@@ -757,18 +859,7 @@ public abstract class ClaimsManagementModuleTests
         }
 
         [Test]
-        public async Task It_returns_a_compliant_400_on_argument_exception()
-        {
-            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
-                .Throws(new ArgumentException("secret argument detail"));
-
-            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
-
-            await AssertBadRequestContract(response, "The claims upload request was invalid.");
-        }
-
-        [Test]
-        public async Task It_returns_a_compliant_500_on_invalid_operation()
+        public async Task It_returns_a_compliant_500_when_the_service_throws_invalid_operation()
         {
             A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
                 .Throws(new InvalidOperationException("secret operation detail"));
