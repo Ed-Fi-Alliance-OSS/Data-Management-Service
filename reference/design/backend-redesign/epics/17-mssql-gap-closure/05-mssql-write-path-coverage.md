@@ -14,6 +14,11 @@ Parity is behavioral. The story does not require identical PostgreSQL and MSSQL 
 counts. Begin with a reviewed inventory that maps each PostgreSQL-only scenario to existing equivalent MSSQL
 coverage, new coverage, or a justified non-applicable dialect difference.
 
+## Dependencies
+
+- Blocked by `DMS-1023`, which establishes the canonical scenario catalog, fixtures, and assertion contract
+  consumed by this provider-coverage story.
+
 ## Required Scenario Families
 
 | Scenario family | Required assertions |

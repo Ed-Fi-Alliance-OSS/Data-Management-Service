@@ -15,6 +15,13 @@ not be blocked by a decision to defer the native-JSON transition. Phase 1 is req
 recorded adopt/defer decision; its implementation criteria apply only when the release-status gate chooses
 adoption. A defer decision keeps `nvarchar(max)` and links a follow-up without preventing Phase 1 completion.
 
+## Dependencies
+
+- Blocked by `DMS-1255` for the SQL Server 2022 template packages and image-coupling contract used by the
+  forward-restore compatibility gate.
+- Native-JSON adoption coordinates with the `DMS-1271` restore-manifest contract, but `DMS-1271` does not block
+  the required runtime upgrade or a recorded defer decision.
+
 ## Phase 1: SQL Server 2025 Runtime
 
 - Update every authoritative image pin used by local compose, DMS CI, CMS CI, and template-build workflows.

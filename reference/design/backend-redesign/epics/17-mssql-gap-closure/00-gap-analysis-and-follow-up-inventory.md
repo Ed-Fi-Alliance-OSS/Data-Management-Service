@@ -39,6 +39,21 @@ move to `DMS-1125`; this repository structure records the target ownership befor
 Links between these tickets and `DMS-873` remain useful for provenance, but a Jira relation does not imply
 that the related ticket must move into `DMS-1125`.
 
+## Blocking Relationships
+
+| Blocker | Blocked ticket | Reason |
+| --- | --- | --- |
+| `DMS-1255` | `DMS-1270` | The separate-topology option extends the shared local-database default delivered by `DMS-1255`. |
+| `DMS-1255` | `DMS-1271` | Template restore requires the published packages and `-DbOnly` startup slice delivered by `DMS-1255`. |
+| `DMS-1255` | `DMS-1279` | The runtime upgrade must prove forward restore of the SQL Server 2022 template packages delivered by `DMS-1255`. |
+| `DMS-1270` | `DMS-1271` | Restore cannot close its shared/separate topology acceptance matrix until the separate-CMS contract exists. |
+| `DMS-1023` | `DMS-1285` | The write-path matrix consumes the canonical scenario catalog, fixtures, and assertion contract from `DMS-1023`. |
+| `DMS-1258` | `DMS-1127` | Native-cascade update-tracking validation requires the finalized SQL Server foreign-key-pruning behavior. |
+
+These are completion blockers, not a requirement to serialize all implementation work. `DMS-1284` and
+`DMS-1286` have no open hard blocker in this inventory. `DMS-1258` and `DMS-1127` retain their existing epic
+ownership while remaining on the MSSQL parity-closure path.
+
 ## Sequencing
 
 1. Finish the `DMS-1255` template and `-DbOnly` prerequisite. Continue `DMS-1258` under its existing pruning

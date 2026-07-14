@@ -14,6 +14,11 @@ uses a dedicated configuration database and DMS instances use separate datastore
 The topology choice must flow through the local start scripts, published-image start scripts, bootstrap
 wrappers, and `build-dms.ps1 StartEnvironment`. It must not be inferred from the selected database engine.
 
+## Dependencies
+
+- Blocked by `DMS-1255`, which delivers the shared local-database default that this story extends.
+- Blocks `DMS-1271`, whose restore acceptance matrix requires the shared and separate topology contracts.
+
 ## Topology Contract
 
 | Mode | CMS database | DMS datastore | Required behavior |

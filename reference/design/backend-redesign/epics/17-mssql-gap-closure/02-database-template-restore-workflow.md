@@ -21,6 +21,12 @@ creates and hashes the database artifact, then packages the completed manifest b
 general package publication remains under `DMS-1255` ownership. This extension also proves that the package
 contains DMS datastore state only; a database template is never a CMS or identity-state backup.
 
+## Dependencies
+
+- Blocked by `DMS-1255` for the published template packages and `-DbOnly` startup slice.
+- Blocked by `DMS-1270` for the separate-CMS topology contract required by target-safety and topology-matrix
+  acceptance coverage.
+
 ## Restore Sequence
 
 The wrapper performs the following sequence in restore mode:

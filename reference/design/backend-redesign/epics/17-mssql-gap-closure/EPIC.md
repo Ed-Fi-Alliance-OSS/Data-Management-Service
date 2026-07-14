@@ -36,16 +36,17 @@ cross-cutting local and CI workflows that do not have another active home.
 
 - `DMS-873` owns the gap inventory and scope boundaries. It does not re-own implementation already assigned
   to a follow-up story.
-- `DMS-1255` supplies the database-template packages and `-DbOnly` startup slice required by `DMS-1270`,
-  `DMS-1271`, and `DMS-1279`. It remains tracked under its existing bootstrap ownership.
+- `DMS-1255` is the Jira blocker for `DMS-1270`, `DMS-1271`, and `DMS-1279`. It supplies the shared local-
+  database default, database-template packages, and `-DbOnly` startup slice required by those stories and
+  remains tracked under its existing bootstrap ownership.
 - `DMS-1258` retains implementation ownership for the SQL Server foreign-key-pruning design. It may proceed in
-  parallel with workflow work, but the MSSQL gap inventory cannot be considered closed while it remains
-  pending.
-- `DMS-1270` and `DMS-1271` meet at one topology seam: restore always targets a DMS datastore. In shared mode,
-  a scratch-validated DMS-only package is restored before CMS initialization touches that database; in
-  separate mode, restore must not target the CMS database. `DMS-1271` also owns the narrow package-producer
-  extension and consumer validation for an external restore manifest; general template publication remains
-  with `DMS-1255`.
+  parallel with workflow work and is the Jira blocker for `DMS-1127`; the MSSQL gap inventory cannot be
+  considered closed while this implementation and its update-tracking validation remain pending.
+- `DMS-1270` is the Jira blocker for `DMS-1271`. The stories meet at one topology seam: restore always targets a
+  DMS datastore. In shared mode, a scratch-validated DMS-only package is restored before CMS initialization
+  touches that database; in separate mode, restore must not target the CMS database. `DMS-1271` also owns the
+  narrow package-producer extension and consumer validation for an external restore manifest; general template
+  publication remains with `DMS-1255`.
 - `DMS-1279` separates the required SQL Server 2025 runtime upgrade from a conditional native `json` storage
   change. A recorded defer decision does not block the runtime upgrade. Adoption applies to the optional
   `DocumentCache` column, uses direct provider coverage unless a production cache path is separately assigned,
@@ -54,8 +55,8 @@ cross-cutting local and CI workflows that do not have another active home.
 - `DMS-1284` owns the public HTTP and Docker-stack boundary for both the standard DMS E2E suite and the separate
   multi-datastore Instance Management E2E suite. Backend defects found there should be linked to their owning
   implementation or provider-integration story rather than absorbed into the E2E harness.
-- `DMS-1285` reuses the shared fixtures and scenario names owned by `DMS-1023`; it owns real-MSSQL write-path
-  execution for the remaining uncovered scenarios.
+- `DMS-1023` is the Jira blocker for `DMS-1285`; it supplies the canonical scenario catalog, fixtures, and
+  assertions. `DMS-1285` owns real-MSSQL execution for the remaining uncovered write-path scenarios.
 - `DMS-1286` owns the real-MSSQL NamespaceBased provider boundary. `DMS-1284` owns representative public E2E
   coverage and must not duplicate the full provider matrix.
 
