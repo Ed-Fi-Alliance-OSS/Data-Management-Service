@@ -98,61 +98,30 @@ jobs:
       hash-code: ${{ steps.hash-code.outputs.hash-code }}
       dms-version: ${{ steps.versions.outputs.dms-v }}
     steps:
-      - name: Validate workflow inputs
-        run: |
-          $verifyRestore = [bool]::Parse('${{ inputs.verify_restore }}')
-          $requirePopulatedData = [bool]::Parse('${{ inputs.require_populated_data }}')
-          $publishPackage = [bool]::Parse('${{ inputs.publish_package }}')
-          $environmentFile = '${{ inputs.environment_file }}'
-          $packageName = '${{ inputs.package_name }}'
-          $databaseEngine = '${{ inputs.database_engine }}'
-
-          $databaseEngines = @('postgresql', 'mssql')
-          if ($databaseEngine -notin $databaseEngines) {
-            throw "database_engine must be one of: $($databaseEngines -join ', '); got '$databaseEngine'."
-          }
-
-          $templateEnvFiles = @('./.env.template', './.env.template.ds61', './.env.smoke', './.env.smoke.ds61')
-          if ($environmentFile -notin $templateEnvFiles) {
-            throw "environment_file must be one of: $($templateEnvFiles -join ', '); got '$environmentFile'."
-          }
-
-          # The smoke surface (Core+[TPDM]+Sample+Homograph) is an in-run smoke artifact only. It
-          # must never publish under the product template contract, and must not reuse a product
-          # package name. The smoke env files are PostgreSQL-only; MSSQL smoke coverage is out of
-          # scope, so combining a smoke env file with database_engine mssql is rejected outright.
-          $smokeEnvFiles = @('./.env.smoke', './.env.smoke.ds61')
-          if ($environmentFile -in $smokeEnvFiles) {
-            if ($databaseEngine -eq 'mssql') {
-              throw "environment_file '$environmentFile' is PostgreSQL-only and cannot be combined with database_engine 'mssql'."
-            }
-            if ($publishPackage) {
-              throw "environment_file '$environmentFile' is smoke-only and must not be published; set publish_package to false."
-            }
-            if ($packageName -notmatch '^EdFi\.Api\.Smoke\.Template\.PostgreSql\.\d+(\.\d+)+$') {
-              throw "environment_file '$environmentFile' requires a smoke package_name of the form 'EdFi.Api.Smoke.Template.PostgreSql.<version>'; got '$packageName'."
-            }
-          }
-          else {
-            # Non-smoke (product) template package names are engine-dependent so a build cannot
-            # silently publish an MSSQL dump under the PostgreSQL product name, or vice versa.
-            $expectedPackagePrefix = if ($databaseEngine -eq 'mssql') { 'EdFi.Api.Populated.Template.MsSql' } else { 'EdFi.Api.Populated.Template.PostgreSql' }
-            # Anchored to prefix + dotted numeric version: a prefix-only -like check lets a
-            # malformed name (e.g. an engine token with trailing junk) pass here and fail much
-            # later during artifact/SBOM lookup.
-            if ($packageName -notmatch "^$([regex]::Escape($expectedPackagePrefix))\.\d+(\.\d+)+$") {
-              throw "environment_file '$environmentFile' with database_engine '$databaseEngine' requires a package_name of the form '$expectedPackagePrefix.<version>'; got '$packageName'."
-            }
-          }
-
-          if ($requirePopulatedData -and -not $verifyRestore) {
-            throw "require_populated_data requires verify_restore."
-          }
-
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+
+      - name: Validate workflow inputs
+        env:
+          STANDARD_VERSION: ${{ inputs.standard_version }}
+          DATABASE_ENGINE: ${{ inputs.database_engine }}
+          PACKAGE_NAME: ${{ inputs.package_name }}
+          TEMPLATE_ENV_PATH: ${{ inputs.environment_file }}
+          PUBLISH_PACKAGE: ${{ inputs.publish_package }}
+          VERIFY_RESTORE: ${{ inputs.verify_restore }}
+          REQUIRE_POPULATED_DATA: ${{ inputs.require_populated_data }}
+        run: |
+          ./eng/DatabaseTemplates/Assert-TemplateWorkflowInputs.ps1 `
+            -WorkflowKind Populated `
+            -StandardVersion $env:STANDARD_VERSION `
+            -PackageName $env:PACKAGE_NAME `
+            -EnvironmentFile $env:TEMPLATE_ENV_PATH `
+            -DatabaseEngine $env:DATABASE_ENGINE `
+            -PublishPackage ([bool]::Parse($env:PUBLISH_PACKAGE)) `
+            -VerifyRestore ([bool]::Parse($env:VERIFY_RESTORE)) `
+            -RequirePopulatedData ([bool]::Parse($env:REQUIRE_POPULATED_DATA))
 
       - name: Checkout Ed-Fi-Data-Standard
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

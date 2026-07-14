@@ -55,6 +55,7 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
             foreach ($fileName in @(
                 "bootstrap-wrapper.psm1",
                 "bootstrap-local-dms.ps1",
+                "bootstrap-schema-catalog.psm1",
                 # The wrapper always composes the local-bootstrap data-standard overlay
                 # (default 5.2) onto the base env via env-utility, so every wrapper
                 # invocation needs the utility module and the overlay files.
@@ -64,6 +65,9 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
             }
+            Copy-Item `
+                -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
+                -Destination (Join-Path $engRoot "schema-package-utility.psm1")
 
             $envFile = Join-Path $dockerComposeRoot ".env.example"
             @"
@@ -242,10 +246,22 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
             New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
 
+            $overlayContent = Get-Content -LiteralPath (Join-Path $DockerComposeRoot ".env.bootstrap.ds52") -Raw
+            $packagesJson = [regex]::Match(
+                $overlayContent,
+                "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
+            ).Groups["value"].Value
+            $selectedPackages = @(
+                ($packagesJson | ConvertFrom-Json) |
+                    ForEach-Object { "$($_.name)@$($_.version)" }
+            )
+
             $manifest = [ordered]@{
                 version = 1
                 schema  = [ordered]@{
                     selectionMode        = "Standard"
+                    selectedExtensions   = @("tpdm")
+                    selectedPackages     = $selectedPackages
                     effectiveSchemaHash  = "abc123"
                     workspaceFingerprint = "0000000000000000000000000000000000000000000000000000000000000000"
                     apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
@@ -1685,6 +1701,17 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 finally {
                     Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
                 }
+            }
+        }
+
+        It "start-local-dms.ps1 rejects -DbOnly with -r before any Docker activity" {
+            $guardRepo = New-StartScriptGuardRepo -StartScriptName "start-local-dms.ps1"
+            try {
+                { & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -r } |
+                    Should -Throw "*-r/-Rebuild is not valid with -DbOnly*"
+            }
+            finally {
+                Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
             }
         }
     }

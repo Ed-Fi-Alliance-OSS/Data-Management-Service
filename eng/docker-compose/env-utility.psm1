@@ -780,14 +780,16 @@ function Resolve-DatabaseEngineEnvironmentFile {
         store in CMS while the DMS container itself still starts on its postgresql default
         (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
 
-        Idempotency guard: when the base file already carries the full overlay signal
-        (DMS_DATASTORE=mssql, DMS_CONFIG_DATASTORE=mssql, and a non-blank MSSQL_SA_PASSWORD -
-        an earlier phase, typically the bootstrap wrapper, already composed the overlay onto
-        it) the base file is returned unchanged instead of composing a derived-of-derived file,
-        unless its DATABASE_TEMPLATE_PACKAGE still carries a stale PostgreSql engine token, in
-        which case a corrected derived file is materialized rather than mutating the caller's
-        source file. DMS_DATASTORE=mssql alone is treated as a partial hand-authored env and
-        the overlay is composed on top to fill in the missing engine keys.
+        Idempotency guard: when the base file already carries every non-blank key from the current
+        .env.mssql overlay, with both datastore discriminators set to mssql, the base file is
+        returned unchanged instead of composing a derived-of-derived file. Reading the required
+        key set from the overlay keeps this proof current when the overlay gains a new engine-owned
+        setting. If DATABASE_TEMPLATE_PACKAGE still carries a stale PostgreSql engine token, a
+        corrected derived file is materialized rather than mutating the caller's source file.
+
+        A partial hand-authored MSSQL env is completed from the overlay. Non-blank custom MSSQL
+        credentials, database names, ports, and connection strings already present in that file are
+        preserved, while DMS_DATASTORE and DMS_CONFIG_DATASTORE are forced to mssql.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -816,19 +818,30 @@ function Resolve-DatabaseEngineEnvironmentFile {
     $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).mssql"
     $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
 
+    $overlayPath = Join-Path $DockerComposeRoot ".env.mssql"
+    if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
+        throw "Resolve-DatabaseEngineEnvironmentFile: no MSSQL engine overlay found (expected '$overlayPath')."
+    }
+
     $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
+    $overlayValues = ReadValuesFromEnvFile $overlayPath
     $templatePackage = Get-EnvValue -EnvValues $baseValues -Name "DATABASE_TEMPLATE_PACKAGE"
     $correctedTemplatePackage = Convert-TemplatePackageToken -PackageId $templatePackage -Engine "MsSql"
 
-    # DMS_DATASTORE=mssql alone is not proof the overlay was composed: a hand-authored partial
-    # env can carry it while missing the CMS SQL Server settings and credentials, and would then
-    # run mssql.yml with PostgreSQL-shaped CMS settings and no PostgreSQL container to fall back
-    # to. Only the full overlay signal short-circuits; a partial env falls through to overlay
-    # composition, which fills in the missing engine keys.
+    # A fixed three-key signal can become stale when .env.mssql gains another required setting.
+    # Prove that every current overlay key exists and is non-blank before treating a file as an
+    # already-composed handoff from an earlier phase.
     $overlayAlreadyComposed =
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -and
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql" -and
-        -not [string]::IsNullOrWhiteSpace((Get-EnvValue -EnvValues $baseValues -Name "MSSQL_SA_PASSWORD"))
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
+    if ($overlayAlreadyComposed) {
+        foreach ($overlayKey in $overlayValues.Keys) {
+            if ([string]::IsNullOrWhiteSpace((Get-EnvValue -EnvValues $baseValues -Name ([string]$overlayKey)))) {
+                $overlayAlreadyComposed = $false
+                break
+            }
+        }
+    }
 
     if ($overlayAlreadyComposed) {
         if ($correctedTemplatePackage -eq $templatePackage) {
@@ -843,9 +856,24 @@ function Resolve-DatabaseEngineEnvironmentFile {
         return $derivedPath
     }
 
-    $overlayPath = Join-Path $DockerComposeRoot ".env.mssql"
-    if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
-        throw "Resolve-DatabaseEngineEnvironmentFile: no MSSQL engine overlay found (expected '$overlayPath')."
+    # Preserve caller-authored MSSQL values when completing a partial MSSQL file. The overlay still
+    # owns both engine discriminators, which prevents a contradictory partial file from routing DMS
+    # or CMS back to PostgreSQL on the single-engine stack.
+    $baseDeclaresMssql =
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
+    $keyOverrides = @{}
+    if ($baseDeclaresMssql) {
+        foreach ($overlayKey in $overlayValues.Keys) {
+            if ($overlayKey -in @("DMS_DATASTORE", "DMS_CONFIG_DATASTORE")) {
+                continue
+            }
+
+            $baseValue = Get-EnvValue -EnvValues $baseValues -Name ([string]$overlayKey)
+            if (-not [string]::IsNullOrWhiteSpace($baseValue)) {
+                $keyOverrides[[string]$overlayKey] = $baseValue
+            }
+        }
     }
 
     $composedPath = New-DataStandardDerivedEnvFile `
@@ -856,10 +884,14 @@ function Resolve-DatabaseEngineEnvironmentFile {
     # The overlay never carries DATABASE_TEMPLATE_PACKAGE (see .env.mssql's header), so the
     # composed file's value is still exactly the base file's value at this point.
     if ($correctedTemplatePackage -ne $templatePackage) {
+        $keyOverrides["DATABASE_TEMPLATE_PACKAGE"] = $correctedTemplatePackage
+    }
+
+    if ($keyOverrides.Count -gt 0) {
         Write-DerivedEnvFile `
             -BaseEnvironmentFile $composedPath `
             -TargetPath $composedPath `
-            -KeyOverrides @{ DATABASE_TEMPLATE_PACKAGE = $correctedTemplatePackage }
+            -KeyOverrides $keyOverrides
     }
 
     return $composedPath

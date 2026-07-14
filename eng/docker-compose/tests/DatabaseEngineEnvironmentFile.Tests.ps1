@@ -23,6 +23,13 @@ Describe "Test-NativeCommandWithTimeout" {
             -TimeoutSeconds 5 | Should -BeTrue
     }
 
+    It "returns false when the native command completes with a non-zero exit code" {
+        Test-NativeCommandWithTimeout `
+            -FilePath $script:pwshPath `
+            -ArgumentList @("-NoProfile", "-Command", "exit 3") `
+            -TimeoutSeconds 5 | Should -BeFalse
+    }
+
     It "returns false and terminates a native command that exceeds the timeout" {
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         $result = Test-NativeCommandWithTimeout `
@@ -54,10 +61,11 @@ Describe "Resolve-DatabaseEngineEnvironmentFile" {
         Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Value @"
 MSSQL_SA_PASSWORD=Abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
+MSSQL_PORT=1435
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DATABASE_CONNECTION_STRING=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
     }
 
@@ -78,8 +86,8 @@ DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};Use
 
         $values = ReadValuesFromEnvFile $result
         $values["DMS_DATASTORE"] | Should -Be "mssql"
-        $values["DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Be 'Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
 
         # Unrelated base lines survive the composition.
         $values["POSTGRES_DB_NAME"] | Should -Be "edfi_datamanagementservice"
@@ -100,14 +108,34 @@ DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};Use
     It "is idempotent: returns the base file unchanged when the full overlay signal is already composed" {
         # Mirrors an already-composed derived file (e.g. one the bootstrap wrapper produced and
         # forwarded to start-local-dms.ps1 via -EnvironmentFile): composing again must not
-        # produce a derived-of-derived file. The signal is the full overlay key set, not
-        # DMS_DATASTORE alone.
+        # produce a derived-of-derived file. Completeness is proved from every overlay key.
         $alreadyComposedPath = Join-Path $script:work ".env.derived"
-        Set-Content -LiteralPath $alreadyComposedPath -Value "DMS_DATASTORE=mssql`nDMS_CONFIG_DATASTORE=mssql`nMSSQL_SA_PASSWORD=Abcdefgh1!`n" -NoNewline
+        $alreadyComposedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw) +
+            "`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.MsSql.5.2.0`n"
+        Set-Content -LiteralPath $alreadyComposedPath -Value $alreadyComposedContent -NoNewline
 
         $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $alreadyComposedPath -DockerComposeRoot $script:composeRoot
 
         $result | Should -Be $alreadyComposedPath
+    }
+
+    It "does not treat the former three-key signal as a complete MSSQL overlay" {
+        $partialPath = Join-Path $script:work ".env.former-signal"
+        Set-Content -LiteralPath $partialPath -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_SA_PASSWORD=CustomSecret1!
+"@ -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
+
+        $result | Should -Not -Be $partialPath
+        $values = ReadValuesFromEnvFile $result
+        $values["MSSQL_DB_NAME"] | Should -Not -BeNullOrEmpty
+        $values["MSSQL_PORT"] | Should -Not -BeNullOrEmpty
+        $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -BeNullOrEmpty
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Not -BeNullOrEmpty
+        $values["MSSQL_SA_PASSWORD"] | Should -Be "CustomSecret1!" -Because "a valid caller override must survive completion"
     }
 
     It "composes the overlay onto a partial env carrying DMS_DATASTORE=mssql without the full overlay signal" {
@@ -124,6 +152,49 @@ DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};Use
         $values["DMS_DATASTORE"] | Should -Be "mssql"
         $values["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
         $values["MSSQL_SA_PASSWORD"] | Should -Not -BeNullOrEmpty
+    }
+
+    It "fills missing MSSQL keys without clobbering valid custom MSSQL values" {
+        $partialPath = Join-Path $script:work ".env.partial-custom"
+        Set-Content -LiteralPath $partialPath -Value @"
+DMS_DATASTORE=mssql
+MSSQL_SA_PASSWORD=CustomSecret1!
+MSSQL_DB_NAME=custom_database
+MSSQL_PORT=1999
+CUSTOM_KEY=preserved
+"@ -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
+        $values = ReadValuesFromEnvFile $result
+
+        $values["DMS_DATASTORE"] | Should -Be "mssql"
+        $values["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        $values["MSSQL_SA_PASSWORD"] | Should -Be "CustomSecret1!"
+        $values["MSSQL_DB_NAME"] | Should -Be "custom_database"
+        $values["MSSQL_PORT"] | Should -Be "1999"
+        $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -BeNullOrEmpty
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Not -BeNullOrEmpty
+        $values["CUSTOM_KEY"] | Should -Be "preserved"
+    }
+
+    It "requires every current overlay key before short-circuiting composition" {
+        $overlayPath = Join-Path $script:composeRoot ".env.mssql"
+        $overlayValues = ReadValuesFromEnvFile $overlayPath
+        $overlayLines = @(Get-Content -LiteralPath $overlayPath)
+
+        foreach ($missingKey in $overlayValues.Keys) {
+            $partialPath = Join-Path $script:work ".env.missing-$missingKey"
+            $partialLines = @($overlayLines | Where-Object { $_ -notmatch "^$([regex]::Escape([string]$missingKey))=" })
+            Set-Content -LiteralPath $partialPath -Value (($partialLines -join "`n") + "`n") -NoNewline
+
+            $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
+            $result | Should -Not -Be $partialPath -Because "missing overlay key '$missingKey' must force completion"
+
+            $values = ReadValuesFromEnvFile $result
+            foreach ($requiredKey in $overlayValues.Keys) {
+                $values[[string]$requiredKey] | Should -Not -BeNullOrEmpty -Because "composition must restore required key '$requiredKey'"
+            }
+        }
     }
 
     It "fails fast when no .env.mssql overlay exists at the docker-compose root" {

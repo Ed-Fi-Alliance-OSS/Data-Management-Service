@@ -28,8 +28,10 @@
     staged the wrapper stages standard mode from the effective env's SCHEMA_PACKAGES value (core
     plus any listed extensions; the catalog-pinned core-only default applies only when the env
     carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
-    its recorded package identity still matches the effective SCHEMA_PACKAGES value - otherwise
-    it is re-staged; expert `-ApiSchemaPath` workspaces are reused as-is. There is no
+    its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
+    stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
+    remove `eng/docker-compose/.bootstrap`; guarded automatic replacement belongs to DMS-1271.
+    Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
     `-Extensions` parameter; custom or unpublished schema sets are staged via expert
     `-ApiSchemaPath` before invoking the wrapper. All staging is delegated to
     `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.

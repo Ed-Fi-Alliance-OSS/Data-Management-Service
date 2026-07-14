@@ -1040,6 +1040,62 @@ function Build-TemplateNuGetPackage {
     Build-NuGetPackage -PackageVersion $PackageVersion -Config $config -BackupDirectory './'
 }
 
+function Add-TemplateDataStore {
+    <#
+    .SYNOPSIS
+        Registers the template build's target data store when the Configuration Service has none.
+
+    .DESCRIPTION
+        Add-DataStore retains a mandatory PostgreSQL credential for backward compatibility, even
+        when a caller supplies a complete connection string for another engine. This helper keeps
+        that compatibility detail in one place while ensuring an MSSQL template build registers an
+        MSSQL connection string instead of silently falling back to the PostgreSQL defaults.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$CmsUrl,
+
+        [Parameter(Mandatory)]
+        [string]$AccessToken,
+
+        [Parameter(Mandatory)]
+        [string]$DatabaseName,
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [Parameter(Mandatory)]
+        [string]$PostgresPassword,
+
+        [Parameter(Mandatory)]
+        [string]$MssqlPassword
+    )
+
+    # Add-DataStore requires this credential even when -ConnectionString supplies the actual
+    # MSSQL target. It remains the real credential on the PostgreSQL path.
+    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
+    $dataStoreParameters = @{
+        CmsUrl              = $CmsUrl
+        AccessToken         = $AccessToken
+        PostgresCredential  = $postgresCredential
+        PostgresDbName      = $DatabaseName
+    }
+
+    if ($DatabaseEngine -eq "mssql") {
+        $dataStoreParameters.ConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine "mssql" `
+            -DbHost "dms-mssql" `
+            -Port 1433 `
+            -Username "sa" `
+            -Password $MssqlPassword `
+            -DatabaseName $DatabaseName
+    }
+
+    return Add-DataStore @dataStoreParameters
+}
+
 <#
 .SYNOPSIS
     Extracts the distinct education organization ids defined in a populated sample data set.
@@ -1322,8 +1378,13 @@ function Build-Template {
         -RequestedDataStoreId ($PSBoundParameters.ContainsKey('DataStoreId') ? $DataStoreId : $null) `
         -DatabaseNameBound ($PSBoundParameters.ContainsKey('DataStoreDatabaseName'))
     if ($null -eq $targetDataStoreId) {
-        $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
-        $targetDataStoreId = Add-DataStore -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresCredential $postgresCredential -PostgresDbName $DataStoreDatabaseName
+        $targetDataStoreId = Add-TemplateDataStore `
+            -CmsUrl $CmsUrl `
+            -AccessToken $cmsToken `
+            -DatabaseName $DataStoreDatabaseName `
+            -DatabaseEngine $DatabaseEngine `
+            -PostgresPassword $PostgresPassword `
+            -MssqlPassword $MssqlPassword
     }
 
     # Create Bootstrap application and assign to the data store

@@ -2777,19 +2777,35 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
                 return right after the infrastructure phase (mirrors BootstrapSeedDelivery.Tests.ps1's
                 "wrapper opt-in" fixtures).
                 #>
+                param(
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScript = "bootstrap-local-dms.ps1"
+                )
+
+                $startScriptName = if ($WrapperEntryScript -eq "bootstrap-local-dms.ps1") {
+                    "start-local-dms.ps1"
+                }
+                else {
+                    "start-published-dms.ps1"
+                }
+
                 $repoRoot = script:New-TestDirectory
                 $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
                 New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
 
                 foreach ($fileName in @(
                     "bootstrap-wrapper.psm1",
-                    "bootstrap-local-dms.ps1",
+                    $WrapperEntryScript,
+                    "bootstrap-schema-catalog.psm1",
                     "env-utility.psm1",
                     ".env.bootstrap.ds52",
                     ".env.bootstrap.ds61"
                 )) {
                     Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
                 }
+                Copy-Item `
+                    -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
+                    -Destination (Join-Path $repoRoot "eng/schema-package-utility.psm1")
 
                 $envFile = Join-Path $dockerComposeRoot ".env.example"
                 @"
@@ -2802,9 +2818,8 @@ DMS_CONFIG_IDENTITY_PROVIDER=self-contained
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
-                # The stub is a no-op: it just records the -EnvironmentFile argument it was invoked
-                # with, so the specs below can prove whether the wrapper re-invokes
-                # prepare-dms-schema.ps1 on a stale manifest.
+                # These stubs only record calls. Mismatch tests assert that neither schema
+                # preparation nor infrastructure startup is reached.
                 $prepareSchemaCallLog = Join-Path $repoRoot "prepare-schema-calls.txt"
                 @"
 param(
@@ -2817,15 +2832,19 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
                 "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)" |
                     Set-Content -LiteralPath (Join-Path $dockerComposeRoot "prepare-dms-claims.ps1") -Encoding utf8
 
-                "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)" |
-                    Set-Content -LiteralPath (Join-Path $dockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+                $startCallLog = Join-Path $repoRoot "start-calls.txt"
+                @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$startCallLog' -Value "start"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
 
                 return [pscustomobject]@{
                     RepoRoot             = $repoRoot
                     DockerComposeRoot    = $dockerComposeRoot
                     EnvFile              = $envFile
-                    WrapperScript        = Join-Path $dockerComposeRoot "bootstrap-local-dms.ps1"
+                    WrapperScript        = Join-Path $dockerComposeRoot $WrapperEntryScript
                     PrepareSchemaCallLog = $prepareSchemaCallLog
+                    StartCallLog         = $startCallLog
                 }
             }
 
@@ -2836,8 +2855,7 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
                 supplied schema.selectedExtensions (and, when supplied, schema.selectedPackages), plus
                 complete claims/seed sections so Test-WrapperManifestClaimsStaged reports claims already
                 staged - isolating the schema-package revalidation as the only variable under test.
-                -Malformed writes unparsable JSON instead, to exercise the "cannot confirm current,
-                re-stage" path.
+                -Malformed writes unparsable JSON instead, exercising the fail-fast cleanup path.
                 #>
                 param(
                     [Parameter(Mandatory)]
@@ -2888,76 +2906,6 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
             }
         }
 
-        It "reuses the staged workspace when selectedExtensions already match the effective SCHEMA_PACKAGES" {
-            $fixture = script:New-WrapperRevalidationFixture
-            try {
-                # The DS 5.2 default bootstrap overlay (.env.bootstrap.ds52) composes to
-                # core + TPDM, so a manifest already recording "tpdm" is current. No
-                # selectedPackages is recorded (a workspace staged before that field existed),
-                # pinning the extension-identity fallback tier.
-                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -SelectedExtensions @("tpdm") |
-                    Out-Null
-
-                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
-
-                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
-                    Should -BeFalse -Because "a manifest whose selectedExtensions already match the effective SCHEMA_PACKAGES must be reused as-is"
-            }
-            finally {
-                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It "re-stages via prepare-dms-schema.ps1 -EnvironmentFile when selectedExtensions no longer match the effective SCHEMA_PACKAGES" {
-            $fixture = script:New-WrapperRevalidationFixture
-            try {
-                # DS 5.2 default composes to core + TPDM; a core-only staged manifest (e.g. left over
-                # from a DS 6.1 run) no longer matches and must be re-staged.
-                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -SelectedExtensions @() |
-                    Out-Null
-
-                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
-
-                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
-                    Should -BeTrue -Because "a staged core-only workspace no longer matches the effective SCHEMA_PACKAGES (core + TPDM)"
-
-                $capturedCall = @(Get-Content -LiteralPath $fixture.PrepareSchemaCallLog) | Select-Object -First 1
-                $capturedCall | Should -Match '^EnvironmentFile=' -Because "prepare-dms-schema.ps1 must be re-invoked with -EnvironmentFile"
-
-                $capturedEnvironmentFile = $capturedCall.Substring("EnvironmentFile=".Length)
-                Test-Path -LiteralPath $capturedEnvironmentFile |
-                    Should -BeTrue -Because "the -EnvironmentFile argument must be the effective (composed) env file"
-                (Get-Content -LiteralPath $capturedEnvironmentFile -Raw) |
-                    Should -Match "TPDM" -Because "the effective env file must be the DS 5.2 composition (core + TPDM)"
-            }
-            finally {
-                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It "re-stages when the staged package versions no longer match the effective SCHEMA_PACKAGES despite an identical extension set" {
-            $fixture = script:New-WrapperRevalidationFixture
-            try {
-                # Extension identity alone ("tpdm") still matches the DS 5.2 composition, so only
-                # the recorded package identity can expose the version drift.
-                script:New-StandardModeManifestFile `
-                    -DockerComposeRoot $fixture.DockerComposeRoot `
-                    -SelectedExtensions @("tpdm") `
-                    -SelectedPackages @(
-                        "EdFi.DataStandard52.ApiSchema@0.0.1",
-                        "EdFi.DataStandard52.TPDM.ApiSchema@0.0.1"
-                    ) | Out-Null
-
-                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
-
-                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
-                    Should -BeTrue -Because "a staged workspace recording different package versions than the effective SCHEMA_PACKAGES must be re-staged even though its extension set still matches"
-            }
-            finally {
-                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
         It "reuses the staged workspace when the recorded package identities match the effective SCHEMA_PACKAGES exactly" {
             $fixture = script:New-WrapperRevalidationFixture
             try {
@@ -2977,21 +2925,145 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
                     Should -BeFalse -Because "a manifest recording the exact effective package identities must be reused as-is"
+                Test-Path -LiteralPath $fixture.StartCallLog |
+                    Should -BeTrue -Because "the current workspace may proceed to infrastructure startup"
             }
             finally {
                 Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
-        It "re-stages via prepare-dms-schema.ps1 when the staged bootstrap manifest is malformed" {
+        It "stops legacy Standard manifests without selectedPackages before preparation or Docker" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*Automatic replacement*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when the staged package identities no longer match the effective package set" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @() `
+                    -SelectedPackages @("EdFi.DataStandard61.ApiSchema@1.0.333") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*does not match*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when package versions drift despite an identical extension set" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") `
+                    -SelectedPackages @(
+                        "EdFi.DataStandard52.ApiSchema@0.0.1",
+                        "EdFi.DataStandard52.TPDM.ApiSchema@0.0.1"
+                    ) | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*does not match*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when the staged bootstrap manifest is malformed" {
             $fixture = script:New-WrapperRevalidationFixture
             try {
                 script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -Malformed | Out-Null
 
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*without a complete selectedPackages identity*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "fails closed when SCHEMA_PACKAGES is present but malformed" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                $overlayPath = Join-Path $fixture.DockerComposeRoot ".env.bootstrap.ds52"
+                $overlayContent = Get-Content -LiteralPath $overlayPath -Raw
+                $overlayContent = $overlayContent -replace '(?m)^SCHEMA_PACKAGES=.*$', "SCHEMA_PACKAGES=not-json"
+                Set-Content -LiteralPath $overlayPath -Value $overlayContent -NoNewline
+
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("EdFi.DataStandard52.ApiSchema@1.0.333") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*Unable to find quoted JSON env value for 'SCHEMA_PACKAGES'*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "uses the catalog-pinned core identity when SCHEMA_PACKAGES is absent" {
+            $fixture = script:New-WrapperRevalidationFixture -WrapperEntryScript "bootstrap-published-dms.ps1"
+            try {
+                Import-Module (Join-Path $fixture.DockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+                $corePackage = Get-StandardCorePackage
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("$($corePackage.Id)@$($corePackage.Version)") | Out-Null
+
                 & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
 
-                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
-                    Should -BeTrue -Because "a malformed staged manifest cannot be confirmed current, so it must be re-staged"
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "rejects an obsolete core package when SCHEMA_PACKAGES is absent" {
+            $fixture = script:New-WrapperRevalidationFixture -WrapperEntryScript "bootstrap-published-dms.ps1"
+            try {
+                Import-Module (Join-Path $fixture.DockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+                $corePackage = Get-StandardCorePackage
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("$($corePackage.Id)@0.0.1") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*$($corePackage.Id)@$($corePackage.Version)*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
             }
             finally {
                 Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -3055,6 +3127,42 @@ Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$Envir
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "shared"
             } | Should -Throw "*MSSQL_DB_NAME*"
+        }
+
+        It "resolves a variable-referenced connection-string database before comparing" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        SHARED_DB                           = "shared"
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "fails closed when a protected database reference is undefined" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*SHARED_DB*not defined*"
+        }
+
+        It "fails closed when protected database references are cyclic" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        SHARED_DB                           = '${OTHER_DB}'
+                        OTHER_DB                            = '${SHARED_DB}'
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*cyclic*SHARED_DB*"
         }
 
         It "fails closed when a configured protected connection string has no database name" {

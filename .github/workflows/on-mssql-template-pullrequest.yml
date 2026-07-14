@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Validate MSSQL Template Packages
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/on-mssql-template-pullrequest.yml"
+      - ".github/workflows/build-minimal-template.yml"
+      - ".github/workflows/build-populated-template.yml"
+      - ".github/workflows/EdFi.Api.Minimal.Template.MsSql.yml"
+      - ".github/workflows/EdFi.Api.Populated.Template.MsSql.yml"
+      - "eng/DatabaseTemplates/**"
+      - "eng/Dms-Management.psm1"
+      - "eng/schema-package-utility.psm1"
+      - "eng/docker-compose/.env.mssql"
+      - "eng/docker-compose/.env.template*"
+      - "eng/docker-compose/env-utility.psm1"
+      - "eng/docker-compose/provision-dms-schema.ps1"
+      - "eng/docker-compose/provision-e2e-database.ps1"
+      - "eng/docker-compose/start-local-dms.ps1"
+      - "src/dms/EdFi.DataManagementService.Backend.Mssql/**"
+      - "src/dms/EdFi.DataManagementService.Backend.SchemaTools/**"
+
+# The reusable workflows generate provenance and require the same token surface as their release
+# callers. Package publication is independently and explicitly disabled on every job below.
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+
+jobs:
+  minimal:
+    name: Minimal MSSQL ${{ matrix.standard_version }}
+    if: ${{ github.event.pull_request.head.repo.fork == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - standard_version: "5.2.0"
+            package_name: "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            environment_file: "./.env.template"
+            provenance_file: "minimal.template.mssql.pr.intoto.jsonl"
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Api.Minimal.Template.MsSql.6.1.0"
+            environment_file: "./.env.template.ds61"
+            provenance_file: "minimal.template.mssql.6.1.0.pr.intoto.jsonl"
+    uses: ./.github/workflows/build-minimal-template.yml
+    with:
+      standard_version: ${{ matrix.standard_version }}
+      package_name: ${{ matrix.package_name }}
+      manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
+      provenance_file: ${{ matrix.provenance_file }}
+      publish_package: false
+      environment_file: ${{ matrix.environment_file }}
+      database_engine: mssql
+    secrets:
+      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+      AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+
+  populated:
+    name: Populated MSSQL ${{ matrix.standard_version }}
+    if: ${{ github.event.pull_request.head.repo.fork == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - standard_version: "5.2.0"
+            package_name: "EdFi.Api.Populated.Template.MsSql.5.2.0"
+            environment_file: "./.env.template"
+            provenance_file: "populated.template.mssql.pr.intoto.jsonl"
+          - standard_version: "6.1.0"
+            package_name: "EdFi.Api.Populated.Template.MsSql.6.1.0"
+            environment_file: "./.env.template.ds61"
+            provenance_file: "populated.template.mssql.6.1.0.pr.intoto.jsonl"
+    uses: ./.github/workflows/build-populated-template.yml
+    with:
+      standard_version: ${{ matrix.standard_version }}
+      package_name: ${{ matrix.package_name }}
+      manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
+      provenance_file: ${{ matrix.provenance_file }}
+      publish_package: false
+      environment_file: ${{ matrix.environment_file }}
+      verify_restore: true
+      require_populated_data: true
+      database_engine: mssql
+    secrets:
+      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+      AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

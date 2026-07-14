@@ -899,6 +899,88 @@ Describe "Get-UserSchemaNames" {
     }
 }
 
+Describe "Add-TemplateDataStore engine dispatch" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "registers an MSSQL connection string when an MSSQL build finds no existing data store" {
+        InModuleScope Template-Management {
+            $credential = [System.Management.Automation.PSCredential]::new(
+                "postgres",
+                [System.Security.SecureString]::new()
+            )
+            Mock ConvertTo-PostgresCredential { return $credential }
+            Mock New-DataStoreConnectionString { return "mssql-connection-string" }
+            Mock Add-DataStore { return 42 }
+
+            $result = Add-TemplateDataStore `
+                -CmsUrl "http://cms" `
+                -AccessToken "cms-token" `
+                -DatabaseName "template_db" `
+                -DatabaseEngine "mssql" `
+                -PostgresPassword "pg-secret" `
+                -MssqlPassword "mssql-secret"
+
+            $result | Should -Be 42
+            Should -Invoke ConvertTo-PostgresCredential -Times 1 -Exactly -ParameterFilter {
+                $UserName -eq "postgres" -and $Secret -eq "pg-secret"
+            }
+            Should -Invoke New-DataStoreConnectionString -Times 1 -Exactly -ParameterFilter {
+                $DatabaseEngine -eq "mssql" -and
+                $DbHost -eq "dms-mssql" -and
+                $Port -eq 1433 -and
+                $Username -eq "sa" -and
+                $Password -eq "mssql-secret" -and
+                $DatabaseName -eq "template_db"
+            }
+            Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter {
+                $CmsUrl -eq "http://cms" -and
+                $AccessToken -eq "cms-token" -and
+                $PostgresCredential -eq $credential -and
+                $PostgresDbName -eq "template_db" -and
+                $ConnectionString -eq "mssql-connection-string"
+            }
+        }
+    }
+
+    It "preserves the PostgreSQL registration path when the engine is omitted" {
+        InModuleScope Template-Management {
+            $credential = [System.Management.Automation.PSCredential]::new(
+                "postgres",
+                [System.Security.SecureString]::new()
+            )
+            Mock ConvertTo-PostgresCredential { return $credential }
+            Mock New-DataStoreConnectionString { throw "PostgreSQL registration must not build an explicit MSSQL connection string." }
+            Mock Add-DataStore { return 84 }
+
+            $result = Add-TemplateDataStore `
+                -CmsUrl "http://cms" `
+                -AccessToken "cms-token" `
+                -DatabaseName "template_db" `
+                -PostgresPassword "pg-secret" `
+                -MssqlPassword "unused"
+
+            $result | Should -Be 84
+            Should -Invoke New-DataStoreConnectionString -Times 0 -Exactly
+            Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter {
+                $CmsUrl -eq "http://cms" -and
+                $AccessToken -eq "cms-token" -and
+                $PostgresCredential -eq $credential -and
+                $PostgresDbName -eq "template_db" -and
+                [string]::IsNullOrWhiteSpace($ConnectionString)
+            }
+        }
+    }
+}
+
 Describe "Build-TemplateNuGetPackage package identity derivation" {
     BeforeAll {
         # Package identity derivation (engine token + artifact extension substitution) is internal

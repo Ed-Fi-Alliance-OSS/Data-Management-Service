@@ -192,7 +192,8 @@ function Assert-SafeDatabaseName {
 function Resolve-EnvironmentValueReference {
     param(
         [string]$Value,
-        [hashtable]$EnvironmentValues
+        [hashtable]$EnvironmentValues,
+        [System.Collections.Generic.HashSet[string]]$VisitedKeys
     )
 
     $Value = ConvertFrom-ComposeEnvironmentValue -Value $Value
@@ -207,13 +208,32 @@ function Resolve-EnvironmentValueReference {
         return $Value
     }
 
-    $resolvedValue = [string]$EnvironmentValues[$match.Groups["key"].Value]
-
-    if ([string]::IsNullOrWhiteSpace($resolvedValue)) {
-        return $Value
+    $referencedKey = $match.Groups["key"].Value
+    if (-not $EnvironmentValues.ContainsKey($referencedKey)) {
+        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is not defined."
     }
 
-    return ConvertFrom-ComposeEnvironmentValue -Value $resolvedValue
+    $resolvedValue = [string]$EnvironmentValues[$referencedKey]
+    if ([string]::IsNullOrWhiteSpace($resolvedValue)) {
+        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is blank."
+    }
+
+    if ($null -eq $VisitedKeys) {
+        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
+    if (-not $VisitedKeys.Add($referencedKey)) {
+        throw "Environment value reference '$Value' is cyclic at '$referencedKey'."
+    }
+
+    try {
+        return Resolve-EnvironmentValueReference `
+            -Value $resolvedValue `
+            -EnvironmentValues $EnvironmentValues `
+            -VisitedKeys $VisitedKeys
+    }
+    finally {
+        $null = $VisitedKeys.Remove($referencedKey)
+    }
 }
 
 function Get-DatabaseNameFromConnectionString {

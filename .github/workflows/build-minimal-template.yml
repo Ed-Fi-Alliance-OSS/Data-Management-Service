@@ -92,33 +92,26 @@ jobs:
       hash-code: ${{ steps.hash-code.outputs.hash-code }}
       dms-version: ${{ steps.versions.outputs.dms-v }}
     steps:
-      - name: Validate workflow inputs
-        env:
-          DATABASE_ENGINE: ${{ inputs.database_engine }}
-          PACKAGE_NAME: ${{ inputs.package_name }}
-        run: |
-          $databaseEngine = $env:DATABASE_ENGINE
-          $packageName = $env:PACKAGE_NAME
-
-          $databaseEngines = @('postgresql', 'mssql')
-          if ($databaseEngine -notin $databaseEngines) {
-            throw "database_engine must be one of: $($databaseEngines -join ', '); got '$databaseEngine'."
-          }
-
-          # Minimal template package names are engine-dependent so a build cannot silently
-          # publish an MSSQL dump under the PostgreSQL product name, or vice versa.
-          $expectedPackagePrefix = if ($databaseEngine -eq 'mssql') { 'EdFi.Api.Minimal.Template.MsSql' } else { 'EdFi.Api.Minimal.Template.PostgreSql' }
-          # Anchored to prefix + dotted numeric version: a prefix-only -like check lets a
-          # malformed name (e.g. an engine token with trailing junk) pass here and fail much
-          # later during artifact/SBOM lookup.
-          if ($packageName -notmatch "^$([regex]::Escape($expectedPackagePrefix))\.\d+(\.\d+)+$") {
-            throw "database_engine '$databaseEngine' requires a package_name of the form '$expectedPackagePrefix.<version>'; got '$packageName'."
-          }
-
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+
+      - name: Validate workflow inputs
+        env:
+          STANDARD_VERSION: ${{ inputs.standard_version }}
+          DATABASE_ENGINE: ${{ inputs.database_engine }}
+          PACKAGE_NAME: ${{ inputs.package_name }}
+          TEMPLATE_ENV_PATH: ${{ inputs.environment_file }}
+          PUBLISH_PACKAGE: ${{ inputs.publish_package }}
+        run: |
+          ./eng/DatabaseTemplates/Assert-TemplateWorkflowInputs.ps1 `
+            -WorkflowKind Minimal `
+            -StandardVersion $env:STANDARD_VERSION `
+            -PackageName $env:PACKAGE_NAME `
+            -EnvironmentFile $env:TEMPLATE_ENV_PATH `
+            -DatabaseEngine $env:DATABASE_ENGINE `
+            -PublishPackage ([bool]::Parse($env:PUBLISH_PACKAGE))
 
       - name: Checkout Ed-Fi-Data-Standard
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

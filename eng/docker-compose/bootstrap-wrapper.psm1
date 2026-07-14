@@ -180,22 +180,20 @@ function Get-WrapperManifestSchemaIdentity {
             return $null
         }
 
-        # $null here (rather than an empty array) means the property is absent entirely, so
-        # Test-WrapperManifestSchemaPackagesCurrent can tell "no extensions recorded, nothing to
-        # compare" apart from "recorded as an explicit empty set". The assignment is split into
-        # its own statement (rather than the branch value of an if/else expression) because
-        # PowerShell flattens an empty-array branch value of a captured if/else expression to
-        # $null; a plain `$selectedExtensions = @(...)` assignment does not.
+        # $null here (rather than an empty array) means the property is absent entirely. Extensions
+        # remain useful diagnostics, but Standard-mode reuse is decided from selectedPackages so a
+        # core-only package/version switch cannot pass through two matching empty extension sets.
+        # The assignment is split into its own statement because PowerShell flattens an empty-array
+        # branch value of a captured if/else expression to $null; a plain assignment does not.
         $selectedExtensionsProperty = $schemaProperty.Value.PSObject.Properties['selectedExtensions']
         $selectedExtensions = $null
         if ($null -ne $selectedExtensionsProperty -and $null -ne $selectedExtensionsProperty.Value) {
             $selectedExtensions = @($selectedExtensionsProperty.Value | ForEach-Object { [string]$_ })
         }
 
-        # Same $null-vs-empty contract as selectedExtensions above: $null means the property is
-        # absent (a workspace staged before selectedPackages was recorded, or expert mode), so the
-        # caller can fall back to the coarser extension-identity comparison instead of treating the
-        # legacy manifest as stale.
+        # Same $null-vs-empty contract as selectedExtensions above. A Standard workspace staged
+        # before selectedPackages was recorded is intentionally unverifiable and therefore stale;
+        # the caller never falls back to the coarser extension-only identity.
         $selectedPackagesProperty = $schemaProperty.Value.PSObject.Properties['selectedPackages']
         $selectedPackages = $null
         if ($null -ne $selectedPackagesProperty -and $null -ne $selectedPackagesProperty.Value) {
@@ -213,69 +211,6 @@ function Get-WrapperManifestSchemaIdentity {
     }
 }
 
-function Get-WrapperEffectiveSchemaExtension {
-    <#
-    .SYNOPSIS
-    Derives the extension identity set (lowercased project-endpoint tokens) implied by the effective
-    env file's SCHEMA_PACKAGES value, using the same core-vs-extension naming convention
-    prepare-dms-schema.ps1's SCHEMA_PACKAGES-driven staging (Invoke-SchemaPackagesModeSchemaStaging)
-    already relies on: EdFi.DataStandard<NN>.ApiSchema identifies the core package; every other
-    EdFi.DataStandard<NN>.<Extension>.ApiSchema entry is an extension whose endpoint token is the
-    <Extension> segment, lowercased - the same token prepare-dms-schema.ps1 records (from the staged
-    package's own declared projectEndpointName) into schema.selectedExtensions, so the two sides are
-    directly comparable without downloading or hashing anything.
-
-    A bare regex extraction (mirroring schema-package-utility.psm1's Get-QuotedEnvJson) keeps this
-    independent of that sibling module in sandboxed Pester invocations. An env file with no
-    SCHEMA_PACKAGES key, or an unparsable value, implies the catalog-pinned core-only default that
-    prepare-dms-schema.ps1 itself falls back to, so it returns an empty set rather than throwing.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [string]
-        $EnvironmentFile
-    )
-
-    $expectedExtensions = [System.Collections.Generic.List[string]]::new()
-
-    if (-not (Test-Path -LiteralPath $EnvironmentFile -PathType Leaf)) {
-        return $expectedExtensions.ToArray()
-    }
-
-    $environmentFileContent = Get-Content -LiteralPath $EnvironmentFile -Raw
-    $schemaPackagesMatch = [System.Text.RegularExpressions.Regex]::Match(
-        $environmentFileContent,
-        "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
-    )
-    if (-not $schemaPackagesMatch.Success) {
-        return $expectedExtensions.ToArray()
-    }
-
-    try {
-        $schemaPackages = @($schemaPackagesMatch.Groups["value"].Value | ConvertFrom-Json -ErrorAction Stop)
-    }
-    catch {
-        return $expectedExtensions.ToArray()
-    }
-
-    $corePackageIdPattern = '^EdFi\.DataStandard\d+\.ApiSchema$'
-    $extensionPackageIdPattern = '^EdFi\.DataStandard\d+\.(?<extension>.+)\.ApiSchema$'
-
-    foreach ($schemaPackage in $schemaPackages) {
-        $packageName = [string]$schemaPackage.name
-        if ([string]::IsNullOrWhiteSpace($packageName) -or $packageName -match $corePackageIdPattern) {
-            continue
-        }
-
-        $extensionMatch = [System.Text.RegularExpressions.Regex]::Match($packageName, $extensionPackageIdPattern)
-        if ($extensionMatch.Success) {
-            $null = $expectedExtensions.Add($extensionMatch.Groups["extension"].Value.ToLowerInvariant())
-        }
-    }
-
-    return $expectedExtensions.ToArray()
-}
-
 function Get-WrapperEffectiveSchemaPackage {
     <#
     .SYNOPSIS
@@ -286,12 +221,11 @@ function Get-WrapperEffectiveSchemaPackage {
     values as declared, and feed URLs deliberately do not participate: the same package id and
     version resolved from a different (or defaulted) feed is the same staged identity.
 
-    Returns an empty set - "no package identity derivable" - when the env file is missing, has no
-    parseable SCHEMA_PACKAGES value, or the value lists no entries. Those are the cases where
-    prepare-dms-schema.ps1 either falls back to the catalog-pinned core-only default (whose pinned
-    identity this module cannot know without loading the catalog) or fails with its own guidance,
-    so Test-WrapperManifestSchemaPackagesCurrent compares extension identity instead - mirroring
-    Get-WrapperEffectiveSchemaExtension's fallback semantics.
+    Uses schema-package-utility.psm1 for the same quoted-JSON parsing as prepare-dms-schema.ps1.
+    Missing SCHEMA_PACKAGES is the one non-error fallback: it resolves the exact catalog-pinned core
+    identity that prepare-dms-schema.ps1 stages in direct standard mode. A present but malformed or
+    empty value throws instead of becoming an empty expected set; otherwise malformed input could
+    make a core-only stale workspace look current.
     #>
     param(
         [Parameter(Mandatory)]
@@ -299,35 +233,51 @@ function Get-WrapperEffectiveSchemaPackage {
         $EnvironmentFile
     )
 
-    $expectedPackages = [System.Collections.Generic.List[string]]::new()
-
     if (-not (Test-Path -LiteralPath $EnvironmentFile -PathType Leaf)) {
-        return $expectedPackages.ToArray()
+        throw "Cannot validate staged schema packages because the effective environment file was not found: $EnvironmentFile"
     }
 
-    $environmentFileContent = Get-Content -LiteralPath $EnvironmentFile -Raw
-    $schemaPackagesMatch = [System.Text.RegularExpressions.Regex]::Match(
-        $environmentFileContent,
-        "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
-    )
-    if (-not $schemaPackagesMatch.Success) {
-        return $expectedPackages.ToArray()
+    $environmentFileContent = Get-Content -LiteralPath $EnvironmentFile -Raw -ErrorAction Stop
+    if ($environmentFileContent -notmatch "(?m)^[ \t]*SCHEMA_PACKAGES[ \t]*=") {
+        $catalogModulePath = Join-Path $PSScriptRoot "bootstrap-schema-catalog.psm1"
+        if (-not (Test-Path -LiteralPath $catalogModulePath -PathType Leaf)) {
+            throw "Cannot resolve the catalog-pinned core schema identity because '$catalogModulePath' was not found."
+        }
+
+        Import-Module $catalogModulePath -Force
+        $corePackage = Get-StandardCorePackage
+        return @("$($corePackage.Id)@$($corePackage.Version)")
     }
 
-    try {
-        $schemaPackages = @($schemaPackagesMatch.Groups["value"].Value | ConvertFrom-Json -ErrorAction Stop)
+    $schemaPackageUtilityPath = Join-Path $PSScriptRoot "../schema-package-utility.psm1"
+    if (-not (Test-Path -LiteralPath $schemaPackageUtilityPath -PathType Leaf)) {
+        throw "Cannot validate SCHEMA_PACKAGES because '$schemaPackageUtilityPath' was not found."
     }
-    catch {
-        return $expectedPackages.ToArray()
+    Import-Module $schemaPackageUtilityPath -Force
+
+    $schemaPackages = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFile)
+    $corePackageIdPattern = '^EdFi\.DataStandard\d+\.ApiSchema$'
+    $coreEntryCount = @($schemaPackages | Where-Object { ([string]$_.name) -match $corePackageIdPattern }).Count
+    if ($coreEntryCount -ne 1) {
+        throw "SCHEMA_PACKAGES in '$EnvironmentFile' must list exactly one core package (EdFi.DataStandard<NN>.ApiSchema). Found $coreEntryCount."
     }
+
+    $expectedPackages = [System.Collections.Generic.List[string]]::new()
+    $identitySet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
     foreach ($schemaPackage in $schemaPackages) {
         $packageName = [string]$schemaPackage.name
-        if ([string]::IsNullOrWhiteSpace($packageName)) {
-            continue
+        $packageVersion = [string]$schemaPackage.version
+        if ([string]::IsNullOrWhiteSpace($packageName) -or [string]::IsNullOrWhiteSpace($packageVersion)) {
+            throw "SCHEMA_PACKAGES in '$EnvironmentFile' contains an entry without both name and version."
         }
 
-        $null = $expectedPackages.Add("$packageName@$([string]$schemaPackage.version)")
+        $identity = "$packageName@$packageVersion"
+        if (-not $identitySet.Add($identity)) {
+            throw "SCHEMA_PACKAGES in '$EnvironmentFile' contains duplicate package identity '$identity'."
+        }
+
+        $null = $expectedPackages.Add($identity)
     }
 
     return $expectedPackages.ToArray()
@@ -340,39 +290,22 @@ function Test-WrapperManifestSchemaPackagesCurrent {
     matches the effective env file's SCHEMA_PACKAGES value, so the wrapper can safely reuse the
     staged schema workspace instead of re-running prepare-dms-schema.ps1.
 
-    The wrapper uses this to close a staging-reuse gap: a workspace staged for one package set (e.g.
-    a DS 6.1 core-only SCHEMA_PACKAGES value) could otherwise be reused under a later invocation
-    whose effective env now selects a different set (e.g. DS 5.2 core + TPDM, or the same set at a
-    bumped version), with no error at the decision point - the drift only surfaces downstream,
-    after full stack startup, when the database fingerprint validation rejects requests against a
-    database provisioned from the stale workspace. The comparison runs in two tiers, without
-    re-downloading or re-hashing anything:
-
-    1. Full package identity, when both sides carry it: schema.selectedPackages - the
-       "<packageId>@<version>" strings prepare-dms-schema.ps1 records for every staged package -
-       against the same identity strings derived from the effective SCHEMA_PACKAGES value. This
-       catches package-version bumps and core-package switches that leave the extension set
-       unchanged. Feed URLs do not participate (see Get-WrapperEffectiveSchemaPackage).
-    2. Extension identity, otherwise: schema.selectedExtensions - the project-endpoint tokens
-       prepare-dms-schema.ps1 records for every staged extension - against the extension identity
-       implied by the effective SCHEMA_PACKAGES package ids. This is the fallback for manifests
-       staged before selectedPackages was recorded, and for envs whose SCHEMA_PACKAGES yields no
-       package identity (the catalog-pinned core-only default, whose pinned identity this module
-       cannot know without loading the catalog).
+    Standard-mode reuse always requires the exact schema.selectedPackages identity set recorded by
+    prepare-dms-schema.ps1. This catches package-version bumps and core-package switches even when
+    both extension sets are empty. A legacy Standard manifest without selectedPackages is rejected
+    with the normal workspace-cleanup guidance; accepting it through an extension-only fallback
+    would make core-only identity unverifiable.
 
     Only schema.selectionMode "Standard" (package-backed) manifests are compared: "ApiSchemaPath"
     (expert filesystem) manifests are not driven by SCHEMA_PACKAGES at all, so forcing a comparison
     against it would treat an intentional manual/expert override as a mismatch and discard a
     hand-staged workspace that may carry custom extensions. Those are always reported as matching
     (reuse as-is), consistent with the staging block's existing "reuse an already-staged workspace
-    as-is" contract. A Standard-mode manifest that has no schema.selectedExtensions recorded at all
-    (rather than an explicit, possibly-empty array) has nothing to compare either, and is likewise
-    reported as matching.
+    as-is" contract. Any other selectionMode is invalid and is reported as not matching.
 
     A missing, empty, malformed, or unreadable manifest, or one missing schema.selectionMode, is
-    reported as "not matching" so the staging phase re-runs prepare-dms-schema.ps1, which then owns
-    the authoritative re-stage (and surfaces its own error, if any) - mirroring how
-    Test-WrapperManifestClaimsStaged treats a malformed manifest as "claims not staged".
+    reported as "not matching". When a manifest is present, the wrapper then stops before any
+    package download or Docker/CMS side effect with the workspace-removal guidance.
 
     .PARAMETER ManifestPath
     Path to the staged bootstrap-manifest.json.
@@ -395,68 +328,41 @@ function Test-WrapperManifestSchemaPackagesCurrent {
         return $false
     }
 
+    if ($manifestSchemaIdentity.SelectionMode -eq "ApiSchemaPath") {
+        return $true
+    }
     if ($manifestSchemaIdentity.SelectionMode -ne "Standard") {
-        return $true
-    }
-
-    try {
-        # Tier 1: full package identity, when both the manifest and the effective env carry it.
-        # Any recorded selectedPackages set has at least the core entry and any package-driven
-        # SCHEMA_PACKAGES value lists at least one entry, so "both non-empty" exactly captures
-        # "both sides package-driven".
-        $stagedPackages = @()
-        if ($null -ne $manifestSchemaIdentity.SelectedPackages) {
-            $stagedPackages = @($manifestSchemaIdentity.SelectedPackages)
-        }
-        $expectedPackages = @(Get-WrapperEffectiveSchemaPackage -EnvironmentFile $EnvironmentFile)
-        if ($stagedPackages.Count -gt 0 -and $expectedPackages.Count -gt 0) {
-            $stagedPackageSet = [System.Collections.Generic.HashSet[string]]::new(
-                [System.StringComparer]::OrdinalIgnoreCase
-            )
-            foreach ($stagedPackage in $stagedPackages) {
-                $null = $stagedPackageSet.Add($stagedPackage)
-            }
-            if ($stagedPackageSet.Count -ne $expectedPackages.Count) {
-                return $false
-            }
-
-            foreach ($expectedPackage in $expectedPackages) {
-                if (-not $stagedPackageSet.Contains($expectedPackage)) {
-                    return $false
-                }
-            }
-
-            return $true
-        }
-
-        # Tier 2: extension identity fallback.
-        if ($null -eq $manifestSchemaIdentity.SelectedExtensions) {
-            return $true
-        }
-
-        $stagedExtensions = [System.Collections.Generic.HashSet[string]]::new(
-            [System.StringComparer]::OrdinalIgnoreCase
-        )
-        foreach ($stagedExtension in $manifestSchemaIdentity.SelectedExtensions) {
-            $null = $stagedExtensions.Add($stagedExtension)
-        }
-
-        $expectedExtensions = @(Get-WrapperEffectiveSchemaExtension -EnvironmentFile $EnvironmentFile)
-        if ($stagedExtensions.Count -ne $expectedExtensions.Count) {
-            return $false
-        }
-
-        foreach ($expectedExtension in $expectedExtensions) {
-            if (-not $stagedExtensions.Contains($expectedExtension)) {
-                return $false
-            }
-        }
-
-        return $true
-    }
-    catch {
         return $false
     }
+
+    $stagedPackages = @()
+    if ($null -ne $manifestSchemaIdentity.SelectedPackages) {
+        $stagedPackages = @($manifestSchemaIdentity.SelectedPackages)
+    }
+    if ($stagedPackages.Count -eq 0) {
+        return $false
+    }
+
+    $expectedPackages = @(Get-WrapperEffectiveSchemaPackage -EnvironmentFile $EnvironmentFile)
+    $stagedPackageSet = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($stagedPackage in $stagedPackages) {
+        if ([string]::IsNullOrWhiteSpace([string]$stagedPackage) -or -not $stagedPackageSet.Add([string]$stagedPackage)) {
+            return $false
+        }
+    }
+    if ($stagedPackageSet.Count -ne $expectedPackages.Count) {
+        return $false
+    }
+
+    foreach ($expectedPackage in $expectedPackages) {
+        if (-not $stagedPackageSet.Contains($expectedPackage)) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Resolve-WrapperEnvironmentFilePath {
@@ -833,7 +739,8 @@ function Invoke-BootstrapWrapper {
         # unconditionally trusting a workspace that may still be bind-mounted into a running stack.
         # There is no -Extensions parameter; custom/unpublished schema sets are staged via expert
         # -ApiSchemaPath before invoking the wrapper (published extensions come from SCHEMA_PACKAGES).
-        # prepare-dms-schema.ps1 owns all validation and the rerun contract.
+        # prepare-dms-schema.ps1 owns fresh-workspace validation and staging. A package mismatch is
+        # terminal in DMS-1255; the wrapper never overwrites a possibly bind-mounted workspace.
         #
         # Claims completion is staged whenever the manifest lacks the claims/seed sections: both after a
         # fresh schema stage above, and when a pre-existing manifest carries schema but not claims/seed
@@ -849,9 +756,9 @@ function Invoke-BootstrapWrapper {
         $stagedManifestPath = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
         $stagedManifestPresent = Test-Path -LiteralPath $stagedManifestPath -PathType Leaf
 
-        # A present manifest is reused only when its recorded schema-package identity - the full
-        # "<packageId>@<version>" set when recorded, extension tokens otherwise - still matches the
-        # effective env's SCHEMA_PACKAGES value (Test-WrapperManifestSchemaPackagesCurrent).
+        # A present Standard-mode manifest is reused only when its recorded full
+        # "<packageId>@<version>" set still matches the effective env's SCHEMA_PACKAGES value
+        # (Test-WrapperManifestSchemaPackagesCurrent).
         # Without this, a workspace staged for one Data Standard / package set could be reused
         # under a later invocation whose effective env selects a different one, with no error at
         # this decision point; the drift only surfaces after full stack startup, far from the
@@ -862,29 +769,25 @@ function Invoke-BootstrapWrapper {
 
         if ($stagedManifestPresent -and -not $stagedManifestCurrent) {
             $staleSchemaIdentity = Get-WrapperManifestSchemaIdentity -ManifestPath $stagedManifestPath
-            # Split into its own statement (rather than an if/else expression branch value): PowerShell
-            # flattens an empty-array branch value of a captured if/else expression to $null.
-            $staleExtensions = @()
-            if ($null -ne $staleSchemaIdentity -and $null -ne $staleSchemaIdentity.SelectedExtensions) {
-                $staleExtensions = @($staleSchemaIdentity.SelectedExtensions)
-            }
             $stalePackages = @()
             if ($null -ne $staleSchemaIdentity -and $null -ne $staleSchemaIdentity.SelectedPackages) {
                 $stalePackages = @($staleSchemaIdentity.SelectedPackages)
             }
             $effectivePackages = @(Get-WrapperEffectiveSchemaPackage -EnvironmentFile $effectiveEnvFile)
-            # Describe each side by the identity tier the comparison actually used: full package
-            # identity when both sides carry it, extension tokens otherwise.
-            if ($stalePackages.Count -gt 0 -and $effectivePackages.Count -gt 0) {
-                $stagedDescription = "staged packages [$($stalePackages -join ', ')]"
-                $effectiveDescription = "effective SCHEMA_PACKAGES [$($effectivePackages -join ', ')]"
+            $stagedDescription = if ($stalePackages.Count -gt 0) {
+                "staged packages [$($stalePackages -join ', ')]"
             }
             else {
-                $effectiveExtensions = @(Get-WrapperEffectiveSchemaExtension -EnvironmentFile $effectiveEnvFile)
-                $stagedDescription = "staged extensions [$($staleExtensions -join ', ')]"
-                $effectiveDescription = "effective SCHEMA_PACKAGES extensions [$($effectiveExtensions -join ', ')]"
+                "a staged Standard manifest without a complete selectedPackages identity"
             }
-            Write-Information "Staged bootstrap schema workspace does not match the effective environment: $stagedDescription vs $effectiveDescription. Re-running prepare-dms-schema.ps1 -EnvironmentFile $effectiveEnvFile to re-stage (or surface its divergence guidance if the existing workspace must be removed first)." -InformationAction Continue
+            $effectiveDescription = "effective packages [$($effectivePackages -join ', ')]"
+
+            # DMS-1255 intentionally never deletes a workspace that may still be bind-mounted into
+            # a running stack. DMS-1271 owns any future guarded replacement path; it must first prove
+            # the stack is stopped, remove the ENTIRE .bootstrap tree, and regenerate schema, claims,
+            # and seed state together so a Data Standard / extension switch cannot retain stale
+            # authorization metadata.
+            throw "Staged bootstrap schema workspace does not match the effective environment: $stagedDescription vs $effectiveDescription. Automatic replacement is intentionally not performed by DMS-1255. Stop the stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v. Guarded replacement is tracked by DMS-1271 and must regenerate schema, claims, and seed state together."
         }
 
         # Reset the native exit-code sentinel before each prepare invocation (same pattern as the
@@ -892,16 +795,12 @@ function Invoke-BootstrapWrapper {
         # run no native command, so a stale nonzero $LASTEXITCODE left by an earlier command in the
         # session would otherwise make a successful staging step throw a false "failed with exit code"
         # before infrastructure starts.
-        if ((Test-Path -LiteralPath $prepareSchemaScript) -and (-not $stagedManifestPresent -or -not $stagedManifestCurrent)) {
+        if ((Test-Path -LiteralPath $prepareSchemaScript) -and -not $stagedManifestPresent) {
             $global:LASTEXITCODE = 0
             # Forward the same effective env file used by the other phases so standard-mode staging
             # can drive itself from its SCHEMA_PACKAGES value (core plus any extensions) instead of
             # the catalog-pinned core-only default. This keeps the staged workspace's effective schema
-            # hash in sync with what the DMS container entrypoint resolves from the same env file. When
-            # the staged manifest is present but stale for the effective SCHEMA_PACKAGES value,
-            # prepare-dms-schema.ps1's own divergence check throws its remove-.bootstrap guidance on a
-            # true mismatch instead of silently re-staging over a workspace that may still be
-            # bind-mounted into a running stack.
+            # hash in sync with what the DMS container entrypoint resolves from the same env file.
             & $prepareSchemaScript -EnvironmentFile $effectiveEnvFile
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                 throw "prepare-dms-schema.ps1 failed with exit code $LASTEXITCODE."

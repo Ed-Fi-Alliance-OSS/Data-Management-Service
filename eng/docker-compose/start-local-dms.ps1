@@ -133,7 +133,8 @@ param (
 
     # Start only the database container and wait for readiness, then stop. Exists for
     # diagnostics and for other tooling to sequence a database-only startup around.
-    # Mutually exclusive with -InfraOnly and -DmsOnly.
+    # Mutually exclusive with -InfraOnly, -DmsOnly, and -r/-Rebuild. Database-only mode
+    # never builds application images.
     [Switch]
     $DbOnly,
 
@@ -190,6 +191,10 @@ if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhi
     if (-not $InfraOnly) {
         throw "-DmsBaseUrl requires -InfraOnly. Use: start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>"
     }
+}
+
+if ($DbOnly -and $r) {
+    throw "Parameter -r/-Rebuild is not valid with -DbOnly. Database-only mode starts and waits for the database without building application images."
 }
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
