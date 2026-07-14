@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentValidation.Results;
@@ -14,6 +16,23 @@ internal static class FailureResults
     private static readonly string _errorDetail =
         "The request could not be processed. See 'errors' for details.";
     private static readonly string _errorContentType = "application/problem+json";
+    private static readonly JsonSerializerOptions _relaxedSerializer = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    /// <summary>
+    /// Writes a Problem Details response body directly to the HTTP response. Intended for middleware
+    /// that runs before the endpoint/DI plumbing an IResult depends on: IResult.ExecuteAsync resolves
+    /// services (ILoggerFactory, JSON options) from HttpContext.RequestServices, which may be
+    /// unavailable in early middleware. Endpoint handlers should return the IResult helpers instead.
+    /// </summary>
+    public static Task WriteAsync(HttpContext httpContext, JsonNode body, int statusCode)
+    {
+        httpContext.Response.StatusCode = statusCode;
+        httpContext.Response.ContentType = _errorContentType;
+        return httpContext.Response.WriteAsync(JsonSerializer.Serialize(body, _relaxedSerializer));
+    }
 
     public static IResult Unknown(string correlationId)
     {

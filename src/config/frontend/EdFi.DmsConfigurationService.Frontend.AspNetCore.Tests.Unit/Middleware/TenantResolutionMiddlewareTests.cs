@@ -12,7 +12,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -123,13 +122,7 @@ internal class TenantResolutionMiddlewareTests
 
         private static DefaultHttpContext CreateContext(string? tenant)
         {
-            // IResult.ExecuteAsync resolves an ILoggerFactory and JSON options from RequestServices,
-            // so error-path tests must supply a service provider (unlike the old WriteAsJsonAsync path).
-            var httpContext = new DefaultHttpContext
-            {
-                RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider(),
-                Response = { Body = new MemoryStream() },
-            };
+            var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
             if (tenant is not null)
             {
                 httpContext.Request.Headers["Tenant"] = tenant;

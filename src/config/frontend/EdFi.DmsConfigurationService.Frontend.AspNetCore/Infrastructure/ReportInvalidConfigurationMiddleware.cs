@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public class ReportInvalidConfigurationMiddleware(RequestDelegate next, List<string> errors)
@@ -16,6 +18,10 @@ public class ReportInvalidConfigurationMiddleware(RequestDelegate next, List<str
             logger.LogCritical(error);
         }
 
-        await FailureResults.Unknown(context.TraceIdentifier).ExecuteAsync(context);
+        await FailureResults.WriteAsync(
+            context,
+            FailureResponse.ForUnknown(context.TraceIdentifier),
+            StatusCodes.Status500InternalServerError
+        );
     }
 }

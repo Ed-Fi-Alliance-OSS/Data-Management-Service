@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation.Results;
@@ -55,8 +56,9 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         )
         {
             logger.LogWarning("Tenant header is missing or empty");
-            await FailureResults
-                .DataValidation(
+            await FailureResults.WriteAsync(
+                context,
+                FailureResponse.ForDataValidation(
                     [
                         new ValidationFailure(
                             TenantHeaderName,
@@ -64,8 +66,9 @@ public class TenantResolutionMiddleware(RequestDelegate next)
                         ),
                     ],
                     context.TraceIdentifier
-                )
-                .ExecuteAsync(context);
+                ),
+                StatusCodes.Status400BadRequest
+            );
             return;
         }
 
@@ -77,12 +80,14 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         if (tenantResult is TenantGetByNameResult.FailureNotFound)
         {
             logger.LogWarning("Tenant not found: {TenantName}", sanitizedTenantName);
-            await FailureResults
-                .DataValidation(
+            await FailureResults.WriteAsync(
+                context,
+                FailureResponse.ForDataValidation(
                     [new ValidationFailure(TenantHeaderName, $"Invalid tenant: {sanitizedTenantName}")],
                     context.TraceIdentifier
-                )
-                .ExecuteAsync(context);
+                ),
+                StatusCodes.Status400BadRequest
+            );
             return;
         }
 
@@ -93,7 +98,11 @@ public class TenantResolutionMiddleware(RequestDelegate next)
                 sanitizedTenantName,
                 SanitizeForLog(failure.FailureMessage)
             );
-            await FailureResults.Unknown(context.TraceIdentifier).ExecuteAsync(context);
+            await FailureResults.WriteAsync(
+                context,
+                FailureResponse.ForUnknown(context.TraceIdentifier),
+                StatusCodes.Status500InternalServerError
+            );
             return;
         }
 
@@ -117,9 +126,11 @@ public class TenantResolutionMiddleware(RequestDelegate next)
 
         // Handle unexpected result type
         logger.LogError("Unexpected tenant lookup result type: {ResultType}", tenantResult.GetType().Name);
-        await FailureResults
-            .BadRequest("Failed to validate tenant.", context.TraceIdentifier)
-            .ExecuteAsync(context);
+        await FailureResults.WriteAsync(
+            context,
+            FailureResponse.ForBadRequest("Failed to validate tenant.", context.TraceIdentifier),
+            StatusCodes.Status400BadRequest
+        );
     }
 
     /// <summary>

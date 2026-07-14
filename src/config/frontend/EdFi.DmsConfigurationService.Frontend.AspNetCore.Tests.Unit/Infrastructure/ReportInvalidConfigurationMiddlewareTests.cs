@@ -8,7 +8,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
@@ -26,11 +25,7 @@ internal class ReportInvalidConfigurationMiddlewareTests
         var errors = new List<string> { "AppSettings:Foo is required", "IdentitySettings:Bar is invalid" };
         var middleware = new ReportInvalidConfigurationMiddleware(next, errors);
 
-        var httpContext = new DefaultHttpContext
-        {
-            RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider(),
-            Response = { Body = new MemoryStream() },
-        };
+        var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
 
         // Act
         await middleware.Invoke(httpContext, logger);
