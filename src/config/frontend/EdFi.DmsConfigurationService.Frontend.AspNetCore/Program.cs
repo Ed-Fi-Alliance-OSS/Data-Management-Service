@@ -74,6 +74,17 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapRouteEndpoints();
 app.MapOpenApi();
+
+// Unmatched routes return the Ed-Fi not-found Problem Details contract instead of an empty framework
+// 404. Registered as an anonymous, lowest-priority fallback so it never affects matched routes,
+// OAuth endpoints, successful/204 responses, or authorization on secured endpoints.
+app.MapFallback(
+        (HttpContext httpContext) =>
+            FailureResults.NotFound("The requested resource was not found.", httpContext.TraceIdentifier)
+    )
+    .AllowAnonymous()
+    .ExcludeFromDescription();
+
 await app.RunAsync();
 
 /// <summary>
