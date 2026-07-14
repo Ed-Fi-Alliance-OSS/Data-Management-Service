@@ -76,11 +76,11 @@ window.EdFiRouteContext = function () {
             return;
         }
 
+        renderSelector(serverDetails.fields);
+
         state.routeOrder = serverDetails.order;
         state.urlTemplate = serverDetails.urlTemplate;
         state.selections = buildUpdatedSelections(serverDetails.fields, serverDetails.defaults);
-
-        renderSelector(serverDetails.fields);
         updateComputedUrl();
     };
 
@@ -357,6 +357,15 @@ window.EdFiRouteContext = function () {
         if (routePrefix && rewrittenUrl.includes('/data/') && !rewrittenUrl.includes('/metadata/')) {
             if (!rewrittenUrl.includes(`${routePrefix}/data/`)) {
                 rewrittenUrl = rewrittenUrl.replace(/\/data\//, `${routePrefix}/data/`);
+            }
+        }
+
+        if (routePrefix && rewrittenUrl.includes('/changeQueries/v1/')) {
+            if (!rewrittenUrl.includes(`${routePrefix}/changeQueries/v1/`)) {
+                rewrittenUrl = rewrittenUrl.replace(
+                    /\/changeQueries\/v1\//,
+                    `${routePrefix}/changeQueries/v1/`
+                );
             }
         }
 
