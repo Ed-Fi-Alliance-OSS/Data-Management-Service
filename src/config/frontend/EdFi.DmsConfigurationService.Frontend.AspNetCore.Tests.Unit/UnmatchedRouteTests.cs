@@ -13,75 +13,79 @@ using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 
-/// <summary>
-/// Verifies that an unmatched CMS route returns the complete Ed-Fi not-found Problem Details
-/// contract (written by the status-code-pages handler) rather than an empty framework 404.
-/// </summary>
 [TestFixture]
 public class UnmatchedRouteTests
 {
-    private WebApplicationFactory<Program> _factory = null!;
-    private HttpClient _client = null!;
-
-    [SetUp]
-    public void Setup()
+    /// <summary>
+    /// Verifies that an unmatched CMS route returns the complete Ed-Fi not-found Problem Details
+    /// contract (written by the status-code-pages handler) rather than an empty framework 404.
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Unmatched_Route
     {
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            builder.UseEnvironment("Test")
-        );
-        _client = _factory.CreateClient();
-    }
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
 
-    [TearDown]
-    public void TearDown()
-    {
-        _client?.Dispose();
-        _factory?.Dispose();
-    }
+        [SetUp]
+        public void Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+                builder.UseEnvironment("Test")
+            );
+            _client = _factory.CreateClient();
+        }
 
-    [Test]
-    public async Task It_returns_a_compliant_not_found_for_an_unmatched_route()
-    {
-        var response = await _client.GetAsync("/this-route-does-not-exist");
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        [Test]
+        public async Task It_returns_a_compliant_not_found_for_an_unmatched_route()
+        {
+            var response = await _client.GetAsync("/this-route-does-not-exist");
 
-        string content = await response.Content.ReadAsStringAsync();
-        var actual = JsonNode.Parse(content);
-        actual!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
 
-        var expected = JsonNode.Parse(
-            """
-            {
-              "detail": "The requested resource was not found.",
-              "type": "urn:ed-fi:api:not-found",
-              "title": "Not Found",
-              "status": 404,
-              "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": []
-            }
-            """.Replace("{correlationId}", actual!["correlationId"]!.GetValue<string>())
-        );
-        JsonNode.DeepEquals(actual, expected).Should().Be(true);
-    }
+            string content = await response.Content.ReadAsStringAsync();
+            var actual = JsonNode.Parse(content);
+            actual!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
 
-    [Test]
-    public async Task It_returns_a_compliant_not_found_for_an_unmatched_post_route()
-    {
-        var response = await _client.PostAsync(
-            "/management/not-a-real-endpoint",
-            new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
-        );
+            var expected = JsonNode.Parse(
+                """
+                {
+                  "detail": "The requested resource was not found.",
+                  "type": "urn:ed-fi:api:not-found",
+                  "title": "Not Found",
+                  "status": 404,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actual!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actual, expected).Should().Be(true);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        [Test]
+        public async Task It_returns_a_compliant_not_found_for_an_unmatched_post_route()
+        {
+            var response = await _client.PostAsync(
+                "/management/not-a-real-endpoint",
+                new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+            );
 
-        string content = await response.Content.ReadAsStringAsync();
-        var actual = JsonNode.Parse(content);
-        actual!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
-        actual["status"]!.GetValue<int>().Should().Be(404);
-        actual["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+            string content = await response.Content.ReadAsStringAsync();
+            var actual = JsonNode.Parse(content);
+            actual!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            actual["status"]!.GetValue<int>().Should().Be(404);
+            actual["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        }
     }
 }
