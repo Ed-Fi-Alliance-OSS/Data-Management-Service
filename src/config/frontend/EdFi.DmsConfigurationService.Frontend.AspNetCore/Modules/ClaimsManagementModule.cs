@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -85,49 +86,20 @@ public class ClaimsManagementModule : IEndpointModule
             }
 
             logger.LogError("Claims reload failed with {FailureCount} failures", status.Failures.Count);
-            return Results.Json(
-                new ReloadClaimsResponse(
-                    Success: false,
-                    Errors: status
-                        .Failures.Select(f => new ClaimsReloadError(
-                            ErrorType: f.FailureType,
-                            Message: f.Message
-                        ))
-                        .ToList()
-                ),
-                statusCode: 500
-            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         catch (JsonException ex)
         {
             logger.LogError(ex, "JSON error during claims reload");
-            return Results.Json(
-                new ReloadClaimsResponse(
-                    Success: false,
-                    Errors: new List<ClaimsReloadError>
-                    {
-                        new ClaimsReloadError(
-                            ErrorType: "JsonError",
-                            Message: "Invalid JSON format: " + ex.Message
-                        ),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.BadRequest(
+                "The claims source could not be parsed as valid JSON.",
+                httpContext.TraceIdentifier
             );
         }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid operation during claims reload");
-            return Results.Json(
-                new ReloadClaimsResponse(
-                    Success: false,
-                    Errors: new List<ClaimsReloadError>
-                    {
-                        new ClaimsReloadError(ErrorType: "OperationError", Message: ex.Message),
-                    }
-                ),
-                statusCode: 500
-            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
     }
 
@@ -154,19 +126,11 @@ public class ClaimsManagementModule : IEndpointModule
 
         logger.LogInformation("Claims upload requested via management endpoint");
 
-        if (request?.Claims == null)
+        if (request?.Claims is null)
         {
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(
-                            ErrorType: "ValidationError",
-                            Message: "Claims JSON is required"
-                        ),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.DataValidation(
+                [new ValidationFailure("Claims", "Claims JSON is required.")],
+                httpContext.TraceIdentifier
             );
         }
 
@@ -187,60 +151,34 @@ public class ClaimsManagementModule : IEndpointModule
             }
 
             logger.LogError("Claims upload failed with {FailureCount} failures", status.Failures.Count);
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    status
-                        .Failures.Select(f => new ClaimsUploadError(
-                            ErrorType: f.FailureType,
-                            Message: f.Message,
-                            Path: f.Path
-                        ))
-                        .ToList()
-                ),
-                statusCode: 400
+            return FailureResults.DataValidation(
+                status.Failures.Select(failure => new ValidationFailure(
+                    string.IsNullOrEmpty(failure.Path) ? failure.FailureType : failure.Path,
+                    failure.Message
+                )),
+                httpContext.TraceIdentifier
             );
         }
         catch (JsonException ex)
         {
             logger.LogError(ex, "JSON error during claims upload");
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(
-                            ErrorType: "JsonError",
-                            Message: "Invalid JSON format: " + ex.Message
-                        ),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.BadRequest(
+                "The request body could not be parsed as valid claims JSON.",
+                httpContext.TraceIdentifier
             );
         }
         catch (ArgumentException ex)
         {
             logger.LogError(ex, "Invalid argument during claims upload");
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(ErrorType: "ArgumentError", Message: ex.Message),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.BadRequest(
+                "The claims upload request was invalid.",
+                httpContext.TraceIdentifier
             );
         }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid operation during claims upload");
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(ErrorType: "OperationError", Message: ex.Message),
-                    }
-                ),
-                statusCode: 500
-            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
     }
 
@@ -293,12 +231,12 @@ public class ClaimsManagementModule : IEndpointModule
         catch (JsonException ex)
         {
             logger.LogError(ex, "JSON error while retrieving current claims");
-            return Results.Json(new { error = "JSON format error", message = ex.Message }, statusCode: 500);
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid operation while retrieving current claims");
-            return Results.Json(new { error = "Invalid operation", message = ex.Message }, statusCode: 500);
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
     }
 }

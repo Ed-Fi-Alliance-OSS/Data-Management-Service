@@ -6,8 +6,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -40,8 +42,8 @@ public abstract class ClaimsManagementModuleTests
     // A syntactically invalid (non-JWT) bearer value that the production JWT handler rejects.
     protected const string InvalidBearerToken = "not-a-valid-jwt";
 
-    private readonly IClaimsUploadService _claimsUploadService = A.Fake<IClaimsUploadService>();
-    private readonly IClaimsProvider _claimsProvider = A.Fake<IClaimsProvider>();
+    protected readonly IClaimsUploadService ClaimsUploadService = A.Fake<IClaimsUploadService>();
+    protected readonly IClaimsProvider ClaimsProvider = A.Fake<IClaimsProvider>();
 
     private WebApplicationFactory<Program> _factory = null!;
     protected HttpClient Client = null!;
@@ -86,6 +88,91 @@ public abstract class ClaimsManagementModuleTests
             )
         );
         JsonNode.DeepEquals(actual, expected).Should().Be(true);
+    }
+
+    /// <summary>
+    /// Asserts the full Ed-Fi internal-server-error contract and that the response is not the old
+    /// ad hoc { error, message } shape and does not leak an exception message.
+    /// </summary>
+    protected static async Task AssertInternalServerErrorContract(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        string content = await response.Content.ReadAsStringAsync();
+        var actual = JsonNode.Parse(content);
+        actual!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        actual["error"].Should().BeNull();
+        actual["message"].Should().BeNull();
+
+        var expected = JsonNode.Parse(
+            """
+            {
+              "detail": "",
+              "type": "urn:ed-fi:api:internal-server-error",
+              "title": "Internal Server Error",
+              "status": 500,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{correlationId}", actual!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actual, expected).Should().Be(true);
+    }
+
+    /// <summary>
+    /// Asserts the full Ed-Fi generic bad-request contract for non-data-validation 400s.
+    /// </summary>
+    protected static async Task AssertBadRequestContract(HttpResponseMessage response, string expectedDetail)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        string content = await response.Content.ReadAsStringAsync();
+        var actual = JsonNode.Parse(content);
+        actual!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+        var expected = JsonNode.Parse(
+            """
+            {
+              "detail": "{detail}",
+              "type": "urn:ed-fi:api:bad-request",
+              "title": "Bad Request",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{detail}", expectedDetail).Replace(
+                "{correlationId}",
+                actual!["correlationId"]!.GetValue<string>()
+            )
+        );
+        JsonNode.DeepEquals(actual, expected).Should().Be(true);
+    }
+
+    /// <summary>
+    /// Asserts the shared fields of the Ed-Fi data-validation contract and returns the parsed body so
+    /// the caller can assert the grouped validationErrors.
+    /// </summary>
+    protected static async Task<JsonNode> AssertDataValidationContract(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        string content = await response.Content.ReadAsStringAsync();
+        var actual = JsonNode.Parse(content)!;
+        actual["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        actual["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        actual["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+        actual["status"]!.GetValue<int>().Should().Be(400);
+        actual["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        actual["errors"]!.AsArray().Count.Should().Be(0);
+        return actual;
     }
 
     protected void ArrangeUnauthenticatedClient(bool dangerousFlagEnabled)
@@ -159,8 +246,8 @@ public abstract class ClaimsManagementModuleTests
                             AuthorizationScopePolicies.Add(options);
                         });
 
-                        collection.AddTransient(_ => _claimsUploadService);
-                        collection.AddTransient(_ => _claimsProvider);
+                        collection.AddTransient(_ => ClaimsUploadService);
+                        collection.AddTransient(_ => ClaimsProvider);
                     }
 
                     // Force the dangerous flag so the handler's inner gate is deterministic.
@@ -461,6 +548,175 @@ public abstract class ClaimsManagementModuleTests
         {
             var response = await Client.GetAsync(CurrentClaimsRoute);
             await AssertNotFoundContract(response, "Current claims endpoint is not available.");
+        }
+    }
+
+    /// <summary>
+    /// Findings 5 and 6: with the flag enabled and an authorized request, current-claims exceptions
+    /// return a compliant Ed-Fi 500 rather than ad hoc { error, message } JSON that leaks the message.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_full_access_token_the_flag_enabled_and_current_claims_throws
+        : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_returns_a_compliant_500_on_json_exception()
+        {
+            A.CallTo(() => ClaimsProvider.GetClaimsDocumentNodes())
+                .Throws(new JsonException("secret parse detail"));
+
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+
+            await AssertInternalServerErrorContract(response);
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_500_on_invalid_operation()
+        {
+            A.CallTo(() => ClaimsProvider.GetClaimsDocumentNodes())
+                .Throws(new InvalidOperationException("secret operation detail"));
+
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+
+            await AssertInternalServerErrorContract(response);
+        }
+    }
+
+    /// <summary>
+    /// With the flag enabled and an authorized request, reload-claims failure and exception branches
+    /// return the compliant Ed-Fi contract instead of custom response envelopes.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_full_access_token_and_the_flag_enabled_for_reload_claims
+        : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_returns_a_compliant_500_when_reload_reports_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
+                .Returns(new ClaimsLoadStatus(false, [new ClaimsFailure("LoadError", "source unavailable")]));
+
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+
+            await AssertInternalServerErrorContract(response);
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_400_on_json_exception()
+        {
+            A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
+                .Throws(new JsonException("secret parse detail"));
+
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+
+            await AssertBadRequestContract(response, "The claims source could not be parsed as valid JSON.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_500_on_invalid_operation()
+        {
+            A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
+                .Throws(new InvalidOperationException("secret operation detail"));
+
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+
+            await AssertInternalServerErrorContract(response);
+        }
+    }
+
+    /// <summary>
+    /// With the flag enabled and an authorized request, upload-claims error branches return the
+    /// compliant Ed-Fi contract: data-validation for missing/invalid claims, generic bad-request for
+    /// malformed input, and internal-server-error for unexpected operations.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_full_access_token_and_the_flag_enabled_for_upload_claims
+        : ClaimsManagementModuleTests
+    {
+        private static StringContent ClaimsBody() =>
+            new("""{ "claims": { "claimSets": [] } }""", Encoding.UTF8, "application/json");
+
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_returns_a_compliant_data_validation_400_when_claims_are_missing()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+
+            var body = await AssertDataValidationContract(response);
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(1);
+            validationErrors["Claims"]!.AsArray()[0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Claims JSON is required.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_data_validation_400_with_grouped_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [new ClaimsFailure("SchemaError", "Invalid claim set.", "$.claimSets[0]")]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            var body = await AssertDataValidationContract(response);
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors["$.claimSets[0]"]!.AsArray()[0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Invalid claim set.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_400_on_json_exception()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Throws(new JsonException("secret parse detail"));
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertBadRequestContract(
+                response,
+                "The request body could not be parsed as valid claims JSON."
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_400_on_argument_exception()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Throws(new ArgumentException("secret argument detail"));
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertBadRequestContract(response, "The claims upload request was invalid.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_500_on_invalid_operation()
+        {
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Throws(new InvalidOperationException("secret operation detail"));
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            await AssertInternalServerErrorContract(response);
         }
     }
 }
