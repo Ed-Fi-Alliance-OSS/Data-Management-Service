@@ -219,15 +219,85 @@ CUSTOM_KEY=preserved
         $partialPath = Join-Path $script:work ".env.partial-custom-connections"
         Set-Content -LiteralPath $partialPath -Value @"
 DMS_CONFIG_DATASTORE=mssql
+MSSQL_DB_NAME=custom_database
+CMS_DATABASE_NAME=`${MSSQL_DB_NAME}
 DATABASE_CONNECTION_STRING_ADMIN=Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=custom_database;User Id=custom;Password=secret;
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
 "@ -NoNewline
 
         $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
         $values = ReadValuesFromEnvFile $result
 
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Be "Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;"
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be "Server=custom-cms,1444;Database=custom_database;User Id=custom;Password=secret;"
+        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
+    }
+
+    It "fails fast when a fully composed MSSQL environment points CMS at a different database" {
+        $mismatchedPath = Join-Path $script:work ".env.mismatched-cms-database"
+        $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
+            Replace(
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        Set-Content -LiteralPath $mismatchedPath -Value $mismatchedContent -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $mismatchedPath `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Throw "*shared-database configuration mismatch*legacy_config*edfi_datamanagementservice*DMS-1270*"
+    }
+
+    It "resolves caller-authored CMS database references before enforcing the shared database" {
+        $mismatchedPath = Join-Path $script:work ".env.mismatched-cms-reference"
+        Set-Content -LiteralPath $mismatchedPath -Value @"
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_DB_NAME=shared_database
+CMS_DATABASE_NAME=legacy_config
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $mismatchedPath `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Throw "*shared-database configuration mismatch*legacy_config*shared_database*DMS-1270*"
+    }
+
+    It "fails fast when a caller-authored CMS MSSQL connection omits its database" {
+        $missingDatabasePath = Join-Path $script:work ".env.missing-cms-database"
+        Set-Content -LiteralPath $missingDatabasePath -Value @"
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_DB_NAME=shared_database
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;User Id=custom;Password=secret;
+"@ -NoNewline
+
+        {
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine "mssql" `
+                -BaseEnvironmentFile $missingDatabasePath `
+                -DockerComposeRoot $script:composeRoot
+        } | Should -Throw "*must include Database or Initial Catalog*shared_database*"
+    }
+
+    It "allows only an explicit database-only diagnostic caller to bypass the CMS database invariant" {
+        $mismatchedPath = Join-Path $script:work ".env.db-only-mismatched-cms"
+        $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
+            Replace(
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
+                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            )
+        Set-Content -LiteralPath $mismatchedPath -Value $mismatchedContent -NoNewline
+
+        $result = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine "mssql" `
+            -BaseEnvironmentFile $mismatchedPath `
+            -DockerComposeRoot $script:composeRoot `
+            -SkipMssqlCmsDatabaseValidation
+
+        $result | Should -Be $mismatchedPath -Because "DbOnly neither starts CMS nor initializes OpenIddict"
     }
 
     It "requires every current overlay key before short-circuiting composition" {

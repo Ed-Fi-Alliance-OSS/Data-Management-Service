@@ -166,7 +166,8 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # (a custom -EnvironmentFile still gets the overlay layered on top) and the bootstrap wrapper
 # path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
-$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
+# DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
+$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an

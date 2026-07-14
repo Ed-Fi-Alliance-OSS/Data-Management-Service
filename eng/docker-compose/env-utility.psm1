@@ -781,6 +781,111 @@ function Test-MssqlConnectionStringValue {
     )
 }
 
+function Resolve-MssqlDatabaseNameReference {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value,
+
+        [Parameter(Mandatory)]
+        [hashtable]$EnvValues,
+
+        [System.Collections.Generic.HashSet[string]]$VisitedKeys
+    )
+
+    $resolvedValue = $Value.Trim()
+    if (
+        $resolvedValue.Length -ge 2 -and
+        $resolvedValue[0] -in @("'", '"') -and
+        $resolvedValue[-1] -eq $resolvedValue[0]
+    ) {
+        $resolvedValue = $resolvedValue.Substring(1, $resolvedValue.Length - 2)
+    }
+
+    $referenceMatch = [regex]::Match($resolvedValue, '^\$\{(?<key>[A-Za-z_][A-Za-z0-9_]*)\}$')
+    if (-not $referenceMatch.Success) {
+        if ($resolvedValue -match '\$\{') {
+            throw "MSSQL database name '$resolvedValue' uses an unsupported environment expression. Use a literal name or a simple `${NAME} reference."
+        }
+
+        return $resolvedValue
+    }
+
+    $referencedKey = $referenceMatch.Groups["key"].Value
+    if (-not $EnvValues.ContainsKey($referencedKey)) {
+        throw "MSSQL database name reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is absent from the effective environment."
+    }
+
+    $referencedValue = [string]$EnvValues[$referencedKey]
+    if ([string]::IsNullOrWhiteSpace($referencedValue)) {
+        throw "MSSQL database name reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is blank."
+    }
+
+    if ($null -eq $VisitedKeys) {
+        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
+    if (-not $VisitedKeys.Add($referencedKey)) {
+        throw "MSSQL database name reference '`${$referencedKey}' is cyclic."
+    }
+
+    try {
+        return Resolve-MssqlDatabaseNameReference `
+            -Value $referencedValue `
+            -EnvValues $EnvValues `
+            -VisitedKeys $VisitedKeys
+    }
+    finally {
+        $null = $VisitedKeys.Remove($referencedKey)
+    }
+}
+
+function Assert-MssqlCmsDatabaseIsShared {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ConnectionString,
+
+        [Parameter(Mandatory)]
+        [hashtable]$EnvValues
+    )
+
+    $expectedDatabaseName = Resolve-MssqlDatabaseNameReference `
+        -Value (Get-EnvValue -EnvValues $EnvValues -Name "MSSQL_DB_NAME") `
+        -EnvValues $EnvValues
+    if ([string]::IsNullOrWhiteSpace($expectedDatabaseName)) {
+        throw "MSSQL_DB_NAME must be non-blank when preserving a caller-authored CMS MSSQL connection string."
+    }
+
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    try {
+        $builder.set_ConnectionString($ConnectionString)
+    }
+    catch {
+        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING is not a valid connection string."
+    }
+
+    $databaseValues = @(
+        foreach ($key in $builder.get_Keys()) {
+            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
+                [string]$builder.get_Item($key)
+            }
+        }
+    )
+    if ($databaseValues.Count -eq 0) {
+        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING must include Database or Initial Catalog and target MSSQL_DB_NAME ('$expectedDatabaseName')."
+    }
+
+    foreach ($databaseValue in $databaseValues) {
+        $actualDatabaseName = Resolve-MssqlDatabaseNameReference -Value $databaseValue -EnvValues $EnvValues
+        if (-not [string]::Equals(
+            $actualDatabaseName,
+            $expectedDatabaseName,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+            throw "MSSQL shared-database configuration mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets '$actualDatabaseName', but MSSQL_DB_NAME resolves to '$expectedDatabaseName'. DMS-1255 requires CMS and OpenIddict to share MSSQL_DB_NAME; align the values. Separate CMS database support is tracked by DMS-1270."
+        }
+    }
+}
+
 function Resolve-DatabaseEngineEnvironmentFile {
     <#
     .SYNOPSIS
@@ -811,8 +916,10 @@ function Resolve-DatabaseEngineEnvironmentFile {
         A partial hand-authored MSSQL env is completed from the overlay. Non-blank custom MSSQL
         credentials, database names, and ports are preserved. Connection strings are preserved only
         when they contain a SQL Server data-source keyword; PostgreSQL-shaped values inherited from
-        a partially edited base file are replaced by the MSSQL overlay. DMS_DATASTORE and
-        DMS_CONFIG_DATASTORE are always forced to mssql.
+        a partially edited base file are replaced by the MSSQL overlay. A caller-authored CMS MSSQL
+        connection string must resolve to MSSQL_DB_NAME so CMS and self-contained OpenIddict cannot
+        silently target different databases; a mismatch fails before any derived file is written.
+        DMS_DATASTORE and DMS_CONFIG_DATASTORE are always forced to mssql.
 
     .PARAMETER DatabaseEngine
         "postgresql" (default; no-op) or "mssql".
@@ -823,11 +930,17 @@ function Resolve-DatabaseEngineEnvironmentFile {
     .PARAMETER DockerComposeRoot
         Directory holding .env.mssql and the .derived output. Defaults to this module's
         directory (eng/docker-compose).
+
+    .PARAMETER SkipMssqlCmsDatabaseValidation
+        Skips the CMS/OpenIddict shared-database invariant only for a dedicated database-only
+        diagnostic startup or teardown, where neither CMS nor OpenIddict is initialized. Full-stack,
+        configure, provision, and wrapper startup flows must leave this off.
     #>
     param(
         [string]$DatabaseEngine = "postgresql",
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
-        [string]$DockerComposeRoot
+        [string]$DockerComposeRoot,
+        [switch]$SkipMssqlCmsDatabaseValidation
     )
 
     if ($DatabaseEngine -ne "mssql") {
@@ -850,6 +963,29 @@ function Resolve-DatabaseEngineEnvironmentFile {
     $overlayValues = ReadValuesFromEnvFile $overlayPath
     $templatePackage = Get-EnvValue -EnvValues $baseValues -Name "DATABASE_TEMPLATE_PACKAGE"
     $correctedTemplatePackage = Convert-TemplatePackageToken -PackageId $templatePackage -Engine "MsSql"
+    $baseDeclaresMssql =
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
+        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
+
+    if ($baseDeclaresMssql -and -not $SkipMssqlCmsDatabaseValidation) {
+        $baseCmsConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+        if (Test-MssqlConnectionStringValue -ConnectionString $baseCmsConnectionString) {
+            # Overlay values establish defaults; caller values then win, matching the actual
+            # composition order used below. Validate the resulting shared-database identity before
+            # either the idempotent return or partial-value preservation can accept this string.
+            $effectiveMssqlValues = @{}
+            foreach ($entry in $overlayValues.GetEnumerator()) {
+                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
+            }
+            foreach ($entry in $baseValues.GetEnumerator()) {
+                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
+            }
+
+            Assert-MssqlCmsDatabaseIsShared `
+                -ConnectionString $baseCmsConnectionString `
+                -EnvValues $effectiveMssqlValues
+        }
+    }
 
     # A fixed three-key signal can become stale when .env.mssql gains another required setting.
     # Prove that every current overlay key exists and is non-blank before treating a file as an
@@ -888,9 +1024,6 @@ function Resolve-DatabaseEngineEnvironmentFile {
     # Preserve caller-authored MSSQL values when completing a partial MSSQL file. Connection
     # strings require an MSSQL shape so a base file with only one edited discriminator cannot
     # retain its PostgreSQL admin/CMS targets. The overlay still owns both engine discriminators.
-    $baseDeclaresMssql =
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
-        (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
     $keyOverrides = @{}
     if ($baseDeclaresMssql) {
         foreach ($overlayKey in $overlayValues.Keys) {
