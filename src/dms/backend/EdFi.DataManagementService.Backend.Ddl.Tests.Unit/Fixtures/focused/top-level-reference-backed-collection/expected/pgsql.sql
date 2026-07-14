@@ -768,46 +768,103 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp"()
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."ProgramReference_DocumentId" IS DISTINCT FROM NEW."ProgramReference_DocumentId" OR OLD."ProgramReference_ProgramId" IS DISTINCT FROM NEW."ProgramReference_ProgramId" OR OLD."ProgramReference_ProgramName" IS DISTINCT FROM NEW."ProgramReference_ProgramName" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."School_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."School_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."ProgramReference_DocumentId" IS DISTINCT FROM o."ProgramReference_DocumentId" OR n."ProgramReference_ProgramId" IS DISTINCT FROM o."ProgramReference_ProgramId" OR n."ProgramReference_ProgramName" IS DISTINCT FROM o."ProgramReference_ProgramName" OR n."PrimaryIndicator" IS DISTINCT FROM o."PrimaryIndicator"
+        UNION
+        SELECT o."School_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."ProgramReference_DocumentId" IS DISTINCT FROM o."ProgramReference_DocumentId" OR n."ProgramReference_ProgramId" IS DISTINCT FROM o."ProgramReference_ProgramId" OR n."ProgramReference_ProgramName" IS DISTINCT FROM o."ProgramReference_ProgramName" OR n."PrimaryIndicator" IS DISTINCT FROM o."PrimaryIndicator"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."School_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolProgram_Stamp" ON "edfi"."SchoolProgram";
-CREATE TRIGGER "TR_SchoolProgram_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SchoolProgram"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolProgram_Stamp_ins" ON "edfi"."SchoolProgram";
+CREATE TRIGGER "TR_SchoolProgram_Stamp_ins"
+AFTER INSERT ON "edfi"."SchoolProgram"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp_ins"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolProgram_Stamp_upd" ON "edfi"."SchoolProgram";
+CREATE TRIGGER "TR_SchoolProgram_Stamp_upd"
+AFTER UPDATE ON "edfi"."SchoolProgram"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolProgram_Stamp_del" ON "edfi"."SchoolProgram";
+CREATE TRIGGER "TR_SchoolProgram_Stamp_del"
+AFTER DELETE ON "edfi"."SchoolProgram"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolProgram_Stamp_del"();
 
 -- ==========================================================
 -- Phase 7: Seed Data (insert-if-missing + validation)
