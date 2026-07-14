@@ -12,6 +12,12 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 /// <summary>
 /// Middleware that handles OpenIddict-specific errors and converts them to proper OAuth 2.0/OpenID Connect error responses
 /// </summary>
+/// <remarks>
+/// These responses intentionally use the OAuth 2.0 / OpenID Connect error format
+/// (the { error, error_description } shape, e.g. RFC 6749 section 5.2) rather than the Ed-Fi Problem
+/// Details contract. Preserving the protocol-standard shape on the OAuth/OIDC endpoints is a
+/// product-approved exception so that standards-compliant OAuth clients can parse these errors.
+/// </remarks>
 public class OpenIddictErrorHandlingMiddleware
 {
     private readonly RequestDelegate _next;

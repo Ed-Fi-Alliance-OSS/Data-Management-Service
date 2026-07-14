@@ -24,6 +24,17 @@ using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
+/// <summary>
+/// Endpoints for OAuth 2.0 / OpenID Connect: client registration plus the token, introspection, and
+/// revocation endpoints.
+/// </summary>
+/// <remarks>
+/// The token, introspection, and revocation endpoints return OAuth 2.0 / OpenID Connect standard
+/// error responses (the { error, error_description } shape, e.g. RFC 6749 section 5.2) rather than
+/// the Ed-Fi Problem Details contract. Preserving these protocol-standard error shapes is a
+/// product-approved exception so that standards-compliant OAuth clients can parse the responses.
+/// The /connect/register endpoint is not an OAuth protocol endpoint and returns the Ed-Fi contract.
+/// </remarks>
 public class IdentityModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
