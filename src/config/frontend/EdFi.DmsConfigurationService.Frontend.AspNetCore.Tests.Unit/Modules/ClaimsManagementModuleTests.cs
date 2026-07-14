@@ -6,6 +6,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -53,6 +54,39 @@ public abstract class ClaimsManagementModuleTests
     }
 
     protected static StringContent EmptyJsonBody() => new("{}", Encoding.UTF8, "application/json");
+
+    /// <summary>
+    /// Asserts that a response carries the full Ed-Fi not-found Problem Details contract
+    /// (application/problem+json, type urn:ed-fi:api:not-found, non-empty correlationId, and the
+    /// empty validationErrors/errors defaults) rather than a bare framework 404.
+    /// </summary>
+    protected static async Task AssertNotFoundContract(HttpResponseMessage response, string expectedDetail)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        string content = await response.Content.ReadAsStringAsync();
+        var actual = JsonNode.Parse(content);
+        actual!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+        var expected = JsonNode.Parse(
+            """
+            {
+              "detail": "{detail}",
+              "type": "urn:ed-fi:api:not-found",
+              "title": "Not Found",
+              "status": 404,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{detail}", expectedDetail).Replace(
+                "{correlationId}",
+                actual!["correlationId"]!.GetValue<string>()
+            )
+        );
+        JsonNode.DeepEquals(actual, expected).Should().Be(true);
+    }
 
     protected void ArrangeUnauthenticatedClient(bool dangerousFlagEnabled)
     {
@@ -393,6 +427,40 @@ public abstract class ClaimsManagementModuleTests
         {
             var response = await Client.GetAsync(CurrentClaimsRoute);
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+    }
+
+    /// <summary>
+    /// With a fully authorized request and the dangerous flag disabled, each management endpoint
+    /// returns a compliant Ed-Fi not-found Problem Details response, not a bare framework 404.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_full_access_token_and_the_flag_disabled_the_disabled_response_is_compliant
+        : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: false);
+
+        [Test]
+        public async Task It_returns_a_compliant_not_found_for_reload_claims()
+        {
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+            await AssertNotFoundContract(response, "Claims reload endpoint is not available.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_not_found_for_upload_claims()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
+            await AssertNotFoundContract(response, "Claims upload endpoint is not available.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_not_found_for_current_claims()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            await AssertNotFoundContract(response, "Current claims endpoint is not available.");
         }
     }
 }

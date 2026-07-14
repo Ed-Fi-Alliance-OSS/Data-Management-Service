@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using Microsoft.Extensions.Options;
 
@@ -52,6 +53,7 @@ public class ClaimsManagementModule : IEndpointModule
         IClaimsUploadService claimsUploadService,
         IClaimsProvider claimsProvider,
         IOptions<ClaimsOptions> claimsOptions,
+        HttpContext httpContext,
         ILogger<ClaimsManagementModule> logger
     )
     {
@@ -61,7 +63,10 @@ public class ClaimsManagementModule : IEndpointModule
             logger.LogWarning(
                 "Claims reload requested but DangerouslyEnableUnrestrictedClaimsLoading is disabled"
             );
-            return Results.NotFound();
+            return FailureResults.NotFound(
+                "Claims reload endpoint is not available.",
+                httpContext.TraceIdentifier
+            );
         }
 
         logger.LogInformation("Claims reload requested via management endpoint");
@@ -131,6 +136,7 @@ public class ClaimsManagementModule : IEndpointModule
         IClaimsUploadService claimsUploadService,
         IClaimsProvider claimsProvider,
         IOptions<ClaimsOptions> claimsOptions,
+        HttpContext httpContext,
         ILogger<ClaimsManagementModule> logger
     )
     {
@@ -140,7 +146,10 @@ public class ClaimsManagementModule : IEndpointModule
             logger.LogWarning(
                 "Claims upload requested but DangerouslyEnableUnrestrictedClaimsLoading is disabled"
             );
-            return Results.NotFound();
+            return FailureResults.NotFound(
+                "Claims upload endpoint is not available.",
+                httpContext.TraceIdentifier
+            );
         }
 
         logger.LogInformation("Claims upload requested via management endpoint");
@@ -248,7 +257,10 @@ public class ClaimsManagementModule : IEndpointModule
             logger.LogWarning(
                 "Current claims requested but DangerouslyEnableUnrestrictedClaimsLoading is disabled"
             );
-            return Results.NotFound();
+            return FailureResults.NotFound(
+                "Current claims endpoint is not available.",
+                httpContext.TraceIdentifier
+            );
         }
 
         logger.LogInformation("Current claims requested via management endpoint");
