@@ -875,4 +875,146 @@ public class TokenEndpointTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
+
+    [Test]
+    public async Task When_grant_type_is_not_client_credentials()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "authorization_code"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var actualResponse = JsonNode.Parse(content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "grant_type": ["The specified grant type is not supported."]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
+}
+
+[TestFixture]
+public class IntrospectEndpointTests
+{
+    [Test]
+    public async Task When_token_is_missing_it_returns_ed_fi_data_validation()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Test")
+        );
+        using var client = factory.CreateClient();
+
+        // Act
+        var requestContent = new FormUrlEncodedContent(
+            new[] { new KeyValuePair<string, string>("token_type_hint", "access_token") }
+        );
+        var response = await client.PostAsync("/connect/introspect", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var actualResponse = JsonNode.Parse(content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "token": ["The token parameter is required."]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
+}
+
+[TestFixture]
+public class RevokeEndpointTests
+{
+    [Test]
+    public async Task When_token_is_missing_it_returns_ed_fi_data_validation()
+    {
+        // Arrange
+        var tokenManager = A.Fake<ITokenManager>();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices((collection) => collection.AddTransient((_) => tokenManager));
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var requestContent = new FormUrlEncodedContent(
+            new[] { new KeyValuePair<string, string>("token_type_hint", "access_token") }
+        );
+        var response = await client.PostAsync("/connect/revoke", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var actualResponse = JsonNode.Parse(content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "token": ["The token parameter is required."]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
 }
