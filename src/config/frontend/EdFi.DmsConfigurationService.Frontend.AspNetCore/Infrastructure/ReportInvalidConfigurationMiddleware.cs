@@ -9,14 +9,13 @@ public class ReportInvalidConfigurationMiddleware(RequestDelegate next, List<str
 {
     public RequestDelegate Next { get; } = next;
 
-    public Task Invoke(HttpContext context, ILogger<ReportInvalidConfigurationMiddleware> logger)
+    public async Task Invoke(HttpContext context, ILogger<ReportInvalidConfigurationMiddleware> logger)
     {
         foreach (var error in errors)
         {
             logger.LogCritical(error);
         }
 
-        context.Response.StatusCode = 500;
-        return Task.CompletedTask;
+        await FailureResults.Unknown(context.TraceIdentifier).ExecuteAsync(context);
     }
 }

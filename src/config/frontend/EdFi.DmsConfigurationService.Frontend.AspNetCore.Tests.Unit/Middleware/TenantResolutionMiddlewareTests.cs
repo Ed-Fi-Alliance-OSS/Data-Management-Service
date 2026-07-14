@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
@@ -11,6 +12,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -119,13 +121,35 @@ internal class TenantResolutionMiddlewareTests
             );
         }
 
+        private static DefaultHttpContext CreateContext(string? tenant)
+        {
+            // IResult.ExecuteAsync resolves an ILoggerFactory and JSON options from RequestServices,
+            // so error-path tests must supply a service provider (unlike the old WriteAsJsonAsync path).
+            var httpContext = new DefaultHttpContext
+            {
+                RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider(),
+                Response = { Body = new MemoryStream() },
+            };
+            if (tenant is not null)
+            {
+                httpContext.Request.Headers["Tenant"] = tenant;
+            }
+            return httpContext;
+        }
+
+        private static async Task<JsonNode> ReadResponseBody(HttpContext httpContext)
+        {
+            httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
+            string content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+            return JsonNode.Parse(content)!;
+        }
+
         [Test]
         public async Task It_returns_400_when_tenant_header_missing()
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
-            httpContext.Response.Body = new MemoryStream();
+            var httpContext = CreateContext(tenant: null);
 
             // Act
             await middleware.Invoke(
@@ -138,6 +162,15 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var body = await ReadResponseBody(httpContext);
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            body["validationErrors"]!["Tenant"]!.AsArray()[0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The 'Tenant' header is required when multi-tenancy is enabled.");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -146,9 +179,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Headers["Tenant"] = "";
-            httpContext.Response.Body = new MemoryStream();
+            var httpContext = CreateContext(tenant: "");
 
             // Act
             await middleware.Invoke(
@@ -161,6 +192,13 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var body = await ReadResponseBody(httpContext);
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["validationErrors"]!["Tenant"]!.AsArray()[0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The 'Tenant' header is required when multi-tenancy is enabled.");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -169,9 +207,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Headers["Tenant"] = "nonexistent-tenant";
-            httpContext.Response.Body = new MemoryStream();
+            var httpContext = CreateContext(tenant: "nonexistent-tenant");
 
             A.CallTo(() => _tenantRepository.GetTenantByName("nonexistent-tenant"))
                 .Returns(new TenantGetByNameResult.FailureNotFound());
@@ -187,17 +223,24 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var body = await ReadResponseBody(httpContext);
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            body["validationErrors"]!["Tenant"]!.AsArray()[0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Invalid tenant: nonexistent-tenant");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
         [Test]
-        public async Task It_returns_400_when_tenant_lookup_fails()
+        public async Task It_returns_a_compliant_500_when_tenant_lookup_fails()
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Headers["Tenant"] = "test-tenant";
-            httpContext.Response.Body = new MemoryStream();
+            var httpContext = CreateContext(tenant: "test-tenant");
 
             A.CallTo(() => _tenantRepository.GetTenantByName("test-tenant"))
                 .Returns(new TenantGetByNameResult.FailureUnknown("Database error"));
@@ -213,6 +256,15 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var body = await ReadResponseBody(httpContext);
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            body["status"]!.GetValue<int>().Should().Be(500);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            // The upstream failure message must not leak into the response.
+            body["error"].Should().BeNull();
+            body["message"].Should().BeNull();
+            JsonNode.DeepEquals(body["validationErrors"], new JsonObject()).Should().BeTrue();
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -281,9 +333,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Headers["Tenant"] = "malicious<script>alert('xss')</script>";
-            httpContext.Response.Body = new MemoryStream();
+            var httpContext = CreateContext(tenant: "malicious<script>alert('xss')</script>");
 
             A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored))
                 .Returns(new TenantGetByNameResult.FailureNotFound());
@@ -298,8 +348,14 @@ internal class TenantResolutionMiddlewareTests
             );
 
             // Assert
-            // The middleware should handle this gracefully without throwing
+            // The middleware should handle this gracefully without throwing, and the tenant name must
+            // be sanitized before it is echoed back in the response body.
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            var body = await ReadResponseBody(httpContext);
+            string tenantError = body["validationErrors"]!["Tenant"]!.AsArray()[0]!.GetValue<string>();
+            tenantError.Should().NotContain("<");
+            tenantError.Should().NotContain(">");
+            tenantError.Should().StartWith("Invalid tenant: ");
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
@@ -308,9 +364,7 @@ internal class TenantResolutionMiddlewareTests
         {
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Headers["Tenant"] = "test-tenant";
-            httpContext.Response.Body = new MemoryStream();
+            var httpContext = CreateContext(tenant: "test-tenant");
 
             A.CallTo(() => _tenantRepository.GetTenantByName("test-tenant"))
                 .Returns(new TenantGetByNameResult());
@@ -326,6 +380,12 @@ internal class TenantResolutionMiddlewareTests
 
             // Assert
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            httpContext.Response.ContentType.Should().Be("application/problem+json");
+            var body = await ReadResponseBody(httpContext);
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["detail"]!.GetValue<string>().Should().Be("Failed to validate tenant.");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
 
