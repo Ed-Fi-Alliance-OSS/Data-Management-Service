@@ -68,22 +68,29 @@ if (!ReportInvalidConfiguration(app))
 }
 
 app.UseExceptionHandler(o => { });
+
+// Give an unmatched-route 404 the Ed-Fi not-found Problem Details contract. This runs only when the
+// response is otherwise empty, so it never replaces bodies already produced (OAuth responses, the
+// authorization handler's 401/403, endpoint error responses) and does not change successful/204
+// responses. Only 404 is rewritten; other framework status codes (e.g. 405/415) are left intact so
+// content-type/method negotiation behavior is preserved.
+app.UseStatusCodePages(async statusCodeContext =>
+{
+    HttpContext context = statusCodeContext.HttpContext;
+    if (context.Response.StatusCode == StatusCodes.Status404NotFound)
+    {
+        await FailureResults
+            .NotFound("The requested resource was not found.", context.TraceIdentifier)
+            .ExecuteAsync(context);
+    }
+});
+
 app.UseRouting();
 app.UseCors("AllowSwaggerUI");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRouteEndpoints();
 app.MapOpenApi();
-
-// Unmatched routes return the Ed-Fi not-found Problem Details contract instead of an empty framework
-// 404. Registered as an anonymous, lowest-priority fallback so it never affects matched routes,
-// OAuth endpoints, successful/204 responses, or authorization on secured endpoints.
-app.MapFallback(
-        (HttpContext httpContext) =>
-            FailureResults.NotFound("The requested resource was not found.", httpContext.TraceIdentifier)
-    )
-    .AllowAnonymous()
-    .ExcludeFromDescription();
 
 await app.RunAsync();
 

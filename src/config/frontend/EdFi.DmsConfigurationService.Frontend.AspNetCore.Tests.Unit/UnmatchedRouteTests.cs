@@ -15,7 +15,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
 /// Verifies that an unmatched CMS route returns the complete Ed-Fi not-found Problem Details
-/// contract from the fallback endpoint rather than an empty framework 404.
+/// contract (written by the status-code-pages handler) rather than an empty framework 404.
 /// </summary>
 [TestFixture]
 public class UnmatchedRouteTests
