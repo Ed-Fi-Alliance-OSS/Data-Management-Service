@@ -183,6 +183,9 @@ public abstract class ClaimsManagementModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
 
+        // The configured authentication scheme's challenge (WWW-Authenticate) must be preserved.
+        response.Headers.WwwAuthenticate.Select(header => header.Scheme).Should().Contain("Bearer");
+
         string content = await response.Content.ReadAsStringAsync();
         var actual = JsonNode.Parse(content);
         actual!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
