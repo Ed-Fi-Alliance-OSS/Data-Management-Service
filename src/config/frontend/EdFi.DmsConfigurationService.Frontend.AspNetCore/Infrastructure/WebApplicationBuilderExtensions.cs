@@ -120,6 +120,14 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddHttpContextAccessor();
         webApplicationBuilder.Services.AddTransient<IAuditContext, AuditContext>();
 
+        // Ensure framework-generated 401/403 responses use the Ed-Fi Problem Details contract.
+        // Registered before AddAuthorization so it wins over the default handler (which is added
+        // via TryAdd) for both self-contained and Keycloak identity providers.
+        webApplicationBuilder.Services.AddSingleton<
+            IAuthorizationMiddlewareResultHandler,
+            ProblemDetailsAuthorizationMiddlewareResultHandler
+        >();
+
         Serilog.ILogger ConfigureLogging()
         {
             var logger = new LoggerConfiguration()

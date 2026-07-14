@@ -84,6 +84,18 @@ internal static class FailureResults
         );
     }
 
+    // Authentication failure with caller-supplied error messages. Unlike the identity-provider
+    // overload above, the errors are used verbatim (no prefixing or JSON parsing), so framework
+    // authentication challenges can surface a clean, specific message.
+    public static IResult Unauthorized(string[] errors, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 401
+        );
+    }
+
     public static IResult Forbidden(string detail, string correlationId)
     {
         var errors = GetIdentityErrorDetails(detail, "Forbidden");
