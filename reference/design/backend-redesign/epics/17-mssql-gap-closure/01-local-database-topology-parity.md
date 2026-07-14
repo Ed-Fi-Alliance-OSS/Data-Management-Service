@@ -27,12 +27,15 @@ scripts. The switch and effective name must be forwarded consistently by every w
 
 ## Database Creation
 
-- MSSQL keeps its guarded CMS-database creation behavior in the OpenIddict initialization path.
-- PostgreSQL gains equivalent guarded creation for the separate CMS database.
-- The PostgreSQL container initialization path must also create the separate CMS database when Keycloak mode
-  bypasses the OpenIddict setup path.
-- Document that PostgreSQL container-init changes require a fresh database volume; initialization scripts do
-  not rerun against an existing volume.
+- CMS keeps engine-neutral ownership of database creation during its normal startup deployment. The existing
+  PostgreSQL and MSSQL `EnsureDatabase` paths create a missing dedicated configuration database when Keycloak
+  mode starts CMS without running the OpenIddict initialization script first.
+- Self-contained identity is the exception because `setup-openiddict.ps1 -InitDb` runs before CMS startup and
+  must connect to the CMS database to create its key store. MSSQL keeps its guarded pre-CMS creation behavior,
+  and PostgreSQL gains the equivalent guarded creation for the selected dedicated configuration database.
+- Do not add a PostgreSQL container-entrypoint initialization script for Keycloak. It would duplicate the CMS
+  deployment path and would work only on a fresh volume, while CMS startup must remain idempotent on both fresh
+  and existing volumes.
 - Creation must be idempotent and must fail with a clear diagnostic when an existing database cannot be used.
 
 ## Coordination with Template Restore
@@ -49,10 +52,12 @@ restore targets only the DMS datastore and never the CMS database.
 - Selecting the switch points CMS at a dedicated configuration database without changing the DMS datastore
   selection.
 - PostgreSQL and MSSQL can create a missing dedicated CMS database through every supported identity-provider
-  path.
+  path: CMS deployment owns the Keycloak path, while guarded OpenIddict initialization owns the pre-CMS
+  self-contained path.
 - All four engine-by-topology cells start successfully, and CMS/DMS schemas land in the intended databases.
-- Pester coverage verifies forwarding, defaults, mutual exclusions, and target database selection.
-- README and environment-file documentation explain both modes and the PostgreSQL fresh-volume requirement.
+- Pester coverage verifies forwarding, defaults, mutual exclusions, target database selection, and the
+  identity-provider-specific creation owner without introducing a duplicate container-init path.
+- README and environment-file documentation explain both modes and their database-creation paths.
 
 ## Non-Goals
 

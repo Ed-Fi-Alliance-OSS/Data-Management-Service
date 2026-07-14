@@ -40,9 +40,13 @@ cross-cutting local and CI workflows that do not have another active home.
   `DMS-1271`, and `DMS-1279`. It remains tracked under its existing bootstrap ownership.
 - `DMS-1270` and `DMS-1271` meet at one topology seam: restore always targets a DMS datastore. In shared mode,
   restore occurs before CMS initialization touches that database; in separate mode, restore must not target
-  the CMS database.
-- `DMS-1279` separates the SQL Server 2025 runtime upgrade from the native `json` storage change. Runtime and
-  template compatibility must be established before changing generated schema.
+  the CMS database. `DMS-1271` also owns the narrow package-producer extension and consumer validation for an
+  external restore manifest; general template publication remains with `DMS-1255`.
+- `DMS-1279` separates the required SQL Server 2025 runtime upgrade from a conditional native `json` storage
+  change. A recorded defer decision does not block the runtime upgrade. Adoption applies to the optional
+  `DocumentCache` column, uses direct provider coverage unless a production cache path is separately assigned,
+  and requires reprovisioned databases/templates plus physical-type validation rather than an implicit
+  migration.
 - `DMS-1284` owns the public HTTP and Docker-stack boundary. Backend defects found there should be linked to
   their owning implementation or provider-integration story rather than absorbed into the E2E harness.
 - `DMS-1285` reuses the shared fixtures and scenario names owned by `DMS-1023`; it owns real-MSSQL write-path

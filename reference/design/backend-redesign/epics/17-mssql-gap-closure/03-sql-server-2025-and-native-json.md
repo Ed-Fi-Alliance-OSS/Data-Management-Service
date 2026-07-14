@@ -11,7 +11,9 @@ Move the supported local and CI MSSQL runtime from SQL Server 2022 to SQL Server
 evaluate changing generated `DocumentJson` columns from `nvarchar(max)` to SQL Server's native `json` type.
 
 The runtime upgrade and storage-format change are separate delivery phases. A successful runtime upgrade must
-not be blocked by a decision to defer the native-JSON transition.
+not be blocked by a decision to defer the native-JSON transition. Phase 1 is required. Phase 2 ends with a
+recorded adopt/defer decision; its implementation criteria apply only when the release-status gate chooses
+adoption. A defer decision keeps `nvarchar(max)` and links a follow-up without preventing Phase 1 completion.
 
 ## Phase 1: SQL Server 2025 Runtime
 
@@ -25,7 +27,11 @@ not be blocked by a decision to defer the native-JSON transition.
 ## Phase 2: Native `json` Storage
 
 The native `json` type is a physical storage decision behind `ISqlDialect.JsonColumnType`. Shared document
-semantics and PostgreSQL `jsonb` behavior do not change.
+semantics and PostgreSQL `jsonb` behavior do not change. Today that dialect property is used only by the
+optional `dms.DocumentCache.DocumentJson` DDL; DMS has no production cache projector or cache-backed read path.
+Ordinary resource CRUD, query, batching, and reconstitution therefore cannot prove native-JSON parameter or
+result behavior, and this story must not claim that coverage unless it also receives explicit ownership of a
+production `DocumentCache` path.
 
 Before enabling native storage:
 
@@ -35,11 +41,35 @@ Before enabling native storage:
 2. Validate the pinned `Microsoft.Data.SqlClient` version and the .NET 10 parameter-binding path. Prefer
    `SqlDbType.Json`/the provider's supported JSON surface when explicit typing is required; retain CLR `string`
    only where provider inference is intentional and covered by integration tests.
-3. Change `MssqlDialect.JsonColumnType`, regenerate provisioned-schema goldens and relational-model manifests,
-   and audit every read/write/bulk path for `nvarchar(max)` assumptions.
-4. Verify `OPENJSON`, `JSON_VALUE`, triggers, views, bulk operations, schema comparison, and reconstitution against
-   native columns.
-5. Rebuild and republish MSSQL database-template packages after the generated schema changes.
+3. Choose the executable validation boundary:
+   - without a production `DocumentCache` path, validate generated DDL and direct `DocumentCache` provider
+     round trips; or
+   - explicitly add the cache projector/read path to an owning ticket before requiring DMS CRUD/query coverage.
+4. Change `MssqlDialect.JsonColumnType`, regenerate provisioned-schema goldens and relational-model manifests,
+   and update the authoritative data-model DDL. Replace the current string-based
+   `LEFT(LTRIM(DocumentJson), 1)` object check, because native `json` does not allow implicit string conversion;
+   use a native-compatible root-object constraint such as `ISJSON(DocumentJson, OBJECT) = 1` and cover it.
+5. In direct real-SQL-Server integration tests, verify table creation, object-only validation, explicit and
+   inferred provider parameter binding, insert/select round trips, `OPENJSON`, `JSON_VALUE`, supported bulk
+   operations, schema inspection, and result materialization against the native column.
+6. Rebuild and republish MSSQL database-template packages after the generated schema changes.
+
+### Existing Database Transition
+
+SchemaTools provisioning is create-only and does not migrate an existing `nvarchar(max)` column. Runtime
+`dms.EffectiveSchema` validation also does not inspect physical column types. Native-JSON adoption therefore
+uses mandatory reprovisioning rather than an in-place migration:
+
+- Phase 1 continues to support existing SQL Server 2022-created databases with `nvarchar(max)` unchanged.
+- An environment or template may claim the native-JSON baseline only after it is recreated from newly
+  generated DDL or a newly published template package.
+- Schema/template verification must inspect the actual SQL Server column type and reject an `nvarchar(max)`
+  `DocumentJson` when native JSON is expected, with drop/reprovision guidance.
+- Do not enable a future cache writer, reader, or `SqlDbType.Json` binding path without a startup compatibility
+  gate that verifies the physical type. `EffectiveSchemaHash` alone is insufficient for this provider-specific
+  storage decision.
+- Document that there is no in-place data-preserving conversion in this story. A future production migration
+  requires its own design and tests.
 
 SQL Server 2025 uses compatibility level 170 as its default/recommended release baseline. Microsoft documents
 the native `json` type as available at all database compatibility levels, so level 170 is not a prerequisite
@@ -56,21 +86,38 @@ the mechanism that enables native JSON.
 
 ## Acceptance Criteria
 
+### Required Runtime Upgrade And Decision
+
 - All local, CI, CMS, and template workflow image pins use the selected SQL Server 2025 image.
 - Existing MSSQL lanes pass on SQL Server 2025 before generated JSON storage changes.
 - Published SQL Server 2022-built templates restore and serve data on the 2025 runtime.
-- Native JSON is enabled only after the release-status gate is satisfied and provider behavior is proven.
-- Generated DDL, goldens, manifests, and template packages consistently use the selected document-column type.
-- Provider integration tests cover create, read, update, query, bulk/batch, and reconstitution paths with native
-  JSON parameters and results.
+- The release-status and provider-capability decision is recorded as adopt or defer. A defer result keeps
+  `nvarchar(max)`, records the reason, and links follow-up work without blocking Phase 1 completion.
 - PostgreSQL behavior and generated DDL remain unchanged.
 - Documentation states the backup compatibility boundary and the reason for compatibility level 170.
+
+### Conditional Native-JSON Adoption
+
+These criteria apply only when the decision is adopt:
+
+- Generated DDL, authoritative data-model DDL, goldens, manifests, and newly built template packages use native
+  `json` consistently, including a native-compatible object-only constraint.
+- Real-SQL-Server integration tests exercise direct `DocumentCache` DDL and provider round trips for parameter
+  binding, object validation, insert/select, JSON functions, supported bulk operations, schema inspection, and
+  result materialization. DMS CRUD/query coverage is required only if a production cache path is explicitly
+  added to scope.
+- Existing databases are not silently treated as converted: native-baseline validation rejects
+  `nvarchar(max)` with reprovisioning guidance, and any future runtime cache path has a physical-type startup
+  gate.
+- Newly rebuilt Minimal and Populated MSSQL templates pass physical-type and served-data verification.
 
 ## Non-Goals
 
 - Changing the public JSON document contract.
 - Introducing JSON-specific indexes without measured query requirements.
 - Treating a preview feature as mandatory without explicit project acceptance.
+- Implementing the optional `DocumentCache` projector/read path unless separately assigned to this ticket.
+- Providing an in-place, data-preserving `nvarchar(max)`-to-`json` migration.
 - Supporting restore of SQL Server 2025-built backups on SQL Server 2022.
 
 ## Design References
