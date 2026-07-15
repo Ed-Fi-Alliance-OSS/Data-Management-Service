@@ -36,7 +36,11 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
         RejectCandidateCycles(candidates);
 
-        var cutEdges = SelectCutEdges(CollectMutableOriginsInStableOrder(context), candidates);
+        var cutEdges = SelectCutEdges(
+            CollectMutableOriginsInStableOrder(context),
+            candidates,
+            CollectImmutableAbstractOrigins(context)
+        );
 
         ApplyCutActions(context, cutEdges);
     }
@@ -48,12 +52,16 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// When a convergence has no locally safe survivor, the nearest earlier decision that assigned
     /// an action to an incoming physical FK of the same receiver is retried with its next stable
     /// survivor; a merely reachable, carrier-related, or disjoint earlier decision is never
-    /// retried. When the shared-FK choices are exhausted, derivation fails as
-    /// NoSafeSqlServerForeignKeyPruning.
+    /// retried. When neither a safe survivor nor a shared-FK retry exists, a convergence discovered
+    /// from an immutable abstract-identity origin (one with no transitively-mutable concrete
+    /// subclass) is rescued by retaining the first still-available candidate and cutting the rest:
+    /// that origin never renames the shared columns, so the cut guards a rename that cannot happen.
+    /// Otherwise derivation fails as NoSafeSqlServerForeignKeyPruning.
     /// </summary>
     internal static HashSet<PruningEdgeKey> SelectCutEdges(
         IReadOnlyList<string> origins,
-        IReadOnlyList<PruningCandidate> candidates
+        IReadOnlyList<PruningCandidate> candidates,
+        IReadOnlySet<string> immutableAbstractOrigins
     )
     {
         List<PruningDecision> decisions = [];
@@ -92,24 +100,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             if (survivorIndex >= 0)
             {
-                var survivorEdge = convergence.IncomingChoices[survivorIndex].EdgeKey;
-                var cuts = convergence
-                    .IncomingChoices.Where((_, index) => index != survivorIndex)
-                    .Select(choice => choice.EdgeKey)
-                    .ToArray();
-
-                cutEdges.UnionWith(cuts);
-                retainedEdgeCounts[survivorEdge] = retainedEdgeCounts.GetValueOrDefault(survivorEdge) + 1;
-                decisions.Add(
-                    new PruningDecision(
-                        origin,
-                        convergence.Receiver,
-                        convergence.IncomingChoices.Select(choice => choice.EdgeKey).ToArray(),
-                        survivorIndex,
-                        survivorEdge,
-                        cuts
-                    )
-                );
+                CommitSurvivor(origin, convergence, survivorIndex, cutEdges, retainedEdgeCounts, decisions);
 
                 continue;
             }
@@ -127,6 +118,20 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             if (retryIndex < 0)
             {
+                // An immutable abstract-identity origin never renames the shared columns, so a
+                // convergence discovered from it guards a rename that cannot happen. With no
+                // locally safe survivor and no earlier shared-FK decision to retry, retain the
+                // first still-available candidate and cut the rest instead of failing: fewer
+                // cascades never violate SQL Server's single-cascade-path rule, and no real update
+                // is left uncovered. Genuinely mutable origins still fail here.
+                if (immutableAbstractOrigins.Contains(origin))
+                {
+                    var rescueIndex = startIndex < convergence.IncomingChoices.Count ? startIndex : 0;
+                    CommitSurvivor(origin, convergence, rescueIndex, cutEdges, retainedEdgeCounts, decisions);
+
+                    continue;
+                }
+
                 throw BuildNoSafePruningException(origin, convergence, firstFailedCondition);
             }
 
@@ -162,6 +167,40 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 decisions.RemoveAt(index);
             }
         }
+    }
+
+    /// <summary>
+    /// Commits a convergence decision: retains the chosen survivor edge, cuts the competing
+    /// incoming edges to full-composite ON UPDATE NO ACTION, records the retained-edge count, and
+    /// appends the decision so a later convergence can retry it if it shares the same physical FK.
+    /// </summary>
+    private static void CommitSurvivor(
+        string origin,
+        ConvergenceDiscovery convergence,
+        int survivorIndex,
+        HashSet<PruningEdgeKey> cutEdges,
+        Dictionary<PruningEdgeKey, int> retainedEdgeCounts,
+        List<PruningDecision> decisions
+    )
+    {
+        var survivorEdge = convergence.IncomingChoices[survivorIndex].EdgeKey;
+        var cuts = convergence
+            .IncomingChoices.Where((_, index) => index != survivorIndex)
+            .Select(choice => choice.EdgeKey)
+            .ToArray();
+
+        cutEdges.UnionWith(cuts);
+        retainedEdgeCounts[survivorEdge] = retainedEdgeCounts.GetValueOrDefault(survivorEdge) + 1;
+        decisions.Add(
+            new PruningDecision(
+                origin,
+                convergence.Receiver,
+                convergence.IncomingChoices.Select(choice => choice.EdgeKey).ToArray(),
+                survivorIndex,
+                survivorEdge,
+                cuts
+            )
+        );
     }
 
     /// <summary>
@@ -546,6 +585,63 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
         origins.Sort(StringComparer.Ordinal);
         return origins;
+    }
+
+    /// <summary>
+    /// Collects the abstract identity origins that cannot actually rename their identity key: an
+    /// abstract identity table has no concrete subclass member whose identity is transitively
+    /// mutable. Every abstract identity table is treated as a mutable origin by
+    /// <see cref="CollectMutableOriginsInStableOrder"/> so its multi-cascade-path topology is still
+    /// pruned, but a convergence discovered from an origin in this set guards a rename that never
+    /// happens, so a cut there is always safe. Returned as formatted receiver-table names matching
+    /// the origin strings the selector walks.
+    /// </summary>
+    internal static IReadOnlySet<string> CollectImmutableAbstractOrigins(
+        RelationalModelSetBuilderContext context
+    )
+    {
+        // Abstract resources with at least one transitively-mutable concrete subclass member. Only
+        // these can seed an identity update that changes the abstract identity key.
+        HashSet<QualifiedResourceName> mutableAbstractResources = [];
+
+        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        {
+            var superclassResourceName = TryGetOptionalString(
+                resourceContext.ResourceSchema,
+                "superclassResourceName"
+            );
+
+            if (string.IsNullOrWhiteSpace(superclassResourceName))
+            {
+                continue;
+            }
+
+            if (!context.GetOrCreateResourceBuilderContext(resourceContext).TransitivelyAllowIdentityUpdates)
+            {
+                continue;
+            }
+
+            var superclassProjectName = RequireString(
+                resourceContext.ResourceSchema,
+                "superclassProjectName"
+            );
+
+            mutableAbstractResources.Add(
+                new QualifiedResourceName(superclassProjectName, superclassResourceName)
+            );
+        }
+
+        HashSet<string> immutableAbstractOrigins = new(StringComparer.Ordinal);
+
+        foreach (var abstractTable in context.AbstractIdentityTablesInNameOrder)
+        {
+            if (!mutableAbstractResources.Contains(abstractTable.AbstractResourceKey.Resource))
+            {
+                immutableAbstractOrigins.Add(FormatTable(abstractTable.TableModel.Table));
+            }
+        }
+
+        return immutableAbstractOrigins;
     }
 
     /// <summary>

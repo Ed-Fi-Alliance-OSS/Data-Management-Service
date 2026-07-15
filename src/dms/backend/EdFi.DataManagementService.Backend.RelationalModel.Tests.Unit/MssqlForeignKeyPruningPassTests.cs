@@ -1343,11 +1343,104 @@ public class Given_Mssql_Pruning_With_A_Document_Id_Dependent_Pairing
         );
 
         var act = () =>
-            MssqlForeignKeyPruningPass.SelectCutEdges(["edfi.Origin"], [upstream, viaEdge, originEdge]);
+            MssqlForeignKeyPruningPass.SelectCutEdges(
+                ["edfi.Origin"],
+                [upstream, viaEdge, originEdge],
+                new HashSet<string>()
+            );
 
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage("NoSafeSqlServerForeignKeyPruning:*DocumentId*");
+    }
+}
+
+/// <summary>
+/// An immutable abstract-identity origin (an abstract identity table whose concrete subclasses are
+/// all immutable, e.g. <c>EducationOrganizationIdentity</c> in standard Ed-Fi) is still walked so
+/// its multi-cascade-path topology is pruned, but a convergence discovered from it guards a rename
+/// that never happens. When no locally safe survivor exists — the shape that fails for a genuinely
+/// mutable origin — the selector rescues the immutable origin by retaining the first candidate and
+/// cutting the rest. This is DS 6.1 <c>Goal</c>, which references <c>EvaluationElement</c> and
+/// <c>EvaluationObjective</c> optionally while both share the education-organization canonical
+/// column.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_An_Immutable_Abstract_Origin
+{
+    private static readonly DbTableName _origin = new(new DbSchemaName("edfi"), "Origin");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    private static MssqlForeignKeyPruningPass.PruningCandidate BuildOptionalCarrier(
+        string name,
+        string documentIdColumn
+    )
+    {
+        // Two edges from the same origin into one receiver, sharing the canonical "SharedKey"
+        // local column paired to the origin's identity, each with its own optional (nullable)
+        // local reference DocumentId anchor.
+        var foreignKey = new TableConstraint.ForeignKey(
+            name,
+            [new DbColumnName("SharedKey"), new DbColumnName(documentIdColumn)],
+            _origin,
+            [new DbColumnName("OriginKey"), new DbColumnName("DocumentId")],
+            ReferentialAction.NoAction,
+            ReferentialAction.Cascade
+        );
+
+        return new MssqlForeignKeyPruningPass.PruningCandidate(
+            MssqlForeignKeyPruningPass.PruningEdgeKey.From(_receiver, foreignKey),
+            name,
+            _receiver,
+            _origin,
+            foreignKey.Columns,
+            foreignKey.Columns[^1],
+            LocalDocumentIdIsRequired: false,
+            foreignKey.TargetColumns,
+            ReferentialAction.NoAction
+        );
+    }
+
+    /// <summary>
+    /// It should fail with the required-binding diagnostic when the origin is genuinely mutable:
+    /// optional carriers supply no native coverage and DMS does not reason about presence.
+    /// </summary>
+    [Test]
+    public void It_should_fail_when_the_origin_is_mutable()
+    {
+        var first = BuildOptionalCarrier("FK_Receiver_First", "First_DocumentId");
+        var second = BuildOptionalCarrier("FK_Receiver_Second", "Second_DocumentId");
+
+        var act = () =>
+            MssqlForeignKeyPruningPass.SelectCutEdges(
+                ["edfi.Origin"],
+                [first, second],
+                new HashSet<string>()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*required binding*");
+    }
+
+    /// <summary>
+    /// It should rescue the same topology when the origin is an immutable abstract identity:
+    /// retain the first stable survivor and cut the other incoming edge to NO ACTION.
+    /// </summary>
+    [Test]
+    public void It_should_retain_the_first_survivor_and_cut_the_rest_when_the_origin_is_immutable()
+    {
+        var first = BuildOptionalCarrier("FK_Receiver_First", "First_DocumentId");
+        var second = BuildOptionalCarrier("FK_Receiver_Second", "Second_DocumentId");
+
+        var cutEdges = MssqlForeignKeyPruningPass.SelectCutEdges(
+            ["edfi.Origin"],
+            [first, second],
+            new HashSet<string> { "edfi.Origin" }
+        );
+
+        cutEdges.Should().ContainSingle().Which.Should().Be(second.EdgeKey);
+        cutEdges.Should().NotContain(first.EdgeKey);
     }
 }
 

@@ -87,6 +87,9 @@ The selector works on a directed physical multigraph after key unification:
 - An edge is directed from referenced target to referencing receiver, matching `ON UPDATE CASCADE` propagation.
 - A mutable origin is a directly mutable concrete resource root or an abstract identity maintenance update that can change
   a referenced identity key.
+- An abstract identity whose concrete subclasses are all immutable cannot change its identity key. Every abstract
+  identity is still walked so its multiple-cascade-path topology is pruned, but a convergence discovered from such an
+  origin guards a rename that never occurs.
 - A duplicate path exists when one mutable origin reaches a receiver through two retained candidate paths.
 - A convergence is the first receiver at which those paths use distinct incoming edges.
 - A survivor remains `ON UPDATE CASCADE`; competing incoming decision edges become full-composite `ON UPDATE NO ACTION`.
@@ -201,6 +204,12 @@ dependency, unless the earlier decision assigned the opposite action to that exa
 This is not a general constraint solver: DMS does not infer a decision-dependency graph, propose upstream edges,
 enumerate arbitrary graph assignments, or retry transitively related or disjoint decisions. If the directly shared
 physical-FK choices are exhausted, fail as `NoSafeSqlServerForeignKeyPruning`.
+
+One exception precedes that failure. When a convergence has no locally safe survivor and no shared-FK retry, but its
+origin is an abstract identity whose concrete subclasses are all immutable, the cut guards a rename that can never
+happen: retain the first still-available candidate and change the rest to full-composite `ON UPDATE NO ACTION`. Fewer
+retained cascades never create a multiple-cascade-path topology, and no reachable update is left uncovered. A genuinely
+mutable origin in the same shape remains unsupported and fails.
 
 Retry is permitted only to reverse an already-assigned action on the same physical FK. A survivor that merely supplies
 an upstream path or appears in a related convergence is not a retry dependency.
