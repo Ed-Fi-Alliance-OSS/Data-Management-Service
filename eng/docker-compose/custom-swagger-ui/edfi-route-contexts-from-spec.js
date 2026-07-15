@@ -343,6 +343,11 @@ window.EdFiRouteContext = function () {
         state.computedValueEl.textContent = computedUrl;
     };
 
+    const prefixUnqualifiedRuntimePath = (url, runtimePath, routePrefix) => {
+        const pattern = new RegExp(`^((?:https?:\\/\\/[^/?#]+)?)${escapeRegex(runtimePath)}`);
+        return url.replace(pattern, (_match, origin) => `${origin}${routePrefix}${runtimePath}`);
+    };
+
     const rewriteRequestUrl = (url) => {
         if (!url || typeof url !== 'string') {
             return url;
@@ -354,19 +359,12 @@ window.EdFiRouteContext = function () {
         rewrittenUrl = rewrittenUrl.replace(/:\/\/ed-fi-api-config(?=[:/]|$)/g, '://localhost');
 
         const routePrefix = buildRoutePrefix();
-        if (routePrefix && rewrittenUrl.includes('/data/') && !rewrittenUrl.includes('/metadata/')) {
-            if (!rewrittenUrl.includes(`${routePrefix}/data/`)) {
-                rewrittenUrl = rewrittenUrl.replace(/\/data\//, `${routePrefix}/data/`);
-            }
+        if (routePrefix && !rewrittenUrl.includes('/metadata/')) {
+            rewrittenUrl = prefixUnqualifiedRuntimePath(rewrittenUrl, '/data/', routePrefix);
         }
 
-        if (routePrefix && rewrittenUrl.includes('/changeQueries/v1/')) {
-            if (!rewrittenUrl.includes(`${routePrefix}/changeQueries/v1/`)) {
-                rewrittenUrl = rewrittenUrl.replace(
-                    /\/changeQueries\/v1\//,
-                    `${routePrefix}/changeQueries/v1/`
-                );
-            }
+        if (routePrefix) {
+            rewrittenUrl = prefixUnqualifiedRuntimePath(rewrittenUrl, '/changeQueries/v1/', routePrefix);
         }
 
         if (routePrefix && rewrittenUrl.includes('/connect/token')) {
