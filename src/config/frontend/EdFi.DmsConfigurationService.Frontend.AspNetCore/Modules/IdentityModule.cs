@@ -221,9 +221,18 @@ public class IdentityModule : IEndpointModule
             scope = scope,
         };
 
-        await validator.GuardAsync(model);
+        // Validate without throwing: a token-endpoint validation failure must be reported as the OAuth
+        // invalid_request error, not the Ed-Fi Problem Details contract the global exception handler
+        // produces for a thrown ValidationException.
+        var validationResult = await validator.ValidateAsync(model);
+        if (!validationResult.IsValid)
+        {
+            return OAuthErrorResults.InvalidRequest(
+                "The request is missing a required parameter or is otherwise malformed."
+            );
+        }
 
-        // Validate grant type (OAuth 2.0 compliance)
+        // Only the client_credentials grant is supported.
         if (
             !string.Equals(
                 model.grant_type,
@@ -232,14 +241,7 @@ public class IdentityModule : IEndpointModule
             )
         )
         {
-            return Results.Json(
-                new
-                {
-                    error = OpenIddictConstants.Errors.UnsupportedGrantType,
-                    error_description = "The specified grant type is not supported.",
-                },
-                statusCode: 400
-            );
+            return OAuthErrorResults.UnsupportedGrantType("The specified grant type is not supported.");
         }
 
         var tokenResult = await tokenManager.GetAccessTokenAsync([
@@ -254,28 +256,44 @@ public class IdentityModule : IEndpointModule
             TokenResult.Success tokenSuccess => Results.Ok(
                 JsonSerializer.Deserialize<TokenResponse>(tokenSuccess.Token)
             ),
-            TokenResult.FailureIdentityProvider failureIdentityProvider =>
-                failureIdentityProvider.IdentityProviderError switch
-                {
-                    InvalidClient unauthorized => FailureResults.InvalidClient(
-                        unauthorized.FailureMessage,
-                        httpContext.TraceIdentifier
-                    ),
-                    Unauthorized unauthorized => FailureResults.Unauthorized(
-                        unauthorized.FailureMessage,
-                        httpContext.TraceIdentifier
-                    ),
-                    Forbidden forbidden => FailureResults.Forbidden(
-                        forbidden.FailureMessage,
-                        httpContext.TraceIdentifier
-                    ),
-                    _ => FailureResults.BadGateway(
-                        failureIdentityProvider.IdentityProviderError.FailureMessage,
-                        httpContext.TraceIdentifier
-                    ),
-                },
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+            TokenResult.FailureIdentityProvider failure => MapIdentityProviderError(
+                failure.IdentityProviderError,
+                logger
+            ),
+            TokenResult.FailureUnknown unknown => UpstreamUnavailable(unknown.FailureMessage, logger),
+            _ => UpstreamUnavailable("Unexpected token result.", logger),
         };
+    }
+
+    // Maps an identity-provider token failure to the OAuth error contract. Bad-credential failures become
+    // invalid_client (401 with a WWW-Authenticate challenge); unreachable/not-found/other upstream
+    // failures become temporarily_unavailable (503). The provider message is logged server-side only and
+    // never surfaced to the caller.
+    private static IResult MapIdentityProviderError(IdentityProviderError error, ILogger logger)
+    {
+        logger.LogWarning(
+            "Token request rejected by the identity provider ({ErrorType}): {FailureMessage}",
+            error.GetType().Name,
+            error.FailureMessage
+        );
+
+        return error switch
+        {
+            InvalidClient or Unauthorized or Forbidden => OAuthErrorResults.InvalidClient(
+                "Client authentication failed."
+            ),
+            _ => OAuthErrorResults.TemporarilyUnavailable(
+                "The authorization server is temporarily unable to handle the request."
+            ),
+        };
+    }
+
+    private static IResult UpstreamUnavailable(string failureMessage, ILogger logger)
+    {
+        logger.LogError("Token request failed: {FailureMessage}", failureMessage);
+        return OAuthErrorResults.TemporarilyUnavailable(
+            "The authorization server is temporarily unable to handle the request."
+        );
     }
 
     private static async Task<IResult> IntrospectToken(
@@ -297,14 +315,7 @@ public class IdentityModule : IEndpointModule
 
         if (string.IsNullOrEmpty(model.Token))
         {
-            return Results.Json(
-                new
-                {
-                    error = OpenIddictConstants.Errors.InvalidRequest,
-                    error_description = "The token parameter is missing.",
-                },
-                statusCode: 400
-            );
+            return OAuthErrorResults.InvalidRequest("The token parameter is missing.");
         }
 
         if (tokenValidator == null)
@@ -355,14 +366,7 @@ public class IdentityModule : IEndpointModule
 
         if (string.IsNullOrEmpty(model.Token))
         {
-            return Results.Json(
-                new
-                {
-                    error = OpenIddictConstants.Errors.InvalidRequest,
-                    error_description = "The token parameter is missing.",
-                },
-                statusCode: 400
-            );
+            return OAuthErrorResults.InvalidRequest("The token parameter is missing.");
         }
 
         // Check if token manager supports revocation via interface

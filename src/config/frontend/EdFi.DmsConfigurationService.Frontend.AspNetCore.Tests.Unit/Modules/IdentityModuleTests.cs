@@ -15,6 +15,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -447,104 +448,152 @@ public class RegisterEndpointTests
     }
 }
 
-[TestFixture]
-public class TokenEndpointTests
+/// <summary>
+/// Shared harness for /connect/token tests. Every failure returns the OAuth 2.0 protocol contract
+/// (application/json { error, error_description }, RFC 6749 section 5.2) rather than the Ed-Fi Problem
+/// Details contract, and never leaks provider, database, or exception detail.
+/// </summary>
+public abstract class TokenEndpointTestBase
 {
-    private ITokenManager? _tokenManager;
+    protected ITokenManager TokenManager = null!;
+    protected HttpResponseMessage Response = null!;
+    protected string RawBody = null!;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
 
     [SetUp]
-    public void Setup()
+    public void BaseSetup() => TokenManager = A.Fake<ITokenManager>();
+
+    [TearDown]
+    public void BaseTearDown()
     {
-        _tokenManager = A.Fake<ITokenManager>();
-        string token = """
-            {
-                "access_token":"input123token",
-                "expires_in":900,
-                "token_type":"bearer"
-            }
-            """;
-        A.CallTo(() =>
-                _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-            )
-            .Returns(new TokenResult.Success(token));
+        Response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
     }
 
-    [Test]
-    public async Task Given_valid_client_credentials()
+    protected void ArrangeTokenResult(TokenResult tokenResult) =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .Returns(tokenResult);
+
+    protected HttpClient CreateClient(string identityProvider = "self-contained")
     {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
+            builder.ConfigureAppConfiguration(configuration =>
+                configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["AppSettings:IdentityProvider"] = identityProvider }
+                )
             );
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
+            builder.ConfigureServices(collection =>
             {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
+                collection.AddTransient(_ => new TokenRequest.Validator());
+                collection.AddTransient(_ => TokenManager);
+            });
+        });
+        _client = _factory.CreateClient();
+        return _client;
+    }
+
+    protected async Task PostTokenRequestAsync(
+        HttpClient client,
+        params KeyValuePair<string, string>[] fields
+    )
+    {
+        Response = await client.PostAsync("/connect/token", new FormUrlEncodedContent(fields));
+        RawBody = await Response.Content.ReadAsStringAsync();
+    }
+
+    protected void AssertOAuthError(HttpStatusCode status, string error, string description)
+    {
+        Response.StatusCode.Should().Be(status);
+        Response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        var body = JsonNode.Parse(RawBody)!;
+        body["error"]!.GetValue<string>().Should().Be(error);
+        body["error_description"]!.GetValue<string>().Should().Be(description);
+
+        // The OAuth error contract must carry none of the Ed-Fi Problem Details members.
+        body["type"].Should().BeNull();
+        body["title"].Should().BeNull();
+        body["status"].Should().BeNull();
+        body["correlationId"].Should().BeNull();
+        body["validationErrors"].Should().BeNull();
+        body["errors"].Should().BeNull();
+    }
+
+    protected void AssertBasicAuthChallenge() =>
+        Response.Headers.WwwAuthenticate.Should().Contain(header => header.Scheme == "Basic");
+
+    private const string SuccessTokenJson = """
+        {
+            "access_token":"input123token",
+            "expires_in":900,
+            "token_type":"bearer"
+        }
+        """;
+
+    protected static TokenResult SuccessResult() => new TokenResult.Success(SuccessTokenJson);
+}
+
+[TestFixture]
+public class Given_A_Valid_Client_Credentials_Token_Request : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
         );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        content.Should().NotBeNull();
-        content.Should().Contain("input123token");
-        content.Should().Contain("bearer");
     }
 
     [Test]
-    public async Task Given_basic_auth_credentials_with_reserved_characters()
-    {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var encodedCredentials = Convert.ToBase64String(
+    [Test]
+    public void It_returns_the_access_token()
+    {
+        RawBody.Should().Contain("input123token");
+        RawBody.Should().Contain("bearer");
+    }
+}
+
+[TestFixture]
+public class Given_Basic_Auth_Credentials_With_Reserved_Characters : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        var encoded = Convert.ToBase64String(
             System.Text.Encoding.UTF8.GetBytes("client%3Awith%2Breserved:secret%3Awith%25reserved%2Bchars")
         );
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
             "Basic",
-            encodedCredentials
+            encoded
         );
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
         );
-        var response = await client.PostAsync("/connect/token", requestContent);
+    }
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    [Test]
+    public void It_decodes_the_reserved_characters_before_calling_the_token_manager() =>
         A.CallTo(() =>
-                _tokenManager!.GetAccessTokenAsync(
+                TokenManager.GetAccessTokenAsync(
                     A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
                         credentials.Any(pair =>
                             pair.Key == "client_id" && pair.Value == "client:with+reserved"
@@ -556,370 +605,343 @@ public class TokenEndpointTests
                 )
             )
             .MustHaveHappenedOnceExactly();
-    }
+}
 
-    [Test]
-    public async Task Given_empty_client_credentials()
+[TestFixture]
+public class Given_A_Token_Request_Missing_The_Client_Id : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
     {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", ""),
-                new KeyValuePair<string, string>("client_secret", ""),
-                new KeyValuePair<string, string>("grant_type", ""),
-                new KeyValuePair<string, string>("scope", ""),
-            }
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials")
         );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-        content = System.Text.RegularExpressions.Regex.Unescape(content);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        content.Should().Contain("'client_id' must not be empty.");
-        content.Should().Contain("'client_secret' must not be empty.");
     }
 
     [Test]
-    public async Task When_error_from_backend()
+    public void It_returns_the_oauth_invalid_request_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+}
+
+[TestFixture]
+public class Given_A_Token_Request_Missing_The_Client_Secret : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
     {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("grant_type", "client_credentials")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+}
+
+[TestFixture]
+public class Given_A_Token_Request_Missing_The_Grant_Type : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+}
+
+[TestFixture]
+public class Given_A_Token_Request_With_An_Unsupported_Grant_Type : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "authorization_code"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_unsupported_grant_type_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "unsupported_grant_type",
+            "The specified grant type is not supported."
+        );
+}
+
+[TestFixture]
+public class Given_Invalid_Client_Credentials_Supplied_Through_Form : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // The provider surfaces an OAuth-shaped message; it must be logged server-side, not echoed.
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.Unauthorized(
+                    """
+                    {"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}
+                    """
                 )
-                .Returns(
-                    new TokenResult.FailureUnknown(
-                        "No connection could be made because the target machine actively refused it."
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
+            )
         );
-        var response = await client.PostAsync("/connect/token", requestContent);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "wrong"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
     }
 
     [Test]
-    public async Task When_provider_is_unreacheable()
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_www_authenticate_challenge() => AssertBasicAuthChallenge();
+
+    [Test]
+    public void It_does_not_leak_the_provider_message() =>
+        RawBody.Should().NotContain("Invalid client or Invalid client credentials");
+}
+
+[TestFixture]
+public class Given_Invalid_Client_Credentials_Supplied_Through_Basic_Authentication : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
     {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unreachable(
-                            "No connection could be made because the target machine actively refused it."
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials")
+            )
         );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
+        var client = CreateClient("self-contained");
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:wrong"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        var actualResponse = JsonNode.Parse(content);
-        var expectedResponse = JsonNode.Parse(
-            """
-            {
-              "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:bad-gateway",
-              "title": "Bad Gateway",
-              "status": 502,
-              "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
+    [Test]
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_www_authenticate_challenge() => AssertBasicAuthChallenge();
+
+    [Test]
+    public void It_does_not_leak_the_provider_message() =>
+        RawBody.Should().NotContain("Invalid client or Invalid client credentials");
+}
+
+[TestFixture]
+public class Given_The_Provider_Reports_The_Client_As_Forbidden : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.Forbidden("Insufficient permissions for this client")
+            )
+        );
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_does_not_leak_the_provider_message() =>
+        RawBody.Should().NotContain("Insufficient permissions");
+}
+
+[TestFixture]
+public class Given_The_Provider_Is_Unreachable : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.Unreachable(
+                    "No connection could be made because the target machine actively refused it."
+                )
+            )
+        );
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() =>
+        AssertOAuthError(
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "The authorization server is temporarily unable to handle the request."
+        );
+
+    [Test]
+    public void It_does_not_leak_the_provider_message() =>
+        RawBody.Should().NotContain("target machine actively refused");
+}
+
+[TestFixture]
+public class Given_The_Provider_Returns_Not_Found : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.NotFound(
+                    """
+                    { "error":"Realm does not exist","error_description":"For more on this error consult the server log at the debug level."}
+                    """
+                )
+            )
+        );
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() =>
+        AssertOAuthError(
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "The authorization server is temporarily unable to handle the request."
+        );
+
+    [Test]
+    public void It_does_not_leak_the_provider_message() =>
+        RawBody.Should().NotContain("Realm does not exist");
+}
+
+[TestFixture]
+public class Given_The_Token_Request_Fails_Unexpectedly : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(
+            new TokenResult.FailureUnknown(
                 "No connection could be made because the target machine actively refused it."
-            ]
-            }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            )
         );
-        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
     }
 
     [Test]
-    public async Task When_provider_has_invalid_realm()
+    public void It_returns_the_oauth_temporarily_unavailable_error() =>
+        AssertOAuthError(
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "The authorization server is temporarily unable to handle the request."
+        );
+
+    [Test]
+    public void It_does_not_leak_the_failure_message() =>
+        RawBody.Should().NotContain("target machine actively refused");
+}
+
+[TestFixture]
+public class Given_Basic_Authentication_In_Keycloak_Mode : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
     {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.NotFound(
-                            """
-                            { "error":"Realm does not exist","error_description":"For more on this error consult the server log at the debug level."}
-                            """
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
+        // In Keycloak mode the endpoint does not read credentials from the Basic header (only
+        // self-contained mode does), so a request carrying only Basic credentials is missing its form
+        // parameters and is rejected as invalid_request.
+        var client = CreateClient("keycloak");
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
         );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        var actualResponse = JsonNode.Parse(content);
-        var expectedResponse = JsonNode.Parse(
-            """
-            {
-              "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:bad-gateway",
-              "title": "Bad Gateway",
-              "status": 502,
-              "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-               "Realm does not exist. For more on this error consult the server log at the debug level."
-            ]
-            }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
         );
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [Test]
-    public async Task When_provider_has_not_realm_admin_role()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized("Insufficient Permissions")
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent([
-            new KeyValuePair<string, string>("client_id", "CSClient1"),
-            new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-            new KeyValuePair<string, string>("grant_type", "client_credentials"),
-            new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-        ]);
-        var response = await client.PostAsync("/connect/token", requestContent);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Test]
-    public async Task When_provider_has_bad_credetials()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized(
-                            """
-                            {"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}
-                            """
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
+    public void It_does_not_read_credentials_from_the_basic_header() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
         );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        var actualResponse = JsonNode.Parse(content);
-        var expectedResponse = JsonNode.Parse(
-            """
-            {
-              "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:security:authentication",
-              "title": "Authentication Failed",
-              "status": 401,
-              "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-               "invalid_client. Invalid client or Invalid client credentials"
-            ]
-            }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
-        );
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-    }
-
-    [Test]
-    public async Task It_returns_the_oauth_unsupported_grant_type_error()
-    {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "authorization_code"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        var actualResponse = JsonNode.Parse(content);
-        var expectedResponse = JsonNode.Parse(
-            """
-            {
-              "error": "unsupported_grant_type",
-              "error_description": "The specified grant type is not supported."
-            }
-            """
-        );
-        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-    }
 }
 
 [TestFixture]
