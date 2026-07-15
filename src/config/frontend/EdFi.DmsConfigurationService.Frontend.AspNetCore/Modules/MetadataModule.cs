@@ -97,6 +97,21 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                             ["items"] = new JsonObject { ["type"] = "string" },
                         },
                     },
+                    ["required"] = new JsonArray { "type", "detail", "status", "correlationId" },
+                };
+
+                // OAuth 2.0 protocol errors (RFC 6749 section 5.2) are application/json
+                // { error, error_description } bodies, not Ed-Fi Problem Details; the token, introspection,
+                // and revocation operations reference this schema instead.
+                schemas["OAuthError"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["error"] = new JsonObject { ["type"] = "string" },
+                        ["error_description"] = new JsonObject { ["type"] = "string" },
+                    },
+                    ["required"] = new JsonArray { "error" },
                 };
 
                 JsonObject ProblemDetailsResponse(string description) =>
@@ -134,6 +149,20 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                     ["InternalServerError"] = ProblemDetailsResponse(
                         "Internal Server Error. An error occurred while processing the request."
                     ),
+                    ["UnsupportedMediaType"] = ProblemDetailsResponse(
+                        "Unsupported Media Type. The request content type is not supported."
+                    ),
+                    ["OAuthError"] = new JsonObject
+                    {
+                        ["description"] = "OAuth 2.0 protocol error (RFC 6749 section 5.2).",
+                        ["content"] = new JsonObject
+                        {
+                            ["application/json"] = new JsonObject
+                            {
+                                ["schema"] = new JsonObject { ["$ref"] = "#/components/schemas/OAuthError" },
+                            },
+                        },
+                    },
                 };
 
                 // Add reusable parameters
@@ -210,11 +239,124 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                     new JsonObject { ["oauth2_client_credentials"] = new JsonArray() },
                 };
 
+                // Reference the reusable error responses from each applicable operation so the generated
+                // contract documents the application/problem+json bodies the API returns. OAuth protocol
+                // endpoints instead document their application/json { error, error_description } shape and
+                // are never described as Ed-Fi Problem Details endpoints.
+                AttachErrorResponses(document);
+
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsync(
                     document.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
                 );
             }
         );
+    }
+
+    // Walks every path and operation and references the reusable error responses that apply, using a
+    // method and route heuristic because handlers return untyped IResult and per-operation error sets
+    // cannot be inferred from types. OAuth protocol endpoints instead reference the OAuth error response,
+    // while the connect-register endpoint and the v3 resources reference the Ed-Fi Problem Details
+    // responses. Only error statuses are written, so success response metadata is left intact.
+    private static void AttachErrorResponses(JsonObject document)
+    {
+        if (document["paths"] is not JsonObject paths)
+        {
+            return;
+        }
+
+        foreach ((string pathKey, JsonNode? pathNode) in paths)
+        {
+            if (pathNode is not JsonObject pathItem)
+            {
+                continue;
+            }
+
+            bool isOAuthProtocol =
+                pathKey.Contains("/connect/token", StringComparison.OrdinalIgnoreCase)
+                || pathKey.Contains("/connect/introspect", StringComparison.OrdinalIgnoreCase)
+                || pathKey.Contains("/connect/revoke", StringComparison.OrdinalIgnoreCase);
+
+            bool isEdFiResource =
+                pathKey.StartsWith("/v3/", StringComparison.OrdinalIgnoreCase)
+                || pathKey.Contains("/connect/register", StringComparison.OrdinalIgnoreCase);
+
+            if (!isOAuthProtocol && !isEdFiResource)
+            {
+                continue;
+            }
+
+            bool hasPathParameter = pathKey.Contains('{');
+
+            foreach ((string methodName, JsonNode? operationNode) in pathItem)
+            {
+                string method = methodName.ToLowerInvariant();
+                if (
+                    method is not ("get" or "put" or "post" or "delete" or "patch" or "options" or "head")
+                    || operationNode is not JsonObject operation
+                )
+                {
+                    continue;
+                }
+
+                JsonObject? responses = operation["responses"]?.AsObject();
+                if (responses is null)
+                {
+                    responses = new JsonObject();
+                    operation["responses"] = responses;
+                }
+
+                if (isOAuthProtocol)
+                {
+                    AddOAuthErrorResponses(responses, pathKey);
+                }
+                else
+                {
+                    AddEdFiErrorResponses(responses, method, hasPathParameter);
+                }
+            }
+        }
+    }
+
+    private static void AddEdFiErrorResponses(JsonObject responses, string method, bool hasPathParameter)
+    {
+        void Reference(string status, string component) =>
+            responses[status] = new JsonObject { ["$ref"] = $"#/components/responses/{component}" };
+
+        // Authentication, authorization, and unexpected-server failures apply to every operation.
+        Reference("401", "Unauthorized");
+        Reference("403", "Forbidden");
+        Reference("500", "InternalServerError");
+
+        if (method is "post" or "put" or "patch")
+        {
+            Reference("400", "BadRequest");
+            Reference("415", "UnsupportedMediaType");
+        }
+
+        if (hasPathParameter)
+        {
+            Reference("404", "NotFound");
+        }
+
+        if (method is "post" or "put")
+        {
+            Reference("409", "Conflict");
+        }
+    }
+
+    private static void AddOAuthErrorResponses(JsonObject responses, string pathKey)
+    {
+        void Reference(string status) =>
+            responses[status] = new JsonObject { ["$ref"] = "#/components/responses/OAuthError" };
+
+        // A missing or malformed request is invalid_request 400 on every token-family endpoint. The token
+        // endpoint additionally reports invalid_client 401 and temporarily_unavailable 503.
+        Reference("400");
+        if (pathKey.Contains("/connect/token", StringComparison.OrdinalIgnoreCase))
+        {
+            Reference("401");
+            Reference("503");
+        }
     }
 }

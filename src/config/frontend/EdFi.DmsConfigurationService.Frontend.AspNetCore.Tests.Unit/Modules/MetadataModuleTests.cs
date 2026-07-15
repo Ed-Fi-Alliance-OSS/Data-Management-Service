@@ -5,10 +5,13 @@
 
 using System.Collections.Generic;
 using System.Net;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -451,4 +454,172 @@ public class MetadataModuleTests
 
         return schema;
     }
+}
+
+/// <summary>
+/// The post-processed /metadata/specifications document must reference the reusable Ed-Fi Problem Details
+/// responses from applicable operations, document the OAuth protocol endpoints with their application/json
+/// error schema (not Ed-Fi Problem Details), and leave success responses intact.
+/// </summary>
+[TestFixture]
+public class Given_The_Metadata_Specifications_Document
+{
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private JsonNode _document = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            // /metadata/specifications self-fetches /openapi/v1.json over HTTP; route that call through
+            // the in-memory test server so the post-processed document can be asserted.
+            builder.ConfigureTestServices(services =>
+                services.AddSingleton<IHttpClientFactory>(
+                    new TestServerHttpClientFactory(() => _factory.Server.CreateHandler())
+                )
+            );
+        });
+        _client = _factory.CreateClient();
+
+        var response = await _client.GetAsync("/metadata/specifications");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        _document = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    private JsonObject Components => _document["components"]!.AsObject();
+
+    private JsonObject FindOperation(string pathContains, bool withPathParameter, string method)
+    {
+        var paths = _document["paths"]!.AsObject();
+        var match = paths.FirstOrDefault(p =>
+            p.Key.Contains(pathContains, StringComparison.OrdinalIgnoreCase)
+            && p.Key.Contains('{') == withPathParameter
+            && p.Value!.AsObject().ContainsKey(method)
+        );
+        match
+            .Value.Should()
+            .NotBeNull(
+                $"a {method.ToUpperInvariant()} operation for a path containing '{pathContains}' "
+                    + $"{(withPathParameter ? "with" : "without")} a path parameter should exist"
+            );
+        return match.Value!.AsObject()[method]!.AsObject();
+    }
+
+    private static string? RefOf(JsonObject operation, string status) =>
+        operation["responses"]?[status]?["$ref"]?.GetValue<string>();
+
+    [Test]
+    public void It_marks_the_problem_details_required_members()
+    {
+        var required = Components["schemas"]!["ProblemDetails"]!["required"]!
+            .AsArray()
+            .Select(n => n!.GetValue<string>());
+        required.Should().Contain(["type", "detail", "status", "correlationId"]);
+
+        var properties = Components["schemas"]!["ProblemDetails"]!["properties"]!.AsObject();
+        properties.Should().ContainKeys("validationErrors", "errors");
+    }
+
+    [Test]
+    public void It_publishes_a_distinct_oauth_error_schema()
+    {
+        var properties = Components["schemas"]!["OAuthError"]!["properties"]!.AsObject();
+        properties.Should().ContainKeys("error", "error_description");
+    }
+
+    [Test]
+    public void It_defines_the_reusable_problem_details_responses_including_415()
+    {
+        var responses = Components["responses"]!.AsObject();
+        string[] problemDetailsResponses =
+        [
+            "BadRequest",
+            "Unauthorized",
+            "Forbidden",
+            "NotFound",
+            "Conflict",
+            "InternalServerError",
+            "UnsupportedMediaType",
+        ];
+        responses.Should().ContainKeys(problemDetailsResponses);
+        foreach (var name in problemDetailsResponses)
+        {
+            responses[name]!["content"]!["application/problem+json"]!["schema"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/ProblemDetails");
+        }
+    }
+
+    [Test]
+    public void It_defines_the_oauth_error_response_as_application_json()
+    {
+        Components["responses"]!["OAuthError"]!["content"]!["application/json"]!["schema"]!["$ref"]!
+            .GetValue<string>()
+            .Should()
+            .Be("#/components/schemas/OAuthError");
+    }
+
+    [Test]
+    public void It_references_problem_details_from_a_resource_get_by_id()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: true, "get");
+        RefOf(operation, "401").Should().Be("#/components/responses/Unauthorized");
+        RefOf(operation, "403").Should().Be("#/components/responses/Forbidden");
+        RefOf(operation, "404").Should().Be("#/components/responses/NotFound");
+        RefOf(operation, "500").Should().Be("#/components/responses/InternalServerError");
+    }
+
+    [Test]
+    public void It_references_write_error_responses_from_a_resource_post()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: false, "post");
+        RefOf(operation, "400").Should().Be("#/components/responses/BadRequest");
+        RefOf(operation, "409").Should().Be("#/components/responses/Conflict");
+        RefOf(operation, "415").Should().Be("#/components/responses/UnsupportedMediaType");
+    }
+
+    [Test]
+    public void It_documents_the_token_endpoint_with_the_oauth_error_shape()
+    {
+        var operation = FindOperation("/connect/token", withPathParameter: true, "post");
+        RefOf(operation, "400").Should().Be("#/components/responses/OAuthError");
+        RefOf(operation, "401").Should().Be("#/components/responses/OAuthError");
+        RefOf(operation, "503").Should().Be("#/components/responses/OAuthError");
+    }
+
+    [Test]
+    public void It_does_not_document_the_token_endpoint_as_ed_fi_problem_details()
+    {
+        var operation = FindOperation("/connect/token", withPathParameter: true, "post");
+        var references = operation["responses"]!
+            .AsObject()
+            .Select(r => r.Value?["$ref"]?.GetValue<string>())
+            .Where(r => r is not null);
+        references.Should().OnlyContain(r => r == "#/components/responses/OAuthError");
+    }
+
+    [Test]
+    public void It_preserves_success_response_metadata()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: false, "post");
+        operation["responses"]!.AsObject().Should().ContainKey("201");
+    }
+}
+
+// Routes the module's internal /openapi/v1.json fetch through the in-memory test server.
+file sealed class TestServerHttpClientFactory(Func<HttpMessageHandler> handlerFactory) : IHttpClientFactory
+{
+    public HttpClient CreateClient(string name) => new(handlerFactory(), disposeHandler: false);
 }
