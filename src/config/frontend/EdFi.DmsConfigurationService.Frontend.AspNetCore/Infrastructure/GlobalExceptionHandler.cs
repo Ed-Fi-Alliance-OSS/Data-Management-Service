@@ -37,11 +37,15 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
 
         switch (exception)
         {
-            case BadHttpRequestException badHttpRequest:
+            case BadHttpRequestException:
+                // Do not surface the framework message: it can echo raw route/body values back to the
+                // caller. In Development ASP.NET Core enables ThrowOnBadRequest, so binding failures reach
+                // this handler rather than the empty-400 status-code-page path; a fixed, generic detail
+                // keeps the response safe in every environment.
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 await response.WriteAsync(
                     JsonSerializer.Serialize(
-                        FailureResponse.ForBadRequest(badHttpRequest.Message, traceId),
+                        FailureResponse.ForBadRequest("The request was invalid.", traceId),
                         relaxedSerializer
                     ),
                     cancellationToken: cancellationToken

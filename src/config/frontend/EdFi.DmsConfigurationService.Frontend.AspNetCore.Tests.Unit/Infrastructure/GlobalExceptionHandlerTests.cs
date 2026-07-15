@@ -24,12 +24,15 @@ internal class GlobalExceptionHandlerTests
     }
 
     [Test]
-    public async Task When_handling_BadHttpRequestException_returns_400_with_proper_response()
+    public async Task When_handling_BadHttpRequestException_returns_a_safe_generic_400_without_leaking_the_message()
     {
         // Arrange
         var httpContext = new DefaultHttpContext();
         httpContext.Response.Body = new MemoryStream();
-        var exception = new BadHttpRequestException("Invalid request data");
+        // A BadHttpRequestException message can embed the offending raw route/body value.
+        var exception = new BadHttpRequestException(
+            "Failed to read parameter \"long id\" from route value \"not-a-long\"."
+        );
 
         // Act
         var result = await _handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
@@ -43,7 +46,12 @@ internal class GlobalExceptionHandlerTests
         httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
         var reader = new StreamReader(httpContext.Response.Body);
         var responseBody = await reader.ReadToEndAsync();
-        responseBody.Should().Contain("Invalid request data");
+
+        // The framework message (and the raw value it embeds) must not be echoed to the caller.
+        responseBody.Should().NotContain("not-a-long");
+        responseBody.Should().NotContain("Failed to read parameter");
+        responseBody.Should().Contain("The request was invalid.");
+        responseBody.Should().Contain("urn:ed-fi:api:bad-request");
     }
 
     [Test]
