@@ -919,9 +919,9 @@ public class Given_Basic_Authentication_In_Keycloak_Mode : TokenEndpointTestBase
     [SetUp]
     public async Task Setup()
     {
-        // In Keycloak mode the endpoint does not read credentials from the Basic header (only
-        // self-contained mode does), so a request carrying only Basic credentials is missing its form
-        // parameters and is rejected as invalid_request.
+        // Basic client authentication is honored in Keycloak mode: the parsed credentials are forwarded
+        // through the token manager exactly as form credentials are.
+        ArrangeTokenResult(SuccessResult());
         var client = CreateClient("keycloak");
         var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
@@ -936,12 +936,245 @@ public class Given_Basic_Authentication_In_Keycloak_Mode : TokenEndpointTestBase
     }
 
     [Test]
-    public void It_does_not_read_credentials_from_the_basic_header() =>
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    [Test]
+    public void It_forwards_the_basic_credentials_to_the_token_manager() =>
+        A.CallTo(() =>
+                TokenManager.GetAccessTokenAsync(
+                    A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
+                        credentials.Any(pair => pair.Key == "client_id" && pair.Value == "CSClient1")
+                        && credentials.Any(pair =>
+                            pair.Key == "client_secret" && pair.Value == "test123@Puiu"
+                        )
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+}
+
+[TestFixture]
+public class Given_Basic_Authentication_In_Self_Contained_Mode : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient("self-contained");
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    [Test]
+    public void It_forwards_the_basic_credentials_to_the_token_manager() =>
+        A.CallTo(() =>
+                TokenManager.GetAccessTokenAsync(
+                    A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
+                        credentials.Any(pair => pair.Key == "client_id" && pair.Value == "CSClient1")
+                        && credentials.Any(pair =>
+                            pair.Key == "client_secret" && pair.Value == "test123@Puiu"
+                        )
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+}
+
+[TestFixture]
+public class Given_A_Basic_Header_That_Is_Not_Valid_Base64 : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // A success is arranged so that a fallback to any other credential source would succeed; the
+        // malformed header must be rejected instead.
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Basic @@@not-base64@@@");
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_full_basic_challenge_with_realm()
+    {
+        Response.Headers.WwwAuthenticate.Should().ContainSingle();
+        var challenge = Response.Headers.WwwAuthenticate.Single();
+        challenge.Scheme.Should().Be("Basic");
+        challenge.Parameter.Should().Be("realm=\"Ed-Fi DMS Configuration Service\"");
+    }
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_A_Basic_Credential_Without_A_Colon_Separator : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("no-colon-credentials"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_www_authenticate_challenge() => AssertBasicAuthChallenge();
+}
+
+[TestFixture]
+public class Given_Both_Basic_And_Form_Client_Credentials : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // RFC 6749 section 2.3 forbids using more than one client-authentication mechanism per request.
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error() =>
         AssertOAuthError(
             HttpStatusCode.BadRequest,
             "invalid_request",
             "The request is missing a required parameter or is otherwise malformed."
         );
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_The_Provider_Returns_A_Success_That_Is_Not_Valid_Json : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(new TokenResult.Success("this is not json"));
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() =>
+        AssertOAuthError(
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "The authorization server is temporarily unable to handle the request."
+        );
+
+    [Test]
+    public void It_does_not_leak_the_provider_payload() => RawBody.Should().NotContain("this is not json");
+}
+
+[TestFixture]
+public class Given_The_Provider_Returns_A_Json_Null_Success : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(new TokenResult.Success("null"));
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() =>
+        AssertOAuthError(
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "The authorization server is temporarily unable to handle the request."
+        );
+}
+
+[TestFixture]
+public class Given_The_Provider_Returns_A_Success_Without_An_Access_Token : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(new TokenResult.Success("""{ "token_type": "bearer", "expires_in": 900 }"""));
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() =>
+        AssertOAuthError(
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "The authorization server is temporarily unable to handle the request."
+        );
+
+    [Test]
+    public void It_does_not_return_a_token_response() => RawBody.Should().NotContain("access_token");
 }
 
 [TestFixture]

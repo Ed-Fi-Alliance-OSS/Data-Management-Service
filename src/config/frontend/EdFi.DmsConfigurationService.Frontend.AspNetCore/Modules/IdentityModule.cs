@@ -142,75 +142,60 @@ public class IdentityModule : IEndpointModule
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromServices] ITokenManager tokenManager,
-        [FromServices] IConfiguration configuration,
         [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
-        var identityProvider =
-            configuration.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant()
-            ?? "self-contained";
-
         // Manually read form data to handle empty form bodies in .NET 10
-        // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked)
-        string clientId = string.Empty;
-        string clientSecret = string.Empty;
+        // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked). The
+        // grant type and scope always come from the form; the client credentials come from either an HTTP
+        // Basic authorization header or the form body.
         string grantType = string.Empty;
         string scope = string.Empty;
+        string formClientId = string.Empty;
+        string formClientSecret = string.Empty;
 
-        // For self-contained mode, support HTTP Basic authentication
-        if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
-        {
-            // Check for Authorization header (HTTP Basic auth) - only for self-contained
-            httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
-            if (
-                !string.IsNullOrEmpty(authHeader.ToString())
-                && authHeader.ToString().StartsWith("basic ", StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                try
-                {
-                    var base64Credentials = authHeader.ToString().Substring(6); // Remove "basic "
-                    var credentialBytes = Convert.FromBase64String(base64Credentials);
-                    var credentials = System.Text.Encoding.UTF8.GetString(credentialBytes);
-                    var parts = credentials.Split(':', 2);
-                    if (parts.Length == 2)
-                    {
-                        clientId = Uri.UnescapeDataString(parts[0]);
-                        clientSecret = Uri.UnescapeDataString(parts[1]);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Log the exception for debugging purposes
-                    logger.LogWarning(ex, "Failed to parse Basic Auth credentials");
-                }
-            }
-        }
-
-        // Read form data for all parameters (and as fallback for credentials in self-contained mode)
         if (httpContext.Request.HasFormContentType)
         {
             var form = await httpContext.Request.ReadFormAsync();
+            grantType = form["grant_type"].ToString();
+            scope = form["scope"].ToString();
+            formClientId = form["client_id"].ToString();
+            formClientSecret = form["client_secret"].ToString();
+        }
 
-            // Use form credentials if Basic auth didn't provide them
-            if (string.IsNullOrEmpty(clientId))
+        // HTTP Basic client authentication (RFC 6749 section 2.3.1) is supported in every
+        // identity-provider mode: the parsed credentials flow through the same token-manager call as
+        // form credentials.
+        httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
+        string authorization = authHeader.ToString();
+        bool hasBasicHeader = authorization.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase);
+
+        string clientId;
+        string clientSecret;
+        if (hasBasicHeader)
+        {
+            // A client must not use more than one authentication mechanism in a single request
+            // (RFC 6749 section 2.3): a Basic header combined with form credentials is malformed.
+            if (!string.IsNullOrEmpty(formClientId) || !string.IsNullOrEmpty(formClientSecret))
             {
-                clientId = form["client_id"].ToString();
-            }
-            if (string.IsNullOrEmpty(clientSecret))
-            {
-                clientSecret = form["client_secret"].ToString();
+                return OAuthErrorResults.InvalidRequest(
+                    "The request is missing a required parameter or is otherwise malformed."
+                );
             }
 
-            if (string.IsNullOrEmpty(grantType))
+            // A malformed Basic header is a failed client authentication; it must not fall back to form
+            // credentials. The header contents are never logged.
+            if (!TryParseBasicCredentials(authorization, out clientId, out clientSecret))
             {
-                grantType = form["grant_type"].ToString();
+                logger.LogWarning("Rejected a malformed Basic authorization header on the token endpoint.");
+                return OAuthErrorResults.InvalidClient("Client authentication failed.");
             }
-            if (string.IsNullOrEmpty(scope))
-            {
-                scope = form["scope"].ToString();
-            }
+        }
+        else
+        {
+            clientId = formClientId;
+            clientSecret = formClientSecret;
         }
 
         var model = new TokenRequest
@@ -253,9 +238,7 @@ public class IdentityModule : IEndpointModule
 
         return tokenResult switch
         {
-            TokenResult.Success tokenSuccess => Results.Ok(
-                JsonSerializer.Deserialize<TokenResponse>(tokenSuccess.Token)
-            ),
+            TokenResult.Success tokenSuccess => CreateTokenResponse(tokenSuccess.Token, logger),
             TokenResult.FailureIdentityProvider failure => MapIdentityProviderError(
                 failure.IdentityProviderError,
                 logger
@@ -263,6 +246,81 @@ public class IdentityModule : IEndpointModule
             TokenResult.FailureUnknown unknown => UpstreamUnavailable(unknown.FailureMessage, logger),
             _ => UpstreamUnavailable("Unexpected token result.", logger),
         };
+    }
+
+    // Parses HTTP Basic client credentials (RFC 6749 section 2.3.1). Returns false for a malformed
+    // header (invalid Base64, or no "id:secret" pair) rather than throwing. The client id and secret are
+    // percent-encoded in the credential, so each half is percent-decoded after the split.
+    private static bool TryParseBasicCredentials(
+        string authorizationHeader,
+        out string clientId,
+        out string clientSecret
+    )
+    {
+        clientId = string.Empty;
+        clientSecret = string.Empty;
+
+        string encoded = authorizationHeader["Basic ".Length..].Trim();
+        if (encoded.Length == 0)
+        {
+            return false;
+        }
+
+        string credentials;
+        try
+        {
+            credentials = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        int separator = credentials.IndexOf(':');
+        if (separator < 0)
+        {
+            return false;
+        }
+
+        clientId = Uri.UnescapeDataString(credentials[..separator]);
+        clientSecret = Uri.UnescapeDataString(credentials[(separator + 1)..]);
+        return true;
+    }
+
+    // Deserializes the identity provider's success payload. The provider returns its raw token response
+    // body unvalidated, so a malformed payload (invalid JSON, a JSON null, or a missing access token) must
+    // not reach the caller as a successful token or escape to the global exception handler as an Ed-Fi
+    // Problem Details response. Any such payload is logged server-side (without its contents) and reported
+    // as the same upstream-unavailable OAuth failure used for other provider problems.
+    private static IResult CreateTokenResponse(string token, ILogger logger)
+    {
+        TokenResponse? tokenResponse;
+        try
+        {
+            tokenResponse = JsonSerializer.Deserialize<TokenResponse>(token);
+        }
+        catch (JsonException)
+        {
+            // Deliberately omit the exception: its message can embed fragments of the invalid payload.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception as a parameter
+            logger.LogError("The identity provider returned a token response that is not valid JSON.");
+#pragma warning restore S6667
+            return OAuthErrorResults.TemporarilyUnavailable(
+                "The authorization server is temporarily unable to handle the request."
+            );
+        }
+
+        if (tokenResponse is null || string.IsNullOrEmpty(tokenResponse.AccessToken))
+        {
+            logger.LogError(
+                "The identity provider returned a successful token response without an access token."
+            );
+            return OAuthErrorResults.TemporarilyUnavailable(
+                "The authorization server is temporarily unable to handle the request."
+            );
+        }
+
+        return Results.Ok(tokenResponse);
     }
 
     // Maps an identity-provider token failure to the OAuth error contract. Bad-credential failures become
