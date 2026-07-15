@@ -55,12 +55,14 @@ internal static class FailureResults
         );
     }
 
-    public static IResult BadRequest(string detail, string correlationId)
+    // The status defaults to 400 but is overridable so a preserved framework client-error status (e.g. a
+    // 413 with no specific Ed-Fi type) can still return the generic bad-request body at its own status.
+    public static IResult BadRequest(string detail, string correlationId, int status = 400)
     {
         return Results.Json(
-            FailureResponse.ForBadRequest(detail, correlationId),
+            FailureResponse.ForBadRequest(detail, correlationId, status),
             contentType: _errorContentType,
-            statusCode: 400
+            statusCode: status
         );
     }
 

@@ -38,26 +38,17 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         switch (exception)
         {
             case BadHttpRequestException badHttpRequest:
-                // Do not surface the framework message: it can echo raw route/body values back to the
-                // caller. In Development ASP.NET Core enables ThrowOnBadRequest, so framework binding
-                // failures reach this handler rather than the empty-body status-code-page path. Preserve
-                // the exception's own status code and emit the matching Ed-Fi contract with a fixed,
-                // generic detail, so the throwing and non-throwing paths produce the same safe response in
-                // every environment. Only 400 and 415 carry an Ed-Fi Problem Details body; any other
-                // framework status (e.g. 413 Payload Too Large) keeps its status code with no body,
-                // matching the status-code-pages path, which leaves those responses untouched.
+                // Do not surface the framework message: it can echo raw route or body values back to the
+                // caller. In Development, ASP.NET Core enables ThrowOnBadRequest, so framework binding
+                // failures reach this handler rather than the empty response status code page path.
+                // Preserve the exception's own status code and always emit a machine-readable Ed-Fi
+                // contract with a fixed, generic detail so the response is never empty and the throwing
+                // and non-throwing paths behave the same in every environment. A 415 uses its specific
+                // Ed-Fi type. Every other framework status uses the generic bad request type with its
+                // status preserved, because the Ed-Fi Error Response Knowledge Base defines no type for a
+                // 413 or for other framework request errors.
                 switch (badHttpRequest.StatusCode)
                 {
-                    case (int)HttpStatusCode.BadRequest:
-                        response.StatusCode = (int)HttpStatusCode.BadRequest;
-                        await response.WriteAsync(
-                            JsonSerializer.Serialize(
-                                FailureResponse.ForBadRequest("The request was invalid.", traceId),
-                                relaxedSerializer
-                            ),
-                            cancellationToken: cancellationToken
-                        );
-                        break;
                     case (int)HttpStatusCode.UnsupportedMediaType:
                         response.StatusCode = (int)HttpStatusCode.UnsupportedMediaType;
                         await response.WriteAsync(
@@ -71,11 +62,33 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                             cancellationToken: cancellationToken
                         );
                         break;
+                    case (int)HttpStatusCode.RequestEntityTooLarge:
+                        response.StatusCode = (int)HttpStatusCode.RequestEntityTooLarge;
+                        await response.WriteAsync(
+                            JsonSerializer.Serialize(
+                                FailureResponse.ForBadRequest(
+                                    "The request payload is too large.",
+                                    traceId,
+                                    (int)HttpStatusCode.RequestEntityTooLarge
+                                ),
+                                relaxedSerializer
+                            ),
+                            cancellationToken: cancellationToken
+                        );
+                        break;
                     default:
-                        // Preserve the framework status with no body. The problem+json content type set
-                        // above does not apply to an empty response, so clear it.
-                        response.Headers.ContentType = default;
                         response.StatusCode = badHttpRequest.StatusCode;
+                        await response.WriteAsync(
+                            JsonSerializer.Serialize(
+                                FailureResponse.ForBadRequest(
+                                    "The request was invalid.",
+                                    traceId,
+                                    badHttpRequest.StatusCode
+                                ),
+                                relaxedSerializer
+                            ),
+                            cancellationToken: cancellationToken
+                        );
                         break;
                 }
                 break;

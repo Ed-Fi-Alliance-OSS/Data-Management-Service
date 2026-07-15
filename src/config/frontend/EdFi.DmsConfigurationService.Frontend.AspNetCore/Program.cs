@@ -77,8 +77,9 @@ if (!ReportInvalidConfiguration(app))
     app.UseExceptionHandler(o => { });
 
     // Give framework-generated non-success responses that would otherwise be empty (binding-failure
-    // 400, unmatched-route 404, method-not-allowed 405, unsupported-media-type 415) the Ed-Fi Problem
-    // Details contract. UseStatusCodePages runs only when the response has no body, so it never
+    // 400, unmatched-route 404, method-not-allowed 405, unsupported-media-type 415, and a too-large
+    // request body 413) the Ed-Fi Problem Details contract. The Knowledge Base defines no 413 type, so
+    // that case uses the generic bad-request type with the 413 status preserved. UseStatusCodePages runs only when the response has no body, so it never
     // replaces bodies already produced (OAuth responses, the authorization handler's 401/403, endpoint
     // error responses including structured data-validation 400s) and does not touch successful/204
     // responses. Only the body is written, so the original status code and any framework headers (e.g.
@@ -104,6 +105,11 @@ if (!ReportInvalidConfiguration(app))
             StatusCodes.Status415UnsupportedMediaType => FailureResults.UnsupportedMediaType(
                 "The request content type is not supported.",
                 context.TraceIdentifier
+            ),
+            StatusCodes.Status413PayloadTooLarge => FailureResults.BadRequest(
+                "The request payload is too large.",
+                context.TraceIdentifier,
+                StatusCodes.Status413PayloadTooLarge
             ),
             _ => null,
         };

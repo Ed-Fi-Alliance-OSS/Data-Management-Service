@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using FluentValidation;
@@ -180,9 +181,10 @@ public class Given_a_bad_http_request_exception_with_an_unsupported_media_type_s
 }
 
 /// <summary>
-/// A BadHttpRequestException whose StatusCode is 413 (payload too large) preserves its status code with
-/// no Problem Details body — matching the status-code-pages path, which leaves an oversized-body response
-/// untouched — clears the optimistic problem+json content type, and never echoes the framework message.
+/// A BadHttpRequestException whose StatusCode is 413 (payload too large) preserves its status code and
+/// returns a machine-readable Ed-Fi Problem Details body — never an empty response. The Ed-Fi Error
+/// Response Knowledge Base defines no dedicated 413 type, so the generic bad-request type is used with
+/// the 413 status preserved; the framework message is never echoed.
 /// </summary>
 [TestFixture]
 public class Given_a_bad_http_request_exception_with_a_payload_too_large_status
@@ -215,11 +217,25 @@ public class Given_a_bad_http_request_exception_with_a_payload_too_large_status
     public void It_handles_the_exception() => _handled.Should().BeTrue();
 
     [Test]
-    public void It_preserves_the_413_status_with_no_body()
+    public void It_returns_the_generic_bad_request_contract_with_the_413_status()
     {
         _httpContext.Response.StatusCode.Should().Be(413);
-        _responseBody.Should().BeEmpty();
-        _httpContext.Response.ContentType.Should().BeNullOrEmpty();
+        _httpContext.Response.ContentType.Should().Be("application/problem+json");
+        _httpContext.Response.Headers["TraceId"].Should().NotBeNullOrEmpty();
+
+        var body = JsonNode.Parse(_responseBody)!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["status"]!.GetValue<int>().Should().Be(413);
+        body["detail"]!.GetValue<string>().Should().Be("The request payload is too large.");
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+    }
+
+    [Test]
+    public void It_does_not_invent_a_nonstandard_type()
+    {
+        // The Ed-Fi Error Response Knowledge Base defines no payload-too-large type.
+        _responseBody.Should().NotContain("payload-too-large");
     }
 
     [Test]

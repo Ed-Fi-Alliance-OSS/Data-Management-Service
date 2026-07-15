@@ -85,12 +85,15 @@ public static class FailureResponse
             errors: errors
         );
 
-    public static JsonNode ForBadRequest(string detail, string correlationId) =>
+    // The status defaults to 400 but is caller-overridable so that a preserved framework client-error
+    // status (e.g. an unmodeled BadHttpRequestException status) can still return a machine-readable body
+    // whose status member matches the HTTP status, rather than an empty response.
+    public static JsonNode ForBadRequest(string detail, string correlationId, int status = 400) =>
         CreateBaseJsonObject(
             detail: detail,
             type: _badRequestTypePrefix,
             title: "Bad Request",
-            status: 400,
+            status: status,
             correlationId: correlationId,
             []
         );
