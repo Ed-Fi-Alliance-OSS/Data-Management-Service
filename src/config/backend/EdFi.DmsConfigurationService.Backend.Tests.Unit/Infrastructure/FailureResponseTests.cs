@@ -112,7 +112,7 @@ public class FailureResponseTests
     }
 
     [Test]
-    public void ForMethodNotAllowed_ShouldReturnCorrectJsonNode()
+    public void It_returns_the_correct_method_not_allowed_response()
     {
         // Arrange
         string detail = "The request method is not allowed for this resource.";
@@ -132,7 +132,7 @@ public class FailureResponseTests
     }
 
     [Test]
-    public void ForUnsupportedMediaType_ShouldReturnCorrectJsonNode()
+    public void It_returns_the_correct_unsupported_media_type_response()
     {
         // Arrange
         string detail = "The request content type is not supported.";
