@@ -888,13 +888,7 @@ Feature: Applications endpoints
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:api:security:authentication",
-                    "title":"Authentication Failed",
-                    "status":401,
-                    "validationErrors":{},
-                     "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                        ]
+                    "error": "invalid_client",
+                    "error_description": "Client authentication failed."
                   }
                   """
