@@ -171,7 +171,7 @@ public class FailureResponseTests
             ?.GetValue<string>()
             .Should()
             .Be("Data validation failed. See 'validationErrors' for details.");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
         result["title"]?.GetValue<string>().Should().Be("Data Validation Failed");
         result["status"]?.GetValue<int>().Should().Be(400);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);

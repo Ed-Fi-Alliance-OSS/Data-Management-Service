@@ -304,7 +304,7 @@ public class StatusCodePagesPipelineTests
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var body = await ParseBody(response);
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
             body["status"]!.GetValue<int>().Should().Be(400);
             body["detail"]!.GetValue<string>().Should().NotBe("The request was invalid.");
             body["validationErrors"]!.AsObject().Count.Should().BeGreaterThan(0);
