@@ -1445,6 +1445,117 @@ public class Given_Mssql_Pruning_With_An_Immutable_Abstract_Origin
 }
 
 /// <summary>
+/// Two disjoint convergences on one physical receiver: an immutable abstract-identity origin whose
+/// convergence is rescued, and a genuinely mutable origin whose convergence has no safe survivor and
+/// shares no physical FK with the rescued one. The mutable convergence must fail deterministically as
+/// NoSafeSqlServerForeignKeyPruning: it may not retry the disjoint rescued decision (no shared FK),
+/// and the rescue may not wrap back to an already-tried candidate. Together those two flaws loop
+/// forever, so the selector is exercised directly with hand-built candidates and a termination guard.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_Disjoint_Convergences_On_One_Receiver
+{
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+    private static readonly DbTableName _immutableOrigin = new(new DbSchemaName("edfi"), "ImmutableOrigin");
+    private static readonly DbTableName _mutableOrigin = new(new DbSchemaName("edfi"), "MutableOrigin");
+
+    private static MssqlForeignKeyPruningPass.PruningCandidate BuildOptionalCarrier(
+        DbTableName target,
+        string name,
+        string sharedKey,
+        string documentIdColumn
+    )
+    {
+        // An edge into the shared receiver whose canonical column pairs to the origin identity, with
+        // its own optional (nullable) local reference DocumentId anchor. Two such edges per origin
+        // form a convergence with no safe survivor: an optional carrier supplies no native coverage.
+        var foreignKey = new TableConstraint.ForeignKey(
+            name,
+            [new DbColumnName(sharedKey), new DbColumnName(documentIdColumn)],
+            target,
+            [new DbColumnName("Key"), new DbColumnName("DocumentId")],
+            ReferentialAction.NoAction,
+            ReferentialAction.Cascade
+        );
+
+        return new MssqlForeignKeyPruningPass.PruningCandidate(
+            MssqlForeignKeyPruningPass.PruningEdgeKey.From(_receiver, foreignKey),
+            name,
+            _receiver,
+            target,
+            foreignKey.Columns,
+            foreignKey.Columns[^1],
+            LocalDocumentIdIsRequired: false,
+            foreignKey.TargetColumns,
+            ReferentialAction.NoAction
+        );
+    }
+
+    /// <summary>
+    /// It should fail deterministically rather than looping between the rescued immutable convergence
+    /// and the disjoint mutable convergence on the same receiver.
+    /// </summary>
+    [Test]
+    public void It_should_fail_and_terminate_when_a_disjoint_mutable_convergence_has_no_safe_survivor()
+    {
+        var immutableFirst = BuildOptionalCarrier(
+            _immutableOrigin,
+            "FK_Receiver_ImmutableFirst",
+            "ImmutableKey",
+            "ImmutableFirst_DocumentId"
+        );
+        var immutableSecond = BuildOptionalCarrier(
+            _immutableOrigin,
+            "FK_Receiver_ImmutableSecond",
+            "ImmutableKey",
+            "ImmutableSecond_DocumentId"
+        );
+        var mutableFirst = BuildOptionalCarrier(
+            _mutableOrigin,
+            "FK_Receiver_MutableFirst",
+            "MutableKey",
+            "MutableFirst_DocumentId"
+        );
+        var mutableSecond = BuildOptionalCarrier(
+            _mutableOrigin,
+            "FK_Receiver_MutableSecond",
+            "MutableKey",
+            "MutableSecond_DocumentId"
+        );
+
+        Exception? captured = null;
+        var completed = Task.Run(() =>
+            {
+                try
+                {
+                    MssqlForeignKeyPruningPass.SelectCutEdges(
+                        ["edfi.ImmutableOrigin", "edfi.MutableOrigin"],
+                        [immutableFirst, immutableSecond, mutableFirst, mutableSecond],
+                        new HashSet<string> { "edfi.ImmutableOrigin" }
+                    );
+                }
+                catch (Exception exception)
+                {
+                    captured = exception;
+                }
+            })
+            .Wait(TimeSpan.FromSeconds(5));
+
+        completed
+            .Should()
+            .BeTrue(
+                "selection must terminate rather than loop between the rescued immutable convergence "
+                    + "and the disjoint mutable convergence on the same receiver"
+            );
+        captured
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("NoSafeSqlServerForeignKeyPruning");
+    }
+}
+
+/// <summary>
 /// Design verification case 13 (parallel FKs): two distinct physical FKs between the same tables
 /// are a convergence in the multigraph; one survives and the other is cut.
 /// </summary>
@@ -1481,8 +1592,10 @@ public class Given_Mssql_Pruning_Of_Parallel_Physical_Fks
     }
 
     /// <summary>
-    /// It should retain the first parallel edge in stable order and cut the second; the disjoint
-    /// cut carries no coverage obligation.
+    /// It should retain the first parallel edge in stable order and cut the second. The disjoint cut
+    /// carries no carrier obligation; because this origin is genuinely mutable, the cut role becomes a
+    /// plain NO ACTION reference — a deliberately out-of-scope shape (it derives, but a runtime
+    /// identity update on Origin is not guaranteed), not present in standard Ed-Fi.
     /// </summary>
     [Test]
     public void It_should_retain_the_first_parallel_edge_and_cut_the_second()

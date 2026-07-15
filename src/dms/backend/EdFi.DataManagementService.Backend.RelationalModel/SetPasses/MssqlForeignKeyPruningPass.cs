@@ -50,13 +50,14 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// origins in stable order, retains the first survivor whose competing incoming edges all pass
     /// the structural safe-cut test, and assigns full-composite ON UPDATE NO ACTION to the cuts.
     /// When a convergence has no locally safe survivor, the nearest earlier decision that assigned
-    /// an action to an incoming physical FK of the same receiver is retried with its next stable
+    /// an action to one of this convergence's own incoming edges is retried with its next stable
     /// survivor; a merely reachable, carrier-related, or disjoint earlier decision is never
     /// retried. When neither a safe survivor nor a shared-FK retry exists, a convergence discovered
     /// from an immutable abstract-identity origin (one with no transitively-mutable concrete
-    /// subclass) is rescued by retaining the first still-available candidate and cutting the rest:
+    /// subclass) is rescued by retaining the next still-available candidate and cutting the rest:
     /// that origin never renames the shared columns, so the cut guards a rename that cannot happen.
-    /// Otherwise derivation fails as NoSafeSqlServerForeignKeyPruning.
+    /// Once backtracking has exhausted that origin's candidates, or for a genuinely mutable origin,
+    /// derivation fails as NoSafeSqlServerForeignKeyPruning.
     /// </summary>
     internal static HashSet<PruningEdgeKey> SelectCutEdges(
         IReadOnlyList<string> origins,
@@ -106,14 +107,12 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
             }
 
             // Retry is permitted only to reverse an already-assigned action on the exact same
-            // physical FK: the nearest earlier decision that assigned an action to an incoming
-            // edge of this convergence's receiver.
-            var incomingEdgesOfReceiver = candidates
-                .Where(candidate => FormatTable(candidate.ReceiverTable) == convergence.Receiver)
-                .Select(candidate => candidate.EdgeKey)
-                .ToHashSet();
+            // physical FK: the nearest earlier decision that assigned an action to one of this
+            // convergence's own incoming edges. A disjoint earlier decision at the same physical
+            // receiver shares no FK with this convergence and is not a retry dependency.
+            var convergenceEdges = convergence.IncomingChoices.Select(choice => choice.EdgeKey).ToHashSet();
             var retryIndex = decisions.FindLastIndex(decision =>
-                decision.AssignedEdges.Any(incomingEdgesOfReceiver.Contains)
+                decision.AssignedEdges.Any(convergenceEdges.Contains)
             );
 
             if (retryIndex < 0)
@@ -121,13 +120,17 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 // An immutable abstract-identity origin never renames the shared columns, so a
                 // convergence discovered from it guards a rename that cannot happen. With no
                 // locally safe survivor and no earlier shared-FK decision to retry, retain the
-                // first still-available candidate and cut the rest instead of failing: fewer
+                // next still-available candidate and cut the rest instead of failing: fewer
                 // cascades never violate SQL Server's single-cascade-path rule, and no real update
-                // is left uncovered. Genuinely mutable origins still fail here.
-                if (immutableAbstractOrigins.Contains(origin))
+                // is left uncovered. Once backtracking has advanced startIndex past the last
+                // candidate, fall through and fail deterministically instead of wrapping to a
+                // candidate already tried. Genuinely mutable origins still fail here.
+                if (
+                    immutableAbstractOrigins.Contains(origin)
+                    && startIndex < convergence.IncomingChoices.Count
+                )
                 {
-                    var rescueIndex = startIndex < convergence.IncomingChoices.Count ? startIndex : 0;
-                    CommitSurvivor(origin, convergence, rescueIndex, cutEdges, retainedEdgeCounts, decisions);
+                    CommitSurvivor(origin, convergence, startIndex, cutEdges, retainedEdgeCounts, decisions);
 
                     continue;
                 }

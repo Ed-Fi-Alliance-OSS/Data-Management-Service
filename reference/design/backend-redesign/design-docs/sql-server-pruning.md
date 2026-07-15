@@ -244,9 +244,13 @@ route representation, or new derivation artifact.
 
    A supported cut therefore covers identity renames with stable local anchors; a cut whose validity depends on
    propagating a reference replacement is unsupported.
-3. **Required bindings only.** The cut reference and retained candidate must have non-nullable canonical local reference
-   `DocumentId` columns. DMS does not reason about optional references, synthetic presence gates, or arbitrary Boolean
-   presence implication. A nullable anchor or any case requiring further proof is unsupported and rejected.
+3. **Required carrier binding.** The retained candidate must have a non-nullable canonical local reference `DocumentId`
+   column: an optional carrier leaves rows whose retained reference is absent without native coverage for the shared
+   columns, and DMS does not reason about presence implication. An optional cut, however, is safe under a required
+   carrier that shares canonical storage: populated cut rows are covered through the always-present shared columns the
+   carrier's cascade maintains, and an absent (null) cut row carries no foreign-key obligation. DMS does not reason
+   about synthetic presence gates or arbitrary Boolean presence implication; a nullable carrier anchor or any case
+   requiring further proof is unsupported and rejected.
 4. **Native coverage only.** Coverage is supplied by the retained native `ON UPDATE CASCADE` operation. An `AFTER`
    trigger, later maintenance command, or application write is not a carrier.
 
@@ -254,6 +258,14 @@ A direct DMS write that replaces a receiver reference supplies the complete publ
 validated by the full-composite FK directly. It is not a carrier obligation for an incoming cut. Conversely, if a directly
 mutable intermediate identity change would require a cut tuple to change without a retained carrier, that survivor is
 unsafe. DMS need not model arbitrary value combinations to make this determination.
+
+A cut column that the retained cascade does not update carries no carrier obligation: the cut keeps enforcing that
+column as an ordinary full-composite `NO ACTION` reference. When the origin is immutable — the standard-Ed-Fi case,
+where disjoint role references resolve to an immutable abstract identity — no rename ever occurs, so the cut is fully
+safe. A genuinely mutable resource referenced through two disjoint, non-unified roles by one receiver is out of scope:
+unlike the shapes above it still derives and installs, but because the cut role becomes a plain `NO ACTION` reference a
+runtime identity update on that origin is not guaranteed. That shape is not present in standard Ed-Fi and is left for a
+separate feature backed by a real fixture.
 
 ## Outputs and Diagnostics
 
