@@ -15,6 +15,9 @@ internal static class FailureResults
 {
     private static readonly string _errorDetail =
         "The request could not be processed. See 'errors' for details.";
+    private static readonly string _authenticationFailedDetail = "The caller could not be authenticated.";
+    private static readonly string _authorizationDeniedDetail =
+        "Access to the resource could not be authorized.";
     private static readonly string _errorContentType = "application/problem+json";
     private static readonly JsonSerializerOptions _relaxedSerializer = new()
     {
@@ -123,11 +126,17 @@ internal static class FailureResults
 
     // Authentication failure with caller-supplied error messages. Unlike the identity-provider
     // overload above, the errors are used verbatim (no prefixing or JSON parsing), so framework
-    // authentication challenges can surface a clean, specific message.
+    // authentication challenges can surface a clean, specific message. The detail is the canonical
+    // Ed-Fi authentication detail; the scenario-specific reason is carried in the errors array.
     public static IResult Unauthorized(string[] errors, string correlationId)
     {
         return Results.Json(
-            FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
+            FailureResponse.ForUnauthorized(
+                "Authentication Failed",
+                _authenticationFailedDetail,
+                correlationId,
+                errors
+            ),
             contentType: _errorContentType,
             statusCode: 401
         );
@@ -145,11 +154,17 @@ internal static class FailureResults
 
     // Authorization failure with caller-supplied error messages. Unlike the identity-provider
     // overload above, the errors are used verbatim (no "Forbidden. " prefix or JSON parsing),
-    // so endpoints and authorization handling can surface a clean, specific message.
+    // so endpoints and authorization handling can surface a clean, specific message. The title and
+    // detail follow the canonical Ed-Fi authorization-denied contract.
     public static IResult Forbidden(string[] errors, string correlationId)
     {
         return Results.Json(
-            FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
+            FailureResponse.ForForbidden(
+                "Authorization Denied",
+                _authorizationDeniedDetail,
+                correlationId,
+                errors
+            ),
             contentType: _errorContentType,
             statusCode: 403
         );

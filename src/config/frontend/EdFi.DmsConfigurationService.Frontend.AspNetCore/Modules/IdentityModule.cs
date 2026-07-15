@@ -29,10 +29,11 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 /// revocation endpoints.
 /// </summary>
 /// <remarks>
-/// Error responses from these endpoints use the Ed-Fi Problem Details contract (the same shape as the
-/// rest of the CMS API) rather than the OAuth { error, error_description } shape. Only protocol success
-/// responses remain protocol-shaped (the token payload and the RFC 7662 introspection { active: ... }
-/// response).
+/// The token, introspection, and revocation endpoints are OAuth 2.0 / OpenID Connect protocol
+/// endpoints. Their error responses use the standard { error, error_description } shape (RFC 6749
+/// section 5.2, RFC 7662, and RFC 7009) rather than the Ed-Fi Problem Details contract, so that
+/// standards-compliant OAuth clients can interpret them. The /connect/register endpoint is not an OAuth
+/// protocol endpoint and returns the Ed-Fi contract.
 /// </remarks>
 public class IdentityModule : IEndpointModule
 {
@@ -222,7 +223,7 @@ public class IdentityModule : IEndpointModule
 
         await validator.GuardAsync(model);
 
-        // Validate grant type (only client_credentials is supported)
+        // Validate grant type (OAuth 2.0 compliance)
         if (
             !string.Equals(
                 model.grant_type,
@@ -231,9 +232,13 @@ public class IdentityModule : IEndpointModule
             )
         )
         {
-            return FailureResults.DataValidation(
-                [new ValidationFailure("grant_type", "The specified grant type is not supported.")],
-                httpContext.TraceIdentifier
+            return Results.Json(
+                new
+                {
+                    error = OpenIddictConstants.Errors.UnsupportedGrantType,
+                    error_description = "The specified grant type is not supported.",
+                },
+                statusCode: 400
             );
         }
 
@@ -292,9 +297,13 @@ public class IdentityModule : IEndpointModule
 
         if (string.IsNullOrEmpty(model.Token))
         {
-            return FailureResults.DataValidation(
-                [new ValidationFailure("token", "The token parameter is required.")],
-                httpContext.TraceIdentifier
+            return Results.Json(
+                new
+                {
+                    error = OpenIddictConstants.Errors.InvalidRequest,
+                    error_description = "The token parameter is missing.",
+                },
+                statusCode: 400
             );
         }
 
@@ -346,9 +355,13 @@ public class IdentityModule : IEndpointModule
 
         if (string.IsNullOrEmpty(model.Token))
         {
-            return FailureResults.DataValidation(
-                [new ValidationFailure("token", "The token parameter is required.")],
-                httpContext.TraceIdentifier
+            return Results.Json(
+                new
+                {
+                    error = OpenIddictConstants.Errors.InvalidRequest,
+                    error_description = "The token parameter is missing.",
+                },
+                statusCode: 400
             );
         }
 

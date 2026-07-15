@@ -375,9 +375,9 @@ public class RegisterEndpointTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "The request could not be processed. See 'errors' for details.",
+              "detail": "Access to the resource could not be authorized.",
               "type": "urn:ed-fi:api:security:authorization",
-              "title": "Authorization Failed",
+              "title": "Authorization Denied",
               "status": 403,
               "correlationId": "{correlationId}",
               "validationErrors": {},
@@ -877,7 +877,7 @@ public class TokenEndpointTests
     }
 
     [Test]
-    public async Task It_returns_ed_fi_data_validation_for_an_unsupported_grant_type()
+    public async Task It_returns_the_oauth_unsupported_grant_type_error()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -908,23 +908,15 @@ public class TokenEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         var actualResponse = JsonNode.Parse(content);
-        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-              "title": "Data Validation Failed",
-              "status": 400,
-              "correlationId": "{correlationId}",
-              "validationErrors": {
-                "grant_type": ["The specified grant type is not supported."]
-              },
-              "errors": []
+              "error": "unsupported_grant_type",
+              "error_description": "The specified grant type is not supported."
             }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            """
         );
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
@@ -934,7 +926,7 @@ public class TokenEndpointTests
 public class Given_An_Introspect_Request_Without_A_Token
 {
     [Test]
-    public async Task It_returns_ed_fi_data_validation()
+    public async Task It_returns_the_oauth_invalid_request_error()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -951,23 +943,15 @@ public class Given_An_Introspect_Request_Without_A_Token
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         var actualResponse = JsonNode.Parse(content);
-        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-              "title": "Data Validation Failed",
-              "status": 400,
-              "correlationId": "{correlationId}",
-              "validationErrors": {
-                "token": ["The token parameter is required."]
-              },
-              "errors": []
+              "error": "invalid_request",
+              "error_description": "The token parameter is missing."
             }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            """
         );
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
@@ -977,7 +961,7 @@ public class Given_An_Introspect_Request_Without_A_Token
 public class Given_A_Revoke_Request_Without_A_Token
 {
     [Test]
-    public async Task It_returns_ed_fi_data_validation()
+    public async Task It_returns_the_oauth_invalid_request_error()
     {
         // Arrange
         var tokenManager = A.Fake<ITokenManager>();
@@ -997,23 +981,15 @@ public class Given_A_Revoke_Request_Without_A_Token
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         var actualResponse = JsonNode.Parse(content);
-        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-              "title": "Data Validation Failed",
-              "status": 400,
-              "correlationId": "{correlationId}",
-              "validationErrors": {
-                "token": ["The token parameter is required."]
-              },
-              "errors": []
+              "error": "invalid_request",
+              "error_description": "The token parameter is missing."
             }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            """
         );
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }

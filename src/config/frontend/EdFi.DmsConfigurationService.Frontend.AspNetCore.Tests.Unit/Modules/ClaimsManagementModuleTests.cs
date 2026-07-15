@@ -42,6 +42,12 @@ public abstract class ClaimsManagementModuleTests
     // A syntactically invalid (non-JWT) bearer value that the production JWT handler rejects.
     protected const string InvalidBearerToken = "not-a-valid-jwt";
 
+    // The framework-401 errors message when no credential was supplied versus one that was supplied
+    // but rejected. The detail is identical; only these differ.
+    protected const string MissingCredentialError = "Authentication is required to access this resource.";
+    protected const string InvalidCredentialError =
+        "The supplied authentication credentials were invalid or have expired.";
+
     protected readonly IClaimsUploadService ClaimsUploadService = A.Fake<IClaimsUploadService>();
     protected readonly IClaimsProvider ClaimsProvider = A.Fake<IClaimsProvider>();
 
@@ -178,7 +184,7 @@ public abstract class ClaimsManagementModuleTests
     /// <summary>
     /// Asserts the full Ed-Fi authentication contract for framework-generated 401 responses.
     /// </summary>
-    protected static async Task AssertUnauthorizedContract(HttpResponseMessage response)
+    protected static async Task AssertUnauthorizedContract(HttpResponseMessage response, string expectedError)
     {
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
@@ -193,15 +199,18 @@ public abstract class ClaimsManagementModuleTests
         var expected = JsonNode.Parse(
             """
             {
-              "detail": "The request could not be processed. See 'errors' for details.",
+              "detail": "The caller could not be authenticated.",
               "type": "urn:ed-fi:api:security:authentication",
               "title": "Authentication Failed",
               "status": 401,
               "correlationId": "{correlationId}",
               "validationErrors": {},
-              "errors": ["Authentication is required to access this resource."]
+              "errors": ["{error}"]
             }
-            """.Replace("{correlationId}", actual!["correlationId"]!.GetValue<string>())
+            """.Replace("{correlationId}", actual!["correlationId"]!.GetValue<string>()).Replace(
+                "{error}",
+                expectedError
+            )
         );
         JsonNode.DeepEquals(actual, expected).Should().Be(true);
     }
@@ -221,9 +230,9 @@ public abstract class ClaimsManagementModuleTests
         var expected = JsonNode.Parse(
             """
             {
-              "detail": "The request could not be processed. See 'errors' for details.",
+              "detail": "Access to the resource could not be authorized.",
               "type": "urn:ed-fi:api:security:authorization",
-              "title": "Authorization Failed",
+              "title": "Authorization Denied",
               "status": 403,
               "correlationId": "{correlationId}",
               "validationErrors": {},
@@ -689,6 +698,56 @@ public abstract class ClaimsManagementModuleTests
 
             await AssertInternalServerErrorContract(response);
         }
+
+        [Test]
+        public async Task It_returns_a_compliant_bad_request_400_when_reload_reports_a_json_error_failure()
+        {
+            // The real malformed-source flow: the service catches the JSON error internally and reports
+            // it as a JsonError failure rather than throwing.
+            A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [
+                            new ClaimsFailure(
+                                "JsonError",
+                                "Invalid JSON format encountered during claims reload"
+                            ),
+                        ]
+                    )
+                );
+
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+
+            await AssertBadRequestContract(response, "The claims source was invalid.");
+        }
+
+        [Test]
+        public async Task It_returns_a_compliant_data_validation_400_when_reload_reports_validation_failures()
+        {
+            A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [
+                            new ClaimsFailure(
+                                "Validation",
+                                "Claim set name is required.",
+                                "$.claimSets[0].claimSetName"
+                            ),
+                        ]
+                    )
+                );
+
+            var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
+
+            var body = await AssertDataValidationContract(response);
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors["$.claimSets[0].claimSetName"]!.AsArray()[0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Claim set name is required.");
+        }
     }
 
     /// <summary>
@@ -931,20 +990,21 @@ public abstract class ClaimsManagementModuleTests
         public async Task It_returns_a_compliant_401_for_reload_claims()
         {
             var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
-            await AssertUnauthorizedContract(response);
+            await AssertUnauthorizedContract(response, MissingCredentialError);
         }
 
         [Test]
         public async Task It_returns_a_compliant_401_for_current_claims()
         {
             var response = await Client.GetAsync(CurrentClaimsRoute);
-            await AssertUnauthorizedContract(response);
+            await AssertUnauthorizedContract(response, MissingCredentialError);
         }
     }
 
     /// <summary>
     /// A malformed (non-JWT) bearer token is rejected by the production JWT handler; the resulting
-    /// 401 carries the Ed-Fi authentication contract.
+    /// 401 carries the Ed-Fi authentication contract and reports the credential as invalid rather than
+    /// missing.
     /// </summary>
     [TestFixture]
     public class Given_an_invalid_bearer_token_the_framework_401_is_compliant : ClaimsManagementModuleTests
@@ -956,7 +1016,7 @@ public abstract class ClaimsManagementModuleTests
         public async Task It_returns_a_compliant_401_for_current_claims()
         {
             var response = await Client.GetAsync(CurrentClaimsRoute);
-            await AssertUnauthorizedContract(response);
+            await AssertUnauthorizedContract(response, InvalidCredentialError);
         }
     }
 

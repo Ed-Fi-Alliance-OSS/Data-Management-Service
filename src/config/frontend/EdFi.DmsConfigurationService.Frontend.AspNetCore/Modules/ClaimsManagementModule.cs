@@ -85,8 +85,16 @@ public class ClaimsManagementModule : IEndpointModule
                 return Results.Ok(new ReloadClaimsResponse(Success: true, ReloadId: claimsProvider.ReloadId));
             }
 
-            logger.LogError("Claims reload failed with {FailureCount} failures", status.Failures.Count);
-            return FailureResults.Unknown(httpContext.TraceIdentifier);
+            // The service catches JSON/argument/operational errors internally and reports them as
+            // failures (it does not throw), so the malformed-source path is classified here rather than
+            // in the catch blocks below.
+            return ClassifyClaimsFailures(
+                status.Failures,
+                "The claims source was invalid.",
+                httpContext,
+                logger,
+                "reload"
+            );
         }
         catch (JsonException ex)
         {
@@ -150,42 +158,12 @@ public class ClaimsManagementModule : IEndpointModule
                 );
             }
 
-            // Operational, database, and unexpected failures are server-side problems: return a safe
-            // 500 and log the details server-side only (their messages can contain DB/connection/SQL
-            // text and must never reach the response body).
-            if (status.Failures.Exists(IsServerSideFailure))
-            {
-                logger.LogError(
-                    "Claims upload failed with a server-side error: {Failures}",
-                    DescribeFailures(status.Failures)
-                );
-                return FailureResults.Unknown(httpContext.TraceIdentifier);
-            }
-
-            // Malformed client input (invalid JSON / arguments): generic 400 without echoing detail.
-            if (status.Failures.Exists(failure => BadRequestFailureTypes.Contains(failure.FailureType)))
-            {
-                logger.LogError(
-                    "Claims upload rejected as a bad request: {Failures}",
-                    DescribeFailures(status.Failures)
-                );
-                return FailureResults.BadRequest(
-                    "The claims upload request was invalid.",
-                    httpContext.TraceIdentifier
-                );
-            }
-
-            // Genuine client data-validation failures: 400 with grouped validationErrors.
-            logger.LogError(
-                "Claims upload failed validation with {FailureCount} failures",
-                status.Failures.Count
-            );
-            return FailureResults.DataValidation(
-                status.Failures.Select(failure => new ValidationFailure(
-                    string.IsNullOrEmpty(failure.Path) ? failure.FailureType : failure.Path,
-                    failure.Message
-                )),
-                httpContext.TraceIdentifier
+            return ClassifyClaimsFailures(
+                status.Failures,
+                "The claims upload request was invalid.",
+                httpContext,
+                logger,
+                "upload"
             );
         }
         catch (JsonException ex)
@@ -267,6 +245,53 @@ public class ClaimsManagementModule : IEndpointModule
             logger.LogError(ex, "Invalid operation while retrieving current claims");
             return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
+    }
+
+    // Maps a failed ClaimsLoadStatus to the appropriate Ed-Fi response. Server-side failures (database,
+    // operational, unexpected) return a safe 500 with the details logged server-side only; malformed
+    // source input (invalid JSON / arguments) returns a generic 400; genuine data-validation failures
+    // return a 400 with grouped validationErrors. Shared by the reload and upload endpoints because the
+    // service reports the same failure classifications for both.
+    private static IResult ClassifyClaimsFailures(
+        List<ClaimsFailure> failures,
+        string badRequestDetail,
+        HttpContext httpContext,
+        ILogger logger,
+        string operation
+    )
+    {
+        if (failures.Exists(IsServerSideFailure))
+        {
+            logger.LogError(
+                "Claims {Operation} failed with a server-side error: {Failures}",
+                operation,
+                DescribeFailures(failures)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        if (failures.Exists(failure => BadRequestFailureTypes.Contains(failure.FailureType)))
+        {
+            logger.LogError(
+                "Claims {Operation} rejected as a bad request: {Failures}",
+                operation,
+                DescribeFailures(failures)
+            );
+            return FailureResults.BadRequest(badRequestDetail, httpContext.TraceIdentifier);
+        }
+
+        logger.LogError(
+            "Claims {Operation} failed validation with {FailureCount} failures",
+            operation,
+            failures.Count
+        );
+        return FailureResults.DataValidation(
+            failures.Select(failure => new ValidationFailure(
+                string.IsNullOrEmpty(failure.Path) ? failure.FailureType : failure.Path,
+                failure.Message
+            )),
+            httpContext.TraceIdentifier
+        );
     }
 
     // ClaimsFailure.FailureType values from IClaimsUploadService that represent genuine client

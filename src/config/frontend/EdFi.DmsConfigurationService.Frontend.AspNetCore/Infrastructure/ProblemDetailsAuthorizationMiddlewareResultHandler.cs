@@ -5,6 +5,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.Extensions.Primitives;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -48,12 +49,26 @@ internal sealed class ProblemDetailsAuthorizationMiddlewareResultHandler
             return;
         }
 
-        IResult problemDetails = authorizeResult.Challenged
-            ? FailureResults.Unauthorized(
-                ["Authentication is required to access this resource."],
+        IResult problemDetails;
+        if (authorizeResult.Challenged)
+        {
+            // Distinguish a missing credential from one that was supplied but rejected: an Authorization
+            // header on the request means credentials were provided but could not be validated, while
+            // its absence means none were supplied. Both share the canonical authentication detail; only
+            // the errors message differs.
+            bool credentialsSupplied = !StringValues.IsNullOrEmpty(context.Request.Headers.Authorization);
+            string[] errors = credentialsSupplied
+                ? ["The supplied authentication credentials were invalid or have expired."]
+                : ["Authentication is required to access this resource."];
+            problemDetails = FailureResults.Unauthorized(errors, context.TraceIdentifier);
+        }
+        else
+        {
+            problemDetails = FailureResults.Forbidden(
+                ["Access to this resource is forbidden."],
                 context.TraceIdentifier
-            )
-            : FailureResults.Forbidden(["Access to this resource is forbidden."], context.TraceIdentifier);
+            );
+        }
 
         await problemDetails.ExecuteAsync(context);
     }

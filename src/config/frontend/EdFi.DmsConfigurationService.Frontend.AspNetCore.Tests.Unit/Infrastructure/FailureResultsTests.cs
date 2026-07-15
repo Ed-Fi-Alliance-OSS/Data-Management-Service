@@ -24,7 +24,8 @@ public class FailureResultsTests
     {
         private const string CorrelationId = "test-correlation-id";
         private const string ProblemJsonContentType = "application/problem+json";
-        private const string SharedDetail = "The request could not be processed. See 'errors' for details.";
+        private const string AuthenticationFailedDetail = "The caller could not be authenticated.";
+        private const string AuthorizationDeniedDetail = "Access to the resource could not be authorized.";
 
         private static (int? StatusCode, string? ContentType, JsonNode Body) Inspect(IResult result)
         {
@@ -122,6 +123,30 @@ public class FailureResultsTests
         }
 
         [Test]
+        public void It_Unauthorized_with_errors_returns_compliant_authentication_failure_using_errors_verbatim()
+        {
+            var (statusCode, contentType, body) = Inspect(
+                FailureResults.Unauthorized(
+                    ["Authentication is required to access this resource."],
+                    CorrelationId
+                )
+            );
+
+            statusCode.Should().Be(401);
+            contentType.Should().Be(ProblemJsonContentType);
+            body["detail"]?.GetValue<string>().Should().Be(AuthenticationFailedDetail);
+            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:security:authentication");
+            body["title"]?.GetValue<string>().Should().Be("Authentication Failed");
+            body["status"]?.GetValue<int>().Should().Be(401);
+            body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+            body["validationErrors"]?.AsObject().Count.Should().Be(0);
+
+            var errors = body["errors"]!.AsArray();
+            errors.Count.Should().Be(1);
+            errors[0]!.GetValue<string>().Should().Be("Authentication is required to access this resource.");
+        }
+
+        [Test]
         public void It_Forbidden_with_errors_returns_compliant_authorization_failure_using_errors_verbatim()
         {
             var (statusCode, contentType, body) = Inspect(
@@ -130,9 +155,9 @@ public class FailureResultsTests
 
             statusCode.Should().Be(403);
             contentType.Should().Be(ProblemJsonContentType);
-            body["detail"]?.GetValue<string>().Should().Be(SharedDetail);
+            body["detail"]?.GetValue<string>().Should().Be(AuthorizationDeniedDetail);
             body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
-            body["title"]?.GetValue<string>().Should().Be("Authorization Failed");
+            body["title"]?.GetValue<string>().Should().Be("Authorization Denied");
             body["status"]?.GetValue<int>().Should().Be(403);
             body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
             body["validationErrors"]?.AsObject().Count.Should().Be(0);
