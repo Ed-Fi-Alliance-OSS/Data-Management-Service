@@ -176,4 +176,138 @@ public class StatusCodePagesPipelineTests
             raw.Should().BeEmpty();
         }
     }
+
+    /// <summary>
+    /// Minimal-API binding failures can set an empty 400 after authorization without invoking the
+    /// endpoint handler (an invalid numeric route segment, or a missing required request body). These
+    /// empty framework 400s receive the complete Ed-Fi bad-request contract with a generic detail;
+    /// a 400 that already carries a structured body (e.g. data validation) is left untouched, and the
+    /// invalid route/body input is never reflected into the response.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Framework_Binding_Failure
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // The handler never runs for a binding failure, but a fake repository keeps the endpoint's
+            // dependencies resolvable for the structured-validation case, where the handler does run.
+            var vendorRepository = A.Fake<IVendorRepository>();
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (ctx, collection) =>
+                    {
+                        collection.AddTestAuthentication();
+                        var identitySettings = ctx
+                            .Configuration.GetSection("IdentitySettings")
+                            .Get<IdentitySettings>()!;
+                        collection.AddAuthorization(options =>
+                        {
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy =>
+                                    policy.RequireClaim(
+                                        identitySettings.RoleClaimType,
+                                        identitySettings.ConfigServiceRole
+                                    )
+                            );
+                            AuthorizationScopePolicies.Add(options);
+                        });
+                        collection.AddTransient(_ => vendorRepository);
+                    }
+                );
+            });
+            _client = _factory.CreateClient();
+            // A full-access scope so authorization passes and the request reaches model binding rather
+            // than being masked by a 401/403.
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        private static async Task<JsonNode> ParseBody(HttpResponseMessage response) =>
+            JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+        private static void AssertBadRequestContract(JsonNode body)
+        {
+            body["detail"]!.GetValue<string>().Should().Be("The request was invalid.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_complete_bad_request_contract_for_an_invalid_route_parameter()
+        {
+            // /v3/vendors/{id} binds id to a long; "not-a-long" fails binding after authorization, so
+            // the handler never runs and the framework produces an empty 400.
+            var response = await _client.GetAsync("/v3/vendors/not-a-long");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+            var body = await ParseBody(response);
+            AssertBadRequestContract(body);
+
+            // The invalid route value must not be reflected into the public response.
+            body.ToJsonString().Should().NotContain("not-a-long");
+        }
+
+        [Test]
+        public async Task It_returns_the_complete_bad_request_contract_for_a_missing_required_body()
+        {
+            // POST /v3/vendors requires a VendorInsertCommand body; an empty body fails framework
+            // binding before the handler runs, producing an empty 400.
+            var content = new StringContent("", Encoding.UTF8, "application/json");
+            var response = await _client.PostAsync("/v3/vendors", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+            var body = await ParseBody(response);
+            AssertBadRequestContract(body);
+        }
+
+        [Test]
+        public async Task It_does_not_overwrite_an_existing_structured_bad_request()
+        {
+            // A syntactically valid body that fails validation produces a structured data-validation
+            // 400 (written with a body by the exception handler); UseStatusCodePages must not replace
+            // it with the generic framework bad-request.
+            var content = new StringContent(
+                """
+                {
+                  "company": "Test",
+                  "contactName": "Test",
+                  "contactEmailAddress": "not-an-email",
+                  "namespacePrefixes": "Test"
+                }
+                """,
+                Encoding.UTF8,
+                "application/json"
+            );
+            var response = await _client.PostAsync("/v3/vendors", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = await ParseBody(response);
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["detail"]!.GetValue<string>().Should().NotBe("The request was invalid.");
+            body["validationErrors"]!.AsObject().Count.Should().BeGreaterThan(0);
+        }
+    }
 }

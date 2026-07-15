@@ -76,17 +76,23 @@ if (!ReportInvalidConfiguration(app))
     // instead of escaping as a bare, unhandled 500.
     app.UseExceptionHandler(o => { });
 
-    // Give framework-generated non-success responses that would otherwise be empty (unmatched-route
-    // 404, method-not-allowed 405, unsupported-media-type 415) the Ed-Fi Problem Details contract.
-    // UseStatusCodePages runs only when the response has no body, so it never replaces bodies already
-    // produced (OAuth responses, the authorization handler's 401/403, endpoint error responses) and
-    // does not touch successful/204 responses. Only the body is written, so the original status code
-    // and any framework headers (e.g. Allow on 405, WWW-Authenticate) are preserved.
+    // Give framework-generated non-success responses that would otherwise be empty (binding-failure
+    // 400, unmatched-route 404, method-not-allowed 405, unsupported-media-type 415) the Ed-Fi Problem
+    // Details contract. UseStatusCodePages runs only when the response has no body, so it never
+    // replaces bodies already produced (OAuth responses, the authorization handler's 401/403, endpoint
+    // error responses including structured data-validation 400s) and does not touch successful/204
+    // responses. Only the body is written, so the original status code and any framework headers (e.g.
+    // Allow on 405, WWW-Authenticate) are preserved. The 400 detail is intentionally generic so that
+    // invalid route/body input and framework exception text are never reflected into the response.
     app.UseStatusCodePages(async statusCodeContext =>
     {
         HttpContext context = statusCodeContext.HttpContext;
         IResult? problemDetails = context.Response.StatusCode switch
         {
+            StatusCodes.Status400BadRequest => FailureResults.BadRequest(
+                "The request was invalid.",
+                context.TraceIdentifier
+            ),
             StatusCodes.Status404NotFound => FailureResults.NotFound(
                 "The requested resource was not found.",
                 context.TraceIdentifier
