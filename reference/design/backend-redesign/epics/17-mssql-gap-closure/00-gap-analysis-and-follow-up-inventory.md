@@ -12,9 +12,9 @@ validation, deployment, and lifecycle gaps rather than a new backend implementat
 those gaps and records their owning tickets, dependencies, and scope boundaries.
 
 `DMS-1125` is the canonical Jira epic for MSSQL gap-closing work that does not have a more specific active home.
-All seven work items originally listed in this design—`DMS-873`, `DMS-1270`, `DMS-1271`, `DMS-1279`,
-`DMS-1284`, `DMS-1285`, and `DMS-1286`—are already children of `DMS-1125`. The parent cleanup is complete;
-no reparenting remains pending for those items.
+All eight inventoried work items—`DMS-873`, `DMS-1270`, `DMS-1271`, `DMS-1279`, `DMS-1284`, `DMS-1285`,
+`DMS-1286`, and `DMS-1289`—are children of `DMS-1125`. The parent cleanup is complete; no reparenting remains
+pending for those items.
 
 ## Gap Inventory
 
@@ -26,7 +26,7 @@ no reparenting remains pending for those items.
 | `DMS-1284` | The standard DMS and Instance Management Docker E2E paths are PostgreSQL-specific | [`04-mssql-docker-e2e.md`](04-mssql-docker-e2e.md) |
 | `DMS-1285` | Several critical relational write-path correctness and resilience scenarios lack real-MSSQL execution | [`05-mssql-write-path-coverage.md`](05-mssql-write-path-coverage.md) |
 | `DMS-1286` | NamespaceBased CRUD authorization lacks broad real-MSSQL provider integration coverage | [`06-mssql-namespace-authorization-coverage.md`](06-mssql-namespace-authorization-coverage.md) |
-| `DMS-1289` | Scheduled smoke tests do not exercise the complete MSSQL template build, restore, registration, and API/SDK smoke path | [Detailed Jira scope and acceptance criteria](https://edfi.atlassian.net/browse/DMS-1289) |
+| `DMS-1289` | Scheduled smoke tests do not exercise the complete MSSQL template build, restore, registration, and API/SDK smoke path | [`07-mssql-scheduled-smoke.md`](07-mssql-scheduled-smoke.md) |
 
 `DMS-1289` belongs in this inventory because scheduled release-confidence coverage is distinct from the Docker
 E2E boundary in `DMS-1284` and the provider-integration matrices in `DMS-1285` and `DMS-1286`.

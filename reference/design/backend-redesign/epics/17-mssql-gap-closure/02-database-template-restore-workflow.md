@@ -45,11 +45,16 @@ The wrapper performs the following sequence in restore mode:
    candidate and leave the active workspace and selected database untouched.
 4. Prove that the entire selected DMS stack is stopped before starting database preflight. A failed or
    indeterminate stop proof leaves the active workspace and target untouched.
-5. Run `start-*-dms.ps1 -DbOnly` to start only the selected database service and wait for readiness.
+5. Run `start-*-dms.ps1 -DbOnly` with an engine-dispatched restore-preflight override that starts only the
+   database service and waits for readiness without creating or selecting the requested target. PostgreSQL
+   must replace `POSTGRES_DB_NAME` with a generated, non-target preflight database for this first startup so
+   `postgresql-init.sh` cannot create the selected target when it initializes a fresh volume. MSSQL uses its
+   administrative database without materializing the target.
 6. Revalidate target safety against the live engine catalog. Restore the artifact into a generated scratch
    database, validate its effective schema and DMS-only catalog contents, and remove the scratch database.
    Package, candidate-workspace, stop-proof, target-safety, or scratch-validation failure ends preflight,
-   removes transient state, and leaves both the active workspace and selected database unchanged.
+   removes the candidate, scratch database, and generated preflight database, and leaves both the active
+   workspace and selected database unchanged, including preserving an absent target as absent.
 7. Stop the database-only slice and again prove that the complete selected stack is stopped. The verified
    candidate and scratch result do not authorize workspace replacement while any stack service is running.
 8. Begin the commit stage. If the active workspace is absent or differs from the verified candidate, replace
@@ -73,6 +78,12 @@ The wrapper owns when restore happens. An engine-dispatched restore module owns 
   scratch name uses a safe product prefix plus an unpredictable suffix, passes the same reserved-name checks,
   and is removed on success or failure. Selected-target replacement cannot begin until scratch validation
   succeeds.
+- The PostgreSQL restore-preflight start must not expose the selected target as `POSTGRES_DB_NAME` because
+  `postgresql-init.sh` creates that database while initializing a fresh volume. It uses a generated preflight
+  database instead, connects through an administrative database for catalog and cleanup operations, and
+  removes the generated database on success or failure. Tests must prove that a target absent before preflight
+  remains absent after every preflight failure. MSSQL preflight similarly connects through an administrative
+  database and does not create the target.
 - PostgreSQL resolves the package's SQL artifact, replays it into the scratch database, validates it, then
   drops/recreates the selected datastore database and replays the same hash-verified SQL into the target.
 - MSSQL resolves the package's `.bak`, validates logical file metadata, and performs `RESTORE ... WITH MOVE`
@@ -98,8 +109,9 @@ The wrapper owns when restore happens. An engine-dispatched restore module owns 
   canonical inventory, compares it with the manifest, verifies `dms.EffectiveSchema` against both the manifest
   and candidate bootstrap manifest, and enforces the DMS-only exclusions before touching the target. Feed and
   `-PackageDirectory` packages use identical producer/consumer checks; local origin is not a trust bypass.
-- Any failure through scratch validation is a preflight failure: transient candidate and scratch state is
-  removed, while the active `.bootstrap` tree and selected physical database remain unchanged.
+- Any failure through scratch validation is a preflight failure: transient candidate, preflight-database, and
+  scratch state is removed, while the active `.bootstrap` tree and selected physical database remain
+  unchanged. A target that did not exist before preflight remains absent.
 - A legacy package without the external manifest is not eligible for target replacement. If legacy-package
   compatibility is later required, it must use a safe scratch restore followed by `dms.EffectiveSchema`
   validation before any destructive operation against the selected datastore.
@@ -145,17 +157,19 @@ state form one handoff and may still be bind-mounted.
   `dmscs`, CMS/OpenIddict state, unexpected principals, or objects outside the manifest's DMS-only inventory
   before replacing the target, including packages supplied through `-PackageDirectory`.
 - Package resolution or external-manifest validation failures occur before Docker startup. Every preflight
-  failure through scratch validation leaves the active workspace and selected target untouched. Target
-  selection or restore failures stop before CMS/DMS startup.
+  failure through scratch validation leaves the active workspace and selected target untouched, including on
+  a fresh PostgreSQL volume where the selected target did not exist. Target selection or restore failures stop
+  before CMS/DMS startup.
 - Existing non-restore bootstrap behavior is unchanged.
 - A mismatched or incomplete workspace is replaced only after the complete stack is proven stopped; the whole
   `.bootstrap` tree is removed and schema, claims, and seed handoff state are regenerated together.
 - Tests cover wrapper sequencing, candidate/package hash and project-inventory mismatches, reserved database
   names for both engines, local-package resolution, engine-specific scratch and target command construction,
   manifest/artifact validation before Docker activity, DMS-only producer and consumer gates, scratch cleanup,
-  failed stop proof, the database-only preflight stop/restart boundary, full-workspace replacement, bind-mount
-  safety, shared/separate topology behavior, default targeting, repeated single-target operation, and the
-  distinction between restore and API seed delivery.
+  generated preflight-database cleanup, fresh-volume PostgreSQL target-absence preservation, failed stop proof,
+  the database-only preflight stop/restart boundary, full-workspace replacement, bind-mount safety,
+  shared/separate topology behavior, default targeting, repeated single-target operation, and the distinction
+  between restore and API seed delivery.
 - Live validation covers PostgreSQL and MSSQL with Minimal and Populated templates and supported Data Standard
   versions, including different extension selections, effective-schema validation, contaminated-package
   rejection before target replacement, and served data.

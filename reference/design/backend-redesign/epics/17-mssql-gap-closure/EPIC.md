@@ -31,15 +31,17 @@ cross-cutting local and CI workflows that do not have another active home.
   coverage gaps
 - `DMS-1286` — `06-mssql-namespace-authorization-coverage.md` — Add real-MSSQL integration coverage for
   NamespaceBased CRUD authorization
+- `DMS-1289` — `07-mssql-scheduled-smoke.md` — Add MSSQL coverage to the scheduled database-template and
+  API/SDK smoke matrix
 
 ## Cross-Work-Item Dependencies
 
 - `DMS-873` owns the gap inventory and scope boundaries. It does not re-own implementation already assigned
   to a follow-up story.
-- `DMS-1255` delivered the shared local-database default prerequisite for `DMS-1270`; its Jira link remains for
-  provenance rather than representing outstanding `DMS-1270` work. It also supplies the database-template
-  packages and `-DbOnly` startup slice required by `DMS-1271` and `DMS-1279` and remains tracked under its
-  existing bootstrap ownership.
+- `DMS-1255` delivered the shared local-database default prerequisite for `DMS-1270`; its Jira links remain for
+  provenance rather than representing active blockers. It also supplies the database-template packages,
+  `-DbOnly` startup slice, and engine-aware build/restore foundations required by `DMS-1271`, `DMS-1279`, and
+  `DMS-1289`, and remains tracked under its existing bootstrap ownership.
 - `DMS-1258` retains implementation ownership for the SQL Server foreign-key-pruning design. It may proceed in
   parallel with workflow work and is the Jira blocker for `DMS-1127`; the MSSQL gap inventory cannot be
   considered closed while this implementation and its update-tracking validation remain pending.
@@ -60,6 +62,9 @@ cross-cutting local and CI workflows that do not have another active home.
   assertions. `DMS-1285` owns real-MSSQL execution for the remaining uncovered write-path scenarios.
 - `DMS-1286` owns the real-MSSQL NamespaceBased provider boundary. `DMS-1284` owns representative public E2E
   coverage and must not duplicate the full provider matrix.
+- `DMS-1289` owns the scheduled engine-native template build, restore, registration, and API/SDK smoke matrix.
+  It retains PostgreSQL coverage and is separate from the standard DMS and Instance Management Docker E2E
+  lanes owned by `DMS-1284`.
 
 ## Related Cross-Epic Work
 

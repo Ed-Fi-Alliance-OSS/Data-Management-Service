@@ -17,8 +17,9 @@ adoption. A defer decision keeps `nvarchar(max)` and links a follow-up without p
 
 ## Dependencies
 
-- Blocked by `DMS-1255` for the SQL Server 2022 template packages and image-coupling contract used by the
-  forward-restore compatibility gate.
+- Delivered prerequisite: `DMS-1255` supplies the SQL Server 2022 template packages and image-coupling contract
+  used by the forward-restore compatibility gate. Retain the Jira relationship for provenance rather than as
+  an active blocker.
 - Native-JSON adoption coordinates with the `DMS-1271` restore-manifest contract, but `DMS-1271` does not block
   the required runtime upgrade or a recorded defer decision.
 

@@ -193,3 +193,4 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1284` — Run the DMS and Instance Management Docker E2E Suites Against MSSQL — `reference/design/backend-redesign/epics/17-mssql-gap-closure/04-mssql-docker-e2e.md`
   - `DMS-1285` — Close MSSQL Relational Write-Path Correctness and Resilience Coverage Gaps — `reference/design/backend-redesign/epics/17-mssql-gap-closure/05-mssql-write-path-coverage.md`
   - `DMS-1286` — Add Real-MSSQL Integration Coverage for NamespaceBased CRUD Authorization — `reference/design/backend-redesign/epics/17-mssql-gap-closure/06-mssql-namespace-authorization-coverage.md`
+  - `DMS-1289` — Add MSSQL Coverage to Scheduled Smoke Tests — `reference/design/backend-redesign/epics/17-mssql-gap-closure/07-mssql-scheduled-smoke.md`
