@@ -208,14 +208,8 @@ Feature: Connect endpoints
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:api:security:authentication",
-                    "title":"Authentication Failed",
-                    "status":401,
-                    "validationErrors":{},
-                     "errors": [
-                        "unauthorized_client. Invalid client or Invalid client credentials"
-                        ]
+                    "error": "invalid_client",
+                    "error_description": "Client authentication failed."
                   }
                   """
 
@@ -243,13 +237,37 @@ Feature: Connect endpoints
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:api:security:authentication",
-                    "title":"Authentication Failed",
-                    "status":401,
-                    "validationErrors":{},
-                     "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                        ]
+                    "error": "invalid_client",
+                    "error_description": "Client authentication failed."
+                  }
+                  """
+
+        Scenario: 07 Verify unsupported grant type returns the OAuth error
+             When a Form URL Encoded POST request is made to "/connect/token" with
+                  | Key           | Value                                          |
+                  | client_id     | _scenarioRunId                                 |
+                  | client_secret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | grant_type    | authorization_code                             |
+                  | scope         | edfi_admin_api/full_access                     |
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "error": "unsupported_grant_type",
+                    "error_description": "The specified grant type is not supported."
+                  }
+                  """
+
+        Scenario: 08 Verify a missing required parameter returns the OAuth error
+             When a Form URL Encoded POST request is made to "/connect/token" with
+                  | Key        | Value              |
+                  | client_id  | _scenarioRunId     |
+                  | grant_type | client_credentials |
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "error": "invalid_request",
+                    "error_description": "The request is missing a required parameter or is otherwise malformed."
                   }
                   """
