@@ -782,3 +782,283 @@ public class ProfileModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }
+
+// Full-contract HTTP tests (asserting the application/problem+json media type via the shared helper) for
+// the DMS-1218 Profile error branches. Added as new Given_/It_ fixtures alongside the legacy fixture.
+public abstract class ProfileProblemDetailsTestBase
+{
+    protected readonly IProfileRepository ProfileRepository = A.Fake<IProfileRepository>();
+    private WebApplicationFactory<Program> _factory = null!;
+    protected HttpClient Client = null!;
+
+    protected const string ValidInsertBody = """
+        {
+            "name": "TestProfile",
+            "definition": "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+        }
+        """;
+
+    protected const string ValidUpdateBody = """
+        {
+            "id": 1,
+            "name": "UpdatedProfile",
+            "definition": "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+        }
+        """;
+
+    [SetUp]
+    public void BaseSetUp()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (ctx, collection) =>
+                {
+                    collection.AddTestAuthentication();
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
+                    collection.AddAuthorization(options =>
+                    {
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
+                    collection.AddTransient(_ => ProfileRepository);
+                }
+            );
+        });
+        Client = _factory.CreateClient();
+        Client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+    }
+
+    [TearDown]
+    public void BaseTearDown()
+    {
+        Client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    protected static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+}
+
+[TestFixture]
+public class Given_A_Profile_Insert_With_A_Duplicate_Name : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
+            .Returns(new ProfileInsertResult.FailureDuplicateName("TestProfile"));
+        _response = await Client.PostAsync("/v3/profiles", Json(ValidInsertBody));
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_data_validation_contract()
+    {
+        var body = await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.BadRequest,
+            "urn:ed-fi:api:bad-request:data",
+            "Data Validation Failed",
+            "Data validation failed. See 'validationErrors' for details."
+        );
+        body["validationErrors"]!["Name"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Profile 'TestProfile' already exists.");
+    }
+}
+
+[TestFixture]
+public class Given_A_Profile_GetById_With_An_Invalid_Definition : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.GetProfile(A<long>.Ignored))
+            .Returns(
+                new ProfileGetResult.Success(
+                    new ProfileResponse
+                    {
+                        Id = 5,
+                        Name = "TestProfile",
+                        Definition = "<Profile name=\"TestProfile\"></Profile>",
+                    }
+                )
+            );
+        _response = await Client.GetAsync("/v3/profiles/5");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 5 not found."
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_GetById_That_Is_Not_Found : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.GetProfile(A<long>.Ignored))
+            .Returns(new ProfileGetResult.FailureNotFound());
+        _response = await Client.GetAsync("/v3/profiles/999");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 999 not found."
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_Update_With_A_Duplicate_Name : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
+            .Returns(new ProfileUpdateResult.FailureDuplicateName("UpdatedProfile"));
+        _response = await Client.PutAsync("/v3/profiles/1", Json(ValidUpdateBody));
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_data_validation_contract()
+    {
+        var body = await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.BadRequest,
+            "urn:ed-fi:api:bad-request:data",
+            "Data Validation Failed",
+            "Data validation failed. See 'validationErrors' for details."
+        );
+        body["validationErrors"]!["Name"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("A profile with this name already exists.");
+    }
+}
+
+[TestFixture]
+public class Given_A_Profile_Update_That_Is_Not_Found : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
+            .Returns(new ProfileUpdateResult.FailureNotExists(999));
+        _response = await Client.PutAsync(
+            "/v3/profiles/999",
+            Json(
+                """
+                {
+                    "id": 999,
+                    "name": "UpdatedProfile",
+                    "definition": "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+                }
+                """
+            )
+        );
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 999 not found."
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_Delete_That_Is_In_Use : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.DeleteProfile(A<long>.Ignored))
+            .Returns(new ProfileDeleteResult.FailureInUse(1));
+        _response = await Client.DeleteAsync("/v3/profiles/1");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_bad_request_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.BadRequest,
+            "urn:ed-fi:api:bad-request",
+            "Bad Request",
+            "Profile is assigned to applications and cannot be deleted."
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_Delete_That_Is_Not_Found : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.DeleteProfile(A<long>.Ignored))
+            .Returns(new ProfileDeleteResult.FailureNotExists(999));
+        _response = await Client.DeleteAsync("/v3/profiles/999");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 999 not found."
+        );
+}

@@ -838,4 +838,125 @@ public class VendorModuleTests
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
     }
+
+    [TestFixture]
+    public class Given_A_Vendor_With_A_Duplicate_Company_Name : VendorModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
+
+            using var client = SetUpClient();
+            _response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            _body = await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details."
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _response?.Dispose();
+
+        [Test]
+        public void It_reports_the_duplicate_name_under_the_Name_field() =>
+            _body["validationErrors"]!["Name"]!
+                .ToJsonString()
+                .Should()
+                .Contain("A vendor name already exists in the database. Please enter a unique name.");
+    }
+
+    [TestFixture]
+    public class Given_A_Vendor_That_Does_Not_Exist : VendorModuleTests
+    {
+        private HttpResponseMessage _getResponse = null!;
+        private HttpResponseMessage _updateResponse = null!;
+        private HttpResponseMessage _deleteResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureNotExists());
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+                .Returns(new VendorDeleteResult.FailureNotExists());
+
+            using var client = SetUpClient();
+            _getResponse = await client.GetAsync("/v3/vendors/1");
+            _updateResponse = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            _deleteResponse = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _getResponse?.Dispose();
+            _updateResponse?.Dispose();
+            _deleteResponse?.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_get_by_id() =>
+            await _getResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "Vendor 1 not found. It may have been recently deleted."
+            );
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_update() =>
+            await _updateResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "Vendor 1 not found. It may have been recently deleted."
+            );
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_delete() =>
+            await _deleteResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "Vendor 1 not found. It may have been recently deleted."
+            );
+    }
 }

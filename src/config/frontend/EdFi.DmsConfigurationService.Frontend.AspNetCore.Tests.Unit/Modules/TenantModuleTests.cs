@@ -405,6 +405,78 @@ public class TenantModuleTests
                 getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
         }
+
+        [TestFixture]
+        public class Given_A_Tenant_With_A_Duplicate_Name : Given_MultiTenancy_Is_Enabled
+        {
+            private HttpResponseMessage _response = null!;
+            private JsonNode _body = null!;
+
+            [SetUp]
+            public async Task SetUp()
+            {
+                A.CallTo(() => _tenantRepository.InsertTenant(A<TenantInsertCommand>.Ignored))
+                    .Returns(new TenantInsertResult.FailureDuplicateName());
+
+                using var client = SetUpClient(multiTenancyEnabled: true);
+                _response = await client.PostAsync(
+                    "/v3/tenants/",
+                    new StringContent(
+                        """
+                        {
+                          "name": "Duplicate_Tenant"
+                        }
+                        """,
+                        Encoding.UTF8,
+                        "application/json"
+                    )
+                );
+                _body = await _response.ShouldBeProblemDetailAsync(
+                    HttpStatusCode.BadRequest,
+                    "urn:ed-fi:api:bad-request:data",
+                    "Data Validation Failed",
+                    "Data validation failed. See 'validationErrors' for details."
+                );
+            }
+
+            [TearDown]
+            public void TearDown() => _response?.Dispose();
+
+            [Test]
+            public void It_reports_the_duplicate_name_under_the_Name_field() =>
+                _body["validationErrors"]!["Name"]!
+                    .ToJsonString()
+                    .Should()
+                    .Contain("A tenant name already exists in the database. Please enter a unique name.");
+        }
+
+        [TestFixture]
+        public class Given_A_Tenant_That_Does_Not_Exist : Given_MultiTenancy_Is_Enabled
+        {
+            private HttpResponseMessage _response = null!;
+
+            [SetUp]
+            public async Task SetUp()
+            {
+                A.CallTo(() => _tenantRepository.GetTenant(A<long>.Ignored))
+                    .Returns(new TenantGetResult.FailureNotFound());
+
+                using var client = SetUpClient(multiTenancyEnabled: true);
+                _response = await client.GetAsync("/v3/tenants/1");
+            }
+
+            [TearDown]
+            public void TearDown() => _response?.Dispose();
+
+            [Test]
+            public async Task It_returns_the_not_found_contract() =>
+                await _response.ShouldBeProblemDetailAsync(
+                    HttpStatusCode.NotFound,
+                    "urn:ed-fi:api:not-found",
+                    "Not Found",
+                    "Tenant 1 not found. It may have been recently deleted."
+                );
+        }
     }
 
     [TestFixture]

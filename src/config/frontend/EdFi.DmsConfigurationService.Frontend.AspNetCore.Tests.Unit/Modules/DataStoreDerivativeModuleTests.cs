@@ -4,10 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreDerivative;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -117,6 +121,172 @@ public class DataStoreDerivativeModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/dataStoreDerivatives?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Missing_DataStoreDerivative : DataStoreDerivativeModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.GetDataStoreDerivative(A<long>._))
+                .Returns(new DataStoreDerivativeGetResult.FailureNotFound());
+
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>._))
+                .Returns(new DataStoreDerivativeUpdateResult.FailureNotFound());
+
+            A.CallTo(() => _repository.DeleteDataStoreDerivative(A<long>._))
+                .Returns(new DataStoreDerivativeDeleteResult.FailureNotFound());
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_get_by_id()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.GetAsync("/v3/dataStoreDerivatives/999");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStoreDerivative 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_update()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreDerivatives/999",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreDerivativeUpdateCommand
+                        {
+                            Id = 999,
+                            DataStoreId = 1,
+                            DerivativeType = "ReadReplica",
+                            ConnectionString = "Server=localhost;Database=ReplicaDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStoreDerivative 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_delete()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.DeleteAsync("/v3/dataStoreDerivatives/999");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStoreDerivative 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_DataStoreDerivative_Insert_Referencing_A_Missing_DataStore
+        : DataStoreDerivativeModuleTests
+    {
+        [SetUp]
+        public void SetUp() =>
+            A.CallTo(() => _repository.InsertDataStoreDerivative(A<DataStoreDerivativeInsertCommand>._))
+                .Returns(new DataStoreDerivativeInsertResult.FailureForeignKeyViolation());
+
+        [Test]
+        public async Task It_returns_the_problem_details_bad_request_contract()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/dataStoreDerivatives/",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreDerivativeInsertCommand
+                        {
+                            DataStoreId = 1,
+                            DerivativeType = "ReadReplica",
+                            ConnectionString = "Server=localhost;Database=ReplicaDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The specified DataStore does not exist."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_DataStoreDerivative_Update_Referencing_A_Missing_DataStore
+        : DataStoreDerivativeModuleTests
+    {
+        [SetUp]
+        public void SetUp() =>
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>._))
+                .Returns(new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation());
+
+        [Test]
+        public async Task It_returns_the_problem_details_bad_request_contract()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreDerivatives/999",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreDerivativeUpdateCommand
+                        {
+                            Id = 999,
+                            DataStoreId = 1,
+                            DerivativeType = "ReadReplica",
+                            ConnectionString = "Server=localhost;Database=ReplicaDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The specified DataStore does not exist."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
 }

@@ -409,6 +409,72 @@ public class DataStoreModuleTests
             body["validationErrors"]!.AsObject().Count.Should().Be(0);
             body["errors"]!.AsArray().Count.Should().Be(0);
         }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_update()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStores/999",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreUpdateCommand
+                        {
+                            Id = 999,
+                            DataStoreType = "Production",
+                            Name = "Test Instance",
+                            ConnectionString = "Server=localhost;Database=TestDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_delete()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.DeleteAsync("/v3/dataStores/999");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_applications_query()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.GetAsync("/v3/dataStores/0/applications/?offset=0&limit=25");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 0 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
     }
 
     [TestFixture]

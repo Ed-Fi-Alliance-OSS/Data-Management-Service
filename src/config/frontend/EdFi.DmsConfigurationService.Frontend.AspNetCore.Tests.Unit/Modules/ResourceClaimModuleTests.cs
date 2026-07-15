@@ -547,4 +547,109 @@ public class ResourceClaimModuleTests
                 .MustHaveHappenedOnceExactly();
         }
     }
+
+    [TestFixture]
+    public class Given_The_Claims_Hierarchy_Is_Missing : ResourceClaimModuleTests
+    {
+        private HttpResponseMessage _getAllResponse = null!;
+        private HttpResponseMessage _getByIdResponse = null!;
+        private HttpResponseMessage _getActionsResponse = null!;
+        private HttpResponseMessage _getAuthStrategiesResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            A.CallTo(() => _repository.GetResourceClaims(A<ResourceClaimQuery>.Ignored))
+                .Returns(new ResourceClaimListResult.FailureHierarchyNotFound());
+            A.CallTo(() => _repository.GetResourceClaim(A<long>.Ignored))
+                .Returns(new ResourceClaimGetResult.FailureHierarchyNotFound());
+            A.CallTo(() => _repository.GetResourceClaimActions(A<ResourceClaimActionQuery>.Ignored))
+                .Returns(new ResourceClaimActionListResult.FailureHierarchyNotFound());
+            A.CallTo(() =>
+                    _repository.GetResourceClaimActionAuthStrategies(
+                        A<ResourceClaimActionAuthStrategyQuery>.Ignored
+                    )
+                )
+                .Returns(new ResourceClaimActionAuthStrategyListResult.FailureHierarchyNotFound());
+
+            var client = SetUpClient();
+            _getAllResponse = await client.GetAsync("/v3/resourceClaims");
+            _getByIdResponse = await client.GetAsync("/v3/resourceClaims/1");
+            _getActionsResponse = await client.GetAsync("/v3/resourceClaimActions");
+            _getAuthStrategiesResponse = await client.GetAsync("/v3/resourceClaimActionAuthStrategies");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _getAllResponse?.Dispose();
+            _getByIdResponse?.Dispose();
+            _getActionsResponse?.Dispose();
+            _getAuthStrategiesResponse?.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_get_all() =>
+            await _getAllResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "The claims hierarchy was not found."
+            );
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_get_by_id() =>
+            await _getByIdResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "The claims hierarchy was not found."
+            );
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_get_actions() =>
+            await _getActionsResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "The claims hierarchy was not found."
+            );
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_get_auth_strategies() =>
+            await _getAuthStrategiesResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "The claims hierarchy was not found."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_Resource_Claim_That_Does_Not_Exist : ResourceClaimModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            A.CallTo(() => _repository.GetResourceClaim(A<long>.Ignored))
+                .Returns(new ResourceClaimGetResult.FailureNotFound());
+
+            var client = SetUpClient();
+            _response = await client.GetAsync("/v3/resourceClaims/999");
+        }
+
+        [TearDown]
+        public void TearDown() => _response?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ResourceClaim 999 not found."
+            );
+    }
 }
