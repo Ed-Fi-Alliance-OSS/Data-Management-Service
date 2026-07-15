@@ -128,7 +128,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                      "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
+                      "type": "urn:ed-fi:api:conflict:non-unique-identity",
                       "title": "Identifying Values Are Not Unique",
                       "status": 409,
                       "validationErrors": {},

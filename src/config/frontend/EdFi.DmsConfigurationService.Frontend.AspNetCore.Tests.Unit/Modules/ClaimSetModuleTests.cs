@@ -1019,7 +1019,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1063,7 +1063,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1104,7 +1104,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1145,7 +1145,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -2070,7 +2070,7 @@ public class ClaimSetModuleTests
         {
             var body = await _response.ShouldBeProblemDetailAsync(
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:data-conflict:non-unique-identity",
+                "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
                 "The identifying value(s) of the item are the same as another item that already exists."
             );
@@ -2111,7 +2111,7 @@ public class ClaimSetModuleTests
         public async Task It_returns_the_non_unique_identity_contract() =>
             await _response.ShouldBeProblemDetailAsync(
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:data-conflict:non-unique-identity",
+                "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
                 "The identifying value(s) of the item are the same as another item that already exists."
             );
@@ -2143,7 +2143,7 @@ public class ClaimSetModuleTests
         public async Task It_returns_the_non_unique_identity_contract() =>
             await _response.ShouldBeProblemDetailAsync(
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:data-conflict:non-unique-identity",
+                "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
                 "The identifying value(s) of the item are the same as another item that already exists."
             );
@@ -2176,7 +2176,7 @@ public class ClaimSetModuleTests
         public async Task It_returns_the_non_unique_identity_contract() =>
             await _response.ShouldBeProblemDetailAsync(
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:data-conflict:non-unique-identity",
+                "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
                 "The identifying value(s) of the item are the same as another item that already exists."
             );
