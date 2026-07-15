@@ -37,19 +37,38 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
 
         switch (exception)
         {
-            case BadHttpRequestException:
+            case BadHttpRequestException badHttpRequest:
                 // Do not surface the framework message: it can echo raw route/body values back to the
-                // caller. In Development ASP.NET Core enables ThrowOnBadRequest, so binding failures reach
-                // this handler rather than the empty-400 status-code-page path; a fixed, generic detail
-                // keeps the response safe in every environment.
-                response.StatusCode = (int)HttpStatusCode.BadRequest;
-                await response.WriteAsync(
-                    JsonSerializer.Serialize(
-                        FailureResponse.ForBadRequest("The request was invalid.", traceId),
-                        relaxedSerializer
-                    ),
-                    cancellationToken: cancellationToken
-                );
+                // caller. In Development ASP.NET Core enables ThrowOnBadRequest, so framework binding
+                // failures reach this handler rather than the empty-body status-code-page path. Preserve
+                // the exception's own status code (a content-type mismatch is 415, not 400) and emit the
+                // matching Ed-Fi contract with a fixed, generic detail, so the throwing and non-throwing
+                // paths produce the same safe response in every environment.
+                if (badHttpRequest.StatusCode == (int)HttpStatusCode.UnsupportedMediaType)
+                {
+                    response.StatusCode = (int)HttpStatusCode.UnsupportedMediaType;
+                    await response.WriteAsync(
+                        JsonSerializer.Serialize(
+                            FailureResponse.ForUnsupportedMediaType(
+                                "The request content type is not supported.",
+                                traceId
+                            ),
+                            relaxedSerializer
+                        ),
+                        cancellationToken: cancellationToken
+                    );
+                }
+                else
+                {
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    await response.WriteAsync(
+                        JsonSerializer.Serialize(
+                            FailureResponse.ForBadRequest("The request was invalid.", traceId),
+                            relaxedSerializer
+                        ),
+                        cancellationToken: cancellationToken
+                    );
+                }
                 break;
             case FluentValidation.ValidationException validationException:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
