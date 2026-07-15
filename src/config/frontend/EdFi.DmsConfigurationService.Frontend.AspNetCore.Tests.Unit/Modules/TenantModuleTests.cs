@@ -199,7 +199,10 @@ public class TenantModuleTests
                     .GetValue<string>()
                     .Should()
                     .Be("Data validation failed. See 'validationErrors' for details.");
-                actualPostResponse["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+                actualPostResponse["type"]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be("urn:ed-fi:api:bad-request:data-validation-failed");
                 actualPostResponse["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
                 actualPostResponse["status"]!.GetValue<int>().Should().Be(400);
                 actualPostResponse["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();

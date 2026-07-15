@@ -233,7 +233,7 @@ Feature: DataStoreDerivatives endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -259,7 +259,7 @@ Feature: DataStoreDerivatives endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -286,7 +286,7 @@ Feature: DataStoreDerivatives endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -312,7 +312,7 @@ Feature: DataStoreDerivatives endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -348,7 +348,7 @@ Feature: DataStoreDerivatives endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {

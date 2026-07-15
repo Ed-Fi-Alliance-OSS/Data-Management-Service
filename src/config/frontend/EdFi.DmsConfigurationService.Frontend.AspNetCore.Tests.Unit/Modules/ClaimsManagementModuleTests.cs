@@ -167,7 +167,7 @@ public abstract class ClaimsManagementModuleTests
             .GetValue<string>()
             .Should()
             .Be("Data validation failed. See 'validationErrors' for details.");
-        actual["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        actual["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
         actual["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
         actual["status"]!.GetValue<int>().Should().Be(400);
         actual["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();

@@ -171,7 +171,7 @@ public class FailureResponseTests
             ?.GetValue<string>()
             .Should()
             .Be("Data validation failed. See 'validationErrors' for details.");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
         result["title"]?.GetValue<string>().Should().Be("Data Validation Failed");
         result["status"]?.GetValue<int>().Should().Be(400);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -192,7 +192,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be(detail);
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:non-unique-identity");
         result["title"]?.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
         result["status"]?.GetValue<int>().Should().Be(409);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);

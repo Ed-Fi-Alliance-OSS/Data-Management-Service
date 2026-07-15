@@ -915,7 +915,7 @@ public class TokenEndpointTests
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:api:bad-request:data-validation-failed",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",
@@ -958,7 +958,7 @@ public class Given_An_Introspect_Request_Without_A_Token
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:api:bad-request:data-validation-failed",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",
@@ -1004,7 +1004,7 @@ public class Given_A_Revoke_Request_Without_A_Token
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:api:bad-request:data-validation-failed",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",

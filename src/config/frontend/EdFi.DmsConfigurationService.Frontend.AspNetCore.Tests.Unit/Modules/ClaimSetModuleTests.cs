@@ -589,7 +589,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -610,7 +610,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -632,7 +632,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -651,7 +651,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -670,7 +670,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1019,7 +1019,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1063,7 +1063,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1104,7 +1104,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1145,7 +1145,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "type": "urn:ed-fi:api:data-conflict:non-unique-identity",
                   "title": "Identifying Values Are Not Unique",
                   "status": 409,
                   "correlationId": "{correlationId}",

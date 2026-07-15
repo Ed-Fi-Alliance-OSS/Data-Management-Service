@@ -289,7 +289,10 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
 
         // Ed-Fi data validation Problem Details reports grouped failures in validationErrors
         // (errors is reserved for additional operator detail and may be empty).
-        responseJson!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        responseJson!["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:bad-request:data-validation-failed");
         var validationErrors = responseJson["validationErrors"]?.AsObject();
         validationErrors.Should().NotBeNull();
         validationErrors!.Count.Should().BeGreaterThan(0, "Expected validation errors in the response");

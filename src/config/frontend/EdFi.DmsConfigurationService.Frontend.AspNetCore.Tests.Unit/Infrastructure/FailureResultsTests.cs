@@ -109,7 +109,7 @@ public class FailureResultsTests
                 ?.GetValue<string>()
                 .Should()
                 .Be("Data validation failed. See 'validationErrors' for details.");
-            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
             body["title"]?.GetValue<string>().Should().Be("Data Validation Failed");
             body["status"]?.GetValue<int>().Should().Be(400);
             body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);

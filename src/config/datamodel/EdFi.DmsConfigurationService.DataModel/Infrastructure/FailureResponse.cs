@@ -23,6 +23,7 @@ public static class FailureResponse
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _notFoundTypePrefix = $"{_typePrefix}:not-found";
     private static readonly string _conflictTypePrefix = $"{_typePrefix}:conflict";
+    private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
     private static readonly string _unavailableType = $"{_typePrefix}:internal-server-error";
     private static readonly string _methodNotAllowedType = $"{_typePrefix}:method-not-allowed";
@@ -140,7 +141,7 @@ public static class FailureResponse
     ) =>
         CreateBaseJsonObject(
             detail: "Data validation failed. See 'validationErrors' for details.",
-            type: $"{_badRequestTypePrefix}:data",
+            type: $"{_badRequestTypePrefix}:data-validation-failed",
             title: "Data Validation Failed",
             status: 400,
             correlationId: correlationId,
@@ -156,7 +157,7 @@ public static class FailureResponse
     ) =>
         CreateBaseJsonObject(
             detail: detail,
-            type: $"{_conflictTypePrefix}:non-unique-identity",
+            type: $"{_dataConflictTypePrefix}:non-unique-identity",
             title: "Identifying Values Are Not Unique",
             status: 409,
             correlationId: correlationId,
