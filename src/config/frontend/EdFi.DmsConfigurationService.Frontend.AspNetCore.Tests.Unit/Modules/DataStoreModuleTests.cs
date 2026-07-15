@@ -7,6 +7,7 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
@@ -390,6 +391,23 @@ public class DataStoreModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             queryApplicationsByDataStoreResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.GetAsync("/v3/dataStores/999");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
 
