@@ -62,59 +62,78 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                     },
                 };
 
-                // Add reusable responses
-                components["responses"] = new JsonObject
+                // Publish the Ed-Fi Problem Details schema and reference it from every reusable error
+                // response, so generated client contracts match the application/problem+json bodies the
+                // API actually returns.
+                var schemas = components["schemas"]?.AsObject();
+                if (schemas is null)
                 {
-                    ["BadRequest"] = new JsonObject
+                    schemas = new JsonObject();
+                    components["schemas"] = schemas;
+                }
+
+                schemas["ProblemDetails"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
                     {
-                        ["description"] = "Bad Request. The request was invalid and cannot be completed.",
+                        ["detail"] = new JsonObject { ["type"] = "string" },
+                        ["type"] = new JsonObject { ["type"] = "string" },
+                        ["title"] = new JsonObject { ["type"] = "string" },
+                        ["status"] = new JsonObject { ["type"] = "integer", ["format"] = "int32" },
+                        ["correlationId"] = new JsonObject { ["type"] = "string" },
+                        ["validationErrors"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["additionalProperties"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject { ["type"] = "string" },
+                            },
+                        },
+                        ["errors"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = new JsonObject { ["type"] = "string" },
+                        },
+                    },
+                };
+
+                JsonObject ProblemDetailsResponse(string description) =>
+                    new()
+                    {
+                        ["description"] = description,
                         ["content"] = new JsonObject
                         {
-                            ["application/json"] = new JsonObject
+                            ["application/problem+json"] = new JsonObject
                             {
                                 ["schema"] = new JsonObject
                                 {
-                                    ["type"] = "object",
-                                    ["properties"] = new JsonObject
-                                    {
-                                        ["title"] = new JsonObject { ["type"] = "string" },
-                                        ["errors"] = new JsonObject
-                                        {
-                                            ["type"] = "object",
-                                            ["additionalProperties"] = new JsonObject
-                                            {
-                                                ["type"] = "array",
-                                                ["items"] = new JsonObject { ["type"] = "string" },
-                                            },
-                                        },
-                                    },
+                                    ["$ref"] = "#/components/schemas/ProblemDetails",
                                 },
                             },
                         },
-                    },
-                    ["Unauthorized"] = new JsonObject
-                    {
-                        ["description"] = "Unauthorized. The request requires authentication.",
-                    },
-                    ["Forbidden"] = new JsonObject
-                    {
-                        ["description"] =
-                            "Forbidden. The request is authenticated but not authorized to access this resource.",
-                    },
-                    ["NotFound"] = new JsonObject
-                    {
-                        ["description"] = "Not Found. The specified resource was not found.",
-                    },
-                    ["Conflict"] = new JsonObject
-                    {
-                        ["description"] =
-                            "Conflict. The request conflicts with the current state of the resource.",
-                    },
-                    ["InternalServerError"] = new JsonObject
-                    {
-                        ["description"] =
-                            "Internal Server Error. An error occurred while processing the request.",
-                    },
+                    };
+
+                // Add reusable responses
+                components["responses"] = new JsonObject
+                {
+                    ["BadRequest"] = ProblemDetailsResponse(
+                        "Bad Request. The request was invalid and cannot be completed."
+                    ),
+                    ["Unauthorized"] = ProblemDetailsResponse(
+                        "Unauthorized. The request requires authentication."
+                    ),
+                    ["Forbidden"] = ProblemDetailsResponse(
+                        "Forbidden. The request is authenticated but not authorized to access this resource."
+                    ),
+                    ["NotFound"] = ProblemDetailsResponse("Not Found. The specified resource was not found."),
+                    ["Conflict"] = ProblemDetailsResponse(
+                        "Conflict. The request conflicts with the current state of the resource."
+                    ),
+                    ["InternalServerError"] = ProblemDetailsResponse(
+                        "Internal Server Error. An error occurred while processing the request."
+                    ),
                 };
 
                 // Add reusable parameters
