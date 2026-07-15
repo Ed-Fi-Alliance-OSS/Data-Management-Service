@@ -96,6 +96,7 @@ public class ProfileModule : IEndpointModule
                     [new ValidationFailure("Name", $"Profile '{duplicate.Name}' already exists.")],
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             ProfileInsertResult.FailureUnknown _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -118,10 +119,12 @@ public class ProfileModule : IEndpointModule
                 ? Results.Ok(success.Profile)
                 : Results.Json(
                     FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                    contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.NotFound
                 ),
             ProfileGetResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ProfileGetResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -155,10 +158,12 @@ public class ProfileModule : IEndpointModule
                     [new ValidationFailure("Name", "A profile with this name already exists.")],
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             ProfileUpdateResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ProfileUpdateResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -183,10 +188,12 @@ public class ProfileModule : IEndpointModule
                     "Profile is assigned to applications and cannot be deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             ProfileDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ProfileDeleteResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),

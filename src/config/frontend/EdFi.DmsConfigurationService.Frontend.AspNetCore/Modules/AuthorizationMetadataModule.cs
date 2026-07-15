@@ -43,6 +43,7 @@ public class AuthorizationMetadataModule : IEndpointModule
                     $"Authorization metadata for claim set '{claimSetName}' not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

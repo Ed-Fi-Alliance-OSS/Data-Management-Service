@@ -88,6 +88,7 @@ public class DataStoreModule : IEndpointModule
                     $"DataStore {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -121,6 +122,7 @@ public class DataStoreModule : IEndpointModule
                     $"DataStore {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -142,6 +144,7 @@ public class DataStoreModule : IEndpointModule
                     $"DataStore {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -164,6 +167,7 @@ public class DataStoreModule : IEndpointModule
                     $"DataStore {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

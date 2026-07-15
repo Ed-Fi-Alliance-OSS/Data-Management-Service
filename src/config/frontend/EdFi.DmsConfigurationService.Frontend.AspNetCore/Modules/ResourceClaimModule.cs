@@ -40,6 +40,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimListResult.FailureProjectionIntegrity => FailureResults.Unknown(
@@ -62,6 +63,7 @@ public class ResourceClaimModule : IEndpointModule
             ResourceClaimGetResult.Success success => Results.Ok(success.ResourceClaim),
             ResourceClaimGetResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound($"ResourceClaim {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimGetResult.FailureHierarchyNotFound => Results.Json(
@@ -69,6 +71,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimGetResult.FailureProjectionIntegrity => FailureResults.Unknown(
@@ -96,6 +99,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimActionListResult.FailureProjectionIntegrity => FailureResults.Unknown(
@@ -125,6 +129,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity => FailureResults.Unknown(

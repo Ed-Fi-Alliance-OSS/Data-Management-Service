@@ -55,6 +55,7 @@ public class TenantModule : IEndpointModule
                     ],
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -88,6 +89,7 @@ public class TenantModule : IEndpointModule
                     $"Tenant {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

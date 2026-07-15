@@ -53,6 +53,7 @@ public class DataStoreDerivativeModule : IEndpointModule
                     "The specified DataStore does not exist.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -92,6 +93,7 @@ public class DataStoreDerivativeModule : IEndpointModule
                     $"DataStoreDerivative {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -125,6 +127,7 @@ public class DataStoreDerivativeModule : IEndpointModule
                     $"DataStoreDerivative {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             DataStoreDerivativeUpdateResult.FailureForeignKeyViolation => Results.Json(
@@ -132,6 +135,7 @@ public class DataStoreDerivativeModule : IEndpointModule
                     "The specified DataStore does not exist.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -153,6 +157,7 @@ public class DataStoreDerivativeModule : IEndpointModule
                     $"DataStoreDerivative {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
