@@ -289,32 +289,6 @@ internal static class IdentityProjectionResolver
     }
 
     /// <summary>
-    /// Resolves a sequence of column names to their canonical stored columns, de-duplicating
-    /// by canonical column name. Convenience wrapper around <see cref="ResolveToStoredColumn"/>.
-    /// </summary>
-    internal static IReadOnlyList<DbColumnName> ResolveColumnsToStored(
-        IEnumerable<DbColumnName> columns,
-        DbTableModel table,
-        QualifiedResourceName resource
-    )
-    {
-        HashSet<string> seen = new(StringComparer.Ordinal);
-        List<DbColumnName> result = [];
-
-        foreach (var column in columns)
-        {
-            var resolved = ResolveToStoredColumn(column, table, resource);
-
-            if (seen.Add(resolved.Value))
-            {
-                result.Add(resolved);
-            }
-        }
-
-        return result.ToArray();
-    }
-
-    /// <summary>
     /// Resolves a column name to its canonical stored column. If the column is a unified alias
     /// (persisted computed column), returns the canonical storage column; otherwise returns the
     /// column itself.

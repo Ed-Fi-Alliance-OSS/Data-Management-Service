@@ -10,11 +10,10 @@ using EdFi.DataManagementService.Tests.Integration.Scenarios;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
-/// DMS-1166 MSSQL API regression: the SQL Server-specific identity-propagation
-/// triggers that fan an upstream identity update out to stored child-collection
-/// bindings must be observable through the public DMS HTTP pipeline. The
-/// PostgreSQL stack does not emit these triggers, so this scenario is wired only
-/// under <c>Tests/Mssql/</c>.
+/// DMS-1166 MSSQL API regression: on SQL Server the native ON UPDATE CASCADE
+/// reference foreign keys must fan an upstream identity update out to stored
+/// child-collection bindings, observable through the public DMS HTTP pipeline.
+/// Wired only under <c>Tests/Mssql/</c> as part of the MSSQL API regression suite.
 /// </summary>
 public sealed class Given_Mssql_ChildBindingIdentityPropagation : MssqlApiIntegrationTestBase
 {

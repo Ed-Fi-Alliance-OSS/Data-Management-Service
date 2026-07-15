@@ -97,55 +97,6 @@ public class Given_Canonical_Stored_Column_Resolution
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*DoesNotExist*");
     }
-
-    /// <summary>
-    /// It should de-duplicate columns that resolve to the same canonical storage column.
-    /// </summary>
-    [Test]
-    public void It_should_de_duplicate_columns_resolving_to_the_same_canonical_column()
-    {
-        var resolved = IdentityProjectionResolver.ResolveColumnsToStored(
-            [
-                new DbColumnName("EducationOrganizationId"),
-                new DbColumnName("SchoolId"),
-                new DbColumnName("EducationOrganizationId"),
-            ],
-            BuildTable(),
-            _resource
-        );
-
-        resolved.Select(column => column.Value).Should().Equal("SchoolId");
-    }
-
-    /// <summary>
-    /// It should preserve first-seen order while de-duplicating.
-    /// </summary>
-    [Test]
-    public void It_should_preserve_first_seen_order_while_de_duplicating()
-    {
-        var idColumn = new DbColumnModel(
-            new DbColumnName("Id"),
-            ColumnKind.Scalar,
-            new RelationalScalarType(ScalarKind.Int64),
-            IsNullable: false,
-            SourceJsonPath: null,
-            TargetResource: null
-        );
-
-        var table = BuildTable() with { Columns = [.. BuildTable().Columns, idColumn] };
-
-        var resolved = IdentityProjectionResolver.ResolveColumnsToStored(
-            [
-                new DbColumnName("Id"),
-                new DbColumnName("EducationOrganizationId"),
-                new DbColumnName("SchoolId"),
-            ],
-            table,
-            _resource
-        );
-
-        resolved.Select(column => column.Value).Should().Equal("Id", "SchoolId");
-    }
 }
 
 /// <summary>
