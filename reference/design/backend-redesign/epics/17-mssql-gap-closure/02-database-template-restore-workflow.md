@@ -23,9 +23,9 @@ contains DMS datastore state only; a database template is never a CMS or identit
 
 ## Dependencies
 
-- Blocked by `DMS-1255` for the published template packages and `-DbOnly` startup slice.
-- Blocked by `DMS-1270` for the separate-CMS topology contract required by target-safety and topology-matrix
-  acceptance coverage.
+- Delivered prerequisite: `DMS-1255` supplies the published template packages and `-DbOnly` startup slice.
+- Active completion blocker: `DMS-1270` supplies the separate-CMS topology contract required by target-safety
+  and topology-matrix acceptance coverage.
 
 ## Restore Sequence
 
@@ -43,21 +43,27 @@ The wrapper performs the following sequence in restore mode:
    core/extension project inventory, `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, relational mapping
    version, engine, and any engine-defined physical-schema version must match exactly. On mismatch, remove the
    candidate and leave the active workspace and selected database untouched.
-4. Prove that the entire selected DMS stack is stopped before replacing or reusing active restore workspace
-   state. A failed or indeterminate stop proof leaves the active workspace and target untouched.
-5. If the active workspace is absent or differs from the verified candidate, replace the complete
-   `.bootstrap` tree with the candidate. If it already matches, discard the candidate and reuse the complete
-   active tree. Never rewrite only a schema or manifest subtree.
-6. Run `start-*-dms.ps1 -DbOnly` to start only the selected database service and wait for readiness.
-7. Revalidate target safety against the live engine catalog. Restore the artifact into a generated scratch
-   database, validate its effective schema and DMS-only catalog contents, remove the scratch database, and only
-   then replace the explicitly selected physical DMS datastore database.
-8. Run `start-*-dms.ps1 -InfraOnly` to initialize identity and CMS.
-9. Run `configure-local-data-store.ps1` for the restored datastore.
-10. Skip `provision-dms-schema.ps1` for that datastore because the template already contains the generated
+4. Prove that the entire selected DMS stack is stopped before starting database preflight. A failed or
+   indeterminate stop proof leaves the active workspace and target untouched.
+5. Run `start-*-dms.ps1 -DbOnly` to start only the selected database service and wait for readiness.
+6. Revalidate target safety against the live engine catalog. Restore the artifact into a generated scratch
+   database, validate its effective schema and DMS-only catalog contents, and remove the scratch database.
+   Package, candidate-workspace, stop-proof, target-safety, or scratch-validation failure ends preflight,
+   removes transient state, and leaves both the active workspace and selected database unchanged.
+7. Stop the database-only slice and again prove that the complete selected stack is stopped. The verified
+   candidate and scratch result do not authorize workspace replacement while any stack service is running.
+8. Begin the commit stage. If the active workspace is absent or differs from the verified candidate, replace
+   the complete `.bootstrap` tree with the candidate. If it already matches, discard the candidate and reuse
+   the complete active tree. Never rewrite only a schema or manifest subtree.
+9. Run `start-*-dms.ps1 -DbOnly` again. Immediately before any destructive target operation, repeat the
+   reserved-name, separate-CMS, running-service, and live-catalog validation, then replace the explicitly
+   selected physical DMS datastore database from the same hash-verified artifact validated in scratch.
+10. Run `start-*-dms.ps1 -InfraOnly` to initialize identity and CMS.
+11. Run `configure-local-data-store.ps1` for the restored datastore.
+12. Skip `provision-dms-schema.ps1` for that datastore because the template already contains the generated
    schema and seed data.
-11. Run `start-*-dms.ps1 -DmsOnly`.
-12. Run supplemental API seed only when an explicit, compatible option requests it.
+13. Run `start-*-dms.ps1 -DmsOnly`.
+14. Run supplemental API seed only when an explicit, compatible option requests it.
 
 The wrapper owns when restore happens. An engine-dispatched restore module owns how the package is restored.
 
@@ -92,6 +98,8 @@ The wrapper owns when restore happens. An engine-dispatched restore module owns 
   canonical inventory, compares it with the manifest, verifies `dms.EffectiveSchema` against both the manifest
   and candidate bootstrap manifest, and enforces the DMS-only exclusions before touching the target. Feed and
   `-PackageDirectory` packages use identical producer/consumer checks; local origin is not a trust bypass.
+- Any failure through scratch validation is a preflight failure: transient candidate and scratch state is
+  removed, while the active `.bootstrap` tree and selected physical database remain unchanged.
 - A legacy package without the external manifest is not eligible for target replacement. If legacy-package
   compatibility is later required, it must use a safe scratch restore followed by `dms.EffectiveSchema`
   validation before any destructive operation against the selected datastore.
@@ -102,11 +110,12 @@ The wrapper owns when restore happens. An engine-dispatched restore module owns 
   plus SQL Server `master`, `model`, `msdb`, and `tempdb`. Apply this denylist during parameter validation and
   again against the live catalog before scratch creation, `DROP`, or `RESTORE`; generic identifier validation
   is not a substitute for reserved-name validation.
-- Fail before workspace replacement unless the complete selected stack is proven stopped; checking only
-  whether CMS or DMS points at the eventual restore target is insufficient because either service may still
-  have `.bootstrap` content bind-mounted.
+- Fail before workspace replacement unless the complete selected stack is proven stopped after scratch
+  validation; checking only whether CMS or DMS points at the eventual restore target is insufficient because
+  either service may still have `.bootstrap` content bind-mounted.
 - Fail before target restore if CMS or DMS is running against the target. Failure to prove either safety
-  condition leaves the existing workspace and database untouched.
+  condition during preflight leaves the existing workspace and database untouched; the same checks run again
+  immediately before target replacement so a post-commit race cannot authorize database mutation.
 - In shared-database mode, restore only a package proven to have the `DmsDatastoreOnly` content profile, and do
   so in the `-DbOnly` window before CMS creates a fresh schema and clients. No CMS or identity record from the
   package may survive into the initialized environment.
@@ -124,8 +133,8 @@ state form one handoff and may still be bind-mounted.
 
 - Bootstrap exposes an explicit restore option separate from `-LoadSeedData`.
 - Restore validates the external manifest and artifact hash, safely prepares the complete workspace, then
-  follows `-DbOnly -> scratch validation -> target restore -> -InfraOnly -> configure -> -DmsOnly`; it skips
-  schema provisioning only for restored targets.
+  follows `-DbOnly -> scratch validation -> stop proof -> complete workspace replacement -> -DbOnly -> target
+  restore -> -InfraOnly -> configure -> -DmsOnly`; it skips schema provisioning only for restored targets.
 - Before Docker startup or active-workspace replacement, restore proves that the package's Data Standard,
   core/extension inventory, `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, relational mapping version, and
   any engine-defined physical-schema version match the authoritative candidate workspace.
@@ -135,16 +144,18 @@ state form one handoff and may still be bind-mounted.
 - Producers reject shared or contaminated sources. Consumers scratch-restore and reject packages containing
   `dmscs`, CMS/OpenIddict state, unexpected principals, or objects outside the manifest's DMS-only inventory
   before replacing the target, including packages supplied through `-PackageDirectory`.
-- Package resolution or external-manifest validation failures occur before Docker startup and leave the
-  workspace and target untouched. Target-selection or restore failures stop before CMS/DMS startup.
+- Package resolution or external-manifest validation failures occur before Docker startup. Every preflight
+  failure through scratch validation leaves the active workspace and selected target untouched. Target
+  selection or restore failures stop before CMS/DMS startup.
 - Existing non-restore bootstrap behavior is unchanged.
 - A mismatched or incomplete workspace is replaced only after the complete stack is proven stopped; the whole
   `.bootstrap` tree is removed and schema, claims, and seed handoff state are regenerated together.
 - Tests cover wrapper sequencing, candidate/package hash and project-inventory mismatches, reserved database
   names for both engines, local-package resolution, engine-specific scratch and target command construction,
   manifest/artifact validation before Docker activity, DMS-only producer and consumer gates, scratch cleanup,
-  failed stop proof, full-workspace replacement, bind-mount safety, shared/separate topology behavior, default
-  targeting, repeated single-target operation, and the distinction between restore and API seed delivery.
+  failed stop proof, the database-only preflight stop/restart boundary, full-workspace replacement, bind-mount
+  safety, shared/separate topology behavior, default targeting, repeated single-target operation, and the
+  distinction between restore and API seed delivery.
 - Live validation covers PostgreSQL and MSSQL with Minimal and Populated templates and supported Data Standard
   versions, including different extension selections, effective-schema validation, contaminated-package
   rejection before target replacement, and served data.

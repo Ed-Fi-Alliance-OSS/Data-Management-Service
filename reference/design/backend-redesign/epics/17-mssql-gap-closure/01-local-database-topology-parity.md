@@ -16,7 +16,8 @@ wrappers, and `build-dms.ps1 StartEnvironment`. It must not be inferred from the
 
 ## Dependencies
 
-- Blocked by `DMS-1255`, which delivers the shared local-database default that this story extends.
+- Prerequisite delivered by `DMS-1255`: the shared local-database default that this story extends is already
+  available. Retain the Jira link for provenance; it does not describe remaining work for this story.
 - Blocks `DMS-1271`, whose restore acceptance matrix requires the shared and separate topology contracts.
 
 ## Topology Contract
@@ -26,9 +27,12 @@ wrappers, and `build-dms.ps1 StartEnvironment`. It must not be inferred from the
 | Shared (default) | Selected local database | Same physical database | Preserve the `DMS-1255` default for PostgreSQL and MSSQL. |
 | Separate | Dedicated configuration database | Selected DMS datastore database | Create and initialize CMS independently; never redirect DMS schema or template restore into the CMS database. |
 
-Expose the separate mode through `-SeparateConfigDatabase`. Use one effective configuration-database name
-as the interpolation seam for both engines rather than embedding engine-specific names throughout the
-scripts. The switch and effective name must be forwarded consistently by every wrapper and entry point.
+Expose the separate mode through `-SeparateConfigDatabase`. `DMS_CONFIG_DATABASE_NAME` is the definitive
+configuration-database-name contract for both engines and must be interpolated into both engines'
+`DMS_CONFIG_DATABASE_CONNECTION_STRING`. Without the switch, it resolves to the selected DMS datastore
+database (`POSTGRES_DB_NAME` or `MSSQL_DB_NAME`). With the switch, it resolves to the dedicated
+`edfi_configurationservice` database. Every wrapper and entry point must forward the switch and preserve this
+effective name; caller-authored connection strings must agree with it or fail with a clear diagnostic.
 
 ## Database Creation
 
@@ -38,7 +42,7 @@ scripts. The switch and effective name must be forwarded consistently by every w
 - Self-contained identity is the exception because `setup-openiddict.ps1 -InitDb` runs before CMS startup and
   must connect to the CMS database to create its key store. MSSQL keeps its guarded pre-CMS creation behavior,
   and PostgreSQL gains the equivalent guarded creation for the selected dedicated configuration database.
-- Do not add a PostgreSQL container-entrypoint initialization script for Keycloak. It would duplicate the CMS
+- Do not add configuration-database creation to `postgresql-init.sh` for Keycloak. It would duplicate the CMS
   deployment path and would work only on a fresh volume, while CMS startup must remain idempotent on both fresh
   and existing volumes.
 - Creation must be idempotent and must fail with a clear diagnostic when an existing database cannot be used.
@@ -47,21 +51,25 @@ scripts. The switch and effective name must be forwarded consistently by every w
 
 [`DMS-1271`](02-database-template-restore-workflow.md) owns template restore. In shared mode, restore occurs
 before CMS initialization, after which CMS creates its schema in the restored database. In separate mode,
-restore targets only the DMS datastore and never the CMS database.
+restore targets only the DMS datastore and never the CMS database. Retain `DMS-1270` and `DMS-1271` as
+separate stories: this story owns topology selection, propagation, database creation, and the four-cell
+bootstrap matrix; `DMS-1271` owns package validation, restore sequencing, and restore target safety.
 
 ## Acceptance Criteria
 
 - `-SeparateConfigDatabase` is available on local/published start scripts, bootstrap wrappers, and
   `build-dms.ps1 StartEnvironment` with consistent forwarding and validation.
-- Omitting the switch preserves the shared-database default on both engines.
-- Selecting the switch points CMS at a dedicated configuration database without changing the DMS datastore
-  selection.
+- Omitting the switch sets `DMS_CONFIG_DATABASE_NAME` to the selected DMS datastore database and preserves the
+  shared-database default on both engines.
+- Selecting the switch sets `DMS_CONFIG_DATABASE_NAME` to `edfi_configurationservice` and points CMS at that
+  dedicated database without changing the DMS datastore selection.
 - PostgreSQL and MSSQL can create a missing dedicated CMS database through every supported identity-provider
   path: CMS deployment owns the Keycloak path, while guarded OpenIddict initialization owns the pre-CMS
   self-contained path.
 - All four engine-by-topology cells start successfully, and CMS/DMS schemas land in the intended databases.
 - Pester coverage verifies forwarding, defaults, mutual exclusions, target database selection, and the
-  identity-provider-specific creation owner without introducing a duplicate container-init path.
+  identity-provider-specific creation owner without adding configuration-database creation to
+  `postgresql-init.sh`.
 - README and environment-file documentation explain both modes and their database-creation paths.
 
 ## Non-Goals

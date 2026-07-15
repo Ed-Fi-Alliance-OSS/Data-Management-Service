@@ -36,9 +36,10 @@ cross-cutting local and CI workflows that do not have another active home.
 
 - `DMS-873` owns the gap inventory and scope boundaries. It does not re-own implementation already assigned
   to a follow-up story.
-- `DMS-1255` is the Jira blocker for `DMS-1270`, `DMS-1271`, and `DMS-1279`. It supplies the shared local-
-  database default, database-template packages, and `-DbOnly` startup slice required by those stories and
-  remains tracked under its existing bootstrap ownership.
+- `DMS-1255` delivered the shared local-database default prerequisite for `DMS-1270`; its Jira link remains for
+  provenance rather than representing outstanding `DMS-1270` work. It also supplies the database-template
+  packages and `-DbOnly` startup slice required by `DMS-1271` and `DMS-1279` and remains tracked under its
+  existing bootstrap ownership.
 - `DMS-1258` retains implementation ownership for the SQL Server foreign-key-pruning design. It may proceed in
   parallel with workflow work and is the Jira blocker for `DMS-1127`; the MSSQL gap inventory cannot be
   considered closed while this implementation and its update-tracking validation remain pending.

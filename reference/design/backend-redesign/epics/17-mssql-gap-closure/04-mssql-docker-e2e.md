@@ -34,21 +34,23 @@ those boundaries without creating MSSQL-specific copies of either E2E product.
   suite requires, and verify that routing keeps requests isolated by district and school year.
 - Remove Npgsql and PostgreSQL SQL assumptions from the MSSQL path while preserving the PostgreSQL path.
 - Treat an unavailable or unhealthy SQL Server as a failed test environment, not an ignored test result.
+- Keep this work separate from `DMS-1289`: this story owns the standard DMS and Instance Management Docker
+  E2E suites, while `DMS-1289` owns the existing scheduled database-template restore and API/SDK smoke
+  workflow.
 
 ## E2E Scenario Matrix
 
 The required MSSQL signal covers representative public-boundary scenarios rather than duplicating every
 provider-integration case:
 
-| Area | Representative coverage |
-| --- | --- |
-| Resources | Create/read/update/delete, query, paging, and total count |
-| Descriptors and profiles | Descriptor CRUD plus representative read/write profile behavior |
-| Authorization | Relationship and NamespaceBased allow/deny behavior with real token and claim-set wiring |
-| Change tracking | Conditional requests, change versions, deletes, and key changes |
-| Schema variation | Extensions and supported Data Standard versions |
-| Identity | Self-contained and Keycloak identity-provider modes |
-| Instance routing | Three MSSQL datastores, district/school-year route contexts, routing isolation, and not-found behavior for unregistered contexts |
+- Resources: create/read/update/delete, query, paging, and total count.
+- Descriptors and profiles: descriptor CRUD plus representative read/write profile behavior.
+- Authorization: Relationship and NamespaceBased allow/deny behavior with real token and claim-set wiring.
+- Change tracking: conditional requests, change versions, deletes, and key changes.
+- Schema variation: extensions and supported Data Standard versions.
+- Identity: self-contained and Keycloak identity-provider modes.
+- Instance routing: three MSSQL datastores, district/school-year route contexts, routing isolation, and
+  not-found behavior for unregistered contexts.
 
 Split the matrix between required pull-request shards and scheduled broader coverage when runtime demands it,
 but keep the complete supported matrix documented and runnable locally.
@@ -61,20 +63,28 @@ but keep the complete supported matrix documented and runnable locally.
   registers engine-correct connection strings, restarts DMS after registration, and runs the existing
   Instance Management shards without PostgreSQL containers, providers, or SQL.
 - Engine-specific connection and reset helpers execute no PostgreSQL provider or SQL code on the MSSQL path.
-- Both full suites are locally invokable against MSSQL; unsupported scenarios are explicit and justified
-  rather than silently skipped.
-- Required CI shards cover the documented representative matrix and fail on infrastructure or scenario errors.
-- MSSQL container, DMS, and CMS logs plus TRX/timing artifacts follow existing failure-upload conventions.
+- Instance Management scenarios verify district and school-year isolation across all three registered
+  datastores and the existing not-found behavior for unregistered route contexts.
+- Local execution supports both full suites, filters/shards, custom database settings, and repeat runs against
+  MSSQL; unsupported scenarios are explicit and justified rather than silently skipped.
+- Required CI lanes run documented MSSQL shards for both suites, cover the representative standard-DMS matrix
+  plus Instance Management routing behavior, and fail on infrastructure or scenario errors.
+- Diagnostics for both suites collect sanitized SQL Server, DMS, and CMS logs plus setup/provisioning output,
+  TRX results, and timing artifacts using existing failure-upload conventions.
+- Cleanup for both suites runs on success and failure, removes their MSSQL test resources using the existing
+  safety conventions, and does not remove unrelated containers, volumes, or databases.
 - Script-level tests cover engine selection, argument forwarding, database-name propagation, three-database
   Instance Management provisioning/registration, and cleanup safety.
 - Existing PostgreSQL commands and CI lanes behave unchanged when the engine is omitted or set to `postgresql`.
-- Standard and Instance Management E2E documentation includes local commands, environment variables,
-  direct-test requirements, and troubleshooting for both engines.
+- Standard and Instance Management E2E documentation includes local and CI commands, required environment
+  variables, direct-test requirements, diagnostics, cleanup, and troubleshooting for both engines.
 
 ## Non-Goals
 
 - Implementing backend defects found by the E2E suite; file or link those defects separately.
 - Database-template production or restore (`DMS-1255`, `DMS-1271`).
+- Changes to the existing scheduled API/SDK smoke workflow; `DMS-1289` owns its MSSQL template build, restore,
+  registration, and smoke-test matrix.
 - Foreign-key pruning.
 - Duplicating the full provider-integration matrices from `DMS-1285` or `DMS-1286`.
 
