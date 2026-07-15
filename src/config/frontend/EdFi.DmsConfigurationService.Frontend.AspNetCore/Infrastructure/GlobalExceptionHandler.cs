@@ -41,33 +41,42 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 // Do not surface the framework message: it can echo raw route/body values back to the
                 // caller. In Development ASP.NET Core enables ThrowOnBadRequest, so framework binding
                 // failures reach this handler rather than the empty-body status-code-page path. Preserve
-                // the exception's own status code (a content-type mismatch is 415, not 400) and emit the
-                // matching Ed-Fi contract with a fixed, generic detail, so the throwing and non-throwing
-                // paths produce the same safe response in every environment.
-                if (badHttpRequest.StatusCode == (int)HttpStatusCode.UnsupportedMediaType)
+                // the exception's own status code and emit the matching Ed-Fi contract with a fixed,
+                // generic detail, so the throwing and non-throwing paths produce the same safe response in
+                // every environment. Only 400 and 415 carry an Ed-Fi Problem Details body; any other
+                // framework status (e.g. 413 Payload Too Large) keeps its status code with no body,
+                // matching the status-code-pages path, which leaves those responses untouched.
+                switch (badHttpRequest.StatusCode)
                 {
-                    response.StatusCode = (int)HttpStatusCode.UnsupportedMediaType;
-                    await response.WriteAsync(
-                        JsonSerializer.Serialize(
-                            FailureResponse.ForUnsupportedMediaType(
-                                "The request content type is not supported.",
-                                traceId
+                    case (int)HttpStatusCode.BadRequest:
+                        response.StatusCode = (int)HttpStatusCode.BadRequest;
+                        await response.WriteAsync(
+                            JsonSerializer.Serialize(
+                                FailureResponse.ForBadRequest("The request was invalid.", traceId),
+                                relaxedSerializer
                             ),
-                            relaxedSerializer
-                        ),
-                        cancellationToken: cancellationToken
-                    );
-                }
-                else
-                {
-                    response.StatusCode = (int)HttpStatusCode.BadRequest;
-                    await response.WriteAsync(
-                        JsonSerializer.Serialize(
-                            FailureResponse.ForBadRequest("The request was invalid.", traceId),
-                            relaxedSerializer
-                        ),
-                        cancellationToken: cancellationToken
-                    );
+                            cancellationToken: cancellationToken
+                        );
+                        break;
+                    case (int)HttpStatusCode.UnsupportedMediaType:
+                        response.StatusCode = (int)HttpStatusCode.UnsupportedMediaType;
+                        await response.WriteAsync(
+                            JsonSerializer.Serialize(
+                                FailureResponse.ForUnsupportedMediaType(
+                                    "The request content type is not supported.",
+                                    traceId
+                                ),
+                                relaxedSerializer
+                            ),
+                            cancellationToken: cancellationToken
+                        );
+                        break;
+                    default:
+                        // Preserve the framework status with no body. The problem+json content type set
+                        // above does not apply to an empty response, so clear it.
+                        response.Headers.ContentType = default;
+                        response.StatusCode = badHttpRequest.StatusCode;
+                        break;
                 }
                 break;
             case FluentValidation.ValidationException validationException:

@@ -178,3 +178,54 @@ public class Given_a_bad_http_request_exception_with_an_unsupported_media_type_s
         _responseBody.Should().NotContain("Unsupported content type");
     }
 }
+
+/// <summary>
+/// A BadHttpRequestException whose StatusCode is 413 (payload too large) preserves its status code with
+/// no Problem Details body — matching the status-code-pages path, which leaves an oversized-body response
+/// untouched — clears the optimistic problem+json content type, and never echoes the framework message.
+/// </summary>
+[TestFixture]
+public class Given_a_bad_http_request_exception_with_a_payload_too_large_status
+{
+    private DefaultHttpContext _httpContext = null!;
+    private string _responseBody = null!;
+    private bool _handled;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _httpContext = new DefaultHttpContext();
+        _httpContext.Response.Body = new MemoryStream();
+        var exception = new BadHttpRequestException(
+            "Request body too large. The max request body size is 30000000 bytes.",
+            StatusCodes.Status413PayloadTooLarge
+        );
+
+        _handled = await new GlobalExceptionHandler().TryHandleAsync(
+            _httpContext,
+            exception,
+            CancellationToken.None
+        );
+
+        _httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
+        _responseBody = await new StreamReader(_httpContext.Response.Body).ReadToEndAsync();
+    }
+
+    [Test]
+    public void It_handles_the_exception() => _handled.Should().BeTrue();
+
+    [Test]
+    public void It_preserves_the_413_status_with_no_body()
+    {
+        _httpContext.Response.StatusCode.Should().Be(413);
+        _responseBody.Should().BeEmpty();
+        _httpContext.Response.ContentType.Should().BeNullOrEmpty();
+    }
+
+    [Test]
+    public void It_does_not_leak_the_framework_message()
+    {
+        _responseBody.Should().NotContain("30000000");
+        _responseBody.Should().NotContain("Request body too large");
+    }
+}

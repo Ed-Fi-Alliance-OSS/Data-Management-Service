@@ -310,4 +310,108 @@ public class StatusCodePagesPipelineTests
             body["validationErrors"]!.AsObject().Count.Should().BeGreaterThan(0);
         }
     }
+
+    /// <summary>
+    /// In the Development environment ASP.NET Core enables ThrowOnBadRequest, so framework binding
+    /// failures are thrown as BadHttpRequestException and handled by GlobalExceptionHandler (the throwing
+    /// path) rather than the empty-body status-code-pages path used in other environments. Both paths
+    /// must produce the same safe Ed-Fi contract; these exercise the throwing path end to end.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Binding_Failure_In_The_Development_Environment
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var vendorRepository = A.Fake<IVendorRepository>();
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                // Development turns on ThrowOnBadRequest. There is no appsettings.Development.json, so
+                // load the Test settings explicitly to supply identity/datastore configuration.
+                builder.UseEnvironment("Development");
+                builder.ConfigureAppConfiguration(config =>
+                    config.AddJsonFile("appsettings.Test.json", optional: false)
+                );
+                // Development also enables ServiceProvider validation on build; disable it so this test
+                // targets the error-response pipeline rather than a pre-existing DI lifetime concern that
+                // is outside the scope of this work.
+                builder.UseDefaultServiceProvider(options =>
+                {
+                    options.ValidateOnBuild = false;
+                    options.ValidateScopes = false;
+                });
+                builder.ConfigureServices(
+                    (ctx, collection) =>
+                    {
+                        collection.AddTestAuthentication();
+                        var identitySettings = ctx
+                            .Configuration.GetSection("IdentitySettings")
+                            .Get<IdentitySettings>()!;
+                        collection.AddAuthorization(options =>
+                        {
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy =>
+                                    policy.RequireClaim(
+                                        identitySettings.RoleClaimType,
+                                        identitySettings.ConfigServiceRole
+                                    )
+                            );
+                            AuthorizationScopePolicies.Add(options);
+                        });
+                        collection.AddTransient(_ => vendorRepository);
+                    }
+                );
+            });
+            _client = _factory.CreateClient();
+            // Full-access scope so authorization passes and the request reaches model binding.
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_request_contract_for_an_invalid_route_parameter()
+        {
+            // "not-a-long" fails route binding; with ThrowOnBadRequest the framework throws and the
+            // exception handler writes the contract before the status-code-pages path could run.
+            var response = await _client.GetAsync("/v3/vendors/not-a-long");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request was invalid."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+            body.ToJsonString().Should().NotContain("not-a-long");
+        }
+
+        [Test]
+        public async Task It_returns_the_unsupported_media_type_contract_for_a_wrong_content_type()
+        {
+            var content = new StringContent("not json", Encoding.UTF8, "text/plain");
+            var response = await _client.PostAsync("/v3/vendors", content);
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.UnsupportedMediaType,
+                "urn:ed-fi:api:unsupported-media-type",
+                "Unsupported Media Type",
+                "The request content type is not supported."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+            body.ToJsonString().Should().NotContain("text/plain");
+        }
+    }
 }
