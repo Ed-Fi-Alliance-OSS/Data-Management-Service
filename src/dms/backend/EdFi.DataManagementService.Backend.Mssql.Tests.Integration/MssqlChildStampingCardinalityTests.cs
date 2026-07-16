@@ -62,6 +62,51 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     }
 
     [Test]
+    public async Task It_should_allocate_one_content_version_for_a_multi_row_single_statement_child_insert()
+    {
+        var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, schoolId: 170);
+        var before = await ReadStampPairAsync(schoolDocumentId);
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        await DelayForDistinctTimestampsAsync();
+
+        // Multiple child rows for the same root in one INSERT statement exercise the statement-level
+        // dedupe — the seed helpers insert one row per statement, so this is the only coverage of a
+        // multi-row single-statement insert.
+        var insertedRows = await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[SchoolAddress] ([Ordinal], [School_DocumentId], [City])
+            VALUES (1, @schoolDocumentId, 'City-170-1'),
+                   (2, @schoolDocumentId, 'City-170-2'),
+                   (3, @schoolDocumentId, 'City-170-3');
+            """,
+            new SqlParameter("@schoolDocumentId", schoolDocumentId)
+        );
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var after = await ReadStampPairAsync(schoolDocumentId);
+
+        insertedRows.Should().Be(3, "the single statement must insert all three child rows");
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(
+                1L,
+                "a multi-row single-statement child insert touching one root must allocate exactly one content version, not one per inserted row"
+            );
+        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
+        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after
+            .Mirror.ContentVersion.Should()
+            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
+        after
+            .Mirror.ContentLastModifiedAt.Should()
+            .Be(
+                after.Document.ContentLastModifiedAt,
+                "the root mirror ContentLastModifiedAt must equal dms.Document"
+            );
+    }
+
+    [Test]
     public async Task It_should_allocate_one_content_version_for_a_multi_row_child_update()
     {
         var schoolDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 100, addressCount: 3);
@@ -239,6 +284,92 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             );
     }
 
+    [Test]
+    public async Task It_should_allocate_one_content_version_for_a_multi_row_child_delete()
+    {
+        var schoolDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 150, addressCount: 3);
+        var before = await ReadStampPairAsync(schoolDocumentId);
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        await DelayForDistinctTimestampsAsync();
+
+        var deletedRows = await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM [edfi].[SchoolAddress]
+            WHERE [School_DocumentId] = @schoolDocumentId;
+            """,
+            new SqlParameter("@schoolDocumentId", schoolDocumentId)
+        );
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var after = await ReadStampPairAsync(schoolDocumentId);
+
+        deletedRows.Should().Be(3, "the single statement must delete all three child rows");
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(
+                1L,
+                "a multi-row child delete against one surviving root must allocate exactly one content version, not one per deleted row"
+            );
+        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
+        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after
+            .Mirror.ContentVersion.Should()
+            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
+        after
+            .Mirror.ContentLastModifiedAt.Should()
+            .Be(
+                after.Document.ContentLastModifiedAt,
+                "the root mirror ContentLastModifiedAt must equal dms.Document"
+            );
+    }
+
+    [Test]
+    public async Task It_should_not_advance_the_root_watermark_past_the_tombstone_on_a_cascaded_root_delete()
+    {
+        // Seed the full descendant graph (child, nested-child, root _ext, collection-aligned _ext) so the
+        // cascading root delete fires every non-root statement-level DELETE trigger under its
+        // root-existence guard.
+        var schoolDocumentId = await SeedSchoolWithFullDescendantGraphAsync(schoolId: 160, addressCount: 3);
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+
+        // Delete the owning root. The root stamping trigger records the tombstone ChangeVersion onto
+        // dms.Document; the row deletion then cascades to every descendant, and each descendant stamp
+        // trigger must observe the already-removed root and skip its stamp.
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM [edfi].[School]
+            WHERE [DocumentId] = @schoolDocumentId;
+            """,
+            new SqlParameter("@schoolDocumentId", schoolDocumentId)
+        );
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var documentContentVersion = await ReadDocumentContentVersionAsync(schoolDocumentId);
+        var tombstoneChangeVersion = await ReadDeleteTombstoneChangeVersionAsync(schoolDocumentId);
+
+        (await ReadSchoolRowCountAsync(schoolDocumentId))
+            .Should()
+            .Be(0L, "the cascading root delete must remove the root row");
+        (afterMaxChangeVersion - beforeMaxChangeVersion)
+            .Should()
+            .Be(
+                1L,
+                "only the root tombstone may allocate a content version; the cascaded child/nested-child/_ext deletes must not"
+            );
+        documentContentVersion
+            .Should()
+            .Be(
+                tombstoneChangeVersion,
+                "the root ContentVersion must remain at the tombstone's ChangeVersion after the cascade"
+            );
+        documentContentVersion
+            .Should()
+            .Be(
+                afterMaxChangeVersion,
+                "no descendant delete may advance the visible watermark past the root tombstone's ChangeVersion"
+            );
+    }
+
     private async Task<long> SeedSchoolWithAddressesAsync(int schoolId, int addressCount)
     {
         var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
@@ -261,6 +392,33 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
                 schoolDocumentId,
                 ordinal,
                 $"City-{schoolId}-{ordinal}"
+            );
+            await InsertSchoolExtensionAddressAsync(
+                addressCollectionItemId,
+                schoolDocumentId,
+                $"Zone-{schoolId}-{ordinal}"
+            );
+        }
+        return schoolDocumentId;
+    }
+
+    private async Task<long> SeedSchoolWithFullDescendantGraphAsync(int schoolId, int addressCount)
+    {
+        var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, schoolId);
+        await InsertSchoolExtensionAsync(schoolDocumentId, $"Campus-{schoolId}");
+        for (var ordinal = 1; ordinal <= addressCount; ordinal++)
+        {
+            var addressCollectionItemId = await InsertSchoolAddressAsync(
+                schoolDocumentId,
+                ordinal,
+                $"City-{schoolId}-{ordinal}"
+            );
+            await InsertSchoolAddressPeriodAsync(
+                addressCollectionItemId,
+                schoolDocumentId,
+                ordinal,
+                $"Period-{schoolId}-{ordinal}"
             );
             await InsertSchoolExtensionAddressAsync(
                 addressCollectionItemId,
@@ -342,6 +500,25 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         );
     }
 
+    private async Task InsertSchoolAddressPeriodAsync(
+        long parentCollectionItemId,
+        long schoolDocumentId,
+        int ordinal,
+        string periodName
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[SchoolAddressPeriod] ([Ordinal], [ParentCollectionItemId], [School_DocumentId], [PeriodName])
+            VALUES (@ordinal, @parentCollectionItemId, @schoolDocumentId, @periodName);
+            """,
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter("@parentCollectionItemId", parentCollectionItemId),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@periodName", periodName)
+        );
+    }
+
     private async Task InsertSchoolExtensionAddressAsync(
         long baseCollectionItemId,
         long schoolDocumentId,
@@ -362,6 +539,35 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     private async Task<long> ReadMaxChangeVersionAsync()
     {
         return await _database.ExecuteScalarAsync<long>("SELECT [dms].[GetMaxChangeVersion]();");
+    }
+
+    private async Task<long> ReadDocumentContentVersionAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            "SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task<long> ReadDeleteTombstoneChangeVersionAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT tc.[ChangeVersion]
+            FROM [tracked_changes_edfi].[School] tc
+            INNER JOIN [dms].[Document] d ON d.[DocumentUuid] = tc.[Id]
+            WHERE d.[DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task<long> ReadSchoolRowCountAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            "SELECT COUNT_BIG(*) FROM [edfi].[School] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", documentId)
+        );
     }
 
     private async Task<StampPair> ReadStampPairAsync(long documentId)

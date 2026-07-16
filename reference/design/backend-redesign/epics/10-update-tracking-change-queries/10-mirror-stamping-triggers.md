@@ -13,7 +13,7 @@ For representation-changing updates and deletes, the trigger must allocate exact
 
 The trigger's affected-document detection must also ignore updates whose only differences are stamp columns. This prevents mirror updates from causing recursive or redundant stamp activity.
 
-Known PostgreSQL follow-up: this story keeps PostgreSQL child / `_ext` `DocumentStamping` triggers on their current row-level shape. When one PostgreSQL statement changes multiple child or `_ext` rows that share the same root `DocumentId`, the final mirror still equals `dms.Document`, but the trigger can allocate more than one `ContentVersion` for that one affected document. Dedupe-by-document PostgreSQL statement-level stamping is tracked separately in `28-postgresql-statement-level-child-stamping.md`.
+Known PostgreSQL follow-up: this story keeps PostgreSQL child / `_ext` `DocumentStamping` triggers on their row-level shape as delivered here. When one PostgreSQL statement changes multiple child or `_ext` rows that share the same root `DocumentId`, the final mirror still equals `dms.Document`, but the trigger can allocate more than one `ContentVersion` for that one affected document. Dedupe-by-document PostgreSQL statement-level stamping is tracked separately in `28-postgresql-statement-level-child-stamping.md`. (Delivered in DMS-1208: that dedupe-by-affected-root, statement-level shape is now implemented for PostgreSQL child, nested-child, and `_ext` stamping.)
 
 ## Acceptance Criteria
 
