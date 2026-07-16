@@ -57,12 +57,36 @@ public class IdentityModule : IEndpointModule
         ILogger<IdentityModule> logger
     )
     {
+        // Registration disabled is answered before any request body is read, so a disabled endpoint
+        // returns the exact Ed-Fi authorization response regardless of the posted body — a malformed or
+        // form-limit-exceeding body must not defeat it by throwing out of the form read below.
+        if (!identitySettings.Value.AllowRegistration)
+        {
+            return FailureResults.AuthorizationFailed(
+                ["Registration is disabled."],
+                httpContext.TraceIdentifier
+            );
+        }
+
         // Manually read form data to handle empty form bodies in .NET 10
-        // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked)
+        // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked).
         RegisterRequest model = new();
         if (httpContext.Request.HasFormContentType)
         {
-            var form = await httpContext.Request.ReadFormAsync();
+            IFormCollection form;
+            try
+            {
+                form = await httpContext.Request.ReadFormAsync();
+            }
+            catch (InvalidDataException exception)
+            {
+                // A form-limit breach or malformed form throws InvalidDataException, which the global
+                // exception handler would answer with a 500. /connect/register is not an OAuth endpoint,
+                // so it uses the Ed-Fi contract: an unreadable form is a client bad request. The framework
+                // message and raw request values are never surfaced; the failure is logged server-side.
+                logger.LogWarning(exception, "Failed to read the form body on the registration endpoint.");
+                return FailureResults.BadRequest("The request was invalid.", httpContext.TraceIdentifier);
+            }
             model = new RegisterRequest
             {
                 ClientId = form["ClientId"].ToString(),
@@ -71,77 +95,70 @@ public class IdentityModule : IEndpointModule
             };
         }
 
-        bool allowRegistration = identitySettings.Value.AllowRegistration;
-        if (allowRegistration)
-        {
-            await validator.GuardAsync(model);
+        await validator.GuardAsync(model);
 
-            var clientResult = await clientRepository.GetAllClientsAsync();
-            switch (clientResult)
-            {
-                case ClientClientsResult.FailureUnknown:
-                    return FailureResults.Unknown(httpContext.TraceIdentifier);
-                case ClientClientsResult.FailureIdentityProvider failureIdentityProvider:
-                    return UpstreamRegistrationError(
-                        logger,
-                        failureIdentityProvider.IdentityProviderError.FailureMessage,
-                        httpContext.TraceIdentifier
-                    );
-                case ClientClientsResult.Success clientSuccess:
-                    if (IsUnique(clientSuccess))
-                    {
-                        var result = await clientRepository.CreateClientAsync(
-                            model.ClientId!,
-                            model.ClientSecret!,
-                            identitySettings.Value.ConfigServiceRole,
-                            model.DisplayName!,
-                            AuthorizationScopes.AdminScope.Name,
-                            string.Empty,
-                            string.Empty
-                        );
-                        return result switch
-                        {
-                            ClientCreateResult.Success => Results.Json(
-                                new
-                                {
-                                    Title = $"Registered client {model.ClientId} successfully.",
-                                    Status = 200,
-                                }
-                            ),
-                            ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
-                                UpstreamRegistrationError(
-                                    logger,
-                                    failureIdentityProvider.IdentityProviderError.FailureMessage,
-                                    httpContext.TraceIdentifier
-                                ),
-                            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-                        };
-                    }
-                    break;
-            }
-            bool IsUnique(ClientClientsResult.Success clientSuccess)
-            {
-                bool clientExists = clientSuccess.ClientList.Any(c =>
-                    c.Equals(model.ClientId!, StringComparison.InvariantCultureIgnoreCase)
+        var clientResult = await clientRepository.GetAllClientsAsync();
+        switch (clientResult)
+        {
+            case ClientClientsResult.FailureUnknown:
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            case ClientClientsResult.FailureIdentityProvider failureIdentityProvider:
+                return UpstreamRegistrationError(
+                    logger,
+                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                    httpContext.TraceIdentifier
                 );
-                if (clientExists)
+            case ClientClientsResult.Success clientSuccess:
+                if (IsUnique(clientSuccess))
                 {
-                    var validationFailures = new List<ValidationFailure>
+                    var result = await clientRepository.CreateClientAsync(
+                        model.ClientId!,
+                        model.ClientSecret!,
+                        identitySettings.Value.ConfigServiceRole,
+                        model.DisplayName!,
+                        AuthorizationScopes.AdminScope.Name,
+                        string.Empty,
+                        string.Empty
+                    );
+                    return result switch
                     {
-                        new()
-                        {
-                            PropertyName = "ClientId",
-                            ErrorMessage =
-                                "Client with the same Client Id already exists. Please provide different Client Id.",
-                        },
+                        ClientCreateResult.Success => Results.Json(
+                            new { Title = $"Registered client {model.ClientId} successfully.", Status = 200 }
+                        ),
+                        ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
+                            UpstreamRegistrationError(
+                                logger,
+                                failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                httpContext.TraceIdentifier
+                            ),
+                        _ => FailureResults.Unknown(httpContext.TraceIdentifier),
                     };
-                    throw new ValidationException(validationFailures);
                 }
-                return true;
-            }
+                break;
         }
 
-        return FailureResults.AuthorizationFailed(["Registration is disabled."], httpContext.TraceIdentifier);
+        bool IsUnique(ClientClientsResult.Success clientSuccess)
+        {
+            bool clientExists = clientSuccess.ClientList.Any(c =>
+                c.Equals(model.ClientId!, StringComparison.InvariantCultureIgnoreCase)
+            );
+            if (clientExists)
+            {
+                var validationFailures = new List<ValidationFailure>
+                {
+                    new()
+                    {
+                        PropertyName = "ClientId",
+                        ErrorMessage =
+                            "Client with the same Client Id already exists. Please provide different Client Id.",
+                    },
+                };
+                throw new ValidationException(validationFailures);
+            }
+            return true;
+        }
+
+        return FailureResults.Unknown(httpContext.TraceIdentifier);
     }
 
     // Reports an identity-provider failure raised while registering a client. The raw provider message is

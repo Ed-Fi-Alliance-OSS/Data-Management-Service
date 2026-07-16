@@ -168,10 +168,25 @@ public class Given_a_bad_http_request_exception_with_a_generic_status
         _httpContext.Response.StatusCode.Should().Be(400);
         _httpContext.Response.ContentType.Should().Be("application/problem+json");
         _httpContext.Response.Headers["TraceId"].Should().NotBeNullOrEmpty();
-        _responseBody.Should().Contain("urn:ed-fi:api:bad-request");
-        _responseBody.Should().Contain("The request was invalid.");
 
         var body = JsonNode.Parse(_responseBody)!;
+        body.AsObject()
+            .Select(member => member.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["detail"]!.GetValue<string>().Should().Be("The request was invalid.");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
         body["validationErrors"]!.AsObject().Count.Should().Be(0);
         body["errors"]!.AsArray().Count.Should().Be(0);
     }
@@ -225,10 +240,25 @@ public class Given_a_bad_http_request_exception_with_an_unsupported_media_type_s
         _httpContext.Response.StatusCode.Should().Be(415);
         _httpContext.Response.ContentType.Should().Be("application/problem+json");
         _httpContext.Response.Headers["TraceId"].Should().NotBeNullOrEmpty();
-        _responseBody.Should().Contain("urn:ed-fi:api:unsupported-media-type");
-        _responseBody.Should().Contain("The request content type is not supported.");
 
         var body = JsonNode.Parse(_responseBody)!;
+        body.AsObject()
+            .Select(member => member.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:unsupported-media-type");
+        body["title"]!.GetValue<string>().Should().Be("Unsupported Media Type");
+        body["detail"]!.GetValue<string>().Should().Be("The request content type is not supported.");
+        body["status"]!.GetValue<int>().Should().Be(415);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
         body["validationErrors"]!.AsObject().Count.Should().Be(0);
         body["errors"]!.AsArray().Count.Should().Be(0);
     }

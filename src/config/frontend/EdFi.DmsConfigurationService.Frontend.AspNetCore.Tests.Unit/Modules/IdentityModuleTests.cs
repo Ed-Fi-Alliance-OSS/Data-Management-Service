@@ -7,6 +7,7 @@ using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
@@ -372,6 +373,115 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var actualResponse = JsonNode.Parse(content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The request could not be processed. See 'errors' for details.",
+              "type": "urn:ed-fi:api:security:authorization",
+              "title": "Authorization Failed",
+              "status": 403,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+                "Registration is disabled."
+              ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
+
+    [Test]
+    public async Task When_the_registration_form_cannot_be_read()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    // A one-value form limit makes ReadFormAsync throw while parsing the multi-field body.
+                    collection.Configure<FormOptions>(options => options.ValueCountLimit = 1);
+                    collection.AddTransient((_) => CreateRegisterRequestValidator());
+                    collection.AddTransient((_) => _clientRepository!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act: three form values exceed the configured limit of one, so ReadFormAsync throws
+        // InvalidDataException while parsing.
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient1"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient1"),
+        ]);
+        var response = await client.PostAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert: an unreadable form is a client bad request under the Ed-Fi contract, not a 500, and the
+        // framework message and raw request values are never surfaced.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var actualResponse = JsonNode.Parse(content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The request was invalid.",
+              "type": "urn:ed-fi:api:bad-request",
+              "title": "Bad Request",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
+
+    [Test]
+    public async Task When_allow_registration_is_disabled_the_form_is_not_read()
+    {
+        // Arrange: registration disabled AND a one-value form limit that would make ReadFormAsync throw.
+        // The disabled response must be returned before the body is read, so the unreadable form never
+        // produces a framework error — proving the disabled check short-circuits ahead of the form read.
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.Configure<IdentitySettings>(opts =>
+                    {
+                        opts.AllowRegistration = false;
+                    });
+                    collection.Configure<FormOptions>(options => options.ValueCountLimit = 1);
+                    collection.AddTransient((_) => CreateRegisterRequestValidator());
+                    collection.AddTransient((_) => _clientRepository!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act: three form values would exceed the limit of one if the form were read.
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient2"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
+        ]);
+        var response = await client.PostAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert: the exact disabled-registration 403 contract, not a 500 from a form-read failure.
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
 
@@ -1374,26 +1484,39 @@ public class Given_The_Provider_Returns_A_Success_Without_A_Token_Type : TokenEn
 [TestFixture]
 public class Given_An_Introspect_Request_Without_A_Token
 {
-    [Test]
-    public async Task It_returns_the_oauth_invalid_request_error()
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private HttpResponseMessage _response = null!;
+    private string _content = null!;
+
+    [SetUp]
+    public async Task Setup()
     {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             builder.UseEnvironment("Test")
         );
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[] { new KeyValuePair<string, string>("token_type_hint", "access_token") }
+        _client = _factory.CreateClient();
+        _response = await _client.PostAsync(
+            "/connect/introspect",
+            new FormUrlEncodedContent([new KeyValuePair<string, string>("token_type_hint", "access_token")])
         );
-        var response = await client.PostAsync("/connect/introspect", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
+        _content = await _response.Content.ReadAsStringAsync();
+    }
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        var actualResponse = JsonNode.Parse(content);
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var actualResponse = JsonNode.Parse(_content);
         var expectedResponse = JsonNode.Parse(
             """
             {
@@ -1409,34 +1532,54 @@ public class Given_An_Introspect_Request_Without_A_Token
 [TestFixture]
 public class Given_An_Introspect_Request_Whose_Form_Cannot_Be_Read
 {
-    [Test]
-    public async Task It_returns_the_oauth_invalid_request_error()
+    private IEnhancedTokenValidator _tokenValidator = null!;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private HttpResponseMessage _response = null!;
+    private string _content = null!;
+
+    [SetUp]
+    public async Task Setup()
     {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        // A token validator is registered so that, if the form-read guard failed and execution fell
+        // through to the introspection branch, ValidateTokenAsync would be invoked — letting the
+        // It_does_not_introspect_the_token assertion detect an unintended introspection.
+        _tokenValidator = A.Fake<IEnhancedTokenValidator>();
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(collection =>
-                collection.Configure<FormOptions>(options => options.ValueCountLimit = 1)
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act — two form values exceed the configured limit of one, so ReadFormAsync throws while parsing.
-        var requestContent = new FormUrlEncodedContent(
-            new[]
             {
+                collection.AddTransient(_ => _tokenValidator);
+                collection.Configure<FormOptions>(options => options.ValueCountLimit = 1);
+            });
+        });
+        _client = _factory.CreateClient();
+        // Two form values exceed the configured limit of one, so ReadFormAsync throws while parsing.
+        _response = await _client.PostAsync(
+            "/connect/introspect",
+            new FormUrlEncodedContent([
                 new KeyValuePair<string, string>("token", "some-token"),
                 new KeyValuePair<string, string>("token_type_hint", "access_token"),
-            }
+            ])
         );
-        var response = await client.PostAsync("/connect/introspect", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
+        _content = await _response.Content.ReadAsStringAsync();
+    }
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        var actualResponse = JsonNode.Parse(content);
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var actualResponse = JsonNode.Parse(_content);
         var expectedResponse = JsonNode.Parse(
             """
             {
@@ -1447,34 +1590,52 @@ public class Given_An_Introspect_Request_Whose_Form_Cannot_Be_Read
         );
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
+
+    [Test]
+    public void It_does_not_introspect_the_token() =>
+        A.CallTo(() => _tokenValidator.ValidateTokenAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
 }
 
 [TestFixture]
 public class Given_A_Revoke_Request_Without_A_Token
 {
-    [Test]
-    public async Task It_returns_the_oauth_invalid_request_error()
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private HttpResponseMessage _response = null!;
+    private string _content = null!;
+
+    [SetUp]
+    public async Task Setup()
     {
-        // Arrange
         var tokenManager = A.Fake<ITokenManager>();
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.ConfigureServices((collection) => collection.AddTransient((_) => tokenManager));
+            builder.ConfigureServices(collection => collection.AddTransient(_ => tokenManager));
         });
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[] { new KeyValuePair<string, string>("token_type_hint", "access_token") }
+        _client = _factory.CreateClient();
+        _response = await _client.PostAsync(
+            "/connect/revoke",
+            new FormUrlEncodedContent([new KeyValuePair<string, string>("token_type_hint", "access_token")])
         );
-        var response = await client.PostAsync("/connect/revoke", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
+        _content = await _response.Content.ReadAsStringAsync();
+    }
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        var actualResponse = JsonNode.Parse(content);
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var actualResponse = JsonNode.Parse(_content);
         var expectedResponse = JsonNode.Parse(
             """
             {
@@ -1597,37 +1758,54 @@ public class Given_The_Provider_Does_Not_Support_Revocation : RevokeEndpointTest
 [TestFixture]
 public class Given_A_Revoke_Request_Whose_Form_Cannot_Be_Read
 {
-    [Test]
-    public async Task It_returns_the_oauth_invalid_request_error()
+    private ITokenManager _tokenManager = null!;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private HttpResponseMessage _response = null!;
+    private string _content = null!;
+
+    [SetUp]
+    public async Task Setup()
     {
-        // Arrange
-        var tokenManager = A.Fake<ITokenManager>();
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        // The fake implements ITokenRevocationManager so that, if the form-read guard failed and execution
+        // fell through to the revocation branch, RevokeTokenAsync would be invoked — letting the
+        // It_does_not_revoke_the_token assertion detect an unintended, state-changing revocation.
+        _tokenManager = A.Fake<ITokenManager>(x => x.Implements<ITokenRevocationManager>());
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(collection =>
             {
-                collection.AddTransient(_ => tokenManager);
+                collection.AddTransient(_ => _tokenManager);
                 collection.Configure<FormOptions>(options => options.ValueCountLimit = 1);
             });
         });
-        using var client = factory.CreateClient();
-
-        // Act — two form values exceed the configured limit of one, so ReadFormAsync throws while parsing.
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
+        _client = _factory.CreateClient();
+        // Two form values exceed the configured limit of one, so ReadFormAsync throws while parsing.
+        _response = await _client.PostAsync(
+            "/connect/revoke",
+            new FormUrlEncodedContent([
                 new KeyValuePair<string, string>("token", "some-token"),
                 new KeyValuePair<string, string>("token_type_hint", "access_token"),
-            }
+            ])
         );
-        var response = await client.PostAsync("/connect/revoke", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
+        _content = await _response.Content.ReadAsStringAsync();
+    }
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        var actualResponse = JsonNode.Parse(content);
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var actualResponse = JsonNode.Parse(_content);
         var expectedResponse = JsonNode.Parse(
             """
             {
@@ -1637,9 +1815,10 @@ public class Given_A_Revoke_Request_Whose_Form_Cannot_Be_Read
             """
         );
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-
-        // The revocation manager must never be reached when the form cannot even be read.
-        A.CallTo(() => tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
-            .MustNotHaveHappened();
     }
+
+    [Test]
+    public void It_does_not_revoke_the_token() =>
+        A.CallTo(() => ((ITokenRevocationManager)_tokenManager).RevokeTokenAsync(A<string>._))
+            .MustNotHaveHappened();
 }
