@@ -42,7 +42,9 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpdateResult _updateResult = null!;
+    private ExtensionChildSchoolRow _schoolBeforeUpdate = null!;
     private ExtensionChildSchoolRow _schoolAfterUpdate = null!;
+    private IReadOnlyList<ExtensionChildAddressRow> _addressesBeforeUpdate = null!;
     private IReadOnlyList<ExtensionChildAddressRow> _addressesAfterUpdate = null!;
     private IReadOnlyList<ExtensionInterventionRow> _interventionsBeforeUpdate = null!;
     private IReadOnlyList<ExtensionInterventionVisitRow> _visitsBeforeUpdate = null!;
@@ -67,6 +69,8 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
 
         long documentId = await ExecuteCreateAsync();
 
+        _schoolBeforeUpdate = await ReadSchoolAsync(documentId);
+        _addressesBeforeUpdate = await ReadSchoolAddressesAsync(documentId);
         _interventionsBeforeUpdate = await ReadInterventionsAsync(documentId);
         _visitsBeforeUpdate = await ReadInterventionVisitsAsync(documentId);
 
@@ -102,7 +106,9 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
     public void It_deletes_the_omitted_standalone_extension_child_collection_without_deleting_base_rows() =>
         AssertStandaloneExtensionChildCollectionDeleted(
             _updateResult,
+            _schoolBeforeUpdate,
             _schoolAfterUpdate,
+            _addressesBeforeUpdate,
             _addressesAfterUpdate,
             _interventionsBeforeUpdate,
             _visitsBeforeUpdate,

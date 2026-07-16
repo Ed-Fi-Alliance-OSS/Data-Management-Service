@@ -3861,14 +3861,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "Community Foundation"
                 )
             );
-        _stateAfterPostAsUpdate
-            .AcademicHonors[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.AcademicHonors[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .AcademicHonors.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.AcademicHonors[1].CollectionItemId);
+        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+            "AcademicHonors",
+            [.. _stateAfterCreate.AcademicHonors.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.AcademicHonors.Select(row => row.CollectionItemId)]
+        );
 
         _stateAfterPostAsUpdate
             .Diplomas.Should()
@@ -3890,14 +3887,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "Honors Path"
                 )
             );
-        _stateAfterPostAsUpdate
-            .Diplomas[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.Diplomas[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .Diplomas.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.Diplomas[1].CollectionItemId);
+        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+            "Diplomas",
+            [.. _stateAfterCreate.Diplomas.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.Diplomas.Select(row => row.CollectionItemId)]
+        );
 
         _stateAfterPostAsUpdate
             .GradePointAverages.Should()
@@ -3919,14 +3913,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     false
                 )
             );
-        _stateAfterPostAsUpdate
-            .GradePointAverages[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.GradePointAverages[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .GradePointAverages.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.GradePointAverages[1].CollectionItemId);
+        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+            "GradePointAverages",
+            [.. _stateAfterCreate.GradePointAverages.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.GradePointAverages.Select(row => row.CollectionItemId)]
+        );
 
         _stateAfterPostAsUpdate
             .Recognitions.Should()
@@ -3948,14 +3939,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "District Office"
                 )
             );
-        _stateAfterPostAsUpdate
-            .Recognitions[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.Recognitions[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .Recognitions.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.Recognitions[1].CollectionItemId);
+        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+            "Recognitions",
+            [.. _stateAfterCreate.Recognitions.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.Recognitions.Select(row => row.CollectionItemId)]
+        );
     }
 
     [Test]

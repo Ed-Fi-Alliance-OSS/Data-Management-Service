@@ -746,24 +746,22 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_U
     [Test]
     public void It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches()
     {
-        _createdAddressCount.Should().BeGreaterThan(_maxRowsPerBatch);
-        _result.Should().BeOfType<UpdateResult.UpdateSuccess>();
-        _result.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
-
         _persistedStateBeforeUpdate.Addresses.Should().HaveCount(_createdAddressCount);
-        _persistedStateAfterUpdate.Addresses.Should().ContainSingle();
-        _persistedStateAfterUpdate
-            .Addresses[0]
-            .Should()
-            .Be(
-                new MultiBatchCollectionPersistedSchoolAddressRow(
-                    _persistedStateBeforeUpdate.Addresses[0].CollectionItemId,
-                    _persistedStateAfterUpdate.Document.DocumentId,
-                    0,
-                    MultiBatchCollectionsIntegrationTestSupport.CreateCity(0)
-                )
-            );
+
+        NoProfileUpdateSemanticsScenarios.AssertMultiBatchBaseCollectionReducedToRetainedRow(
+            _result,
+            SchoolDocumentUuid,
+            _persistedStateAfterUpdate.Document.DocumentId,
+            _maxRowsPerBatch,
+            [.. _persistedStateBeforeUpdate.Addresses.Select(ToNeutralAddress)],
+            [.. _persistedStateAfterUpdate.Addresses.Select(ToNeutralAddress)],
+            MultiBatchCollectionsIntegrationTestSupport.CreateCity(0)
+        );
     }
+
+    private static NoProfileUpdateSemanticsScenarios.SchoolAddressRow ToNeutralAddress(
+        MultiBatchCollectionPersistedSchoolAddressRow address
+    ) => new(address.CollectionItemId, address.SchoolDocumentId, address.Ordinal, address.City);
 
     [Test]
     public void It_partitions_collection_delete_commands_using_the_compiled_batch_limit()

@@ -308,11 +308,14 @@ public static class NoProfileUpdateSemanticsScenarios
 
     /// <summary>
     /// Asserts that omitting the standalone extension-child collection on a changed PUT deletes its
-    /// intervention and visit rows while leaving the root School and its base address rows intact.
+    /// intervention and visit rows while leaving the root School and its base address row intact
+    /// (same DocumentId, same base address CollectionItemId — not delete-and-reinserted).
     /// </summary>
     public static void AssertStandaloneExtensionChildCollectionDeleted(
         UpdateResult result,
+        ExtensionChildSchoolRow schoolBefore,
         ExtensionChildSchoolRow schoolAfter,
+        IReadOnlyList<ExtensionChildAddressRow> addressesBefore,
         IReadOnlyList<ExtensionChildAddressRow> addressesAfter,
         IReadOnlyList<ExtensionInterventionRow> interventionsBefore,
         IReadOnlyList<ExtensionInterventionVisitRow> visitsBefore,
@@ -322,16 +325,105 @@ public static class NoProfileUpdateSemanticsScenarios
     {
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
 
+        // Preconditions: the standalone extension-child collection and one base address exist.
+        schoolBefore.SchoolId.Should().Be(255901);
         interventionsBefore.Should().HaveCount(2);
         visitsBefore.Should().HaveCount(3);
+        addressesBefore
+            .Should()
+            .ContainSingle("the create persists exactly one base address")
+            .Which.City.Should()
+            .Be("Austin");
 
         interventionsAfter.Should().BeEmpty("the omitted standalone extension-child collection is deleted");
         visitsAfter.Should().BeEmpty("deleting the intervention rows deletes their child visit rows");
 
-        schoolAfter.SchoolId.Should().Be(255901, "the root School row is preserved");
-        addressesAfter.Should().HaveCount(1, "the base address collection is preserved");
-        addressesAfter[0].SchoolDocumentId.Should().Be(schoolAfter.DocumentId);
-        addressesAfter[0].Ordinal.Should().Be(0);
-        addressesAfter[0].City.Should().Be("Austin");
+        // The root and base address rows survive unchanged: same DocumentId/SchoolId and the same
+        // base address CollectionItemId/parent/ordinal/value (a delete-and-reinsert would fail this).
+        schoolAfter.Should().Be(schoolBefore, "the root School row keeps its DocumentId and SchoolId");
+        addressesAfter
+            .Should()
+            .Equal(
+                new ExtensionChildAddressRow(
+                    addressesBefore[0].CollectionItemId,
+                    schoolBefore.DocumentId,
+                    0,
+                    "Austin"
+                )
+            );
+    }
+
+    // --- DeletedBaseCollectionRows (multi-batch base collection delete) -----------------------
+
+    /// <summary>
+    /// Asserts a changed PUT that retains a single base collection row deleted the omitted rows (the
+    /// create must exceed the compiled batch limit) and left exactly the retained row with its stable
+    /// CollectionItemId, parent document id, ordinal 0, and value. Batch-partitioning mechanics stay
+    /// in the multi-batch suite.
+    /// </summary>
+    public static void AssertMultiBatchBaseCollectionReducedToRetainedRow(
+        UpdateResult result,
+        DocumentUuid documentUuid,
+        long documentId,
+        int maxRowsPerBatch,
+        IReadOnlyList<SchoolAddressRow> addressesBefore,
+        IReadOnlyList<SchoolAddressRow> addressesAfter,
+        string retainedCity
+    )
+    {
+        addressesBefore
+            .Count.Should()
+            .BeGreaterThan(maxRowsPerBatch, "the create must exceed the compiled batch limit");
+
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        result.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(documentUuid);
+
+        addressesAfter.Should().ContainSingle("the changed PUT retains exactly one base collection row");
+        addressesAfter[0]
+            .Should()
+            .Be(new SchoolAddressRow(addressesBefore[0].CollectionItemId, documentId, 0, retainedCity));
+    }
+
+    // --- DeletedAndReplacedChildCollectionRows (authoritative child-collection replace) --------
+
+    /// <summary>
+    /// Asserts a changed POST-as-update that retained the first child row and replaced the second
+    /// reused the retained row's stable CollectionItemId, dropped the omitted prior row's id, and
+    /// assigned the replacement row a new id. The detailed row/value/FK assertions stay in the
+    /// authoritative-resource suite.
+    /// </summary>
+    public static void AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+        string collectionName,
+        IReadOnlyList<long> collectionItemIdsBefore,
+        IReadOnlyList<long> collectionItemIdsAfter
+    )
+    {
+        collectionItemIdsBefore
+            .Should()
+            .HaveCount(2, "{0} starts with two rows before the changed POST-as-update", collectionName);
+        collectionItemIdsAfter
+            .Should()
+            .HaveCount(2, "{0} keeps two rows after the changed POST-as-update", collectionName);
+        collectionItemIdsAfter[0]
+            .Should()
+            .Be(
+                collectionItemIdsBefore[0],
+                "{0} retained row keeps its stable CollectionItemId",
+                collectionName
+            );
+        collectionItemIdsAfter[1]
+            .Should()
+            .NotBe(
+                collectionItemIdsBefore[1],
+                "{0} replacement row is assigned a new CollectionItemId",
+                collectionName
+            );
+        collectionItemIdsAfter
+            .Should()
+            .NotContain(
+                collectionItemIdsBefore[1],
+                "{0} omitted prior row id no longer exists",
+                collectionName
+            );
     }
 }
