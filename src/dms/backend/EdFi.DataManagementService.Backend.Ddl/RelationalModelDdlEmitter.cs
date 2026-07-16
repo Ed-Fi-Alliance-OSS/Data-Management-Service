@@ -668,6 +668,28 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var funcName = _dialect.Rules.ShortenIdentifier($"TF_{trigger.Name.Value}");
         var schema = trigger.Table.Schema;
 
+        // Non-root DocumentStamping triggers (child, nested-child, root _ext, and collection-aligned
+        // _ext tables) render as statement-level triggers with transition tables so a multi-row DML
+        // that touches several rows owned by one root allocates exactly one ChangeVersionSequence
+        // value per distinct affected DocumentId (DMS-1208). Root and descriptor stamping stay
+        // row-level below because they assign NEW mirror columns in place.
+        if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
+        {
+            var stampingTableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
+            var stampingMirrorTarget = RequireMirrorStampTargetTable(trigger);
+            if (!IsRootDocumentStampingTrigger(trigger, stampingTableModel, stampingMirrorTarget))
+            {
+                EmitPgsqlNonRootStatementLevelStamping(
+                    writer,
+                    trigger,
+                    stampingTableModel,
+                    stampingMirrorTarget,
+                    trackedChangeTablesByName
+                );
+                return;
+            }
+        }
+
         // Function: CREATE OR REPLACE is supported and idempotent
         writer.Append("CREATE OR REPLACE FUNCTION ");
         writer.Append(Quote(schema));
@@ -789,6 +811,327 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("();");
         writer.AppendLine();
     }
+
+    /// <summary>
+    /// Emits the statement-level PostgreSQL DocumentStamping rendering for a non-root stamping
+    /// trigger (child, nested-child, root <c>_ext</c>, or collection-aligned <c>_ext</c> table).
+    /// PostgreSQL forbids transition tables on a trigger that fires on more than one event, so the
+    /// single combined row-level trigger is replaced by three event-specific functions and triggers
+    /// (INSERT / UPDATE / DELETE), each using <c>REFERENCING ... FOR EACH STATEMENT</c>. Every event
+    /// builds a deduplicated affected-root workset and stamps <c>dms.Document</c> once per distinct
+    /// owning <c>DocumentId</c>, then mirrors the same stamp into the owning resource root — matching
+    /// the SQL Server statement-level shape (DMS-1208).
+    /// </summary>
+    private void EmitPgsqlNonRootStatementLevelStamping(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        DbTableName mirrorStampTargetTable,
+        IReadOnlyDictionary<DbTableName, TrackedChangeTableInfo> trackedChangeTablesByName
+    )
+    {
+        if (trigger.KeyColumns.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{trigger.Name.Value}' requires exactly one key column in the PgSQL path, but has {trigger.KeyColumns.Count}."
+            );
+        }
+
+        // Validate tracked-change attachment consistency even though non-root stamping never emits
+        // tombstones or key-changes: a non-root trigger must not carry a ChangeTracking attachment.
+        // Mirrors the unconditional build on the MSSQL and root paths so inconsistencies still throw.
+        _ = TryBuildTrackedChangePlan(trigger, tableModel, trackedChangeTablesByName);
+
+        var schema = trigger.Table.Schema;
+        var documentTable = Quote(DmsTableNames.Document);
+        var sequenceName = FormatSequenceName();
+        var keyColumn = trigger.KeyColumns[0];
+        var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
+        var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
+
+        // INSERT: every inserted row is a representation change, so the workset is the distinct set
+        // of owning roots drawn from the new-row images.
+        EmitPgsqlNonRootStampFunction(
+            writer,
+            schema,
+            PerEventStampFunctionName(trigger, "ins"),
+            documentTable,
+            sequenceName,
+            mirrorStampTargetTable,
+            () => EmitPgsqlAffectedFromSingleTransitionTable(writer, "newtab", keyColumn)
+        );
+
+        // UPDATE: correlate old/new images by the table's stable primary key and keep only rows whose
+        // stored values changed; the UNION contributes both the new and old owning root so a locator
+        // change stamps each side once.
+        EmitPgsqlNonRootStampFunction(
+            writer,
+            schema,
+            PerEventStampFunctionName(trigger, "upd"),
+            documentTable,
+            sequenceName,
+            mirrorStampTargetTable,
+            () =>
+                EmitPgsqlAffectedFromUpdateTransitionTables(writer, keyColumn, tableKeyColumns, storedColumns)
+        );
+
+        // DELETE: the workset is the distinct set of owning roots drawn from the old-row images. The
+        // root-existence guard inside the shared body keeps cascaded child/_ext deletes from advancing
+        // the watermark past the owning root's tombstone.
+        EmitPgsqlNonRootStampFunction(
+            writer,
+            schema,
+            PerEventStampFunctionName(trigger, "del"),
+            documentTable,
+            sequenceName,
+            mirrorStampTargetTable,
+            () => EmitPgsqlAffectedFromSingleTransitionTable(writer, "oldtab", keyColumn)
+        );
+
+        // Replace the legacy combined row-level trigger and (re)create the three event-specific
+        // statement-level triggers. The legacy DROP is emitted once, ahead of the INSERT trigger.
+        EmitPgsqlNonRootStampTrigger(
+            writer,
+            trigger,
+            schema,
+            "ins",
+            "AFTER INSERT",
+            "REFERENCING NEW TABLE AS newtab",
+            dropLegacyCombined: true
+        );
+        EmitPgsqlNonRootStampTrigger(
+            writer,
+            trigger,
+            schema,
+            "upd",
+            "AFTER UPDATE",
+            "REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab",
+            dropLegacyCombined: false
+        );
+        EmitPgsqlNonRootStampTrigger(
+            writer,
+            trigger,
+            schema,
+            "del",
+            "AFTER DELETE",
+            "REFERENCING OLD TABLE AS oldtab",
+            dropLegacyCombined: false
+        );
+    }
+
+    /// <summary>
+    /// Emits one non-root statement-level stamping function. The <paramref name="emitAffectedRows"/>
+    /// callback renders the event-specific <c>affected</c> workset (the distinct owning
+    /// <c>DocumentId</c> set); the shared tail stamps <c>dms.Document</c> once per affected row under
+    /// a root-existence guard and mirrors the returned stamp into the owning resource root.
+    /// </summary>
+    private void EmitPgsqlNonRootStampFunction(
+        SqlWriter writer,
+        DbSchemaName schema,
+        string funcName,
+        string documentTable,
+        string sequenceName,
+        DbTableName mirrorStampTargetTable,
+        Action emitAffectedRows
+    )
+    {
+        writer.Append("CREATE OR REPLACE FUNCTION ");
+        writer.Append(Quote(schema));
+        writer.Append(".");
+        writer.Append(Quote(funcName));
+        writer.AppendLine("()");
+        writer.AppendLine("RETURNS TRIGGER AS $func$");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("WITH affected AS (");
+            using (writer.Indent())
+            {
+                emitAffectedRows();
+            }
+            writer.AppendLine("),");
+            writer.AppendLine("stamped AS (");
+            using (writer.Indent())
+            {
+                writer.Append("UPDATE ");
+                writer.Append(documentTable);
+                writer.AppendLine(" d");
+                writer.Append("SET ");
+                writer.Append(Quote(ContentVersionColumn));
+                writer.Append(" = nextval('");
+                writer.Append(sequenceName);
+                writer.Append("'), ");
+                writer.Append(Quote(ContentLastModifiedAtColumn));
+                writer.AppendLine(" = now()");
+                writer.AppendLine("FROM affected a");
+                writer.Append("WHERE d.");
+                writer.Append(Quote(DocumentIdColumn));
+                writer.Append(" = a.");
+                writer.AppendLine(Quote(DocumentIdColumn));
+                // Root-existence guard: during a cascaded root delete the owning root row is already
+                // gone, so this skips the stamp and the child/_ext cascade cannot advance the visible
+                // watermark past the root tombstone.
+                writer.Append("AND EXISTS (SELECT 1 FROM ");
+                writer.Append(Quote(mirrorStampTargetTable));
+                writer.Append(" r WHERE r.");
+                writer.Append(Quote(DocumentIdColumn));
+                writer.Append(" = a.");
+                writer.Append(Quote(DocumentIdColumn));
+                writer.AppendLine(")");
+                writer.Append("RETURNING d.");
+                writer.Append(Quote(DocumentIdColumn));
+                writer.Append(", d.");
+                writer.Append(Quote(ContentVersionColumn));
+                writer.Append(", d.");
+                writer.AppendLine(Quote(ContentLastModifiedAtColumn));
+            }
+            writer.AppendLine(")");
+            writer.Append("UPDATE ");
+            writer.Append(Quote(mirrorStampTargetTable));
+            writer.AppendLine(" r");
+            writer.Append("SET ");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(" = stamped.");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(", ");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.Append(" = stamped.");
+            writer.AppendLine(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine("FROM stamped");
+            writer.Append("WHERE r.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(" = stamped.");
+            writer.Append(Quote(DocumentIdColumn));
+            writer.AppendLine(";");
+            writer.AppendLine("RETURN NULL;");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("$func$ LANGUAGE plpgsql;");
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the <c>affected</c> workset for the INSERT or DELETE statement-level stamping function:
+    /// the distinct set of owning root <c>DocumentId</c> values drawn from a single transition table
+    /// (<c>newtab</c> for INSERT, <c>oldtab</c> for DELETE).
+    /// </summary>
+    private void EmitPgsqlAffectedFromSingleTransitionTable(
+        SqlWriter writer,
+        string transitionTable,
+        DbColumnName keyColumn
+    )
+    {
+        writer.Append("SELECT DISTINCT ");
+        writer.Append(transitionTable);
+        writer.Append(".");
+        writer.Append(Quote(keyColumn));
+        writer.Append(" AS ");
+        writer.AppendLine(Quote(DocumentIdColumn));
+        writer.Append("FROM ");
+        writer.AppendLine(transitionTable);
+    }
+
+    /// <summary>
+    /// Emits the <c>affected</c> workset for the UPDATE statement-level stamping function. Correlates
+    /// the new-image (<c>newtab</c>) and old-image (<c>oldtab</c>) rows by the table's stable primary
+    /// key, filters to rows whose stored values changed (null-safe), and UNION-dedupes the new and old
+    /// owning roots so a locator change stamps both the source and target document once. Mirrors the
+    /// SQL Server child <c>affectedDocs</c> shape.
+    /// </summary>
+    private void EmitPgsqlAffectedFromUpdateTransitionTables(
+        SqlWriter writer,
+        DbColumnName keyColumn,
+        IReadOnlyList<DbColumnName> tableKeyColumns,
+        IReadOnlyList<DbColumnName> storedColumns
+    )
+    {
+        var quotedKeyColumn = Quote(keyColumn);
+        var quotedDocumentId = Quote(DocumentIdColumn);
+        var quotedProbeColumn = Quote(tableKeyColumns[0]);
+
+        // New-image arm: rows present in newtab whose stored values changed (or new-only rows under a
+        // primary-key change) contribute the new owning root.
+        writer.Append("SELECT n.");
+        writer.Append(quotedKeyColumn);
+        writer.Append(" AS ");
+        writer.AppendLine(quotedDocumentId);
+        writer.AppendLine("FROM newtab n");
+        writer.Append("LEFT JOIN oldtab o ON ");
+        EmitPgsqlJoinConjunction(writer, "o", "n", tableKeyColumns);
+        writer.AppendLine();
+        writer.Append("WHERE o.");
+        writer.Append(quotedProbeColumn);
+        writer.Append(" IS NULL OR ");
+        EmitPgsqlValueDiffDisjunction(writer, storedColumns, "n", "o");
+        writer.AppendLine();
+        writer.AppendLine("UNION");
+        // Old-image arm: contributes the old owning root, covering locator changes and old-only rows.
+        writer.Append("SELECT o.");
+        writer.Append(quotedKeyColumn);
+        writer.Append(" AS ");
+        writer.AppendLine(quotedDocumentId);
+        writer.AppendLine("FROM oldtab o");
+        writer.Append("LEFT JOIN newtab n ON ");
+        EmitPgsqlJoinConjunction(writer, "n", "o", tableKeyColumns);
+        writer.AppendLine();
+        writer.Append("WHERE n.");
+        writer.Append(quotedProbeColumn);
+        writer.Append(" IS NULL OR ");
+        EmitPgsqlValueDiffDisjunction(writer, storedColumns, "n", "o");
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the DROP + CREATE for one event-specific non-root statement-level stamping trigger.
+    /// The legacy combined row-level trigger is dropped once (ahead of the INSERT trigger) so
+    /// regeneration idempotently replaces it.
+    /// </summary>
+    private void EmitPgsqlNonRootStampTrigger(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbSchemaName schema,
+        string suffix,
+        string triggerEvent,
+        string referencingClause,
+        bool dropLegacyCombined
+    )
+    {
+        var triggerName = PerEventStampTriggerName(trigger, suffix);
+        var funcName = PerEventStampFunctionName(trigger, suffix);
+
+        if (dropLegacyCombined)
+        {
+            writer.AppendLine(_dialect.DropTriggerIfExists(trigger.Table, trigger.Name.Value));
+        }
+        writer.AppendLine(_dialect.DropTriggerIfExists(trigger.Table, triggerName));
+        writer.Append("CREATE TRIGGER ");
+        writer.AppendLine(Quote(triggerName));
+        writer.Append(triggerEvent);
+        writer.Append(" ON ");
+        writer.AppendLine(Quote(trigger.Table));
+        writer.AppendLine(referencingClause);
+        writer.AppendLine("FOR EACH STATEMENT");
+        writer.Append("EXECUTE FUNCTION ");
+        writer.Append(Quote(schema));
+        writer.Append(".");
+        writer.Append(Quote(funcName));
+        writer.AppendLine("();");
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Resolves the deterministic event-specific trigger name (<c>&lt;triggerName&gt;_&lt;suffix&gt;</c>),
+    /// applying the dialect identifier-length limit.
+    /// </summary>
+    private string PerEventStampTriggerName(DbTriggerInfo trigger, string suffix) =>
+        _dialect.Rules.ShortenIdentifier($"{trigger.Name.Value}_{suffix}");
+
+    /// <summary>
+    /// Resolves the deterministic event-specific trigger-function name
+    /// (<c>TF_&lt;triggerName&gt;_&lt;suffix&gt;</c>), applying the dialect identifier-length limit.
+    /// </summary>
+    private string PerEventStampFunctionName(DbTriggerInfo trigger, string suffix) =>
+        _dialect.Rules.ShortenIdentifier($"TF_{trigger.Name.Value}_{suffix}");
 
     /// <summary>
     /// Emits a SQL Server trigger.
@@ -2394,22 +2737,65 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// Emits a PostgreSQL <c>OLD.col IS DISTINCT FROM NEW.col</c> disjunction for identity
     /// projection columns, used as a value-diff guard in trigger bodies.
     /// </summary>
+    private void EmitPgsqlValueDiffDisjunction(SqlWriter writer, IReadOnlyList<DbColumnName> columns) =>
+        EmitPgsqlValueDiffDisjunction(writer, columns, "OLD", "NEW");
+
+    /// <summary>
+    /// Emits a PostgreSQL null-safe value-diff disjunction
+    /// (<c>{left}.col IS DISTINCT FROM {right}.col OR ...</c>) over the given columns. Row-level
+    /// trigger bodies use the default <c>OLD</c>/<c>NEW</c> aliases; statement-level non-root stamping
+    /// passes the transition-table aliases (<c>n</c>/<c>o</c>) to diff correlated new/old images.
+    /// </summary>
     private void EmitPgsqlValueDiffDisjunction(
         SqlWriter writer,
-        IReadOnlyList<DbColumnName> identityProjectionColumns
+        IReadOnlyList<DbColumnName> columns,
+        string leftAlias,
+        string rightAlias
     )
     {
-        for (int i = 0; i < identityProjectionColumns.Count; i++)
+        for (int i = 0; i < columns.Count; i++)
         {
             if (i > 0)
             {
                 writer.Append(" OR ");
             }
-            var col = Quote(identityProjectionColumns[i]);
-            writer.Append("OLD.");
+            var col = Quote(columns[i]);
+            writer.Append(leftAlias);
+            writer.Append(".");
             writer.Append(col);
-            writer.Append(" IS DISTINCT FROM NEW.");
+            writer.Append(" IS DISTINCT FROM ");
+            writer.Append(rightAlias);
+            writer.Append(".");
             writer.Append(col);
+        }
+    }
+
+    /// <summary>
+    /// Emits a PostgreSQL equi-join conjunction (<c>{left}.col = {right}.col AND ...</c>) over the
+    /// given key columns, used to correlate the transition-table new/old images by the table's stable
+    /// primary key in statement-level non-root stamping. Mirrors <see cref="EmitMssqlJoinConjunction"/>.
+    /// </summary>
+    private void EmitPgsqlJoinConjunction(
+        SqlWriter writer,
+        string leftAlias,
+        string rightAlias,
+        IReadOnlyList<DbColumnName> keyColumns
+    )
+    {
+        for (int i = 0; i < keyColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" AND ");
+            }
+            var quotedColumn = Quote(keyColumns[i]);
+            writer.Append(leftAlias);
+            writer.Append(".");
+            writer.Append(quotedColumn);
+            writer.Append(" = ");
+            writer.Append(rightAlias);
+            writer.Append(".");
+            writer.Append(quotedColumn);
         }
     }
 

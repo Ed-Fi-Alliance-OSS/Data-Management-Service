@@ -614,128 +614,299 @@ CREATE INDEX IF NOT EXISTS "IX_ParentResourceExtensionParentChildrenExtensionChi
 
 CREATE INDEX IF NOT EXISTS "IX_ParentResource_ContentVersion" ON "edfi"."ParentResource" ("ContentVersion");
 
-CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"()
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."AlignedHiddenScalar" IS DISTINCT FROM NEW."AlignedHiddenScalar" OR OLD."AlignedVisibleScalar" IS DISTINCT FROM NEW."AlignedVisibleScalar") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."ParentResource" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."BaseCollectionItemId" = n."BaseCollectionItemId"
+        WHERE o."BaseCollectionItemId" IS NULL OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."AlignedHiddenScalar" IS DISTINCT FROM o."AlignedHiddenScalar" OR n."AlignedVisibleScalar" IS DISTINCT FROM o."AlignedVisibleScalar"
+        UNION
+        SELECT o."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."BaseCollectionItemId" = o."BaseCollectionItemId"
+        WHERE n."BaseCollectionItemId" IS NULL OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."AlignedHiddenScalar" IS DISTINCT FROM o."AlignedHiddenScalar" OR n."AlignedVisibleScalar" IS DISTINCT FROM o."AlignedVisibleScalar"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp" ON "aligned"."ParentResourceExtensionParent";
-CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "aligned"."ParentResourceExtensionParent"
-FOR EACH ROW
-EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp"();
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp_ins" ON "aligned"."ParentResourceExtensionParent";
+CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp_ins"
+AFTER INSERT ON "aligned"."ParentResourceExtensionParent"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp"()
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp_upd" ON "aligned"."ParentResourceExtensionParent";
+CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp_upd"
+AFTER UPDATE ON "aligned"."ParentResourceExtensionParent"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParent_Stamp_del" ON "aligned"."ParentResourceExtensionParent";
+CREATE TRIGGER "TR_ParentResourceExtensionParent_Stamp_del"
+AFTER DELETE ON "aligned"."ParentResourceExtensionParent"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParent_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."ChildCode" IS DISTINCT FROM NEW."ChildCode" OR OLD."ChildValue" IS DISTINCT FROM NEW."ChildValue") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."ParentResource" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ChildCode" IS DISTINCT FROM o."ChildCode" OR n."ChildValue" IS DISTINCT FROM o."ChildValue"
+        UNION
+        SELECT o."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ChildCode" IS DISTINCT FROM o."ChildCode" OR n."ChildValue" IS DISTINCT FROM o."ChildValue"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildren_Stamp" ON "aligned"."ParentResourceExtensionParentChildren";
-CREATE TRIGGER "TR_ParentResourceExtensionParentChildren_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "aligned"."ParentResourceExtensionParentChildren"
-FOR EACH ROW
-EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp"();
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildren_Stamp_ins" ON "aligned"."ParentResourceExtensionParentChildren";
+CREATE TRIGGER "TR_ParentResourceExtensionParentChildren_Stamp_ins"
+AFTER INSERT ON "aligned"."ParentResourceExtensionParentChildren"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_7747cf507c"()
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildren_Stamp_upd" ON "aligned"."ParentResourceExtensionParentChildren";
+CREATE TRIGGER "TR_ParentResourceExtensionParentChildren_Stamp_upd"
+AFTER UPDATE ON "aligned"."ParentResourceExtensionParentChildren"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildren_Stamp_del" ON "aligned"."ParentResourceExtensionParentChildren";
+CREATE TRIGGER "TR_ParentResourceExtensionParentChildren_Stamp_del"
+AFTER DELETE ON "aligned"."ParentResourceExtensionParentChildren"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildren_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_efd1162d7f"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."ExtensionChildCode" IS DISTINCT FROM NEW."ExtensionChildCode" OR OLD."ExtensionChildValue" IS DISTINCT FROM NEW."ExtensionChildValue") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."ParentResource" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_ba570e05d2"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentCollectionItemId" IS DISTINCT FROM o."ParentCollectionItemId" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ExtensionChildCode" IS DISTINCT FROM o."ExtensionChildCode" OR n."ExtensionChildValue" IS DISTINCT FROM o."ExtensionChildValue"
+        UNION
+        SELECT o."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentCollectionItemId" IS DISTINCT FROM o."ParentCollectionItemId" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ExtensionChildCode" IS DISTINCT FROM o."ExtensionChildCode" OR n."ExtensionChildValue" IS DISTINCT FROM o."ExtensionChildValue"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_c613ce7962"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildrenExtensionChildren_Stamp" ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren";
-CREATE TRIGGER "TR_ParentResourceExtensionParentChildrenExtensionChildren_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren"
-FOR EACH ROW
-EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_7747cf507c"();
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildrenExtensionChi_f1b4a8a38e" ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren";
+CREATE TRIGGER "TR_ParentResourceExtensionParentChildrenExtensionChi_f1b4a8a38e"
+AFTER INSERT ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_efd1162d7f"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildrenExtensionChi_e99d2105f4" ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren";
+CREATE TRIGGER "TR_ParentResourceExtensionParentChildrenExtensionChi_e99d2105f4"
+AFTER UPDATE ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_ba570e05d2"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceExtensionParentChildrenExtensionChi_5bd14f321f" ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren";
+CREATE TRIGGER "TR_ParentResourceExtensionParentChildrenExtensionChi_5bd14f321f"
+AFTER DELETE ON "aligned"."ParentResourceExtensionParentChildrenExtensionChildren"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "aligned"."TF_TR_ParentResourceExtensionParentChildrenExtension_c613ce7962"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResource_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -825,46 +996,103 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ParentResource"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ParentResource_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"()
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."ParentResource_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = OLD."ParentResource_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."ParentResource" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentResource_DocumentId" IS DISTINCT FROM NEW."ParentResource_DocumentId" OR OLD."ParentCode" IS DISTINCT FROM NEW."ParentCode" OR OLD."ParentName" IS DISTINCT FROM NEW."ParentName") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."ParentResource_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = NEW."ParentResource_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."ParentResource" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."ParentResource_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ParentCode" IS DISTINCT FROM o."ParentCode" OR n."ParentName" IS DISTINCT FROM o."ParentName"
+        UNION
+        SELECT o."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentResource_DocumentId" IS DISTINCT FROM o."ParentResource_DocumentId" OR n."ParentCode" IS DISTINCT FROM o."ParentCode" OR n."ParentName" IS DISTINCT FROM o."ParentName"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."ParentResource_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."ParentResource" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."ParentResource" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp" ON "edfi"."ParentResourceParent";
-CREATE TRIGGER "TR_ParentResourceParent_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."ParentResourceParent"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp"();
+DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp_ins" ON "edfi"."ParentResourceParent";
+CREATE TRIGGER "TR_ParentResourceParent_Stamp_ins"
+AFTER INSERT ON "edfi"."ParentResourceParent"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_ins"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp_upd" ON "edfi"."ParentResourceParent";
+CREATE TRIGGER "TR_ParentResourceParent_Stamp_upd"
+AFTER UPDATE ON "edfi"."ParentResourceParent"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_ParentResourceParent_Stamp_del" ON "edfi"."ParentResourceParent";
+CREATE TRIGGER "TR_ParentResourceParent_Stamp_del"
+AFTER DELETE ON "edfi"."ParentResourceParent"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_ParentResourceParent_Stamp_del"();
 
 -- ==========================================================
 -- Phase 7: Seed Data (insert-if-missing + validation)

@@ -930,292 +930,691 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"()
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."City" IS DISTINCT FROM NEW."City") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."School_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."School_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."City" IS DISTINCT FROM o."City"
+        UNION
+        SELECT o."School_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."City" IS DISTINCT FROM o."City"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."School_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolAddress_Stamp" ON "edfi"."SchoolAddress";
-CREATE TRIGGER "TR_SchoolAddress_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SchoolAddress"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolAddress_Stamp_ins" ON "edfi"."SchoolAddress";
+CREATE TRIGGER "TR_SchoolAddress_Stamp_ins"
+AFTER INSERT ON "edfi"."SchoolAddress"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp"()
+DROP TRIGGER IF EXISTS "TR_SchoolAddress_Stamp_upd" ON "edfi"."SchoolAddress";
+CREATE TRIGGER "TR_SchoolAddress_Stamp_upd"
+AFTER UPDATE ON "edfi"."SchoolAddress"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolAddress_Stamp_del" ON "edfi"."SchoolAddress";
+CREATE TRIGGER "TR_SchoolAddress_Stamp_del"
+AFTER DELETE ON "edfi"."SchoolAddress"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."PeriodName" IS DISTINCT FROM NEW."PeriodName") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."School_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."School_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentCollectionItemId" IS DISTINCT FROM o."ParentCollectionItemId" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."PeriodName" IS DISTINCT FROM o."PeriodName"
+        UNION
+        SELECT o."School_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentCollectionItemId" IS DISTINCT FROM o."ParentCollectionItemId" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."PeriodName" IS DISTINCT FROM o."PeriodName"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."School_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolAddressPeriod_Stamp" ON "edfi"."SchoolAddressPeriod";
-CREATE TRIGGER "TR_SchoolAddressPeriod_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SchoolAddressPeriod"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolAddressPeriod_Stamp_ins" ON "edfi"."SchoolAddressPeriod";
+CREATE TRIGGER "TR_SchoolAddressPeriod_Stamp_ins"
+AFTER INSERT ON "edfi"."SchoolAddressPeriod"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp"()
+DROP TRIGGER IF EXISTS "TR_SchoolAddressPeriod_Stamp_upd" ON "edfi"."SchoolAddressPeriod";
+CREATE TRIGGER "TR_SchoolAddressPeriod_Stamp_upd"
+AFTER UPDATE ON "edfi"."SchoolAddressPeriod"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolAddressPeriod_Stamp_del" ON "edfi"."SchoolAddressPeriod";
+CREATE TRIGGER "TR_SchoolAddressPeriod_Stamp_del"
+AFTER DELETE ON "edfi"."SchoolAddressPeriod"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPeriod_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CampusCode" IS DISTINCT FROM NEW."CampusCode") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."DocumentId" = n."DocumentId"
+        WHERE o."DocumentId" IS NULL OR n."DocumentId" IS DISTINCT FROM o."DocumentId" OR n."CampusCode" IS DISTINCT FROM o."CampusCode"
+        UNION
+        SELECT o."DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."DocumentId" = o."DocumentId"
+        WHERE n."DocumentId" IS NULL OR n."DocumentId" IS DISTINCT FROM o."DocumentId" OR n."CampusCode" IS DISTINCT FROM o."CampusCode"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolExtension_Stamp" ON "sample"."SchoolExtension";
-CREATE TRIGGER "TR_SchoolExtension_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "sample"."SchoolExtension"
-FOR EACH ROW
-EXECUTE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolExtension_Stamp_ins" ON "sample"."SchoolExtension";
+CREATE TRIGGER "TR_SchoolExtension_Stamp_ins"
+AFTER INSERT ON "sample"."SchoolExtension"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp"()
+DROP TRIGGER IF EXISTS "TR_SchoolExtension_Stamp_upd" ON "sample"."SchoolExtension";
+CREATE TRIGGER "TR_SchoolExtension_Stamp_upd"
+AFTER UPDATE ON "sample"."SchoolExtension"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolExtension_Stamp_del" ON "sample"."SchoolExtension";
+CREATE TRIGGER "TR_SchoolExtension_Stamp_del"
+AFTER DELETE ON "sample"."SchoolExtension"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Zone" IS DISTINCT FROM NEW."Zone") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."School_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."School_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."BaseCollectionItemId" = n."BaseCollectionItemId"
+        WHERE o."BaseCollectionItemId" IS NULL OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."Zone" IS DISTINCT FROM o."Zone"
+        UNION
+        SELECT o."School_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."BaseCollectionItemId" = o."BaseCollectionItemId"
+        WHERE n."BaseCollectionItemId" IS NULL OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."Zone" IS DISTINCT FROM o."Zone"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."School_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddress_Stamp" ON "sample"."SchoolExtensionAddress";
-CREATE TRIGGER "TR_SchoolExtensionAddress_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "sample"."SchoolExtensionAddress"
-FOR EACH ROW
-EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddress_Stamp_ins" ON "sample"."SchoolExtensionAddress";
+CREATE TRIGGER "TR_SchoolExtensionAddress_Stamp_ins"
+AFTER INSERT ON "sample"."SchoolExtensionAddress"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp"()
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddress_Stamp_upd" ON "sample"."SchoolExtensionAddress";
+CREATE TRIGGER "TR_SchoolExtensionAddress_Stamp_upd"
+AFTER UPDATE ON "sample"."SchoolExtensionAddress"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddress_Stamp_del" ON "sample"."SchoolExtensionAddress";
+CREATE TRIGGER "TR_SchoolExtensionAddress_Stamp_del"
+AFTER DELETE ON "sample"."SchoolExtensionAddress"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddress_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."School_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."School_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."Program_DocumentId" IS DISTINCT FROM o."Program_DocumentId" OR n."Program_ProgramName" IS DISTINCT FROM o."Program_ProgramName"
+        UNION
+        SELECT o."School_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."BaseCollectionItemId" IS DISTINCT FROM o."BaseCollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."Program_DocumentId" IS DISTINCT FROM o."Program_DocumentId" OR n."Program_ProgramName" IS DISTINCT FROM o."Program_ProgramName"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."School_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddressSponsorReference_Stamp" ON "sample"."SchoolExtensionAddressSponsorReference";
-CREATE TRIGGER "TR_SchoolExtensionAddressSponsorReference_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "sample"."SchoolExtensionAddressSponsorReference"
-FOR EACH ROW
-EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddressSponsorReference_Stamp_ins" ON "sample"."SchoolExtensionAddressSponsorReference";
+CREATE TRIGGER "TR_SchoolExtensionAddressSponsorReference_Stamp_ins"
+AFTER INSERT ON "sample"."SchoolExtensionAddressSponsorReference"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp"()
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddressSponsorReference_Stamp_upd" ON "sample"."SchoolExtensionAddressSponsorReference";
+CREATE TRIGGER "TR_SchoolExtensionAddressSponsorReference_Stamp_upd"
+AFTER UPDATE ON "sample"."SchoolExtensionAddressSponsorReference"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionAddressSponsorReference_Stamp_del" ON "sample"."SchoolExtensionAddressSponsorReference";
+CREATE TRIGGER "TR_SchoolExtensionAddressSponsorReference_Stamp_del"
+AFTER DELETE ON "sample"."SchoolExtensionAddressSponsorReference"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionAddressSponsorReference_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."InterventionCode" IS DISTINCT FROM NEW."InterventionCode") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."School_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."School_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."InterventionCode" IS DISTINCT FROM o."InterventionCode"
+        UNION
+        SELECT o."School_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."InterventionCode" IS DISTINCT FROM o."InterventionCode"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."School_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolExtensionIntervention_Stamp" ON "sample"."SchoolExtensionIntervention";
-CREATE TRIGGER "TR_SchoolExtensionIntervention_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "sample"."SchoolExtensionIntervention"
-FOR EACH ROW
-EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionIntervention_Stamp_ins" ON "sample"."SchoolExtensionIntervention";
+CREATE TRIGGER "TR_SchoolExtensionIntervention_Stamp_ins"
+AFTER INSERT ON "sample"."SchoolExtensionIntervention"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp_ins"();
 
-CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp"()
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionIntervention_Stamp_upd" ON "sample"."SchoolExtensionIntervention";
+CREATE TRIGGER "TR_SchoolExtensionIntervention_Stamp_upd"
+AFTER UPDATE ON "sample"."SchoolExtensionIntervention"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionIntervention_Stamp_del" ON "sample"."SchoolExtensionIntervention";
+CREATE TRIGGER "TR_SchoolExtensionIntervention_Stamp_del"
+AFTER DELETE ON "sample"."SchoolExtensionIntervention"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionIntervention_Stamp_del"();
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp_ins"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        WITH stamped AS (
-            UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-            WHERE "DocumentId" = OLD."School_DocumentId"
-            AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = OLD."School_DocumentId")
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
-        )
-        UPDATE "edfi"."School" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
-        FROM stamped
-        WHERE r."DocumentId" = stamped."DocumentId";
-        RETURN OLD;
-    END IF;
-    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."VisitCode" IS DISTINCT FROM NEW."VisitCode") THEN
-        RETURN NEW;
-    END IF;
-    WITH stamped AS (
-        UPDATE "dms"."Document"
+    WITH affected AS (
+        SELECT DISTINCT newtab."School_DocumentId" AS "DocumentId"
+        FROM newtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."School_DocumentId"
-        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = NEW."School_DocumentId")
-        RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
     )
     UPDATE "edfi"."School" r
     SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
-    RETURN NEW;
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp_upd"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT n."School_DocumentId" AS "DocumentId"
+        FROM newtab n
+        LEFT JOIN oldtab o ON o."CollectionItemId" = n."CollectionItemId"
+        WHERE o."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentCollectionItemId" IS DISTINCT FROM o."ParentCollectionItemId" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."VisitCode" IS DISTINCT FROM o."VisitCode"
+        UNION
+        SELECT o."School_DocumentId" AS "DocumentId"
+        FROM oldtab o
+        LEFT JOIN newtab n ON n."CollectionItemId" = o."CollectionItemId"
+        WHERE n."CollectionItemId" IS NULL OR n."CollectionItemId" IS DISTINCT FROM o."CollectionItemId" OR n."Ordinal" IS DISTINCT FROM o."Ordinal" OR n."ParentCollectionItemId" IS DISTINCT FROM o."ParentCollectionItemId" OR n."School_DocumentId" IS DISTINCT FROM o."School_DocumentId" OR n."VisitCode" IS DISTINCT FROM o."VisitCode"
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
+END;
+$func$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp_del"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    WITH affected AS (
+        SELECT DISTINCT oldtab."School_DocumentId" AS "DocumentId"
+        FROM oldtab
+    ),
+    stamped AS (
+        UPDATE "dms"."Document" d
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        FROM affected a
+        WHERE d."DocumentId" = a."DocumentId"
+        AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
+        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+    )
+    UPDATE "edfi"."School" r
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    FROM stamped
+    WHERE r."DocumentId" = stamped."DocumentId";
+    RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolExtensionInterventionVisit_Stamp" ON "sample"."SchoolExtensionInterventionVisit";
-CREATE TRIGGER "TR_SchoolExtensionInterventionVisit_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "sample"."SchoolExtensionInterventionVisit"
-FOR EACH ROW
-EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp"();
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionInterventionVisit_Stamp_ins" ON "sample"."SchoolExtensionInterventionVisit";
+CREATE TRIGGER "TR_SchoolExtensionInterventionVisit_Stamp_ins"
+AFTER INSERT ON "sample"."SchoolExtensionInterventionVisit"
+REFERENCING NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp_ins"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionInterventionVisit_Stamp_upd" ON "sample"."SchoolExtensionInterventionVisit";
+CREATE TRIGGER "TR_SchoolExtensionInterventionVisit_Stamp_upd"
+AFTER UPDATE ON "sample"."SchoolExtensionInterventionVisit"
+REFERENCING OLD TABLE AS oldtab NEW TABLE AS newtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp_upd"();
+
+DROP TRIGGER IF EXISTS "TR_SchoolExtensionInterventionVisit_Stamp_del" ON "sample"."SchoolExtensionInterventionVisit";
+CREATE TRIGGER "TR_SchoolExtensionInterventionVisit_Stamp_del"
+AFTER DELETE ON "sample"."SchoolExtensionInterventionVisit"
+REFERENCING OLD TABLE AS oldtab
+FOR EACH STATEMENT
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtensionInterventionVisit_Stamp_del"();
 
 -- ==========================================================
 -- Phase 7: Seed Data (insert-if-missing + validation)
