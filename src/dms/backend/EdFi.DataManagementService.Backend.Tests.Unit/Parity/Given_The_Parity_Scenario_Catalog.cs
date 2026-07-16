@@ -398,49 +398,45 @@ public class Given_The_Parity_Scenario_Catalog
         }
     }
 
+    private static readonly string[] ExpectedNoProfileExtPgTriples =
+    [
+        "PostgresqlRelationalWriteCreateBaselineTests.cs::Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_persists_root_extensions_collection_extensions_and_extension_child_collections",
+        "PostgresqlRelationalWriteUpdateSemanticsTests.cs::Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture::It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows",
+    ];
+
+    private static readonly string[] ExpectedSiblingOrdinalPgTriples =
+    [
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_assigns_aligned_extension_child_ordinals_in_new_request_order",
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child::It_recomputes_the_surviving_aligned_extension_child_ordinal",
+    ];
+
+    private static readonly string[] ExpectedSiblingOrdinalMssqlTriples =
+    [
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_assigns_aligned_extension_child_ordinals_in_new_request_order",
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child::It_recomputes_the_surviving_aligned_extension_child_ordinal",
+    ];
+
     [Test]
     public void It_records_both_no_profile_ext_entry_points()
     {
         ParityScenario row = _all.Single(s => s.Id == "NoProfileWriteBehavior/NoProfileExt");
-        row.PgsqlLocations.Any(l =>
-                l.File == "PostgresqlRelationalWriteCreateBaselineTests.cs"
-                && l.Methods.Contains(
-                    "It_persists_root_extensions_collection_extensions_and_extension_child_collections"
-                )
-            )
-            .Should()
-            .BeTrue("the create _ext entry point is recorded");
-        row.PgsqlLocations.Any(l =>
-                l.File == "PostgresqlRelationalWriteUpdateSemanticsTests.cs"
-                && l.Methods.Contains(
-                    "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows"
-                )
-            )
-            .Should()
-            .BeTrue("the omitted-aligned-extension-scope deletion entry point is recorded");
+        Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtPgTriples);
     }
 
     [Test]
-    public void It_records_the_delete_renumber_sibling_ordinal_entry_point()
+    public void It_records_the_exact_sibling_ordinal_renumber_entry_points()
     {
         ParityScenario row = _all.Single(s =>
             s.Id == "ProfileVisibleRowUpdateWithHiddenRowPreservation/SiblingOrdinalRenumbering"
         );
-        row.PgsqlLocations.Any(l =>
-                l.Fixture
-                    == "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child"
-                && l.Methods.Contains("It_recomputes_the_surviving_aligned_extension_child_ordinal")
-            )
-            .Should()
-            .BeTrue("the PostgreSQL omitting-child ordinal-renumber entry point is recorded");
-        row.MssqlLocations.Any(l =>
-                l.Fixture
-                    == "Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child"
-                && l.Methods.Contains("It_recomputes_the_surviving_aligned_extension_child_ordinal")
-            )
-            .Should()
-            .BeTrue("the SQL Server omitting-child ordinal-renumber entry point is recorded");
+        Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedSiblingOrdinalPgTriples);
+        Flatten(row.MssqlLocations).Should().BeEquivalentTo(ExpectedSiblingOrdinalMssqlTriples);
     }
+
+    private static List<string> Flatten(IEnumerable<ScenarioLocation> locations) =>
+        locations.SelectMany(l => l.Methods.Select(m => $"{l.File}::{l.Fixture}::{m}")).ToList();
 
     [Test]
     public void It_derives_canonical_ids_by_matching_approved_prefixes()
