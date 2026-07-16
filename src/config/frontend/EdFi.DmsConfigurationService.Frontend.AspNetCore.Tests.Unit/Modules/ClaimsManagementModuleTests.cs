@@ -1017,6 +1017,20 @@ public abstract class ClaimsManagementModuleTests
             var response = await Client.GetAsync(CurrentClaimsRoute);
             await AssertUnauthorizedContract(response, InvalidCredentialError);
         }
+
+        [Test]
+        public async Task It_does_not_leak_token_validation_details_in_the_challenge_header()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+
+            // The challenge must be a bare "Bearer" scheme. With IncludeErrorDetails enabled the
+            // production JWT handler would append error="invalid_token" (and, for structurally valid
+            // tokens, an error_description describing the validation failure) to WWW-Authenticate,
+            // leaking provider/token details the sanitized Problem Details body withholds.
+            var challenge = response.Headers.WwwAuthenticate.Should().ContainSingle().Which;
+            challenge.Scheme.Should().Be("Bearer");
+            challenge.Parameter.Should().BeNullOrEmpty();
+        }
     }
 
     /// <summary>

@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
@@ -41,6 +42,12 @@ public class KeycloakTokenManager(
                 HttpStatusCode.NotFound => new TokenResult.FailureIdentityProvider(
                     new IdentityProviderError.NotFound(responseString)
                 ),
+                // OAuth 2.0 client errors (RFC 6749 section 5.2) arrive as HTTP 400 with a machine-readable
+                // "error" code (invalid_scope, invalid_grant, ...). Preserve the code so the caller learns
+                // its request was rejected rather than seeing it collapsed into a retryable server outage.
+                HttpStatusCode.BadRequest => new TokenResult.FailureIdentityProvider(
+                    new IdentityProviderError.BadRequest(ParseOAuthErrorCode(responseString), responseString)
+                ),
                 _ => new TokenResult.FailureIdentityProvider(new IdentityProviderError(responseString)),
             };
         }
@@ -56,6 +63,36 @@ public class KeycloakTokenManager(
             logger.LogError(ex, "Get access token error");
             return new TokenResult.FailureUnknown(ex.Message);
         }
+    }
+
+    // RFC 6749 section 5.2 error responses carry a machine-readable "error" code in the JSON body.
+    // Extract it so the token endpoint can return the corresponding OAuth error to the caller instead of
+    // misclassifying a client mistake as a server outage; fall back to invalid_request when the provider
+    // response is not the expected shape.
+    private static string ParseOAuthErrorCode(string responseBody)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            if (
+                document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+            )
+            {
+                string? code = error.GetString();
+                if (!string.IsNullOrWhiteSpace(code))
+                {
+                    return code;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Non-JSON or malformed body; fall through to the generic client-error code.
+        }
+
+        return "invalid_request";
     }
 
     async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> ITokenManager.GetPublicKeysAsync()

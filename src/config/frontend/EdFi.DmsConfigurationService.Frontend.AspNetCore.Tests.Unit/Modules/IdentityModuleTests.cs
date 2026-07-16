@@ -1073,6 +1073,85 @@ public class Given_The_Provider_Reports_The_Client_As_Forbidden : TokenEndpointT
 }
 
 [TestFixture]
+public class Given_The_Provider_Reports_An_Oauth_Client_Error : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // A provider-side OAuth client error (RFC 6749 section 5.2) is a 400 the caller must correct,
+        // not a retryable server outage. The provider's error_description must be logged, not echoed.
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.BadRequest(
+                    "invalid_scope",
+                    """
+                    {"error":"invalid_scope","error_description":"Invalid scopes: edfi_admin_api/bogus"}
+                    """
+                )
+            )
+        );
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/bogus")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_provider_oauth_client_error_as_a_400() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_scope",
+            "The authorization server rejected the request."
+        );
+
+    [Test]
+    public void It_does_not_leak_the_provider_message() => RawBody.Should().NotContain("Invalid scopes");
+}
+
+[TestFixture]
+public class Given_The_Provider_Reports_An_Unrecognized_Oauth_Error : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // An error code outside the RFC 6749 section 5.2 token-endpoint set must not be reflected back.
+        // It collapses to invalid_request while staying a 400 (still a client error, never a 503).
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.BadRequest(
+                    "some_unexpected_code",
+                    """{"error":"some_unexpected_code"}"""
+                )
+            )
+        );
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_generic_invalid_request_client_error_as_a_400() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The authorization server rejected the request."
+        );
+
+    [Test]
+    public void It_does_not_reflect_the_unrecognized_code() =>
+        RawBody.Should().NotContain("some_unexpected_code");
+}
+
+[TestFixture]
 public class Given_The_Provider_Is_Unreachable : TokenEndpointTestBase
 {
     [SetUp]

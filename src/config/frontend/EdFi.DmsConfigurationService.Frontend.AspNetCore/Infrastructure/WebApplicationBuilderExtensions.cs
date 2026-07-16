@@ -243,6 +243,12 @@ public static class WebApplicationBuilderExtensions
                         options.SaveToken = true;
                         options.Audience = identitySettings.Audience;
                         options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+
+                        // Return a bare "Bearer" challenge instead of echoing token-validation
+                        // failures (expiry, signature, issuer/audience) in the WWW-Authenticate
+                        // header, so provider and exception details are not leaked. The sanitized
+                        // Ed-Fi Problem Details body carries the response message instead.
+                        options.IncludeErrorDetails = false;
                         options.TokenValidationParameters = new TokenValidationParameters
                         {
                             ValidateAudience = true,
@@ -363,6 +369,12 @@ public static class WebApplicationBuilderExtensions
                         options.Authority = identitySettings.Authority;
                         options.Audience = identitySettings.Audience;
                         options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+
+                        // Return a bare "Bearer" challenge instead of echoing token-validation
+                        // failures (expiry, signature, issuer/audience) in the WWW-Authenticate
+                        // header, so provider and exception details are not leaked. The sanitized
+                        // Ed-Fi Problem Details body carries the response message instead.
+                        options.IncludeErrorDetails = false;
                         options.TokenValidationParameters = new TokenValidationParameters
                         {
                             ValidateAudience = true,

@@ -438,9 +438,10 @@ public class IdentityModule : IEndpointModule
     }
 
     // Maps an identity-provider token failure to the OAuth error contract. Bad-credential failures become
-    // invalid_client (401 with a WWW-Authenticate challenge); unreachable/not-found/other upstream
-    // failures become temporarily_unavailable (503). The provider message is logged server-side only and
-    // never surfaced to the caller.
+    // invalid_client (401 with a WWW-Authenticate challenge); a provider-side OAuth client error (e.g.
+    // invalid_scope, invalid_grant) is returned as that error with 400 so a client mistake is not
+    // retried; unreachable/not-found/other upstream failures become temporarily_unavailable (503). The
+    // provider message is logged server-side only and never surfaced to the caller.
     private static IResult MapIdentityProviderError(IdentityProviderError error, ILogger logger)
     {
         logger.LogWarning(
@@ -454,6 +455,7 @@ public class IdentityModule : IEndpointModule
             InvalidClient or Unauthorized or Forbidden => OAuthErrorResults.InvalidClient(
                 "Client authentication failed."
             ),
+            BadRequest badRequest => OAuthErrorResults.ClientError(badRequest.Error),
             _ => OAuthErrorResults.TemporarilyUnavailable(
                 "The authorization server is temporarily unable to handle the request."
             ),

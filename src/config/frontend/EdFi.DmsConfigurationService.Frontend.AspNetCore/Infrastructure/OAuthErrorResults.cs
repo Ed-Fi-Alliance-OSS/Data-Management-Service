@@ -45,11 +45,39 @@ internal static class OAuthErrorResults
         );
 
     /// <summary>
+    /// A client error (HTTP 400) returned by the upstream identity provider's token endpoint, such as
+    /// invalid_scope or invalid_grant. The provider's OAuth error code is echoed only after validation
+    /// against the RFC 6749 section 5.2 token-endpoint error set, so an unexpected or malformed code
+    /// cannot be reflected back; unrecognized codes collapse to invalid_request. This keeps a client
+    /// mistake a 400 rather than a retryable 503.
+    /// </summary>
+    public static IResult ClientError(string oauthErrorCode) =>
+        new OAuthErrorResult(
+            NormalizeTokenEndpointClientError(oauthErrorCode),
+            "The authorization server rejected the request.",
+            StatusCodes.Status400BadRequest
+        );
+
+    /// <summary>
     /// The authorization server cannot currently handle the request, e.g. the identity provider is
     /// unreachable or returned an unexpected failure (HTTP 503).
     /// </summary>
     public static IResult TemporarilyUnavailable(string description) =>
         new OAuthErrorResult("temporarily_unavailable", description, StatusCodes.Status503ServiceUnavailable);
+
+    // Restrict an echoed provider error code to the RFC 6749 section 5.2 token-endpoint set (excluding
+    // invalid_client, which is a 401 challenge handled separately). Anything else becomes invalid_request
+    // so an unexpected code is never reflected back to the caller.
+    private static string NormalizeTokenEndpointClientError(string oauthErrorCode) =>
+        oauthErrorCode switch
+        {
+            "invalid_request"
+            or "invalid_grant"
+            or "unauthorized_client"
+            or "unsupported_grant_type"
+            or "invalid_scope" => oauthErrorCode,
+            _ => "invalid_request",
+        };
 
     private sealed class OAuthErrorResult(
         string error,
