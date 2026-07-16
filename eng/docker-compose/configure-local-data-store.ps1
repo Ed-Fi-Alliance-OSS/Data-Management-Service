@@ -18,7 +18,8 @@ param(
     # connection string (Server=dms-mssql;...) instead of the PostgreSQL form, and composes the
     # .env.mssql overlay onto -EnvironmentFile (no-op when the env is already composed, e.g. via
     # the bootstrap wrapper) so the MSSQL_* values used here come from the same source as the
-    # other phases. The Configuration Service itself always runs on PostgreSQL.
+    # other phases. The Configuration Service uses the selected engine and shares the DMS
+    # database in the default local topology.
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql"
 )

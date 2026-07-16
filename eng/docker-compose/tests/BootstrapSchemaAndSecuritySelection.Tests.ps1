@@ -432,7 +432,7 @@ exit $ExitCode
     }
 
     function script:Invoke-PrepareSchemaStandard {
-        # Standard mode is package-backed core-only; there is no -Extensions parameter.
+        # Direct standard mode without -EnvironmentFile uses the package-backed core-only fallback.
         param(
             [string]
             $FeedFolder,
@@ -491,7 +491,7 @@ exit $ExitCode
         }
 
         It "does not accept an -Extensions parameter in standard mode" {
-            # standard mode is core-only; -Extensions was removed and fails with the native
+            # Standard mode derives package selection from -EnvironmentFile; -Extensions was removed and fails with the native
             # PowerShell "parameter cannot be found" error.
             { & $script:repo.PrepareSchemaScript -Extensions "sample" } |
                 Should -Throw -ExpectedMessage "*parameter cannot be found*Extensions*"
@@ -511,6 +511,8 @@ exit $ExitCode
             $manifest.schema.selectedExtensions | Should -Contain "sample"
             $manifest.schema.effectiveSchemaHash | Should -Be $script:hashA
             $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+            # Expert filesystem staging is not package-driven, so no package identity is recorded.
+            $manifest.schema.PSObject.Properties['selectedPackages'] | Should -BeNullOrEmpty
         }
 
         It "copies optional schema-adjacent runtime content and preserves schema JSON payloads" {
@@ -1300,8 +1302,8 @@ exit $ExitCode
         }
 
         It "validates a package-backed standard-mode bootstrap manifest at startup (DMS-1156 wrapper path)" {
-            # regression: prepare-dms-schema.ps1 standard mode (core-only, invoked directly or
-            # auto-staged by the wrapper) records selectionMode "Standard". Standard and ApiSchemaPath modes
+            # Regression: prepare-dms-schema.ps1 standard mode (core-only fallback when invoked directly,
+            # effective package set when auto-staged by the wrapper) records selectionMode "Standard". Standard and ApiSchemaPath modes
             # stage the same normalized .bootstrap/ApiSchema workspace, so startup validation must accept
             # "Standard"; rejecting everything but "ApiSchemaPath" broke the standard-mode/wrapper production
             # path before infrastructure could start.

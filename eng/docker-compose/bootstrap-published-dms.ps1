@@ -25,10 +25,16 @@
     selects the target start script (`start-published-dms.ps1`).
 
     Staging: no manual prepare step is required for the standard happy path. When no workspace is
-    staged the wrapper stages core-only standard mode; an already-staged workspace (e.g. a manual
-    expert `-ApiSchemaPath` flow) is used as-is. There is no `-Extensions` parameter; extension or
-    custom schema sets are staged via expert `-ApiSchemaPath` before invoking the wrapper. All
-    staging is delegated to `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
+    staged the wrapper stages standard mode from the effective env's SCHEMA_PACKAGES value (core
+    plus any listed extensions; the catalog-pinned core-only default applies only when the env
+    carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
+    its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
+    stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
+    remove `eng/docker-compose/.bootstrap`; guarded automatic replacement belongs to DMS-1271.
+    Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
+    `-Extensions` parameter; custom or unpublished schema sets are staged via expert
+    `-ApiSchemaPath` before invoking the wrapper. All staging is delegated to
+    `prepare-dms-schema.ps1` / `prepare-dms-claims.ps1`.
 
 .PARAMETER LoadSeedData
     When supplied, invokes `load-dms-seed-data.ps1` after `start-published-dms.ps1` completes.
@@ -71,9 +77,15 @@
     `start-published-dms.ps1`; when seed loading is requested, every year in the range is
     also passed to the seed phase via `-SchoolYear`.
 
+.PARAMETER DatabaseEngine
+    Database engine for the whole stack ("postgresql" or "mssql"). Forwarded to
+    `start-published-dms.ps1`, which swaps mssql.yml in for postgresql.yml: SQL Server then
+    hosts the DMS datastore, the Configuration Service (CMS SQL Server backend), and the
+    self-contained OpenIddict identity stores.
+
 .EXAMPLE
     pwsh ./bootstrap-published-dms.ps1
-    Standard mode, core only. Stages the core ApiSchema package and claims in-line (when no
+    Standard mode. Stages the effective SCHEMA_PACKAGES set and matching claims in-line (when no
     workspace is staged), then starts the published stack and provisions schemas. No seed loading.
 
 .EXAMPLE
@@ -115,6 +127,16 @@ param(
     [Switch]$AddSmokeTestCredentials,
 
     [string]$SchoolYearRange = "",
+
+    # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
+    # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
+    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores - no
+    # PostgreSQL container runs. Forwarded to start-published-dms.ps1. The .env.mssql overlay
+    # (DMS_DATASTORE=mssql, DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server
+    # connection strings) is composed automatically onto -EnvironmentFile, so no
+    # -EnvironmentFile is needed for a turnkey MSSQL deploy.
+    [ValidateSet("postgresql", "mssql")]
+    [string]$DatabaseEngine = "postgresql",
 
     # Data standard version for the local-bootstrap package surface. The .env.bootstrap.<token>
     # overlay (DS 5.2, the default: core + TPDM; DS 6.1: core only, since TPDM is folded into

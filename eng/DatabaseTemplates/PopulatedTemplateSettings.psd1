@@ -4,11 +4,11 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 @{
-    DatabaseBackupName = "EdFi.Api.Populated.Template.PostgreSql.{StandardVersion}.sql"
-    PackageProjectName = "EdFi.Api.Populated.Template.PostgreSql.{StandardVersion}.csproj"
-    Id = "EdFi.Api.Populated.Template.PostgreSql.{StandardVersion}"
-    Title = "EdFi.Api.Populated.Template.PostgreSql.{StandardVersion}"
-    Description = "EdFi Dms Populated Template Database for PostgreSql"
+    DatabaseBackupName = "EdFi.Api.Populated.Template.{DatabaseEngine}.{StandardVersion}.{ArtifactExtension}"
+    PackageProjectName = "EdFi.Api.Populated.Template.{DatabaseEngine}.{StandardVersion}.csproj"
+    Id = "EdFi.Api.Populated.Template.{DatabaseEngine}.{StandardVersion}"
+    Title = "EdFi.Api.Populated.Template.{DatabaseEngine}.{StandardVersion}"
+    Description = "EdFi Dms Populated Template Database for {DatabaseEngine}"
     Authors = "Ed-Fi Alliance"
     ProjectUrl = "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service"
     License = "Apache-2.0"

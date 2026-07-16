@@ -55,6 +55,7 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
             foreach ($fileName in @(
                 "bootstrap-wrapper.psm1",
                 "bootstrap-local-dms.ps1",
+                "bootstrap-schema-catalog.psm1",
                 # The wrapper always composes the local-bootstrap data-standard overlay
                 # (default 5.2) onto the base env via env-utility, so every wrapper
                 # invocation needs the utility module and the overlay files.
@@ -64,6 +65,9 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
             }
+            Copy-Item `
+                -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
+                -Destination (Join-Path $engRoot "schema-package-utility.psm1")
 
             $envFile = Join-Path $dockerComposeRoot ".env.example"
             @"
@@ -242,10 +246,22 @@ Add-Content -LiteralPath '$CallLogPath' -Value "seed DmsBaseUrl=`$DmsBaseUrl"
             $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
             New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
 
+            $overlayContent = Get-Content -LiteralPath (Join-Path $DockerComposeRoot ".env.bootstrap.ds52") -Raw
+            $packagesJson = [regex]::Match(
+                $overlayContent,
+                "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
+            ).Groups["value"].Value
+            $selectedPackages = @(
+                ($packagesJson | ConvertFrom-Json) |
+                    ForEach-Object { "$($_.name)@$($_.version)" }
+            )
+
             $manifest = [ordered]@{
                 version = 1
                 schema  = [ordered]@{
                     selectionMode        = "Standard"
+                    selectedExtensions   = @("tpdm")
+                    selectedPackages     = $selectedPackages
                     effectiveSchemaHash  = "abc123"
                     workspaceFingerprint = "0000000000000000000000000000000000000000000000000000000000000000"
                     apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
@@ -750,16 +766,17 @@ $failureStatement
     #   compatibility only and is no longer a meaningful opt-out.
     # =========================================================================
     Context "Config Service always included in compose set" {
-        It "start-local-dms.ps1 includes local-config.yml unconditionally (no if-guard)" {
+        It "start-local-dms.ps1 includes local-config.yml for every non-DbOnly compose set" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # The unconditional assignment must be present.
+            # Config Service is unconditional within the full application compose set. The
+            # outer databaseOnlyStartup guard keeps the dedicated database diagnostic isolated.
             $startScript | Should -Match '\$files\s*\+=\s*@\("-f",\s*"local-config\.yml"\)'
+            $startScript | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?\$files\s*\+=\s*@\("-f",\s*"local-config\.yml"\)'
 
-            # There must be NO conditional guard wrapping the local-config.yml inclusion.
-            # Verify by asserting the old conditional pattern is absent.
+            # There must be no feature-switch guard wrapping the local-config.yml inclusion.
             $startScript | Should -Not -Match 'if\s*\([^)]*EnableConfig[^)]*\)[^{]*\{[^}]*local-config\.yml' -Because "local-config.yml must be included unconditionally, not gated on -EnableConfig"
             $startScript | Should -Not -Match 'if\s*\(\$EnableConfig\s*-or' -Because "the old conditional guard must have been removed"
         }
@@ -810,6 +827,14 @@ $failureStatement
             $startScript | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]'
         }
 
+        It "start-local-dms.ps1 exposes -Rebuild as an alias for -r" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+            ) -Raw
+
+            $startScript | Should -Match '\[Alias\("Rebuild"\)\]\s*\[Switch\]\s*\$r'
+        }
+
         It "start-local-dms.ps1 swaps the database compose file by engine (single db service)" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
@@ -829,9 +854,10 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # On SQL Server the OpenIddict stores live in the CMS database (created by -InitDb
-            # when missing); every invocation must splat the shared engine-aware parameters.
-            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "edfi_configurationservice"'
+            # On SQL Server the OpenIddict stores live in the shared DMS datastore database
+            # (created by -InitDb when missing, now that CMS shares it too); every invocation
+            # must splat the shared engine-aware parameters.
+            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME"'
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
             foreach ($call in $openiddictCalls) {
@@ -1470,6 +1496,338 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             @(Get-Content -LiteralPath $dockerLog)[0] | Should -Match '-p dms-published down --remove-orphans -v$'
             Test-Path -LiteralPath $script:repo.BootstrapRoot | Should -BeFalse -Because "a clean -d -v -RemoveBootstrap teardown must remove the workspace"
             $result.Error | Should -BeNullOrEmpty
+        }
+    }
+
+    # =========================================================================
+    # DMS-1238 - -DatabaseEngine parameter surface and unconditional forwarding across both
+    # start scripts. mssql.yml is no longer a local-only tier: both bootstrap entry points
+    # accept -DatabaseEngine, and the wrapper forwards it to whichever start script it targets
+    # without gating on StartScriptName.
+    # =========================================================================
+    Context "Bootstrap -DatabaseEngine parameter surface and forwarding across both start scripts (DMS-1238)" {
+        BeforeAll {
+            # Isolated fixture proving forwarding directly: a stub start script declares its own
+            # -DatabaseEngine parameter and records the bound value, so the assertion does not
+            # depend on inspecting the wrapper's own source. Mirrors New-EngineOverlayProbeRepo's
+            # shape (env-utility + bootstrap overlays are unused here but keep the fixture valid
+            # for either wrapper entry script without a second variant).
+            function script:New-DatabaseEngineForwardingProbeRepo {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScriptName
+                )
+
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    $WrapperEntryScriptName,
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61",
+                    ".env.mssql"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $callLog = Join-Path $repoRoot "call-log.txt"
+                $startScriptName = $WrapperEntryScriptName -replace '^bootstrap-', 'start-'
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [string] `$DatabaseEngine,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngine"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot      = $repoRoot
+                    WrapperScript = Join-Path $dockerComposeRoot $WrapperEntryScriptName
+                    CallLog       = $callLog
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -ne $script:databaseEngineForwardingRepo -and (Test-Path -LiteralPath $script:databaseEngineForwardingRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:databaseEngineForwardingRepo.RepoRoot -Recurse -Force
+            }
+            $script:databaseEngineForwardingRepo = $null
+        }
+
+        It "bootstrap-local-dms.ps1 and bootstrap-published-dms.ps1 both declare -DatabaseEngine validated to postgresql/mssql defaulting to postgresql" {
+            foreach ($name in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                $params = Get-DeclaredScriptParameters -Path (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                )
+                $params | Should -Contain "DatabaseEngine"
+
+                $source = Get-Content -LiteralPath (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                ) -Raw
+                $source | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]\s*\[string\]\$DatabaseEngine = "postgresql"'
+            }
+        }
+
+        It "the wrapper forwards -DatabaseEngine to the start, health-wait, and DMS-start phases unconditionally, regardless of StartScriptName" {
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+
+            # mssql.yml is no longer a local-only tier, so there must be no gating variable
+            # deciding forwarding by StartScriptName.
+            $wrapperSource | Should -Not -Match "startScriptSupportsDatabaseEngine"
+            $wrapperSource | Should -Match '(?m)^\s*\$startArgs\.DatabaseEngine\s*=\s*\$DatabaseEngine\s*$'
+            $wrapperSource | Should -Match '(?m)^\s*\$healthWaitArgs\.DatabaseEngine\s*=\s*\$DatabaseEngine\s*$'
+            $wrapperSource | Should -Match '(?m)^\s*\$dmsStartArgs\.DatabaseEngine\s*=\s*\$DatabaseEngine\s*$'
+        }
+
+        It "bootstrap-local-dms.ps1 forwards -DatabaseEngine mssql to start-local-dms.ps1" {
+            $script:databaseEngineForwardingRepo = New-DatabaseEngineForwardingProbeRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+
+            & $script:databaseEngineForwardingRepo.WrapperScript -DatabaseEngine mssql
+
+            $log = @(Get-Content -LiteralPath $script:databaseEngineForwardingRepo.CallLog)
+            $log | Should -Contain "start DatabaseEngine=mssql"
+        }
+
+        It "bootstrap-published-dms.ps1 forwards -DatabaseEngine mssql to start-published-dms.ps1" {
+            $script:databaseEngineForwardingRepo = New-DatabaseEngineForwardingProbeRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+
+            & $script:databaseEngineForwardingRepo.WrapperScript -DatabaseEngine mssql
+
+            $log = @(Get-Content -LiteralPath $script:databaseEngineForwardingRepo.CallLog)
+            $log | Should -Contain "start DatabaseEngine=mssql"
+        }
+    }
+
+    # =========================================================================
+    # -DbOnly parameter surface and mutual exclusivity: both start scripts start only the
+    # database container (a slice for diagnostics and for other tooling to sequence a
+    # database-only startup around) and reject combination with -InfraOnly/-DmsOnly.
+    # =========================================================================
+    Context "Bootstrap -DbOnly parameter surface and mutual exclusivity" {
+        BeforeAll {
+            # Isolated fixture carrying only what the target start script needs to reach its own
+            # -DbOnly/-InfraOnly/-DmsOnly mutual-exclusion guard. Its deliberately malformed
+            # bootstrap manifest proves DbOnly bypasses workspace validation before reaching that
+            # guard, without any Docker or CMS side effect.
+            function script:New-StartScriptGuardRepo {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("start-local-dms.ps1", "start-published-dms.ps1")]
+                    [string]$StartScriptName
+                )
+
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    $StartScriptName,
+                    "bootstrap-manifest.psm1",
+                    "bootstrap-claims-gate.psm1",
+                    "env-utility.psm1"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.guard"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=unsupported-for-db-only
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+# Deliberately invalid application-only settings. DbOnly parameter guards must still be reached,
+# proving the database slice does not parse identity configuration before returning.
+DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $bootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Value '{ malformed' -NoNewline
+
+                return [pscustomobject]@{
+                    RepoRoot    = $repoRoot
+                    StartScript = Join-Path $dockerComposeRoot $StartScriptName
+                    EnvFile     = $envFile
+                }
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both declare -DbOnly" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $params = Get-DeclaredScriptParameters -Path (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                )
+                $params | Should -Contain "DbOnly"
+            }
+        }
+
+        It "both start scripts bypass bootstrap activation and manifest inspection for database-only startup" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $source = Get-Content -LiteralPath (
+                    Join-Path $script:sourceDockerComposeRoot $name
+                ) -Raw
+
+                $source | Should -Match '\$databaseOnlyStartup\s*=\s*\$DbOnly\s*-and\s*-not\s*\$d'
+                $source | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?Import-Module .*?bootstrap-manifest\.psm1.*?bootstrap-claims-gate\.psm1'
+                $source | Should -Match '(?s)\$bootstrapMode\s*=\s*\$false.*?\$bootstrapManifestPresent\s*=\s*\$false.*?if \(-not \$databaseOnlyStartup\) \{.*?Invoke-BootstrapStartupConfiguration.*?Get-BootstrapRoot'
+                $source | Should -Match '(?s)\$envValues\s*=\s*ReadValuesFromEnvFile.*?if \(-not \$databaseOnlyStartup\) \{.*?Resolve-IdentityClientSecretConfiguration'
+                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile[^\r\n]*-SkipMssqlCmsDatabaseValidation:\(\$databaseOnlyStartup -or \$d\)' -Because "DbOnly and teardown must not parse application-only CMS database settings"
+            }
+        }
+
+        It "both start scripts keep application and bootstrap compose files out of database-only startup" {
+            foreach ($case in @(
+                @{ Name = "start-local-dms.ps1"; ApplicationFile = "local-dms.yml"; ConfigFile = "local-config.yml" },
+                @{ Name = "start-published-dms.ps1"; ApplicationFile = "published-dms.yml"; ConfigFile = "published-config.yml" }
+            )) {
+                $source = Get-Content -LiteralPath (
+                    Join-Path $script:sourceDockerComposeRoot $case.Name
+                ) -Raw
+                $applicationComposeFileIndex = $source.IndexOf('"' + $case.ApplicationFile + '"')
+                $applicationComposeGuardIndex = $source.LastIndexOf(
+                    'if (-not $databaseOnlyStartup) {',
+                    $applicationComposeFileIndex
+                )
+
+                $applicationComposeFileIndex | Should -BeGreaterThan -1
+                $applicationComposeGuardIndex | Should -BeGreaterThan -1
+                $applicationComposeFileIndex | Should -BeGreaterThan $applicationComposeGuardIndex
+                $source.IndexOf('"' + $case.ConfigFile + '"', $applicationComposeGuardIndex) |
+                    Should -BeGreaterThan $applicationComposeGuardIndex
+                $source.IndexOf('"bootstrap-dms.yml"', $applicationComposeGuardIndex) |
+                    Should -BeGreaterThan $applicationComposeGuardIndex
+                $source | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(?:local|published) up \$upArgs db'
+                $source | Should -Match '(?s)\$upArgs\s*=\s*@\("--detach"\).*?if \(-not \$databaseOnlyStartup\) \{.*?\$upArgs\s*\+=\s*"--remove-orphans"' -Because "DbOnly must not remove already-running application containers omitted from its reduced compose set"
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both reject -DbOnly with -InfraOnly at the param-parse level" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $guardRepo = New-StartScriptGuardRepo -StartScriptName $name
+                try {
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -InfraOnly
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+                }
+                finally {
+                    Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                }
+            }
+        }
+
+        It "start-local-dms.ps1 and start-published-dms.ps1 both reject -DbOnly with -DmsOnly at the param-parse level" {
+            foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+                $guardRepo = New-StartScriptGuardRepo -StartScriptName $name
+                try {
+                    {
+                        & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -DmsOnly
+                    } | Should -Throw "*-DbOnly is mutually exclusive with -InfraOnly and -DmsOnly*"
+                }
+                finally {
+                    Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+                }
+            }
+        }
+
+        It "start-local-dms.ps1 rejects -DbOnly with -r before any Docker activity" {
+            $guardRepo = New-StartScriptGuardRepo -StartScriptName "start-local-dms.ps1"
+            try {
+                { & $guardRepo.StartScript -EnvironmentFile $guardRepo.EnvFile -DbOnly -r } |
+                    Should -Throw "*-r/-Rebuild is not valid with -DbOnly*"
+            }
+            finally {
+                Remove-Item -LiteralPath $guardRepo.RepoRoot -Recurse -Force
+            }
+        }
+    }
+
+    # =========================================================================
+    # build-dms.ps1 StartEnvironment forwarding: -DatabaseEngine forwards only when supplied
+    # (the bootstrap wrapper's own default governs when it is omitted); -DataStandardVersion
+    # forwards only when the caller explicitly supplied it (captured at script scope as
+    # $dataStandardVersionSupplied, before Invoke-Main, since PSBoundParameters inside the
+    # Invoke-Main script block reflects that block's own bindings, not the top-level script's).
+    # =========================================================================
+    Context "build-dms.ps1 StartEnvironment forwarding (-DatabaseEngine, -DataStandardVersion)" {
+        It "declares -DatabaseEngine validated to postgresql/mssql and -DataStandardVersion validated to 5.2/6.1" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]\s*\$DatabaseEngine,'
+            $buildScript | Should -Match '\[ValidateSet\("5\.2",\s*"6\.1"\)\]\s*\$DataStandardVersion\r?\n\)'
+        }
+
+        It "captures whether -DataStandardVersion was supplied at script scope, before Invoke-Main" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $suppliedIndex = $buildScript.IndexOf(
+                '$dataStandardVersionSupplied = $PSBoundParameters.ContainsKey(''DataStandardVersion'')'
+            )
+            $invokeMainIndex = $buildScript.IndexOf('Invoke-Main {')
+
+            $suppliedIndex | Should -BeGreaterThan -1
+            $invokeMainIndex | Should -BeGreaterThan $suppliedIndex -Because "PSBoundParameters inside the Invoke-Main script block reflects that block's own bindings, not the top-level script's"
+        }
+
+        It "the StartEnvironment command forwards -DatabaseEngine, -DataStandardVersion, and the supplied-gate switch to Start-BootstrapDockerEnvironment" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards -DatabaseEngine to the bootstrap wrapper only when supplied" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)if \(\$DatabaseEngine\) \{\s*\$bootstrapArgs\.DatabaseEngine = \$DatabaseEngine\s*\}'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards the effective database engine to teardown" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)\$effectiveDatabaseEngine\s*=.*?if \(\[string\]::IsNullOrWhiteSpace\(\$DatabaseEngine\)\).*?"postgresql"'
+            $buildScript | Should -Match '(?s)Stop-DockerEnvironment\s+`\s*-EnvironmentFilePath \$environmentFilePath\s+`\s*-IdentityProvider \$IdentityProvider\s+`\s*-DatabaseEngine \$effectiveDatabaseEngine'
+            $buildScript | Should -Match '(?s)function Stop-DockerEnvironment.*?\[ValidateSet\("postgresql", "mssql"\)\].*?\$DatabaseEngine = "postgresql"'
+            $buildScript | Should -Match 'start-local-dms\.ps1 .*?-DatabaseEngine \$DatabaseEngine -d -v'
+            $buildScript | Should -Match 'start-published-dms\.ps1 .*?-DatabaseEngine \$DatabaseEngine -d -v'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards -DataStandardVersion to the bootstrap wrapper only when the caller explicitly supplied it" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)if \(\$DataStandardVersionSupplied\) \{\s*\$bootstrapArgs\.DataStandardVersion = \$DataStandardVersion\s*\}'
         }
     }
 }

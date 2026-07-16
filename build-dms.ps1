@@ -118,6 +118,12 @@ param(
     [switch]
     $LoadSeedData,
 
+    # For StartEnvironment only: database engine backing the stack. Forwarded to the bootstrap
+    # wrapper, whose own default governs when this is omitted.
+    [string]
+    [ValidateSet("postgresql", "mssql")]
+    $DatabaseEngine,
+
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
@@ -131,11 +137,17 @@ param(
     [string]
     $TestFilter,
 
-    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1"). Forwarded to the start scripts, which
-    # compose the matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
+    # Optional Ed-Fi Data Standard version. Forwarded to the start scripts, which compose the
+    # matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
     [string]
+    [ValidateSet("5.2", "6.1")]
     $DataStandardVersion
 )
+
+# Captured here (script scope) rather than at the point of use: $PSBoundParameters inside the
+# Invoke-Main script block below reflects that block's own bindings, not this script's, so the
+# ContainsKey check has to run in this scope while the top-level $PSBoundParameters is populated.
+$dataStandardVersionSupplied = $PSBoundParameters.ContainsKey('DataStandardVersion')
 
 $solutionRoot = "$PSScriptRoot/src/dms"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
@@ -448,6 +460,10 @@ function Stop-DockerEnvironment {
         [string]
         $IdentityProvider,
 
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine = "postgresql",
+
         [switch]
         $RemoveBootstrap,
 
@@ -459,10 +475,10 @@ function Stop-DockerEnvironment {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
             Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+                ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$RemoveBootstrap
             }
             Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v -RemoveBootstrap:$RemoveBootstrap
+                ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$RemoveBootstrap
             }
         }
         finally {
@@ -847,11 +863,34 @@ function Start-BootstrapDockerEnvironment {
         [switch]
         $LoadSeedData,
 
+        # Forwarded to the bootstrap wrapper only when supplied, so the wrapper's own default
+        # ("postgresql") governs when this is omitted. Validated against
+        # ValidateSet("postgresql", "mssql") at the top-level parameter; left as a plain string
+        # here so forwarding an unset (null) value from the caller does not trip validation.
         [string]
-        $IdentityProvider="self-contained"
+        $DatabaseEngine,
+
+        [string]
+        $IdentityProvider="self-contained",
+
+        # Forwarded to the bootstrap wrapper only when the caller explicitly supplied it (see
+        # $dataStandardVersionSupplied), so the wrapper's own default-composition behavior governs
+        # when it is absent.
+        [string]
+        $DataStandardVersion,
+
+        [switch]
+        $DataStandardVersionSupplied
     )
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+    $effectiveDatabaseEngine =
+        if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) {
+            "postgresql"
+        }
+        else {
+            $DatabaseEngine
+        }
 
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
@@ -859,7 +898,8 @@ function Start-BootstrapDockerEnvironment {
 
     Stop-DockerEnvironment `
         -EnvironmentFilePath $environmentFilePath `
-        -IdentityProvider $IdentityProvider
+        -IdentityProvider $IdentityProvider `
+        -DatabaseEngine $effectiveDatabaseEngine
 
     Invoke-Execute {
         try {
@@ -874,6 +914,14 @@ function Start-BootstrapDockerEnvironment {
 
             if ($LoadSeedData) {
                 $bootstrapArgs.LoadSeedData = $true
+            }
+
+            if ($DatabaseEngine) {
+                $bootstrapArgs.DatabaseEngine = $DatabaseEngine
+            }
+
+            if ($DataStandardVersionSupplied) {
+                $bootstrapArgs.DataStandardVersion = $DataStandardVersion
             }
 
             Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
@@ -1412,7 +1460,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

@@ -253,8 +253,8 @@ exit $ExitCode
         function script:Invoke-PrepareStandard {
             <#
             .SYNOPSIS
-            Invokes prepare-dms-schema.ps1 in standard mode (no -ApiSchemaPath). Standard mode is
-            package-backed core-only; there is no -Extensions parameter.
+            Invokes prepare-dms-schema.ps1 in direct standard mode (no -ApiSchemaPath and no
+            -EnvironmentFile), which uses the catalog-pinned core-only fallback.
             #>
             param(
                 [Parameter(Mandatory)]
@@ -447,6 +447,8 @@ exit $ExitCode
                 $manifest = script:Get-RootManifest
                 $manifest.schema.selectionMode | Should -Be "Standard"
                 @($manifest.schema.selectedExtensions) | Should -Contain "tpdm"
+                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.ApiSchema@1.0.333"
+                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.TPDM.ApiSchema@1.0.333"
 
                 $apiSchemaManifest = script:Get-ApiSchemaManifest
                 $projectEndpoints = @($apiSchemaManifest.projects | ForEach-Object { $_.projectEndpointName })
@@ -600,6 +602,10 @@ exit $ExitCode
             $manifest = script:Get-RootManifest
             $manifest.schema.selectionMode | Should -Be "Standard"
             $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
+            # The catalog-default staging records the pinned core package identity so the wrapper's
+            # package-tier revalidation stays available for later SCHEMA_PACKAGES-carrying envs.
+            @($manifest.schema.selectedPackages) | Should -HaveCount 1
+            @($manifest.schema.selectedPackages)[0] | Should -Match '^EdFi\.DataStandard52\.ApiSchema@\d+\.\d+\.\d+'
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
                 Should -BeTrue
         }
@@ -660,7 +666,7 @@ exit $ExitCode
 
     Context "Given_ExtensionsParameterRemoved" {
         It "It_does_not_declare_an_Extensions_parameter_on_prepare-dms-schema.ps1" {
-            # scope decision: standard mode is package-backed core-only; there is no
+            # Standard mode takes its package set from -EnvironmentFile rather than a named
             # -Extensions parameter. Invoking with -Extensions must fail with PowerShell's native
             # "parameter cannot be found" error.
             $prepareContent = Get-Content -LiteralPath $script:repo.PrepareSchemaScript -Raw
@@ -677,7 +683,7 @@ exit $ExitCode
         It "It_throws_invalid_input_instead_of_falling_into_standard_mode_when_ApiSchemaPath_is_blank" {
             # blocker: standard mode is selected by OMITTING -ApiSchemaPath. An explicitly bound
             # but blank value is invalid expert-mode input and must fail fast, not silently route to
-            # package-backed core-only staging.
+            # package-backed standard staging.
             {
                 & $script:repo.PrepareSchemaScript -ApiSchemaPath ""
             } | Should -Throw -ExpectedMessage "*-ApiSchemaPath was supplied but is blank*"
@@ -689,7 +695,7 @@ exit $ExitCode
     }
 
     Context "Given_StandardMode_ManifestCorrectness" {
-        It "It_does_not_record_package_IDs_or_feed_URLs_in_root_manifest_or_ApiSchema_manifest" {
+        It "It_records_package_identity_only_in_the_schema_section_and_never_feed_URLs" {
             $script:feedFolder = script:New-FixtureFeed
 
             script:Invoke-PrepareStandard -FeedFolder $script:feedFolder
@@ -697,12 +703,20 @@ exit $ExitCode
             $rootManifest = script:Get-RootManifest
             $apiSchemaManifest = script:Get-ApiSchemaManifest
 
-            # Root manifest schema section must not expose package IDs, versions, or feed URLs.
+            # The schema section records the staged package identity ("<packageId>@<version>") so
+            # the bootstrap wrapper can revalidate a staged workspace against the effective
+            # SCHEMA_PACKAGES value without re-downloading anything.
+            @($rootManifest.schema.selectedPackages) | Should -HaveCount 1
+            @($rootManifest.schema.selectedPackages)[0] | Should -Match '^EdFi\.DataStandard52\.ApiSchema@\d+\.\d+\.\d+'
+
+            # That identity lives ONLY in schema.selectedPackages - nowhere else in the root
+            # manifest - and feed URLs never participate in it.
             $rootManifestJson = $rootManifest | ConvertTo-Json -Depth 20
-            $rootManifestJson | Should -Not -Match "EdFi\.DataStandard"
-            $rootManifestJson | Should -Not -Match "1\.0\.329"
             $rootManifestJson | Should -Not -Match "pkgs\.dev\.azure\.com"
             $rootManifestJson | Should -Not -Match $script:feedFolder.Replace("\", "\\")
+            $rootManifestWithoutPackages = $rootManifestJson | ConvertFrom-Json
+            $rootManifestWithoutPackages.schema.PSObject.Properties.Remove('selectedPackages')
+            ($rootManifestWithoutPackages | ConvertTo-Json -Depth 20) | Should -Not -Match "EdFi\.DataStandard"
 
             # ApiSchema manifest projects must not expose package IDs, versions, or feed URLs.
             $apiSchemaManifestJson = $apiSchemaManifest | ConvertTo-Json -Depth 20
@@ -1143,10 +1157,10 @@ exit $ExitCode
         }
     }
 
-    Context "Given_SchemaPackagesEnvVar_DoesNotInfluenceStandardMode" {
-        It "It_produces_the_same_core_workspace_regardless_of_SCHEMA_PACKAGES_env_var_value" {
-            # SCHEMA_PACKAGES is a non-bootstrap env var owned by the DLL-backed schema-loader path.
-            # Standard mode must ignore it completely: the result must be a clean core-only workspace.
+    Context "Given_AmbientSchemaPackages_DoesNotInfluenceDirectStandardMode" {
+        It "It_produces_the_same_core_workspace_regardless_of_ambient_SCHEMA_PACKAGES" {
+            # Only -EnvironmentFile opts standard preparation into SCHEMA_PACKAGES-driven staging.
+            # The ambient process variable must not alter the direct core-only fallback.
             $script:feedFolder = script:New-FixtureFeed
 
             $savedSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
@@ -1161,7 +1175,7 @@ exit $ExitCode
 
                 $manifest = script:Get-RootManifest
 
-                # Standard mode stages core only; SCHEMA_PACKAGES must not introduce any extension.
+                # Direct standard mode stages core only; ambient SCHEMA_PACKAGES must not introduce an extension.
                 $manifest.schema.selectionMode | Should -Be "Standard"
                 $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
                 Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
@@ -1176,8 +1190,8 @@ exit $ExitCode
     }
 
     Context "Given_ExtensionsParameterRemoved_StaticAssertion" {
-        # The package-backed core-only contract requires that no schema/wrapper surface exposes
-        # -Extensions. Assert this from the parameter AST of every required surface (not a single regex
+        # The package-backed contract derives extensions from SCHEMA_PACKAGES rather than a named
+        # -Extensions switch. Assert this from the parameter AST of every required surface (not a single regex
         # shape), so untyped or aliased parameters - and any forwarding shape - are also caught.
         It "It_<Name>_does_not_expose_an_Extensions_parameter_or_alias" -ForEach @(
             @{ Name = "prepare-dms-schema.ps1";      File = "prepare-dms-schema.ps1";      Function = "" }
@@ -1188,7 +1202,7 @@ exit $ExitCode
             $filePath = Join-Path $script:sourceDockerComposeRoot $File
             $paramBlock = script:Get-DeclaredParameterBlock -FilePath $filePath -FunctionName $Function
             script:Test-ExposesExtensionsParameter -ParamBlock $paramBlock |
-                Should -BeFalse -Because "$Name must not expose -Extensions (parameter or alias) under the package-backed core-only contract"
+                Should -BeFalse -Because "$Name must derive package selection from the effective environment rather than expose -Extensions"
         }
 
         It "It_wrapper_module_never_forwards_an_Extensions_argument_to_any_command" {

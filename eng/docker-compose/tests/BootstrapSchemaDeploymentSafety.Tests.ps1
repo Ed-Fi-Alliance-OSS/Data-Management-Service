@@ -290,10 +290,11 @@ exit $ExitCode
             $params | Should -Contain "DatabaseName"
             $params | Should -Contain "Configuration"
             $params | Should -Contain "PostgresContainerName"
+            $params | Should -Contain "DatabaseEngine"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "DataStoreId"
             $params | Should -Not -Contain "SchoolYear"
-            $params.Count | Should -Be 4
+            $params.Count | Should -Be 5
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
@@ -369,11 +370,12 @@ exit $ExitCode
         }
 
         It "start-published-dms.ps1 retains transitional flags pending consumer migration" {
-            # start-published-dms.ps1 keeps -LoadSeedData, -NoDataStore, -SchoolYearRange, and
+            # start-published-dms.ps1 keeps -NoDataStore, -SchoolYearRange, and
             # -AddSmokeTestCredentials until the published-image consumer path is migrated (separate task).
+            # -LoadSeedData (the direct-SQL database-template path) has been removed.
             $params = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1")
 
-            $params | Should -Contain "LoadSeedData"
+            $params | Should -Not -Contain "LoadSeedData"
             $params | Should -Contain "NoDataStore"
             $params | Should -Contain "SchoolYearRange"
             $params | Should -Contain "AddSmokeTestCredentials"
@@ -2758,6 +2760,433 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 
             $content | Should -Match 'start-local-dms\.ps1'
             $content | Should -Not -Match 'SkipConnectorSetup'
+        }
+    }
+
+    Context "wrapper revalidates the staged workspace against the effective SCHEMA_PACKAGES" {
+        BeforeAll {
+            function script:New-WrapperRevalidationFixture {
+                <#
+                .SYNOPSIS
+                Isolated repo carrying only what Invoke-BootstrapWrapper needs to reach its schema/claims
+                staging phase and then return early: the wrapper module + entry script, env-utility.psm1
+                plus the DS 5.2/6.1 bootstrap overlays (composed unconditionally for start-local-dms.ps1),
+                a base .env.example, and no-op stubs for prepare-dms-schema.ps1, prepare-dms-claims.ps1, and
+                start-local-dms.ps1. configure-local-data-store.ps1 / provision-dms-schema.ps1 are
+                deliberately absent so the wrapper takes its documented "isolated Pester fixture" early
+                return right after the infrastructure phase (mirrors BootstrapSeedDelivery.Tests.ps1's
+                "wrapper opt-in" fixtures).
+                #>
+                param(
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScript = "bootstrap-local-dms.ps1"
+                )
+
+                $startScriptName = if ($WrapperEntryScript -eq "bootstrap-local-dms.ps1") {
+                    "start-local-dms.ps1"
+                }
+                else {
+                    "start-published-dms.ps1"
+                }
+
+                $repoRoot = script:New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    $WrapperEntryScript,
+                    "bootstrap-schema-catalog.psm1",
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+                Copy-Item `
+                    -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
+                    -Destination (Join-Path $repoRoot "eng/schema-package-utility.psm1")
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                # These stubs only record calls. Mismatch tests assert that neither schema
+                # preparation nor infrastructure startup is reached.
+                $prepareSchemaCallLog = Join-Path $repoRoot "prepare-schema-calls.txt"
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$prepareSchemaCallLog' -Value "EnvironmentFile=`$EnvironmentFile"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot "prepare-dms-schema.ps1") -Encoding utf8
+
+                "param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)" |
+                    Set-Content -LiteralPath (Join-Path $dockerComposeRoot "prepare-dms-claims.ps1") -Encoding utf8
+
+                $startCallLog = Join-Path $repoRoot "start-calls.txt"
+                @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$startCallLog' -Value "start"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot             = $repoRoot
+                    DockerComposeRoot    = $dockerComposeRoot
+                    EnvFile              = $envFile
+                    WrapperScript        = Join-Path $dockerComposeRoot $WrapperEntryScript
+                    PrepareSchemaCallLog = $prepareSchemaCallLog
+                    StartCallLog         = $startCallLog
+                }
+            }
+
+            function script:New-StandardModeManifestFile {
+                <#
+                .SYNOPSIS
+                Writes a Standard-mode (package-backed) .bootstrap/bootstrap-manifest.json carrying the
+                supplied schema.selectedExtensions (and, when supplied, schema.selectedPackages), plus
+                complete claims/seed sections so Test-WrapperManifestClaimsStaged reports claims already
+                staged - isolating the schema-package revalidation as the only variable under test.
+                -Malformed writes unparsable JSON instead, exercising the fail-fast cleanup path.
+                #>
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$DockerComposeRoot,
+
+                    [string[]]$SelectedExtensions = @(),
+
+                    # "<packageId>@<version>" identity strings; omitted from the manifest when not
+                    # supplied, modeling a workspace staged before selectedPackages was recorded.
+                    [string[]]$SelectedPackages = $null,
+
+                    [switch]$Malformed
+                )
+
+                $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
+                New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+                $manifestPath = Join-Path $bootstrapRoot "bootstrap-manifest.json"
+
+                if ($Malformed) {
+                    "{ not valid json" | Set-Content -LiteralPath $manifestPath -Encoding utf8
+                    return $manifestPath
+                }
+
+                $manifest = [ordered]@{
+                    version = 1
+                    schema  = [ordered]@{
+                        selectionMode         = "Standard"
+                        selectedExtensions    = @($SelectedExtensions)
+                        effectiveSchemaHash   = "abc123"
+                        workspaceFingerprint  = "0000000000000000000000000000000000000000000000000000000000000000"
+                        apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                    }
+                    claims  = [ordered]@{
+                        mode                       = "Embedded"
+                        directory                  = "claims"
+                        fingerprint                = "def456"
+                        expectedVerificationChecks = @()
+                    }
+                    seed    = [ordered]@{
+                        extensionNamespacePrefixes = @()
+                    }
+                }
+                if ($null -ne $SelectedPackages) {
+                    $manifest["schema"].Insert(2, "selectedPackages", @($SelectedPackages))
+                }
+                $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+                return $manifestPath
+            }
+        }
+
+        It "reuses the staged workspace when the recorded package identities match the effective SCHEMA_PACKAGES exactly" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                # Derive the expected "<packageId>@<version>" set from the same DS 5.2 overlay the
+                # wrapper composes, so this spec keeps passing when the pinned versions bump.
+                $overlayContent = Get-Content -LiteralPath (Join-Path $fixture.DockerComposeRoot ".env.bootstrap.ds52") -Raw
+                $packagesJson = [regex]::Match($overlayContent, "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'").Groups["value"].Value
+                $overlayPackages = @(($packagesJson | ConvertFrom-Json) | ForEach-Object { "$($_.name)@$($_.version)" })
+                $overlayPackages.Count | Should -BeGreaterThan 0
+
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") `
+                    -SelectedPackages $overlayPackages | Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog |
+                    Should -BeFalse -Because "a manifest recording the exact effective package identities must be reused as-is"
+                Test-Path -LiteralPath $fixture.StartCallLog |
+                    Should -BeTrue -Because "the current workspace may proceed to infrastructure startup"
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops legacy Standard manifests without selectedPackages before preparation or Docker" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*Automatic replacement*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when the staged package identities no longer match the effective package set" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @() `
+                    -SelectedPackages @("EdFi.DataStandard61.ApiSchema@1.0.333") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*does not match*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when package versions drift despite an identical extension set" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedExtensions @("tpdm") `
+                    -SelectedPackages @(
+                        "EdFi.DataStandard52.ApiSchema@0.0.1",
+                        "EdFi.DataStandard52.TPDM.ApiSchema@0.0.1"
+                    ) | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*does not match*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "stops when the staged bootstrap manifest is malformed" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -Malformed | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*without a complete selectedPackages identity*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "fails closed when SCHEMA_PACKAGES is present but malformed" {
+            $fixture = script:New-WrapperRevalidationFixture
+            try {
+                $overlayPath = Join-Path $fixture.DockerComposeRoot ".env.bootstrap.ds52"
+                $overlayContent = Get-Content -LiteralPath $overlayPath -Raw
+                $overlayContent = $overlayContent -replace '(?m)^SCHEMA_PACKAGES=.*$', "SCHEMA_PACKAGES=not-json"
+                Set-Content -LiteralPath $overlayPath -Value $overlayContent -NoNewline
+
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("EdFi.DataStandard52.ApiSchema@1.0.333") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*Unable to find quoted JSON env value for 'SCHEMA_PACKAGES'*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "uses the catalog-pinned core identity when SCHEMA_PACKAGES is absent" {
+            $fixture = script:New-WrapperRevalidationFixture -WrapperEntryScript "bootstrap-published-dms.ps1"
+            try {
+                Import-Module (Join-Path $fixture.DockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+                $corePackage = Get-StandardCorePackage
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("$($corePackage.Id)@$($corePackage.Version)") | Out-Null
+
+                & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "rejects an obsolete core package when SCHEMA_PACKAGES is absent" {
+            $fixture = script:New-WrapperRevalidationFixture -WrapperEntryScript "bootstrap-published-dms.ps1"
+            try {
+                Import-Module (Join-Path $fixture.DockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+                $corePackage = Get-StandardCorePackage
+                script:New-StandardModeManifestFile `
+                    -DockerComposeRoot $fixture.DockerComposeRoot `
+                    -SelectedPackages @("$($corePackage.Id)@0.0.1") | Out-Null
+
+                { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
+                    Should -Throw "*$($corePackage.Id)@$($corePackage.Version)*DMS-1271*"
+
+                Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
+                Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $fixture.RepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Context "E2E dedicated-database guard (engine-aware)" {
+        BeforeAll {
+            # Dot-source stops at the script's dot-source guard, exposing the guard functions
+            # without provisioning anything.
+            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
+        }
+
+        It "rejects a case-variant of the bootstrap database name" {
+            # SQL Server's default collation treats identifiers case-insensitively, so a
+            # case-variant of the protected name is the same physical database there.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "EDFI_DataManagementService"
+            } | Should -Throw "*must be dedicated*POSTGRES_DB_NAME*"
+        }
+
+        It "protects MSSQL_DB_NAME as a first-class database-name key" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "Edfi_DataManagementService"
+            } | Should -Throw "*MSSQL_DB_NAME*"
+        }
+
+        It "extracts the database name from an Initial Catalog connection-string segment" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice"
+            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "rejects a Compose-quoted connection string that targets the E2E database" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DMS_CONFIG_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING*"
+        }
+
+        It "rejects a Compose-quoted database-name key that matches the E2E database" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "'shared' # local database" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*MSSQL_DB_NAME*"
+        }
+
+        It "resolves a variable-referenced connection-string database before comparing" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        SHARED_DB                           = "shared"
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
+        It "fails closed when a protected database reference is undefined" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*SHARED_DB*not defined*"
+        }
+
+        It "fails closed when protected database references are cyclic" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        SHARED_DB                           = '${OTHER_DB}'
+                        OTHER_DB                            = '${SHARED_DB}'
+                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*cyclic*SHARED_DB*"
+        }
+
+        It "fails closed when a configured protected connection string has no database name" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DMS_CONFIG_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "shared"
+            } | Should -Throw "*could not determine a database name*"
+        }
+
+        It "accepts a dedicated E2E database name" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        POSTGRES_DB_NAME                 = "edfi_datamanagementservice"
+                        MSSQL_DB_NAME                    = "edfi_datamanagementservice"
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_e2e"
+            } | Should -Not -Throw
         }
     }
 }

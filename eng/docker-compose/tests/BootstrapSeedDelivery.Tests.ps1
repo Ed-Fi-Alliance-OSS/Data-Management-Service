@@ -29,9 +29,18 @@ Describe "DMS-1152 API seed delivery bootstrap" {
             # utility module, the tracked bootstrap overlay files, and a base env file for the
             # composition to read (mirroring the tracked .env.example) so the paths that do compose
             # succeed.
-            foreach ($fileName in @("env-utility.psm1", ".env.bootstrap.ds52", ".env.bootstrap.ds61")) {
+            foreach ($fileName in @(
+                "env-utility.psm1",
+                "bootstrap-schema-catalog.psm1",
+                ".env.bootstrap.ds52",
+                ".env.bootstrap.ds61"
+            )) {
                 Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Destination $DockerComposeRoot -Force
             }
+            Copy-Item `
+                -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
+                -Destination (Join-Path (Split-Path -Parent $DockerComposeRoot) "schema-package-utility.psm1") `
+                -Force
 
             $exampleEnvFile = Join-Path $DockerComposeRoot ".env.example"
             if (-not (Test-Path -LiteralPath $exampleEnvFile)) {
@@ -45,6 +54,59 @@ DMS_CONFIG_IDENTITY_PROVIDER=self-contained
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $exampleEnvFile -Encoding utf8
             }
+        }
+
+        function script:New-CurrentWrapperManifest {
+            param(
+                [Parameter(Mandatory)]
+                [string]$DockerComposeRoot,
+
+                [switch]$Published
+            )
+
+            $selectedExtensions = @()
+            $selectedPackages = @()
+            if ($Published) {
+                Import-Module (Join-Path $DockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
+                $corePackage = Get-StandardCorePackage
+                $selectedPackages = @("$($corePackage.Id)@$($corePackage.Version)")
+            }
+            else {
+                $overlayContent = Get-Content -LiteralPath (Join-Path $DockerComposeRoot ".env.bootstrap.ds52") -Raw
+                $packagesJson = [regex]::Match(
+                    $overlayContent,
+                    "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'"
+                ).Groups["value"].Value
+                $selectedPackages = @(
+                    ($packagesJson | ConvertFrom-Json) |
+                        ForEach-Object { "$($_.name)@$($_.version)" }
+                )
+                $selectedExtensions = @("tpdm")
+            }
+
+            $bootstrapRoot = Join-Path $DockerComposeRoot ".bootstrap"
+            New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+            $manifest = [ordered]@{
+                version = 1
+                schema  = [ordered]@{
+                    selectionMode       = "Standard"
+                    selectedExtensions  = $selectedExtensions
+                    selectedPackages    = $selectedPackages
+                    effectiveSchemaHash = "abc123"
+                }
+                claims  = [ordered]@{
+                    directory                  = "claims"
+                    fingerprint                = "def456"
+                    expectedVerificationChecks = @()
+                }
+                seed    = [ordered]@{
+                    extensionNamespacePrefixes = @()
+                }
+            }
+
+            $manifestPath = Join-Path $bootstrapRoot "bootstrap-manifest.json"
+            $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+            return $manifestPath
         }
 
         function script:New-IsolatedSeedRepo {
@@ -752,6 +814,30 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 Remove-Item function:script:Get-DataStandardRepo -ErrorAction SilentlyContinue
                 Remove-Item -LiteralPath $bootstrapRoot -Recurse -Force -ErrorAction SilentlyContinue
             }
+        }
+    }
+
+    Context "Data Standard ref tag resolution" {
+        It "maps Data Standard 5.2 to the v5.2.0 seed ref tag" {
+            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "5.2" }
+
+            Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v5.2.0"
+        }
+
+        It "maps Data Standard 6.1 to the v6.1.0 seed ref tag" {
+            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "6.1" }
+
+            Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v6.1.0"
+        }
+
+        It "falls back to v5.2.0 when the Data Standard version is absent or blank" {
+            Resolve-SeedDataStandardRefTag -EnvValues @{} | Should -Be "v5.2.0"
+            Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = " " } | Should -Be "v5.2.0"
+        }
+
+        It "throws on an unrecognized non-blank Data Standard version instead of materializing v5.2.0 seeds" {
+            { Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = "9.9" } } |
+                Should -Throw "*DMS_CONFIG_DATA_STANDARD_VERSION*9.9*"
         }
     }
 
@@ -2468,9 +2554,7 @@ EdFi.BulkLoadClient.Console fake
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes when
             # the second invocation below adds -LoadSeedData.
-            $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
-            New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
-            "{}" | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
+            New-CurrentWrapperManifest -DockerComposeRoot $tmpDockerCompose | Out-Null
 
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
@@ -2507,9 +2591,7 @@ EdFi.BulkLoadClient.Console fake
             Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes.
-            $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
-            New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
-            "{}" | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
+            New-CurrentWrapperManifest -DockerComposeRoot $tmpDockerCompose | Out-Null
 
             $startArgsProbe = Join-Path $tmpRoot "start-args.txt"
             # Stub declares -EnableConfig explicitly so it binds when the wrapper passes it,
@@ -2564,10 +2646,10 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "bootstrap-local-dms.ps1 auto-stages core-only standard mode when no workspace is pre-staged" {
+        It "bootstrap-local-dms.ps1 auto-stages package-backed standard mode when no workspace is pre-staged" {
             # bootstrap-design.md Section 9.4.1: the thin wrapper requires no manual prepare
             # step. With no -Extensions and no pre-staged .bootstrap/bootstrap-manifest.json, the wrapper
-            # stages core-only standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before the
+            # stages package-backed standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before the
             # start phase, then reaches start (and the seed phase under -LoadSeedData) without throwing.
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             $tmpRoot = New-TestDirectory
@@ -2582,8 +2664,8 @@ EdFi.BulkLoadClient.Console fake
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
 
-            # prepare-dms-schema.ps1 stub records that the core-only prepare phase ran and asserts no
-            # -Extensions were forwarded (core-only path).
+            # prepare-dms-schema.ps1 stub records that package-backed preparation ran and asserts no
+            # removed -Extensions parameter was forwarded.
             "param([string[]]`$Extensions, [Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$prepareProbe' -Value (`"extensions=`$(`$Extensions -join ',')`") -Encoding utf8" |
                 Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-schema.ps1") -Encoding utf8
             "param([Parameter(ValueFromRemainingArguments)]`$rest)" |
@@ -2599,14 +2681,14 @@ EdFi.BulkLoadClient.Console fake
             # prepare phase stages the workspace first, then start and seed run.
             { & $wrapperCopy -LoadSeedData } | Should -Not -Throw
 
-            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "core-only auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
+            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "package-backed auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
             Test-Path -LiteralPath $startProbe | Should -BeTrue -Because "start phase must run after core-only staging"
             Test-Path -LiteralPath $seedProbe | Should -BeTrue -Because "seed phase must run when -LoadSeedData is supplied"
 
-            # The no-argument core-only happy path also stages and starts (no seed).
+            # The no-argument package-backed happy path also stages and starts (no seed).
             Remove-Item -LiteralPath $prepareProbe, $startProbe, $seedProbe -Force -ErrorAction SilentlyContinue
             & $wrapperCopy
-            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "no-argument wrapper must auto-stage core-only"
+            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "the no-argument wrapper must auto-stage its effective package set"
             Test-Path -LiteralPath $startProbe | Should -BeTrue
             Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run without -LoadSeedData"
 
@@ -2811,9 +2893,7 @@ EdFi.BulkLoadClient.Console fake
             Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes.
-            $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
-            New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
-            "{}" | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
+            New-CurrentWrapperManifest -DockerComposeRoot $tmpDockerCompose -Published | Out-Null
 
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
@@ -2839,10 +2919,10 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "bootstrap-published-dms.ps1 auto-stages core-only standard mode when no workspace is pre-staged" {
+        It "bootstrap-published-dms.ps1 auto-stages package-backed standard mode when no workspace is pre-staged" {
             # bootstrap-design.md Section 9.4.1: like the local wrapper, the published thin wrapper requires
             # no manual prepare step. With no -Extensions and no pre-staged .bootstrap/bootstrap-manifest.json,
-            # it must stage core-only standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before
+            # it must stage package-backed standard mode (prepare-dms-schema.ps1 + prepare-dms-claims.ps1) before
             # the start phase, then reach start (and the seed phase under -LoadSeedData) without throwing.
             # The other published-wrapper tests pre-stage a fake manifest, which bypasses this auto-stage path.
             $wrapperScript = Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
@@ -2858,8 +2938,8 @@ EdFi.BulkLoadClient.Console fake
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
 
-            # prepare-dms-schema.ps1 stub records that the core-only prepare phase ran and asserts no
-            # -Extensions were forwarded (core-only path).
+            # prepare-dms-schema.ps1 stub records that package-backed preparation ran and asserts no
+            # removed -Extensions parameter was forwarded.
             "param([string[]]`$Extensions, [Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$prepareProbe' -Value (`"extensions=`$(`$Extensions -join ',')`") -Encoding utf8" |
                 Set-Content -LiteralPath (Join-Path $tmpDockerCompose "prepare-dms-schema.ps1") -Encoding utf8
             "param([Parameter(ValueFromRemainingArguments)]`$rest)" |
@@ -2875,14 +2955,14 @@ EdFi.BulkLoadClient.Console fake
             # prepare phase stages the workspace first, then start and seed run.
             { & $wrapperCopy -LoadSeedData } | Should -Not -Throw
 
-            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "core-only auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
+            (Get-Content -LiteralPath $prepareProbe -Raw).Trim() | Should -Be "extensions=" -Because "package-backed auto-stage must run prepare-dms-schema.ps1 with no -Extensions"
             Test-Path -LiteralPath $startProbe | Should -BeTrue -Because "start phase must run after core-only staging"
             Test-Path -LiteralPath $seedProbe | Should -BeTrue -Because "seed phase must run when -LoadSeedData is supplied"
 
-            # The no-argument core-only happy path also stages and starts (no seed).
+            # The no-argument package-backed happy path also stages and starts (no seed).
             Remove-Item -LiteralPath $prepareProbe, $startProbe, $seedProbe -Force -ErrorAction SilentlyContinue
             & $wrapperCopy
-            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "no-argument wrapper must auto-stage core-only"
+            Test-Path -LiteralPath $prepareProbe | Should -BeTrue -Because "the no-argument wrapper must auto-stage its effective package set"
             Test-Path -LiteralPath $startProbe | Should -BeTrue
             Test-Path -LiteralPath $seedProbe | Should -BeFalse -Because "seed phase must not run without -LoadSeedData"
 
@@ -2900,9 +2980,7 @@ EdFi.BulkLoadClient.Console fake
             Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
             # Stage a fake bootstrap manifest so the wrapper's pre-start preflight passes.
-            $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
-            New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
-            "{}" | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
+            New-CurrentWrapperManifest -DockerComposeRoot $tmpDockerCompose -Published | Out-Null
 
             $startArgsProbe = Join-Path $tmpRoot "start-args.txt"
             "param([switch]`$EnableConfig, [Parameter(ValueFromRemainingArguments)]`$rest); Set-Content -LiteralPath '$startArgsProbe' -Value (`"EnableConfig=`$EnableConfig`") -Encoding utf8" |
@@ -2919,19 +2997,17 @@ EdFi.BulkLoadClient.Console fake
             Remove-Item -LiteralPath $tmpRoot -Recurse -Force
         }
 
-        It "start-published-dms.ps1 still declares -LoadSeedData pending bootstrap verification gate" {
-            # bootstrap-design.md Section 6.4 gates the removal of -LoadSeedData on
-            # "verifying the repo-pinned BulkLoadClient XML mode against DMS discovery,
-            # dependencies, OAuth, data, and XSD metadata or staged-XSD behavior." Until that
-            # gate closes, -LoadSeedData stays on start-published-dms.ps1 invoking the
-            # direct-SQL database-template path for direct published-image startup.
+        It "start-published-dms.ps1 no longer declares -LoadSeedData" {
+            # The direct-SQL seed path is removed from start-published-dms.ps1. Use
+            # load-dms-seed-data.ps1 directly, or the bootstrap-published-dms.ps1 wrapper's
+            # -LoadSeedData flag, for the API-based seed path.
             $startScript = Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             Test-Path -LiteralPath $startScript | Should -BeTrue
             $content = Get-Content -LiteralPath $startScript -Raw
             $paramBody = ([regex]::Match($content, '(?s)param\s*\((.*?)\)\s*\n')).Groups[1].Value
             $declaredParams = [regex]::Matches($paramBody, '\$(\w+)') |
                 ForEach-Object { $_.Groups[1].Value }
-            $declaredParams | Should -Contain "LoadSeedData" -Because "start-published-dms.ps1 must retain -LoadSeedData until the bootstrap-design.md Section 6.4 verification gate closes"
+            $declaredParams | Should -Not -Contain "LoadSeedData" -Because "start-published-dms.ps1 must not declare -LoadSeedData after the direct-SQL seed path is removed"
         }
 
         It "start-local-dms.ps1 no longer declares -LoadSeedData (DMS-1153 de-scope)" {
@@ -2961,6 +3037,124 @@ EdFi.BulkLoadClient.Console fake
         }
     }
 
+    Context "database-template package id engine-token conversion" {
+        BeforeAll {
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+        }
+
+        Context "Convert-TemplatePackageToken" {
+            It "maps the engine segment PostgreSql to MsSql and back, leaving prefix, template, and version untouched" {
+                $postgres = "EdFi.Dms.Minimal.Template.PostgreSql.6.1.0"
+
+                $mssql = Convert-TemplatePackageToken -PackageId $postgres -Engine "MsSql"
+                $mssql | Should -Be "EdFi.Dms.Minimal.Template.MsSql.6.1.0"
+
+                (Convert-TemplatePackageToken -PackageId $mssql -Engine "PostgreSql") | Should -Be $postgres
+            }
+
+            It "leaves the Smoke template segment untouched when rewriting the engine" {
+                $smoke = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
+
+                (Convert-TemplatePackageToken -PackageId $smoke -Engine "MsSql") | Should -Be "EdFi.Api.Smoke.Template.MsSql.5.2.0" -Because "the engine rewrite must never touch the template segment"
+            }
+
+            It "returns a package id unchanged when it does not match the <template>.Template.<engine>.<version> shape, and passes blank input through" {
+                $unrecognized = "Some.Unrelated.Package.Id.1.0.0"
+                (Convert-TemplatePackageToken -PackageId $unrecognized -Engine "MsSql") | Should -Be $unrecognized
+                (Convert-TemplatePackageToken -PackageId "" -Engine "MsSql") | Should -Be ""
+            }
+        }
+
+        Context "Resolve-DatabaseEngineEnvironmentFile DATABASE_TEMPLATE_PACKAGE rewrite" {
+            BeforeEach {
+                $script:engineTokenWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-enginetoken-$([Guid]::NewGuid().ToString('N'))"
+                $script:engineTokenComposeRoot = Join-Path $script:engineTokenWork "compose"
+                New-Item -ItemType Directory -Path $script:engineTokenComposeRoot -Force | Out-Null
+
+                Set-Content -LiteralPath (Join-Path $script:engineTokenComposeRoot ".env.mssql") -Value @"
+MSSQL_SA_PASSWORD=Abcdefgh1!
+MSSQL_DB_NAME=edfi_datamanagementservice
+MSSQL_PORT=1435
+DMS_DATASTORE=mssql
+DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+"@ -NoNewline
+            }
+
+            AfterEach {
+                if (Test-Path -LiteralPath $script:engineTokenWork) {
+                    Remove-Item -LiteralPath $script:engineTokenWork -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            It "rewrites a PostgreSql DATABASE_TEMPLATE_PACKAGE to MsSql when composing from a plain .env-style base" {
+                $basePath = Join-Path $script:engineTokenWork ".env"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n" -NoNewline
+
+                $derivedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $values = ReadValuesFromEnvFile $derivedPath
+                $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            }
+
+            It "rewrites a PostgreSql DATABASE_TEMPLATE_PACKAGE to MsSql when composing from a data-standard-derived (.env.ds61-style) base" {
+                $basePath = Join-Path $script:engineTokenWork ".env.ds61"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0`n" -NoNewline
+
+                $derivedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $values = ReadValuesFromEnvFile $derivedPath
+                $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Populated.Template.MsSql.6.1.0"
+            }
+
+            It "is idempotent on re-compose: composing an already-corrected derived file returns it unchanged" {
+                $basePath = Join-Path $script:engineTokenWork ".env"
+                Set-Content -LiteralPath $basePath -Value "DMS_DATASTORE=postgresql`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0`n" -NoNewline
+
+                $firstPass = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $basePath -DockerComposeRoot $script:engineTokenComposeRoot
+                $secondPass = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $firstPass -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $secondPass | Should -Be $firstPass -Because "re-composing an already-corrected mssql-flagged file must not produce a derived-of-derived file"
+                (ReadValuesFromEnvFile $secondPass)["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            }
+
+            It "corrects a stale PostgreSql DATABASE_TEMPLATE_PACKAGE on an already-composed mssql base without mutating the source file" {
+                # Exercise the overlayAlreadyComposed + stale-token branch itself: all current
+                # overlay keys are present, with caller-specific values that must survive while only
+                # DATABASE_TEMPLATE_PACKAGE is corrected into a derived file.
+                $staleBasePath = Join-Path $script:engineTokenWork ".env"
+                $staleContent = @"
+MSSQL_SA_PASSWORD=CustomSecret1!
+MSSQL_DB_NAME=custom_database
+MSSQL_PORT=1999
+DMS_DATASTORE=mssql
+DATABASE_CONNECTION_STRING_ADMIN=Server=custom-mssql;Database=`${MSSQL_DB_NAME};User Id=custom;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=custom;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
+CUSTOM_KEY=preserved
+"@
+                Set-Content -LiteralPath $staleBasePath -Value $staleContent -NoNewline
+
+                $correctedPath = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $staleBasePath -DockerComposeRoot $script:engineTokenComposeRoot
+
+                $correctedPath | Should -Not -Be $staleBasePath -Because "the correction must land in a new derived file, not the source"
+                $correctedValues = ReadValuesFromEnvFile $correctedPath
+                $correctedValues["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+                $correctedValues["MSSQL_SA_PASSWORD"] | Should -Be "CustomSecret1!"
+                $correctedValues["MSSQL_DB_NAME"] | Should -Be "custom_database"
+                $correctedValues["MSSQL_PORT"] | Should -Be "1999"
+                $correctedValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match "^Server=custom-mssql;"
+                $correctedValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Match "^Server=custom-mssql,1433;"
+                $correctedValues["CUSTOM_KEY"] | Should -Be "preserved"
+
+                # The source file must be untouched.
+                (Get-Content -LiteralPath $staleBasePath -Raw) | Should -Be $staleContent
+            }
+        }
+    }
+
     Context "IDE workflow shapes (DMS-1153)" {
         # Helpers shared across IDE workflow tests
 
@@ -2976,9 +3170,7 @@ EdFi.BulkLoadClient.Console fake
             Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Destination $tmpDockerCompose
             Copy-WrapperCompositionPrerequisites -DockerComposeRoot $tmpDockerCompose
 
-            $bootstrapDir = Join-Path $tmpDockerCompose ".bootstrap"
-            New-Item -ItemType Directory -Path $bootstrapDir -Force | Out-Null
-            "{}" | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
+            New-CurrentWrapperManifest -DockerComposeRoot $tmpDockerCompose | Out-Null
 
             $StartScriptStub | Set-Content -LiteralPath (Join-Path $tmpDockerCompose "start-local-dms.ps1") -Encoding utf8
 
@@ -3137,9 +3329,8 @@ Add-Content -LiteralPath '$sequencePath' -Value 'seed'
 Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataStoreId -join ',')" -Encoding utf8
 "@ | Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose "load-dms-seed-data.ps1") -Encoding utf8
 
-            # Stage a fake bootstrap manifest so -LoadSeedData preflight passes
-            '{"schema":{"selectionMode":"Standard"}}' |
-                Set-Content -LiteralPath (Join-Path $fixture.TmpDockerCompose ".bootstrap/bootstrap-manifest.json") -Encoding utf8
+            # Stage a current Standard manifest so package identity validation and seed preflight pass.
+            New-CurrentWrapperManifest -DockerComposeRoot $fixture.TmpDockerCompose | Out-Null
 
             & $fixture.WrapperScript -InfraOnly -DmsBaseUrl "http://localhost:8080" -LoadSeedData
 

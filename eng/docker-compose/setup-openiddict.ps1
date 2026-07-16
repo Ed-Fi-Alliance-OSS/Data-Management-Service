@@ -426,7 +426,7 @@ function Invoke-DbQuery {
         # argument with no shell re-parsing; -b makes sqlcmd exit nonzero on SQL
         # errors so failures throw instead of leaking error text into results;
         # -I sets QUOTED_IDENTIFIER ON, required by XML data type methods.
-        $output = docker exec $MssqlContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U $user -P $password -d $db -C -b -I -h -1 -W -Q $Sql 2>&1
+        $output = docker exec -e "SQLCMDPASSWORD=$password" $MssqlContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U $user -d $db -C -b -I -h -1 -W -Q $Sql 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "sqlcmd failed (exit $LASTEXITCODE): $output"
         }
