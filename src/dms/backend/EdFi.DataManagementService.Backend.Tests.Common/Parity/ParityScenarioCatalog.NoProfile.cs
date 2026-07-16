@@ -206,7 +206,7 @@ public static partial class ParityScenarioCatalog
                 "It_returns_update_success_for_an_unchanged_put",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put",
             ],
-            sharedEntryPoint: "NoProfileGuardedNoOpScenarios (DMS-1023 shared contract, later unit)",
+            sharedEntryPoint: "NoProfileGuardedNoOpScenarios",
             boundaryDetail: "RelationalWriteGuardedNoOp + IRelationalWriteFreshnessChecker/IRelationalWriteCurrentStateLoader"
         ),
         GuardedNoOp(
