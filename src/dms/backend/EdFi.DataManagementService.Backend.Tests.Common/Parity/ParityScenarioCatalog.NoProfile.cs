@@ -43,7 +43,7 @@ public static partial class ParityScenarioCatalog
                 "It_persists_root_and_nested_collection_rows_with_stable_collection_ids",
                 "It_persists_root_extensions_collection_extensions_and_extension_child_collections",
             ],
-            sharedEntryPoint: "NoProfileCreateBaselineScenarios (DMS-1023 shared contract, later unit)"
+            sharedEntryPoint: "NoProfileCreateBaselineScenarios"
         ),
         CreateVariant(
             "InsertSuccess",
