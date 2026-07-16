@@ -175,6 +175,9 @@ public static class NoProfileCollectionReorderScenarios
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
         result.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
         after.Document.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
+        after
+            .Document.DocumentId.Should()
+            .Be(before.Document.DocumentId, "the changed PUT updates the existing document row in place");
         after.Document.ResourceKeyId.Should().Be(mappingSet.ResourceKeyIdByResource[SchoolResource]);
         after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
     }
@@ -192,7 +195,10 @@ public static class NoProfileCollectionReorderScenarios
     {
         before.Addresses.Should().HaveCount(2);
 
-        after.School.Should().Be(new SchoolRow(after.Document.DocumentId, 255901, "LHS"));
+        // The original root row is the expected precondition, and the reorder must preserve it in
+        // place (same storage DocumentId/SchoolId/ShortName), not delete-and-reinsert the root.
+        before.School.Should().Be(new SchoolRow(before.Document.DocumentId, 255901, "LHS"));
+        after.School.Should().Be(before.School);
 
         after
             .Addresses.Should()
