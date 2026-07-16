@@ -743,10 +743,11 @@ pwsh ./start-local-dms.ps1 -d -v
 
 ## Accessing Swagger UI
 
-Open your browser and go to <http://localhost:8082> Use the dropdown menu to
-select either the Resources or Descriptors spec. Swagger UI is configured to
-consume the DMS endpoints published on the host (localhost and the port defined
-in DMS_HTTP_PORTS).
+Open your browser and go to <http://localhost:8082>. The dropdown reflects the
+API definitions advertised by DMS at `/metadata/specifications`, including Resources
+and Descriptors and, when the selected API schema advertises it, Change-Queries.
+Swagger UI consumes the DMS endpoints published on the host (localhost and the
+port defined in DMS_HTTP_PORTS).
 >[!NOTE]
 > The user that is configured to use swagger must have the Web Origins
 > configuration in Keycloak to allow CORS. To do this you must search for your
