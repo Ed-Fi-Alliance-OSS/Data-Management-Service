@@ -178,7 +178,7 @@ public static partial class ParityScenarioCatalog
                 "It_reuses_collection_item_ids_while_recomputing_ordinals_for_a_full_surface_reorder",
                 "It_succeeds_for_a_two_row_swap_under_the_db_sibling_ordinal_uniqueness_constraint",
             ],
-            sharedEntryPoint: "NoProfileCollectionReorderScenarios (DMS-1023 shared contract, later unit)"
+            sharedEntryPoint: "NoProfileCollectionReorderScenarios"
         ),
         ReorderVariant(
             "OrdinalReuseStableIds",
