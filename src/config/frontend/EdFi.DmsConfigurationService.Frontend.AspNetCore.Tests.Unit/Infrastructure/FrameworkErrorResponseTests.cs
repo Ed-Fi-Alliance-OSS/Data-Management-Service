@@ -19,7 +19,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 /// mapped result and asserting the response the client would receive.
 /// </summary>
 [TestFixture]
-internal class FrameworkErrorResponseTests
+internal class Given_A_Framework_Generated_Empty_Status_Code
 {
     private static readonly object[] MappedStatusCases =
     [
@@ -65,10 +65,37 @@ internal class FrameworkErrorResponseTests
         body["errors"]!.AsArray().Count.Should().Be(0);
     }
 
-    [TestCase(403)]
+    // Any client-error status without a more specific mapping falls back to the generic bad-request
+    // contract with its status preserved, matching the throwing GlobalExceptionHandler.
+    [TestCase(406)]
+    [TestCase(411)]
     [TestCase(418)]
+    [TestCase(431)]
+    public async Task It_maps_any_other_client_error_status_to_a_generic_bad_request(int statusCode)
+    {
+        IResult? result = FrameworkErrorResponse.ForEmptyStatusCode(statusCode, "trace-123");
+        result.Should().NotBeNull();
+
+        (int bodyStatus, JsonNode body) = await ExecuteAsync(result!);
+
+        bodyStatus.Should().Be(statusCode);
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["status"]!.GetValue<int>().Should().Be(statusCode);
+        body["detail"]!.GetValue<string>().Should().Be("The request was invalid.");
+        body["correlationId"]!.GetValue<string>().Should().Be("trace-123");
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
+    }
+
+    // Authentication/authorization statuses carry the authorization handler's body and server errors carry
+    // the exception handler's body, so this mapper leaves both untouched rather than rewriting them as a
+    // bad request.
+    [TestCase(401)]
+    [TestCase(403)]
     [TestCase(500)]
-    public void It_returns_null_for_a_status_it_does_not_map(int statusCode) =>
+    [TestCase(503)]
+    public void It_returns_null_for_auth_and_server_statuses(int statusCode) =>
         FrameworkErrorResponse.ForEmptyStatusCode(statusCode, "trace-123").Should().BeNull();
 
     // Executes the result against a bare HTTP context and returns the written status and parsed body,

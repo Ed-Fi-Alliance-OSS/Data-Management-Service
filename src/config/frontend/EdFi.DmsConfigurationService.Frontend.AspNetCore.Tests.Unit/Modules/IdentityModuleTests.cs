@@ -15,6 +15,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -379,9 +380,9 @@ public class RegisterEndpointTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "Access to the resource could not be authorized.",
+              "detail": "The request could not be processed. See 'errors' for details.",
               "type": "urn:ed-fi:api:security:authorization",
-              "title": "Authorization Denied",
+              "title": "Authorization Failed",
               "status": 403,
               "correlationId": "{correlationId}",
               "validationErrors": {},
@@ -493,6 +494,25 @@ public abstract class TokenEndpointTestBase
             {
                 collection.AddTransient(_ => new TokenRequest.Validator());
                 collection.AddTransient(_ => TokenManager);
+            });
+        });
+        _client = _factory.CreateClient();
+        return _client;
+    }
+
+    // Builds a client whose host rejects any request form carrying more than one value, so a form-read
+    // failure (InvalidDataException from the form reader) can be exercised without a real oversized body —
+    // the in-memory test server does not enforce request-body-size limits.
+    protected HttpClient CreateClientWithSingleValueFormLimit()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                collection.AddTransient(_ => new TokenRequest.Validator());
+                collection.AddTransient(_ => TokenManager);
+                collection.Configure<FormOptions>(options => options.ValueCountLimit = 1);
             });
         });
         _client = _factory.CreateClient();
@@ -700,6 +720,38 @@ public class Given_A_Token_Request_With_An_Unsupported_Grant_Type : TokenEndpoin
             "unsupported_grant_type",
             "The specified grant type is not supported."
         );
+}
+
+[TestFixture]
+public class Given_A_Token_Request_Whose_Form_Cannot_Be_Read : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // A success is arranged so that, if the unreadable form were somehow processed, the request would
+        // succeed — proving the form-read failure is what produces the error rather than a fallback path.
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClientWithSingleValueFormLimit();
+        // Two form values exceed the configured limit of one, so ReadFormAsync throws while parsing.
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
 }
 
 [TestFixture]
@@ -1355,6 +1407,49 @@ public class Given_An_Introspect_Request_Without_A_Token
 }
 
 [TestFixture]
+public class Given_An_Introspect_Request_Whose_Form_Cannot_Be_Read
+{
+    [Test]
+    public async Task It_returns_the_oauth_invalid_request_error()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+                collection.Configure<FormOptions>(options => options.ValueCountLimit = 1)
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act — two form values exceed the configured limit of one, so ReadFormAsync throws while parsing.
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("token", "some-token"),
+                new KeyValuePair<string, string>("token_type_hint", "access_token"),
+            }
+        );
+        var response = await client.PostAsync("/connect/introspect", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var actualResponse = JsonNode.Parse(content);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "error": "invalid_request",
+              "error_description": "The request is missing a required parameter or is otherwise malformed."
+            }
+            """
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
+}
+
+[TestFixture]
 public class Given_A_Revoke_Request_Without_A_Token
 {
     [Test]
@@ -1497,4 +1592,54 @@ public class Given_The_Provider_Does_Not_Support_Revocation : RevokeEndpointTest
 
     [Test]
     public void It_returns_the_oauth_temporarily_unavailable_error() => AssertTemporarilyUnavailable();
+}
+
+[TestFixture]
+public class Given_A_Revoke_Request_Whose_Form_Cannot_Be_Read
+{
+    [Test]
+    public async Task It_returns_the_oauth_invalid_request_error()
+    {
+        // Arrange
+        var tokenManager = A.Fake<ITokenManager>();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                collection.AddTransient(_ => tokenManager);
+                collection.Configure<FormOptions>(options => options.ValueCountLimit = 1);
+            });
+        });
+        using var client = factory.CreateClient();
+
+        // Act — two form values exceed the configured limit of one, so ReadFormAsync throws while parsing.
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("token", "some-token"),
+                new KeyValuePair<string, string>("token_type_hint", "access_token"),
+            }
+        );
+        var response = await client.PostAsync("/connect/revoke", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var actualResponse = JsonNode.Parse(content);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "error": "invalid_request",
+              "error_description": "The request is missing a required parameter or is otherwise malformed."
+            }
+            """
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+
+        // The revocation manager must never be reached when the form cannot even be read.
+        A.CallTo(() => tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
+    }
 }

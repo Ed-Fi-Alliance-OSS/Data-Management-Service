@@ -141,7 +141,7 @@ public class IdentityModule : IEndpointModule
             }
         }
 
-        return FailureResults.Forbidden(["Registration is disabled."], httpContext.TraceIdentifier);
+        return FailureResults.AuthorizationFailed(["Registration is disabled."], httpContext.TraceIdentifier);
     }
 
     // Reports an identity-provider failure raised while registering a client. The raw provider message is
@@ -161,6 +161,40 @@ public class IdentityModule : IEndpointModule
         return FailureResults.BadGateway("Identity provider error during client registration", correlationId);
     }
 
+    // Reads the posted form for an OAuth protocol endpoint (token, introspection, revocation). A failure to
+    // read the form — the request body exceeds a form or overall size limit, or the form is otherwise
+    // malformed — must not escape to the global exception handler, which answers with the Ed-Fi Problem
+    // Details contract (and with a 500 for a form-limit InvalidDataException). These endpoints answer with
+    // the OAuth error contract (RFC 6749 section 5.2), so an unreadable form is reported as invalid_request.
+    // The framework message and raw request values are never surfaced; the failure is logged server-side
+    // only. Returns a null form and null error when the request carries no form content type, matching the
+    // endpoints' empty-body handling.
+    private static async Task<(IFormCollection? Form, IResult? Error)> TryReadOAuthFormAsync(
+        HttpContext httpContext,
+        ILogger logger
+    )
+    {
+        if (!httpContext.Request.HasFormContentType)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            return (await httpContext.Request.ReadFormAsync(), null);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or BadHttpRequestException)
+        {
+            logger.LogWarning(exception, "Failed to read the form body on the OAuth endpoint.");
+            return (
+                null,
+                OAuthErrorResults.InvalidRequest(
+                    "The request is missing a required parameter or is otherwise malformed."
+                )
+            );
+        }
+    }
+
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromServices] ITokenManager tokenManager,
@@ -177,9 +211,13 @@ public class IdentityModule : IEndpointModule
         string formClientId = string.Empty;
         string formClientSecret = string.Empty;
 
-        if (httpContext.Request.HasFormContentType)
+        var (form, formError) = await TryReadOAuthFormAsync(httpContext, logger);
+        if (formError is not null)
         {
-            var form = await httpContext.Request.ReadFormAsync();
+            return formError;
+        }
+        if (form is not null)
+        {
             grantType = form["grant_type"].ToString();
             scope = form["scope"].ToString();
             formClientId = form["client_id"].ToString();
@@ -404,14 +442,19 @@ public class IdentityModule : IEndpointModule
 
     private static async Task<IResult> IntrospectToken(
         [FromServices] IEnhancedTokenValidator? tokenValidator,
+        [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
         // Manually read form data to handle empty form bodies in .NET 10
         IntrospectionRequest model = new();
-        if (httpContext.Request.HasFormContentType)
+        var (form, formError) = await TryReadOAuthFormAsync(httpContext, logger);
+        if (formError is not null)
         {
-            var form = await httpContext.Request.ReadFormAsync();
+            return formError;
+        }
+        if (form is not null)
+        {
             model = new IntrospectionRequest
             {
                 Token = form["token"].ToString(),
@@ -461,9 +504,13 @@ public class IdentityModule : IEndpointModule
     {
         // Manually read form data to handle empty form bodies in .NET 10
         RevocationRequest model = new();
-        if (httpContext.Request.HasFormContentType)
+        var (form, formError) = await TryReadOAuthFormAsync(httpContext, logger);
+        if (formError is not null)
         {
-            var form = await httpContext.Request.ReadFormAsync();
+            return formError;
+        }
+        if (form is not null)
+        {
             model = new RevocationRequest
             {
                 Token = form["token"].ToString(),

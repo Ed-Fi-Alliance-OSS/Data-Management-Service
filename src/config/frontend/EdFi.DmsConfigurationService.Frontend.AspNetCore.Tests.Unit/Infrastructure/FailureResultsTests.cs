@@ -26,6 +26,7 @@ public class FailureResultsTests
         private const string ProblemJsonContentType = "application/problem+json";
         private const string AuthenticationFailedDetail = "The caller could not be authenticated.";
         private const string AuthorizationDeniedDetail = "Access to the resource could not be authorized.";
+        private const string ErrorDetail = "The request could not be processed. See 'errors' for details.";
 
         private static (int? StatusCode, string? ContentType, JsonNode Body) Inspect(IResult result)
         {
@@ -147,10 +148,10 @@ public class FailureResultsTests
         }
 
         [Test]
-        public void It_Forbidden_with_errors_returns_compliant_authorization_failure_using_errors_verbatim()
+        public void It_Forbidden_with_errors_returns_compliant_authorization_denied_using_errors_verbatim()
         {
             var (statusCode, contentType, body) = Inspect(
-                FailureResults.Forbidden(["Registration is disabled."], CorrelationId)
+                FailureResults.Forbidden(["Access to this resource is forbidden."], CorrelationId)
             );
 
             statusCode.Should().Be(403);
@@ -158,6 +159,27 @@ public class FailureResultsTests
             body["detail"]?.GetValue<string>().Should().Be(AuthorizationDeniedDetail);
             body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
             body["title"]?.GetValue<string>().Should().Be("Authorization Denied");
+            body["status"]?.GetValue<int>().Should().Be(403);
+            body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+            body["validationErrors"]?.AsObject().Count.Should().Be(0);
+
+            var errors = body["errors"]!.AsArray();
+            errors.Count.Should().Be(1);
+            errors[0]!.GetValue<string>().Should().Be("Access to this resource is forbidden.");
+        }
+
+        [Test]
+        public void It_AuthorizationFailed_returns_the_canonical_authorization_failed_contract_using_errors_verbatim()
+        {
+            var (statusCode, contentType, body) = Inspect(
+                FailureResults.AuthorizationFailed(["Registration is disabled."], CorrelationId)
+            );
+
+            statusCode.Should().Be(403);
+            contentType.Should().Be(ProblemJsonContentType);
+            body["detail"]?.GetValue<string>().Should().Be(ErrorDetail);
+            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
+            body["title"]?.GetValue<string>().Should().Be("Authorization Failed");
             body["status"]?.GetValue<int>().Should().Be(403);
             body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
             body["validationErrors"]?.AsObject().Count.Should().Be(0);

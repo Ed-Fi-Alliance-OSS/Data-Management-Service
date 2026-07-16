@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -30,6 +31,7 @@ public class VendorModuleTests
 {
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
+    private readonly IIdentityProviderRepository _clientRepository = A.Fake<IIdentityProviderRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
 
     private HttpClient SetUpClient()
@@ -61,7 +63,8 @@ public class VendorModuleTests
                     collection
                         .AddTransient((_) => _httpContext)
                         .AddTransient((_) => _vendorRepository)
-                        .AddTransient((_) => _applicationRepository);
+                        .AddTransient((_) => _applicationRepository)
+                        .AddTransient((_) => _clientRepository);
                 }
             );
         });
@@ -964,5 +967,76 @@ public class VendorModuleTests
                 "Not Found",
                 "Vendor 1 not found. It may have been recently deleted."
             );
+    }
+
+    /// <summary>
+    /// A vendor update succeeds but the follow-up identity-provider client namespace-claim update fails.
+    /// The endpoint must return the fixed 502 bad-gateway contract and never surface the raw provider
+    /// message (which can carry provider URLs and status detail).
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Vendor_Update_Whose_Client_Namespace_Update_Fails_At_The_Identity_Provider
+        : VendorModuleTests
+    {
+        private const string SensitiveProviderMessage =
+            "Keycloak returned 401 from https://idp.internal/realms/edfi/clients: invalid_grant secret=hunter2";
+
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            // The vendor row updates successfully and reports one affected client, so the endpoint then
+            // calls the identity provider to update that client's namespace claim.
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.Success([Guid.NewGuid()]));
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientNamespaceClaimAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .Returns(
+                    new ClientUpdateResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unreachable(SensitiveProviderMessage)
+                    )
+                );
+
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            JsonNode body = await _updateResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadGateway,
+                "urn:ed-fi:api:bad-gateway",
+                "Bad Gateway",
+                "The request could not be processed. See 'errors' for details.",
+                errors: ["Identity provider error during client update"]
+            );
+
+            // The raw provider message and its embedded detail must never be surfaced to the caller.
+            string raw = body.ToJsonString();
+            raw.Should().NotContain(SensitiveProviderMessage);
+            raw.Should().NotContain("idp.internal");
+            raw.Should().NotContain("hunter2");
+        }
     }
 }

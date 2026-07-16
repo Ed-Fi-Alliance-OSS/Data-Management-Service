@@ -48,7 +48,37 @@ internal class GlobalExceptionHandlerTests
         httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
         var reader = new StreamReader(httpContext.Response.Body);
         var responseBody = await reader.ReadToEndAsync();
-        responseBody.Should().Contain("validationErrors");
+
+        var body = JsonNode.Parse(responseBody)!;
+        body.AsObject()
+            .Select(member => member.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["errors"]!.AsArray().Count.Should().Be(0);
+
+        var validationErrors = body["validationErrors"]!.AsObject();
+        validationErrors.Count.Should().Be(1);
+        validationErrors["PropertyName"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .Should()
+            .Equal("Validation error message");
     }
 
     [Test]
@@ -71,7 +101,30 @@ internal class GlobalExceptionHandlerTests
         httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
         var reader = new StreamReader(httpContext.Response.Body);
         var responseBody = await reader.ReadToEndAsync();
-        responseBody.Should().NotBeEmpty();
+
+        var body = JsonNode.Parse(responseBody)!;
+        body.AsObject()
+            .Select(member => member.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+        body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
+        body["detail"]!.GetValue<string>().Should().BeEmpty();
+        body["status"]!.GetValue<int>().Should().Be(500);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
+
+        // The exception message must never be surfaced in the response body.
+        responseBody.Should().NotContain("Unexpected error");
     }
 }
 

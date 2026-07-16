@@ -154,10 +154,11 @@ internal static class FailureResults
         );
     }
 
-    // Authorization failure with caller-supplied error messages. Unlike the identity-provider
-    // overload above, the errors are used verbatim (no "Forbidden. " prefix or JSON parsing),
-    // so endpoints and authorization handling can surface a clean, specific message. The title and
-    // detail follow the canonical Ed-Fi authorization-denied contract.
+    // Authorization failure raised by the framework authorization middleware (an authenticated caller
+    // whose access to a secured endpoint was denied), with caller-supplied error messages used verbatim
+    // (no "Forbidden. " prefix or JSON parsing). Reports the "Authorization Denied" contract. Endpoints
+    // that deny an operation should use AuthorizationFailed instead, which follows the canonical Ed-Fi
+    // "Authorization Failed" contract.
     public static IResult Forbidden(string[] errors, string correlationId)
     {
         return Results.Json(
@@ -167,6 +168,20 @@ internal static class FailureResults
                 correlationId,
                 errors
             ),
+            contentType: _errorContentType,
+            statusCode: 403
+        );
+    }
+
+    // Authorization failure raised by an endpoint that denies an operation (e.g. registration when it is
+    // disabled), with caller-supplied error messages used verbatim. Reports the canonical Ed-Fi
+    // "Authorization Failed" contract (title and detail), distinct from the framework authorization
+    // middleware's Forbidden overload above, which reports an authenticated caller's denied access as
+    // "Authorization Denied".
+    public static IResult AuthorizationFailed(string[] errors, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
             contentType: _errorContentType,
             statusCode: 403
         );
