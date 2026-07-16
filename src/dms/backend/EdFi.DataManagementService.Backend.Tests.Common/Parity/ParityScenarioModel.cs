@@ -30,8 +30,15 @@ public enum EngineCoverage
     /// <summary>An executing test exercises this engine for this scenario.</summary>
     Covered,
 
-    /// <summary>No test exercises this engine yet; a twin is owed (see the scenario's gap owner).</summary>
+    /// <summary>No test exercises this engine and one is owed; the scenario's per-engine owner names the ticket.</summary>
     Gap,
+
+    /// <summary>
+    /// This engine has no test for this exact row, but the mechanic is contractually covered by the
+    /// canonical same-boundary scenario the row defers to (used by supporting-smoke breadth rows). Not
+    /// an owned gap.
+    /// </summary>
+    Mapped,
 
     /// <summary>The behavior is provider-independent, so cross-engine execution does not apply.</summary>
     NotApplicable,
@@ -40,8 +47,8 @@ public enum EngineCoverage
 /// <summary>
 /// Coverage classification. Reuses the DMS-1124 Slice-7 vocabulary (<see cref="Both"/>,
 /// <see cref="FixInSlice"/>, <see cref="Na"/>) and adds the DMS-1023 classifications.
-/// Classification is a separate field from the scenario's gap owner; a known gap is never
-/// encoded as a combined free-form string.
+/// Classification is a separate field from the scenario's per-engine gap owners; a known gap is
+/// never encoded as a combined free-form string.
 /// </summary>
 public enum ParityClassification
 {
@@ -54,12 +61,12 @@ public enum ParityClassification
     /// <summary>Provider-independent behavior validated at the unit level; no cross-engine parity applies.</summary>
     Na,
 
-    /// <summary>PostgreSQL-only today; a SQL Server twin is owed by the scenario's <c>GapOwner</c>.</summary>
+    /// <summary>PostgreSQL-only today; a SQL Server twin is owed by the scenario's per-engine owner.</summary>
     KnownGap,
 
     /// <summary>
-    /// Real-world breadth smoke whose mechanic is contractually covered by another canonical
-    /// scenario at the same production boundary (see <c>CoveredByScenarioId</c>).
+    /// Real-world breadth smoke whose mechanic is contractually covered by a canonical scenario at
+    /// the same production boundary (see <c>CoveredByScenarioId</c>); the other engine is Mapped.
     /// </summary>
     SupportingSmoke,
 
@@ -92,11 +99,14 @@ public enum ProductionBoundary
     /// <summary>WritePlanBatchSqlEmitter / PlanWriteBatchingConventions batching.</summary>
     BatchSqlEmitter,
 
-    /// <summary>Runtime reference-identity column population/cascade.</summary>
+    /// <summary>Runtime reference-identity column population/repopulation/cascade.</summary>
     ReferenceIdentityRuntime,
 
     /// <summary>Key-unification conflict validation with atomic rollback.</summary>
     KeyUnificationValidation,
+
+    /// <summary>Relational GET-by-id read-back / ETag / If-Match / readable-profile projection.</summary>
+    RelationalReadback,
 
     /// <summary>The profile-aware persist executor (profile layer only).</summary>
     ProfilePersistExecutor,
@@ -109,9 +119,9 @@ public enum ProductionBoundary
 }
 
 /// <summary>
-/// A test entry point recorded per engine: the source file, the NUnit fixture class, and the
-/// test method(s) that exercise the scenario on that engine. Names are recorded independently
-/// per engine because the provider suites do not mechanically mirror each other's names.
+/// A test entry point: the source file, the NUnit fixture class, and the test method(s) that
+/// exercise the scenario. Names are recorded independently per engine because the provider suites
+/// do not mechanically mirror each other's names.
 /// </summary>
 public sealed record ScenarioLocation(string File, string Fixture, ImmutableArray<string> Methods);
 
@@ -120,7 +130,8 @@ public sealed record DialectDifference(string Description, string Rationale);
 
 /// <summary>
 /// One row of the canonical cross-engine parity catalog. The C# catalog is the authoritative
-/// source of truth; the design document is the narrative/index.
+/// source of truth; the design document is the narrative/index. A single scenario may name more
+/// than one fixture per engine, so the locations are collections.
 /// </summary>
 public sealed record ParityScenario
 {
@@ -142,14 +153,14 @@ public sealed record ParityScenario
     /// <summary>Optional specific class/method on the boundary (e.g. RelationalWriteIdentityStability.TryBuildFailureResult).</summary>
     public string? BoundaryDetail { get; init; }
 
-    /// <summary>PostgreSQL test location, or null when none applies.</summary>
-    public ScenarioLocation? Pgsql { get; init; }
+    /// <summary>PostgreSQL test locations (one per fixture); empty when PostgreSQL has none.</summary>
+    public ImmutableArray<ScenarioLocation> PgsqlLocations { get; init; } = [];
 
-    /// <summary>SQL Server test location, or null when none applies (e.g. a known gap).</summary>
-    public ScenarioLocation? Mssql { get; init; }
+    /// <summary>SQL Server test locations (one per fixture); empty when SQL Server has none.</summary>
+    public ImmutableArray<ScenarioLocation> MssqlLocations { get; init; } = [];
 
-    /// <summary>Provider-independent unit test location for an Na row; null otherwise.</summary>
-    public ScenarioLocation? Unit { get; init; }
+    /// <summary>Provider-independent unit test locations for an Na row; empty otherwise.</summary>
+    public ImmutableArray<ScenarioLocation> UnitLocations { get; init; } = [];
 
     /// <summary>PostgreSQL coverage state.</summary>
     public required EngineCoverage PgsqlCoverage { get; init; }
@@ -163,22 +174,15 @@ public sealed record ParityScenario
     /// <summary>Coverage classification.</summary>
     public required ParityClassification Classification { get; init; }
 
-    /// <summary>
-    /// Owning ticket for the PostgreSQL gap on a KnownGap row; required when PostgreSQL is a gap and
-    /// forbidden otherwise.
-    /// </summary>
+    /// <summary>Owning ticket for the PostgreSQL gap; required iff PostgreSQL coverage is Gap.</summary>
     public string? PgsqlGapOwner { get; init; }
 
-    /// <summary>
-    /// Owning ticket for the SQL Server gap on a KnownGap row; required when SQL Server is a gap and
-    /// forbidden otherwise.
-    /// </summary>
+    /// <summary>Owning ticket for the SQL Server gap; required iff SQL Server coverage is Gap.</summary>
     public string? MssqlGapOwner { get; init; }
 
     /// <summary>
-    /// For a SupportingSmoke row, the canonical same-boundary scenario id whose mechanic
-    /// contractually covers this breadth smoke. The reverse mapping is derived from these forward
-    /// links, never stored separately.
+    /// For a SupportingSmoke row, the canonical (base) same-boundary scenario id whose mechanic
+    /// contractually covers this breadth smoke. Must equal an exact canonical no-profile id.
     /// </summary>
     public string? CoveredByScenarioId { get; init; }
 

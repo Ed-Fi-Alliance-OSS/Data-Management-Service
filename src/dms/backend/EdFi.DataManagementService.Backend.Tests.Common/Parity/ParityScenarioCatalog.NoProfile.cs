@@ -11,15 +11,27 @@ public static partial class ParityScenarioCatalog
 {
     private const string DmsGapOwner = "DMS-1285";
 
+    private const string ContactSmoke = "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs";
+    private const string SchoolSmoke = "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs";
+    private const string SeoaSmoke = "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs";
+    private const string SsaSmoke =
+        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs";
+    private const string SsecaSmoke =
+        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs";
+    private const string SurveyQuestionSmoke =
+        "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs";
+
     /// <summary>
     /// DMS-984 no-profile relational-write scenarios. Every canonical family is PostgreSQL-only
-    /// today and owed a SQL Server twin by DMS-1285 (KnownGap). Real-world authoritative smokes are
-    /// split into one row per behavioral mechanic, each deferring to a canonical family at the same
-    /// no-profile production boundary (SupportingSmoke).
+    /// today and owed a SQL Server twin by DMS-1285 (KnownGap). Authoritative real-world smokes are
+    /// split into one row per behavioral mechanic: family mechanics (create / changed-PUT / no-op)
+    /// defer to a canonical family at the same boundary (SupportingSmoke, other engine Mapped), while
+    /// reference-identity and read-back mechanics — which are not among the eight no-profile write
+    /// families — are first-class Both rows on their own boundaries.
     /// </summary>
     internal static readonly ImmutableArray<ParityScenario> NoProfileScenarios =
     [
-        // --- NoProfileFullSurfaceCreate -----------------------------------------------------
+        // --- NoProfileFullSurfaceCreate + variants ------------------------------------------
         Gap(
             "NoProfileFullSurfaceCreate",
             "Creates the full no-profile surface (root, nested collections, root extension, collection extension, extension-child collections) with stable ids and contiguous 0-based ordinals.",
@@ -33,7 +45,22 @@ public static partial class ParityScenarioCatalog
             ],
             sharedEntryPoint: "NoProfileCreateBaselineScenarios (DMS-1023 shared contract, later unit)"
         ),
-        // --- NoProfileChangedPutOmissionSemantics -------------------------------------------
+        CreateVariant(
+            "InsertSuccess",
+            "Create returns InsertSuccess with a persisted Document row.",
+            "It_returns_insert_success_for_the_repository_create_flow"
+        ),
+        CreateVariant(
+            "RootAndNestedCollectionStableIds",
+            "Root and nested collection rows persist with unique, positive, stable CollectionItemIds and 0-based ordinals.",
+            "It_persists_root_and_nested_collection_rows_with_stable_collection_ids"
+        ),
+        CreateVariant(
+            "RootAndCollectionExtensionAndExtensionChild",
+            "Root extension, collection-aligned extension, and extension-child collection rows all persist on create.",
+            "It_persists_root_extensions_collection_extensions_and_extension_child_collections"
+        ),
+        // --- NoProfileChangedPutOmissionSemantics + variants --------------------------------
         Gap(
             "NoProfileChangedPutOmissionSemantics",
             "Changed PUT bumps ContentVersion, clears omitted inlined columns, and deletes omitted collection-aligned extension scope rows without deleting base rows.",
@@ -48,21 +75,40 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileUpdateSemanticsScenarios (DMS-1023 shared contract, later unit)",
             notes: "Consolidating contract; omission semantics are currently distributed across the variants below."
         ),
-        Gap(
-            "NoProfileChangedPutOmissionSemantics/DeletedBaseCollectionRows",
-            "Changed PUT reduces a large base collection to the retained rows, deleting omitted rows in batches.",
-            ProductionBoundary.NoProfileMerge,
+        UpdateVariant(
+            "ClearedInlinedColumn",
+            "A changed PUT clears an omitted inlined root column instead of preserving the old value.",
+            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"
+        ),
+        UpdateVariant(
+            "DeletedAlignedExtensionScope",
+            "A changed PUT deletes omitted collection-aligned extension scope rows without deleting the base rows.",
+            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows"
+        ),
+        UpdateVariant(
+            "ContentVersionBump",
+            "A changed PUT returns UpdateSuccess and bumps ContentVersion.",
+            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "It_returns_update_success_and_bumps_content_version_for_the_put_flow"
+        ),
+        UpdateVariant(
+            "DeletedBaseCollectionRows",
+            "A changed PUT reduces a large base collection to the retained rows, deleting omitted rows in batches.",
             "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
-            ["It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches"]
+            "It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches"
         ),
-        Gap(
-            "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
-            "Changed PUT reuses retained child-collection ids and replaces omitted rows across multiple child tables.",
-            ProductionBoundary.NoProfileMerge,
+        UpdateVariant(
+            "DeletedAndReplacedChildCollectionRows",
+            "A changed PUT reuses retained child-collection ids and replaces omitted rows across multiple child tables.",
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
-            ["It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows"]
+            "It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows"
         ),
         new ParityScenario
         {
@@ -72,8 +118,6 @@ public static partial class ParityScenarioCatalog
                 "Changed PUT that omits a standalone extension-child collection deletes those rows without disturbing base rows.",
             SharedEntryPoint = "NoProfileUpdateSemanticsScenarios (DMS-1023 shared contract, later unit)",
             Boundary = ProductionBoundary.NoProfileMerge,
-            Pgsql = null,
-            Mssql = null,
             PgsqlCoverage = EngineCoverage.Gap,
             MssqlCoverage = EngineCoverage.Gap,
             Classification = ParityClassification.KnownGap,
@@ -82,7 +126,7 @@ public static partial class ParityScenarioCatalog
             Notes =
                 "No existing PostgreSQL test (extension child collections are exercised only on create). DMS-1023 adds the PostgreSQL proof (G1 ruling); the SQL Server twin is owed to DMS-1285.",
         },
-        // --- NoProfileWriteBehavior (umbrella changed-write control) ------------------------
+        // --- NoProfileWriteBehavior (umbrella) ----------------------------------------------
         Gap(
             "NoProfileWriteBehavior",
             "Umbrella no-profile changed-write control path: standard full-surface present/absent semantics including an omitted non-collection scope and a no-profile _ext case.",
@@ -93,7 +137,7 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileCreateBaselineScenarios + NoProfileUpdateSemanticsScenarios (umbrella; DMS-1023 shared contracts, later unit)",
             notes: "Realized by NoProfileFullSurfaceCreate (no-profile _ext create) and NoProfileChangedPutOmissionSemantics (omitted non-collection scope)."
         ),
-        // --- FullSurfaceCollectionReorder ---------------------------------------------------
+        // --- FullSurfaceCollectionReorder + variants ----------------------------------------
         Gap(
             "FullSurfaceCollectionReorder",
             "No-profile full-surface reorder matches stored rows by semantic identity, reuses CollectionItemIds, and recomputes contiguous 0-based ordinals.",
@@ -107,7 +151,22 @@ public static partial class ParityScenarioCatalog
             ],
             sharedEntryPoint: "NoProfileCollectionReorderScenarios (DMS-1023 shared contract, later unit)"
         ),
-        // --- NoProfileGuardedNoOp (10 PUT/POST-as-update variants) --------------------------
+        ReorderVariant(
+            "OrdinalReuseStableIds",
+            "Reorder reuses CollectionItemIds while recomputing ordinals.",
+            "It_reuses_collection_item_ids_while_recomputing_ordinals_for_a_full_surface_reorder"
+        ),
+        ReorderVariant(
+            "TwoRowSwapUnderSiblingUniqueness",
+            "A two-row ordinal swap commits under the sibling-ordinal uniqueness constraint.",
+            "It_succeeds_for_a_two_row_swap_under_the_db_sibling_ordinal_uniqueness_constraint"
+        ),
+        ReorderVariant(
+            "ContentVersionBump",
+            "A full-surface reorder returns UpdateSuccess and bumps ContentVersion.",
+            "It_returns_update_success_and_bumps_content_version_for_a_full_surface_reorder"
+        ),
+        // --- NoProfileGuardedNoOp (10 variants) ---------------------------------------------
         Gap(
             "NoProfileGuardedNoOp",
             "Unchanged PUT / POST-as-update compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op.",
@@ -201,7 +260,7 @@ public static partial class ParityScenarioCatalog
                 "It_preserves_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
             ]
         ),
-        // --- NoProfileMultiBatchCollection --------------------------------------------------
+        // --- NoProfileMultiBatchCollection + variants ---------------------------------------
         Gap(
             "NoProfileMultiBatchCollection",
             "Collection create/update/delete are partitioned into batches at the compiled MaxRowsPerBatch / ParametersPerRow.",
@@ -253,10 +312,10 @@ public static partial class ParityScenarioCatalog
                 "It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put",
             ]
         ),
-        // --- NoProfilePostAsUpdate ----------------------------------------------------------
+        // --- NoProfilePostAsUpdate + variants -----------------------------------------------
         Gap(
             "NoProfilePostAsUpdate",
-            "POST that resolves to an existing document updates in place, preserving the document row and inserting no duplicate rows.",
+            "POST that resolves to an existing document (FocusedStableKey) updates in place, preserving the document row and inserting no duplicate rows.",
             ProductionBoundary.NoProfilePersister,
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
@@ -313,7 +372,7 @@ public static partial class ParityScenarioCatalog
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update",
             ]
         ),
-        // --- NoProfileRollbackSafety --------------------------------------------------------
+        // --- NoProfileRollbackSafety + variants ---------------------------------------------
         Gap(
             "NoProfileRollbackSafety",
             "A failure after early relational writes rolls the whole request back, leaving no partial state.",
@@ -327,108 +386,115 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileAtomicRollbackAssertions (DMS-1023 shared contract, later unit)"
         ),
         Gap(
+            "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
+            "An injected failure after early writes rolls back fully, leaving Document/School/SchoolAddress counts at zero.",
+            ProductionBoundary.NoProfilePersister,
+            "PostgresqlRelationalWriteRollbackSafetyTests.cs",
+            "Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
+            [
+                "It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted",
+                "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
+            ]
+        ),
+        Gap(
             "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically",
             "A key-unification conflict is rejected as a validation failure and leaves the document and authoritative tables unchanged (atomic rollback).",
             ProductionBoundary.KeyUnificationValidation,
-            "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
+            SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
             ["It_returns_a_validation_failure_and_leaves_document_and_authoritative_tables_unchanged"],
             sharedEntryPoint: "NoProfileAtomicRollbackAssertions (DMS-1023 shared contract, later unit)"
         ),
         // --- Authoritative PostgreSQL breadth smokes (one row per mechanic/boundary) --------
-        // DS-5.2 Contact
         PgSmokeCreate(
             "Ds52Contact",
             "DS-5.2 Contact create with two-level nested grandchild collections.",
-            "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs",
+            ContactSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture",
             ["It_persists_authoritative_ds52_contact_addresses_and_nested_address_periods_on_create"]
         ),
         PgSmokeChangedPut(
             "Ds52Contact",
             "DS-5.2 Contact changed-PUT reuses stable ids for retained addresses and nested periods.",
-            "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs",
+            ContactSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture",
             ["It_reuses_stable_collection_item_ids_for_retained_addresses_and_nested_periods_on_changed_put"]
         ),
         PgSmokeNoOp(
             "Ds52Contact",
             "DS-5.2 Contact repeat-PUT is a guarded no-op.",
-            "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs",
+            ContactSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture",
             ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
         ),
-        // DS-5.2 School
         PgSmokeCreate(
             "Ds52School",
             "DS-5.2 School create across parallel root collections.",
-            "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs",
+            SchoolSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture",
             ["It_persists_authoritative_ds52_school_root_and_collection_rows_on_create"]
         ),
         PgSmokeChangedPut(
             "Ds52School",
             "DS-5.2 School changed-PUT reuses stable ids and updates ordinals (reorder).",
-            "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs",
+            SchoolSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture",
             ["It_reuses_stable_collection_item_ids_and_updates_ordinals_for_a_changed_put"]
         ),
         PgSmokeNoOp(
             "Ds52School",
             "DS-5.2 School repeat-PUT is a guarded no-op.",
-            "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs",
+            SchoolSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture",
             ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
         ),
-        // Sample StudentEducationOrganizationAssociation
         PgSmokeCreate(
             "SampleStudentEducationOrganizationAssociation",
-            "Sample SEOA create with collection-aligned extension children (also exercises runtime reference-identity cascade in a separate fixture).",
-            "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs",
+            "Sample SEOA create with collection-aligned extension children.",
+            SeoaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
             ["It_persists_authoritative_sample_base_root_and_extension_rows_on_create"]
         ),
         PgSmokeChangedPut(
             "SampleStudentEducationOrganizationAssociation",
-            "Sample SEOA changed-PUT reuses stable ids and updates root extension data.",
-            "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs",
+            "Sample SEOA changed-PUT reuses stable ids and updates root extension data (omission/update semantics).",
+            SeoaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
-            ["It_reuses_stable_collection_item_ids_and_updates_root_extension_data_for_a_changed_put"]
+            ["It_reuses_stable_collection_item_ids_and_updates_root_extension_data_for_a_changed_put"],
+            coveredBy: "NoProfileChangedPutOmissionSemantics"
         ),
         PgSmokeNoOp(
             "SampleStudentEducationOrganizationAssociation",
             "Sample SEOA repeat-PUT is a guarded no-op.",
-            "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs",
+            SeoaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
             ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
         ),
-        // Sample StudentSchoolAssociation (the conflict/rollback fixture is a separate KnownGap row)
         PgSmokeCreate(
             "SampleStudentSchoolAssociation",
             "Sample StudentSchoolAssociation create with root extension and child rows.",
-            "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
+            SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
             ["It_persists_authoritative_student_school_association_root_extension_and_child_rows_on_create"]
         ),
         PgSmokeChangedPut(
             "SampleStudentSchoolAssociation",
             "Sample StudentSchoolAssociation changed-PUT reuses stable ids and updates authoritative state.",
-            "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
+            SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
             ["It_reuses_stable_collection_item_ids_and_updates_authoritative_state_on_changed_put"]
         ),
         PgSmokeNoOp(
             "SampleStudentSchoolAssociation",
             "Sample StudentSchoolAssociation repeat-PUT is a guarded no-op.",
-            "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
+            SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
             ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
         ),
-        // Sample StudentSectionAssociation
         PgSmokeCreate(
             "SampleStudentSectionAssociation",
             "Sample StudentSectionAssociation create with a reference-backed extension child collection.",
-            "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs",
+            SsecaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
             [
                 "It_persists_the_authoritative_sample_root_extension_and_extension_child_collection_rows_on_create",
@@ -436,8 +502,8 @@ public static partial class ParityScenarioCatalog
         ),
         PgSmokeChangedPut(
             "SampleStudentSectionAssociation",
-            "Sample StudentSectionAssociation changed-PUT reuses stable ids when extension children are reordered/removed/replaced.",
-            "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs",
+            "Sample StudentSectionAssociation changed-PUT reorders/removes/replaces reference-backed extension children with stable ids.",
+            SsecaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
             [
                 "It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
@@ -446,73 +512,123 @@ public static partial class ParityScenarioCatalog
         PgSmokeNoOp(
             "SampleStudentSectionAssociation",
             "Sample StudentSectionAssociation repeat-PUT is a guarded no-op.",
-            "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs",
+            SsecaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
             ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
         ),
-        // Sample SurveyQuestion
         PgSmokeCreate(
             "SampleSurveyQuestion",
             "Sample SurveyQuestion create with two sibling root child collections and a composite reference.",
-            "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs",
+            SurveyQuestionSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture",
             ["It_persists_authoritative_sample_survey_question_root_and_child_rows_on_create"]
         ),
         PgSmokeChangedPut(
             "SampleSurveyQuestion",
             "Sample SurveyQuestion changed-PUT reuses stable ids for retained matrices and response choices.",
-            "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs",
+            SurveyQuestionSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture",
             ["It_reuses_stable_collection_item_ids_for_retained_matrices_and_response_choices_on_changed_put"]
         ),
         PgSmokeNoOp(
             "SampleSurveyQuestion",
             "Sample SurveyQuestion repeat-PUT is a guarded no-op.",
-            "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs",
+            SurveyQuestionSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture",
             ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
         ),
-        // --- Existing SQL Server authoritative breadth (one row per mechanic/boundary) ------
-        MssqlSmokeCreate(
-            "SampleStudentArtProgramAssociation",
-            "SQL Server no-profile create populating descriptor-backed root reference columns.",
-            "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs",
-            "Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture",
+        // --- Reference-identity and read-back: cross-engine Both rows on their own boundaries -
+        NoProfileBoth(
+            "NoProfile/ReferenceIdentityRuntime",
+            "Runtime reference-identity: descriptor/reference-backed reference columns are populated on create, repopulated on changed PUT, and participate in identity-propagation cascade/trigger fallback. Covered on both engines (different resources; per-mechanic parity).",
+            ProductionBoundary.ReferenceIdentityRuntime,
             [
-                "It_extracts_descriptor_backed_root_reference_members_via_the_shared_document_info_helper",
-                "It_populates_root_reference_columns_from_descriptor_backed_reference_members_on_create",
-            ]
-        ),
-        MssqlSmokeCreate(
-            "Ds52Survey",
-            "SQL Server no-profile create populating runtime reference-identity columns.",
-            "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs",
-            "Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture",
-            ["It_populates_persisted_reference_identity_columns_on_create"]
-        ),
-        MssqlSmokeChangedPut(
-            "Ds52Survey",
-            "SQL Server changed-PUT repopulates runtime reference-identity columns and keeps rows in the identity-propagation trigger fallback.",
-            "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs",
-            "Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture",
+                Loc(
+                    SeoaSmoke,
+                    "Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Cascade_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
+                    [
+                        "It_should_store_runtime_written_reference_identity_columns_in_all_or_none_shape",
+                        "It_should_cascade_abstract_reference_identity_updates_into_runtime_written_reference_columns",
+                    ]
+                ),
+                Loc(
+                    SsaSmoke,
+                    "Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
+                    [
+                        "It_populates_persisted_reference_identity_columns_on_create",
+                        "It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
+                    ]
+                ),
+                Loc(
+                    SsaSmoke,
+                    "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
+                    [
+                        "It_extracts_descriptor_valued_collection_reference_members_from_concrete_paths_via_the_shared_document_info_helper",
+                    ]
+                ),
+            ],
             [
-                "It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
-                "It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback",
-            ]
+                Loc(
+                    "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs",
+                    "Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture",
+                    [
+                        "It_populates_persisted_reference_identity_columns_on_create",
+                        "It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
+                        "It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback",
+                    ]
+                ),
+                Loc(
+                    "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs",
+                    "Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture",
+                    [
+                        "It_extracts_descriptor_backed_root_reference_members_via_the_shared_document_info_helper",
+                        "It_populates_root_reference_columns_from_descriptor_backed_reference_members_on_create",
+                    ]
+                ),
+            ],
+            notes: "Not one of the eight no-profile write families; a first-class cross-engine mechanic outside SupportingSmoke."
         ),
-        MssqlSmokeCreate(
-            "SampleStudentSchoolAssociation",
-            "SQL Server no-profile create with read-back etag / If-Match / semantic-JSON-equivalence / readable-profile projection.",
-            "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
-            "Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
+        NoProfileBoth(
+            "NoProfile/RelationalReadback",
+            "Relational GET-by-id read-back parity: served create ETag, ResourceLinks If-Match against current relational state, semantic-JSON-equivalence + metadata, and readable-profile projection. Covered on both engines.",
+            ProductionBoundary.RelationalReadback,
             [
-                "It_returns_the_create_etag_from_follow_up_get_by_id",
-                "It_matches_ResourceLinks_IfMatch_against_the_current_relational_state",
-                "It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata",
-                "It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection",
-            ]
+                Loc(
+                    SsaSmoke,
+                    "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
+                    [
+                        "It_returns_the_create_etag_from_follow_up_get_by_id",
+                        "It_matches_ResourceLinks_IfMatch_against_the_current_relational_state",
+                        "It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata",
+                        "It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection",
+                    ]
+                ),
+                Loc(
+                    SeoaSmoke,
+                    "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
+                    [
+                        "It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection_for_collection_aligned_extensions",
+                    ]
+                ),
+            ],
+            [
+                Loc(
+                    "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
+                    "Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
+                    [
+                        "It_returns_the_create_etag_from_follow_up_get_by_id",
+                        "It_matches_ResourceLinks_IfMatch_against_the_current_relational_state",
+                        "It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata",
+                        "It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection",
+                    ]
+                ),
+            ],
+            notes: "Not one of the eight no-profile write families; a first-class cross-engine read-path mechanic outside SupportingSmoke."
         ),
     ];
+
+    private static ScenarioLocation Loc(string file, string fixture, string[] methods) =>
+        new(file, fixture, [.. methods]);
 
     private static ParityScenario Gap(
         string id,
@@ -534,8 +650,7 @@ public static partial class ParityScenarioCatalog
             SharedEntryPoint = sharedEntryPoint,
             Boundary = boundary,
             BoundaryDetail = boundaryDetail,
-            Pgsql = new ScenarioLocation(pgFile, pgFixture, [.. pgMethods]),
-            Mssql = null,
+            PgsqlLocations = [new ScenarioLocation(pgFile, pgFixture, [.. pgMethods])],
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Gap,
             DialectDifference = diff,
@@ -543,6 +658,42 @@ public static partial class ParityScenarioCatalog
             MssqlGapOwner = DmsGapOwner,
             Notes = notes,
         };
+
+    private static ParityScenario CreateVariant(string variant, string contract, string method) =>
+        Gap(
+            $"NoProfileFullSurfaceCreate/{variant}",
+            contract,
+            ProductionBoundary.NoProfilePersister,
+            "PostgresqlRelationalWriteCreateBaselineTests.cs",
+            "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+            [method]
+        );
+
+    private static ParityScenario UpdateVariant(
+        string variant,
+        string contract,
+        string file,
+        string fixture,
+        string method
+    ) =>
+        Gap(
+            $"NoProfileChangedPutOmissionSemantics/{variant}",
+            contract,
+            ProductionBoundary.NoProfileMerge,
+            file,
+            fixture,
+            [method]
+        );
+
+    private static ParityScenario ReorderVariant(string variant, string contract, string method) =>
+        Gap(
+            $"FullSurfaceCollectionReorder/{variant}",
+            contract,
+            ProductionBoundary.NoProfileMerge,
+            "PostgresqlRelationalWriteCollectionReorderTests.cs",
+            "Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
+            [method]
+        );
 
     private static ParityScenario GuardedNoOp(string variant, string pgFixture, string[] pgMethods) =>
         Gap(
@@ -559,8 +710,7 @@ public static partial class ParityScenarioCatalog
         string contract,
         string file,
         string fixture,
-        string[] methods,
-        string? notes = null
+        string[] methods
     ) =>
         PgSmoke(
             $"NoProfile/AuthoritativeSmoke/{suite}/Create",
@@ -569,8 +719,7 @@ public static partial class ParityScenarioCatalog
             "NoProfileFullSurfaceCreate",
             file,
             fixture,
-            methods,
-            notes
+            methods
         );
 
     private static ParityScenario PgSmokeChangedPut(
@@ -579,17 +728,16 @@ public static partial class ParityScenarioCatalog
         string file,
         string fixture,
         string[] methods,
-        string? notes = null
+        string coveredBy = "FullSurfaceCollectionReorder"
     ) =>
         PgSmoke(
-            $"NoProfile/AuthoritativeSmoke/{suite}/ChangedPutStableId",
+            $"NoProfile/AuthoritativeSmoke/{suite}/ChangedPut",
             contract,
             ProductionBoundary.NoProfileMerge,
-            "FullSurfaceCollectionReorder",
+            coveredBy,
             file,
             fixture,
-            methods,
-            notes
+            methods
         );
 
     private static ParityScenario PgSmokeNoOp(
@@ -597,8 +745,7 @@ public static partial class ParityScenarioCatalog
         string contract,
         string file,
         string fixture,
-        string[] methods,
-        string? notes = null
+        string[] methods
     ) =>
         PgSmoke(
             $"NoProfile/AuthoritativeSmoke/{suite}/RepeatPutNoOp",
@@ -607,8 +754,7 @@ public static partial class ParityScenarioCatalog
             "NoProfileGuardedNoOp",
             file,
             fixture,
-            methods,
-            notes
+            methods
         );
 
     private static ParityScenario PgSmoke(
@@ -618,8 +764,7 @@ public static partial class ParityScenarioCatalog
         string coveredBy,
         string file,
         string fixture,
-        string[] methods,
-        string? notes
+        string[] methods
     ) =>
         new()
         {
@@ -627,62 +772,20 @@ public static partial class ParityScenarioCatalog
             Layer = ParityLayer.NoProfile,
             BehavioralContract = contract,
             Boundary = boundary,
-            Pgsql = new ScenarioLocation(file, fixture, [.. methods]),
-            Mssql = null,
+            PgsqlLocations = [new ScenarioLocation(file, fixture, [.. methods])],
             PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Gap,
+            MssqlCoverage = EngineCoverage.Mapped,
             Classification = ParityClassification.SupportingSmoke,
             CoveredByScenarioId = coveredBy,
-            Notes = notes,
         };
 
-    private static ParityScenario MssqlSmokeCreate(
-        string suite,
-        string contract,
-        string file,
-        string fixture,
-        string[] methods,
-        string? notes = null
-    ) =>
-        MssqlSmoke(
-            $"NoProfile/MssqlAuthoritativeSmoke/{suite}/Create",
-            contract,
-            ProductionBoundary.NoProfilePersister,
-            "NoProfileFullSurfaceCreate",
-            file,
-            fixture,
-            methods,
-            notes
-        );
-
-    private static ParityScenario MssqlSmokeChangedPut(
-        string suite,
-        string contract,
-        string file,
-        string fixture,
-        string[] methods,
-        string? notes = null
-    ) =>
-        MssqlSmoke(
-            $"NoProfile/MssqlAuthoritativeSmoke/{suite}/ChangedPutStableId",
-            contract,
-            ProductionBoundary.NoProfileMerge,
-            "FullSurfaceCollectionReorder",
-            file,
-            fixture,
-            methods,
-            notes
-        );
-
-    private static ParityScenario MssqlSmoke(
+    private static ParityScenario NoProfileBoth(
         string id,
         string contract,
         ProductionBoundary boundary,
-        string coveredBy,
-        string file,
-        string fixture,
-        string[] methods,
-        string? notes
+        ImmutableArray<ScenarioLocation> pgsql,
+        ImmutableArray<ScenarioLocation> mssql,
+        string? notes = null
     ) =>
         new()
         {
@@ -690,12 +793,11 @@ public static partial class ParityScenarioCatalog
             Layer = ParityLayer.NoProfile,
             BehavioralContract = contract,
             Boundary = boundary,
-            Pgsql = null,
-            Mssql = new ScenarioLocation(file, fixture, [.. methods]),
-            PgsqlCoverage = EngineCoverage.Gap,
+            PgsqlLocations = pgsql,
+            MssqlLocations = mssql,
+            PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
-            Classification = ParityClassification.SupportingSmoke,
-            CoveredByScenarioId = coveredBy,
+            Classification = ParityClassification.Both,
             Notes = notes,
         };
 }

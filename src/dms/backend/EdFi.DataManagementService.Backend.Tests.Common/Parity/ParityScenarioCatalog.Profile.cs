@@ -11,14 +11,14 @@ public static partial class ParityScenarioCatalog
 {
     /// <summary>
     /// DMS-1124 profile-aware relational-write scenarios, mapped rather than rewritten. All are
-    /// Both/Covered on the profile persist-executor boundary with mirrored PostgreSQL and SQL
-    /// Server fixtures (fixture names are recorded per engine because they are not mechanically
-    /// mirrorable; the per-fixture test-method names are identical across engines). Three
-    /// documented creatability variants exist only as synthesizer unit tests and are recorded Na.
+    /// Both/Covered on the profile persist-executor boundary with mirrored PostgreSQL and SQL Server
+    /// fixtures (fixture names are recorded per engine because they are not mechanically mirrorable;
+    /// the per-fixture test-method names are identical across engines). A scenario that has more than
+    /// one provider fixture records one ScenarioLocation per fixture. Three documented creatability
+    /// variants exist only as synthesizer unit tests and are recorded Na.
     /// </summary>
     internal static readonly ImmutableArray<ParityScenario> ProfileScenarios =
     [
-        // --- ProfileRootCreateRejectedWhenNonCreatable --------------------------------------
         Profile(
             "ProfileRootCreateRejectedWhenNonCreatable",
             "A profiled POST create whose root is not creatable is rejected as a profile data-policy failure.",
@@ -27,7 +27,7 @@ public static partial class ParityScenarioCatalog
             "Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable",
             ["It_returns_profile_data_policy_failure_for_creatability_rejection"]
         ),
-        // --- ProfileHiddenInlinedColumnPreservation -----------------------------------------
+        // ProfileHiddenInlinedColumnPreservation + variants
         Profile(
             "ProfileHiddenInlinedColumnPreservation",
             "A profiled PUT that never names a hidden inlined scalar preserves its stored value.",
@@ -79,7 +79,7 @@ public static partial class ParityScenarioCatalog
             "Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropagatedIdentity",
             ["It_preserves_student_reference_document_id", "It_preserves_student_reference_student_unique_id"]
         ),
-        // --- ProfileVisibleButAbsentNonCollectionScope --------------------------------------
+        // ProfileVisibleButAbsentNonCollectionScope + variant
         Profile(
             "ProfileVisibleButAbsentNonCollectionScope",
             "A profiled PUT that omits a visible inlined scope clears the clearable value and preserves the hidden value.",
@@ -96,7 +96,7 @@ public static partial class ParityScenarioCatalog
             "Given_A_Mssql_ProfiledUpdate_With_VisibleAbsent_SeparateTableScope_DeletesIt",
             ["It_deletes_the_separate_table_row"]
         ),
-        // --- ProfileHiddenExtensionRowPreservation ------------------------------------------
+        // ProfileHiddenExtensionRowPreservation + variants
         Profile(
             "ProfileHiddenExtensionRowPreservation",
             "A profiled PUT preserves a hidden extension row on a separate table.",
@@ -121,10 +121,18 @@ public static partial class ParityScenarioCatalog
             "Given_A_Mssql_ProfiledUpdate_WithHiddenDescriptorFKOn_SeparateTable_PreservesFK",
             ["It_preserves_the_hidden_descriptor_fk"]
         ),
-        // --- ProfileVisibleRowUpdateWithHiddenRowPreservation -------------------------------
+        // ProfileVisibleRowUpdateWithHiddenRowPreservation + variants
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation",
             "A profiled PUT updates the visible collection rows and preserves the hidden sibling rows.",
+            "ProfileTopLevelCollectionMergeTests",
+            "Given_A_Postgresql_Profiled_TopLevelCollection_Merge",
+            "Given_A_Mssql_Profiled_TopLevelCollection_Merge",
+            ["It_updates_visible_rows_and_preserves_hidden_rows"]
+        ),
+        Profile(
+            "ProfileVisibleRowUpdateWithHiddenRowPreservation/TopLevel",
+            "Top-level-collection shape: a profiled PUT updates visible rows and preserves hidden rows.",
             "ProfileTopLevelCollectionMergeTests",
             "Given_A_Postgresql_Profiled_TopLevelCollection_Merge",
             "Given_A_Mssql_Profiled_TopLevelCollection_Merge",
@@ -140,11 +148,31 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/InterleavedUpdatePlusInsert",
-            "A reference-backed profiled PUT updates a matched visible row in place and inserts a new creatable visible item.",
-            "ProfileTopLevelCollectionReferenceBackedMergeTests",
-            "Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
-            "Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
-            ["It_inserts_new_visible_item_when_creatable_and_no_prior_match_exists"]
+            "A profiled PUT interleaves an in-place update of a matched visible row with an inserted new creatable item (reference-backed top-level and aligned-extension-child forms).",
+            [
+                PgLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_inserts_new_visible_item_when_creatable_and_no_prior_match_exists"]
+                ),
+                PgLoc(
+                    "ProfileCollectionAlignedExtensionMergeTests",
+                    "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
+                    ["It_assigns_aligned_extension_child_ordinals_in_new_request_order"]
+                ),
+            ],
+            [
+                MsLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_inserts_new_visible_item_when_creatable_and_no_prior_match_exists"]
+                ),
+                MsLoc(
+                    "ProfileCollectionAlignedExtensionMergeTests",
+                    "Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
+                    ["It_assigns_aligned_extension_child_ordinals_in_new_request_order"]
+                ),
+            ]
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection",
@@ -156,11 +184,31 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
-            "A profiled PUT updates a root-level extension child collection's values and scalars.",
-            "ProfileNestedCollectionMergeTests",
-            "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
-            "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
-            ["It_updates_the_root_extension_child_values", "It_updates_the_root_extension_scalars"]
+            "A profiled PUT updates a root-level extension child collection (nested and reference-backed forms).",
+            [
+                PgLoc(
+                    "ProfileNestedCollectionMergeTests",
+                    "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
+                    ["It_updates_the_root_extension_child_values", "It_updates_the_root_extension_scalars"]
+                ),
+                PgLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_updates_in_place_when_request_item_matches_stored_visible_row_by_reference_identity"]
+                ),
+            ],
+            [
+                MsLoc(
+                    "ProfileNestedCollectionMergeTests",
+                    "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
+                    ["It_updates_the_root_extension_child_values", "It_updates_the_root_extension_scalars"]
+                ),
+                MsLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_updates_in_place_when_request_item_matches_stored_visible_row_by_reference_identity"]
+                ),
+            ]
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/CollectionAlignedExtensionChildCollection",
@@ -189,7 +237,7 @@ public static partial class ParityScenarioCatalog
                 "It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
             ]
         ),
-        // --- ProfileVisibleRowDeleteWithHiddenRowPreservation -------------------------------
+        // ProfileVisibleRowDeleteWithHiddenRowPreservation + variants
         Profile(
             "ProfileVisibleRowDeleteWithHiddenRowPreservation",
             "A profiled PUT deletes omitted visible rows and preserves the hidden rows.",
@@ -199,22 +247,62 @@ public static partial class ParityScenarioCatalog
             ["It_deletes_omitted_visible_rows_and_preserves_hidden_rows"]
         ),
         Profile(
-            "ProfileVisibleRowDeleteWithHiddenRowPreservation/DeleteAllVisibleWhileHiddenRemain",
-            "A profiled PUT that omits all visible rows deletes them while the hidden rows remain.",
-            "ProfileTopLevelCollectionMergeTests",
-            "Given_A_Postgresql_Profiled_TopLevelCollection_Merge",
-            "Given_A_Mssql_Profiled_TopLevelCollection_Merge",
-            ["It_deletes_all_visible_rows_while_hidden_rows_remain"]
+            "ProfileVisibleRowDeleteWithHiddenRowPreservation/DeleteOmittedVisible",
+            "A profiled PUT deletes visible rows absent from the request while preserving hidden rows (top-level and reference-backed forms).",
+            [
+                PgLoc(
+                    "ProfileTopLevelCollectionMergeTests",
+                    "Given_A_Postgresql_Profiled_TopLevelCollection_Merge",
+                    ["It_deletes_omitted_visible_rows_and_preserves_hidden_rows"]
+                ),
+                PgLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_deletes_visible_row_absent_from_request_while_preserving_hidden_rows"]
+                ),
+            ],
+            [
+                MsLoc(
+                    "ProfileTopLevelCollectionMergeTests",
+                    "Given_A_Mssql_Profiled_TopLevelCollection_Merge",
+                    ["It_deletes_omitted_visible_rows_and_preserves_hidden_rows"]
+                ),
+                MsLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_deletes_visible_row_absent_from_request_while_preserving_hidden_rows"]
+                ),
+            ]
         ),
         Profile(
-            "ProfileVisibleRowDeleteWithHiddenRowPreservation/NestedDeleteAllVisible",
-            "A profiled PUT that omits all visible nested children preserves only the hidden child row.",
-            "ProfileNestedCollectionMergeTests",
-            "Given_a_ProfileNested_put_request_omitting_all_visible_children_with_hidden_remaining",
-            "Given_a_ProfileNested_put_request_omitting_all_visible_children_with_hidden_remaining",
-            ["It_deletes_both_visible_child_rows", "It_preserves_only_the_hidden_child_row"]
+            "ProfileVisibleRowDeleteWithHiddenRowPreservation/DeleteAllVisibleWhileHiddenRemain",
+            "A profiled PUT that omits all visible rows deletes them while the hidden rows remain (top-level and nested forms).",
+            [
+                PgLoc(
+                    "ProfileTopLevelCollectionMergeTests",
+                    "Given_A_Postgresql_Profiled_TopLevelCollection_Merge",
+                    ["It_deletes_all_visible_rows_while_hidden_rows_remain"]
+                ),
+                PgLoc(
+                    "ProfileNestedCollectionMergeTests",
+                    "Given_a_ProfileNested_put_request_omitting_all_visible_children_with_hidden_remaining",
+                    ["It_deletes_both_visible_child_rows", "It_preserves_only_the_hidden_child_row"]
+                ),
+            ],
+            [
+                MsLoc(
+                    "ProfileTopLevelCollectionMergeTests",
+                    "Given_A_Mssql_Profiled_TopLevelCollection_Merge",
+                    ["It_deletes_all_visible_rows_while_hidden_rows_remain"]
+                ),
+                MsLoc(
+                    "ProfileNestedCollectionMergeTests",
+                    "Given_a_ProfileNested_put_request_omitting_all_visible_children_with_hidden_remaining",
+                    ["It_deletes_both_visible_child_rows", "It_preserves_only_the_hidden_child_row"]
+                ),
+            ]
         ),
-        // --- ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable ------------------------
+        // ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable + variants
         Profile(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable",
             "A profiled write rejects a non-creatable new visible collection item before any DML.",
@@ -234,11 +322,30 @@ public static partial class ParityScenarioCatalog
         Profile(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NewVisible1To1Scope",
             "A profiled upsert of a new non-creatable separate-table (1:1) scope is rejected; an existing scope still updates.",
-            "ProfileSeparateTableMergeFixtureTests",
-            "Given_A_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScope_Rejects",
-            "Given_A_Mssql_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScope_Rejects",
-            ["It_returns_profile_data_policy_failure"],
-            notes: "Update-allowed companion: Given_A_ProfiledUpdate_WithExistingSeparateTableScope_And_Creatable_False_AllowsUpdate (Mssql twin)."
+            [
+                PgLoc(
+                    "ProfileSeparateTableMergeFixtureTests",
+                    "Given_A_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScope_Rejects",
+                    ["It_returns_profile_data_policy_failure"]
+                ),
+                PgLoc(
+                    "ProfileSeparateTableMergeFixtureTests",
+                    "Given_A_ProfiledUpdate_WithExistingSeparateTableScope_And_Creatable_False_AllowsUpdate",
+                    ["It_updates_the_separate_table_visible_scalar"]
+                ),
+            ],
+            [
+                MsLoc(
+                    "ProfileSeparateTableMergeFixtureTests",
+                    "Given_A_Mssql_ProfiledUpsert_With_Creatable_False_ForNewSeparateTableScope_Rejects",
+                    ["It_returns_profile_data_policy_failure"]
+                ),
+                MsLoc(
+                    "ProfileSeparateTableMergeFixtureTests",
+                    "Given_A_Mssql_ProfiledUpdate_WithExistingSeparateTableScope_And_Creatable_False_AllowsUpdate",
+                    ["It_updates_the_separate_table_visible_scalar"]
+                ),
+            ]
         ),
         Profile(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionScope",
@@ -247,6 +354,14 @@ public static partial class ParityScenarioCatalog
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_a_non_creatable_aligned_extension_scope_with_no_matching_stored_row",
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_a_non_creatable_aligned_extension_scope_with_no_matching_stored_row",
             ["It_returns_profile_data_policy_failure"]
+        ),
+        Profile(
+            "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/TwoLevelCreatableFalseChildrenRejected",
+            "A profiled PUT with creatable=false on nested children rejects new children (the provider companion to the synthesizer-level three-level chain).",
+            "ProfileNestedCollectionMergeTests",
+            "Given_a_ProfileNested_put_request_with_creatable_false_on_children_rejects_new_children",
+            "Given_a_ProfileNested_put_request_with_creatable_false_on_children_rejects_new_children",
+            ["It_returns_a_profile_data_policy_failure"]
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NestedCommonTypeScope",
@@ -266,7 +381,7 @@ public static partial class ParityScenarioCatalog
             "Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3",
             ["It_returns_a_rejection"]
         ),
-        // --- ProfileHiddenExtensionChildCollectionPreservation ------------------------------
+        // ProfileHiddenExtensionChildCollectionPreservation + variant
         Profile(
             "ProfileHiddenExtensionChildCollectionPreservation",
             "A profiled PUT with a hidden root-extension scope preserves both root-extension child rows.",
@@ -283,7 +398,7 @@ public static partial class ParityScenarioCatalog
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_hidden_in_storage",
             ["It_preserves_the_aligned_extension_row"]
         ),
-        // --- ProfileUnchangedWriteGuardedNoOp -----------------------------------------------
+        // ProfileUnchangedWriteGuardedNoOp + variants
         Profile(
             "ProfileUnchangedWriteGuardedNoOp",
             "An unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps.",
@@ -351,14 +466,17 @@ public static partial class ParityScenarioCatalog
         ),
     ];
 
+    private static ScenarioLocation PgLoc(string stem, string fixture, string[] methods) =>
+        new($"Postgresql{stem}.cs", fixture, [.. methods]);
+
+    private static ScenarioLocation MsLoc(string stem, string fixture, string[] methods) =>
+        new($"Mssql{stem}.cs", fixture, [.. methods]);
+
     private static ParityScenario Profile(
         string id,
         string contract,
-        string stem,
-        string pgFixture,
-        string mssqlFixture,
-        string[] methods,
-        string sharedEntryPoint = "",
+        ImmutableArray<ScenarioLocation> pgsql,
+        ImmutableArray<ScenarioLocation> mssql,
         string? notes = null
     ) =>
         new()
@@ -366,15 +484,25 @@ public static partial class ParityScenarioCatalog
             Id = id,
             Layer = ParityLayer.Profile,
             BehavioralContract = contract,
-            SharedEntryPoint = sharedEntryPoint,
             Boundary = ProductionBoundary.ProfilePersistExecutor,
-            Pgsql = new ScenarioLocation($"Postgresql{stem}.cs", pgFixture, [.. methods]),
-            Mssql = new ScenarioLocation($"Mssql{stem}.cs", mssqlFixture, [.. methods]),
+            PgsqlLocations = pgsql,
+            MssqlLocations = mssql,
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
             Classification = ParityClassification.Both,
             Notes = notes,
         };
+
+    private static ParityScenario Profile(
+        string id,
+        string contract,
+        string stem,
+        string pgFixture,
+        string mssqlFixture,
+        string[] methods,
+        string? notes = null
+    ) =>
+        Profile(id, contract, [PgLoc(stem, pgFixture, methods)], [MsLoc(stem, mssqlFixture, methods)], notes);
 
     private static ParityScenario ProfileNa(
         string id,
@@ -388,13 +516,14 @@ public static partial class ParityScenarioCatalog
             Layer = ParityLayer.Profile,
             BehavioralContract = contract,
             Boundary = ProductionBoundary.ProfileMergeSynthesizer,
-            Pgsql = null,
-            Mssql = null,
-            Unit = new ScenarioLocation(
-                "RelationalWriteProfileMergeSynthesizerTests.cs",
-                unitFixture,
-                [.. unitMethods]
-            ),
+            UnitLocations =
+            [
+                new ScenarioLocation(
+                    "RelationalWriteProfileMergeSynthesizerTests.cs",
+                    unitFixture,
+                    [.. unitMethods]
+                ),
+            ],
             PgsqlCoverage = EngineCoverage.NotApplicable,
             MssqlCoverage = EngineCoverage.NotApplicable,
             Classification = ParityClassification.Na,

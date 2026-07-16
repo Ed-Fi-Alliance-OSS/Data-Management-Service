@@ -10,47 +10,12 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Parity;
 
 /// <summary>
-/// Asserts the authoritative parity catalog is well-formed and complete: it satisfies every
-/// structural invariant, carries the exact canonical identifier sets and the DMS-1022 API
-/// behaviors, owns every DMS-1285 no-profile family as a SQL Server gap, catalogs all six
-/// authoritative PostgreSQL smoke suites, and records the unit-level creatability variants.
+/// Asserts the authoritative parity catalog is well-formed and complete. The expected id sets are
+/// maintained here independently of the catalog so a collapsed or omitted variant fails the build.
 /// </summary>
 [TestFixture]
 public class Given_The_Parity_Scenario_Catalog
 {
-    private static readonly string[] Dms1022ApiIds =
-    [
-        "Api/CrudRoundTrip/CreatesAndReadsAStudent",
-        "Api/CrudRoundTrip/UpdatesAStudentViaPut",
-        "Api/CrudRoundTrip/UpsertsAStudentViaPost",
-        "Api/CrudRoundTrip/DeletesAStudent",
-        "Api/CrudRoundTrip/PagesStudentsViaQuery",
-        "Api/CrudRoundTrip/RejectsCreateWithMissingReference",
-        "Api/CrudRoundTrip/RejectsDeleteWhenReferenced",
-        "Api/ProfileRootOnlyMerge/CreatesAndReadsViaVisibleProfile",
-        "Api/ProfileRootOnlyMerge/PreservesHiddenFieldOnProfiledPut",
-        "Api/ProfileRootOnlyMerge/RejectsWriteAgainstReadOnlyProfile",
-    ];
-
-    private static readonly string[] AuthoritativeSmokeFiles =
-    [
-        "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs",
-    ];
-
-    private static readonly string[] UnitLevelCreatabilityVariantIds =
-    [
-        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NestedCommonTypeScope",
-        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionCollectionItem",
-        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
-    ];
-
-    // Independent expected sets: a typo made consistently in the catalog's own arrays and rows
-    // would still fail these, unlike asserting the catalog arrays against themselves.
     private static readonly string[] ExpectedProfileCanonicalIds =
     [
         "ProfileVisibleRowUpdateWithHiddenRowPreservation",
@@ -76,6 +41,128 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfileRollbackSafety",
     ];
 
+    private static readonly string[] ExpectedApiIds =
+    [
+        "Api/CrudRoundTrip/CreatesAndReadsAStudent",
+        "Api/CrudRoundTrip/UpdatesAStudentViaPut",
+        "Api/CrudRoundTrip/UpsertsAStudentViaPost",
+        "Api/CrudRoundTrip/DeletesAStudent",
+        "Api/CrudRoundTrip/PagesStudentsViaQuery",
+        "Api/CrudRoundTrip/RejectsCreateWithMissingReference",
+        "Api/CrudRoundTrip/RejectsDeleteWhenReferenced",
+        "Api/ProfileRootOnlyMerge/CreatesAndReadsViaVisibleProfile",
+        "Api/ProfileRootOnlyMerge/PreservesHiddenFieldOnProfiledPut",
+        "Api/ProfileRootOnlyMerge/RejectsWriteAgainstReadOnlyProfile",
+    ];
+
+    private static readonly string[] ExpectedProfileIds =
+    [
+        "ProfileRootCreateRejectedWhenNonCreatable",
+        "ProfileHiddenInlinedColumnPreservation",
+        "ProfileHiddenInlinedColumnPreservation/RootScopePreservedText",
+        "ProfileHiddenInlinedColumnPreservation/HiddenMemberPathOnVisibleChild",
+        "ProfileHiddenInlinedColumnPreservation/KeyUnifiedCanonicalStorage",
+        "ProfileHiddenInlinedColumnPreservation/SyntheticPresenceFlag",
+        "ProfileHiddenInlinedColumnPreservation/HiddenReferenceBinding",
+        "ProfileVisibleButAbsentNonCollectionScope",
+        "ProfileVisibleButAbsentNonCollectionScope/SeparateTable",
+        "ProfileHiddenExtensionRowPreservation",
+        "ProfileHiddenExtensionRowPreservation/WholeSeparateTableScope",
+        "ProfileHiddenExtensionRowPreservation/HiddenDescriptorFkOnSeparateTable",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/TopLevel",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/NoPreviouslyVisibleRows",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/InterleavedUpdatePlusInsert",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/CollectionAlignedExtensionChildCollection",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/HiddenDescriptorBinding",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/SiblingOrdinalRenumbering",
+        "ProfileVisibleRowDeleteWithHiddenRowPreservation",
+        "ProfileVisibleRowDeleteWithHiddenRowPreservation/DeleteOmittedVisible",
+        "ProfileVisibleRowDeleteWithHiddenRowPreservation/DeleteAllVisibleWhileHiddenRemain",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/CollectionOrCommonTypeItem",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NewVisible1To1Scope",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionScope",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/TwoLevelCreatableFalseChildrenRejected",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NestedCommonTypeScope",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionCollectionItem",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
+        "ProfileHiddenExtensionChildCollectionPreservation",
+        "ProfileHiddenExtensionChildCollectionPreservation/CollectionAlignedExtensionHidden",
+        "ProfileUnchangedWriteGuardedNoOp",
+        "ProfileUnchangedWriteGuardedNoOp/RootOnlyPostAsUpdate",
+        "ProfileUnchangedWriteGuardedNoOp/StalePut",
+        "ProfileUnchangedWriteGuardedNoOp/StalePostAsUpdate",
+        "ProfileUnchangedWriteGuardedNoOp/SeparateTablePut",
+        "ProfileUnchangedWriteGuardedNoOp/TopLevelCollectionPut",
+        "ProfileUnchangedWriteGuardedNoOp/OrdinalAlignmentAcrossNoProfilePath",
+    ];
+
+    private static readonly string[] ExpectedNoProfileIds =
+    [
+        "NoProfileFullSurfaceCreate",
+        "NoProfileFullSurfaceCreate/InsertSuccess",
+        "NoProfileFullSurfaceCreate/RootAndNestedCollectionStableIds",
+        "NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild",
+        "NoProfileChangedPutOmissionSemantics",
+        "NoProfileChangedPutOmissionSemantics/ClearedInlinedColumn",
+        "NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope",
+        "NoProfileChangedPutOmissionSemantics/ContentVersionBump",
+        "NoProfileChangedPutOmissionSemantics/DeletedBaseCollectionRows",
+        "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
+        "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection",
+        "NoProfileWriteBehavior",
+        "FullSurfaceCollectionReorder",
+        "FullSurfaceCollectionReorder/OrdinalReuseStableIds",
+        "FullSurfaceCollectionReorder/TwoRowSwapUnderSiblingUniqueness",
+        "FullSurfaceCollectionReorder/ContentVersionBump",
+        "NoProfileGuardedNoOp",
+        "NoProfileGuardedNoOp/Put",
+        "NoProfileGuardedNoOp/PostAsUpdate",
+        "NoProfileGuardedNoOp/PutCurrentStateRefresh",
+        "NoProfileGuardedNoOp/PostAsUpdateCurrentStateRefresh",
+        "NoProfileGuardedNoOp/PutAfterReorder",
+        "NoProfileGuardedNoOp/PostAsUpdateAfterReorder",
+        "NoProfileGuardedNoOp/StalePut",
+        "NoProfileGuardedNoOp/StalePostAsUpdate",
+        "NoProfileGuardedNoOp/PutCommitWindowRace",
+        "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace",
+        "NoProfileMultiBatchCollection",
+        "NoProfileMultiBatchCollection/DeleteUpdate",
+        "NoProfileMultiBatchCollection/AlignedExtensionCreate",
+        "NoProfileMultiBatchCollection/AuthoritativeParameterPressure",
+        "NoProfilePostAsUpdate",
+        "NoProfilePostAsUpdate/ImmutableIdentityRejected",
+        "NoProfilePostAsUpdate/CreateRaceConvertedToUpdate",
+        "NoProfilePostAsUpdate/AuthoritativeDs52SchoolYearType",
+        "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",
+        "NoProfileRollbackSafety",
+        "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
+        "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically",
+        "NoProfile/AuthoritativeSmoke/Ds52Contact/Create",
+        "NoProfile/AuthoritativeSmoke/Ds52Contact/ChangedPut",
+        "NoProfile/AuthoritativeSmoke/Ds52Contact/RepeatPutNoOp",
+        "NoProfile/AuthoritativeSmoke/Ds52School/Create",
+        "NoProfile/AuthoritativeSmoke/Ds52School/ChangedPut",
+        "NoProfile/AuthoritativeSmoke/Ds52School/RepeatPutNoOp",
+        "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/Create",
+        "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/ChangedPut",
+        "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/RepeatPutNoOp",
+        "NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/Create",
+        "NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/ChangedPut",
+        "NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/RepeatPutNoOp",
+        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/Create",
+        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPut",
+        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/RepeatPutNoOp",
+        "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/Create",
+        "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/ChangedPut",
+        "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/RepeatPutNoOp",
+        "NoProfile/ReferenceIdentityRuntime",
+        "NoProfile/RelationalReadback",
+    ];
+
     private IReadOnlyList<ParityScenario> _all = null!;
     private IReadOnlyList<string> _violations = null!;
 
@@ -83,7 +170,7 @@ public class Given_The_Parity_Scenario_Catalog
     public void Setup()
     {
         _all = ParityScenarioCatalog.All;
-        _violations = ParityCatalogInvariants.Validate(_all);
+        _violations = ParityCatalogInvariants.Validate(_all, ParityScenarioCatalog.CanonicalNoProfileIds);
     }
 
     [Test]
@@ -101,58 +188,33 @@ public class Given_The_Parity_Scenario_Catalog
         ParityScenarioCatalog.CanonicalNoProfileIds.Should().BeEquivalentTo(ExpectedNoProfileCanonicalIds);
 
     [Test]
-    public void It_contains_every_canonical_profile_id_in_the_profile_layer()
-    {
-        foreach (string id in ParityScenarioCatalog.CanonicalProfileIds)
-        {
-            _all.Should()
-                .Contain(s => s.Id == id && s.Layer == ParityLayer.Profile, "canonical profile id {0}", id);
-        }
-    }
+    public void It_contains_exactly_the_expected_api_scenario_ids() =>
+        _all.Where(s => s.Layer == ParityLayer.Api).Select(s => s.Id).Should().BeEquivalentTo(ExpectedApiIds);
 
     [Test]
-    public void It_contains_every_canonical_no_profile_id_in_the_no_profile_layer()
-    {
-        foreach (string id in ParityScenarioCatalog.CanonicalNoProfileIds)
-        {
-            _all.Should()
-                .Contain(
-                    s => s.Id == id && s.Layer == ParityLayer.NoProfile,
-                    "canonical no-profile id {0}",
-                    id
-                );
-        }
-    }
+    public void It_contains_exactly_the_expected_profile_scenario_ids() =>
+        _all.Where(s => s.Layer == ParityLayer.Profile)
+            .Select(s => s.Id)
+            .Should()
+            .BeEquivalentTo(ExpectedProfileIds);
 
     [Test]
-    public void It_keeps_the_two_original_matrix_rows_in_the_no_profile_layer()
-    {
-        _all.Should().Contain(s => s.Id == "NoProfileWriteBehavior" && s.Layer == ParityLayer.NoProfile);
-        _all.Should()
-            .Contain(s => s.Id == "FullSurfaceCollectionReorder" && s.Layer == ParityLayer.NoProfile);
-    }
+    public void It_contains_exactly_the_expected_no_profile_scenario_ids() =>
+        _all.Where(s => s.Layer == ParityLayer.NoProfile)
+            .Select(s => s.Id)
+            .Should()
+            .BeEquivalentTo(ExpectedNoProfileIds);
 
     [Test]
-    public void It_maps_all_ten_dms_1022_api_behaviors_as_both_engine_covered()
-    {
-        foreach (string id in Dms1022ApiIds)
-        {
-            _all.Should()
-                .Contain(
-                    s =>
-                        s.Id == id
-                        && s.Layer == ParityLayer.Api
-                        && s.Classification == ParityClassification.Both,
-                    "DMS-1022 API behavior {0}",
-                    id
-                );
-        }
-    }
+    public void It_maps_all_ten_dms_1022_api_behaviors_as_both_engine_covered() =>
+        _all.Where(s => s.Layer == ParityLayer.Api)
+            .Should()
+            .OnlyContain(s => s.Classification == ParityClassification.Both);
 
     [Test]
     public void It_owns_every_canonical_no_profile_family_as_a_dms_1285_known_gap()
     {
-        foreach (string id in ParityScenarioCatalog.CanonicalNoProfileIds)
+        foreach (string id in ExpectedNoProfileCanonicalIds)
         {
             _all.Should()
                 .Contain(
@@ -168,34 +230,11 @@ public class Given_The_Parity_Scenario_Catalog
     }
 
     [Test]
-    public void It_catalogs_all_six_authoritative_postgresql_smoke_suites()
-    {
-        List<string> pgSmokeFiles = _all.Where(s => s.Pgsql is not null).Select(s => s.Pgsql!.File).ToList();
-        foreach (string file in AuthoritativeSmokeFiles)
-        {
-            pgSmokeFiles.Should().Contain(file, "authoritative smoke suite {0}", file);
-        }
-    }
-
-    [Test]
-    public void It_marks_the_key_unification_conflict_as_a_dms_1285_known_gap()
-    {
-        _all.Should()
-            .Contain(s =>
-                s.Id == "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically"
-                && s.Classification == ParityClassification.KnownGap
-                && s.MssqlGapOwner == "DMS-1285"
-                && s.Boundary == ProductionBoundary.KeyUnificationValidation
-            );
-    }
-
-    [Test]
     public void It_splits_the_standalone_extension_child_gap_across_dms_1023_and_dms_1285()
     {
         _all.Should()
             .Contain(s =>
                 s.Id == "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection"
-                && s.Classification == ParityClassification.KnownGap
                 && s.PgsqlCoverage == EngineCoverage.Gap
                 && s.PgsqlGapOwner == "DMS-1023"
                 && s.MssqlCoverage == EngineCoverage.Gap
@@ -218,14 +257,64 @@ public class Given_The_Parity_Scenario_Catalog
     }
 
     [Test]
+    public void It_records_reference_identity_and_readback_as_cross_engine_both_rows()
+    {
+        foreach (
+            string id in (string[])["NoProfile/ReferenceIdentityRuntime", "NoProfile/RelationalReadback"]
+        )
+        {
+            ParityScenario row = _all.Single(s => s.Id == id);
+            row.Classification.Should().Be(ParityClassification.Both);
+            row.PgsqlLocations.Should().NotBeEmpty();
+            row.MssqlLocations.Should().NotBeEmpty();
+        }
+    }
+
+    [Test]
+    public void It_defers_the_seoa_changed_put_smoke_to_the_omission_semantics_family()
+    {
+        _all.Single(s =>
+                s.Id
+                == "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/ChangedPut"
+            )
+            .CoveredByScenarioId.Should()
+            .Be("NoProfileChangedPutOmissionSemantics");
+    }
+
+    [Test]
+    public void It_records_the_multi_fixture_profile_variants_with_more_than_one_location()
+    {
+        foreach (
+            string id in (string[])
+                [
+                    "ProfileVisibleRowUpdateWithHiddenRowPreservation/InterleavedUpdatePlusInsert",
+                    "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
+                    "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NewVisible1To1Scope",
+                ]
+        )
+        {
+            ParityScenario row = _all.Single(s => s.Id == id);
+            row.PgsqlLocations.Length.Should().BeGreaterThan(1, "{0} names multiple PostgreSQL fixtures", id);
+            row.MssqlLocations.Length.Should().BeGreaterThan(1, "{0} names multiple SQL Server fixtures", id);
+        }
+    }
+
+    [Test]
     public void It_records_the_three_unit_level_creatability_variants_as_not_applicable()
     {
-        foreach (string id in UnitLevelCreatabilityVariantIds)
+        foreach (
+            string id in (string[])
+                [
+                    "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NestedCommonTypeScope",
+                    "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionCollectionItem",
+                    "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
+                ]
+        )
         {
             ParityScenario row = _all.Single(s => s.Id == id);
             row.Classification.Should().Be(ParityClassification.Na);
             row.Boundary.Should().Be(ProductionBoundary.ProfileMergeSynthesizer);
-            row.Unit.Should().NotBeNull();
+            row.UnitLocations.Should().NotBeEmpty();
             row.PgsqlCoverage.Should().Be(EngineCoverage.NotApplicable);
             row.MssqlCoverage.Should().Be(EngineCoverage.NotApplicable);
         }
@@ -242,7 +331,6 @@ public class Given_The_Parity_Scenario_Catalog
             .CanonicalIdOf("NoProfileGuardedNoOp/StalePut")
             .Should()
             .Be("NoProfileGuardedNoOp");
-        // API and supporting-smoke ids use slashes as namespace segments, so they are unchanged.
         ParityScenarioCatalog
             .CanonicalIdOf("Api/CrudRoundTrip/CreatesAndReadsAStudent")
             .Should()
@@ -251,19 +339,5 @@ public class Given_The_Parity_Scenario_Catalog
             .CanonicalIdOf("NoProfile/AuthoritativeSmoke/Ds52Contact/Create")
             .Should()
             .Be("NoProfile/AuthoritativeSmoke/Ds52Contact/Create");
-    }
-
-    [Test]
-    public void It_defers_every_supporting_smoke_to_a_same_layer_no_profile_scenario()
-    {
-        var byId = _all.ToDictionary(s => s.Id, StringComparer.Ordinal);
-        foreach (
-            ParityScenario smoke in _all.Where(s => s.Classification == ParityClassification.SupportingSmoke)
-        )
-        {
-            smoke.CoveredByScenarioId.Should().NotBeNullOrEmpty();
-            byId.Should().ContainKey(smoke.CoveredByScenarioId!);
-            byId[smoke.CoveredByScenarioId!].Layer.Should().Be(ParityLayer.NoProfile);
-        }
     }
 }
