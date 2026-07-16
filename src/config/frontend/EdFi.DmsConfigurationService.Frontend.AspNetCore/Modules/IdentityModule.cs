@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
@@ -52,7 +53,8 @@ public class IdentityModule : IEndpointModule
         RegisterRequest.Validator validator,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
-        HttpContext httpContext
+        HttpContext httpContext,
+        ILogger<IdentityModule> logger
     )
     {
         // Manually read form data to handle empty form bodies in .NET 10
@@ -80,7 +82,8 @@ public class IdentityModule : IEndpointModule
                 case ClientClientsResult.FailureUnknown:
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
                 case ClientClientsResult.FailureIdentityProvider failureIdentityProvider:
-                    return FailureResults.BadGateway(
+                    return UpstreamRegistrationError(
+                        logger,
                         failureIdentityProvider.IdentityProviderError.FailureMessage,
                         httpContext.TraceIdentifier
                     );
@@ -106,7 +109,8 @@ public class IdentityModule : IEndpointModule
                                 }
                             ),
                             ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
-                                FailureResults.BadGateway(
+                                UpstreamRegistrationError(
+                                    logger,
                                     failureIdentityProvider.IdentityProviderError.FailureMessage,
                                     httpContext.TraceIdentifier
                                 ),
@@ -138,6 +142,23 @@ public class IdentityModule : IEndpointModule
         }
 
         return FailureResults.Forbidden(["Registration is disabled."], httpContext.TraceIdentifier);
+    }
+
+    // Reports an identity-provider failure raised while registering a client. The raw provider message is
+    // built from the underlying HTTP client exception and can carry provider URLs and status detail, so it
+    // is recorded server-side only, sanitized for safe logging; the caller receives a fixed generic
+    // response. This keeps provider, database, and exception details from ever being surfaced.
+    private static IResult UpstreamRegistrationError(
+        ILogger logger,
+        string failureMessage,
+        string correlationId
+    )
+    {
+        logger.LogError(
+            "Identity provider error during client registration: {FailureMessage}",
+            LoggingUtility.SanitizeForLog(failureMessage)
+        );
+        return FailureResults.BadGateway("Identity provider error during client registration", correlationId);
     }
 
     private static async Task<IResult> GetClientAccessToken(
@@ -210,9 +231,18 @@ public class IdentityModule : IEndpointModule
             scope = scope,
         };
 
-        // Validate without throwing: a token-endpoint validation failure must be reported as the OAuth
-        // invalid_request error, not the Ed-Fi Problem Details contract the global exception handler
-        // produces for a thrown ValidationException.
+        // RFC 6749 §5.2: absent or incomplete client authentication (a missing client_id or
+        // client_secret) is a failed client authentication, reported as invalid_client (401 with the
+        // Basic challenge), not invalid_request. This applies to the form path as well as the Basic
+        // header, so it is checked before the ordinary-parameter validation below.
+        if (string.IsNullOrEmpty(model.client_id) || string.IsNullOrEmpty(model.client_secret))
+        {
+            return OAuthErrorResults.InvalidClient("Client authentication failed.");
+        }
+
+        // Validate the remaining request parameters without throwing: a token-endpoint validation failure
+        // is reported as the OAuth invalid_request error, not the Ed-Fi Problem Details contract the
+        // global exception handler produces for a thrown ValidationException.
         var validationResult = await validator.ValidateAsync(model);
         if (!validationResult.IsValid)
         {

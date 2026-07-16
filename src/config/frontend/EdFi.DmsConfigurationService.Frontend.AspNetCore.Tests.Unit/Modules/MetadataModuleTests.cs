@@ -540,10 +540,25 @@ public class Given_The_Metadata_Specifications_Document
         var required = Components["schemas"]!["ProblemDetails"]!["required"]!
             .AsArray()
             .Select(n => n!.GetValue<string>());
-        required.Should().Contain(["type", "detail", "status", "correlationId"]);
+
+        // The Ed-Fi contract always includes all seven members (validationErrors {} and errors [] when
+        // empty), so the published schema marks every one required.
+        required
+            .Should()
+            .BeEquivalentTo(
+                "type",
+                "title",
+                "detail",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
 
         var properties = Components["schemas"]!["ProblemDetails"]!["properties"]!.AsObject();
-        properties.Should().ContainKeys("validationErrors", "errors");
+        properties
+            .Should()
+            .ContainKeys("type", "title", "detail", "status", "correlationId", "validationErrors", "errors");
     }
 
     [Test]

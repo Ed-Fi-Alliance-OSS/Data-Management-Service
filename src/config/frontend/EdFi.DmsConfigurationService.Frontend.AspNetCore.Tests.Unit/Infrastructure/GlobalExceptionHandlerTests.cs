@@ -117,6 +117,10 @@ public class Given_a_bad_http_request_exception_with_a_generic_status
         _httpContext.Response.Headers["TraceId"].Should().NotBeNullOrEmpty();
         _responseBody.Should().Contain("urn:ed-fi:api:bad-request");
         _responseBody.Should().Contain("The request was invalid.");
+
+        var body = JsonNode.Parse(_responseBody)!;
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
     }
 
     [Test]
@@ -170,6 +174,10 @@ public class Given_a_bad_http_request_exception_with_an_unsupported_media_type_s
         _httpContext.Response.Headers["TraceId"].Should().NotBeNullOrEmpty();
         _responseBody.Should().Contain("urn:ed-fi:api:unsupported-media-type");
         _responseBody.Should().Contain("The request content type is not supported.");
+
+        var body = JsonNode.Parse(_responseBody)!;
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
     }
 
     [Test]
@@ -229,6 +237,8 @@ public class Given_a_bad_http_request_exception_with_a_payload_too_large_status
         body["status"]!.GetValue<int>().Should().Be(413);
         body["detail"]!.GetValue<string>().Should().Be("The request payload is too large.");
         body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
     }
 
     [Test]
@@ -243,5 +253,65 @@ public class Given_a_bad_http_request_exception_with_a_payload_too_large_status
     {
         _responseBody.Should().NotContain("30000000");
         _responseBody.Should().NotContain("Request body too large");
+    }
+}
+
+/// <summary>
+/// A BadHttpRequestException whose StatusCode is neither 400, 413, nor 415 (any other framework request
+/// status) is preserved rather than collapsed to 400: the generic bad-request contract is returned with
+/// that exact status in both the HTTP status and the body, since the Ed-Fi Error Response Knowledge Base
+/// defines no more specific type; the framework message is never echoed.
+/// </summary>
+[TestFixture]
+public class Given_a_bad_http_request_exception_with_an_other_framework_status
+{
+    private DefaultHttpContext _httpContext = null!;
+    private string _responseBody = null!;
+    private bool _handled;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _httpContext = new DefaultHttpContext();
+        _httpContext.Response.Body = new MemoryStream();
+        var exception = new BadHttpRequestException(
+            "Request header fields too large.",
+            StatusCodes.Status431RequestHeaderFieldsTooLarge
+        );
+
+        _handled = await new GlobalExceptionHandler().TryHandleAsync(
+            _httpContext,
+            exception,
+            CancellationToken.None
+        );
+
+        _httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
+        _responseBody = await new StreamReader(_httpContext.Response.Body).ReadToEndAsync();
+    }
+
+    [Test]
+    public void It_handles_the_exception() => _handled.Should().BeTrue();
+
+    [Test]
+    public void It_preserves_the_status_in_the_generic_bad_request_contract()
+    {
+        _httpContext.Response.StatusCode.Should().Be(431);
+        _httpContext.Response.ContentType.Should().Be("application/problem+json");
+        _httpContext.Response.Headers["TraceId"].Should().NotBeNullOrEmpty();
+
+        var body = JsonNode.Parse(_responseBody)!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["status"]!.GetValue<int>().Should().Be(431);
+        body["detail"]!.GetValue<string>().Should().Be("The request was invalid.");
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_does_not_leak_the_framework_message()
+    {
+        _responseBody.Should().NotContain("Request header fields too large");
     }
 }

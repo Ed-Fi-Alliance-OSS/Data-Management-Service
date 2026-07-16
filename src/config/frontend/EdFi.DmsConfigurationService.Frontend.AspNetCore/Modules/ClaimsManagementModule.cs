@@ -85,24 +85,21 @@ public class ClaimsManagementModule : IEndpointModule
                 return Results.Ok(new ReloadClaimsResponse(Success: true, ReloadId: claimsProvider.ReloadId));
             }
 
-            // The service catches JSON/argument/operational errors internally and reports them as
-            // failures (it does not throw), so the malformed-source path is classified here rather than
-            // in the catch blocks below.
-            return ClassifyClaimsFailures(
-                status.Failures,
-                "The claims source was invalid.",
-                httpContext,
-                logger,
-                "reload"
+            // Reload reads a server-managed claims source and accepts no client input, so any failure —
+            // including a malformed (JSON) source — is a server-side error (500), not a client 400. The
+            // service catches JSON/argument/operational errors internally and reports them as failures
+            // (it does not throw). The failure detail is logged server-side only and never surfaced.
+            logger.LogError(
+                "Claims reload failed with a server-side error: {Failures}",
+                DescribeFailures(status.Failures)
             );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         catch (JsonException ex)
         {
+            // A malformed server-managed claims source is a server-side error, not a client 400.
             logger.LogError(ex, "JSON error during claims reload");
-            return FailureResults.BadRequest(
-                "The claims source could not be parsed as valid JSON.",
-                httpContext.TraceIdentifier
-            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         catch (InvalidOperationException ex)
         {

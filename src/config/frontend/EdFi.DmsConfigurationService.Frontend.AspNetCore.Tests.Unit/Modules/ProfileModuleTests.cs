@@ -868,16 +868,16 @@ public class Given_A_Profile_Insert_With_A_Duplicate_Name : ProfileProblemDetail
     [Test]
     public async Task It_returns_the_data_validation_contract()
     {
-        var body = await _response.ShouldBeProblemDetailAsync(
+        await _response.ShouldBeProblemDetailAsync(
             HttpStatusCode.BadRequest,
             "urn:ed-fi:api:bad-request:data",
             "Data Validation Failed",
-            "Data validation failed. See 'validationErrors' for details."
+            "Data validation failed. See 'validationErrors' for details.",
+            validationErrors: new JsonObject
+            {
+                ["Name"] = new JsonArray("Profile 'TestProfile' already exists."),
+            }
         );
-        body["validationErrors"]!["Name"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("Profile 'TestProfile' already exists.");
     }
 }
 
@@ -961,16 +961,16 @@ public class Given_A_Profile_Update_With_A_Duplicate_Name : ProfileProblemDetail
     [Test]
     public async Task It_returns_the_data_validation_contract()
     {
-        var body = await _response.ShouldBeProblemDetailAsync(
+        await _response.ShouldBeProblemDetailAsync(
             HttpStatusCode.BadRequest,
             "urn:ed-fi:api:bad-request:data",
             "Data Validation Failed",
-            "Data validation failed. See 'validationErrors' for details."
+            "Data validation failed. See 'validationErrors' for details.",
+            validationErrors: new JsonObject
+            {
+                ["Name"] = new JsonArray("A profile with this name already exists."),
+            }
         );
-        body["validationErrors"]!["Name"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("A profile with this name already exists.");
     }
 }
 

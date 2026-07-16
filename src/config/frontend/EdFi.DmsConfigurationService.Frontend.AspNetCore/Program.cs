@@ -88,31 +88,10 @@ if (!ReportInvalidConfiguration(app))
     app.UseStatusCodePages(async statusCodeContext =>
     {
         HttpContext context = statusCodeContext.HttpContext;
-        IResult? problemDetails = context.Response.StatusCode switch
-        {
-            StatusCodes.Status400BadRequest => FailureResults.BadRequest(
-                "The request was invalid.",
-                context.TraceIdentifier
-            ),
-            StatusCodes.Status404NotFound => FailureResults.NotFound(
-                "The requested resource was not found.",
-                context.TraceIdentifier
-            ),
-            StatusCodes.Status405MethodNotAllowed => FailureResults.MethodNotAllowed(
-                "The request method is not allowed for this resource.",
-                context.TraceIdentifier
-            ),
-            StatusCodes.Status415UnsupportedMediaType => FailureResults.UnsupportedMediaType(
-                "The request content type is not supported.",
-                context.TraceIdentifier
-            ),
-            StatusCodes.Status413PayloadTooLarge => FailureResults.BadRequest(
-                "The request payload is too large.",
-                context.TraceIdentifier,
-                StatusCodes.Status413PayloadTooLarge
-            ),
-            _ => null,
-        };
+        IResult? problemDetails = FrameworkErrorResponse.ForEmptyStatusCode(
+            context.Response.StatusCode,
+            context.TraceIdentifier
+        );
 
         if (problemDetails is not null)
         {

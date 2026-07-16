@@ -200,7 +200,8 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Unauthorized");
+        content.Should().Contain("Identity provider error during client registration");
+        content.Should().NotContain("Unauthorized");
     }
 
     [Test]
@@ -238,7 +239,8 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Forbidden");
+        content.Should().Contain("Identity provider error during client registration");
+        content.Should().NotContain("Forbidden");
     }
 
     [Test]
@@ -288,7 +290,7 @@ public class RegisterEndpointTests
               "correlationId": "{correlationId}",
               "validationErrors": {},
               "errors": [
-               "Realm does not exist. For more on this error consult the server log at the debug level."
+                "Identity provider error during client registration"
             ]
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
@@ -440,7 +442,7 @@ public class RegisterEndpointTests
               "correlationId": "{correlationId}",
               "validationErrors": {},
               "errors": [
-                "No connection could be made because the target machine actively refused it."
+                "Identity provider error during client registration"
             ]
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
@@ -623,12 +625,11 @@ public class Given_A_Token_Request_Missing_The_Client_Id : TokenEndpointTestBase
     }
 
     [Test]
-    public void It_returns_the_oauth_invalid_request_error() =>
-        AssertOAuthError(
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "The request is missing a required parameter or is otherwise malformed."
-        );
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_www_authenticate_challenge() => AssertBasicAuthChallenge();
 }
 
 [TestFixture]
@@ -646,12 +647,11 @@ public class Given_A_Token_Request_Missing_The_Client_Secret : TokenEndpointTest
     }
 
     [Test]
-    public void It_returns_the_oauth_invalid_request_error() =>
-        AssertOAuthError(
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "The request is missing a required parameter or is otherwise malformed."
-        );
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_www_authenticate_challenge() => AssertBasicAuthChallenge();
 }
 
 [TestFixture]

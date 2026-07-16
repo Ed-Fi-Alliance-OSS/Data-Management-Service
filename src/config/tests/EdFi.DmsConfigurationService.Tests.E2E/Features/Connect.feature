@@ -258,11 +258,25 @@ Feature: Connect endpoints
                   }
                   """
 
-        Scenario: 08 Verify a missing required parameter returns the OAuth error
+        Scenario: 08 Verify missing client authentication returns invalid_client
              When a Form URL Encoded POST request is made to "/connect/token" with
                   | Key        | Value              |
                   | client_id  | _scenarioRunId     |
                   | grant_type | client_credentials |
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                    "error": "invalid_client",
+                    "error_description": "Client authentication failed."
+                  }
+                  """
+
+        Scenario: 09 Verify a missing required parameter returns the OAuth error
+             When a Form URL Encoded POST request is made to "/connect/token" with
+                  | Key           | Value          |
+                  | client_id     | _scenarioRunId |
+                  | client_secret | wrongsecret    |
              Then it should respond with 400
               And the response body is
                   """

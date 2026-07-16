@@ -2068,17 +2068,13 @@ public class ClaimSetModuleTests
         [Test]
         public async Task It_returns_the_non_unique_identity_contract()
         {
-            var body = await _response.ShouldBeProblemDetailAsync(
+            await _response.ShouldBeProblemDetailAsync(
                 HttpStatusCode.Conflict,
                 "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
-                "The identifying value(s) of the item are the same as another item that already exists."
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
             );
-            body["errors"]!
-                .AsArray()
-                .Select(e => e!.GetValue<string>())
-                .Should()
-                .Contain("A claim set with this name already exists.");
         }
     }
 
@@ -2113,7 +2109,8 @@ public class ClaimSetModuleTests
                 HttpStatusCode.Conflict,
                 "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
-                "The identifying value(s) of the item are the same as another item that already exists."
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
             );
     }
 
@@ -2145,7 +2142,8 @@ public class ClaimSetModuleTests
                 HttpStatusCode.Conflict,
                 "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
-                "The identifying value(s) of the item are the same as another item that already exists."
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
             );
     }
 
@@ -2178,7 +2176,8 @@ public class ClaimSetModuleTests
                 HttpStatusCode.Conflict,
                 "urn:ed-fi:api:conflict:non-unique-identity",
                 "Identifying Values Are Not Unique",
-                "The identifying value(s) of the item are the same as another item that already exists."
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
             );
     }
 

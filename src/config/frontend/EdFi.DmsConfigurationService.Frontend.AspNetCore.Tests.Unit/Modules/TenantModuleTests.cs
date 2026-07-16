@@ -435,7 +435,13 @@ public class TenantModuleTests
                     HttpStatusCode.BadRequest,
                     "urn:ed-fi:api:bad-request:data",
                     "Data Validation Failed",
-                    "Data validation failed. See 'validationErrors' for details."
+                    "Data validation failed. See 'validationErrors' for details.",
+                    validationErrors: new JsonObject
+                    {
+                        ["Name"] = new JsonArray(
+                            "A tenant name already exists in the database. Please enter a unique name."
+                        ),
+                    }
                 );
             }
 

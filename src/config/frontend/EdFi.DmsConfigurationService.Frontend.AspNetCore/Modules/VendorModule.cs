@@ -5,6 +5,7 @@
 
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
@@ -184,10 +185,14 @@ public class VendorModule : IEndpointModule
                     case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                         logger.LogError(
                             "Failure updating client: {FailureMessage}",
-                            failureIdentityProvider.IdentityProviderError.FailureMessage
+                            LoggingUtility.SanitizeForLog(
+                                failureIdentityProvider.IdentityProviderError.FailureMessage
+                            )
                         );
+                        // The provider message can carry provider URLs and status detail, so surface only a
+                        // fixed generic response and never the raw upstream message.
                         return FailureResults.BadGateway(
-                            failureIdentityProvider.IdentityProviderError.FailureMessage,
+                            "Identity provider error during client update",
                             httpContext.TraceIdentifier
                         );
                     case ClientUpdateResult.FailureNotFound notFound:

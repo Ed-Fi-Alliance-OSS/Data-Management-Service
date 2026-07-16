@@ -97,7 +97,18 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                             ["items"] = new JsonObject { ["type"] = "string" },
                         },
                     },
-                    ["required"] = new JsonArray { "type", "detail", "status", "correlationId" },
+                    // Every Ed-Fi error response carries all seven members (validationErrors {} and
+                    // errors [] when empty), so each is required in the published schema.
+                    ["required"] = new JsonArray
+                    {
+                        "type",
+                        "title",
+                        "detail",
+                        "status",
+                        "correlationId",
+                        "validationErrors",
+                        "errors",
+                    },
                 };
 
                 // OAuth 2.0 protocol errors (RFC 6749 section 5.2) are application/json

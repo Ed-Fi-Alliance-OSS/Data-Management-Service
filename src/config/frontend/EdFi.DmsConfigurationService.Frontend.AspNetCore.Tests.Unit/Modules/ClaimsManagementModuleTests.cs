@@ -678,14 +678,15 @@ public abstract class ClaimsManagementModuleTests
         }
 
         [Test]
-        public async Task It_returns_a_compliant_400_on_json_exception()
+        public async Task It_returns_a_compliant_500_on_json_exception()
         {
+            // Reload has no client input; a JSON error from the server-managed source is server-side.
             A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
                 .Throws(new JsonException("secret parse detail"));
 
             var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
 
-            await AssertBadRequestContract(response, "The claims source could not be parsed as valid JSON.");
+            await AssertInternalServerErrorContract(response);
         }
 
         [Test]
@@ -700,10 +701,11 @@ public abstract class ClaimsManagementModuleTests
         }
 
         [Test]
-        public async Task It_returns_a_compliant_bad_request_400_when_reload_reports_a_json_error_failure()
+        public async Task It_returns_a_compliant_500_when_reload_reports_a_json_error_failure()
         {
             // The real malformed-source flow: the service catches the JSON error internally and reports
-            // it as a JsonError failure rather than throwing.
+            // it as a JsonError failure rather than throwing. Because the reload source is server-managed
+            // (not client input), a malformed source is a server-side 500, not a client 400.
             A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
                 .Returns(
                     new ClaimsLoadStatus(
@@ -719,12 +721,14 @@ public abstract class ClaimsManagementModuleTests
 
             var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
 
-            await AssertBadRequestContract(response, "The claims source was invalid.");
+            await AssertInternalServerErrorContract(response);
         }
 
         [Test]
-        public async Task It_returns_a_compliant_data_validation_400_when_reload_reports_validation_failures()
+        public async Task It_returns_a_compliant_500_when_reload_reports_validation_failures()
         {
+            // A validation failure in the server-managed reload source is a server-side error returning
+            // HTTP 500. Reload accepts no client input, so it is never a client data-validation error.
             A.CallTo(() => ClaimsUploadService.ReloadClaimsAsync())
                 .Returns(
                     new ClaimsLoadStatus(
@@ -741,12 +745,7 @@ public abstract class ClaimsManagementModuleTests
 
             var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
 
-            var body = await AssertDataValidationContract(response);
-            var validationErrors = body["validationErrors"]!.AsObject();
-            validationErrors["$.claimSets[0].claimSetName"]!.AsArray()[0]!
-                .GetValue<string>()
-                .Should()
-                .Be("Claim set name is required.");
+            await AssertInternalServerErrorContract(response);
         }
     }
 
