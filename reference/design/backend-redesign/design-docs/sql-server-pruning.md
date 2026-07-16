@@ -328,9 +328,14 @@ Unit coverage must include:
 14. root, child/collection, and extension bindings.
 
 SQL Server integration coverage must prove generated DDL installs without error 1785, every document-reference FK is
-full composite, retained cascades perform renames, covered cuts remain valid, unsafe schemas fail before DDL, the old
-identity-propagation trigger is absent, existing stamping still observes cascaded child/extension updates, and the
-authoritative `sample`, `ds-5.2`, and `ds-5.2-tpdm` fixture surfaces derive and install successfully.
+full composite, retained cascades perform renames, covered cuts remain valid, unsafe schemas fail before DDL, existing
+stamping still observes cascaded child/extension updates, and the authoritative `sample`, `ds-5.2`, and `ds-5.2-tpdm`
+fixture surfaces derive and install successfully.
+
+Absence of the retired SQL Server identity-propagation trigger is guaranteed at the derivation and golden layers rather
+than by an installed-schema assertion: the trigger-inventory derivation emits no propagation intent, and the committed
+golden DDL is compared byte-for-byte in CI, so no `CREATE TRIGGER` for the retired mechanism can appear in a provisioned
+schema. SQL Server integration coverage instead proves the replacement behavior — native FK cascade.
 
 PostgreSQL regression coverage must prove no action or FK-shape change. SQL Server-only failure fixtures continue to
 derive for PostgreSQL unless an independent existing validation rejects them.
