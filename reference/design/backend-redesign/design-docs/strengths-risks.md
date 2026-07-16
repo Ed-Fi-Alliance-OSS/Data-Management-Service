@@ -123,7 +123,7 @@ Mitigations:
 ### Trigger correctness for stamping and identity maintenance (Correctness Risk)
 
 Correctness depends on generated triggers to:
-- stamp `dms.Document` on all representation changes (including propagation updates from PostgreSQL FK cascades or SQL Server propagation triggers), and
+- stamp `dms.Document` on all representation changes (including propagation updates from PostgreSQL or SQL Server FK cascades), and
 - maintain `dms.ReferentialIdentity` and abstract identity tables transactionally.
 
 Failure mode: missing or incorrect triggers can cause stale `_etag/_lastModifiedDate/ChangeVersion` or incorrect identity resolution.

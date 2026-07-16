@@ -297,8 +297,15 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             if (survivorIndex < 0)
             {
-                // Not updated by the retained cascade: no carrier obligation. The cut FK keeps
-                // enforcing this pairing as an ordinary NO ACTION reference.
+                // Not updated by the retained cascade, so no carrier obligation: the cut FK keeps
+                // enforcing this pairing as an ordinary full-composite NO ACTION reference. On the
+                // standard Ed-Fi surface every disjoint role reference resolves to an immutable
+                // abstract identity (EducationOrganization), so no rename ever reaches this pairing
+                // and the skip is fully safe. The one shape it does not guard — a genuinely mutable
+                // origin referenced under two disjoint, non-unified roles — is outside the supported
+                // SQL Server pruning set and does not occur in standard Ed-Fi; there a rename is
+                // rejected at runtime by the surviving NO ACTION reference (a clean SQL Server error,
+                // never a corrupt tuple). See design-docs/sql-server-pruning.md, "Safe cut".
                 continue;
             }
 

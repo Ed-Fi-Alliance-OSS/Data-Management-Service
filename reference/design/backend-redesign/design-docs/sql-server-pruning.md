@@ -261,11 +261,12 @@ unsafe. DMS need not model arbitrary value combinations to make this determinati
 
 A cut column that the retained cascade does not update carries no carrier obligation: the cut keeps enforcing that
 column as an ordinary full-composite `NO ACTION` reference. When the origin is immutable — the standard-Ed-Fi case,
-where disjoint role references resolve to an immutable abstract identity — no rename ever occurs, so the cut is fully
-safe. A genuinely mutable resource referenced through two disjoint, non-unified roles by one receiver is out of scope:
-unlike the shapes above it still derives and installs, but because the cut role becomes a plain `NO ACTION` reference a
-runtime identity update on that origin is not guaranteed. That shape is not present in standard Ed-Fi and is left for a
-separate feature backed by a real fixture.
+where disjoint role references resolve to an immutable abstract identity such as `EducationOrganization` — no rename
+ever occurs, so the cut is fully safe. A genuinely mutable resource referenced through two disjoint, non-unified roles
+by one receiver is the single shape this skip does not guard, and it is outside the supported SQL Server pruning set.
+Such a model still derives and installs, and it fails closed at runtime: a rename of that origin is rejected by the
+surviving `NO ACTION` reference (a clean SQL Server error, never a corrupt tuple). This shape does not occur in standard
+Ed-Fi; supporting it would require a real fixture exhibiting it, and none exists.
 
 ## Outputs and Diagnostics
 

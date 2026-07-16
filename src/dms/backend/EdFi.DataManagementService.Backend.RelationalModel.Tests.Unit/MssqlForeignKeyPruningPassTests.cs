@@ -1593,9 +1593,12 @@ public class Given_Mssql_Pruning_Of_Parallel_Physical_Fks
 
     /// <summary>
     /// It should retain the first parallel edge in stable order and cut the second. The disjoint cut
-    /// carries no carrier obligation; because this origin is genuinely mutable, the cut role becomes a
-    /// plain NO ACTION reference — a deliberately out-of-scope shape (it derives, but a runtime
-    /// identity update on Origin is not guaranteed), not present in standard Ed-Fi.
+    /// carries no carrier obligation, so the cut role becomes an ordinary full-composite NO ACTION
+    /// reference. This synthetic shape — a genuinely mutable origin referenced under two disjoint,
+    /// non-unified roles — is outside the supported SQL Server pruning set and does not occur in
+    /// standard Ed-Fi. It derives cleanly and fails closed at runtime: a rename of Origin would be
+    /// rejected by the surviving NO ACTION reference (a clean SQL Server error, never a corrupt
+    /// tuple), which is why the shape is out of scope rather than something this pass guards.
     /// </summary>
     [Test]
     public void It_should_retain_the_first_parallel_edge_and_cut_the_second()
