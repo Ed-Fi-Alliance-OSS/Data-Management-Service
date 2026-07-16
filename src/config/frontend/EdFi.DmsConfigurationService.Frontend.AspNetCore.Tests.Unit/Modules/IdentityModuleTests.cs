@@ -455,11 +455,6 @@ public class RegisterEndpointTests
     }
 }
 
-/// <summary>
-/// Shared harness for /connect/token tests. Every failure returns the OAuth 2.0 protocol contract
-/// (application/json { error, error_description }, RFC 6749 section 5.2) rather than the Ed-Fi Problem
-/// Details contract, and never leaks provider, database, or exception detail.
-/// </summary>
 [TestFixture]
 public class Given_A_Registration_Request_Whose_Form_Cannot_Be_Read
 {
@@ -621,6 +616,11 @@ public class Given_Registration_Is_Disabled_And_The_Form_Cannot_Be_Read
     }
 }
 
+/// <summary>
+/// Shared harness for /connect/token tests. Every failure returns the OAuth 2.0 protocol contract
+/// (application/json { error, error_description }, RFC 6749 section 5.2) rather than the Ed-Fi Problem
+/// Details contract, and never leaks provider, database, or exception detail.
+/// </summary>
 public abstract class TokenEndpointTestBase
 {
     protected ITokenManager TokenManager = null!;
