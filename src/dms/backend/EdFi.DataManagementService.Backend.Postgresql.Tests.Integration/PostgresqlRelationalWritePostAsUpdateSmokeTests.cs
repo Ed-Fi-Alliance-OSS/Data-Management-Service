@@ -730,12 +730,22 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     [Test]
     public void It_persists_authoritative_student_academic_record_root_extension_and_large_collection_rows_on_create()
     {
-        NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionCreateIdentity(
+        NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionCreatePersisted(
             _createResult,
             StudentAcademicRecordDocumentUuid,
             _mappingSet,
             StudentAcademicRecordResource,
-            ToNeutralDocument(_stateAfterCreate.Document)
+            ToNeutralDocument(_stateAfterCreate.Document),
+            _stateAfterCreate.AcademicRecord.DocumentId,
+            _stateAfterCreate.AcademicRecordExtension.DocumentId,
+            [.. _stateAfterCreate.AcademicHonors.Select(honor => honor.CollectionItemId)],
+            [.. _stateAfterCreate.Diplomas.Select(diploma => diploma.CollectionItemId)],
+            [
+                .. _stateAfterCreate.GradePointAverages.Select(gradePointAverage =>
+                    gradePointAverage.CollectionItemId
+                ),
+            ],
+            [.. _stateAfterCreate.Recognitions.Select(recognition => recognition.CollectionItemId)]
         );
         _stateAfterCreate
             .AcademicRecord.Should()

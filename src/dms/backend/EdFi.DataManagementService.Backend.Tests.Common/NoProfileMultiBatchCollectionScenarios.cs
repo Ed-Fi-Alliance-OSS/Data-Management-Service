@@ -132,6 +132,42 @@ public static class NoProfileMultiBatchCollectionScenarios
     ) => deleteParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, parametersPerRow);
 
     /// <summary>
+    /// Asserts a multi-batch delete/update reduced a large base collection to a single retained row: the
+    /// create seeded maxRowsPerBatch + 2 rows, the pre-update readback matches that count, the update
+    /// returned UpdateSuccess for the existing document, and exactly the retained row remains with its
+    /// original CollectionItemId, document id, ordinal 0, and value. Reuses the approved omission helper
+    /// for the reduced-row semantic.
+    /// </summary>
+    public static void AssertMultiBatchDeleteUpdateReducedToRetainedRow(
+        UpdateResult result,
+        DocumentUuid documentUuid,
+        long documentId,
+        int maxRowsPerBatch,
+        int createdAddressCount,
+        IReadOnlyList<NoProfileUpdateSemanticsScenarios.SchoolAddressRow> addressesBefore,
+        IReadOnlyList<NoProfileUpdateSemanticsScenarios.SchoolAddressRow> addressesAfter,
+        string retainedCity
+    )
+    {
+        createdAddressCount
+            .Should()
+            .Be(maxRowsPerBatch + 2, "the create seeds maxRowsPerBatch + 2 rows before the delete/update");
+        addressesBefore
+            .Should()
+            .HaveCount(createdAddressCount, "the pre-update readback matches the created row count");
+
+        NoProfileUpdateSemanticsScenarios.AssertMultiBatchBaseCollectionReducedToRetainedRow(
+            result,
+            documentUuid,
+            documentId,
+            maxRowsPerBatch,
+            addressesBefore,
+            addressesAfter,
+            retainedCity
+        );
+    }
+
+    /// <summary>
     /// Asserts a multi-batch create of a large collection-aligned extension scope returned InsertSuccess
     /// and persisted every extension row keyed to its base address CollectionItemId in base order.
     /// </summary>
@@ -190,21 +226,68 @@ public static class NoProfileMultiBatchCollectionScenarios
     }
 
     /// <summary>
-    /// Asserts the authoritative large-collection create returned InsertSuccess and stamped the expected
-    /// document identity and resource key. Detailed root/extension/collection value assertions stay in
-    /// the provider suite.
+    /// Asserts the authoritative StudentAcademicRecord large-collection create returned InsertSuccess with
+    /// the expected document identity and resource key, that the root and extension rows are keyed to the
+    /// created DocumentId, and that the four child collections persisted their authoritative expected row
+    /// counts (12 academic honors, 12 diplomas, 2 grade point averages, 2 recognitions; 28 total) with
+    /// unique CollectionItemIds. Detailed root/extension/collection value assertions stay in the provider
+    /// suite, which passes actual persisted state (not request-spec counts).
     /// </summary>
-    public static void AssertAuthoritativeLargeCollectionCreateIdentity(
+    public static void AssertAuthoritativeLargeCollectionCreatePersisted(
         UpsertResult result,
         DocumentUuid documentUuid,
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        DocumentRow document
+        DocumentRow document,
+        long academicRecordRootDocumentId,
+        long academicRecordExtensionDocumentId,
+        IReadOnlyList<long> academicHonorCollectionItemIds,
+        IReadOnlyList<long> diplomaCollectionItemIds,
+        IReadOnlyList<long> gradePointAverageCollectionItemIds,
+        IReadOnlyList<long> recognitionCollectionItemIds
     )
     {
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
         document.DocumentUuid.Should().Be(documentUuid.Value);
         document.ResourceKeyId.Should().Be(mappingSet.ResourceKeyIdByResource[resource]);
+
+        academicRecordRootDocumentId
+            .Should()
+            .Be(document.DocumentId, "the StudentAcademicRecord root row is keyed to the created document");
+        academicRecordExtensionDocumentId
+            .Should()
+            .Be(
+                document.DocumentId,
+                "the StudentAcademicRecord extension row is keyed to the created document"
+            );
+
+        AssertCollectionIdSet(academicHonorCollectionItemIds, 12, "AcademicHonors");
+        AssertCollectionIdSet(diplomaCollectionItemIds, 12, "Diplomas");
+        AssertCollectionIdSet(gradePointAverageCollectionItemIds, 2, "GradePointAverages");
+        AssertCollectionIdSet(recognitionCollectionItemIds, 2, "Recognitions");
+
+        (
+            academicHonorCollectionItemIds.Count
+            + diplomaCollectionItemIds.Count
+            + gradePointAverageCollectionItemIds.Count
+            + recognitionCollectionItemIds.Count
+        )
+            .Should()
+            .Be(28, "the authoritative create persists 28 collection rows in total");
+    }
+
+    private static void AssertCollectionIdSet(
+        IReadOnlyList<long> collectionItemIds,
+        int expectedCount,
+        string collectionName
+    )
+    {
+        collectionItemIds
+            .Should()
+            .HaveCount(expectedCount, "{0} persists its authoritative expected row count", collectionName);
+        collectionItemIds
+            .Should()
+            .OnlyHaveUniqueItems("{0} persists unique CollectionItemIds", collectionName);
     }
 
     /// <summary>
@@ -238,6 +321,28 @@ public static class NoProfileMultiBatchCollectionScenarios
         IReadOnlyDictionary<string, long> changedIdsByKey
     )
     {
+        // Guard against a vacuous pass: the ids must be unique, and the change must actually exercise a
+        // retained, an omitted, and an inserted key so the per-key provenance checks below are meaningful.
+        createIdsByKey
+            .Values.Should()
+            .OnlyHaveUniqueItems("{0} create CollectionItemIds are unique", collectionName);
+        changedIdsByKey
+            .Values.Should()
+            .OnlyHaveUniqueItems("{0} changed CollectionItemIds are unique", collectionName);
+
+        createIdsByKey
+            .Keys.Intersect(changedIdsByKey.Keys, StringComparer.Ordinal)
+            .Should()
+            .NotBeEmpty("{0} must exercise at least one retained key", collectionName);
+        createIdsByKey
+            .Keys.Except(changedIdsByKey.Keys, StringComparer.Ordinal)
+            .Should()
+            .NotBeEmpty("{0} must exercise at least one omitted key", collectionName);
+        changedIdsByKey
+            .Keys.Except(createIdsByKey.Keys, StringComparer.Ordinal)
+            .Should()
+            .NotBeEmpty("{0} must exercise at least one inserted key", collectionName);
+
         foreach ((string key, long createId) in createIdsByKey)
         {
             if (changedIdsByKey.TryGetValue(key, out long changedId))
