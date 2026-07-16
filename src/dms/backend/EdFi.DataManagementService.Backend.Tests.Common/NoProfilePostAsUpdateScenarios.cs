@@ -52,17 +52,74 @@ public static class NoProfilePostAsUpdateScenarios
         string SchoolYearDescription
     );
 
-    public sealed record CollectionRowSnapshot(long CollectionItemId, int Ordinal, string Key);
+    // Field-for-field neutral projection of the full authoritative persisted state, so the repeat
+    // no-op assertion compares the entire rowset (every value/FK) and ContentVersion, not a subset.
+    public sealed record AuthoritativeDocumentSnapshot(
+        long DocumentId,
+        Guid DocumentUuid,
+        short ResourceKeyId,
+        long ContentVersion
+    );
+
+    public sealed record AuthoritativeAcademicRecordSnapshot(
+        long DocumentId,
+        long EducationOrganizationDocumentId,
+        long EducationOrganizationId,
+        long SchoolYearDocumentId,
+        int SchoolYear,
+        long StudentDocumentId,
+        string StudentUniqueId,
+        long TermDescriptorId,
+        decimal CumulativeEarnedCredits,
+        string ProjectedGraduationDate
+    );
+
+    public sealed record AuthoritativeAcademicRecordExtensionSnapshot(long DocumentId, string Notes);
+
+    public sealed record AuthoritativeAcademicHonorSnapshot(
+        long CollectionItemId,
+        int Ordinal,
+        long StudentAcademicRecordDocumentId,
+        long AcademicHonorCategoryDescriptorId,
+        string HonorDescription,
+        string IssuerName
+    );
+
+    public sealed record AuthoritativeDiplomaSnapshot(
+        long CollectionItemId,
+        int Ordinal,
+        long StudentAcademicRecordDocumentId,
+        long DiplomaTypeDescriptorId,
+        string DiplomaAwardDate,
+        string DiplomaDescription
+    );
+
+    public sealed record AuthoritativeGradePointAverageSnapshot(
+        long CollectionItemId,
+        int Ordinal,
+        long StudentAcademicRecordDocumentId,
+        long GradePointAverageTypeDescriptorId,
+        decimal GradePointAverageValue,
+        bool IsCumulative
+    );
+
+    public sealed record AuthoritativeRecognitionSnapshot(
+        long CollectionItemId,
+        int Ordinal,
+        long StudentAcademicRecordDocumentId,
+        long RecognitionTypeDescriptorId,
+        string RecognitionDescription,
+        string IssuerName
+    );
 
     public sealed record AuthoritativePostAsUpdateSnapshot(
-        long DocumentId,
-        long ContentVersion,
-        long AcademicRecordDocumentId,
-        long AcademicRecordExtensionDocumentId,
-        IReadOnlyList<CollectionRowSnapshot> AcademicHonors,
-        IReadOnlyList<CollectionRowSnapshot> Diplomas,
-        IReadOnlyList<CollectionRowSnapshot> GradePointAverages,
-        IReadOnlyList<CollectionRowSnapshot> Recognitions
+        AuthoritativeDocumentSnapshot Document,
+        AuthoritativeAcademicRecordSnapshot AcademicRecord,
+        AuthoritativeAcademicRecordExtensionSnapshot AcademicRecordExtension,
+        IReadOnlyList<AuthoritativeAcademicHonorSnapshot> AcademicHonors,
+        IReadOnlyList<AuthoritativeDiplomaSnapshot> Diplomas,
+        IReadOnlyList<AuthoritativeGradePointAverageSnapshot> GradePointAverages,
+        IReadOnlyList<AuthoritativeRecognitionSnapshot> Recognitions
     );
 
     /// <summary>

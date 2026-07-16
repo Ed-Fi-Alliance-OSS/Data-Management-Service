@@ -155,41 +155,75 @@ file static class PostAsUpdateIntegrationTestSupport
         AuthoritativeStudentAcademicRecordPersistedState state
     ) =>
         new(
-            state.Document.DocumentId,
-            state.Document.ContentVersion,
-            state.AcademicRecord.DocumentId,
-            state.AcademicRecordExtension.DocumentId,
+            new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
+                state.Document.DocumentId,
+                state.Document.DocumentUuid,
+                state.Document.ResourceKeyId,
+                state.Document.ContentVersion
+            ),
+            new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
+                state.AcademicRecord.DocumentId,
+                state.AcademicRecord.EducationOrganizationDocumentId,
+                state.AcademicRecord.EducationOrganizationId,
+                state.AcademicRecord.SchoolYearDocumentId,
+                state.AcademicRecord.SchoolYear,
+                state.AcademicRecord.StudentDocumentId,
+                state.AcademicRecord.StudentUniqueId,
+                state.AcademicRecord.TermDescriptorId,
+                state.AcademicRecord.CumulativeEarnedCredits,
+                state.AcademicRecord.ProjectedGraduationDate
+            ),
+            new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordExtensionSnapshot(
+                state.AcademicRecordExtension.DocumentId,
+                state.AcademicRecordExtension.Notes
+            ),
             [
                 .. state.AcademicHonors.Select(
-                    row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicHonorSnapshot(
                         row.CollectionItemId,
                         row.Ordinal,
-                        row.HonorDescription
+                        row.StudentAcademicRecordDocumentId,
+                        row.AcademicHonorCategoryDescriptorId,
+                        row.HonorDescription,
+                        row.IssuerName
                     )
                 ),
             ],
             [
-                .. state.Diplomas.Select(row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
-                    row.CollectionItemId,
-                    row.Ordinal,
-                    row.DiplomaAwardDate
-                )),
+                .. state.Diplomas.Select(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeDiplomaSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.StudentAcademicRecordDocumentId,
+                        row.DiplomaTypeDescriptorId,
+                        row.DiplomaAwardDate,
+                        row.DiplomaDescription
+                    )
+                ),
             ],
             [
                 .. state.GradePointAverages.Select(
-                    row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeGradePointAverageSnapshot(
                         row.CollectionItemId,
                         row.Ordinal,
-                        row.GradePointAverageValue.ToString(CultureInfo.InvariantCulture)
+                        row.StudentAcademicRecordDocumentId,
+                        row.GradePointAverageTypeDescriptorId,
+                        row.GradePointAverageValue,
+                        row.IsCumulative
                     )
                 ),
             ],
             [
-                .. state.Recognitions.Select(row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
-                    row.CollectionItemId,
-                    row.Ordinal,
-                    row.RecognitionDescription
-                )),
+                .. state.Recognitions.Select(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeRecognitionSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.StudentAcademicRecordDocumentId,
+                        row.RecognitionTypeDescriptorId,
+                        row.RecognitionDescription,
+                        row.IssuerName
+                    )
+                ),
             ]
         );
 
