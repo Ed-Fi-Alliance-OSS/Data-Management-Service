@@ -56,6 +56,7 @@ internal class Given_A_Framework_Generated_Empty_Status_Code
         (int bodyStatus, JsonNode body) = await ExecuteAsync(result!);
 
         bodyStatus.Should().Be(statusCode);
+        AssertOnlyContractMembers(body);
         body["type"]!.GetValue<string>().Should().Be(type);
         body["title"]!.GetValue<string>().Should().Be(title);
         body["status"]!.GetValue<int>().Should().Be(statusCode);
@@ -79,6 +80,7 @@ internal class Given_A_Framework_Generated_Empty_Status_Code
         (int bodyStatus, JsonNode body) = await ExecuteAsync(result!);
 
         bodyStatus.Should().Be(statusCode);
+        AssertOnlyContractMembers(body);
         body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
         body["title"]!.GetValue<string>().Should().Be("Bad Request");
         body["status"]!.GetValue<int>().Should().Be(statusCode);
@@ -97,6 +99,23 @@ internal class Given_A_Framework_Generated_Empty_Status_Code
     [TestCase(503)]
     public void It_returns_null_for_auth_and_server_statuses(int statusCode) =>
         FrameworkErrorResponse.ForEmptyStatusCode(statusCode, "trace-123").Should().BeNull();
+
+    // Asserts the body carries exactly the Ed-Fi Problem Details contract members and no framework or ad hoc
+    // extras, mirroring the HTTP-level ProblemDetailsResponseAssertions.ShouldBeProblemDetailAsync check
+    // (which cannot be reused here because these tests execute the IResult against a bare HTTP context).
+    private static void AssertOnlyContractMembers(JsonNode body) =>
+        body.AsObject()
+            .Select(member => member.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
 
     // Executes the result against a bare HTTP context and returns the written status and parsed body,
     // mirroring what the client would receive from the status-code-pages handler.

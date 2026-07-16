@@ -203,10 +203,21 @@ public class IdentityModule : IEndpointModule
         catch (Exception exception) when (exception is InvalidDataException or BadHttpRequestException)
         {
             logger.LogWarning(exception, "Failed to read the form body on the OAuth endpoint.");
+            // A BadHttpRequestException carries the framework request status (for example 413 when the body
+            // exceeds the size limit); preserve it rather than collapsing every form-read failure to 400, so
+            // an oversized body is not reported as a plain 400. This mirrors the framework-error handling on
+            // the Ed-Fi paths, which preserve the status. An InvalidDataException (a form key/value/count
+            // limit breach) has no status and is a malformed form, so it stays 400. The OAuth error shape
+            // and generic description are kept in every case; the framework message and raw request values
+            // are never surfaced.
+            int statusCode = exception is BadHttpRequestException badRequest
+                ? badRequest.StatusCode
+                : StatusCodes.Status400BadRequest;
             return (
                 null,
                 OAuthErrorResults.InvalidRequest(
-                    "The request is missing a required parameter or is otherwise malformed."
+                    "The request is missing a required parameter or is otherwise malformed.",
+                    statusCode
                 )
             );
         }

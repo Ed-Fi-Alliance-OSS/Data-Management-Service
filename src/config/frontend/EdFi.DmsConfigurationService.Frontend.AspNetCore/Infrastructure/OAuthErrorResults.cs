@@ -17,9 +17,16 @@ internal static class OAuthErrorResults
     // Advertised in the WWW-Authenticate challenge when client authentication fails.
     private const string BasicChallenge = "Basic realm=\"Ed-Fi DMS Configuration Service\"";
 
-    /// <summary>A required parameter is missing or the request is otherwise malformed (HTTP 400).</summary>
-    public static IResult InvalidRequest(string description) =>
-        new OAuthErrorResult("invalid_request", description, StatusCodes.Status400BadRequest);
+    /// <summary>
+    /// A required parameter is missing or the request is otherwise malformed (HTTP 400 by default). A
+    /// framework form-read rejection carries its own request status — for example 413 Payload Too Large —
+    /// which is passed through <paramref name="statusCode"/> so it is preserved rather than collapsed to
+    /// 400, matching how the Ed-Fi framework-error paths preserve the status.
+    /// </summary>
+    public static IResult InvalidRequest(
+        string description,
+        int statusCode = StatusCodes.Status400BadRequest
+    ) => new OAuthErrorResult("invalid_request", description, statusCode);
 
     /// <summary>The requested grant type is not supported (HTTP 400).</summary>
     public static IResult UnsupportedGrantType(string description) =>

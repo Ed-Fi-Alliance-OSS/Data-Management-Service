@@ -54,39 +54,17 @@ public class StatusCodePagesPipelineTests
         private static async Task<JsonNode> ParseBody(HttpResponseMessage response) =>
             JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
 
-        private static void AssertContract(
-            JsonNode body,
-            string type,
-            string title,
-            int status,
-            string detail
-        )
-        {
-            body["detail"]!.GetValue<string>().Should().Be(detail);
-            body["type"]!.GetValue<string>().Should().Be(type);
-            body["title"]!.GetValue<string>().Should().Be(title);
-            body["status"]!.GetValue<int>().Should().Be(status);
-            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            body["errors"]!.AsArray().Count.Should().Be(0);
-        }
-
         [Test]
         public async Task It_returns_405_with_allow_header_and_complete_body()
         {
             // /connect/token is registered POST-only, so a GET is a method mismatch.
             var response = await _client.GetAsync("/connect/token");
 
-            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
-            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
             response.Content.Headers.Allow.Should().Contain("POST");
-
-            var body = await ParseBody(response);
-            AssertContract(
-                body,
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.MethodNotAllowed,
                 "urn:ed-fi:api:method-not-allowed",
                 "Method Not Allowed",
-                405,
                 "The request method is not allowed for this resource."
             );
         }
@@ -99,15 +77,10 @@ public class StatusCodePagesPipelineTests
             var content = new StringContent("not json", Encoding.UTF8, "text/plain");
             var response = await _client.PostAsync("/v3/vendors", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
-            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-
-            var body = await ParseBody(response);
-            AssertContract(
-                body,
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.UnsupportedMediaType,
                 "urn:ed-fi:api:unsupported-media-type",
                 "Unsupported Media Type",
-                415,
                 "The request content type is not supported."
             );
         }
@@ -239,17 +212,6 @@ public class StatusCodePagesPipelineTests
         private static async Task<JsonNode> ParseBody(HttpResponseMessage response) =>
             JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
 
-        private static void AssertBadRequestContract(JsonNode body)
-        {
-            body["detail"]!.GetValue<string>().Should().Be("The request was invalid.");
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
-            body["title"]!.GetValue<string>().Should().Be("Bad Request");
-            body["status"]!.GetValue<int>().Should().Be(400);
-            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            body["errors"]!.AsArray().Count.Should().Be(0);
-        }
-
         [Test]
         public async Task It_returns_the_complete_bad_request_contract_for_an_invalid_route_parameter()
         {
@@ -257,11 +219,12 @@ public class StatusCodePagesPipelineTests
             // the handler never runs and the framework produces an empty 400.
             var response = await _client.GetAsync("/v3/vendors/not-a-long");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-
-            var body = await ParseBody(response);
-            AssertBadRequestContract(body);
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request was invalid."
+            );
 
             // The invalid route value must not be reflected into the public response.
             body.ToJsonString().Should().NotContain("not-a-long");
@@ -275,11 +238,12 @@ public class StatusCodePagesPipelineTests
             var content = new StringContent("", Encoding.UTF8, "application/json");
             var response = await _client.PostAsync("/v3/vendors", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-
-            var body = await ParseBody(response);
-            AssertBadRequestContract(body);
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request was invalid."
+            );
         }
 
         [Test]
