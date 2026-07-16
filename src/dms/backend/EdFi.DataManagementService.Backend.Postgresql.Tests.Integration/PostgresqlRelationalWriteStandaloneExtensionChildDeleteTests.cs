@@ -24,34 +24,37 @@ using static EdFi.DataManagementService.Backend.Tests.Common.NoProfileUpdateSema
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
-/// PostgreSQL adapter for the shared <c>NoProfileChangedPutOmissionSemantics</c> changed-PUT
-/// omission behaviors. This suite owns only the PostgreSQL provisioning, resolver registration,
-/// no-profile production-boundary invocation, and SQL readback; the request bodies, persisted-state
-/// snapshot shapes, and behavioral assertions come from <see cref="NoProfileUpdateSemanticsScenarios"/>
-/// in Backend.Tests.Common.
+/// PostgreSQL proof that a changed PUT omitting a standalone extension-child collection deletes those
+/// extension-child rows while leaving the root and base rows intact, through the existing no-profile
+/// merge production boundary (parity scenario
+/// <c>NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection</c>). This suite
+/// owns only the PostgreSQL provisioning, resolver registration, production-boundary invocation, and
+/// SQL readback; the request bodies, snapshot shapes, and assertions come from
+/// <see cref="NoProfileUpdateSemanticsScenarios"/> in Backend.Tests.Common.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture
+public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Child_Collection
 {
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpdateResult _updateResult = null!;
-    private DocumentRow _documentBeforeUpdate = null!;
-    private DocumentRow _documentAfterUpdate = null!;
-    private SchoolRow _schoolAfterUpdate = null!;
-    private IReadOnlyList<SchoolAddressRow> _addressesBeforeUpdate = null!;
-    private IReadOnlyList<SchoolAddressRow> _addressesAfterUpdate = null!;
-    private IReadOnlyList<SchoolExtensionAddressRow> _extensionAddressesBeforeUpdate = null!;
-    private IReadOnlyList<SchoolExtensionAddressRow> _extensionAddressesAfterUpdate = null!;
+    private ExtensionChildSchoolRow _schoolAfterUpdate = null!;
+    private IReadOnlyList<ExtensionChildAddressRow> _addressesAfterUpdate = null!;
+    private IReadOnlyList<ExtensionInterventionRow> _interventionsBeforeUpdate = null!;
+    private IReadOnlyList<ExtensionInterventionVisitRow> _visitsBeforeUpdate = null!;
+    private IReadOnlyList<ExtensionInterventionRow> _interventionsAfterUpdate = null!;
+    private IReadOnlyList<ExtensionInterventionVisitRow> _visitsAfterUpdate = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            StandaloneExtensionChildFixtureRelativePath
+        );
         _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
     }
@@ -62,22 +65,17 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         await _database.ResetAsync();
         _serviceProvider = CreateServiceProvider();
 
-        await ExecuteCreateAsync();
+        long documentId = await ExecuteCreateAsync();
 
-        _documentBeforeUpdate = await ReadDocumentAsync();
-        _addressesBeforeUpdate = await ReadSchoolAddressesAsync(_documentBeforeUpdate.DocumentId);
-        _extensionAddressesBeforeUpdate = await ReadSchoolExtensionAddressesAsync(
-            _documentBeforeUpdate.DocumentId
-        );
+        _interventionsBeforeUpdate = await ReadInterventionsAsync(documentId);
+        _visitsBeforeUpdate = await ReadInterventionVisitsAsync(documentId);
 
         _updateResult = await ExecuteUpdateAsync();
 
-        _documentAfterUpdate = await ReadDocumentAsync();
-        _schoolAfterUpdate = await ReadSchoolAsync(_documentAfterUpdate.DocumentId);
-        _addressesAfterUpdate = await ReadSchoolAddressesAsync(_documentAfterUpdate.DocumentId);
-        _extensionAddressesAfterUpdate = await ReadSchoolExtensionAddressesAsync(
-            _documentAfterUpdate.DocumentId
-        );
+        _schoolAfterUpdate = await ReadSchoolAsync(documentId);
+        _addressesAfterUpdate = await ReadSchoolAddressesAsync(documentId);
+        _interventionsAfterUpdate = await ReadInterventionsAsync(documentId);
+        _visitsAfterUpdate = await ReadInterventionVisitsAsync(documentId);
     }
 
     [TearDown]
@@ -101,29 +99,18 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     }
 
     [Test]
-    public void It_returns_update_success_and_bumps_content_version_for_the_put_flow() =>
-        AssertUpdateSuccessAndContentVersionBump(
+    public void It_deletes_the_omitted_standalone_extension_child_collection_without_deleting_base_rows() =>
+        AssertStandaloneExtensionChildCollectionDeleted(
             _updateResult,
-            _mappingSet,
-            _documentBeforeUpdate,
-            _documentAfterUpdate
-        );
-
-    [Test]
-    public void It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value() =>
-        AssertClearedOmittedInlinedColumn(_documentAfterUpdate, _schoolAfterUpdate);
-
-    [Test]
-    public void It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows() =>
-        AssertDeletedOmittedAlignedExtensionScope(
-            _documentAfterUpdate,
-            _addressesBeforeUpdate,
-            _extensionAddressesBeforeUpdate,
+            _schoolAfterUpdate,
             _addressesAfterUpdate,
-            _extensionAddressesAfterUpdate
+            _interventionsBeforeUpdate,
+            _visitsBeforeUpdate,
+            _interventionsAfterUpdate,
+            _visitsAfterUpdate
         );
 
-    private async Task ExecuteCreateAsync()
+    private async Task<long> ExecuteCreateAsync()
     {
         using var scope = _serviceProvider.CreateScope();
 
@@ -133,7 +120,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
                 new DataStore(
                     Id: 1,
                     DataStoreType: "test",
-                    Name: "PostgresqlRelationalWriteUpdateSemantics",
+                    Name: "PostgresqlStandaloneExtensionChildDelete",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -142,6 +129,8 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         var createResult = await repository.UpsertDocument(CreateUpsertRequest());
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        return await ReadDocumentIdAsync();
     }
 
     private async Task<UpdateResult> ExecuteUpdateAsync()
@@ -154,7 +143,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
                 new DataStore(
                     Id: 1,
                     DataStoreType: "test",
-                    Name: "PostgresqlRelationalWriteUpdateSemantics",
+                    Name: "PostgresqlStandaloneExtensionChildDelete",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -169,10 +158,10 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
-            EdfiDoc: CreateRequestBody(),
+            EdfiDoc: StandaloneExtensionChildCreateBody(),
             Headers: [],
-            TraceId: new TraceId("no-profile-update-semantics-create"),
-            DocumentUuid: SchoolDocumentUuid
+            TraceId: new TraceId("no-profile-standalone-extension-child-create"),
+            DocumentUuid: StandaloneExtensionChildDocumentUuid
         );
 
     private UpdateRequest CreateUpdateRequest() =>
@@ -180,10 +169,10 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
-            EdfiDoc: UpdateRequestBody(),
+            EdfiDoc: StandaloneExtensionChildUpdateBody(),
             Headers: [],
-            TraceId: new TraceId("no-profile-update-semantics-update"),
-            DocumentUuid: SchoolDocumentUuid
+            TraceId: new TraceId("no-profile-standalone-extension-child-update"),
+            DocumentUuid: StandaloneExtensionChildDocumentUuid
         );
 
     private static ServiceProvider CreateServiceProvider()
@@ -204,34 +193,29 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         );
     }
 
-    private async Task<DocumentRow> ReadDocumentAsync()
+    private async Task<long> ReadDocumentIdAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
-            new NpgsqlParameter("documentUuid", SchoolDocumentUuid.Value)
+            new NpgsqlParameter("documentUuid", StandaloneExtensionChildDocumentUuid.Value)
         );
 
         return rows.Count == 1
-            ? new DocumentRow(
-                GetInt64(rows[0], "DocumentId"),
-                GetGuid(rows[0], "DocumentUuid"),
-                GetInt16(rows[0], "ResourceKeyId"),
-                GetInt64(rows[0], "ContentVersion")
-            )
+            ? GetInt64(rows[0], "DocumentId")
             : throw new InvalidOperationException(
-                $"Expected exactly one document row for '{SchoolDocumentUuid.Value}', but found {rows.Count}."
+                $"Expected exactly one document row for '{StandaloneExtensionChildDocumentUuid.Value}', but found {rows.Count}."
             );
     }
 
-    private async Task<SchoolRow> ReadSchoolAsync(long documentId)
+    private async Task<ExtensionChildSchoolRow> ReadSchoolAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "SchoolId", "ShortName"
+            SELECT "DocumentId", "SchoolId"
             FROM "edfi"."School"
             WHERE "DocumentId" = @documentId;
             """,
@@ -239,17 +223,13 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         );
 
         return rows.Count == 1
-            ? new SchoolRow(
-                GetInt64(rows[0], "DocumentId"),
-                GetInt64(rows[0], "SchoolId"),
-                GetNullableString(rows[0], "ShortName")
-            )
+            ? new ExtensionChildSchoolRow(GetInt64(rows[0], "DocumentId"), GetInt64(rows[0], "SchoolId"))
             : throw new InvalidOperationException(
                 $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
             );
     }
 
-    private async Task<IReadOnlyList<SchoolAddressRow>> ReadSchoolAddressesAsync(long documentId)
+    private async Task<IReadOnlyList<ExtensionChildAddressRow>> ReadSchoolAddressesAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
             """
@@ -261,7 +241,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             new NpgsqlParameter("documentId", documentId)
         );
 
-        return rows.Select(row => new SchoolAddressRow(
+        return rows.Select(row => new ExtensionChildAddressRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "School_DocumentId"),
                 GetInt32(row, "Ordinal"),
@@ -270,30 +250,50 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             .ToArray();
     }
 
-    private async Task<IReadOnlyList<SchoolExtensionAddressRow>> ReadSchoolExtensionAddressesAsync(
+    private async Task<IReadOnlyList<ExtensionInterventionRow>> ReadInterventionsAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId", "School_DocumentId", "Ordinal", "InterventionCode"
+            FROM "sample"."SchoolExtensionIntervention"
+            WHERE "School_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new ExtensionInterventionRow(
+                GetInt64(row, "CollectionItemId"),
+                GetInt64(row, "School_DocumentId"),
+                GetInt32(row, "Ordinal"),
+                GetString(row, "InterventionCode")
+            ))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<ExtensionInterventionVisitRow>> ReadInterventionVisitsAsync(
         long documentId
     )
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "BaseCollectionItemId", "School_DocumentId", "Zone"
-            FROM "sample"."SchoolExtensionAddress"
+            SELECT "CollectionItemId", "School_DocumentId", "ParentCollectionItemId", "Ordinal", "VisitCode"
+            FROM "sample"."SchoolExtensionInterventionVisit"
             WHERE "School_DocumentId" = @documentId
-            ORDER BY "BaseCollectionItemId";
+            ORDER BY "ParentCollectionItemId", "Ordinal", "CollectionItemId";
             """,
             new NpgsqlParameter("documentId", documentId)
         );
 
-        return rows.Select(row => new SchoolExtensionAddressRow(
-                GetInt64(row, "BaseCollectionItemId"),
+        return rows.Select(row => new ExtensionInterventionVisitRow(
+                GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "School_DocumentId"),
-                GetString(row, "Zone")
+                GetInt64(row, "ParentCollectionItemId"),
+                GetInt32(row, "Ordinal"),
+                GetString(row, "VisitCode")
             ))
             .ToArray();
     }
-
-    private static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     private static int GetInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
@@ -301,21 +301,9 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     private static long GetInt64(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt64(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
-    private static Guid GetGuid(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        GetRequiredValue(row, columnName) is Guid value
-            ? value
-            : throw new InvalidOperationException($"Expected column '{columnName}' to contain a Guid value.");
-
     private static string GetString(IReadOnlyDictionary<string, object?> row, string columnName) =>
         GetRequiredValue(row, columnName) as string
         ?? throw new InvalidOperationException($"Expected column '{columnName}' to contain a string value.");
-
-    private static string? GetNullableString(IReadOnlyDictionary<string, object?> row, string columnName) =>
-        row.TryGetValue(columnName, out var value)
-            ? value as string
-            : throw new InvalidOperationException(
-                $"Expected persisted row to contain column '{columnName}'."
-            );
 
     private static object GetRequiredValue(IReadOnlyDictionary<string, object?> row, string columnName)
     {

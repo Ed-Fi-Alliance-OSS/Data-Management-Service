@@ -72,8 +72,8 @@ public static partial class ParityScenarioCatalog
                 "It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value",
                 "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows",
             ],
-            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios (DMS-1023 shared contract, later unit)",
-            notes: "Consolidating contract; omission semantics are currently distributed across the variants below."
+            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios",
+            notes: "Core omission semantics are backed by the shared contract; the variants below decompose them and add the standalone extension-child deletion proof."
         ),
         UpdateVariant(
             "ClearedInlinedColumn",
@@ -110,22 +110,16 @@ public static partial class ParityScenarioCatalog
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             "It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows"
         ),
-        new ParityScenario
-        {
-            Id = "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection",
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract =
-                "Changed PUT that omits a standalone extension-child collection deletes those rows without disturbing base rows.",
-            SharedEntryPoint = "NoProfileUpdateSemanticsScenarios (DMS-1023 shared contract, later unit)",
-            Boundary = ProductionBoundary.NoProfileMerge,
-            PgsqlCoverage = EngineCoverage.Gap,
-            MssqlCoverage = EngineCoverage.Gap,
-            Classification = ParityClassification.KnownGap,
-            PgsqlGapOwner = "DMS-1023",
-            MssqlGapOwner = DmsGapOwner,
-            Notes =
-                "No existing PostgreSQL test (extension child collections are exercised only on create). DMS-1023 adds the PostgreSQL proof (G1 ruling); the SQL Server twin is owed to DMS-1285.",
-        },
+        Gap(
+            "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection",
+            "Changed PUT that omits a standalone extension-child collection deletes those rows without disturbing base rows.",
+            ProductionBoundary.NoProfileMerge,
+            "PostgresqlRelationalWriteStandaloneExtensionChildDeleteTests.cs",
+            "Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Child_Collection",
+            ["It_deletes_the_omitted_standalone_extension_child_collection_without_deleting_base_rows"],
+            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios",
+            notes: "DMS-1023 adds the PostgreSQL proof (G1 ruling) that omitting a standalone extension-child collection on a changed PUT deletes those rows; the SQL Server twin is owed to DMS-1285."
+        ),
         // --- NoProfileWriteBehavior (umbrella) ----------------------------------------------
         Gap(
             "NoProfileWriteBehavior",

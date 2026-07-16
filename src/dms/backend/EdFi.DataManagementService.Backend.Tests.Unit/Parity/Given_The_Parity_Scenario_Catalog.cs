@@ -308,16 +308,26 @@ public class Given_The_Parity_Scenario_Catalog
     }
 
     [Test]
-    public void It_splits_the_standalone_extension_child_gap_across_dms_1023_and_dms_1285()
+    public void It_covers_the_standalone_extension_child_delete_on_postgres_and_owes_sql_server_to_dms_1285()
     {
-        _all.Should()
-            .Contain(s =>
-                s.Id == "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection"
-                && s.PgsqlCoverage == EngineCoverage.Gap
-                && s.PgsqlGapOwner == "DMS-1023"
-                && s.MssqlCoverage == EngineCoverage.Gap
-                && s.MssqlGapOwner == "DMS-1285"
+        ParityScenario row = _all.Single(s =>
+            s.Id == "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection"
+        );
+
+        row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
+        row.PgsqlGapOwner.Should().BeNull();
+        Flatten(row.PgsqlLocations)
+            .Should()
+            .BeEquivalentTo(
+                (string[])
+                    [
+                        "PostgresqlRelationalWriteStandaloneExtensionChildDeleteTests.cs::Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Child_Collection::It_deletes_the_omitted_standalone_extension_child_collection_without_deleting_base_rows",
+                    ]
             );
+
+        row.MssqlCoverage.Should().Be(EngineCoverage.Gap);
+        row.MssqlGapOwner.Should().Be("DMS-1285");
+        row.Classification.Should().Be(ParityClassification.KnownGap);
     }
 
     [Test]
