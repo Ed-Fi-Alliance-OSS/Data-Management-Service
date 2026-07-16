@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
@@ -164,32 +165,35 @@ public class IdentityModule : IEndpointModule
             formClientSecret = form["client_secret"].ToString();
         }
 
-        // HTTP Basic client authentication (RFC 6749 section 2.3.1) is supported in every
-        // identity-provider mode: the parsed credentials flow through the same token-manager call as
-        // form credentials.
+        // Client authentication (RFC 6749 section 2.3), supported in every identity-provider mode. Any
+        // Authorization header is an attempt to authenticate the client via the request header. If it is
+        // not a valid HTTP Basic credential — an unsupported scheme (e.g. Digest) or a malformed Basic
+        // value — it is a failed client authentication (section 5.2): respond 401 invalid_client with the
+        // Basic challenge and never fall back to the form credentials. With no Authorization header, the
+        // client may authenticate with form credentials, which flow through the same token-manager call.
         httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
         string authorization = authHeader.ToString();
-        bool hasBasicHeader = authorization.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase);
 
         string clientId;
         string clientSecret;
-        if (hasBasicHeader)
+        if (!string.IsNullOrEmpty(authorization))
         {
+            if (!TryParseBasicCredentials(authorization, out clientId, out clientSecret))
+            {
+                // Unsupported scheme or malformed Basic credentials. The header contents are never logged.
+                logger.LogWarning(
+                    "Rejected an unsupported or malformed Authorization header on the token endpoint."
+                );
+                return OAuthErrorResults.InvalidClient("Client authentication failed.");
+            }
+
             // A client must not use more than one authentication mechanism in a single request
-            // (RFC 6749 section 2.3): a Basic header combined with form credentials is malformed.
+            // (RFC 6749 section 2.3): a Basic header combined with form credentials is invalid_request.
             if (!string.IsNullOrEmpty(formClientId) || !string.IsNullOrEmpty(formClientSecret))
             {
                 return OAuthErrorResults.InvalidRequest(
                     "The request is missing a required parameter or is otherwise malformed."
                 );
-            }
-
-            // A malformed Basic header is a failed client authentication; it must not fall back to form
-            // credentials. The header contents are never logged.
-            if (!TryParseBasicCredentials(authorization, out clientId, out clientSecret))
-            {
-                logger.LogWarning("Rejected a malformed Basic authorization header on the token endpoint.");
-                return OAuthErrorResults.InvalidClient("Client authentication failed.");
             }
         }
         else
@@ -248,9 +252,11 @@ public class IdentityModule : IEndpointModule
         };
     }
 
-    // Parses HTTP Basic client credentials (RFC 6749 section 2.3.1). Returns false for a malformed
-    // header (invalid Base64, or no "id:secret" pair) rather than throwing. The client id and secret are
-    // percent-encoded in the credential, so each half is percent-decoded after the split.
+    // Parses HTTP Basic client credentials (RFC 6749 section 2.3.1). Returns false — never throws — for
+    // anything that is not a well-formed Basic credential: an unsupported scheme, a "Basic" value with no
+    // credentials, invalid Base64, or a value with no "id:secret" pair. Per section 2.3.1 the client id
+    // and secret are application/x-www-form-urlencoded, so each half is form-decoded (which converts '+'
+    // to a space) with WebUtility.UrlDecode rather than Uri.UnescapeDataString.
     private static bool TryParseBasicCredentials(
         string authorizationHeader,
         out string clientId,
@@ -260,7 +266,13 @@ public class IdentityModule : IEndpointModule
         clientId = string.Empty;
         clientSecret = string.Empty;
 
-        string encoded = authorizationHeader["Basic ".Length..].Trim();
+        const string scheme = "Basic ";
+        if (!authorizationHeader.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string encoded = authorizationHeader[scheme.Length..].Trim();
         if (encoded.Length == 0)
         {
             return false;
@@ -282,8 +294,8 @@ public class IdentityModule : IEndpointModule
             return false;
         }
 
-        clientId = Uri.UnescapeDataString(credentials[..separator]);
-        clientSecret = Uri.UnescapeDataString(credentials[(separator + 1)..]);
+        clientId = WebUtility.UrlDecode(credentials[..separator]);
+        clientSecret = WebUtility.UrlDecode(credentials[(separator + 1)..]);
         return true;
     }
 

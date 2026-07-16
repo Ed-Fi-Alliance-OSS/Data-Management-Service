@@ -1094,6 +1094,118 @@ public class Given_Both_Basic_And_Form_Client_Credentials : TokenEndpointTestBas
 }
 
 [TestFixture]
+public class Given_An_Unsupported_Authorization_Scheme : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // Arrange a success so that, if the endpoint wrongly fell back to another credential source, the
+        // request would succeed — proving the unsupported scheme is rejected instead.
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Digest username=\"CSClient1\"");
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_full_basic_challenge_with_realm()
+    {
+        Response.Headers.WwwAuthenticate.Should().ContainSingle();
+        var challenge = Response.Headers.WwwAuthenticate.Single();
+        challenge.Scheme.Should().Be("Basic");
+        challenge.Parameter.Should().Be("realm=\"Ed-Fi DMS Configuration Service\"");
+    }
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() =>
+                TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+            )
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_An_Unsupported_Authorization_Scheme_With_Form_Credentials : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // A non-Basic Authorization header must not be ignored in favor of form credentials: this is a
+        // failed header authentication, not an accepted form authentication.
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Digest realm=\"x\"");
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_does_not_accept_the_form_credentials() =>
+        A.CallTo(() =>
+                TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+            )
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_Basic_Credentials_With_A_Form_Encoded_Space : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // RFC 6749 section 2.3.1 encodes the client id and secret with application/x-www-form-urlencoded,
+        // where a space is "+". The parser must decode "+" back to a space.
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        var encoded = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes("CSClient1:secret+with+spaces")
+        );
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    [Test]
+    public void It_decodes_the_plus_signs_to_spaces_before_calling_the_token_manager() =>
+        A.CallTo(() =>
+                TokenManager.GetAccessTokenAsync(
+                    A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
+                        credentials.Any(pair =>
+                            pair.Key == "client_secret" && pair.Value == "secret with spaces"
+                        )
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+}
+
+[TestFixture]
 public class Given_The_Provider_Returns_A_Success_That_Is_Not_Valid_Json : TokenEndpointTestBase
 {
     [SetUp]
