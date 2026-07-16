@@ -1730,15 +1730,10 @@ internal static class TriggerInventoryTestSchemaBuilder
 /// <summary>
 /// Trigger derivation over a grouped-duplicate reference, where one reference field
 /// (<c>$.schoolReference.schoolId</c>) is bound to two target identity fields (<c>$.schoolId</c> and
-/// <c>$.localEducationAgencyId</c>) that key-unify on the referenced School. This exercises two trigger
-/// paths that previously mishandled duplicate <c>ReferenceJsonPath</c> bindings:
-/// <list type="bullet">
-/// <item>Abstract identity maintenance must accept the converging duplicate (two identity-part columns
-/// resolving to one stored column) rather than rejecting any count other than one.</item>
-/// <item>Identity propagation must pair each referrer target column with the source column for its own
-/// target identity path, instead of collapsing duplicates by reference path and applying one identity
-/// path's source column to every binding.</item>
-/// </list>
+/// <c>$.localEducationAgencyId</c>) that key-unify on the referenced School. This exercises the abstract
+/// identity maintenance path that previously mishandled duplicate <c>ReferenceJsonPath</c> bindings: it
+/// must accept the converging duplicate (two identity-part columns resolving to one stored column)
+/// rather than rejecting any count other than one.
 /// </summary>
 [TestFixture]
 public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
@@ -1756,9 +1751,9 @@ public class Given_Grouped_Duplicate_Reference_Trigger_Derivation_On_Mssql
 
     /// <summary>
     /// Derives the trigger inventory for the grouped-duplicate fixture. Key unification must run before
-    /// abstract identity derivation so the grouped duplicate columns converge; transitive identity
-    /// mutability must run so the identity-propagation trigger is emitted on the mutable referenced
-    /// resource.
+    /// abstract identity derivation so the grouped duplicate columns converge. Transitive identity
+    /// mutability runs as part of the standard pipeline; identity-value propagation is handled by native
+    /// FK cascades, not by an emitted trigger.
     /// </summary>
     private static IReadOnlyList<DbTriggerInfo> BuildTriggers(bool reverseDuplicateReferenceBindings)
     {

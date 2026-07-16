@@ -958,6 +958,29 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         surveySessionForeignKey.UpdateAction.Should().Be("CASCADE");
     }
 
+    [Test]
+    public async Task It_should_not_install_any_retired_identity_propagation_trigger()
+    {
+        // DMS-1258 acceptance criterion: SQL Server integration coverage must prove the old
+        // identity-value propagation trigger is absent from the provisioned schema. Identity
+        // renames now cascade through native full-composite FKs (MssqlForeignKeyPruningPass),
+        // so no TR_*_PropagateIdentity trigger may be installed. This asserts against the live
+        // catalog because the golden DDL is a regenerable snapshot, not an independent guarantee.
+        var retiredPropagationTriggers = await _database.QueryRowsAsync(
+            """
+            SELECT triggers.name AS [TriggerName]
+            FROM sys.triggers triggers
+            WHERE triggers.name LIKE '%PropagateIdentity%';
+            """
+        );
+        retiredPropagationTriggers
+            .Should()
+            .BeEmpty(
+                "the retired identity-value propagation trigger must not be installed; "
+                    + "identity renames cascade through native FKs"
+            );
+    }
+
     private async Task AssertForeignKeysEnabledTrustedAndValidAsync(string schemaName, string tableName)
     {
         var compromisedForeignKeys = await _database.QueryRowsAsync(
