@@ -12,8 +12,9 @@ related:
 
 Add a reusable service that materializes the caller-agnostic full resource document used by `dms.DocumentCache`.
 
-The service must use the same relational reconstitution rules as GET/query response assembly, compute the
-full-resource `_etag` and `_lastModifiedDate`, and produce the metadata needed by the cache row and CDC stream.
+The service must use the same relational reconstitution rules as GET/query response assembly, derive
+`_lastModifiedDate`, return the `ContentVersion` needed for later `_etag` composition, and produce the
+metadata needed by the cache row and CDC stream.
 Readable-profile projection and `ResourceLinks:Enabled` response stripping happen after cache retrieval and are
 not part of the cached shape.
 
@@ -62,7 +63,8 @@ projection result whose cache columns and embedded server metadata were produced
 2. Reuse existing read-plan/reconstitution code instead of duplicating JSON assembly rules.
 3. Add metadata lookup for `DocumentUuid`, resource names, resource version, `ContentVersion`, and
    `ContentLastModifiedAt`.
-4. Compute or reuse the full-resource `_etag` using the update-tracking rules.
+4. Return `ContentVersion` without composing or embedding `_etag`; API serving and Kafka stream shaping compose
+   `_etag` later from `ContentVersion` and the active `variantKey`.
 5. Add invariant validation before handing a result to the cache upsert path.
 6. Add tests for shape, embedded metadata, cache-column/embedded-field consistency, links, and absence of
    authorization/profile data.

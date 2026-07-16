@@ -72,7 +72,7 @@ Authorization is out of scope for this story, but the query execution SQL should
      projection context. Mirror the GET-by-id pattern (src/dms/core/EdFi.DataManagementService.Core/Backend/GetRequest.cs:22), but I would not invent a query “stored document” mode unless a
      real internal caller appears.
   5. Profile response integration: yes, DMS-993 should own the full relational readable-profile path for GET-many. The repository should project each item through IReadableProfileProjector
-     while preserving each item’s full-resource _etag, and the handler should set the profile-specific response content type. The legacy middleware explicitly skips relational reads (src/dms/core/
+     and compose each item’s served `_etag` from `ContentVersion` plus the active `variantKey`, and the handler should set the profile-specific response content type. The legacy middleware explicitly skips relational reads (src/dms/core/
      EdFi.DataManagementService.Core/Middleware/ProfileFilteringMiddleware.cs:29), and QueryRequestHandler currently just returns the array body with no relational profile content-type
      handling (src/dms/core/EdFi.DataManagementService.Core/Handler/QueryRequestHandler.cs:57). That matches the ownership split in reference/design/backend-redesign/design-docs/
      profiles.md#read-path-under-profiles and the _etag rule in reference/design/backend-redesign/design-docs/update-tracking.md#serving-api-metadata.

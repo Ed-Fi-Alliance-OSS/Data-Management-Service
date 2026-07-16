@@ -27,7 +27,7 @@ original no-representation-hash decision; see [Amendment (2026-07-08, profileCod
 
 ## Executive Summary
 
-A deep code analysis reveals that the `_etag` calculation requires an extra database read, which may have a noticeable impact across high volume operations. At the same time, the application is calculating a `ContentVersion` (numeric) for every update. This number could be used as the `_etag` instead.
+A deep code analysis reveals that the `_etag` calculation requires an extra database read, which may have a noticeable impact across high volume operations. At the same time, the application is calculating a `ContentVersion` (numeric) for every update. This number can be used as the state component of the composed `_etag` instead.
 
 The only additional benefit provided with the more complex current path is that it would guarantee etag equality for the same payload when pushed to multiple servers, or in the case of a `DELETE` followed by `POST` of the same body. However, this is not a requirement of an Ed-Fi API. Indeed, the legacy Ed-Fi ODS/API likewise does not satisfy that requirement. Consequently, this ADR pushes the code base to use the `ContentVersion` as the basis for the `_etag`.
 
@@ -35,7 +35,7 @@ Additionally, this ADR brings the `_etag` formatting in line with (HTTP) RFC 911
 
 ## Context
 
-In the redesigned relational backend, `_etag` is computed as a SHA-256 hash of the canonical resource-state JSON (object properties ordinally ordered, arrays preserved, minified UTF-8, base64; server fields `id`, `link`, `_etag`, `_lastModifiedDate` excluded). The same algorithm is used by the current JSON-document backend.
+Before this ADR, the redesigned relational backend design computed `_etag` as a SHA-256 hash of the canonical resource-state JSON (object properties ordinally ordered, arrays preserved, minified UTF-8, base64; server fields `id`, `link`, `_etag`, `_lastModifiedDate` excluded). The same algorithm was used by the JSON-document backend at the time of the decision.
 
 A throughput review of the high-concurrency POST path (a client full-sync issuing tens of thousands of POSTs to `/students` and `/studentSchoolAssociations`) identified the per-write computation of this hash as the single most impactful bottleneck. In the relational backend the hash cannot be computed from the request body, because the persisted canonical document can differ from the request (collection merges, identity cascades, normalization). To obtain it, the write path performs a full hydrate-materialize-hash **readback** of the just-written document — a multi-statement query plus JSON reconstruction — **inside the write transaction, before `COMMIT`**, solely to populate a response header. The POST/PUT response body is `null`, so none of the materialized document is otherwise used.
 
@@ -87,7 +87,7 @@ Compute the hash once at write, store it on `dms.Document`, and serve it on read
 
 ### Option 4 — Derive `_etag` from `ContentVersion` (CHOSEN)
 
-Serve `_etag` from `dms.Document.ContentVersion`, the monotonic per-document change counter, abandoning the content hash.
+Serve `_etag` from `dms.Document.ContentVersion`, the monotonic per-document change counter, plus the active representation `variantKey`, abandoning the content hash.
 
 - **Pros:** Cheapest possible — no readback, no hash; the value is already returned by `INSERT … RETURNING` and present on the row at zero marginal cost. Eliminates the bottleneck for both reads and writes. Satisfies every *written* requirement for `_etag`. Retires the per-*read* rehash (helps GET-by-id and GET-collection).
 - **Cons:** Loses content-addressability and cross-instance content identity (both confirmed out of scope). Couples `If-Match` to the change-version counter — but this is moot, since `ChangeVersion` (equal to `ContentVersion`) is already a client-visible field, so the etag exposes nothing new.
@@ -185,7 +185,7 @@ Cost: each etag is a string concatenation of the counter with five small tokens.
 ### Cross-backend implementation scope
 
 - **JSON-document backend:** `InjectVersionMetadataToEdFiDocumentMiddleware` (Core) currently computes `_etag` by hashing the request body **before persistence** (`ResourceEtagFormatter.FormatEtag`). Because `ContentVersion` does not exist until the write, etag production must move to **after** the write (or the backend must return the counter for Core to format). Confirm this does not regress the JSON backend's current zero-readback property.
-- **Relational backend:** `_etag` is computed from the materialized current/committed representation; it will instead come directly from the persisted/returned `ContentVersion`.
+- **Relational backend:** `_etag` was computed from the materialized current/committed representation; its state component now comes directly from the persisted/returned `ContentVersion` and is composed with the active `variantKey`.
 - **`If-Match` precondition check:** `RelationalCurrentEtagPreconditionChecker` currently re-hashes the materialized current state. Under Option 4 it becomes a `ContentVersion` comparison — and since `RelationalWriteFreshnessChecker` already fetches `ContentVersion … FOR UPDATE`, the two could converge into a single read.
 
 ### Design documentation
@@ -234,7 +234,7 @@ The **served** etag is unchanged: reads and writes still emit the full `"{Conten
 
 `schemaEpoch` **remains** significant: a schema or profile-*definition* change genuinely changes the reproducible bytes for an unchanged `ContentVersion`, so invalidating prior etags across such a change is still correct. This does not affect the legacy scenario, which is same-schema.
 
-1. **Realignment with the DMS-1005 story.** The update-tracking story (`epics/10-update-tracking-change-queries/03-if-match.md`, Answers 1.1 and 3.2) already resolved that `If-Match` must "compare against the same full-resource `_etag` used by unprofiled requests" and "ignore readable profile projection." The 2026-07-01 decision diverged from that resolution; this amendment restores it. The ADR's *separate* decision to serve **profile-variant** etags for conditional-GET / `If-None-Match` cache correctness still stands — that supersedes the story's acceptance criterion "profiled GET preserves the same `_etag` as unprofiled" and is unaffected by this amendment, because served etags and the `If-Match` comparison are deliberately decoupled.
+1. **Realignment with the DMS-1005 story.** The update-tracking story (`epics/10-update-tracking-change-queries/03-if-match.md`, Answers 1.1 and 3.2) already resolved that `If-Match` must ignore readable profile projection rather than requiring a profile-specific match. In current terminology, `If-Match` compares the state-significant projection (`ContentVersion` plus `schemaEpoch`) and ignores representation-only `variantKey` segments. The 2026-07-01 decision diverged from that resolution; this amendment restores it. The ADR's *separate* decision to serve **profile-variant** etags for conditional-GET / `If-None-Match` cache correctness still stands — that supersedes the earlier story acceptance criterion that profiled GET preserve the unprofiled tag and is unaffected by this amendment, because served etags and the `If-Match` comparison are deliberately decoupled.
 
 ### Scope of the code change
 
@@ -468,8 +468,9 @@ Two profile-different descriptor GET representations now carry distinct strong `
 
 ## Amendment (2026-07-08): final `ContentVersion` read relocated into the persister
 
-**Status:** Accepted — refines how Option 4's "serve `_etag` from the persisted `ContentVersion`"
-is realized on the write path; the served-etag and `If-Match` contracts are unchanged. \
+**Status:** Accepted — refines how Option 4's "compose `_etag` from the persisted `ContentVersion`
+plus `variantKey`" is realized on the write path; the served-etag and `If-Match` contracts are
+unchanged. \
 **Date:** 2026-07-08 \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
 

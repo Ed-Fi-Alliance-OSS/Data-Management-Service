@@ -10,15 +10,14 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1005
 Implement optimistic concurrency checks using stored representation stamps for relational document resources and descriptor resources:
 
 - For operations that support `If-Match` (`PUT`, `DELETE`, and `POST` when upsert resolves to an existing
-  document), compare the client-provided `If-Match` header value to the current `_etag` computed from the canonical
-  JSON form of the current full resource-state representation, as defined by
-  `reference/design/backend-redesign/design-docs/update-tracking.md`. Readable profile filtering and
-  server-generated response decorations such as reference `link` objects are excluded from ETag-surface selection and
-  do not affect `If-Match`. This applies equally to descriptor resources stored through `dms.Descriptor`.
+  document), compare the client-provided `If-Match` header value to the current state-significant projection of the
+  `_etag` defined by `reference/design/backend-redesign/design-docs/update-tracking.md`. The current `_etag` is
+  composed from `ContentVersion` plus `variantKey`; `If-Match` retains only `ContentVersion` and `schemaEpoch` and
+  ignores representation-only segments such as format, readable profile, link mode, and content coding. This applies
+  equally to descriptor resources stored through `dms.Descriptor`.
 - `If-Match` is optional. When the header is absent, these operations proceed without an HTTP precondition check.
-- Header matching is an exact opaque string comparison: the header value must exactly equal the current `_etag` value
-  DMS would serve for the full resource-state representation. The implementation must not normalize quotes, parse
-  entity-tag lists, or otherwise reinterpret the value for this story.
+- Header matching follows the state-significant comparison in `update-tracking.md`; DMS must not hash or
+  canonicalize the document body to validate `If-Match`.
 - When `POST` with `If-Match` resolves to an insert/new document, the request fails with `412` because there is no
   current representation whose `_etag` can satisfy the precondition.
 - No dependency locking is required because indirect impacts are materialized as local updates that bump the same stamp.
@@ -30,14 +29,14 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 - When `If-Match` is absent, `PUT`, `DELETE`, and `POST` upsert-as-update continue through the existing relational
   and descriptor write/delete paths without an HTTP precondition check.
-- When `If-Match` exactly equals the current `_etag`, the changed write/delete proceeds and a guarded no-op may
+- When `If-Match` matches the current state-significant `_etag` projection, the changed write/delete proceeds and a guarded no-op may
   short-circuit after the internal `ContentVersion` freshness recheck succeeds on the shared no-profile or profiled
   executor path.
 - When `If-Match` does not exactly match, the request fails with the appropriate HTTP error semantics (e.g.,
   precondition failed / `412`).
-- When the client obtained `_etag` from a profiled GET/query response, the value still represents the full resource
-  state. Profiled and unprofiled writes compare against the same full-resource `_etag`, and successful profiled writes
-  return the same full-resource ETag that a follow-up unprofiled GET would return.
+- When the client obtained `_etag` from a profiled GET/query response, `If-Match` still compares only
+  `ContentVersion` and `schemaEpoch`. Successful profiled writes return the served ETag for that response context;
+  a follow-up unprofiled GET may have a different served ETag because its `variantKey` differs.
 - When a profile-hidden field changes, a stale `_etag` obtained from a profiled GET/query no longer satisfies
   `If-Match`; hidden full-resource changes are still concurrency-relevant.
 - When `POST` resolves to a new document and the request includes `If-Match`, the request fails with `412`; DMS does
@@ -51,13 +50,10 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 ## Tasks
 
-1. Implement a "read current document and compute `_etag` from its full resource-state representation" path usable by
+1. Implement a "read current document stamp and compose/compare `_etag` state" path usable by
    `PUT`, `DELETE`, and `POST` upsert-as-update handlers prior to write/delete, for both relational document resources
-   and descriptor resources. The computation follows update-tracking canonicalization, including exclusion of readable
-   profile filtering and `link`.
-   Because DMS-990 already introduced the read metadata canonicalization path, this story must update/reuse that
-   metadata-removal logic so `link` is removed alongside `id`, `_etag`, and `_lastModifiedDate` everywhere `_etag` is
-   computed or compared.
+   and descriptor resources. The comparison follows update-tracking's state-significant projection:
+   `ContentVersion` and `schemaEpoch` are significant; format, readable profile, link mode, and content coding are not.
 2. Implement optional exact opaque-string `If-Match` comparison and stale-no-op handling paths usable by changed
    writes, deletes, and guarded no-op handlers, consuming the internal freshness result produced by the shared
    `DMS-984` executor path and reused by `DMS-1124`.
@@ -71,20 +67,21 @@ Implement optimistic concurrency checks using stored representation stamps for r
    7. at least one PostgreSQL and one SQL Server relational integration test proving a cascaded referenced identity
       change changes the dependent `_etag` and causes stale `If-Match` to return `412`,
    8. existing `If-Match` E2E scenarios switched to the relational backend without changing the scenario coverage,
-   9. canonical metadata removal excludes `link` so the same full resource state produces the same `_etag` whether
-      links are present or stripped,
+   9. link mode changes the served `_etag` through `variantKey.linkFlag`, but does not affect the `If-Match`
+      state-significant comparison when `ContentVersion` and `schemaEpoch` agree,
    10. `If-Match` succeeds when the client-supplied `_etag` was obtained with
        `DataManagement:ResourceLinks:Enabled=true` and the write check runs with links stripped,
    11. `If-Match` succeeds when the client-supplied `_etag` was obtained with
        `DataManagement:ResourceLinks:Enabled=false` and the write check runs against a link-bearing
-       intermediate document, proving link inclusion/exclusion does not affect the precondition for
-       the same full resource state,
-   12. profiled GET/query responses preserve the same `_etag` as unprofiled responses for the same document,
+       intermediate document, proving link mode does not affect the precondition for the same `ContentVersion`
+       and `schemaEpoch`,
+   12. profiled and unprofiled GET/query responses may serve different `_etag` values but both satisfy
+       `If-Match` when their state-significant projection matches,
    13. `If-Match` succeeds when the client-supplied `_etag` was obtained from a profiled GET/query and the current
       full resource state still matches,
    14. `If-Match` fails when the client-supplied `_etag` was obtained from a profiled GET/query before a change to
       profile-hidden full resource state,
-   15. successful profiled writes return the same full-resource ETag that a follow-up unprofiled GET would return, and
+   15. successful profiled writes return the served ETag for the profiled response context, and
    16. stale no-op compare reported by the shared guarded no-op executor path (`DMS-984`, reused by `DMS-1124`) that
       is rejected by the guarded `If-Match` recheck.
 
@@ -111,9 +108,9 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 ### Answers 1
 
-  1. Profiled requests: compare against the same full-resource _etag used by unprofiled requests, and return that
-     full-resource ETag on successful profiled writes. This matches legacy ODS behavior: readable profiles filter the
-     response body but preserve `_etag` as the resource-state concurrency validator.
+  1. Profiled requests: compare the state-significant `_etag` projection used by unprofiled requests: `ContentVersion`
+     and `schemaEpoch` are significant, while `profileCode` is not. Successful profiled writes return the served ETag
+     for the profiled response context.
   2. Stale guarded no-op: follow the profile/concurrency design. Stale no-op + present If-Match should return 412 immediately. The story wording should say “if the guarded no-op freshness check is
      stale and If-Match was supplied.” Without If-Match, abandon the no-op fast path and re-evaluate/retry.
   3. Locking: yes, for operations that supply If-Match, lock the target dms.Document row through the transaction before comparing and before changed write/delete DML. This is still row-local locking,
@@ -139,8 +136,8 @@ Implement optimistic concurrency checks using stored representation stamps for r
   3. For stale guarded no-op with If-Match present, should the repository bypass the current stale-no-op retry loop and return 412 on the first stale outcome?
   4. When If-Match is absent and stale guarded no-op occurs, is the current single retry enough, or should this story broaden it to a more explicit re-evaluate/retry policy?
   5. Should this story also fix descriptor POST-as-update no-op stamping, or leave that to DMS-1008? The current descriptor POST-as-update path appears to always issue update/stamp work.
-  6. Do descriptor writes need any special ETag behavior when profile media-type headers are present, or should they use the same full-resource _etag as relational-table resources?
-  7. If a DELETE request carries profile media-type headers, should If-Match compare against the full resource _etag or should profile headers affect DELETE precondition behavior?
+  6. Do descriptor writes need any special ETag behavior when profile media-type headers are present, or should they use the same state-significant comparison as relational-table resources?
+  7. If a DELETE request carries profile media-type headers, should If-Match compare only the state-significant ETag projection or should profile headers affect DELETE precondition behavior?
   8. For existing-target mismatch, should 412 take precedence over deeper backend failures such as invalid references, profile creatability, and authorization, once the target is resolved? The story
      answers this for POST create-new, but not for existing-target mismatch.
 
@@ -149,7 +146,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
   1. Use a typed precondition contract. Add something like IfMatchPrecondition / WritePrecondition, built once from request headers with exact opaque-string semantics. Do not have relational or
      descriptor code read Headers["If-Match"] directly. Pass the typed value through RelationalWriteExecutorRequest, DescriptorWriteRequest, and a descriptor delete request shape.
   2. Yes, the authoritative check belongs inside the transaction. Treat the repository’s first target lookup as advisory. For present If-Match, re-resolve or confirm the target in the write/delete
-     transaction, lock dms.Document, compute the current full-resource _etag, compare, then keep the lock through DML/delete/commit. This matches the earlier locking answer above.
+     transaction, lock dms.Document, compose the current ETag state from `ContentVersion` plus `variantKey`, compare the state-significant projection, then keep the lock through DML/delete/commit. This matches the earlier locking answer above.
   3. Yes, stale guarded no-op plus If-Match should bypass retry and return 412. The current repository retry loop retries stale no-op unconditionally at src/dms/backend/
      EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:700. Change that so retry only applies when the precondition is absent.
   4. Keep the absent-If-Match retry narrow for this story. The design says stale without If-Match should re-evaluate current state, and the existing single retry is a reasonable scoped implementation.
@@ -157,11 +154,11 @@ Implement optimistic concurrency checks using stored representation stamps for r
   5. Do not absorb all of DMS-1008, but fix the overlap if touched. DMS-1008 owns descriptor stamp/journal correctness, including no-op descriptor updates (reference/design/backend-redesign/epics/10-
      update-tracking-change-queries/06-descriptor-stamping.md:10). But DMS-1005 will already need current descriptor state for If-Match; if practical, use that helper to stop descriptor POST-as-update
      from always issuing update/stamp work, which currently happens in src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs:411.
-  6. Descriptor writes use the same full-resource _etag as relational-table resources. Profile projection is not an
-     ETag surface. If writable descriptor profiles are unsupported, fail earlier as unsupported/invalid profile usage;
-     if they are supported, If-Match still compares against the full descriptor resource state.
-  7. DELETE should use the full-resource _etag. A DELETE removes the whole resource, not just the profile-visible
-     surface. Ignore profile media-type headers for DELETE precondition purposes.
+  6. Descriptor writes use the same state-significant comparison as relational-table resources. Profile projection is not
+     significant for `If-Match`. If writable descriptor profiles are unsupported, fail earlier as unsupported/invalid
+     profile usage; if they are supported, `If-Match` still compares `ContentVersion` and `schemaEpoch`.
+  7. DELETE should use the state-significant ETag projection. A DELETE removes the whole resource, not just the
+     profile-visible surface. Ignore profile media-type headers for DELETE precondition purposes.
   8. Precedence: auth should not be overridden by 412; most deeper write validation can be. Suggested order: malformed request/content type/profile usage and missing target still win; authorization
      should still return 403 before exposing an ETag mismatch for an existing target. After target exists and the caller is authorized, If-Match mismatch should short-circuit before reference
      resolution, profile creatability, merge validation, and DML.
@@ -183,17 +180,17 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 ### Answers 3
 
-  1. ResourceLinks flag should not affect If-Match. `_etag` is a resource-state validator, not a response-decoration
-     validator, and reference `link` objects are derived from persisted reference state. Compare against the same
-     link-excluding `_etag` in both flag states. This aligns with reference/design/backend-redesign/design-docs/
-     update-tracking.md and reference/design/backend-redesign/design-docs/link-injection.md.
+  1. ResourceLinks flag should not affect If-Match. Served `_etag` values differ by `variantKey.linkFlag`, but
+     `If-Match` ignores representation-only `variantKey` segments and compares `ContentVersion` plus `schemaEpoch`.
+     This aligns with reference/design/backend-redesign/design-docs/update-tracking.md and
+     reference/design/backend-redesign/design-docs/link-injection.md.
   2. If-Match should ignore readable profile projection. Backend should receive a typed precondition contract carrying
-     only the opaque header value; it should compute the current full-resource `_etag` from the same pre-profile full
-     resource state used by unprofiled GET. It does not need resource-link mode for `If-Match`, because `link`
-     is excluded from `_etag` derivation in both flag states.
+     only the header value; it should compose current ETag state from `ContentVersion` plus `variantKey` and compare
+     only the state-significant projection. It does not need resource-link mode for `If-Match`, because `linkFlag` is
+     ignored by the precondition comparison.
   3. Treat writable descriptor profiles as unsupported unless deliberately scoped now. If descriptor profile writes are
-     not expected today, fail them before If-Match logic. If they are expected, they still use the same full-resource
-     descriptor `_etag`; do not add descriptor-specific profile-based comparison.
+     not expected today, fail them before If-Match logic. If they are expected, they still use the same
+     state-significant descriptor ETag comparison; do not add descriptor-specific profile-based comparison.
   4. Prefer moving descriptors onto the shared transaction/session pattern. A single SQL batch with row lock + compare + update can be correct, but DMS-1005 already needs the same row-local lock/check/
      write semantics described in reference/design/backend-redesign/design-docs/transactions-and-concurrency.md#concurrency-optimistic-if-match. I’d refactor descriptors enough to use a shared session/helper for lock, materialize
      current representation, compare, DML, and commit. It does not need to become the whole relational resource executor.

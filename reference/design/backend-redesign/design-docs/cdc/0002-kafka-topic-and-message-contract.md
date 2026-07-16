@@ -129,10 +129,12 @@ For creates, updates, and initial snapshots, the value is a JSON object:
   "resourceName": "Student",
   "resourceVersion": "5.2.0",
   "contentVersion": 123456,
-  "etag": "123456-kafka-document-v1",
+  "etag": "123456-a1b2c3d4.j._.l.i",
   "lastModifiedAt": "2026-07-06T15:30:45.1234567Z",
   "document": {
-    "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
+    "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
+    "_etag": "123456-a1b2c3d4.j._.l.i",
+    "_lastModifiedDate": "2026-07-06T15:30:45.1234567Z"
   }
 }
 ```
@@ -156,6 +158,11 @@ Pascal case. Connector transforms should rename columns after Debezium unwrap.
 
 `contractVersion` is a JSON number. `contentVersion` is a JSON number and consumers must
 treat it as a signed 64-bit integer. `documentUuid` must match the Kafka key exactly.
+
+The Kafka document-state `variantKey` uses the same five-component shape as API
+`_etag` values: `{schemaEpoch}.j._.{linkFlag}.i` for JSON, no readable profile, the
+published document's link mode, and identity content coding. The example uses
+`a1b2c3d4.j._.l.i` as an illustrative variant key.
 
 `document` is produced from the cached caller-agnostic, pre-profile, full API resource
 body. The value-shaping transform injects the stream-bound `_etag` from the envelope

@@ -35,7 +35,8 @@ GET/query behavior because DMS can always fall back to relational reconstitution
   used for response-body assembly.
 - Readable-profile projection runs after cache retrieval.
 - `DataManagement:ResourceLinks:Enabled` stripping runs after cache retrieval and readable-profile projection.
-- Cached/full-resource `_etag` is preserved for unprofiled and profiled responses.
+- Cached JSON is not the source of `_etag`; cache-backed and relational-fallback reads compose the same served
+  `_etag` from `ContentVersion` and the active request `variantKey`.
 - The read path may enqueue projection work for missing or stale rows.
 - Metrics distinguish cache hit, miss, stale miss, and relational fallback.
 - Tests cover cache hit, miss, stale row, profile projection, link stripping, and disabled read acceleration.

@@ -16,9 +16,9 @@ This story covers serving descriptor resources themselves (distinct from descrip
 
 > **Superseded ETag guidance:** ETag-specific wording in this older read-path story is superseded by
 > `reference/design/backend-redesign/design-docs/update-tracking.md` and
-> `../10-update-tracking-change-queries/03-if-match.md`. Implementers must preserve the full-resource
-> `_etag` through readable profile projection; do not recompute `_etag` from a profile-filtered descriptor
-> response body.
+> `../10-update-tracking-change-queries/03-if-match.md`. Implementers must compose served `_etag`
+> values from `ContentVersion` plus the active `variantKey`; do not hash or recompute `_etag` from a
+> profile-filtered descriptor response body.
 
 ## Acceptance Criteria
 
@@ -26,7 +26,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
   - resolves `DocumentUuid → DocumentId`,
   - verifies the document is of the expected descriptor resource type,
   - returns JSON reconstituted from `dms.Descriptor` columns plus `id` from `dms.Document.DocumentUuid`,
-  - computes the full-resource `_etag` before readable profile projection and serves `_lastModifiedDate` from stored `dms.Document` stamps.
+  - composes `_etag` from `ContentVersion` plus the active `variantKey` and serves `_lastModifiedDate` from stored `dms.Document` stamps.
 - Query for a descriptor resource:
   - compiles filters for descriptor fields to `dms.Descriptor` columns (root-only semantics),
   - pages deterministically using `DocumentId` ordering,
@@ -107,7 +107,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
 8. Fail closed for interim auth. Allow only no strategies or NoFurtherAuthorizationRequired; otherwise return 501/not implemented for descriptor GET/query until SQL-layer auth lands. Descriptor
     namespace auth can later be implemented directly against dms.Descriptor.Namespace.
 
-9. Apply readable profile projection when Core supplies a profile context. Preserve id, _etag, and _lastModifiedDate. The older instruction to recompute `_etag` after projection is superseded; readable projection must preserve the full-resource `_etag`.
+9. Apply readable profile projection when Core supplies a profile context. Preserve id and _lastModifiedDate. The older instruction to recompute `_etag` after projection is superseded; the served `_etag` is composed from `ContentVersion` plus the active `variantKey`, including any readable-profile `profileCode`.
 
 10. Use both test styles: POST-created descriptors for end-to-end acceptance and direct dms.Document/dms.Descriptor seeding for focused read-path, paging, and invariant-failure cases.
 
@@ -170,7 +170,7 @@ descriptor resources and delegates.
      query support for that resource with a 501/actionable diagnostic rather than failing the whole mapping set.
 
   6. Yes, always preserve namespace and codeValue under readable profiles. Descriptor identity is synthetic internally, so the normal identity-property extraction may not protect those fields.
-     Treat them as descriptor identity fields, along with id, _etag, and _lastModifiedDate. The earlier recompute-after-projection guidance is superseded by reference/design/backend-redesign/design-docs/update-tracking.md; profile projection preserves the full-resource `_etag`. The implementation stance should be: descriptor read handler materializes the public descriptor JSON; profile projection
+     Treat them as descriptor identity fields, along with id and _lastModifiedDate. The earlier recompute-after-projection guidance is superseded by reference/design/backend-redesign/design-docs/update-tracking.md; `_etag` is composed after projection context is known from `ContentVersion` plus the active `variantKey`. The implementation stance should be: descriptor read handler materializes the public descriptor JSON; profile projection
      remains generic; Core tells the generic projector that descriptor identity includes namespace and codeValue.
 
   7. Strictly match the stored Namespace column. ?namespace=<namespace>#<codeValue> should not match unless that full value was actually stored in Namespace. Preserve the legacy E2E
@@ -215,6 +215,6 @@ descriptor resources and delegates.
      should only change materialization:
 
     - ExternalResponse: public descriptor fields plus id, _etag, _lastModifiedDate; apply readable profile projection; preserve
-        namespace/codeValue and the full-resource `_etag`.
+        namespace/codeValue and compose the served `_etag` from `ContentVersion` plus the active `variantKey`.
     - StoredDocument: public descriptor fields only; no id, _etag, _lastModifiedDate, no profile projection, no ChangeVersion.
     - Neither mode should emit internal Uri or Discriminator.

@@ -42,10 +42,11 @@ The backend redesign already defines `dms.DocumentCache` as an optional, eventua
 consistent materialized JSON projection intended for read acceleration, downstream
 indexing, and CDC streaming. Its `DocumentJson` column contains the caller-agnostic,
 pre-profile, full API resource body emitted by reconstitution, including top-level
-`id`, `_etag`, and `_lastModifiedDate`. When link injection is part of the read plan,
-this cached document includes reference `link` subtrees; readable-profile projection and
-`ResourceLinks:Enabled` stripping happen after cache retrieval and do not change the
-full-resource `_etag`.
+`id` and `_lastModifiedDate`. It does not store `_etag`; serving and stream-shaping
+boundaries compose `_etag` from `ContentVersion` plus the active representation
+`variantKey`. When link injection is part of the read plan, this cached document
+includes reference `link` subtrees; readable-profile projection and
+`ResourceLinks:Enabled` stripping happen after cache retrieval.
 
 Change Queries are a separate polling API surface based on `ContentVersion`,
 `ContentLastModifiedAt`, and `tracked_changes_*` tables. They are not the Debezium/Kafka

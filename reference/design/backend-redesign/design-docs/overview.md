@@ -107,7 +107,7 @@ This redesign is split into focused docs in this directory:
 - Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
-- Update tracking (stored stamps for `_etag/_lastModifiedDate/ChangeVersion`): [update-tracking.md](update-tracking.md)
+- Update tracking (stored stamps for `_lastModifiedDate` / `ChangeVersion`, composed `_etag`): [update-tracking.md](update-tracking.md)
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, `ContentVersion` mirror, `tracked_changes_*` tables): [change-queries.md](change-queries.md)
 - CDC/Kafka (`dms.DocumentCache` source, topic/message contract, connector deployment): [cdc/](cdc/)
 - DDL Generation (builds the relational model and emits/provisions DDL): [ddl-generation.md](ddl-generation.md)

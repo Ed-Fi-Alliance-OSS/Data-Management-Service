@@ -84,10 +84,12 @@ Create/update/snapshot values have this public shape:
   "resourceName": "Student",
   "resourceVersion": "5.2.0",
   "contentVersion": 123456,
-  "etag": "TZZ7bIyeL9XIpH4/Cm250PS5u1x8MMGk4x3Uwh8qASM=",
+  "etag": "123456-a1b2c3d4.j._.l.i",
   "lastModifiedAt": "2026-07-06T15:30:45.1234567Z",
   "document": {
-    "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
+    "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
+    "_etag": "123456-a1b2c3d4.j._.l.i",
+    "_lastModifiedDate": "2026-07-06T15:30:45.1234567Z"
   }
 }
 ```
@@ -95,8 +97,9 @@ Create/update/snapshot values have this public shape:
 The published value does not include `DocumentId`, `ComputedAt`, authorization arrays,
 EdOrg hierarchy arrays, API client identity, or readable-profile-specific projections.
 The `etag` value is the DMS API `_etag` for the Kafka document-state variant. It is
-derived from `contentVersion` and the stream `variantKey`, not read from
-`dms.DocumentCache`.
+derived from `contentVersion` and the stream `variantKey`, using the same
+`{schemaEpoch}.j._.{linkFlag}.i` variant-key shape as API ETags for the published JSON
+document. It is not read from a `dms.DocumentCache.Etag` column.
 
 The `document` field is produced from the caller-agnostic, pre-profile, full API
 resource body stored in `dms.DocumentCache.DocumentJson`. The stream shaper injects

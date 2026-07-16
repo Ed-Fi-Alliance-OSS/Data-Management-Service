@@ -114,7 +114,7 @@ This index links design documents under `reference/design/backend-redesign/epics
 - `DMS-1001` — Update Tracking (`_etag/_lastModifiedDate`) + Change Queries (`ChangeVersion`) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/EPIC.md`
   - `DMS-1002` — Emit Stamping Triggers for `dms.Document` (Content + Identity Stamps) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/00-token-stamping.md`
   - `DMS-1003` — Journaling Contract (Triggers Own Journal Writes) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/01-journaling-contract.md`
-  - `DMS-1004` — Serve `_etag`, `_lastModifiedDate`, and `ChangeVersion` from Stored Stamps — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/02-derived-metadata.md`
+  - `DMS-1004` — Compose `_etag`; Serve `_lastModifiedDate` and `ChangeVersion` from Stored Stamps — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/02-derived-metadata.md`
   - `DMS-1005` — Enforce `If-Match` Using Stored Representation Stamps — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/03-if-match.md`
   - `DMS-1006` — Change Query Candidate Selection (Journal-Driven) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/04-change-query-selection.md`
   - `DMS-1007` — Change Query API Endpoints (Optional / Future-Facing) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/05-change-query-api.md`
