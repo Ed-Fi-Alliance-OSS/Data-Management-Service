@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -82,7 +81,6 @@ file sealed class FailOnSchoolAddressInsertRelationalWriteSession(
 ) : IRelationalWriteSession
 {
     private const string SchoolAddressInsertSql = "INSERT INTO \"edfi\".\"SchoolAddress\"";
-    private const string InjectedFailureMessage = "Injected write failure after early executor writes.";
 
     private readonly IRelationalWriteSession _innerSession =
         innerSession ?? throw new ArgumentNullException(nameof(innerSession));
@@ -99,7 +97,7 @@ file sealed class FailOnSchoolAddressInsertRelationalWriteSession(
 
         if (command.CommandText.Contains(SchoolAddressInsertSql, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(InjectedFailureMessage);
+            throw new InvalidOperationException(NoProfileAtomicRollbackAssertions.InjectedFailureMessage);
         }
 
         return _innerSession.CreateCommand(command);
@@ -297,27 +295,19 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
     }
 
     [Test]
-    public void It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted()
-    {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception.Message.Should().Be("Injected write failure after early executor writes.");
-
-        var documentInsertIndex = FindCommandIndex("INSERT INTO dms.\"Document\"");
-        var schoolInsertIndex = FindCommandIndex("INSERT INTO \"edfi\".\"School\"");
-        var schoolAddressInsertIndex = FindCommandIndex("INSERT INTO \"edfi\".\"SchoolAddress\"");
-
-        documentInsertIndex.Should().BeGreaterThanOrEqualTo(0);
-        schoolInsertIndex.Should().BeGreaterThan(documentInsertIndex);
-        schoolAddressInsertIndex.Should().BeGreaterThan(schoolInsertIndex);
-    }
+    public void It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted() =>
+        NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites(
+            _exception,
+            RecordedWriteSteps()
+        );
 
     [Test]
-    public void It_leaves_no_partial_relational_state_after_the_transaction_rolls_back()
-    {
-        _documentCount.Should().Be(0);
-        _schoolCount.Should().Be(0);
-        _schoolAddressCount.Should().Be(0);
-    }
+    public void It_leaves_no_partial_relational_state_after_the_transaction_rolls_back() =>
+        NoProfileAtomicRollbackAssertions.AssertNoPartialRelationalStateAfterRollback(
+            _documentCount,
+            _schoolCount,
+            _schoolAddressCount
+        );
 
     private async Task ExecuteCreateAsync()
     {
@@ -347,11 +337,27 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         );
     }
 
-    private int FindCommandIndex(string commandTextSnippet) =>
+    // Translates the recorded PostgreSQL command text into the provider-neutral ordered write steps
+    // consumed by the shared rollback assertion. Provider dialect SQL stays here, not in the contract.
+    private static readonly (
+        string Snippet,
+        NoProfileAtomicRollbackAssertions.RelationalWriteStep Step
+    )[] WriteStepSnippets =
+    [
+        ("INSERT INTO dms.\"Document\"", NoProfileAtomicRollbackAssertions.RelationalWriteStep.Document),
+        ("INSERT INTO \"edfi\".\"School\"", NoProfileAtomicRollbackAssertions.RelationalWriteStep.School),
+        (
+            "INSERT INTO \"edfi\".\"SchoolAddress\"",
+            NoProfileAtomicRollbackAssertions.RelationalWriteStep.SchoolAddress
+        ),
+    ];
+
+    private IReadOnlyList<NoProfileAtomicRollbackAssertions.RelationalWriteStep> RecordedWriteSteps() =>
         _commandRecorder
-            .CommandTexts.Select(static (commandText, index) => (commandText, index))
-            .Where(entry => entry.commandText.Contains(commandTextSnippet, StringComparison.Ordinal))
-            .Select(entry => entry.index)
-            .DefaultIfEmpty(-1)
-            .First();
+            .CommandTexts.SelectMany(commandText =>
+                WriteStepSnippets
+                    .Where(entry => commandText.Contains(entry.Snippet, StringComparison.Ordinal))
+                    .Select(entry => entry.Step)
+            )
+            .ToArray();
 }

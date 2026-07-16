@@ -385,14 +385,6 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationPersistedState
     IReadOnlyList<AuthoritativeSampleStudentSchoolAssociationEducationPlanRow> EducationPlans
 );
 
-internal sealed record AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot(
-    IReadOnlyList<Guid> DocumentUuids,
-    IReadOnlyList<long> AssociationDocumentIds,
-    IReadOnlyList<long> AssociationExtensionDocumentIds,
-    IReadOnlyList<long> AlternativeGraduationPlanCollectionItemIds,
-    IReadOnlyList<long> EducationPlanCollectionItemIds
-);
-
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
@@ -3604,8 +3596,8 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     private ResourceSchema _baseResourceSchema = null!;
     private AuthoritativeSampleStudentSchoolAssociationSeedData _seedData = null!;
     private UpsertResult _result = null!;
-    private AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot _snapshotBefore = null!;
-    private AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot _snapshotAfter = null!;
+    private NoProfileAtomicRollbackAssertions.RejectedWriteSnapshot _snapshotBefore = null!;
+    private NoProfileAtomicRollbackAssertions.RejectedWriteSnapshot _snapshotAfter = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -3665,34 +3657,15 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     }
 
     [Test]
-    public void It_returns_a_validation_failure_and_leaves_document_and_authoritative_tables_unchanged()
-    {
-        _result.Should().BeOfType<UpsertResult.UpsertFailureValidation>();
-
-        var validationFailure = _result
-            .As<UpsertResult.UpsertFailureValidation>()
-            .ValidationFailures.Should()
-            .ContainSingle()
-            .Subject;
-
-        validationFailure.Path.Value.Should().Be("$.schoolReference.schoolId");
-        validationFailure
-            .Message.Should()
-            .Contain("Key-unification conflict for canonical column 'SchoolId_Unified'");
-
-        _snapshotAfter.Should().BeEquivalentTo(_snapshotBefore);
-        _snapshotAfter.DocumentUuids.Should().NotContain(RejectedDocumentUuid.Value);
-        _snapshotAfter.AssociationDocumentIds.Should().BeEmpty();
-        _snapshotAfter.AssociationExtensionDocumentIds.Should().BeEmpty();
-        _snapshotAfter.AlternativeGraduationPlanCollectionItemIds.Should().BeEmpty();
-        _snapshotAfter.EducationPlanCollectionItemIds.Should().BeEmpty();
-        _snapshotAfter.DocumentUuids.Count.Should().Be(_snapshotBefore.DocumentUuids.Count);
-        _mappingSet
-            .ResourceKeyIdByResource[new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation")]
-            .Should()
-            .BeGreaterThan((short)0);
-        _seedData.ConflictCalendarDocumentId.Should().BeGreaterThan(0L);
-    }
+    public void It_returns_a_validation_failure_and_leaves_document_and_authoritative_tables_unchanged() =>
+        NoProfileAtomicRollbackAssertions.AssertKeyUnificationConflictRejectedAtomically(
+            _result,
+            _mappingSet,
+            RejectedDocumentUuid.Value,
+            _snapshotBefore,
+            _snapshotAfter,
+            _seedData.ConflictCalendarDocumentId
+        );
 
     private async Task<UpsertResult> ExecuteCreateAsync(
         string requestBodyJson,
@@ -4436,7 +4409,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         );
     }
 
-    private async Task<AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot> ReadRejectedWriteSnapshotAsync()
+    private async Task<NoProfileAtomicRollbackAssertions.RejectedWriteSnapshot> ReadRejectedWriteSnapshotAsync()
     {
         return new(
             DocumentUuids: await ReadGuidListAsync(

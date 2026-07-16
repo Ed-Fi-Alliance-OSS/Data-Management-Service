@@ -434,7 +434,7 @@ public static partial class ParityScenarioCatalog
                 "It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted",
                 "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
             ],
-            sharedEntryPoint: "NoProfileAtomicRollbackAssertions (DMS-1023 shared contract, later unit)"
+            sharedEntryPoint: "NoProfileAtomicRollbackAssertions"
         ),
         Gap(
             "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
@@ -454,7 +454,7 @@ public static partial class ParityScenarioCatalog
             SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
             ["It_returns_a_validation_failure_and_leaves_document_and_authoritative_tables_unchanged"],
-            sharedEntryPoint: "NoProfileAtomicRollbackAssertions (DMS-1023 shared contract, later unit)"
+            sharedEntryPoint: "NoProfileAtomicRollbackAssertions"
         ),
         // --- Authoritative PostgreSQL breadth smokes (one row per mechanic/boundary) --------
         PgSmokeCreate(
