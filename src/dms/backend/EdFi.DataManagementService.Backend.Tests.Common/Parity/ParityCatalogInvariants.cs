@@ -85,14 +85,39 @@ public static class ParityCatalogInvariants
         CheckLocations(scenario.MssqlLocations, id, "SQL Server", violations);
         CheckLocations(scenario.UnitLocations, id, "unit", violations);
 
-        if (scenario.PgsqlCoverage == EngineCoverage.Covered && scenario.PgsqlLocations.IsDefaultOrEmpty)
-        {
-            violations.Add($"{id}: PostgreSQL coverage is Covered but no PostgreSQL location is recorded.");
-        }
+        CheckCoverageLocationConsistency(
+            id,
+            "PostgreSQL",
+            scenario.PgsqlCoverage,
+            scenario.PgsqlLocations,
+            violations
+        );
+        CheckCoverageLocationConsistency(
+            id,
+            "SQL Server",
+            scenario.MssqlCoverage,
+            scenario.MssqlLocations,
+            violations
+        );
+    }
 
-        if (scenario.MssqlCoverage == EngineCoverage.Covered && scenario.MssqlLocations.IsDefaultOrEmpty)
+    private static void CheckCoverageLocationConsistency(
+        string id,
+        string engine,
+        EngineCoverage coverage,
+        ImmutableArray<ScenarioLocation> locations,
+        List<string> violations
+    )
+    {
+        if (coverage == EngineCoverage.Covered && locations.IsDefaultOrEmpty)
         {
-            violations.Add($"{id}: SQL Server coverage is Covered but no SQL Server location is recorded.");
+            violations.Add($"{id}: {engine} coverage is Covered but no {engine} location is recorded.");
+        }
+        else if (coverage != EngineCoverage.Covered && !locations.IsDefaultOrEmpty)
+        {
+            violations.Add(
+                $"{id}: {engine} coverage is {coverage} but a {engine} location is recorded (only Covered may name a location)."
+            );
         }
     }
 
@@ -186,6 +211,19 @@ public static class ParityCatalogInvariants
         {
             violations.Add($"{id}: Unit locations are only valid on an Na row.");
         }
+
+        if (
+            (
+                scenario.PgsqlCoverage == EngineCoverage.Mapped
+                || scenario.MssqlCoverage == EngineCoverage.Mapped
+            )
+            && scenario.Classification != ParityClassification.SupportingSmoke
+        )
+        {
+            violations.Add(
+                $"{id}: EngineCoverage.Mapped is only valid on the deferred engine of a SupportingSmoke row."
+            );
+        }
     }
 
     private static void ValidateNotApplicable(ParityScenario scenario, string id, List<string> violations)
@@ -214,6 +252,11 @@ public static class ParityCatalogInvariants
         List<string> violations
     )
     {
+        if (scenario.Layer != ParityLayer.NoProfile)
+        {
+            violations.Add($"{id}: a SupportingSmoke row must be in the NoProfile layer.");
+        }
+
         bool oneCoveredOneMapped =
             (
                 scenario.PgsqlCoverage == EngineCoverage.Covered

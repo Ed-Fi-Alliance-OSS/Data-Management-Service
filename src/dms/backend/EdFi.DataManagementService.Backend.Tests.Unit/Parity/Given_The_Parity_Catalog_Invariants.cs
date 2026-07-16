@@ -435,3 +435,94 @@ public class Given_A_Unit_Location_On_A_Non_Na_Row
             .Should()
             .Contain(v => v.Contains("Unit locations are only valid on an Na row", StringComparison.Ordinal));
 }
+
+[TestFixture]
+public class Given_A_Gap_Engine_That_Still_Names_A_Location
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[1] = scenarios[1] with
+        {
+            MssqlLocations = [new("MssqlSample.cs", "Given_A_Mssql_Sample", ["It_persists"])],
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_location_on_a_non_covered_engine() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("only Covered may name a location", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Not_Applicable_Row_With_A_Provider_Location
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[3] = scenarios[3] with
+        {
+            PgsqlLocations = [new("PostgresqlSample.cs", "Given_A_Postgresql_Sample", ["It_persists"])],
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_provider_location_on_a_not_applicable_engine() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("only Covered may name a location", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Mapped_Engine_That_Still_Names_A_Location
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[2] = scenarios[2] with
+        {
+            MssqlLocations = [new("MssqlSampleSmoke.cs", "Given_A_Mssql_Sample_Smoke", ["It_persists"])],
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_location_on_a_mapped_engine() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("only Covered may name a location", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Mapped_Engine_On_A_Non_Supporting_Row
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[1] = scenarios[1] with { PgsqlCoverage = EngineCoverage.Mapped, PgsqlLocations = [] };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_mapped_coverage_outside_a_supporting_smoke() =>
+        _violations
+            .Should()
+            .Contain(v =>
+                v.Contains("Mapped is only valid on the deferred engine", StringComparison.Ordinal)
+            );
+}

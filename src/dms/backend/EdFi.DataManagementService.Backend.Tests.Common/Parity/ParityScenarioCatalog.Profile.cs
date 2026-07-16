@@ -408,6 +408,14 @@ public static partial class ParityScenarioCatalog
             ["It_returns_update_success_for_an_unchanged_profiled_put", "It_does_not_change_rowsets"]
         ),
         Profile(
+            "ProfileUnchangedWriteGuardedNoOp/RootOnlyPut",
+            "Root-only shape: an unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps.",
+            "ProfileGuardedNoOpTests",
+            "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
+            "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
+            ["It_returns_update_success_for_an_unchanged_profiled_put", "It_does_not_change_rowsets"]
+        ),
+        Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPostAsUpdate",
             "An unchanged profiled POST-as-update is a guarded no-op that keeps the existing document uuid.",
             "ProfileGuardedNoOpTests",

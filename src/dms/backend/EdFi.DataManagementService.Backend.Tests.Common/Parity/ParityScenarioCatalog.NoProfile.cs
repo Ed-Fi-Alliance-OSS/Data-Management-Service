@@ -137,6 +137,22 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileCreateBaselineScenarios + NoProfileUpdateSemanticsScenarios (umbrella; DMS-1023 shared contracts, later unit)",
             notes: "Realized by NoProfileFullSurfaceCreate (no-profile _ext create) and NoProfileChangedPutOmissionSemantics (omitted non-collection scope)."
         ),
+        Gap(
+            "NoProfileWriteBehavior/OmittedNonCollectionScope",
+            "The control changed-write clears an omitted non-collection (inlined) scope rather than preserving hidden data.",
+            ProductionBoundary.NoProfilePersister,
+            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            ["It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"]
+        ),
+        Gap(
+            "NoProfileWriteBehavior/NoProfileExt",
+            "The control full-surface write persists no-profile _ext (root extension, collection extension, extension-child) storage on create.",
+            ProductionBoundary.NoProfilePersister,
+            "PostgresqlRelationalWriteCreateBaselineTests.cs",
+            "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+            ["It_persists_root_extensions_collection_extensions_and_extension_child_collections"]
+        ),
         // --- FullSurfaceCollectionReorder + variants ----------------------------------------
         Gap(
             "FullSurfaceCollectionReorder",
@@ -279,6 +295,17 @@ public static partial class ParityScenarioCatalog
             )
         ),
         Gap(
+            "NoProfileMultiBatchCollection/Create",
+            "Multi-batch create persists the full large collection and partitions id-reservation and insert commands at the compiled batch limit.",
+            ProductionBoundary.BatchSqlEmitter,
+            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture",
+            [
+                "It_returns_insert_success_and_persists_the_full_large_collection",
+                "It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit",
+            ]
+        ),
+        Gap(
             "NoProfileMultiBatchCollection/DeleteUpdate",
             "Multi-batch delete/update reduces a large collection, partitioning delete commands at the compiled batch limit.",
             ProductionBoundary.BatchSqlEmitter,
@@ -324,6 +351,17 @@ public static partial class ParityScenarioCatalog
                 "It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update",
             ],
             sharedEntryPoint: "NoProfilePostAsUpdateScenarios (DMS-1023 shared contract, later unit)"
+        ),
+        Gap(
+            "NoProfilePostAsUpdate/FocusedStableKey",
+            "POST-as-update on the focused stable-key fixture preserves the existing document row and applies changed full-surface state without inserting new rows.",
+            ProductionBoundary.NoProfilePersister,
+            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
+            [
+                "It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update",
+                "It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update",
+            ]
         ),
         Gap(
             "NoProfilePostAsUpdate/ImmutableIdentityRejected",
@@ -624,6 +662,22 @@ public static partial class ParityScenarioCatalog
                 ),
             ],
             notes: "Not one of the eight no-profile write families; a first-class cross-engine read-path mechanic outside SupportingSmoke."
+        ),
+        Gap(
+            "NoProfile/RelationalReadback/ChangedPutEtag",
+            "The served ETag from a follow-up GET-by-id after a changed PUT matches the current relational state (PostgreSQL-only today; no audited SQL Server equivalent).",
+            ProductionBoundary.RelationalReadback,
+            SsaSmoke,
+            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
+            ["It_returns_the_changed_put_etag_from_follow_up_get_by_id"]
+        ),
+        Gap(
+            "NoProfile/RelationalReadback/RepeatPutEtag",
+            "The served ETag from a follow-up GET-by-id after a repeat (no-op) PUT matches the current relational state (PostgreSQL-only today; no audited SQL Server equivalent).",
+            ProductionBoundary.RelationalReadback,
+            SsaSmoke,
+            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
+            ["It_returns_the_repeat_put_etag_from_follow_up_get_by_id"]
         ),
     ];
 
