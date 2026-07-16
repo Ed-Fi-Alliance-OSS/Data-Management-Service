@@ -76,11 +76,11 @@ window.EdFiRouteContext = function () {
             return;
         }
 
-        renderSelector(serverDetails.fields);
-
         state.routeOrder = serverDetails.order;
         state.urlTemplate = serverDetails.urlTemplate;
         state.selections = buildUpdatedSelections(serverDetails.fields, serverDetails.defaults);
+
+        renderSelector(serverDetails.fields);
         updateComputedUrl();
     };
 
@@ -343,11 +343,6 @@ window.EdFiRouteContext = function () {
         state.computedValueEl.textContent = computedUrl;
     };
 
-    const prefixUnqualifiedRuntimePath = (url, runtimePath, routePrefix) => {
-        const pattern = new RegExp(`^((?:https?:\\/\\/[^/?#]+)?)${escapeRegex(runtimePath)}`);
-        return url.replace(pattern, (_match, origin) => `${origin}${routePrefix}${runtimePath}`);
-    };
-
     const rewriteRequestUrl = (url) => {
         if (!url || typeof url !== 'string') {
             return url;
@@ -359,12 +354,10 @@ window.EdFiRouteContext = function () {
         rewrittenUrl = rewrittenUrl.replace(/:\/\/ed-fi-api-config(?=[:/]|$)/g, '://localhost');
 
         const routePrefix = buildRoutePrefix();
-        if (routePrefix && !rewrittenUrl.includes('/metadata/')) {
-            rewrittenUrl = prefixUnqualifiedRuntimePath(rewrittenUrl, '/data/', routePrefix);
-        }
-
-        if (routePrefix) {
-            rewrittenUrl = prefixUnqualifiedRuntimePath(rewrittenUrl, '/changeQueries/v1/', routePrefix);
+        if (routePrefix && rewrittenUrl.includes('/data/') && !rewrittenUrl.includes('/metadata/')) {
+            if (!rewrittenUrl.includes(`${routePrefix}/data/`)) {
+                rewrittenUrl = rewrittenUrl.replace(/\/data\//, `${routePrefix}/data/`);
+            }
         }
 
         if (routePrefix && rewrittenUrl.includes('/connect/token')) {
