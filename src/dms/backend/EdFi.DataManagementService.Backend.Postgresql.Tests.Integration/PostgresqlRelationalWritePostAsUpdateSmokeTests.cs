@@ -120,6 +120,79 @@ file static class PostAsUpdateIntegrationTestSupport
         );
     }
 
+    // Project actual PostgreSQL readback rows into the provider-neutral records/snapshots the shared
+    // NoProfilePostAsUpdateScenarios contract asserts over.
+    public static NoProfilePostAsUpdateScenarios.DocumentRow ToNeutral(
+        FocusedPostAsUpdateDocumentRow document
+    ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
+
+    public static NoProfilePostAsUpdateScenarios.DocumentRow ToNeutral(
+        AuthoritativePostAsUpdateDocumentRow document
+    ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolRow ToNeutral(FocusedPostAsUpdateSchoolRow school) =>
+        new(school.DocumentId, school.SchoolId, school.ShortName);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolAddressRow ToNeutral(
+        FocusedPostAsUpdateSchoolAddressRow address
+    ) => new(address.CollectionItemId, address.SchoolDocumentId, address.Ordinal, address.City);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolExtensionAddressRow ToNeutral(
+        FocusedPostAsUpdateSchoolExtensionAddressRow extensionAddress
+    ) => new(extensionAddress.BaseCollectionItemId, extensionAddress.SchoolDocumentId, extensionAddress.Zone);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolYearTypeRow ToNeutral(
+        AuthoritativeSchoolYearTypeRow schoolYearType
+    ) =>
+        new(
+            schoolYearType.DocumentId,
+            schoolYearType.SchoolYear,
+            schoolYearType.CurrentSchoolYear,
+            schoolYearType.SchoolYearDescription
+        );
+
+    public static NoProfilePostAsUpdateScenarios.AuthoritativePostAsUpdateSnapshot ToSnapshot(
+        AuthoritativeStudentAcademicRecordPersistedState state
+    ) =>
+        new(
+            state.Document.DocumentId,
+            state.Document.ContentVersion,
+            state.AcademicRecord.DocumentId,
+            state.AcademicRecordExtension.DocumentId,
+            [
+                .. state.AcademicHonors.Select(
+                    row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.HonorDescription
+                    )
+                ),
+            ],
+            [
+                .. state.Diplomas.Select(row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
+                    row.CollectionItemId,
+                    row.Ordinal,
+                    row.DiplomaAwardDate
+                )),
+            ],
+            [
+                .. state.GradePointAverages.Select(
+                    row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.GradePointAverageValue.ToString(CultureInfo.InvariantCulture)
+                    )
+                ),
+            ],
+            [
+                .. state.Recognitions.Select(row => new NoProfilePostAsUpdateScenarios.CollectionRowSnapshot(
+                    row.CollectionItemId,
+                    row.Ordinal,
+                    row.RecognitionDescription
+                )),
+            ]
+        );
+
     public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
@@ -359,26 +432,22 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     }
 
     [Test]
-    public void It_returns_explicit_immutable_identity_failure_for_post_as_update()
-    {
-        _rejectedPostAsUpdateResult.Should().BeOfType<UpsertResult.UpsertFailureImmutableIdentity>();
-        _rejectedPostAsUpdateResult.Should().NotBeOfType<UpsertResult.UnknownFailure>();
-        _rejectedPostAsUpdateResult
-            .As<UpsertResult.UpsertFailureImmutableIdentity>()
-            .FailureMessage.Should()
-            .Be(
-                "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
-            );
-    }
+    public void It_returns_explicit_immutable_identity_failure_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertImmutableIdentityRejected(
+            _rejectedPostAsUpdateResult,
+            "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
+        );
 
     [Test]
-    public void It_does_not_commit_row_changes_for_rejected_post_as_update()
-    {
-        _documentAfterRejectedPostAsUpdate.Should().Be(_documentBeforeRejectedPostAsUpdate);
-        _schoolAfterRejectedPostAsUpdate.Should().Be(_schoolBeforeRejectedPostAsUpdate);
-        _documentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_does_not_commit_row_changes_for_rejected_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges(
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentBeforeRejectedPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterRejectedPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolBeforeRejectedPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterRejectedPostAsUpdate),
+            _documentCount,
+            _incomingDocumentUuidCount
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -2459,61 +2528,44 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     }
 
     [Test]
-    public void It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update()
-    {
-        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _postAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingSchoolDocumentUuid);
-        _documentAfterPostAsUpdate.DocumentUuid.Should().Be(ExistingSchoolDocumentUuid.Value);
-        _documentAfterPostAsUpdate
-            .ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[SchoolResource]);
-        _documentAfterPostAsUpdate
-            .ContentVersion.Should()
-            .BeGreaterThan(_documentBeforePostAsUpdate.ContentVersion);
-        _documentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace(
+            _postAsUpdateResult,
+            ExistingSchoolDocumentUuid,
+            _mappingSet,
+            SchoolResource,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentBeforePostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            _documentCount,
+            _incomingDocumentUuidCount
+        );
 
     [Test]
-    public void It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update()
-    {
-        _addressesBeforePostAsUpdate.Should().HaveCount(2);
-        _extensionAddressesBeforePostAsUpdate.Should().HaveCount(2);
-
-        _schoolAfterPostAsUpdate
-            .Should()
-            .Be(new FocusedPostAsUpdateSchoolRow(_documentAfterPostAsUpdate.DocumentId, 255901, null));
-
-        _addressesAfterPostAsUpdate
-            .Should()
-            .Equal(
-                new FocusedPostAsUpdateSchoolAddressRow(
-                    _addressesBeforePostAsUpdate[0].CollectionItemId,
-                    _documentAfterPostAsUpdate.DocumentId,
-                    0,
-                    "Austin"
+    public void It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied(
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterPostAsUpdate),
+            [
+                .. _addressesBeforePostAsUpdate.Select(address =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(address)
                 ),
-                new FocusedPostAsUpdateSchoolAddressRow(
-                    _addressesBeforePostAsUpdate[1].CollectionItemId,
-                    _documentAfterPostAsUpdate.DocumentId,
-                    1,
-                    "Dallas"
-                )
-            );
-
-        _extensionAddressesAfterPostAsUpdate
-            .Should()
-            .Equal(
-                new FocusedPostAsUpdateSchoolExtensionAddressRow(
-                    _addressesBeforePostAsUpdate[0].CollectionItemId,
-                    _documentAfterPostAsUpdate.DocumentId,
-                    "Zone-1-Updated"
-                )
-            );
-    }
+            ],
+            [
+                .. _extensionAddressesBeforePostAsUpdate.Select(extensionAddress =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(extensionAddress)
+                ),
+            ],
+            [
+                .. _addressesAfterPostAsUpdate.Select(address =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(address)
+                ),
+            ],
+            [
+                .. _extensionAddressesAfterPostAsUpdate.Select(extensionAddress =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(extensionAddress)
+                ),
+            ]
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -2844,32 +2896,29 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     }
 
     [Test]
-    public void It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits()
-    {
-        var createWinnerSuccess = _createWinnerResult.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
-        createWinnerSuccess.NewDocumentUuid.Should().Be(CreateWinnerDocumentUuid);
-        RelationalGetIntegrationTestHelper.AssertComposedEtag(createWinnerSuccess.ETag);
-        _staleCreateCandidateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _staleCreateCandidateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(CreateWinnerDocumentUuid);
-        _documentAfterRequests.DocumentUuid.Should().Be(CreateWinnerDocumentUuid.Value);
-        _documentCount.Should().Be(1);
-        _staleCreateCandidateDocumentUuidCount.Should().Be(0);
-    }
+    public void It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits() =>
+        NoProfilePostAsUpdateScenarios.AssertStaleCreateConvertedToPostAsUpdate(
+            _createWinnerResult,
+            CreateWinnerDocumentUuid,
+            _staleCreateCandidateResult,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterRequests),
+            _documentCount,
+            _staleCreateCandidateDocumentUuidCount
+        );
 
     [Test]
-    public void It_applies_last_writer_state_to_the_existing_document_instead_of_creating_duplicate_rows()
-    {
-        _schoolAfterRequests
-            .Should()
-            .Be(new FocusedPostAsUpdateSchoolRow(_documentAfterRequests.DocumentId, 255901, "LAST-WRITER"));
-        _addressesAfterRequests.Should().ContainSingle();
-        _addressesAfterRequests[0].SchoolDocumentId.Should().Be(_documentAfterRequests.DocumentId);
-        _addressesAfterRequests[0].Ordinal.Should().Be(0);
-        _addressesAfterRequests[0].City.Should().Be("Dallas");
-    }
+    public void It_applies_last_writer_state_to_the_existing_document_instead_of_creating_duplicate_rows() =>
+        NoProfilePostAsUpdateScenarios.AssertLastWriterStateApplied(
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterRequests),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterRequests),
+            [
+                .. _addressesAfterRequests.Select(address =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(address)
+                ),
+            ],
+            "LAST-WRITER",
+            "Dallas"
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -3189,38 +3238,27 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     }
 
     [Test]
-    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid()
-    {
-        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _postAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingSchoolYearTypeDocumentUuid);
-        _documentAfterPostAsUpdate.DocumentUuid.Should().Be(ExistingSchoolYearTypeDocumentUuid.Value);
-        _documentAfterPostAsUpdate
-            .ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[SchoolYearTypeResource]);
-        _documentAfterPostAsUpdate
-            .ContentVersion.Should()
-            .BeGreaterThan(_documentBeforePostAsUpdate.ContentVersion);
-        _documentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid() =>
+        NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace(
+            _postAsUpdateResult,
+            ExistingSchoolYearTypeDocumentUuid,
+            _mappingSet,
+            SchoolYearTypeResource,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentBeforePostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            _documentCount,
+            _incomingDocumentUuidCount
+        );
 
     [Test]
-    public void It_updates_the_authoritative_ds52_row_in_place_for_post_as_update()
-    {
-        _schoolYearTypeAfterPostAsUpdate
-            .Should()
-            .Be(
-                new AuthoritativeSchoolYearTypeRow(
-                    _documentAfterPostAsUpdate.DocumentId,
-                    2026,
-                    false,
-                    "2025-2026 Revised"
-                )
-            );
-    }
+    public void It_updates_the_authoritative_ds52_row_in_place_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertAuthoritativeSchoolYearTypeRowInPlace(
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolYearTypeAfterPostAsUpdate),
+            2026,
+            false,
+            "2025-2026 Revised"
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -3760,30 +3798,27 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     }
 
     [Test]
-    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid()
-    {
-        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _postAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingStudentAcademicRecordDocumentUuid);
-        _stateAfterPostAsUpdate
-            .Document.DocumentUuid.Should()
-            .Be(ExistingStudentAcademicRecordDocumentUuid.Value);
-        _stateAfterPostAsUpdate.Document.DocumentId.Should().Be(_stateAfterCreate.Document.DocumentId);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]);
-        _stateAfterPostAsUpdate
-            .Document.ContentVersion.Should()
-            .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
-        _resourceDocumentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid() =>
+        NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace(
+            _postAsUpdateResult,
+            ExistingStudentAcademicRecordDocumentUuid,
+            _mappingSet,
+            StudentAcademicRecordResource,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_stateAfterCreate.Document),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_stateAfterPostAsUpdate.Document),
+            _resourceDocumentCount,
+            _incomingDocumentUuidCount
+        );
 
     [Test]
     public void It_updates_root_and_extension_rows_in_place_for_authoritative_student_academic_record_post_as_update()
     {
+        NoProfilePostAsUpdateScenarios.AssertAuthoritativeRootAndExtensionInPlace(
+            _stateAfterPostAsUpdate.AcademicRecord.DocumentId,
+            _stateAfterPostAsUpdate.AcademicRecordExtension.DocumentId,
+            _stateAfterCreate.Document.DocumentId
+        );
+
         _stateAfterPostAsUpdate
             .AcademicRecord.Should()
             .Be(
@@ -3833,7 +3868,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "Community Foundation"
                 )
             );
-        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
             "AcademicHonors",
             [.. _stateAfterCreate.AcademicHonors.Select(row => row.CollectionItemId)],
             [.. _stateAfterPostAsUpdate.AcademicHonors.Select(row => row.CollectionItemId)]
@@ -3859,7 +3894,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "Honors Path"
                 )
             );
-        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
             "Diplomas",
             [.. _stateAfterCreate.Diplomas.Select(row => row.CollectionItemId)],
             [.. _stateAfterPostAsUpdate.Diplomas.Select(row => row.CollectionItemId)]
@@ -3885,7 +3920,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     false
                 )
             );
-        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
             "GradePointAverages",
             [.. _stateAfterCreate.GradePointAverages.Select(row => row.CollectionItemId)],
             [.. _stateAfterPostAsUpdate.GradePointAverages.Select(row => row.CollectionItemId)]
@@ -3911,7 +3946,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "District Office"
                 )
             );
-        NoProfileUpdateSemanticsScenarios.AssertRetainedChildRowIdStableAndOmittedRowReplaced(
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
             "Recognitions",
             [.. _stateAfterCreate.Recognitions.Select(row => row.CollectionItemId)],
             [.. _stateAfterPostAsUpdate.Recognitions.Select(row => row.CollectionItemId)]
@@ -3919,16 +3954,14 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     }
 
     [Test]
-    public void It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update()
-    {
-        _repeatPostAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _repeatPostAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingStudentAcademicRecordDocumentUuid);
-        _stateAfterRepeatPostAsUpdate.Should().BeEquivalentTo(_stateAfterPostAsUpdate);
-        _repeatIncomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp(
+            _repeatPostAsUpdateResult,
+            ExistingStudentAcademicRecordDocumentUuid,
+            PostAsUpdateIntegrationTestSupport.ToSnapshot(_stateAfterPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToSnapshot(_stateAfterRepeatPostAsUpdate),
+            _repeatIncomingDocumentUuidCount
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,

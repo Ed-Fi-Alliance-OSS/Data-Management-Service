@@ -363,7 +363,7 @@ public static partial class ParityScenarioCatalog
                 "It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update",
                 "It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update",
             ],
-            sharedEntryPoint: "NoProfilePostAsUpdateScenarios (DMS-1023 shared contract, later unit)"
+            sharedEntryPoint: "NoProfilePostAsUpdateScenarios"
         ),
         Gap(
             "NoProfilePostAsUpdate/FocusedStableKey",
