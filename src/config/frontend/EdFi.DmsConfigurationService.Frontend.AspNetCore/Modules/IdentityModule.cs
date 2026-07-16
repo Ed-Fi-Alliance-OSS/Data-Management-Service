@@ -300,10 +300,11 @@ public class IdentityModule : IEndpointModule
     }
 
     // Deserializes the identity provider's success payload. The provider returns its raw token response
-    // body unvalidated, so a malformed payload (invalid JSON, a JSON null, or a missing access token) must
-    // not reach the caller as a successful token or escape to the global exception handler as an Ed-Fi
-    // Problem Details response. Any such payload is logged server-side (without its contents) and reported
-    // as the same upstream-unavailable OAuth failure used for other provider problems.
+    // body unvalidated, so a malformed payload (invalid JSON, a JSON null, or one missing a field RFC 6749
+    // §5.1 requires — access_token or token_type) must not reach the caller as a successful token or escape
+    // to the global exception handler as an Ed-Fi Problem Details response. Any such payload is logged
+    // server-side (without its contents) and reported as the same upstream-unavailable OAuth failure used
+    // for other provider problems.
     private static IResult CreateTokenResponse(string token, ILogger logger)
     {
         TokenResponse? tokenResponse;
@@ -322,10 +323,15 @@ public class IdentityModule : IEndpointModule
             );
         }
 
-        if (tokenResponse is null || string.IsNullOrEmpty(tokenResponse.AccessToken))
+        // RFC 6749 §5.1 requires both access_token and token_type in a successful token response.
+        if (
+            tokenResponse is null
+            || string.IsNullOrEmpty(tokenResponse.AccessToken)
+            || string.IsNullOrEmpty(tokenResponse.TokenType)
+        )
         {
             logger.LogError(
-                "The identity provider returned a successful token response without an access token."
+                "The identity provider returned a successful token response missing a required field."
             );
             return OAuthErrorResults.TemporarilyUnavailable(
                 "The authorization server is temporarily unable to handle the request."

@@ -1290,6 +1290,36 @@ public class Given_The_Provider_Returns_A_Success_Without_An_Access_Token : Toke
 }
 
 [TestFixture]
+public class Given_The_Provider_Returns_A_Success_Without_A_Token_Type : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // RFC 6749 §5.1 requires token_type in addition to access_token.
+        ArrangeTokenResult(new TokenResult.Success("""{ "access_token": "abc123token" }"""));
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() =>
+        AssertOAuthError(
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "The authorization server is temporarily unable to handle the request."
+        );
+
+    [Test]
+    public void It_does_not_return_a_token_response() => RawBody.Should().NotContain("abc123token");
+}
+
+[TestFixture]
 public class Given_An_Introspect_Request_Without_A_Token
 {
     [Test]
