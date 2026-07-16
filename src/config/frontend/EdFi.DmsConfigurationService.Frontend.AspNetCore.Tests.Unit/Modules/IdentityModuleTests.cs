@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
@@ -1103,7 +1104,10 @@ public class Given_An_Unsupported_Authorization_Scheme : TokenEndpointTestBase
         // request would succeed — proving the unsupported scheme is rejected instead.
         ArrangeTokenResult(SuccessResult());
         var client = CreateClient();
-        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Digest username=\"CSClient1\"");
+        client.DefaultRequestHeaders.TryAddWithoutValidation(
+            "Authorization",
+            "Digest username=\"CSClient1\""
+        );
         await PostTokenRequestAsync(
             client,
             new("grant_type", "client_credentials"),
@@ -1126,9 +1130,7 @@ public class Given_An_Unsupported_Authorization_Scheme : TokenEndpointTestBase
 
     [Test]
     public void It_does_not_call_the_token_manager() =>
-        A.CallTo(() =>
-                TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-            )
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
             .MustNotHaveHappened();
 }
 
@@ -1158,9 +1160,7 @@ public class Given_An_Unsupported_Authorization_Scheme_With_Form_Credentials : T
 
     [Test]
     public void It_does_not_accept_the_form_credentials() =>
-        A.CallTo(() =>
-                TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-            )
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
             .MustNotHaveHappened();
 }
 
@@ -1390,4 +1390,111 @@ public class Given_A_Revoke_Request_Without_A_Token
         );
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
+}
+
+public abstract class RevokeEndpointTestBase
+{
+    protected HttpResponseMessage Response = null!;
+    protected string RawBody = null!;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+
+    [TearDown]
+    public void TearDown()
+    {
+        Response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    protected async Task PostRevokeAsync(ITokenManager tokenManager)
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection => collection.AddTransient(_ => tokenManager));
+        });
+        _client = _factory.CreateClient();
+        Response = await _client.PostAsync(
+            "/connect/revoke",
+            new FormUrlEncodedContent([new KeyValuePair<string, string>("token", "some-token")])
+        );
+        RawBody = await Response.Content.ReadAsStringAsync();
+    }
+
+    protected void AssertTemporarilyUnavailable()
+    {
+        Response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        Response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var body = JsonNode.Parse(RawBody)!;
+        body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+        body["error_description"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The authorization server is temporarily unable to handle the request.");
+    }
+}
+
+[TestFixture]
+public class Given_A_Token_Is_Revoked_Successfully : RevokeEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        var tokenManager = A.Fake<ITokenManager>(x => x.Implements<ITokenRevocationManager>());
+        A.CallTo(() => ((ITokenRevocationManager)tokenManager).RevokeTokenAsync(A<string>._)).Returns(true);
+        await PostRevokeAsync(tokenManager);
+    }
+
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+}
+
+[TestFixture]
+public class Given_A_Revocation_Request_For_An_Unknown_Token : RevokeEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // RFC 7009 §2.2: an invalid or unknown token is still a successful revocation (200).
+        var tokenManager = A.Fake<ITokenManager>(x => x.Implements<ITokenRevocationManager>());
+        A.CallTo(() => ((ITokenRevocationManager)tokenManager).RevokeTokenAsync(A<string>._)).Returns(false);
+        await PostRevokeAsync(tokenManager);
+    }
+
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+}
+
+[TestFixture]
+public class Given_The_Revocation_Service_Fails : RevokeEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        var tokenManager = A.Fake<ITokenManager>(x => x.Implements<ITokenRevocationManager>());
+        A.CallTo(() => ((ITokenRevocationManager)tokenManager).RevokeTokenAsync(A<string>._))
+            .Throws(new InvalidOperationException("database unavailable"));
+        await PostRevokeAsync(tokenManager);
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() => AssertTemporarilyUnavailable();
+
+    [Test]
+    public void It_does_not_leak_the_failure() => RawBody.Should().NotContain("database unavailable");
+}
+
+[TestFixture]
+public class Given_The_Provider_Does_Not_Support_Revocation : RevokeEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // A plain ITokenManager (e.g. the Keycloak manager) does not implement ITokenRevocationManager.
+        await PostRevokeAsync(A.Fake<ITokenManager>());
+    }
+
+    [Test]
+    public void It_returns_the_oauth_temporarily_unavailable_error() => AssertTemporarilyUnavailable();
 }

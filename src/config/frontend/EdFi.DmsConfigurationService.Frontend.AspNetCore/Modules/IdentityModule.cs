@@ -425,6 +425,7 @@ public class IdentityModule : IEndpointModule
 
     private static async Task<IResult> RevokeToken(
         [FromServices] ITokenManager tokenManager,
+        [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
@@ -445,23 +446,30 @@ public class IdentityModule : IEndpointModule
             return OAuthErrorResults.InvalidRequest("The token parameter is missing.");
         }
 
-        // Check if token manager supports revocation via interface
-        if (tokenManager is ITokenRevocationManager revocationManager)
+        // RFC 7009 §2.2: respond 200 for a successful revocation or an invalid/unknown token, but 503
+        // when the revocation service is unavailable — a provider that does not implement revocation, or
+        // an unexpected failure — so the client knows the token may still exist and can retry.
+        if (tokenManager is not ITokenRevocationManager revocationManager)
         {
-            try
-            {
-                await revocationManager.RevokeTokenAsync(model.Token);
-                return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
-            }
-            catch
-            {
-                // Even if revocation fails, return 200 OK (RFC 7009 requirement)
-                return Results.Ok();
-            }
+            logger.LogWarning("The configured identity provider does not support token revocation.");
+            return OAuthErrorResults.TemporarilyUnavailable(
+                "The authorization server is temporarily unable to handle the request."
+            );
         }
 
-        // If revocation is not supported, still return 200 OK
-        return Results.Ok();
+        try
+        {
+            // A revoked token and an invalid or unknown token both succeed under RFC 7009 (both 200).
+            await revocationManager.RevokeTokenAsync(model.Token);
+            return Results.Ok();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Token revocation failed.");
+            return OAuthErrorResults.TemporarilyUnavailable(
+                "The authorization server is temporarily unable to handle the request."
+            );
+        }
     }
 
     public class IntrospectionRequest

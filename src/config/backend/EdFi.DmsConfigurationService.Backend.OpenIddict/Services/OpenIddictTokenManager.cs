@@ -399,22 +399,30 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// </summary>
         public async Task<bool> RevokeTokenAsync(string token)
         {
+            // An unparseable, malformed, or unknown token is treated as an invalid token, for which
+            // RFC 7009 §2.2 has the endpoint respond 200. Repository/database failures are deliberately
+            // NOT caught here: they propagate so the endpoint can respond 503 rather than reporting a
+            // false success for a token that may still exist.
+            if (!TryGetTokenId(token, out Guid tokenId))
+            {
+                return false;
+            }
+
+            return await _tokenRepository.RevokeTokenAsync(tokenId);
+        }
+
+        private bool TryGetTokenId(string token, out Guid tokenId)
+        {
+            tokenId = Guid.Empty;
             try
             {
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var jwtToken = tokenHandler.ReadJwtToken(token);
+                var jwtToken = new JwtSecurityTokenHandler().ReadJwtToken(token);
                 var jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
-
-                if (!string.IsNullOrEmpty(jti))
-                {
-                    return await _tokenRepository.RevokeTokenAsync(Guid.Parse(jti));
-                }
-
-                return false;
+                return !string.IsNullOrEmpty(jti) && Guid.TryParse(jti, out tokenId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to revoke token");
+                _logger.LogWarning(ex, "Ignoring an unparseable token on the revocation endpoint");
                 return false;
             }
         }
