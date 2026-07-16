@@ -42,11 +42,33 @@ Implement optimistic concurrency checks using stored representation stamps for r
 - When `POST` resolves to a new document and the request includes `If-Match`, the request fails with `412`; DMS does
   not ignore the header and does not treat it as an insert precondition success.
 - If the shared guarded no-op executor path introduced by `DMS-984` and extended by `DMS-1124` reports that a no-op
-  decision became stale before the guarded short-circuit step and `If-Match` was supplied, the request fails rather
-  than returning success based on stale data.
+  decision became stale before the guarded short-circuit step and a specific-tag `If-Match` was supplied, the request
+  fails rather than returning success based on stale data. A bare wildcard `If-Match: *` is existence-only and retries /
+  re-evaluates like the no-precondition path.
 - The check is resource-state-sensitive and reflects dependency identity changes.
 - Descriptor `PUT`, descriptor `DELETE`, and descriptor `POST` upsert-as-update enforce the same optional exact-match
   `If-Match` semantics as relational document resources.
+
+## If-Match Outcome Table
+
+This table is the DMS-1005 write-side summary. `If-None-Match` behavior is defined in
+[`../../design-docs/update-tracking.md`](../../design-docs/update-tracking.md) and the ContentVersion ADR; when both
+headers are present, `If-Match` governs.
+
+| Request state | `If-Match` form | Evaluation | Result |
+|---|---|---|---|
+| `PUT` / `DELETE` target missing | Absent or specific tag | Normal target lookup; no current representation is available for comparison. | Preserve existing `404` behavior. |
+| `PUT` / `DELETE` target missing | Bare `*` | Wildcard requires a current representation to exist. | `412`; this is the missing-target exception to normal `404` behavior. |
+| `POST` upsert resolves to insert | Specific tag or bare `*` | `If-Match` requires a current representation; an insert target has none. | `412` after the request is valid enough to resolve the target identity and authorization has passed; insert no rows. |
+| Existing target | Header absent | No HTTP precondition. | Continue through normal write/delete/no-op handling. |
+| Existing target | Bare `*` | Existence-only precondition; no tag projection comparison. | Proceed while preserving the normal row lock / guarded-session boundary. |
+| Existing target | Specific tag, quoted or unquoted | Compare only the state-significant projection: `ContentVersion` plus `schemaEpoch`. Ignore `format`, `profileCode`, `linkFlag`, and `contentCoding`. | Proceed when the projection matches; otherwise `412`. |
+| Existing target with profiled, cross-profile, cross-link-mode, or cross-content-coding tag | Specific tag | Same state-significant comparison; representation-only segments are ignored. | Proceed when `ContentVersion` and `schemaEpoch` match. |
+| Existing target after a hidden full-resource change or referenced-identity cascade | Stale specific tag | The stored state changed, so `ContentVersion` changes even if the served profile hides the field. | `412`. |
+| Existing target with weak, structurally malformed, blank/whitespace, or quoted `"*"` value | Specific opaque value, not wildcard | The value is treated as present and non-matching; only bare unquoted `*` has wildcard semantics. | `412`. |
+| Existing target where authorization and `If-Match` would both fail | Any `If-Match` | Final intended ordering is authorization before precondition exposure. | Return authorization failure (`403`) before `412`; see Implementation Notes for the DMS-1005 temporary authorization gap. |
+| Guarded no-op compare becomes stale | Specific tag | Do not return no-op success against stale observed state and do not retry past the stale specific-tag precondition. | `412`. |
+| Guarded no-op compare becomes stale | Absent header or bare `*` | No specific concurrency tag is being enforced. | Retry / re-evaluate against current state. |
 
 ## Tasks
 
@@ -83,7 +105,7 @@ Implement optimistic concurrency checks using stored representation stamps for r
       profile-hidden full resource state,
    15. successful profiled writes return the served ETag for the profiled response context, and
    16. stale no-op compare reported by the shared guarded no-op executor path (`DMS-984`, reused by `DMS-1124`) that
-      is rejected by the guarded `If-Match` recheck.
+      is rejected by the guarded specific-tag `If-Match` recheck.
 
 ## Clarifying Questions and Answers
 
@@ -111,8 +133,9 @@ Implement optimistic concurrency checks using stored representation stamps for r
   1. Profiled requests: compare the state-significant `_etag` projection used by unprofiled requests: `ContentVersion`
      and `schemaEpoch` are significant, while `profileCode` is not. Successful profiled writes return the served ETag
      for the profiled response context.
-  2. Stale guarded no-op: follow the profile/concurrency design. Stale no-op + present If-Match should return 412 immediately. The story wording should say “if the guarded no-op freshness check is
-     stale and If-Match was supplied.” Without If-Match, abandon the no-op fast path and re-evaluate/retry.
+  2. Stale guarded no-op: follow the profile/concurrency design. Stale no-op + specific-tag If-Match should return 412 immediately. The story wording should say “if the guarded no-op freshness check is
+     stale and a specific-tag If-Match was supplied.” Without If-Match, abandon the no-op fast path and re-evaluate/retry. A bare wildcard `If-Match: *` is existence-only and follows the retry /
+     re-evaluate path rather than acting as a specific concurrency tag.
   3. Locking: yes, for operations that supply If-Match, lock the target dms.Document row through the transaction before comparing and before changed write/delete DML. This is still row-local locking,
      not dependency locking. It prevents a check-then-write race where another write changes the representation after the ETag comparison.
   4. POST create-new with If-Match precedence: once the request is valid enough to resolve the target identity, if POST resolves to create-new and If-Match is present, return 412 before deeper backend
@@ -147,8 +170,8 @@ Implement optimistic concurrency checks using stored representation stamps for r
      descriptor code read Headers["If-Match"] directly. Pass the typed value through RelationalWriteExecutorRequest, DescriptorWriteRequest, and a descriptor delete request shape.
   2. Yes, the authoritative check belongs inside the transaction. Treat the repository’s first target lookup as advisory. For present If-Match, re-resolve or confirm the target in the write/delete
      transaction, lock dms.Document, compose the current ETag state from `ContentVersion` plus `variantKey`, compare the state-significant projection, then keep the lock through DML/delete/commit. This matches the earlier locking answer above.
-  3. Yes, stale guarded no-op plus If-Match should bypass retry and return 412. The current repository retry loop retries stale no-op unconditionally at src/dms/backend/
-     EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:700. Change that so retry only applies when the precondition is absent.
+  3. Yes, stale guarded no-op plus specific-tag If-Match should bypass retry and return 412. The current repository retry loop retries stale no-op unconditionally at src/dms/backend/
+     EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:700. Change that so retry only applies when the precondition is absent or is the bare wildcard `If-Match: *`.
   4. Keep the absent-If-Match retry narrow for this story. The design says stale without If-Match should re-evaluate current state, and the existing single retry is a reasonable scoped implementation.
      Broader retry policy belongs in the executor/retry stories, not DMS-1005.
   5. Do not absorb all of DMS-1008, but fix the overlap if touched. DMS-1008 owns descriptor stamp/journal correctness, including no-op descriptor updates (reference/design/backend-redesign/epics/10-

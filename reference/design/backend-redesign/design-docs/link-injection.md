@@ -300,14 +300,15 @@ A single configuration key controls link emission:
 - **Key**: `DataManagement:ResourceLinks:Enabled`
 - **Default**: `true`
 - **Behavior when `false`**: `link` subtrees are stripped from the served body as the **final
-  response-shaping pass** in the repository wrapper — after the materializer injects API metadata
-  (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection runs, and immediately
+  response-shaping pass** in the repository wrapper — after the materializer injects stable API
+  metadata (`id`/`_lastModifiedDate`) and after readable-profile projection runs, and immediately
   before the body is returned to the caller. The materializer's reconstituted intermediate is
-  always link-bearing (caller-agnostic), while the served `_etag` is composed for the final request
-  variant from stored `ContentVersion` plus `variantKey`. `variantKey.linkFlag` is `l` when links
-  are served and `n` when they are stripped, so the two byte-different responses carry different
-  strong validators without hashing either document. The auxiliary lookup and plan compilation are
-  unaffected.
+  always link-bearing (caller-agnostic) and does not carry a reusable `_etag`; the served `_etag` is
+  composed for the final request variant from stored `ContentVersion` plus `variantKey` after
+  readable profile, link mode, format, and content coding are known. `variantKey.linkFlag` is `l`
+  when links are served and `n` when they are stripped, so the two byte-different responses carry
+  different strong validators without hashing either document. The auxiliary lookup and plan
+  compilation are unaffected.
 
 **Rationale for response-shaping rather than plan-shaping.** Treating the flag as a response
 filter eliminates dual plan shapes, startup plan-fingerprint reconciliation, and the mixed-plan

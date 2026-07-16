@@ -111,14 +111,15 @@ Soft dependency:
   backfill for reference-target `DocumentUuid`.
 - Feature flag `DataManagement:ResourceLinks:Enabled` (default `true`) controls emission as a
   **response filter**. When `false`, `link` subtrees are stripped from the served body as the
-  final response-shaping pass in the repository wrapper — after the materializer injects API
-  metadata (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection (when
-  applicable) runs, immediately before the body is returned to the caller. The materializer's
-  reconstituted intermediate is always link-bearing (caller-agnostic); the served `_etag` is
-  composed at the response boundary from `ContentVersion` plus the active `variantKey`. The
-  `variantKey.linkFlag` value reflects whether links are served or stripped. The auxiliary lookup
-  and plan compilation are unaffected by the flag; flag-off does not reduce database work. No
-  per-resource, per-request, or per-reference override is provided.
+  final response-shaping pass in the repository wrapper — after the materializer injects stable API
+  metadata (`id`/`_lastModifiedDate`) and after readable-profile projection (when applicable) runs,
+  immediately before the body is returned to the caller. The materializer's reconstituted
+  intermediate is always link-bearing (caller-agnostic); `_etag` is not injected into that
+  intermediate. The served `_etag` is composed at the response boundary from `ContentVersion` plus
+  the active `variantKey`, after readable profile, link mode, format, and content coding are known.
+  The `variantKey.linkFlag` value reflects whether links are served or stripped. The auxiliary
+  lookup and plan compilation are unaffected by the flag; flag-off does not reduce database work.
+  No per-resource, per-request, or per-reference override is provided.
 - Runtime configuration binds `DataManagement:ResourceLinks` to a dedicated `ResourceLinksOptions`
   type; the story must not assume a nested `AppSettings.DataManagement` object already exists in
   Core.
@@ -245,14 +246,14 @@ Soft dependency:
    V1 requirement). The options type is consumed only at the response-serialization boundary, not
    in the plan compiler or reconstitution engine.
 6. Response-boundary strip pass: apply the `ResourceLinks:Enabled` strip pass as the final
-   response-shaping pass in the repository wrapper — after the materializer injects API
-   metadata (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection (when
-   applicable) runs, immediately before the body is returned to the caller. The materializer's
-   reconstituted intermediate is always link-bearing (caller-agnostic). The strip removes exactly
-   the `link` subtree on reference objects; other server-generated fields (`_lastModifiedDate`) are
-   untouched. Compose `_etag` at the serving boundary from `ContentVersion` plus the active
-   `variantKey`; readable profile and link mode participate through their `variantKey` segments per
-   `design-docs/update-tracking.md` §Serving API metadata.
+   response-shaping pass in the repository wrapper — after the materializer injects stable API
+   metadata (`id`/`_lastModifiedDate`) and after readable-profile projection (when applicable) runs,
+   immediately before the body is returned to the caller. The materializer's reconstituted
+   intermediate is always link-bearing (caller-agnostic) and does not carry a reusable `_etag`. The
+   strip removes exactly the `link` subtree on reference objects; other server-generated fields
+   (`_lastModifiedDate`) are untouched. Compose `_etag` at the serving boundary from `ContentVersion`
+   plus the active `variantKey`; readable profile, link mode, format, and content coding participate
+   through their `variantKey` segments per `design-docs/update-tracking.md` §Serving API metadata.
 7. When `dms.DocumentCache` is provisioned: store cached `ContentVersion` and `LastModifiedAt` so the two-input freshness check
    (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==
    dms.Document.ContentLastModifiedAt`) is representable in the schema. Cache entries store the

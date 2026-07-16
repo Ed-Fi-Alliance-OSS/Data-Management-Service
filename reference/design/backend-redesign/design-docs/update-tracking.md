@@ -248,6 +248,17 @@ Change Query candidate selection is defined in [change-queries.md](change-querie
 
 With stored representation stamps:
 
+Comparison basis summary:
+
+| Surface | Comparison function | `ContentVersion` | `schemaEpoch` | `format` | `profileCode` | `linkFlag` | `contentCoding` | Failure / match result |
+|---|---|---|---|---|---|---|---|---|
+| Served `_etag` / `ETag` emission | N/A; compose full strong validator | Included | Included | Included | Included | Included | Included | Distinct tag per served byte-representation |
+| Conditional GET `If-None-Match` | RFC weak comparison against full served tag | Significant | Significant | Significant | Significant | Significant | Significant | Any match returns `304` |
+| Write `If-Match` | RFC strong comparison over state-significant projection | Significant | Significant | Ignored | Ignored | Ignored | Ignored | Mismatch returns `412` |
+| Write `If-None-Match` | RFC weak comparison over state-significant projection | Significant | Significant | Ignored | Ignored | Ignored | Ignored | Any match returns `412` |
+| Bare `If-Match: *` | Existence precondition | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | Missing current representation returns `412` |
+| Bare `If-None-Match: *` | Non-existence precondition | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | Existing current representation returns `412` |
+
 - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the representation actually served
   (see "Serving API metadata"). It is a strong validator under RFC 9110 §8.8.1.
 - Conditional GET evaluates `If-None-Match` only after authorization and other normal request checks
