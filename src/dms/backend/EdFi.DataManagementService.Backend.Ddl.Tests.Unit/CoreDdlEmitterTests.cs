@@ -540,9 +540,11 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── Indexes ─────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_index_descriptor_uri_discriminator()
+    public void It_should_not_emit_a_descriptor_uri_discriminator_index()
     {
-        _ddl.Should().Contain("\"IX_Descriptor_Uri_Discriminator\"");
+        // UX_Descriptor_Uri_Discriminator already indexes (Uri, Discriminator); a plain
+        // index on the same columns would be a duplicate.
+        _ddl.Should().NotContain("\"IX_Descriptor_Uri_Discriminator\"");
     }
 
     [Test]
@@ -567,9 +569,11 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_index_referential_identity_document_id()
+    public void It_should_not_emit_a_referential_identity_document_id_index()
     {
-        _ddl.Should().Contain("\"IX_ReferentialIdentity_DocumentId\"");
+        // DocumentId-keyed access is served by the leading column of
+        // UX_ReferentialIdentity_DocumentId_ResourceKeyId.
+        _ddl.Should().NotContain("\"IX_ReferentialIdentity_DocumentId\"");
     }
 
     // ── PG descriptor stamping trigger ──────────────────────────────
@@ -1156,13 +1160,16 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_have_all_five_indexes()
+    public void It_should_have_exactly_the_three_core_indexes()
     {
-        _ddl.Should().Contain("[IX_Descriptor_Uri_Discriminator]");
         _ddl.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
         _ddl.Should().Contain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
-        _ddl.Should().Contain("[IX_ReferentialIdentity_DocumentId]");
+        // (Uri, Discriminator) is covered by UX_Descriptor_Uri_Discriminator, and
+        // ReferentialIdentity DocumentId access by the leading column of
+        // UX_ReferentialIdentity_DocumentId_ResourceKeyId.
+        _ddl.Should().NotContain("[IX_Descriptor_Uri_Discriminator]");
+        _ddl.Should().NotContain("[IX_ReferentialIdentity_DocumentId]");
     }
 
     // ── MSSQL descriptor stamping trigger ───────────────────────────
@@ -1711,9 +1718,11 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     {
         // IX_Descriptor_Discriminator_ContentVersion is derived-inventory-owned and rendered once by the
         // relational DDL emitter; the core emitter must not also emit it (which would duplicate it in the
-        // full DDL). The core emitter still owns IX_Descriptor_Uri_Discriminator.
+        // full DDL). The core emitter emits no plain descriptor index at all: (Uri, Discriminator) is
+        // covered by the UX_Descriptor_Uri_Discriminator unique constraint.
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
-        _pgsqlDdl.Should().Contain("IX_Descriptor_Uri_Discriminator");
+        _pgsqlDdl.Should().NotContain("IX_Descriptor_Uri_Discriminator");
+        _pgsqlDdl.Should().Contain("UX_Descriptor_Uri_Discriminator");
     }
 
     private static int CountOccurrences(string haystack, string needle)

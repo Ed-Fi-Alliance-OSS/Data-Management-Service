@@ -775,15 +775,13 @@ public sealed class CoreDdlEmitter
         writer.WritePhaseHeader(7, "Indexes");
 
         // Ordered by (table name, index name).
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _descriptorTable,
-                "IX_Descriptor_Uri_Discriminator",
-                [Col("Uri"), Col("Discriminator")]
-            )
-        );
-        writer.AppendLine();
+        //
+        // Deliberately not emitted:
+        // - dms.Descriptor (Uri, Discriminator): already indexed by the
+        //   UX_Descriptor_Uri_Discriminator unique constraint.
+        // - dms.ReferentialIdentity (DocumentId): DocumentId-keyed access (FK cascade from
+        //   dms.Document and the identity-maintenance triggers) is served by the leading
+        //   column of UX_ReferentialIdentity_DocumentId_ResourceKeyId.
 
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
@@ -808,15 +806,6 @@ public sealed class CoreDdlEmitter
                 _documentCacheTable,
                 "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
                 [Col("ProjectName"), Col("ResourceName"), Col("LastModifiedAt"), Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _referentialIdentityTable,
-                "IX_ReferentialIdentity_DocumentId",
-                [Col("DocumentId")]
             )
         );
         writer.AppendLine();

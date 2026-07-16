@@ -209,10 +209,8 @@ CREATE TABLE dms.ReferentialIdentity (
     CONSTRAINT PK_ReferentialIdentity PRIMARY KEY (ReferentialId),
     CONSTRAINT FK_ReferentialIdentity_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKey UNIQUE (DocumentId, ResourceKeyId)
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId)
 );
-
-CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (DocumentId);
 ```
 
 **SQL Server**
@@ -227,7 +225,7 @@ CREATE TABLE dms.ReferentialIdentity (
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     CONSTRAINT FK_ReferentialIdentity_ResourceKey FOREIGN KEY (ResourceKeyId)
         REFERENCES dms.ResourceKey (ResourceKeyId),
-    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKey UNIQUE CLUSTERED (DocumentId, ResourceKeyId)
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKeyId UNIQUE CLUSTERED (DocumentId, ResourceKeyId)
 );
 ```
 
@@ -235,6 +233,7 @@ Database Specific Differences:
 
 - The logical shape is identical across engines (UUID `ReferentialId` → `DocumentId` + `ResourceKeyId`).
 - The physical DDL will differ slightly for performance: SQL Server should not cluster on a randomly-distributed UUID.
+- No standalone `DocumentId` index is defined: all `DocumentId`-keyed access (the `FK_ReferentialIdentity_Document` cascade delete and the identity-maintenance trigger delete keyed by `(DocumentId, ResourceKeyId)`) is served by the leading column of `UX_ReferentialIdentity_DocumentId_ResourceKeyId`. Application lookups resolve by `ReferentialId` (the PK).
 
 Operational considerations:
 
@@ -281,9 +280,9 @@ CREATE TABLE dms.Descriptor (
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     CONSTRAINT UX_Descriptor_Uri_Discriminator UNIQUE (Uri, Discriminator)
 );
-
-CREATE INDEX IX_Descriptor_Uri_Discriminator ON dms.Descriptor (Uri, Discriminator);
 ```
+
+`(Uri, Discriminator)` lookups are served by the `UX_Descriptor_Uri_Discriminator` unique constraint; no additional plain index on the same columns is defined.
 
 The effective date columns are part of the descriptor field contract. This matches legacy ODS behavior, where `edfi.Descriptor` includes nullable `EffectiveBeginDate` and `EffectiveEndDate` columns. DMS differs from ODS by using a single shared `dms.Descriptor` keyed by `DocumentId` and by not creating per-descriptor marker tables.
 
