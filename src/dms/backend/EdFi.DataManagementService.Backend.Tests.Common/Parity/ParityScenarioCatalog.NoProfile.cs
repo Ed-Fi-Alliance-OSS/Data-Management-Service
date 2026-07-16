@@ -128,7 +128,7 @@ public static partial class ParityScenarioCatalog
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_returns_update_success_and_bumps_content_version_for_the_put_flow"],
-            sharedEntryPoint: "NoProfileCreateBaselineScenarios + NoProfileUpdateSemanticsScenarios (umbrella; DMS-1023 shared contracts, later unit)",
+            sharedEntryPoint: "NoProfileCreateBaselineScenarios + NoProfileUpdateSemanticsScenarios",
             notes: "Realized by NoProfileFullSurfaceCreate (no-profile _ext create) and NoProfileChangedPutOmissionSemantics (omitted non-collection scope)."
         ),
         Gap(
