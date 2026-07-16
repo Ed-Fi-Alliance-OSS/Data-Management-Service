@@ -519,6 +519,21 @@ public class Given_The_Metadata_Specifications_Document
     private static string? RefOf(JsonObject operation, string status) =>
         operation["responses"]?[status]?["$ref"]?.GetValue<string>();
 
+    private JsonObject FindAnyOperation(string pathContains, string method)
+    {
+        var paths = _document["paths"]!.AsObject();
+        var match = paths.FirstOrDefault(p =>
+            p.Key.Contains(pathContains, StringComparison.OrdinalIgnoreCase)
+            && p.Value!.AsObject().ContainsKey(method)
+        );
+        match
+            .Value.Should()
+            .NotBeNull(
+                $"a {method.ToUpperInvariant()} operation for a path containing '{pathContains}' should exist"
+            );
+        return match.Value!.AsObject()[method]!.AsObject();
+    }
+
     [Test]
     public void It_marks_the_problem_details_required_members()
     {
@@ -615,6 +630,51 @@ public class Given_The_Metadata_Specifications_Document
     {
         var operation = FindOperation("/v3/vendors", withPathParameter: false, "post");
         operation["responses"]!.AsObject().Should().ContainKey("201");
+    }
+
+    [Test]
+    public void It_references_problem_details_from_a_management_operation()
+    {
+        var operation = FindAnyOperation("/management", "post");
+        RefOf(operation, "401").Should().Be("#/components/responses/Unauthorized");
+        RefOf(operation, "403").Should().Be("#/components/responses/Forbidden");
+        RefOf(operation, "500").Should().Be("#/components/responses/InternalServerError");
+    }
+
+    [Test]
+    public void It_references_bad_request_from_a_collection_get()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: false, "get");
+        RefOf(operation, "400").Should().Be("#/components/responses/BadRequest");
+    }
+
+    [Test]
+    public void It_defines_the_reusable_bad_gateway_response()
+    {
+        var responses = Components["responses"]!.AsObject();
+        responses.Should().ContainKey("BadGateway");
+        responses["BadGateway"]!["content"]!["application/problem+json"]!["schema"]!["$ref"]!
+            .GetValue<string>()
+            .Should()
+            .Be("#/components/schemas/ProblemDetails");
+    }
+
+    [Test]
+    public void It_references_bad_gateway_from_registration()
+    {
+        var operation = FindAnyOperation("/connect/register", "post");
+        RefOf(operation, "502").Should().Be("#/components/responses/BadGateway");
+    }
+
+    [Test]
+    public void It_documents_introspection_and_revocation_with_the_oauth_error_shape()
+    {
+        RefOf(FindAnyOperation("/connect/introspect", "post"), "400")
+            .Should()
+            .Be("#/components/responses/OAuthError");
+        RefOf(FindAnyOperation("/connect/revoke", "post"), "400")
+            .Should()
+            .Be("#/components/responses/OAuthError");
     }
 }
 

@@ -152,6 +152,9 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                     ["UnsupportedMediaType"] = ProblemDetailsResponse(
                         "Unsupported Media Type. The request content type is not supported."
                     ),
+                    ["BadGateway"] = ProblemDetailsResponse(
+                        "Bad Gateway. An upstream identity provider returned an error."
+                    ),
                     ["OAuthError"] = new JsonObject
                     {
                         ["description"] = "OAuth 2.0 protocol error (RFC 6749 section 5.2).",
@@ -279,6 +282,7 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
 
             bool isEdFiResource =
                 pathKey.StartsWith("/v3/", StringComparison.OrdinalIgnoreCase)
+                || pathKey.StartsWith("/management/", StringComparison.OrdinalIgnoreCase)
                 || pathKey.Contains("/connect/register", StringComparison.OrdinalIgnoreCase);
 
             if (!isOAuthProtocol && !isEdFiResource)
@@ -312,13 +316,18 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                 }
                 else
                 {
-                    AddEdFiErrorResponses(responses, method, hasPathParameter);
+                    AddEdFiErrorResponses(responses, pathKey, method, hasPathParameter);
                 }
             }
         }
     }
 
-    private static void AddEdFiErrorResponses(JsonObject responses, string method, bool hasPathParameter)
+    private static void AddEdFiErrorResponses(
+        JsonObject responses,
+        string pathKey,
+        string method,
+        bool hasPathParameter
+    )
     {
         void Reference(string status, string component) =>
             responses[status] = new JsonObject { ["$ref"] = $"#/components/responses/{component}" };
@@ -328,9 +337,14 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
         Reference("403", "Forbidden");
         Reference("500", "InternalServerError");
 
-        if (method is "post" or "put" or "patch")
+        // A malformed request can produce a 400 on any read (e.g. paging/query validation on a
+        // collection GET) or write; write operations can additionally reject the media type (415).
+        if (method is "get" or "post" or "put" or "patch")
         {
             Reference("400", "BadRequest");
+        }
+        if (method is "post" or "put" or "patch")
+        {
             Reference("415", "UnsupportedMediaType");
         }
 
@@ -342,6 +356,17 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
         if (method is "post" or "put")
         {
             Reference("409", "Conflict");
+        }
+
+        // Operations that provision identity-provider state (registration, vendors, API clients) can
+        // fail upstream and return 502.
+        bool provisionsIdentityProvider =
+            pathKey.Contains("/connect/register", StringComparison.OrdinalIgnoreCase)
+            || pathKey.Contains("/v3/vendors", StringComparison.OrdinalIgnoreCase)
+            || pathKey.Contains("/v3/apiClients", StringComparison.OrdinalIgnoreCase);
+        if (provisionsIdentityProvider && method is not "get")
+        {
+            Reference("502", "BadGateway");
         }
     }
 
