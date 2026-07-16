@@ -145,14 +145,33 @@ public static partial class ParityScenarioCatalog
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"]
         ),
-        Gap(
-            "NoProfileWriteBehavior/NoProfileExt",
-            "The control full-surface write persists no-profile _ext (root extension, collection extension, extension-child) storage on create.",
-            ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWriteCreateBaselineTests.cs",
-            "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
-            ["It_persists_root_extensions_collection_extensions_and_extension_child_collections"]
-        ),
+        new ParityScenario
+        {
+            Id = "NoProfileWriteBehavior/NoProfileExt",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract =
+                "The control full-surface write persists no-profile _ext storage on create and deletes omitted collection-aligned extension scope rows on a changed PUT.",
+            Boundary = ProductionBoundary.NoProfilePersister,
+            BoundaryDetail =
+                "Umbrella variant spanning NoProfilePersister (create _ext, via NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild) and NoProfileMerge (delete omitted aligned-extension scope, via NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope).",
+            PgsqlLocations =
+            [
+                Loc(
+                    "PostgresqlRelationalWriteCreateBaselineTests.cs",
+                    "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+                    ["It_persists_root_extensions_collection_extensions_and_extension_child_collections"]
+                ),
+                Loc(
+                    "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+                    "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+                    ["It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows"]
+                ),
+            ],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Gap,
+            Classification = ParityClassification.KnownGap,
+            MssqlGapOwner = DmsGapOwner,
+        },
         // --- FullSurfaceCollectionReorder + variants ----------------------------------------
         Gap(
             "FullSurfaceCollectionReorder",

@@ -399,6 +399,50 @@ public class Given_The_Parity_Scenario_Catalog
     }
 
     [Test]
+    public void It_records_both_no_profile_ext_entry_points()
+    {
+        ParityScenario row = _all.Single(s => s.Id == "NoProfileWriteBehavior/NoProfileExt");
+        row.PgsqlLocations.Any(l =>
+                l.File == "PostgresqlRelationalWriteCreateBaselineTests.cs"
+                && l.Methods.Contains(
+                    "It_persists_root_extensions_collection_extensions_and_extension_child_collections"
+                )
+            )
+            .Should()
+            .BeTrue("the create _ext entry point is recorded");
+        row.PgsqlLocations.Any(l =>
+                l.File == "PostgresqlRelationalWriteUpdateSemanticsTests.cs"
+                && l.Methods.Contains(
+                    "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows"
+                )
+            )
+            .Should()
+            .BeTrue("the omitted-aligned-extension-scope deletion entry point is recorded");
+    }
+
+    [Test]
+    public void It_records_the_delete_renumber_sibling_ordinal_entry_point()
+    {
+        ParityScenario row = _all.Single(s =>
+            s.Id == "ProfileVisibleRowUpdateWithHiddenRowPreservation/SiblingOrdinalRenumbering"
+        );
+        row.PgsqlLocations.Any(l =>
+                l.Fixture
+                    == "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child"
+                && l.Methods.Contains("It_recomputes_the_surviving_aligned_extension_child_ordinal")
+            )
+            .Should()
+            .BeTrue("the PostgreSQL omitting-child ordinal-renumber entry point is recorded");
+        row.MssqlLocations.Any(l =>
+                l.Fixture
+                    == "Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child"
+                && l.Methods.Contains("It_recomputes_the_surviving_aligned_extension_child_ordinal")
+            )
+            .Should()
+            .BeTrue("the SQL Server omitting-child ordinal-renumber entry point is recorded");
+    }
+
+    [Test]
     public void It_derives_canonical_ids_by_matching_approved_prefixes()
     {
         ParityScenarioCatalog

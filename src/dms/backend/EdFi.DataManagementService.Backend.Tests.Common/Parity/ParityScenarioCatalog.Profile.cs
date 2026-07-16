@@ -228,13 +228,36 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/SiblingOrdinalRenumbering",
-            "A profiled reorder+insert assigns aligned extension child ordinals in request order and preserves matched CollectionItemIds.",
-            "ProfileCollectionAlignedExtensionMergeTests",
-            "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
-            "Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
+            "A profiled aligned-extension-child reorder+insert assigns ordinals in request order (preserving matched CollectionItemIds), and omitting an aligned extension child recomputes the surviving ordinal.",
             [
-                "It_assigns_aligned_extension_child_ordinals_in_new_request_order",
-                "It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
+                PgLoc(
+                    "ProfileCollectionAlignedExtensionMergeTests",
+                    "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
+                    [
+                        "It_assigns_aligned_extension_child_ordinals_in_new_request_order",
+                        "It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
+                    ]
+                ),
+                PgLoc(
+                    "ProfileCollectionAlignedExtensionMergeTests",
+                    "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child",
+                    ["It_recomputes_the_surviving_aligned_extension_child_ordinal"]
+                ),
+            ],
+            [
+                MsLoc(
+                    "ProfileCollectionAlignedExtensionMergeTests",
+                    "Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
+                    [
+                        "It_assigns_aligned_extension_child_ordinals_in_new_request_order",
+                        "It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
+                    ]
+                ),
+                MsLoc(
+                    "ProfileCollectionAlignedExtensionMergeTests",
+                    "Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child",
+                    ["It_recomputes_the_surviving_aligned_extension_child_ordinal"]
+                ),
             ]
         ),
         // ProfileVisibleRowDeleteWithHiddenRowPreservation + variants
