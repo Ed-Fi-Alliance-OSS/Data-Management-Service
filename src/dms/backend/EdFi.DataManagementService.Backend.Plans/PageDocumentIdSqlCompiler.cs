@@ -71,16 +71,20 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var requiresDocumentUuidJoin = rewrittenPredicates.Any(static predicate =>
             predicate.Target is QueryPredicateTarget.DocumentUuid
         );
-        // The descriptor join also covers the descriptor-alias namespace check used by descriptor
-        // queries: the page subquery roots on dms.Document for ResourceKeyId paging, while the
-        // Namespace column lives on the joined dms.Descriptor row.
+        // The descriptor join serves DescriptorColumn-target predicates and dms.Descriptor
+        // namespace checks for queries rooted on some other table. Descriptor queries root on
+        // dms.Descriptor itself, so their namespace checks bind to the root alias and need no
+        // self-join.
         var requiresDescriptorJoin =
             rewrittenPredicates.Any(static predicate =>
                 predicate.Target is QueryPredicateTarget.DescriptorColumn
             )
             || (
-                authorization?.NamespaceChecks?.Any(check => check.RootTable.Equals(_descriptorTable))
-                ?? false
+                !spec.RootTable.Equals(_descriptorTable)
+                && (
+                    authorization?.NamespaceChecks?.Any(check => check.RootTable.Equals(_descriptorTable))
+                    ?? false
+                )
             );
         var filterParametersInOrder = BuildFilterParametersInOrder(
             rewrittenPredicates,
@@ -688,10 +692,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Resolves the SQL alias to qualify a namespace check column. Resource queries always check
-    /// against the query root table. Descriptor queries root the page subquery on
-    /// <c>dms.Document</c> but the namespace column lives on the joined <c>dms.Descriptor</c> row;
-    /// in that case the check binds to the shared descriptor alias rather than the document root.
+    /// Resolves the SQL alias to qualify a namespace check column. Checks against the query root
+    /// table (including descriptor queries, which root on <c>dms.Descriptor</c>) bind to the root
+    /// alias. A <c>dms.Descriptor</c> check paired with a <c>dms.Document</c> root binds to the
+    /// shared descriptor join alias instead; that pairing remains supported for callers that root
+    /// elsewhere.
     /// </summary>
     private static string ResolveNamespaceCheckAlias(DbTableName checkRootTable, DbTableName queryRootTable)
     {

@@ -263,7 +263,7 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
     }
 
     [Test]
-    public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
+    public async Task It_excludes_a_corrupt_descriptor_document_from_the_page_and_total_count()
     {
         await SeedDescriptorsAsync([PagingFirstSeed]);
 
@@ -271,6 +271,8 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             _mappingSet,
             SchoolTypeDescriptorResource
         );
+        // A dms.Document row with no dms.Descriptor row (hand-corrupted state). The page keyset
+        // and total count root on dms.Descriptor, so the corrupt document is invisible to both.
         await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
             _database,
             new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000207")),
@@ -285,11 +287,11 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             offset: 0
         );
 
-        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 2);
+        AssertDescriptorPage(result, [PagingFirstSeed], expectedTotalCount: 1);
     }
 
     [Test]
-    public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_query_document_has_no_descriptor_row()
+    public async Task It_excludes_a_corrupt_descriptor_document_from_selection_instead_of_failing_hydration()
     {
         await SeedDescriptorsAsync([PagingFirstSeed]);
 
@@ -297,21 +299,23 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             _mappingSet,
             SchoolTypeDescriptorResource
         );
-        var corruptDocumentId = await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
+        // Before the dms.Descriptor re-root this corrupt document was selectable at offset 1 and
+        // failed mid-hydration; now the keyset can only yield documents with a descriptor row.
+        await PostgresqlDescriptorReadTestSupport.InsertDocumentAsync(
             _database,
             new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000208")),
             resourceKeyId
         );
 
-        var result = await ExecuteQueryAsync([], "pg-descriptor-query-corrupt-selected", limit: 1, offset: 1);
+        var result = await ExecuteQueryAsync(
+            [],
+            "pg-descriptor-query-corrupt-selected",
+            totalCount: true,
+            limit: 1,
+            offset: 1
+        );
 
-        var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
-        failure.FailureMessage.Should().Contain($"DocumentId {corruptDocumentId}");
-        // The row reader treats Namespace as nullable so a stored null can flow into the
-        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
-        // required column, so the reader's invariant message names it when the LEFT JOIN
-        // finds no descriptor row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        AssertEmptyPage(result, expectedTotalCount: 1);
     }
 
     [Test]

@@ -27,6 +27,9 @@ public abstract record QueryPredicateTarget
 
     /// <summary>
     /// Predicate targets a shared <c>dms.Descriptor</c> table column and therefore requires the descriptor join.
+    /// No production planner currently emits this target (descriptor queries root on <c>dms.Descriptor</c>
+    /// and use <see cref="RootColumn"/>); it is retained for callers that filter descriptor columns from a
+    /// non-descriptor root.
     /// </summary>
     /// <param name="Column">The shared descriptor-table column.</param>
     public sealed record DescriptorColumn(DbColumnName Column) : QueryPredicateTarget;

@@ -2751,7 +2751,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "CodeValue",
-      "ordinal_position": 3,
+      "ordinal_position": 4,
       "data_type": "nvarchar(50)",
       "is_nullable": false,
       "default_expression": null,
@@ -2761,7 +2761,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "ContentLastModifiedAt",
-      "ordinal_position": 11,
+      "ordinal_position": 12,
       "data_type": "datetime2",
       "is_nullable": false,
       "default_expression": "(sysutcdatetime())",
@@ -2771,7 +2771,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "ContentVersion",
-      "ordinal_position": 10,
+      "ordinal_position": 11,
       "data_type": "bigint",
       "is_nullable": false,
       "default_expression": "((0))",
@@ -2781,7 +2781,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "Description",
-      "ordinal_position": 5,
+      "ordinal_position": 6,
       "data_type": "nvarchar(1024)",
       "is_nullable": true,
       "default_expression": null,
@@ -2791,7 +2791,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "Discriminator",
-      "ordinal_position": 8,
+      "ordinal_position": 9,
       "data_type": "nvarchar(128)",
       "is_nullable": false,
       "default_expression": null,
@@ -2811,16 +2811,6 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "EffectiveBeginDate",
-      "ordinal_position": 6,
-      "data_type": "date",
-      "is_nullable": true,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Descriptor",
-      "column_name": "EffectiveEndDate",
       "ordinal_position": 7,
       "data_type": "date",
       "is_nullable": true,
@@ -2830,8 +2820,18 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
+      "column_name": "EffectiveEndDate",
+      "ordinal_position": 8,
+      "data_type": "date",
+      "is_nullable": true,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
       "column_name": "Namespace",
-      "ordinal_position": 2,
+      "ordinal_position": 3,
       "data_type": "nvarchar(255)",
       "is_nullable": false,
       "default_expression": null,
@@ -2840,8 +2840,18 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
+      "column_name": "ResourceKeyId",
+      "ordinal_position": 2,
+      "data_type": "smallint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
       "column_name": "ShortDescription",
-      "ordinal_position": 4,
+      "ordinal_position": 5,
       "data_type": "nvarchar(75)",
       "is_nullable": false,
       "default_expression": null,
@@ -2851,7 +2861,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "Uri",
-      "ordinal_position": 9,
+      "ordinal_position": 10,
       "data_type": "nvarchar(306)",
       "is_nullable": false,
       "default_expression": null,
@@ -65859,6 +65869,20 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
+      "constraint_name": "FK_Descriptor_ResourceKey",
+      "constraint_type": "FOREIGN KEY",
+      "columns": [
+        "ResourceKeyId"
+      ],
+      "referenced_schema": "dms",
+      "referenced_table": "ResourceKey",
+      "referenced_columns": [
+        "ResourceKeyId"
+      ]
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
       "constraint_name": "PK_Descriptor",
       "constraint_type": "PRIMARY KEY",
       "columns": [
@@ -112904,21 +112928,21 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "Document",
-      "index_name": "IX_Document_CreatedByOwnershipTokenId",
+      "table_name": "Descriptor",
+      "index_name": "IX_Descriptor_ResourceKeyId_DocumentId",
       "is_unique": false,
       "columns": [
-        "CreatedByOwnershipTokenId"
+        "ResourceKeyId",
+        "DocumentId"
       ]
     },
     {
       "schema_name": "dms",
       "table_name": "Document",
-      "index_name": "IX_Document_ResourceKeyId_DocumentId",
+      "index_name": "IX_Document_CreatedByOwnershipTokenId",
       "is_unique": false,
       "columns": [
-        "ResourceKeyId",
-        "DocumentId"
+        "CreatedByOwnershipTokenId"
       ]
     },
     {

@@ -244,6 +244,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_include_resource_key_id_in_descriptor_table()
+    {
+        // Denormalized from dms.Document so descriptor paging can root on dms.Descriptor.
+        DescriptorTableColumnExtractor.ExtractPgColumns(_ddl).Should().Contain("ResourceKeyId");
+    }
+
+    [Test]
     public void It_should_create_document_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"");
@@ -508,6 +515,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_have_fk_descriptor_resource_key()
+    {
+        _ddl.Should().Contain("\"FK_Descriptor_ResourceKey\"");
+    }
+
+    [Test]
     public void It_should_have_fk_document_resource_key()
     {
         _ddl.Should().Contain("\"FK_Document_ResourceKey\"");
@@ -548,6 +561,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_have_index_descriptor_resource_key_id()
+    {
+        _ddl.Should().Contain("\"IX_Descriptor_ResourceKeyId_DocumentId\"");
+    }
+
+    [Test]
     public void It_should_have_created_by_ownership_token_id_index()
     {
         _ddl.Should()
@@ -557,9 +576,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_index_document_resource_key_id()
+    public void It_should_not_emit_a_document_resource_key_id_index()
     {
-        _ddl.Should().Contain("\"IX_Document_ResourceKeyId_DocumentId\"");
+        // Descriptor paging roots on dms.Descriptor, no other query path filters
+        // dms.Document by ResourceKeyId, and dms.ResourceKey rows are never deleted
+        // or updated at runtime, so FK_Document_ResourceKey needs no referencing-side
+        // index either.
+        _ddl.Should().NotContain("\"IX_Document_ResourceKeyId_DocumentId\"");
     }
 
     [Test]
@@ -689,12 +712,19 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // asserts each non-PK, non-stamp column appears as an IS DISTINCT FROM predicate.
         // The change-version mirror columns are stamp targets, not client content, so they are
         // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
+        // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
+        // a migration backfill UPDATE of that column must not bump stamps.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
+        string[] immutableColumns = ["ResourceKeyId"];
         var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns.Should().Contain("DocumentId", "sanity check the extractor found PK column");
 
-        foreach (var column in columns.Where(c => c != "DocumentId" && !stampColumns.Contains(c)))
+        foreach (
+            var column in columns.Where(c =>
+                c != "DocumentId" && !stampColumns.Contains(c) && !immutableColumns.Contains(c)
+            )
+        )
         {
             _ddl.Should()
                 .Contain(
@@ -704,12 +734,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
                 );
         }
 
-        foreach (var stampColumn in stampColumns)
+        foreach (var excludedColumn in stampColumns.Concat(immutableColumns))
         {
             _ddl.Should()
                 .NotContain(
-                    $"OLD.\"{stampColumn}\" IS DISTINCT FROM NEW.\"{stampColumn}\"",
-                    "change-version mirror columns are stamp targets and must not appear in the no-op diff"
+                    $"OLD.\"{excludedColumn}\" IS DISTINCT FROM NEW.\"{excludedColumn}\"",
+                    "stamp targets and immutable columns must not appear in the no-op diff"
                 );
         }
     }
@@ -1100,6 +1130,17 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Nullable column ─────────────────────────────────────────────
 
     [Test]
+    public void It_should_include_resource_key_id_in_descriptor_table()
+    {
+        // Denormalized from dms.Document so descriptor paging can root on dms.Descriptor.
+        DescriptorTableColumnExtractor
+            .ExtractMssqlColumns(_ddl)
+            .Select(c => c.Name)
+            .Should()
+            .Contain("ResourceKeyId");
+    }
+
+    [Test]
     public void It_should_have_nullable_description_in_descriptor()
     {
         _ddl.Should().Contain("[Description] nvarchar(1024) NULL");
@@ -1126,9 +1167,10 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_six_foreign_keys()
+    public void It_should_have_all_seven_foreign_keys()
     {
         _ddl.Should().Contain("[FK_Descriptor_Document]");
+        _ddl.Should().Contain("[FK_Descriptor_ResourceKey]");
         _ddl.Should().Contain("[FK_Document_ResourceKey]");
         _ddl.Should().Contain("[FK_DocumentCache_Document]");
         _ddl.Should().Contain("[FK_ReferentialIdentity_Document]");
@@ -1162,13 +1204,15 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_have_exactly_the_three_core_indexes()
     {
+        _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
-        _ddl.Should().Contain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
         // (Uri, Discriminator) is covered by UX_Descriptor_Uri_Discriminator, and
         // ReferentialIdentity DocumentId access by the leading column of
-        // UX_ReferentialIdentity_DocumentId_ResourceKeyId.
+        // UX_ReferentialIdentity_DocumentId_ResourceKeyId. Descriptor paging roots
+        // on dms.Descriptor, so dms.Document carries no ResourceKeyId index.
         _ddl.Should().NotContain("[IX_Descriptor_Uri_Discriminator]");
+        _ddl.Should().NotContain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().NotContain("[IX_ReferentialIdentity_DocumentId]");
     }
 
@@ -1304,7 +1348,10 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // future column addition forgets to wire the right comparator, this test fails.
         // The change-version mirror columns are stamp targets, not client content, so they are
         // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
+        // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
+        // a migration backfill UPDATE of that column must not bump stamps.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
+        string[] immutableColumns = ["ResourceKeyId"];
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
         columns
@@ -1313,7 +1360,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain("DocumentId", "sanity check the extractor found PK column");
 
         foreach (
-            var (name, type) in columns.Where(c => c.Name != "DocumentId" && !stampColumns.Contains(c.Name))
+            var (name, type) in columns.Where(c =>
+                c.Name != "DocumentId" && !stampColumns.Contains(c.Name) && !immutableColumns.Contains(c.Name)
+            )
         )
         {
             var isStringType = type.Contains("char", StringComparison.OrdinalIgnoreCase);
@@ -1328,12 +1377,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 );
         }
 
-        foreach (var stampColumn in stampColumns)
+        foreach (var excludedColumn in stampColumns.Concat(immutableColumns))
         {
             _ddl.Should()
                 .NotContain(
-                    $"i.[{stampColumn}] <> del.[{stampColumn}]",
-                    "change-version mirror columns are stamp targets and must not appear in the no-op diff"
+                    $"i.[{excludedColumn}] <> del.[{excludedColumn}]",
+                    "stamp targets and immutable columns must not appear in the no-op diff"
                 );
         }
     }

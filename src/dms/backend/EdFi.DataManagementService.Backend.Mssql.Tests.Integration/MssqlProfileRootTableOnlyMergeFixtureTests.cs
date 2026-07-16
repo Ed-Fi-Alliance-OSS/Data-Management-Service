@@ -398,6 +398,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -407,6 +408,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -416,6 +418,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

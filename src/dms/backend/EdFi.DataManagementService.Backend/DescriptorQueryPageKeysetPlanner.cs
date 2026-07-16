@@ -20,8 +20,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         ChangeVersionFilterConstants.MinChangeVersionParameterName;
     private const string MaxChangeVersionParameterName =
         ChangeVersionFilterConstants.MaxChangeVersionParameterName;
-    private static readonly DbColumnName _documentUuidColumn = new("DocumentUuid");
-    private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
+    private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
     private readonly PageDocumentIdSqlCompiler _sqlCompiler = new(dialect);
 
     public PageKeysetSpec.Query Plan(
@@ -51,9 +50,9 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder, parameterNamesByIndex);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, requestResource);
 
-        // The page keyset roots on dms.Document so the descriptor type predicate filters on the
-        // project-qualified ResourceKeyId — the same type authority descriptor GET-by-id uses.
-        // Descriptor field filters join dms.Descriptor through the page SQL compiler.
+        // The page keyset roots on dms.Descriptor, whose denormalized ResourceKeyId carries the
+        // same project-qualified type authority descriptor GET-by-id reads from dms.Document.
+        // Descriptor field filters land on the root; only ?id= joins dms.Document.
         List<QueryValuePredicate> predicates =
         [
             new QueryValuePredicate(
@@ -66,7 +65,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         AppendChangeVersionPredicates(changeVersionRange, predicates);
 
         var pageQuerySpec = new PageDocumentIdQuerySpec(
-            RootTable: _documentTable,
+            RootTable: _descriptorTable,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
             OffsetParameterName: OffsetParameterName,
@@ -88,9 +87,10 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Appends <c>dms.Document.ContentVersion</c> range predicates for the validated change-version
-    /// window. The DMS-1173 stamping triggers keep the descriptor mirror in lock-step, so filtering
-    /// the canonical document column is equivalent and stays on the page keyset root.
+    /// Appends <c>ContentVersion</c> range predicates for the validated change-version window
+    /// against the page keyset root. The root is <c>dms.Descriptor</c>, whose ContentVersion
+    /// mirror the DMS-1173 stamping triggers keep in lock-step with the canonical
+    /// <c>dms.Document.ContentVersion</c> — the same root-mirror filtering regular resources use.
     /// </summary>
     private static void AppendChangeVersionPredicates(
         ChangeVersionRange? changeVersionRange,
@@ -158,8 +158,11 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
 
         return queryElement.SupportedField.ValueKind switch
         {
+            // The ?id= filter targets dms.Document.DocumentUuid, which is not on the
+            // dms.Descriptor root, so the DocumentUuid target makes the compiler emit the
+            // shared document join.
             DescriptorQueryValueKind.DocumentUuid => new QueryValuePredicate(
-                _documentUuidColumn,
+                new QueryPredicateTarget.DocumentUuid(),
                 QueryComparisonOperator.Equal,
                 parameterName
             ),
@@ -191,8 +194,9 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                     + $"'{supportedField.QueryFieldName}' with value kind '{supportedField.ValueKind}'."
             );
 
+        // Descriptor columns live on the dms.Descriptor page keyset root itself.
         return new QueryValuePredicate(
-            new QueryPredicateTarget.DescriptorColumn(descriptorColumn),
+            descriptorColumn,
             QueryComparisonOperator.Equal,
             parameterName,
             scalarKind

@@ -10,7 +10,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-987
 Implement descriptor resource write behavior that persists descriptor resources into core tables only:
 
 - `dms.Document` provides `DocumentId`, `DocumentUuid`, `ResourceKeyId`, and update-tracking stamps.
-- `dms.Descriptor` stores descriptor fields and derived `Uri`.
+- `dms.Descriptor` stores descriptor fields, the derived `Uri`, and a denormalized copy of `ResourceKeyId` (written in the same insert transaction, immutable thereafter) so descriptor paging can root on `dms.Descriptor`.
 - `dms.ReferentialIdentity` stores the descriptor referential id (descriptor type + normalized `Uri`) used for descriptor reference resolution.
 
 Descriptor writes must be compatible with existing DMS descriptor endpoint behavior (create, update of non-identity fields, delete).
@@ -20,7 +20,7 @@ For descriptor `PUT`, unchanged non-identity fields should be treated as a succe
 
 - POST to a descriptor resource:
   - allocates a `DocumentUuid` (if not supplied) and creates/updates `dms.Document` with the descriptor resource `ResourceKeyId`,
-  - inserts `dms.Descriptor` keyed by `DocumentId`,
+  - inserts `dms.Descriptor` keyed by `DocumentId`, carrying the same `ResourceKeyId`,
   - inserts/updates the descriptor referential identity row in `dms.ReferentialIdentity`.
 - PUT to a descriptor resource:
   - allows updates to non-identity fields (`Description`, `ShortDescription`, `EffectiveBeginDate`, `EffectiveEndDate`, etc.),

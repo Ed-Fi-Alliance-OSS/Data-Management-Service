@@ -1,10 +1,10 @@
 SELECT r.[DocumentId]
-FROM [dms].[Document] r
-INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = r.[DocumentId]
+FROM [dms].[Descriptor] r
+INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = r.[DocumentId]
 WHERE
-    (d.[EffectiveEndDate] = @effectiveEndDate)
-    AND (d.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace)
-    AND (r.[DocumentUuid] = @id)
+    (doc.[DocumentUuid] = @id)
+    AND (r.[EffectiveEndDate] = @effectiveEndDate)
+    AND (r.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace)
     AND (r.[ResourceKeyId] = @resourceKeyId)
 ORDER BY r.[DocumentId] ASC
 OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY

@@ -793,6 +793,7 @@ public class Given_Mssql_ResourceKey_Table_Dropped_After_Provisioning
             connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText = """
+                ALTER TABLE [dms].[Descriptor] DROP CONSTRAINT [FK_Descriptor_ResourceKey];
                 ALTER TABLE [dms].[Document] DROP CONSTRAINT [FK_Document_ResourceKey];
                 ALTER TABLE [dms].[ReferentialIdentity] DROP CONSTRAINT [FK_ReferentialIdentity_ResourceKey];
                 DROP TABLE [dms].[ResourceKey];
