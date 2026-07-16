@@ -1,0 +1,282 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Globalization;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using FluentAssertions;
+
+namespace EdFi.DataManagementService.Backend.Tests.Common;
+
+/// <summary>
+/// Provider-agnostic scenario data and assertion helpers for the no-profile multi-batch collection
+/// family (`NoProfileMultiBatchCollection`): collection create/update/delete are partitioned into
+/// batches at the compiled MaxRowsPerBatch / ParametersPerRow, and a real authoritative payload
+/// exercises genuine parameter pressure. Each provider suite keeps its own provisioning, command
+/// recording, dialect SQL/readback, and request execution; it translates its recorded commands into
+/// the small provider-neutral batch summaries (reservation row counts and per-command parameter
+/// counts) and neutral persisted-state projections defined here, then delegates the behavioral
+/// assertions. No provider dialect SQL (for example generate_series or quoted table names) or driver
+/// types belong in this contract.
+/// </summary>
+public static class NoProfileMultiBatchCollectionScenarios
+{
+    public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+
+    /// <summary>Deterministic city value for the address at <paramref name="index"/> (shared by request builders and assertions).</summary>
+    public static string CreateCity(int index) =>
+        $"City-{index.ToString("D5", CultureInfo.InvariantCulture)}";
+
+    /// <summary>Deterministic zone value for the collection-aligned extension at <paramref name="index"/>.</summary>
+    public static string CreateZone(int index) =>
+        $"Zone-{index.ToString("D5", CultureInfo.InvariantCulture)}";
+
+    public sealed record DocumentRow(
+        long DocumentId,
+        Guid DocumentUuid,
+        short ResourceKeyId,
+        long ContentVersion
+    );
+
+    public sealed record SchoolRow(long DocumentId, long SchoolId, string? ShortName);
+
+    public sealed record SchoolAddressRow(
+        long CollectionItemId,
+        long SchoolDocumentId,
+        int Ordinal,
+        string City
+    );
+
+    public sealed record SchoolExtensionAddressRow(
+        long BaseCollectionItemId,
+        long SchoolDocumentId,
+        string Zone
+    );
+
+    /// <summary>
+    /// Asserts a multi-batch create (request count exceeding the compiled batch limit) returned
+    /// InsertSuccess and persisted the full large base collection with the expected document/root
+    /// identity, contiguous 0-based ordinals, unique CollectionItemIds, and correct first/last values.
+    /// </summary>
+    public static void AssertLargeCollectionCreatePersisted(
+        UpsertResult result,
+        DocumentUuid documentUuid,
+        MappingSet mappingSet,
+        int maxRowsPerBatch,
+        int requestedAddressCount,
+        DocumentRow document,
+        SchoolRow school,
+        IReadOnlyList<SchoolAddressRow> addresses
+    )
+    {
+        requestedAddressCount
+            .Should()
+            .BeGreaterThan(maxRowsPerBatch, "the request must exceed the compiled batch limit");
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(documentUuid);
+
+        document.DocumentUuid.Should().Be(documentUuid.Value);
+        document.ResourceKeyId.Should().Be(mappingSet.ResourceKeyIdByResource[SchoolResource]);
+        school.Should().Be(new SchoolRow(document.DocumentId, 255901, "BATCH"));
+
+        addresses.Should().HaveCount(requestedAddressCount);
+        addresses
+            .Select(address => address.Ordinal)
+            .Should()
+            .Equal(Enumerable.Range(0, requestedAddressCount));
+        addresses.Select(address => address.CollectionItemId).Should().OnlyHaveUniqueItems();
+
+        addresses[0]
+            .Should()
+            .Be(new SchoolAddressRow(addresses[0].CollectionItemId, document.DocumentId, 0, CreateCity(0)));
+        addresses[^1]
+            .Should()
+            .Be(
+                new SchoolAddressRow(
+                    addresses[^1].CollectionItemId,
+                    document.DocumentId,
+                    requestedAddressCount - 1,
+                    CreateCity(requestedAddressCount - 1)
+                )
+            );
+    }
+
+    /// <summary>
+    /// Asserts the id-reservation and base-collection insert commands were partitioned into exactly two
+    /// batches at the compiled limit: reservation row counts <c>[maxRowsPerBatch, 2]</c> and insert
+    /// parameter counts <c>[maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow]</c>.
+    /// </summary>
+    public static void AssertCreateBatchPartitions(
+        IReadOnlyList<int> reservationRowCounts,
+        IReadOnlyList<int> insertParameterCounts,
+        int maxRowsPerBatch,
+        int parametersPerRow
+    )
+    {
+        reservationRowCounts.Should().Equal(maxRowsPerBatch, 2);
+        insertParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow);
+    }
+
+    /// <summary>
+    /// Asserts the base-collection delete commands were partitioned into exactly two batches at the
+    /// compiled limit: delete parameter counts <c>[maxRowsPerBatch * parametersPerRow, parametersPerRow]</c>.
+    /// </summary>
+    public static void AssertDeleteBatchPartitions(
+        IReadOnlyList<int> deleteParameterCounts,
+        int maxRowsPerBatch,
+        int parametersPerRow
+    ) => deleteParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, parametersPerRow);
+
+    /// <summary>
+    /// Asserts a multi-batch create of a large collection-aligned extension scope returned InsertSuccess
+    /// and persisted every extension row keyed to its base address CollectionItemId in base order.
+    /// </summary>
+    public static void AssertLargeCollectionAlignedExtensionCreatePersisted(
+        UpsertResult result,
+        DocumentUuid documentUuid,
+        int maxRowsPerBatch,
+        int requestedAddressCount,
+        DocumentRow document,
+        IReadOnlyList<SchoolAddressRow> addresses,
+        IReadOnlyList<SchoolExtensionAddressRow> extensionAddresses
+    )
+    {
+        requestedAddressCount
+            .Should()
+            .BeGreaterThan(maxRowsPerBatch, "the request must exceed the compiled batch limit");
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(documentUuid);
+
+        addresses.Should().HaveCount(requestedAddressCount);
+        extensionAddresses.Should().HaveCount(requestedAddressCount);
+
+        extensionAddresses
+            .Should()
+            .Equal(
+                addresses.Select(
+                    (address, index) =>
+                        new SchoolExtensionAddressRow(
+                            address.CollectionItemId,
+                            document.DocumentId,
+                            CreateZone(index)
+                        )
+                )
+            );
+    }
+
+    /// <summary>
+    /// Asserts the collection-aligned extension insert commands were partitioned into exactly two
+    /// batches at the compiled limit: parameter counts <c>[maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow]</c>.
+    /// </summary>
+    public static void AssertAlignedExtensionInsertBatchPartitions(
+        IReadOnlyList<int> extensionInsertParameterCounts,
+        int maxRowsPerBatch,
+        int parametersPerRow
+    ) =>
+        extensionInsertParameterCounts
+            .Should()
+            .Equal(maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow);
+
+    /// <summary>Asserts the authoritative payload is large enough to exercise real parameter pressure: exactly 28 collection rows and more than 300 insert parameters.</summary>
+    public static void AssertParameterPressurePayload(int collectionRowCount, int insertParameterCount)
+    {
+        collectionRowCount.Should().Be(28);
+        insertParameterCount.Should().BeGreaterThan(300);
+    }
+
+    /// <summary>
+    /// Asserts the authoritative large-collection create returned InsertSuccess and stamped the expected
+    /// document identity and resource key. Detailed root/extension/collection value assertions stay in
+    /// the provider suite.
+    /// </summary>
+    public static void AssertAuthoritativeLargeCollectionCreateIdentity(
+        UpsertResult result,
+        DocumentUuid documentUuid,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentRow document
+    )
+    {
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        document.DocumentUuid.Should().Be(documentUuid.Value);
+        document.ResourceKeyId.Should().Be(mappingSet.ResourceKeyIdByResource[resource]);
+    }
+
+    /// <summary>
+    /// Asserts the authoritative changed PUT returned UpdateSuccess for the existing document, kept its
+    /// storage DocumentId, and bumped ContentVersion. Detailed root/extension/collection value
+    /// assertions stay in the provider suite.
+    /// </summary>
+    public static void AssertAuthoritativeLargeCollectionChangedPutIdentity(
+        UpdateResult result,
+        DocumentUuid documentUuid,
+        DocumentRow documentAfterCreate,
+        DocumentRow documentAfterChangedPut
+    )
+    {
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        result.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(documentUuid);
+        documentAfterChangedPut.DocumentUuid.Should().Be(documentUuid.Value);
+        documentAfterChangedPut.DocumentId.Should().Be(documentAfterCreate.DocumentId);
+        documentAfterChangedPut.ContentVersion.Should().BeGreaterThan(documentAfterCreate.ContentVersion);
+    }
+
+    /// <summary>
+    /// Asserts a changed PUT over a large keyed child collection reused the stable CollectionItemId for
+    /// every retained key, dropped the id of every omitted key, and assigned a new id to every inserted
+    /// key. The maps are keyed by each collection's semantic identity (for example honor description or
+    /// diploma award date). Detailed row/value/FK assertions stay in the provider suite.
+    /// </summary>
+    public static void AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+        string collectionName,
+        IReadOnlyDictionary<string, long> createIdsByKey,
+        IReadOnlyDictionary<string, long> changedIdsByKey
+    )
+    {
+        foreach ((string key, long createId) in createIdsByKey)
+        {
+            if (changedIdsByKey.TryGetValue(key, out long changedId))
+            {
+                changedId
+                    .Should()
+                    .Be(
+                        createId,
+                        "{0} reuses the stable CollectionItemId for retained '{1}'",
+                        collectionName,
+                        key
+                    );
+            }
+            else
+            {
+                changedIdsByKey
+                    .Values.Should()
+                    .NotContain(
+                        createId,
+                        "{0} drops the CollectionItemId of omitted '{1}'",
+                        collectionName,
+                        key
+                    );
+            }
+        }
+
+        foreach ((string key, long changedId) in changedIdsByKey)
+        {
+            if (!createIdsByKey.ContainsKey(key))
+            {
+                createIdsByKey
+                    .Values.Should()
+                    .NotContain(
+                        changedId,
+                        "{0} assigns a new CollectionItemId to inserted '{1}'",
+                        collectionName,
+                        key
+                    );
+            }
+        }
+    }
+}

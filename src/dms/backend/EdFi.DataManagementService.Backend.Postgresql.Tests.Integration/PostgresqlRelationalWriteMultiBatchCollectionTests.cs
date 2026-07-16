@@ -342,11 +342,62 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         return new MultiBatchCollectionPersistedState(document, school, addresses);
     }
 
-    public static string CreateCity(int index) =>
-        $"City-{index.ToString("D5", CultureInfo.InvariantCulture)}";
+    public static string CreateCity(int index) => NoProfileMultiBatchCollectionScenarios.CreateCity(index);
 
-    public static string CreateZone(int index) =>
-        $"Zone-{index.ToString("D5", CultureInfo.InvariantCulture)}";
+    public static string CreateZone(int index) => NoProfileMultiBatchCollectionScenarios.CreateZone(index);
+
+    // Translate recorded PostgreSQL commands into the provider-neutral batch summaries the shared
+    // contract asserts over. Dialect command text stays in this adapter, not in Common.
+    public static IReadOnlyList<int> ReservationRowCounts(MultiBatchCommandRecorder recorder) =>
+        recorder
+            .Commands.Where(command =>
+                command.CommandText.Contains("generate_series(1, @count)", StringComparison.Ordinal)
+            )
+            .Select(command =>
+                Convert.ToInt32(command.ParametersByName["@count"], CultureInfo.InvariantCulture)
+            )
+            .ToArray();
+
+    public static IReadOnlyList<int> SchoolAddressInsertParameterCounts(MultiBatchCommandRecorder recorder) =>
+        InsertParameterCounts(recorder, "INSERT INTO \"edfi\".\"SchoolAddress\"");
+
+    public static IReadOnlyList<int> SchoolExtensionAddressInsertParameterCounts(
+        MultiBatchCommandRecorder recorder
+    ) => InsertParameterCounts(recorder, "INSERT INTO \"sample\".\"SchoolExtensionAddress\"");
+
+    public static IReadOnlyList<int> SchoolAddressDeleteParameterCounts(MultiBatchCommandRecorder recorder) =>
+        recorder
+            .Commands.Where(command =>
+                command.CommandText.Contains("delete from", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("SchoolAddress", StringComparison.Ordinal)
+            )
+            .Select(command => command.ParametersByName.Count)
+            .ToArray();
+
+    public static NoProfileMultiBatchCollectionScenarios.DocumentRow ToNeutral(
+        MultiBatchCollectionPersistedDocumentRow document
+    ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
+
+    public static NoProfileMultiBatchCollectionScenarios.SchoolRow ToNeutral(
+        MultiBatchCollectionPersistedSchoolRow school
+    ) => new(school.DocumentId, school.SchoolId, school.ShortName);
+
+    public static NoProfileMultiBatchCollectionScenarios.SchoolAddressRow ToNeutral(
+        MultiBatchCollectionPersistedSchoolAddressRow address
+    ) => new(address.CollectionItemId, address.SchoolDocumentId, address.Ordinal, address.City);
+
+    public static NoProfileMultiBatchCollectionScenarios.SchoolExtensionAddressRow ToNeutral(
+        MultiBatchCollectionPersistedSchoolExtensionAddressRow extensionAddress
+    ) => new(extensionAddress.BaseCollectionItemId, extensionAddress.SchoolDocumentId, extensionAddress.Zone);
+
+    private static IReadOnlyList<int> InsertParameterCounts(
+        MultiBatchCommandRecorder recorder,
+        string insertSnippet
+    ) =>
+        recorder
+            .Commands.Where(command => command.CommandText.Contains(insertSnippet, StringComparison.Ordinal))
+            .Select(command => command.ParametersByName.Count)
+            .ToArray();
 
     private static async Task<MultiBatchCollectionPersistedDocumentRow> ReadDocumentAsync(
         PostgresqlGeneratedDdlTestDatabase database,
@@ -576,93 +627,30 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_W
     }
 
     [Test]
-    public void It_returns_insert_success_and_persists_the_full_large_collection()
-    {
-        _requestedAddressCount.Should().BeGreaterThan(_maxRowsPerBatch);
-        _result.Should().BeOfType<UpsertResult.InsertSuccess>();
-        _result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(SchoolDocumentUuid);
-
-        _persistedState.Document.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
-        _persistedState
-            .Document.ResourceKeyId.Should()
-            .Be(
-                _mappingSet.ResourceKeyIdByResource[
-                    MultiBatchCollectionsIntegrationTestSupport.SchoolResource
-                ]
-            );
-        _persistedState
-            .School.Should()
-            .Be(
-                new MultiBatchCollectionPersistedSchoolRow(
-                    _persistedState.Document.DocumentId,
-                    255901,
-                    "BATCH"
-                )
-            );
-
-        _persistedState.Addresses.Should().HaveCount(_requestedAddressCount);
-        _persistedState
-            .Addresses.Select(address => address.Ordinal)
-            .Should()
-            .Equal(Enumerable.Range(0, _requestedAddressCount));
-        _persistedState.Addresses.Select(address => address.CollectionItemId).Should().OnlyHaveUniqueItems();
-
-        _persistedState
-            .Addresses[0]
-            .Should()
-            .Be(
-                new MultiBatchCollectionPersistedSchoolAddressRow(
-                    _persistedState.Addresses[0].CollectionItemId,
-                    _persistedState.Document.DocumentId,
-                    0,
-                    MultiBatchCollectionsIntegrationTestSupport.CreateCity(0)
-                )
-            );
-        _persistedState
-            .Addresses[^1]
-            .Should()
-            .Be(
-                new MultiBatchCollectionPersistedSchoolAddressRow(
-                    _persistedState.Addresses[^1].CollectionItemId,
-                    _persistedState.Document.DocumentId,
-                    _requestedAddressCount - 1,
-                    MultiBatchCollectionsIntegrationTestSupport.CreateCity(_requestedAddressCount - 1)
-                )
-            );
-    }
+    public void It_returns_insert_success_and_persists_the_full_large_collection() =>
+        NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted(
+            _result,
+            SchoolDocumentUuid,
+            _mappingSet,
+            _maxRowsPerBatch,
+            _requestedAddressCount,
+            MultiBatchCollectionsIntegrationTestSupport.ToNeutral(_persistedState.Document),
+            MultiBatchCollectionsIntegrationTestSupport.ToNeutral(_persistedState.School),
+            [
+                .. _persistedState.Addresses.Select(address =>
+                    MultiBatchCollectionsIntegrationTestSupport.ToNeutral(address)
+                ),
+            ]
+        );
 
     [Test]
-    public void It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit()
-    {
-        var reservationCommands = _commandRecorder
-            .Commands.Where(command =>
-                command.CommandText.Contains("generate_series(1, @count)", StringComparison.Ordinal)
-            )
-            .ToArray();
-
-        reservationCommands.Should().HaveCount(2);
-        reservationCommands
-            .Select(command =>
-                Convert.ToInt32(command.ParametersByName["@count"], CultureInfo.InvariantCulture)
-            )
-            .Should()
-            .Equal(_maxRowsPerBatch, 2);
-
-        var schoolAddressInsertCommands = _commandRecorder
-            .Commands.Where(command =>
-                command.CommandText.Contains(
-                    "INSERT INTO \"edfi\".\"SchoolAddress\"",
-                    StringComparison.Ordinal
-                )
-            )
-            .ToArray();
-
-        schoolAddressInsertCommands.Should().HaveCount(2);
-        schoolAddressInsertCommands
-            .Select(command => command.ParametersByName.Count)
-            .Should()
-            .Equal(_maxRowsPerBatch * _parametersPerRow, 2 * _parametersPerRow);
-    }
+    public void It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit() =>
+        NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions(
+            MultiBatchCollectionsIntegrationTestSupport.ReservationRowCounts(_commandRecorder),
+            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressInsertParameterCounts(_commandRecorder),
+            _maxRowsPerBatch,
+            _parametersPerRow
+        );
 
     private async Task<UpsertResult> ExecuteCreateAsync()
     {
@@ -764,21 +752,12 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_U
     ) => new(address.CollectionItemId, address.SchoolDocumentId, address.Ordinal, address.City);
 
     [Test]
-    public void It_partitions_collection_delete_commands_using_the_compiled_batch_limit()
-    {
-        var deleteCommands = _commandRecorder
-            .Commands.Where(command =>
-                command.CommandText.Contains("delete from", StringComparison.OrdinalIgnoreCase)
-                && command.CommandText.Contains("SchoolAddress", StringComparison.Ordinal)
-            )
-            .ToArray();
-
-        deleteCommands.Should().HaveCount(2);
-        deleteCommands
-            .Select(command => command.ParametersByName.Count)
-            .Should()
-            .Equal(_maxRowsPerBatch * _parametersPerRow, _parametersPerRow);
-    }
+    public void It_partitions_collection_delete_commands_using_the_compiled_batch_limit() =>
+        NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions(
+            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressDeleteParameterCounts(_commandRecorder),
+            _maxRowsPerBatch,
+            _parametersPerRow
+        );
 
     private async Task ExecuteCreateAsync()
     {
@@ -884,47 +863,34 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_
     }
 
     [Test]
-    public void It_returns_insert_success_and_persists_the_full_large_collection_aligned_extension_scope()
-    {
-        _requestedAddressCount.Should().BeGreaterThan(_maxRowsPerBatch);
-        _result.Should().BeOfType<UpsertResult.InsertSuccess>();
-        _result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(SchoolDocumentUuid);
-
-        _persistedState.Addresses.Should().HaveCount(_requestedAddressCount);
-        _persistedExtensionAddresses.Should().HaveCount(_requestedAddressCount);
-
-        _persistedExtensionAddresses
-            .Should()
-            .Equal(
-                _persistedState.Addresses.Select(
-                    (address, index) =>
-                        new MultiBatchCollectionPersistedSchoolExtensionAddressRow(
-                            address.CollectionItemId,
-                            _persistedState.Document.DocumentId,
-                            MultiBatchCollectionsIntegrationTestSupport.CreateZone(index)
-                        )
-                )
-            );
-    }
+    public void It_returns_insert_success_and_persists_the_full_large_collection_aligned_extension_scope() =>
+        NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionAlignedExtensionCreatePersisted(
+            _result,
+            SchoolDocumentUuid,
+            _maxRowsPerBatch,
+            _requestedAddressCount,
+            MultiBatchCollectionsIntegrationTestSupport.ToNeutral(_persistedState.Document),
+            [
+                .. _persistedState.Addresses.Select(address =>
+                    MultiBatchCollectionsIntegrationTestSupport.ToNeutral(address)
+                ),
+            ],
+            [
+                .. _persistedExtensionAddresses.Select(extensionAddress =>
+                    MultiBatchCollectionsIntegrationTestSupport.ToNeutral(extensionAddress)
+                ),
+            ]
+        );
 
     [Test]
-    public void It_partitions_collection_aligned_extension_insert_commands_using_the_compiled_batch_limit()
-    {
-        var extensionInsertCommands = _commandRecorder
-            .Commands.Where(command =>
-                command.CommandText.Contains(
-                    "INSERT INTO \"sample\".\"SchoolExtensionAddress\"",
-                    StringComparison.Ordinal
-                )
-            )
-            .ToArray();
-
-        extensionInsertCommands.Should().HaveCount(2);
-        extensionInsertCommands
-            .Select(command => command.ParametersByName.Count)
-            .Should()
-            .Equal(_maxRowsPerBatch * _parametersPerRow, 2 * _parametersPerRow);
-    }
+    public void It_partitions_collection_aligned_extension_insert_commands_using_the_compiled_batch_limit() =>
+        NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions(
+            MultiBatchCollectionsIntegrationTestSupport.SchoolExtensionAddressInsertParameterCounts(
+                _commandRecorder
+            ),
+            _maxRowsPerBatch,
+            _parametersPerRow
+        );
 
     private async Task<UpsertResult> ExecuteCreateAsync()
     {

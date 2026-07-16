@@ -723,14 +723,20 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         }
     }
 
+    private static NoProfileMultiBatchCollectionScenarios.DocumentRow ToNeutralDocument(
+        AuthoritativePostAsUpdateDocumentRow document
+    ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
+
     [Test]
     public void It_persists_authoritative_student_academic_record_root_extension_and_large_collection_rows_on_create()
     {
-        _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-        _stateAfterCreate.Document.DocumentUuid.Should().Be(StudentAcademicRecordDocumentUuid.Value);
-        _stateAfterCreate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]);
+        NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionCreateIdentity(
+            _createResult,
+            StudentAcademicRecordDocumentUuid,
+            _mappingSet,
+            StudentAcademicRecordResource,
+            ToNeutralDocument(_stateAfterCreate.Document)
+        );
         _stateAfterCreate
             .AcademicRecord.Should()
             .Be(
@@ -804,25 +810,21 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     }
 
     [Test]
-    public void It_uses_a_payload_large_enough_to_exercise_real_parameter_pressure()
-    {
-        _createCollectionRowCount.Should().Be(28);
-        _createCollectionInsertParameterCount.Should().BeGreaterThan(300);
-    }
+    public void It_uses_a_payload_large_enough_to_exercise_real_parameter_pressure() =>
+        NoProfileMultiBatchCollectionScenarios.AssertParameterPressurePayload(
+            _createCollectionRowCount,
+            _createCollectionInsertParameterCount
+        );
 
     [Test]
     public void It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put()
     {
-        _changedUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
-        _changedUpdateResult
-            .As<UpdateResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(StudentAcademicRecordDocumentUuid);
-        _stateAfterChangedUpdate
-            .Document.ContentVersion.Should()
-            .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
-        _stateAfterChangedUpdate.Document.DocumentUuid.Should().Be(StudentAcademicRecordDocumentUuid.Value);
-        _stateAfterChangedUpdate.Document.DocumentId.Should().Be(_stateAfterCreate.Document.DocumentId);
+        NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionChangedPutIdentity(
+            _changedUpdateResult,
+            StudentAcademicRecordDocumentUuid,
+            ToNeutralDocument(_stateAfterCreate.Document),
+            ToNeutralDocument(_stateAfterChangedUpdate.Document)
+        );
         _stateAfterChangedUpdate
             .AcademicRecord.Should()
             .Be(
@@ -870,34 +872,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        foreach (
-            var deletedHonorDescription in CreateAcademicHonorSpecs
-                .Select(spec => spec.HonorDescription)
-                .Except(
-                    ChangedAcademicHonorSpecs.Select(spec => spec.HonorDescription),
-                    StringComparer.Ordinal
-                )
-        )
-        {
-            changedAcademicHonorIdsByDescription.Keys.Should().NotContain(deletedHonorDescription);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "AcademicHonors",
+            createAcademicHonorIdsByDescription,
             changedAcademicHonorIdsByDescription
-                .Values.Should()
-                .NotContain(createAcademicHonorIdsByDescription[deletedHonorDescription]);
-        }
-
-        foreach (
-            var insertedHonorDescription in ChangedAcademicHonorSpecs
-                .Select(spec => spec.HonorDescription)
-                .Except(
-                    CreateAcademicHonorSpecs.Select(spec => spec.HonorDescription),
-                    StringComparer.Ordinal
-                )
-        )
-        {
-            createAcademicHonorIdsByDescription
-                .Values.Should()
-                .NotContain(changedAcademicHonorIdsByDescription[insertedHonorDescription]);
-        }
+        );
 
         var createDiplomaIdsByAwardDate = CreateDiplomaIdsByAwardDate(_stateAfterCreate.Diplomas);
         var changedDiplomaIdsByAwardDate = CreateDiplomaIdsByAwardDate(_stateAfterChangedUpdate.Diplomas);
@@ -917,28 +896,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        foreach (
-            var deletedDiplomaAwardDate in CreateDiplomaSpecs
-                .Select(spec => spec.DiplomaAwardDate)
-                .Except(ChangedDiplomaSpecs.Select(spec => spec.DiplomaAwardDate), StringComparer.Ordinal)
-        )
-        {
-            changedDiplomaIdsByAwardDate.Keys.Should().NotContain(deletedDiplomaAwardDate);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "Diplomas",
+            createDiplomaIdsByAwardDate,
             changedDiplomaIdsByAwardDate
-                .Values.Should()
-                .NotContain(createDiplomaIdsByAwardDate[deletedDiplomaAwardDate]);
-        }
-
-        foreach (
-            var insertedDiplomaAwardDate in ChangedDiplomaSpecs
-                .Select(spec => spec.DiplomaAwardDate)
-                .Except(CreateDiplomaSpecs.Select(spec => spec.DiplomaAwardDate), StringComparer.Ordinal)
-        )
-        {
-            createDiplomaIdsByAwardDate
-                .Values.Should()
-                .NotContain(changedDiplomaIdsByAwardDate[insertedDiplomaAwardDate]);
-        }
+        );
 
         var createGradePointAverageIdsByKey = CreateGradePointAverageIdsByKey(
             _stateAfterCreate.GradePointAverages
@@ -962,13 +924,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        changedGradePointAverageIdsByKey.Keys.Should().NotContain("Session");
-        changedGradePointAverageIdsByKey
-            .Values.Should()
-            .NotContain(createGradePointAverageIdsByKey["Session"]);
-        createGradePointAverageIdsByKey
-            .Values.Should()
-            .NotContain(changedGradePointAverageIdsByKey["Weighted"]);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "GradePointAverages",
+            createGradePointAverageIdsByKey,
+            changedGradePointAverageIdsByKey
+        );
 
         var createRecognitionIdsByKey = CreateRecognitionIdsByKey(_stateAfterCreate.Recognitions);
         var changedRecognitionIdsByKey = CreateRecognitionIdsByKey(_stateAfterChangedUpdate.Recognitions);
@@ -988,9 +948,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        changedRecognitionIdsByKey.Keys.Should().NotContain("Leadership");
-        changedRecognitionIdsByKey.Values.Should().NotContain(createRecognitionIdsByKey["Leadership"]);
-        createRecognitionIdsByKey.Values.Should().NotContain(changedRecognitionIdsByKey["Attendance"]);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "Recognitions",
+            createRecognitionIdsByKey,
+            changedRecognitionIdsByKey
+        );
     }
 
     [Test]

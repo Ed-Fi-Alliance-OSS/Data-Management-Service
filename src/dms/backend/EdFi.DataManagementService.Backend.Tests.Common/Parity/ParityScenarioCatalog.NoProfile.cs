@@ -300,7 +300,7 @@ public static partial class ParityScenarioCatalog
                 "It_returns_insert_success_and_persists_the_full_large_collection",
                 "It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit",
             ],
-            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios (DMS-1023 shared contract, later unit)",
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios",
             boundaryDetail: "WritePlanBatchSqlEmitter / PlanWriteBatchingConventions",
             diff: new DialectDifference(
                 "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent and caps at 2100 parameters / 1000 rows.",
