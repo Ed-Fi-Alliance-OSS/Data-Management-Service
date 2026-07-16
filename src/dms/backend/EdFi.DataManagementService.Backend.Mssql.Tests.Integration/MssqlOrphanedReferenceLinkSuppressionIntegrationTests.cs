@@ -471,6 +471,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -480,6 +481,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -489,6 +491,7 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

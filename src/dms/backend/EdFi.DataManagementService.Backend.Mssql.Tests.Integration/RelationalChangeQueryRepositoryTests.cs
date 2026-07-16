@@ -983,6 +983,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -992,6 +993,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1001,6 +1003,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

@@ -2036,12 +2036,12 @@ internal sealed class DescriptorWriteHandler(
             )
             , new_descriptor AS (
                 INSERT INTO dms."Descriptor" (
-                    "DocumentId", "Namespace", "CodeValue", "ShortDescription",
+                    "DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
                     "Description", "EffectiveBeginDate", "EffectiveEndDate",
                     "Discriminator", "Uri"
                 )
                 SELECT
-                    "DocumentId", @namespace, @codeValue, @shortDescription,
+                    "DocumentId", @resourceKeyId, @namespace, @codeValue, @shortDescription,
                     @description, @effectiveBeginDate::date, @effectiveEndDate::date,
                     @discriminator, @uri
                 FROM new_doc
@@ -2085,12 +2085,12 @@ internal sealed class DescriptorWriteHandler(
             SET @newDocumentId = SCOPE_IDENTITY();
 
             INSERT INTO [dms].[Descriptor] (
-                [DocumentId], [Namespace], [CodeValue], [ShortDescription],
+                [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
                 [Description], [EffectiveBeginDate], [EffectiveEndDate],
                 [Discriminator], [Uri]
             )
             VALUES (
-                @newDocumentId, @namespace, @codeValue, @shortDescription,
+                @newDocumentId, @resourceKeyId, @namespace, @codeValue, @shortDescription,
                 @description, @effectiveBeginDate, @effectiveEndDate,
                 @discriminator, @uri
             );

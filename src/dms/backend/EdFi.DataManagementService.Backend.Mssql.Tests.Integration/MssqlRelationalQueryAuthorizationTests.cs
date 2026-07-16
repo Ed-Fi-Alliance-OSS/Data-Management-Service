@@ -2070,6 +2070,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -2079,6 +2080,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -2088,6 +2090,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

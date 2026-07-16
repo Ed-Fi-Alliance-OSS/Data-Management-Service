@@ -1,9 +1,9 @@
 SELECT COUNT(1)
-FROM "dms"."Document" r
-INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = r."DocumentId"
+FROM "dms"."Descriptor" r
+INNER JOIN "dms"."Document" doc ON doc."DocumentId" = r."DocumentId"
 WHERE
-    (d."EffectiveEndDate" = @effectiveEndDate)
-    AND (d."Namespace" = @namespace)
-    AND (r."DocumentUuid" = @id)
+    (doc."DocumentUuid" = @id)
+    AND (r."EffectiveEndDate" = @effectiveEndDate)
+    AND (r."Namespace" = @namespace)
     AND (r."ResourceKeyId" = @resourceKeyId)
 ;

@@ -85,6 +85,7 @@ $uuidv5$;
 CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
 (
     "DocumentId" bigint NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Namespace" varchar(255) NOT NULL,
     "CodeValue" varchar(50) NOT NULL,
     "ShortDescription" varchar(75) NOT NULL,
@@ -308,6 +309,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_Descriptor_ResourceKey'
+        AND conrelid = to_regclass('"dms"."Descriptor"')
+    )
+    THEN
+        ALTER TABLE "dms"."Descriptor"
+        ADD CONSTRAINT "FK_Descriptor_ResourceKey"
+        FOREIGN KEY ("ResourceKeyId")
+        REFERENCES "dms"."ResourceKey" ("ResourceKeyId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_Document_ResourceKey'
         AND conrelid = to_regclass('"dms"."Document"')
     )
@@ -393,9 +411,9 @@ END $$;
 -- Phase 7: Indexes
 -- ==========================================================
 
-CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId");
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Document_ResourceKeyId_DocumentId" ON "dms"."Document" ("ResourceKeyId", "DocumentId");
+CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId");
 
 CREATE INDEX IF NOT EXISTS "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt" ON "dms"."DocumentCache" ("ProjectName", "ResourceName", "LastModifiedAt", "DocumentId");
 

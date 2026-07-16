@@ -43,7 +43,7 @@ internal static class PostgresqlDescriptorReadTestSupport
         );
         var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
 
-        await InsertDescriptorRowAsync(database, resource, documentId, seed);
+        await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
 
         return documentId;
     }
@@ -52,6 +52,7 @@ internal static class PostgresqlDescriptorReadTestSupport
         PostgresqlGeneratedDdlTestDatabase database,
         QualifiedResourceName resource,
         long documentId,
+        short resourceKeyId,
         DescriptorReadSeed seed
     )
     {
@@ -61,6 +62,7 @@ internal static class PostgresqlDescriptorReadTestSupport
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -72,6 +74,7 @@ internal static class PostgresqlDescriptorReadTestSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -83,6 +86,7 @@ internal static class PostgresqlDescriptorReadTestSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", seed.Namespace),
             new NpgsqlParameter("codeValue", seed.CodeValue),
             new NpgsqlParameter("shortDescription", seed.ShortDescription),

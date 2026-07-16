@@ -516,6 +516,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -525,6 +526,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -534,6 +536,7 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

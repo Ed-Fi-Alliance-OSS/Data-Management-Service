@@ -94,9 +94,6 @@ CREATE TABLE dms.Document (
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_Document_ResourceKeyId_DocumentId
-    ON dms.Document (ResourceKeyId, DocumentId);
-
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
 ```
@@ -129,9 +126,6 @@ CREATE TABLE dms.Document (
         REFERENCES dms.ResourceKey (ResourceKeyId)
 );
 
-CREATE INDEX IX_Document_ResourceKeyId_DocumentId
-    ON dms.Document (ResourceKeyId, DocumentId);
-
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
 ```
@@ -140,6 +134,7 @@ Notes:
 
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
+- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` index: descriptor paging — the only query path that filtered documents by resource type — roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §3), and every other `ResourceKeyId` filter rides a `DocumentUuid` unique probe. `FK_Document_ResourceKey` needs no referencing-side index either, because `dms.ResourceKey` rows are seeded at provisioning and never deleted or updated at runtime.
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
@@ -267,6 +262,7 @@ Descriptors are still documents, but we maintain a unified descriptor table keye
 ```sql
 CREATE TABLE dms.Descriptor (
     DocumentId bigint NOT NULL,
+    ResourceKeyId smallint NOT NULL,
     Namespace varchar(255) NOT NULL,
     CodeValue varchar(50) NOT NULL,
     ShortDescription varchar(75) NOT NULL,
@@ -278,11 +274,18 @@ CREATE TABLE dms.Descriptor (
     CONSTRAINT PK_Descriptor PRIMARY KEY (DocumentId),
     CONSTRAINT FK_Descriptor_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT FK_Descriptor_ResourceKey FOREIGN KEY (ResourceKeyId)
+        REFERENCES dms.ResourceKey (ResourceKeyId),
     CONSTRAINT UX_Descriptor_Uri_Discriminator UNIQUE (Uri, Discriminator)
 );
+
+CREATE INDEX IX_Descriptor_ResourceKeyId_DocumentId
+    ON dms.Descriptor (ResourceKeyId, DocumentId);
 ```
 
 `(Uri, Discriminator)` lookups are served by the `UX_Descriptor_Uri_Discriminator` unique constraint; no additional plain index on the same columns is defined.
+
+`ResourceKeyId` is denormalized from `dms.Document` at insert time (same transaction, same value) and is immutable thereafter, mirroring the immutability of a document's resource type. It exists so descriptor GET-all/GET-by-query paging and totalCount can root entirely on `dms.Descriptor` through `IX_Descriptor_ResourceKeyId_DocumentId` — an index over only the descriptor rows — instead of maintaining a `(ResourceKeyId, DocumentId)` index across every row of `dms.Document`. The stamping trigger's no-op diff deliberately excludes it, so a migration backfill of the column does not bump change versions.
 
 The effective date columns are part of the descriptor field contract. This matches legacy ODS behavior, where `edfi.Descriptor` includes nullable `EffectiveBeginDate` and `EffectiveEndDate` columns. DMS differs from ODS by using a single shared `dms.Descriptor` keyed by `DocumentId` and by not creating per-descriptor marker tables.
 
@@ -296,6 +299,7 @@ If DB-level enforcement of “descriptor must be of type X” becomes necessary 
 Descriptor update semantics:
 
 - Descriptor identity is immutable after creation: `Namespace`, `CodeValue`, and the derived `Uri` must not change on PUT.
+- `ResourceKeyId` and `Discriminator` are set at insert and never updated (a document's resource type is immutable).
 - Descriptor representation fields can be updated: `ShortDescription`, `Description`, `EffectiveBeginDate`, and `EffectiveEndDate`.
 - Descriptor endpoint query fields map to shared descriptor columns with root-table-only semantics, including `namespace`, `codeValue`, `shortDescription`, `description`, `effectiveBeginDate`, and `effectiveEndDate`.
 - Descriptor references remain stable because other resources reference the descriptor document by resolved descriptor identity/URI, not by copied descriptor metadata.
