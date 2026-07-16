@@ -26,6 +26,12 @@ multiple-cascade-path convergence.
    carry that move.
 7. Cycles and unsupported cuts fail derivation. DMS does not search arbitrary upstream cuts, optimize a cut set, or retain
    a weaker fallback.
+8. A cut column the retained cascade does not update is a plain full-composite `NO ACTION` reference, not an unsupported
+   cut: the safe-cut test passes it and it derives. The one shape this does not specially guard is a genuinely mutable
+   resource referenced through two disjoint, non-unified roles by one receiver. That shape does not occur in standard
+   Ed-Fi (every disjoint role there resolves to an immutable abstract identity), and it is deliberately left to fail
+   closed at runtime — a clean SQL Server error on a rename, never a corrupt tuple — rather than to fail derivation. This
+   is settled, intended behavior; do not read the surviving `NO ACTION` reference as an unproven or out-of-scope cut.
 
 ## Problem
 
@@ -259,14 +265,18 @@ validated by the full-composite FK directly. It is not a carrier obligation for 
 mutable intermediate identity change would require a cut tuple to change without a retained carrier, that survivor is
 unsafe. DMS need not model arbitrary value combinations to make this determination.
 
-A cut column that the retained cascade does not update carries no carrier obligation: the cut keeps enforcing that
-column as an ordinary full-composite `NO ACTION` reference. When the origin is immutable — the standard-Ed-Fi case,
-where disjoint role references resolve to an immutable abstract identity such as `EducationOrganization` — no rename
-ever occurs, so the cut is fully safe. A genuinely mutable resource referenced through two disjoint, non-unified roles
-by one receiver is the single shape this skip does not guard, and it is outside the supported SQL Server pruning set.
-Such a model still derives and installs, and it fails closed at runtime: a rename of that origin is rejected by the
-surviving `NO ACTION` reference (a clean SQL Server error, never a corrupt tuple). This shape does not occur in standard
-Ed-Fi; supporting it would require a real fixture exhibiting it, and none exists.
+A cut column that the retained cascade does not update carries no carrier obligation. Safe-cut rule 1 applies only to a
+column the survivor also updates, so a column the survivor does not update leaves the cut a plain full-composite
+`NO ACTION` reference and the test passes it. This is a safe, supported result of the safe-cut test — not an unsupported
+cut, and it does not fail derivation. (This is distinct from the no-safe-survivor case above, where a genuinely mutable
+origin does fail derivation.) When the origin is immutable — the standard-Ed-Fi case, where disjoint role references
+resolve to an immutable abstract identity such as `EducationOrganization` — no rename ever occurs, so the cut is fully
+safe. The one case this skip does not specially guard is a genuinely mutable resource referenced through two disjoint,
+non-unified roles by one receiver. Its surviving `NO ACTION` reference is a complete, enforced full-composite reference,
+not a cascade carrier, so a rename of the origin is rejected at runtime by it — a clean SQL Server error, never a corrupt
+tuple. This is settled, intended behavior: the shape does not occur in standard Ed-Fi, and it is deliberately left to
+fail closed at runtime rather than to fail derivation. Do not read the surviving `NO ACTION` reference as an unproven or
+out-of-scope cut; it is an ordinary full-composite reference, complete and enforced.
 
 ## Outputs and Diagnostics
 

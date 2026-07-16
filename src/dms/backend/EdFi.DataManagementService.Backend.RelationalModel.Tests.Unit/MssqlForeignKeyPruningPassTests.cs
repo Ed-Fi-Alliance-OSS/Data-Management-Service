@@ -797,6 +797,16 @@ public class Given_Mssql_Pruning_With_An_Upstream_Convergence
 /// Design verification case 7: an interacting cross-origin overlapping-diamond case in which a
 /// later convergence has no locally safe survivor and retries the earlier decision that selected
 /// an action for the exact same physical FK.
+///
+/// The retry cuts the BridgeOne edge, dissolving OriginBeta's convergence. That leaves BridgeOne a
+/// full-composite NO ACTION edge into Receiver while OriginBeta still cascades upstream into
+/// BridgeOne, so a rename of the genuinely mutable OriginBeta is rejected at runtime by that
+/// surviving NO ACTION reference — a clean SQL Server error, never a corrupt tuple. This is the same
+/// settled, intended fail-closed behavior as Given_Mssql_Pruning_Of_Parallel_Physical_Fks: the pass
+/// proves the convergence is dissolved to a single cascade path, not that every cut edge carries its
+/// origin's cascade. The surviving NO ACTION edge is a complete, enforced full-composite reference,
+/// not an unproven cut. This cross-origin shape does not occur in standard Ed-Fi. See
+/// design-docs/sql-server-pruning.md, "Safe cut" and Settled Decision 8.
 /// </summary>
 [TestFixture]
 public class Given_Mssql_Pruning_With_A_Cross_Origin_Shared_Fk_Retry
@@ -1593,12 +1603,14 @@ public class Given_Mssql_Pruning_Of_Parallel_Physical_Fks
 
     /// <summary>
     /// It should retain the first parallel edge in stable order and cut the second. The disjoint cut
-    /// carries no carrier obligation, so the cut role becomes an ordinary full-composite NO ACTION
-    /// reference. This synthetic shape — a genuinely mutable origin referenced under two disjoint,
-    /// non-unified roles — is outside the supported SQL Server pruning set and does not occur in
-    /// standard Ed-Fi. It derives cleanly and fails closed at runtime: a rename of Origin would be
-    /// rejected by the surviving NO ACTION reference (a clean SQL Server error, never a corrupt
-    /// tuple), which is why the shape is out of scope rather than something this pass guards.
+    /// carries no carrier obligation, so safe-cut rule 1 does not apply and the cut role becomes an
+    /// ordinary full-composite NO ACTION reference — a safe, supported result of the safe-cut test,
+    /// not an unsupported cut. This synthetic shape — a genuinely mutable origin referenced under two
+    /// disjoint, non-unified roles — does not occur in standard Ed-Fi. It derives cleanly and fails
+    /// closed at runtime: a rename of Origin would be rejected by the surviving NO ACTION reference
+    /// (a clean SQL Server error, never a corrupt tuple). This is settled, intended behavior — the
+    /// pass deliberately leaves this case to fail closed rather than to fail derivation, and does not
+    /// specially guard it. See design-docs/sql-server-pruning.md, "Safe cut" and Settled Decision 8.
     /// </summary>
     [Test]
     public void It_should_retain_the_first_parallel_edge_and_cut_the_second()

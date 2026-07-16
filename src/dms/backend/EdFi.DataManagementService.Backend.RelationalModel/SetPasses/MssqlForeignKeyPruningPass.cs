@@ -297,15 +297,19 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             if (survivorIndex < 0)
             {
-                // Not updated by the retained cascade, so no carrier obligation: the cut FK keeps
-                // enforcing this pairing as an ordinary full-composite NO ACTION reference. On the
-                // standard Ed-Fi surface every disjoint role reference resolves to an immutable
-                // abstract identity (EducationOrganization), so no rename ever reaches this pairing
-                // and the skip is fully safe. The one shape it does not guard — a genuinely mutable
-                // origin referenced under two disjoint, non-unified roles — is outside the supported
-                // SQL Server pruning set and does not occur in standard Ed-Fi; there a rename is
-                // rejected at runtime by the surviving NO ACTION reference (a clean SQL Server error,
-                // never a corrupt tuple). See design-docs/sql-server-pruning.md, "Safe cut".
+                // Not updated by the retained cascade, so no carrier obligation: safe-cut rule 1
+                // applies only to a column the survivor also updates, so the cut FK keeps enforcing
+                // this pairing as an ordinary full-composite NO ACTION reference. Passing it is a
+                // safe, supported result of the test, not an unsupported cut — it does not fail
+                // derivation. On the standard Ed-Fi surface every disjoint role reference resolves to
+                // an immutable abstract identity (EducationOrganization), so no rename ever reaches
+                // this pairing and the skip is fully safe. The one case it does not specially guard —
+                // a genuinely mutable origin referenced under two disjoint, non-unified roles — does
+                // not occur in standard Ed-Fi; its surviving NO ACTION reference is a complete,
+                // enforced full-composite reference, and a rename is rejected at runtime by it (a
+                // clean SQL Server error, never a corrupt tuple). This is settled, intended behavior,
+                // deliberately left to fail closed rather than to fail derivation. See
+                // design-docs/sql-server-pruning.md, "Safe cut".
                 continue;
             }
 

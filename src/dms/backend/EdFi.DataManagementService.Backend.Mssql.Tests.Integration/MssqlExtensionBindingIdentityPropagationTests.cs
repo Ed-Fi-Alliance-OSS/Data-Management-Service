@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard4)]
-public class MssqlExtensionBindingIdentityPropagationTests
+public class Given_A_Provisioned_Mssql_Database_With_A_FavoriteProgram_Extension_Binding
 {
     // The FavoriteProgram reference is a sample-extension property, so this exercises the
     // authoritative sample surface (which loads the sample extension project).
@@ -91,7 +91,7 @@ public class MssqlExtensionBindingIdentityPropagationTests
     }
 
     [Test]
-    public async Task Updating_Program_identity_propagates_to_the_FavoriteProgram_extension_binding_and_bumps_the_owning_root_ContentVersion()
+    public async Task It_should_propagate_a_Program_identity_rename_to_the_FavoriteProgram_extension_binding_and_bump_the_owning_root_ContentVersion()
     {
         // Arrange — seed:
         //   StudentEducationOrganizationAssociation (the owning root of the extension)
