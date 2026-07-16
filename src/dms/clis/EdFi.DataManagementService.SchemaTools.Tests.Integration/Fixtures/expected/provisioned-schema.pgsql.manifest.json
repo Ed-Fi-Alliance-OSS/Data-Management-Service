@@ -114540,16 +114540,6 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "Descriptor",
-      "index_name": "IX_Descriptor_Uri_Discriminator",
-      "is_unique": false,
-      "columns": [
-        "Uri",
-        "Discriminator"
-      ]
-    },
-    {
-      "schema_name": "dms",
       "table_name": "Document",
       "index_name": "IX_Document_CreatedByOwnershipTokenId",
       "is_unique": false,
@@ -114576,15 +114566,6 @@
         "ProjectName",
         "ResourceName",
         "LastModifiedAt",
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "index_name": "IX_ReferentialIdentity_DocumentId",
-      "is_unique": false,
-      "columns": [
         "DocumentId"
       ]
     },
