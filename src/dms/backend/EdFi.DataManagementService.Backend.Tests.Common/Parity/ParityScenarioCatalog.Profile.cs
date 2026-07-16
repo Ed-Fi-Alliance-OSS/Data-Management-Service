@@ -251,17 +251,20 @@ public static partial class ParityScenarioCatalog
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NestedCommonTypeScope",
             "A non-creatable new nested/common-type scope is rejected; provider-independent, validated at the synthesizer unit level.",
-            "unit: EdFi.DataManagementService.Backend.Tests.Unit.Profile.RelationalWriteProfileMergeSynthesizerTests.Given_nested_visible_request_item_with_no_visible_stored_match_when_creatable_is_false::It_identifies_the_nested_children_scope_in_the_rejection"
+            "Given_nested_visible_request_item_with_no_visible_stored_match_when_creatable_is_false",
+            ["It_identifies_the_nested_children_scope_in_the_rejection"]
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionCollectionItem",
             "A non-creatable new extension-scope item is rejected; provider-independent, validated at the synthesizer unit level.",
-            "unit: EdFi.DataManagementService.Backend.Tests.Unit.Profile.RelationalWriteProfileMergeSynthesizerTests.Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_Creatable_False::It_identifies_the_extension_scope_as_the_rejected_scope"
+            "Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_Creatable_False",
+            ["It_identifies_the_extension_scope_as_the_rejected_scope"]
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
             "The three-level chain (existing middle parent allows descendant create; a new middle parent denies it) is provider-independent, validated at the synthesizer unit level.",
-            "unit: EdFi.DataManagementService.Backend.Tests.Unit.Profile.RelationalWriteProfileMergeSynthesizerTests.Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3::It_returns_a_rejection"
+            "Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3",
+            ["It_returns_a_rejection"]
         ),
         // --- ProfileHiddenExtensionChildCollectionPreservation ------------------------------
         Profile(
@@ -373,18 +376,27 @@ public static partial class ParityScenarioCatalog
             Notes = notes,
         };
 
-    private static ParityScenario ProfileNa(string id, string contract, string unitEntryPoint) =>
+    private static ParityScenario ProfileNa(
+        string id,
+        string contract,
+        string unitFixture,
+        string[] unitMethods
+    ) =>
         new()
         {
             Id = id,
             Layer = ParityLayer.Profile,
             BehavioralContract = contract,
-            Boundary = ProductionBoundary.ProfilePersistExecutor,
+            Boundary = ProductionBoundary.ProfileMergeSynthesizer,
             Pgsql = null,
             Mssql = null,
+            Unit = new ScenarioLocation(
+                "RelationalWriteProfileMergeSynthesizerTests.cs",
+                unitFixture,
+                [.. unitMethods]
+            ),
             PgsqlCoverage = EngineCoverage.NotApplicable,
             MssqlCoverage = EngineCoverage.NotApplicable,
             Classification = ParityClassification.Na,
-            Notes = unitEntryPoint,
         };
 }

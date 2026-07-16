@@ -51,10 +51,21 @@ public static class ParityCatalogInvariants
                 violations.Add($"{id}: BehavioralContract is required.");
             }
 
+            ValidateLocations(scenario, id, violations);
             ValidateGapOwnership(scenario, id, violations);
             ValidateSupportingSmoke(scenario, id, byId, violations);
-            ValidateEngineCoverage(scenario, id, violations);
             ValidateNotApplicable(scenario, id, violations);
+
+            if (
+                scenario.Classification == ParityClassification.Both
+                && (
+                    scenario.PgsqlCoverage != EngineCoverage.Covered
+                    || scenario.MssqlCoverage != EngineCoverage.Covered
+                )
+            )
+            {
+                violations.Add($"{id}: a Both row requires Covered coverage on both engines.");
+            }
 
             if (
                 scenario.DialectDifference is { } difference
@@ -66,40 +77,88 @@ public static class ParityCatalogInvariants
             {
                 violations.Add($"{id}: DialectDifference requires a non-empty Description and Rationale.");
             }
-
-            foreach (string supportingId in scenario.SupportingScenarioIds)
-            {
-                if (!byId.ContainsKey(supportingId))
-                {
-                    violations.Add(
-                        $"{id}: SupportingScenarioIds references unknown scenario '{supportingId}'."
-                    );
-                }
-            }
         }
 
         return violations;
+    }
+
+    private static void ValidateLocations(ParityScenario scenario, string id, List<string> violations)
+    {
+        CheckLocation(scenario.Pgsql, id, "PostgreSQL", violations);
+        CheckLocation(scenario.Mssql, id, "SQL Server", violations);
+        CheckLocation(scenario.Unit, id, "unit", violations);
+
+        if (scenario.PgsqlCoverage == EngineCoverage.Covered && scenario.Pgsql is null)
+        {
+            violations.Add($"{id}: PostgreSQL coverage is Covered but no PostgreSQL location is recorded.");
+        }
+
+        if (scenario.MssqlCoverage == EngineCoverage.Covered && scenario.Mssql is null)
+        {
+            violations.Add($"{id}: SQL Server coverage is Covered but no SQL Server location is recorded.");
+        }
+    }
+
+    private static void CheckLocation(
+        ScenarioLocation? location,
+        string id,
+        string engine,
+        List<string> violations
+    )
+    {
+        if (location is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(location.File) || string.IsNullOrWhiteSpace(location.Fixture))
+        {
+            violations.Add($"{id}: the {engine} location requires a non-blank File and Fixture.");
+        }
+
+        if (location.Methods.IsDefaultOrEmpty || location.Methods.Any(string.IsNullOrWhiteSpace))
+        {
+            violations.Add($"{id}: the {engine} location requires at least one non-blank test method.");
+        }
     }
 
     private static void ValidateGapOwnership(ParityScenario scenario, string id, List<string> violations)
     {
         if (scenario.Classification == ParityClassification.KnownGap)
         {
-            if (string.IsNullOrWhiteSpace(scenario.GapOwner))
-            {
-                violations.Add($"{id}: a KnownGap row requires a GapOwner.");
-            }
-
             if (scenario.MssqlCoverage != EngineCoverage.Gap)
             {
                 violations.Add(
                     $"{id}: a KnownGap row must have MssqlCoverage=Gap because its SQL Server twin is missing."
                 );
             }
+
+            CheckEngineOwner(id, "PostgreSQL", scenario.PgsqlCoverage, scenario.PgsqlGapOwner, violations);
+            CheckEngineOwner(id, "SQL Server", scenario.MssqlCoverage, scenario.MssqlGapOwner, violations);
         }
-        else if (!string.IsNullOrEmpty(scenario.GapOwner))
+        else if (
+            !string.IsNullOrEmpty(scenario.PgsqlGapOwner) || !string.IsNullOrEmpty(scenario.MssqlGapOwner)
+        )
         {
-            violations.Add($"{id}: GapOwner is only valid on a KnownGap row.");
+            violations.Add($"{id}: gap owners are only valid on a KnownGap row.");
+        }
+    }
+
+    private static void CheckEngineOwner(
+        string id,
+        string engine,
+        EngineCoverage coverage,
+        string? owner,
+        List<string> violations
+    )
+    {
+        if (coverage == EngineCoverage.Gap && string.IsNullOrWhiteSpace(owner))
+        {
+            violations.Add($"{id}: the {engine} gap requires an owning ticket.");
+        }
+        else if (coverage != EngineCoverage.Gap && !string.IsNullOrEmpty(owner))
+        {
+            violations.Add($"{id}: a {engine} owner is only valid when {engine} coverage is a gap.");
         }
     }
 
@@ -122,11 +181,21 @@ public static class ParityCatalogInvariants
                     $"{id}: CoveredByScenarioId '{scenario.CoveredByScenarioId}' does not match any scenario."
                 );
             }
-            else if (target.Layer != ParityLayer.NoProfile)
+            else
             {
-                violations.Add(
-                    $"{id}: CoveredByScenarioId '{scenario.CoveredByScenarioId}' must be a NoProfile-layer scenario at the same production boundary."
-                );
+                if (target.Layer != ParityLayer.NoProfile || target.Boundary != scenario.Boundary)
+                {
+                    violations.Add(
+                        $"{id}: CoveredByScenarioId '{scenario.CoveredByScenarioId}' must be a NoProfile scenario at the same production boundary ({scenario.Boundary})."
+                    );
+                }
+
+                if (target.Classification is ParityClassification.SupportingSmoke or ParityClassification.Na)
+                {
+                    violations.Add(
+                        $"{id}: CoveredByScenarioId '{scenario.CoveredByScenarioId}' must be a canonical scenario, not a supporting-smoke or Na row."
+                    );
+                }
             }
         }
         else if (!string.IsNullOrEmpty(scenario.CoveredByScenarioId))
@@ -135,52 +204,28 @@ public static class ParityCatalogInvariants
         }
     }
 
-    private static void ValidateEngineCoverage(ParityScenario scenario, string id, List<string> violations)
-    {
-        if (
-            scenario.Classification == ParityClassification.Both
-            && (
-                scenario.Pgsql is null
-                || scenario.Mssql is null
-                || scenario.PgsqlCoverage != EngineCoverage.Covered
-                || scenario.MssqlCoverage != EngineCoverage.Covered
-            )
-        )
-        {
-            violations.Add(
-                $"{id}: a Both row requires PostgreSQL and SQL Server locations with Covered coverage on each engine."
-            );
-        }
-
-        if (scenario.PgsqlCoverage == EngineCoverage.Covered && scenario.Pgsql is null)
-        {
-            violations.Add($"{id}: PostgreSQL coverage is Covered but no PostgreSQL location is recorded.");
-        }
-
-        if (scenario.MssqlCoverage == EngineCoverage.Covered && scenario.Mssql is null)
-        {
-            violations.Add($"{id}: SQL Server coverage is Covered but no SQL Server location is recorded.");
-        }
-    }
-
     private static void ValidateNotApplicable(ParityScenario scenario, string id, List<string> violations)
     {
-        if (scenario.Classification != ParityClassification.Na)
+        if (scenario.Classification == ParityClassification.Na)
         {
-            return;
-        }
+            if (
+                scenario.PgsqlCoverage != EngineCoverage.NotApplicable
+                || scenario.MssqlCoverage != EngineCoverage.NotApplicable
+            )
+            {
+                violations.Add($"{id}: an Na row must be NotApplicable on both engines.");
+            }
 
-        if (
-            scenario.PgsqlCoverage != EngineCoverage.NotApplicable
-            || scenario.MssqlCoverage != EngineCoverage.NotApplicable
-        )
-        {
-            violations.Add($"{id}: an Na row must be NotApplicable on both engines.");
+            if (scenario.Unit is null)
+            {
+                violations.Add(
+                    $"{id}: an Na row requires a Unit location recording its unit-test entry point."
+                );
+            }
         }
-
-        if (string.IsNullOrWhiteSpace(scenario.Notes))
+        else if (scenario.Unit is not null)
         {
-            violations.Add($"{id}: an Na row requires Notes recording its unit-level entry point.");
+            violations.Add($"{id}: a Unit location is only valid on an Na row.");
         }
     }
 }

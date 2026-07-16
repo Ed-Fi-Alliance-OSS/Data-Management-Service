@@ -100,6 +100,12 @@ public enum ProductionBoundary
 
     /// <summary>The profile-aware persist executor (profile layer only).</summary>
     ProfilePersistExecutor,
+
+    /// <summary>
+    /// The provider-independent profile merge synthesizer/planner, exercised by unit tests with
+    /// no provider persist executor. Used by rows whose only coverage is a synthesizer unit test.
+    /// </summary>
+    ProfileMergeSynthesizer,
 }
 
 /// <summary>
@@ -142,6 +148,9 @@ public sealed record ParityScenario
     /// <summary>SQL Server test location, or null when none applies (e.g. a known gap).</summary>
     public ScenarioLocation? Mssql { get; init; }
 
+    /// <summary>Provider-independent unit test location for an Na row; null otherwise.</summary>
+    public ScenarioLocation? Unit { get; init; }
+
     /// <summary>PostgreSQL coverage state.</summary>
     public required EngineCoverage PgsqlCoverage { get; init; }
 
@@ -154,18 +163,25 @@ public sealed record ParityScenario
     /// <summary>Coverage classification.</summary>
     public required ParityClassification Classification { get; init; }
 
-    /// <summary>Owning ticket for a known gap; required when <see cref="Classification"/> is KnownGap.</summary>
-    public string? GapOwner { get; init; }
+    /// <summary>
+    /// Owning ticket for the PostgreSQL gap on a KnownGap row; required when PostgreSQL is a gap and
+    /// forbidden otherwise.
+    /// </summary>
+    public string? PgsqlGapOwner { get; init; }
+
+    /// <summary>
+    /// Owning ticket for the SQL Server gap on a KnownGap row; required when SQL Server is a gap and
+    /// forbidden otherwise.
+    /// </summary>
+    public string? MssqlGapOwner { get; init; }
 
     /// <summary>
     /// For a SupportingSmoke row, the canonical same-boundary scenario id whose mechanic
-    /// contractually covers this breadth smoke.
+    /// contractually covers this breadth smoke. The reverse mapping is derived from these forward
+    /// links, never stored separately.
     /// </summary>
     public string? CoveredByScenarioId { get; init; }
 
-    /// <summary>For a canonical row, the breadth smokes that additionally exercise it.</summary>
-    public ImmutableArray<string> SupportingScenarioIds { get; init; } = [];
-
-    /// <summary>Free-form traceability notes (trace labels, unit entry points for Na rows, partial-coverage notes).</summary>
+    /// <summary>Free-form traceability notes (trace labels, partial-coverage / additional-mechanic notes).</summary>
     public string? Notes { get; init; }
 }

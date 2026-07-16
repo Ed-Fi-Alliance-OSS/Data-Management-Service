@@ -54,11 +54,31 @@ public static partial class ParityScenarioCatalog
     public static IReadOnlyList<ParityScenario> All =>
         _all ??= [.. ApiScenarios, .. ProfileScenarios, .. NoProfileScenarios];
 
-    /// <summary>The canonical identifier of a row, i.e. the id without any <c>/variant</c> suffix.</summary>
+    /// <summary>
+    /// The canonical identifier of a row. A profile/no-profile id is the approved canonical prefix
+    /// it exactly matches or extends with a <c>/variant</c> suffix; API and supporting-smoke ids use
+    /// slashes as namespace segments and are returned unchanged.
+    /// </summary>
     public static string CanonicalIdOf(string id)
     {
         ArgumentNullException.ThrowIfNull(id);
-        int slash = id.IndexOf('/', StringComparison.Ordinal);
-        return slash < 0 ? id : id[..slash];
+
+        foreach (string canonical in CanonicalProfileIds)
+        {
+            if (id == canonical || id.StartsWith(canonical + "/", StringComparison.Ordinal))
+            {
+                return canonical;
+            }
+        }
+
+        foreach (string canonical in CanonicalNoProfileIds)
+        {
+            if (id == canonical || id.StartsWith(canonical + "/", StringComparison.Ordinal))
+            {
+                return canonical;
+            }
+        }
+
+        return id;
     }
 }

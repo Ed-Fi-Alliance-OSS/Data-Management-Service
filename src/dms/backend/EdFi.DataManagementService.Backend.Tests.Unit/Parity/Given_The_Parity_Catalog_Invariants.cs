@@ -41,13 +41,13 @@ internal static class ParityInvariantSamples
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Gap,
             Classification = ParityClassification.KnownGap,
-            GapOwner = "DMS-1285",
+            MssqlGapOwner = "DMS-1285",
         };
 
-    public static ParityScenario SupportingSmoke() =>
+    public static ParityScenario SupportingSmoke(string id = "NoProfileSample/AuthoritativeBreadth") =>
         new()
         {
-            Id = "NoProfileSample/AuthoritativeBreadth",
+            Id = id,
             Layer = ParityLayer.NoProfile,
             BehavioralContract = "authoritative breadth on the same no-profile boundary",
             Boundary = ProductionBoundary.NoProfilePersister,
@@ -65,13 +65,13 @@ internal static class ParityInvariantSamples
             Id = "ProfileSample/UnitOnlyVariant",
             Layer = ParityLayer.Profile,
             BehavioralContract = "provider-independent creatability rejection validated at unit level",
-            Boundary = ProductionBoundary.ProfilePersistExecutor,
+            Boundary = ProductionBoundary.ProfileMergeSynthesizer,
             Pgsql = null,
             Mssql = null,
+            Unit = new("SampleSynthesizerTests.cs", "Given_Sample_Unit_Fixture", ["It_returns_a_rejection"]),
             PgsqlCoverage = EngineCoverage.NotApplicable,
             MssqlCoverage = EngineCoverage.NotApplicable,
             Classification = ParityClassification.Na,
-            Notes = "unit: Given_Sample_Unit_Fixture::It_returns_a_rejection",
         };
 
     public static List<ParityScenario> Valid() =>
@@ -126,7 +126,7 @@ public class Given_A_Parity_Catalog_With_A_Blank_Scenario_Id
 }
 
 [TestFixture]
-public class Given_A_Known_Gap_Without_A_Gap_Owner
+public class Given_A_Known_Gap_Without_A_Sql_Server_Owner
 {
     private IReadOnlyList<string> _violations = null!;
 
@@ -134,12 +134,60 @@ public class Given_A_Known_Gap_Without_A_Gap_Owner
     public void Setup()
     {
         var scenarios = ParityInvariantSamples.Valid();
-        scenarios[1] = scenarios[1] with { GapOwner = null };
+        scenarios[1] = scenarios[1] with { MssqlGapOwner = null };
         _violations = ParityCatalogInvariants.Validate(scenarios);
     }
 
     [Test]
-    public void It_reports_the_missing_gap_owner() =>
+    public void It_reports_the_missing_sql_server_owner() =>
+        _violations.Should().Contain(v => v.Contains("NoProfileSample", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Known_Gap_With_A_Postgresql_Gap_But_No_Postgresql_Owner
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        // Both engines a gap, but only the SQL Server side has an owner.
+        scenarios[1] = scenarios[1] with
+        {
+            Pgsql = null,
+            PgsqlCoverage = EngineCoverage.Gap,
+            PgsqlGapOwner = null,
+        };
+        _violations = ParityCatalogInvariants.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_missing_postgresql_owner() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("PostgreSQL gap requires an owning ticket", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Non_Gap_Engine_With_An_Owner
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        // PostgreSQL is Covered, so it must not carry a gap owner.
+        scenarios[1] = scenarios[1] with
+        {
+            PgsqlGapOwner = "DMS-1023",
+        };
+        _violations = ParityCatalogInvariants.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_stray_engine_owner() =>
         _violations.Should().Contain(v => v.Contains("NoProfileSample", StringComparison.Ordinal));
 }
 
@@ -156,13 +204,32 @@ public class Given_A_Known_Gap_Whose_Sql_Server_Side_Is_Marked_Covered
         {
             MssqlCoverage = EngineCoverage.Covered,
             Mssql = new("MssqlSample.cs", "Given_A_Mssql_Sample", ["It_persists"]),
+            MssqlGapOwner = null,
         };
         _violations = ParityCatalogInvariants.Validate(scenarios);
     }
 
     [Test]
     public void It_reports_that_a_known_gap_cannot_be_covered_on_sql_server() =>
-        _violations.Should().Contain(v => v.Contains("NoProfileSample", StringComparison.Ordinal));
+        _violations.Should().Contain(v => v.Contains("MssqlCoverage=Gap", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Gap_Owner_On_A_Non_Known_Gap_Row
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[0] = scenarios[0] with { MssqlGapOwner = "DMS-1285" };
+        _violations = ParityCatalogInvariants.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_stray_gap_owner() =>
+        _violations.Should().Contain(v => v.Contains("Api/Sample/Behavior", StringComparison.Ordinal));
 }
 
 [TestFixture]
@@ -202,7 +269,7 @@ public class Given_A_Supporting_Smoke_Deferring_To_A_Missing_Scenario
 }
 
 [TestFixture]
-public class Given_A_Supporting_Smoke_Deferring_To_A_Different_Production_Boundary
+public class Given_A_Supporting_Smoke_Deferring_To_A_Different_Boundary_In_The_Same_Layer
 {
     private IReadOnlyList<string> _violations = null!;
 
@@ -210,17 +277,43 @@ public class Given_A_Supporting_Smoke_Deferring_To_A_Different_Production_Bounda
     public void Setup()
     {
         var scenarios = ParityInvariantSamples.Valid();
-        // Point the no-profile smoke at the API (HttpPipeline) row — a different boundary.
+        // Same NoProfile layer as its target, but a different production boundary.
         scenarios[2] = scenarios[2] with
         {
-            CoveredByScenarioId = "Api/Sample/Behavior",
+            Boundary = ProductionBoundary.GuardedNoOp,
         };
         _violations = ParityCatalogInvariants.Validate(scenarios);
     }
 
     [Test]
     public void It_reports_the_cross_boundary_deferral() =>
-        _violations.Should().Contain(v => v.Contains("AuthoritativeBreadth", StringComparison.Ordinal));
+        _violations.Should().Contain(v => v.Contains("same production boundary", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Supporting_Smoke_Deferring_To_Another_Supporting_Smoke
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        var secondSmoke = ParityInvariantSamples.SupportingSmoke("NoProfileSample/AuthoritativeBreadth2");
+        scenarios.Add(secondSmoke);
+        // Defer to the smoke instead of a canonical row (same layer and boundary).
+        scenarios[2] = scenarios[2] with
+        {
+            CoveredByScenarioId = secondSmoke.Id,
+        };
+        _violations = ParityCatalogInvariants.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_non_canonical_deferral_target() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("must be a canonical scenario", StringComparison.Ordinal));
 }
 
 [TestFixture]
@@ -259,7 +352,7 @@ public class Given_A_Both_Row_Missing_A_Sql_Server_Location
 }
 
 [TestFixture]
-public class Given_A_Gap_Owner_On_A_Non_Known_Gap_Row
+public class Given_A_Covered_Location_With_A_Blank_Test_Method
 {
     private IReadOnlyList<string> _violations = null!;
 
@@ -267,13 +360,18 @@ public class Given_A_Gap_Owner_On_A_Non_Known_Gap_Row
     public void Setup()
     {
         var scenarios = ParityInvariantSamples.Valid();
-        scenarios[0] = scenarios[0] with { GapOwner = "DMS-1285" };
+        scenarios[1] = scenarios[1] with
+        {
+            Pgsql = new("PostgresqlSample.cs", "Given_A_Postgresql_Sample", [" "]),
+        };
         _violations = ParityCatalogInvariants.Validate(scenarios);
     }
 
     [Test]
-    public void It_reports_the_stray_gap_owner() =>
-        _violations.Should().Contain(v => v.Contains("Api/Sample/Behavior", StringComparison.Ordinal));
+    public void It_reports_the_incomplete_location() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("at least one non-blank test method", StringComparison.Ordinal));
 }
 
 [TestFixture]
@@ -299,7 +397,7 @@ public class Given_An_Na_Row_With_Concrete_Engine_Coverage
 }
 
 [TestFixture]
-public class Given_A_Supporting_Scenario_Reference_That_Does_Not_Exist
+public class Given_An_Na_Row_Without_A_Unit_Location
 {
     private IReadOnlyList<string> _violations = null!;
 
@@ -307,11 +405,32 @@ public class Given_A_Supporting_Scenario_Reference_That_Does_Not_Exist
     public void Setup()
     {
         var scenarios = ParityInvariantSamples.Valid();
-        scenarios[1] = scenarios[1] with { SupportingScenarioIds = ["GhostScenario"] };
+        scenarios[3] = scenarios[3] with { Unit = null };
         _violations = ParityCatalogInvariants.Validate(scenarios);
     }
 
     [Test]
-    public void It_reports_the_dangling_supporting_scenario_reference() =>
-        _violations.Should().Contain(v => v.Contains("GhostScenario", StringComparison.Ordinal));
+    public void It_reports_the_missing_unit_location() =>
+        _violations.Should().Contain(v => v.Contains("requires a Unit location", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Unit_Location_On_A_Non_Na_Row
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[0] = scenarios[0] with
+        {
+            Unit = new("SampleSynthesizerTests.cs", "Given_Sample_Unit_Fixture", ["It_returns_a_rejection"]),
+        };
+        _violations = ParityCatalogInvariants.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_stray_unit_location() =>
+        _violations.Should().Contain(v => v.Contains("only valid on an Na row", StringComparison.Ordinal));
 }

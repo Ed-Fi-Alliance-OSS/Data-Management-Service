@@ -49,6 +49,33 @@ public class Given_The_Parity_Scenario_Catalog
         "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
     ];
 
+    // Independent expected sets: a typo made consistently in the catalog's own arrays and rows
+    // would still fail these, unlike asserting the catalog arrays against themselves.
+    private static readonly string[] ExpectedProfileCanonicalIds =
+    [
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation",
+        "ProfileVisibleRowDeleteWithHiddenRowPreservation",
+        "ProfileVisibleButAbsentNonCollectionScope",
+        "ProfileHiddenInlinedColumnPreservation",
+        "ProfileRootCreateRejectedWhenNonCreatable",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable",
+        "ProfileHiddenExtensionRowPreservation",
+        "ProfileHiddenExtensionChildCollectionPreservation",
+        "ProfileUnchangedWriteGuardedNoOp",
+    ];
+
+    private static readonly string[] ExpectedNoProfileCanonicalIds =
+    [
+        "NoProfileWriteBehavior",
+        "FullSurfaceCollectionReorder",
+        "NoProfileFullSurfaceCreate",
+        "NoProfileChangedPutOmissionSemantics",
+        "NoProfileGuardedNoOp",
+        "NoProfileMultiBatchCollection",
+        "NoProfilePostAsUpdate",
+        "NoProfileRollbackSafety",
+    ];
+
     private IReadOnlyList<ParityScenario> _all = null!;
     private IReadOnlyList<string> _violations = null!;
 
@@ -66,12 +93,12 @@ public class Given_The_Parity_Scenario_Catalog
     public void It_has_no_duplicate_scenario_ids() => _all.Select(s => s.Id).Should().OnlyHaveUniqueItems();
 
     [Test]
-    public void It_defines_exactly_nine_canonical_profile_ids() =>
-        ParityScenarioCatalog.CanonicalProfileIds.Length.Should().Be(9);
+    public void It_defines_exactly_the_expected_nine_canonical_profile_ids() =>
+        ParityScenarioCatalog.CanonicalProfileIds.Should().BeEquivalentTo(ExpectedProfileCanonicalIds);
 
     [Test]
-    public void It_defines_exactly_eight_canonical_no_profile_ids() =>
-        ParityScenarioCatalog.CanonicalNoProfileIds.Length.Should().Be(8);
+    public void It_defines_exactly_the_expected_eight_canonical_no_profile_ids() =>
+        ParityScenarioCatalog.CanonicalNoProfileIds.Should().BeEquivalentTo(ExpectedNoProfileCanonicalIds);
 
     [Test]
     public void It_contains_every_canonical_profile_id_in_the_profile_layer()
@@ -132,7 +159,7 @@ public class Given_The_Parity_Scenario_Catalog
                     s =>
                         s.Id == id
                         && s.Classification == ParityClassification.KnownGap
-                        && s.GapOwner == "DMS-1285"
+                        && s.MssqlGapOwner == "DMS-1285"
                         && s.MssqlCoverage == EngineCoverage.Gap,
                     "no-profile family {0} owed to DMS-1285",
                     id
@@ -143,10 +170,10 @@ public class Given_The_Parity_Scenario_Catalog
     [Test]
     public void It_catalogs_all_six_authoritative_postgresql_smoke_suites()
     {
+        List<string> pgSmokeFiles = _all.Where(s => s.Pgsql is not null).Select(s => s.Pgsql!.File).ToList();
         foreach (string file in AuthoritativeSmokeFiles)
         {
-            _all.Should()
-                .Contain(s => s.Pgsql != null && s.Pgsql.File == file, "authoritative smoke suite {0}", file);
+            pgSmokeFiles.Should().Contain(file, "authoritative smoke suite {0}", file);
         }
     }
 
@@ -157,9 +184,37 @@ public class Given_The_Parity_Scenario_Catalog
             .Contain(s =>
                 s.Id == "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically"
                 && s.Classification == ParityClassification.KnownGap
-                && s.GapOwner == "DMS-1285"
+                && s.MssqlGapOwner == "DMS-1285"
                 && s.Boundary == ProductionBoundary.KeyUnificationValidation
             );
+    }
+
+    [Test]
+    public void It_splits_the_standalone_extension_child_gap_across_dms_1023_and_dms_1285()
+    {
+        _all.Should()
+            .Contain(s =>
+                s.Id == "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection"
+                && s.Classification == ParityClassification.KnownGap
+                && s.PgsqlCoverage == EngineCoverage.Gap
+                && s.PgsqlGapOwner == "DMS-1023"
+                && s.MssqlCoverage == EngineCoverage.Gap
+                && s.MssqlGapOwner == "DMS-1285"
+            );
+    }
+
+    [Test]
+    public void It_gives_every_no_profile_canonical_family_a_shared_entry_point()
+    {
+        foreach (string id in ExpectedNoProfileCanonicalIds)
+        {
+            _all.Should()
+                .Contain(
+                    s => s.Id == id && !string.IsNullOrWhiteSpace(s.SharedEntryPoint),
+                    "no-profile family {0} names its shared contract entry point",
+                    id
+                );
+        }
     }
 
     [Test]
@@ -167,17 +222,35 @@ public class Given_The_Parity_Scenario_Catalog
     {
         foreach (string id in UnitLevelCreatabilityVariantIds)
         {
-            _all.Should()
-                .Contain(
-                    s =>
-                        s.Id == id
-                        && s.Classification == ParityClassification.Na
-                        && s.PgsqlCoverage == EngineCoverage.NotApplicable
-                        && s.MssqlCoverage == EngineCoverage.NotApplicable,
-                    "unit-level creatability variant {0}",
-                    id
-                );
+            ParityScenario row = _all.Single(s => s.Id == id);
+            row.Classification.Should().Be(ParityClassification.Na);
+            row.Boundary.Should().Be(ProductionBoundary.ProfileMergeSynthesizer);
+            row.Unit.Should().NotBeNull();
+            row.PgsqlCoverage.Should().Be(EngineCoverage.NotApplicable);
+            row.MssqlCoverage.Should().Be(EngineCoverage.NotApplicable);
         }
+    }
+
+    [Test]
+    public void It_derives_canonical_ids_by_matching_approved_prefixes()
+    {
+        ParityScenarioCatalog
+            .CanonicalIdOf("ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection")
+            .Should()
+            .Be("ProfileVisibleRowUpdateWithHiddenRowPreservation");
+        ParityScenarioCatalog
+            .CanonicalIdOf("NoProfileGuardedNoOp/StalePut")
+            .Should()
+            .Be("NoProfileGuardedNoOp");
+        // API and supporting-smoke ids use slashes as namespace segments, so they are unchanged.
+        ParityScenarioCatalog
+            .CanonicalIdOf("Api/CrudRoundTrip/CreatesAndReadsAStudent")
+            .Should()
+            .Be("Api/CrudRoundTrip/CreatesAndReadsAStudent");
+        ParityScenarioCatalog
+            .CanonicalIdOf("NoProfile/AuthoritativeSmoke/Ds52Contact/Create")
+            .Should()
+            .Be("NoProfile/AuthoritativeSmoke/Ds52Contact/Create");
     }
 
     [Test]
