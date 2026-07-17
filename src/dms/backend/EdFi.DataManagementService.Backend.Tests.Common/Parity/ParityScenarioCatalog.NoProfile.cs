@@ -123,13 +123,13 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileWriteBehavior (umbrella) ----------------------------------------------
         Gap(
             "NoProfileWriteBehavior",
-            "Umbrella no-profile write control path at the persister boundary: the changed-write flow is orchestrated to update success, and the no-profile _ext surface persists on create.",
+            "Umbrella no-profile changed-write control path at the persister boundary: the changed-write flow is orchestrated to update success and bumps ContentVersion.",
             ProductionBoundary.NoProfilePersister,
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_returns_update_success_and_bumps_content_version_for_the_put_flow"],
-            sharedEntryPoint: "NoProfileCreateBaselineScenarios + NoProfileUpdateSemanticsScenarios",
-            notes: "Realized by NoProfileFullSurfaceCreate (no-profile _ext create); merge-level omission and deletion semantics are owned by NoProfileChangedPutOmissionSemantics at the NoProfileMerge boundary."
+            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios",
+            notes: "The no-profile _ext create mechanic is recorded on NoProfileWriteBehavior/NoProfileExt; merge-level omission and deletion semantics are owned by NoProfileChangedPutOmissionSemantics at the NoProfileMerge boundary."
         ),
         Gap(
             "NoProfileWriteBehavior/OmittedNonCollectionScope",
@@ -145,6 +145,7 @@ public static partial class ParityScenarioCatalog
             Layer = ParityLayer.NoProfile,
             BehavioralContract =
                 "The control full-surface write persists the no-profile _ext surface (root extension, collection-aligned extension, and extension-child collection rows) on create.",
+            SharedEntryPoint = "NoProfileCreateBaselineScenarios",
             Boundary = ProductionBoundary.NoProfilePersister,
             BoundaryDetail =
                 "No-profile _ext create surface persisted via NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild; the omitted-aligned-extension deletion on a changed PUT is a merge mechanic cataloged under NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope.",
@@ -344,8 +345,15 @@ public static partial class ParityScenarioCatalog
             [
                 "It_persists_authoritative_student_academic_record_root_extension_and_large_collection_rows_on_create",
                 "It_uses_a_payload_large_enough_to_exercise_real_parameter_pressure",
-                "It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put",
             ]
+        ),
+        Gap(
+            "NoProfileMultiBatchCollection/AuthoritativeChangedPutIdentity",
+            "Authoritative StudentAcademicRecord changed PUT reuses stable collection item ids across the large-collection tables.",
+            ProductionBoundary.NoProfileMerge,
+            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+            ["It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put"]
         ),
         // --- NoProfilePostAsUpdate + variants -----------------------------------------------
         Gap(
@@ -418,14 +426,32 @@ public static partial class ParityScenarioCatalog
         ),
         // This fixture also exercises retained-and-omitted child-collection replacement, which is a merge
         // behavior owned by the DeletedAndReplacedChildCollectionRows omission-semantics variant, and a
-        // repeat POST-as-update guarded no-op, recorded as the supporting smoke below.
-        PgSmokeNoOp(
-            "SampleStudentAcademicRecord",
-            "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op.",
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
-            "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update"]
-        ),
+        // repeat POST-as-update guarded no-op recorded below. The no-op runs the guarded-no-op path yet
+        // asserts through NoProfilePostAsUpdateScenarios, so it records that shared contract directly while
+        // deferring its SQL Server twin to the NoProfileGuardedNoOp family.
+        new ParityScenario
+        {
+            Id = "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract =
+                "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op.",
+            SharedEntryPoint = "NoProfilePostAsUpdateScenarios",
+            Boundary = ProductionBoundary.GuardedNoOp,
+            PgsqlLocations =
+            [
+                Loc(
+                    "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+                    "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+                    [
+                        "It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update",
+                    ]
+                ),
+            ],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Mapped,
+            Classification = ParityClassification.SupportingSmoke,
+            CoveredByScenarioId = "NoProfileGuardedNoOp",
+        },
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
         Gap(
             "NoProfileRollbackSafety",
