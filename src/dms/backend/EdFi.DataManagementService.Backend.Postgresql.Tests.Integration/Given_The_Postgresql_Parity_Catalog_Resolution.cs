@@ -8,7 +8,9 @@ using EdFi.DataManagementService.Backend.Tests.Common.Parity;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+// Sibling namespace outside the PostgreSQL integration setup-fixture scope so this pure-reflection
+// meta-test never triggers database provisioning.
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Parity;
 
 /// <summary>
 /// Reflection meta-test: every parity-catalog Profile/NoProfile row that declares PostgreSQL coverage

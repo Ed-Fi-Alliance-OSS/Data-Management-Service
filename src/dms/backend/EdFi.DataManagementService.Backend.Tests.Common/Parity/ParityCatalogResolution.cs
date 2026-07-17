@@ -129,6 +129,15 @@ public static class ParityCatalogResolution
 
         Type fixture = fixtures[0];
 
+        if (!fixture.IsClass || fixture.IsAbstract)
+        {
+            violations.Add(
+                $"{scenarioId} [{engineLabel}] {location.File}::{location.Fixture}: '{location.Fixture}' resolved to a type "
+                    + $"in assembly '{assembly.GetName().Name}' that is not a concrete class."
+            );
+            return;
+        }
+
         foreach (string methodName in location.Methods)
         {
             MethodInfo[] methods =

@@ -4,11 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 using EdFi.DataManagementService.Backend.Tests.Common.Parity;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
+// Sibling namespace outside the MSSQL integration setup-fixture scope so this pure-reflection
+// meta-test never triggers database provisioning; the Integration namespace is imported only for the
+// internal MssqlCiShards.Shard4 category constant.
+namespace EdFi.DataManagementService.Backend.Mssql.Tests.Parity;
 
 /// <summary>
 /// Reflection meta-test: every parity-catalog Profile/NoProfile row that declares SQL Server coverage
