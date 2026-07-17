@@ -198,6 +198,36 @@ extensions, and the catalog walker matches the lowercase pattern.
    bind to the chosen `FixtureKey`, and exposes one `[Test]` method per
    scenario entry point.
 
+## Cross-engine API parity convention
+
+Required cross-engine API behaviors are tracked in the machine-readable parity
+catalog (`ParityScenarioCatalog.Api.cs` in
+`EdFi.DataManagementService.Backend.Tests.Common`) and enforced by the
+`Given_The_Api_Parity_Catalog_Resolution` reflection meta-test in this project,
+which resolves every Api-layer catalog row's declared PostgreSQL and SQL Server
+locations to real `[Test]` methods without needing a database connection.
+
+When you add an API behavior that must hold on both engines:
+
+1. **Implement the scenario logic once** as a `static` method in `Scenarios/`
+   (see [Adding a new scenario](#adding-a-new-scenario)).
+2. **Add independently named PostgreSQL and SQL Server `[Test]` wrappers** in
+   `Tests/Postgresql/` and `Tests/Mssql/`. The wrapper class names differ by
+   dialect; both expose the **same stable method entry point** (the `[Test]`
+   method name recorded in the catalog).
+3. **Record the exact locations** — file, fixture class, and method — for both
+   engines in the matching `ParityScenarioCatalog.Api.cs` row.
+4. **Run the API parity meta-test**
+   (`dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration --filter "FullyQualifiedName~Parity"`);
+   it fails with an actionable `scenario [engine] File::Fixture::Method` message
+   when a declared covered location does not resolve.
+
+This convention is **catalog-driven**: it enforces only the wrappers the catalog
+declares. It does **not** ban legitimate single-engine regression tests, and it
+does **not** require global PostgreSQL/SQL Server wrapper-name or file-name
+symmetry — only that each catalog-declared covered location resolves to exactly
+one `[Test]` method.
+
 ## Debugging
 
 When a runtime failure produces little useful output in the test console,
