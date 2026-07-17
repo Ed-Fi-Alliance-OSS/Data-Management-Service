@@ -24,6 +24,7 @@ internal static class ParityInvariantSamples
             Id = "Api/Sample/Behavior",
             Layer = ParityLayer.Api,
             BehavioralContract = "round-trips a resource over HTTP on both engines",
+            SharedEntryPoint = "SampleApiScenario.It_behaves",
             Boundary = ProductionBoundary.HttpPipeline,
             PgsqlLocations = [new("Given_Postgresql_Sample.cs", "Given_Postgresql_Sample", ["It_behaves"])],
             MssqlLocations = [new("Given_Mssql_Sample.cs", "Given_Mssql_Sample", ["It_behaves"])],
@@ -38,6 +39,7 @@ internal static class ParityInvariantSamples
             Id = "NoProfileSample",
             Layer = ParityLayer.NoProfile,
             BehavioralContract = "no-profile family owed a SQL Server twin",
+            SharedEntryPoint = "NoProfileSampleScenarios",
             Boundary = ProductionBoundary.NoProfilePersister,
             PgsqlLocations = [new("PostgresqlSample.cs", "Given_A_Postgresql_Sample", ["It_persists"])],
             PgsqlCoverage = EngineCoverage.Covered,
@@ -77,6 +79,8 @@ internal static class ParityInvariantSamples
             PgsqlCoverage = EngineCoverage.NotApplicable,
             MssqlCoverage = EngineCoverage.NotApplicable,
             Classification = ParityClassification.Na,
+            ProviderSpecificEntryPointRationale =
+                "provider-independent unit-level validation; the unit fixture is the effective entry point",
         };
 
     public static List<ParityScenario> Valid() =>
@@ -525,4 +529,79 @@ public class Given_A_Mapped_Engine_On_A_Non_Supporting_Row
             .Contain(v =>
                 v.Contains("Mapped is only valid on the deferred engine", StringComparison.Ordinal)
             );
+}
+
+[TestFixture]
+public class Given_A_Row_Without_A_Direct_Inherited_Or_Provider_Specific_Entry_Point
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        // Remove the direct shared entry point without recording a provider-specific rationale, so the row no
+        // longer resolves to any effective entry point.
+        scenarios[0] = scenarios[0] with
+        {
+            SharedEntryPoint = "",
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_a_provider_specific_rationale_is_required() =>
+        _violations
+            .Should()
+            .Contain(v =>
+                v.Contains("requires a", StringComparison.Ordinal)
+                && v.Contains("ProviderSpecificEntryPointRationale", StringComparison.Ordinal)
+            );
+}
+
+[TestFixture]
+public class Given_A_Direct_Row_That_Also_Declares_A_Provider_Specific_Rationale
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        // A direct row must not also carry a provider-specific rationale, or the resolution mode is ambiguous.
+        scenarios[1] = scenarios[1] with
+        {
+            ProviderSpecificEntryPointRationale = "stray rationale on a direct row",
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_the_rationale_is_only_valid_when_provider_specific() =>
+        _violations
+            .Should()
+            .Contain(v =>
+                v.Contains("only valid when the effective entry point is", StringComparison.Ordinal)
+            );
+}
+
+[TestFixture]
+public class Given_A_Duplicate_Inheritance_Target_Scenario_Id
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Duplicate the canonical/covered-by target the supporting-smoke row inherits from. Effective-entry-point
+        // resolution must not throw on the ambiguous inheritance lookup; Validate still returns the duplicate-id
+        // violation. (A duplicated Direct row is not an inheritance target, so it never exercises this path.)
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios.Add(ParityInvariantSamples.KnownGapNoProfile());
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_duplicate_id_without_throwing() =>
+        _violations.Should().Contain(v => v.Contains("NoProfileSample", StringComparison.Ordinal));
 }

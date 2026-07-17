@@ -333,5 +333,7 @@ public static class NoProfileCreateBaselineScenarios
                     "Visit-C"
                 )
             );
+        interventionVisits.Select(static row => row.CollectionItemId).Should().OnlyHaveUniqueItems();
+        interventionVisits.Select(static row => row.CollectionItemId).Should().OnlyContain(id => id > 0);
     }
 }

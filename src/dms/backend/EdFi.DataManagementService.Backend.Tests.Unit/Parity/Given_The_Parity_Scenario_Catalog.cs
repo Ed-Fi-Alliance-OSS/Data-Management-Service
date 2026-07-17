@@ -221,7 +221,7 @@ public class Given_The_Parity_Scenario_Catalog
         "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture::It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put",
         "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs::Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture::It_populates_persisted_reference_identity_columns_on_create",
         "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs::Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture::It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
-        "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs::Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture::It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback",
+        "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs::Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture::It_should_keep_runtime_written_rows_participating_in_native_identity_cascades",
         "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture::It_extracts_descriptor_backed_root_reference_members_via_the_shared_document_info_helper",
         "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture::It_populates_root_reference_columns_from_descriptor_backed_reference_members_on_create",
         "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_returns_the_create_etag_from_follow_up_get_by_id",
@@ -343,6 +343,35 @@ public class Given_The_Parity_Scenario_Catalog
                 );
         }
     }
+
+    [Test]
+    public void It_resolves_an_effective_entry_point_for_every_row() =>
+        _all.Where(s => ParityEntryPointResolution.ResolveEffectiveEntryPoint(s) is null)
+            .Select(s => s.Id)
+            .Should()
+            .BeEmpty();
+
+    [Test]
+    public void It_resolves_a_direct_shared_contract_for_a_no_profile_family() =>
+        ParityEntryPointResolution
+            .ResolveEffectiveEntryPoint(_all.Single(s => s.Id == "NoProfileFullSurfaceCreate"))!
+            .Kind.Should()
+            .Be(EntryPointKind.Direct);
+
+    [Test]
+    public void It_resolves_a_provider_specific_entry_point_for_a_profile_row() =>
+        ParityEntryPointResolution
+            .ResolveEffectiveEntryPoint(_all.Single(s => s.Id == "ProfileHiddenInlinedColumnPreservation"))!
+            .Kind.Should()
+            .Be(EntryPointKind.ProviderSpecific);
+
+    [Test]
+    public void It_resolves_at_least_one_inherited_entry_point() =>
+        _all.Any(s =>
+                ParityEntryPointResolution.ResolveEffectiveEntryPoint(s)?.Kind == EntryPointKind.Inherited
+            )
+            .Should()
+            .BeTrue();
 
     [Test]
     public void It_records_reference_identity_and_readback_as_cross_engine_both_rows()

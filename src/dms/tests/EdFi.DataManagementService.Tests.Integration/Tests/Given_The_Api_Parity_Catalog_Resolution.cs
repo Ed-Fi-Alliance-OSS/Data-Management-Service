@@ -33,6 +33,13 @@ public class Given_The_Api_Parity_Catalog_Resolution
             .ResolveApiCoveredLocations(Assembly.GetExecutingAssembly())
             .Should()
             .BeEmpty();
+
+    [Test]
+    public void It_resolves_every_api_shared_entry_point_to_a_declared_scenario_member() =>
+        ParityCatalogResolution
+            .ResolveApiSharedEntryPoints(Assembly.GetExecutingAssembly())
+            .Should()
+            .BeEmpty();
 }
 
 /// <summary>

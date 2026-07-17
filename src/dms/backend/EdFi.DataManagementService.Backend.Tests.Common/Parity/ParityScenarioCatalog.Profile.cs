@@ -497,6 +497,19 @@ public static partial class ParityScenarioCatalog
         ),
     ];
 
+    // Profile parity is validated through the existing per-engine profile fixtures; DMS-1023 delivers the
+    // provider-neutral no-profile contracts, while profiled execution and any shared profile helpers are owned
+    // by DMS-1124. The rows therefore resolve ProviderSpecific from their recorded per-engine (or unit) locations.
+    private const string ProfileProviderSpecificRationale =
+        "Profile-layer parity is validated through the per-engine profile fixtures recorded on this row; the "
+        + "provider-neutral no-profile contracts are DMS-1023's scope, whereas profiled execution and any shared "
+        + "profile helpers are owned by DMS-1124, so these existing provider fixtures are the effective entry points.";
+
+    private const string ProfileNaProviderSpecificRationale =
+        "Provider-independent creatability/rejection behavior validated at the profile merge-synthesizer unit "
+        + "level; the unit fixture recorded on this row is the effective assertion entry point and no cross-engine "
+        + "shared contract applies.";
+
     private static ScenarioLocation PgLoc(string stem, string fixture, string[] methods) =>
         new($"Postgresql{stem}.cs", fixture, [.. methods]);
 
@@ -521,6 +534,7 @@ public static partial class ParityScenarioCatalog
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
             Classification = ParityClassification.Both,
+            ProviderSpecificEntryPointRationale = ProfileProviderSpecificRationale,
             Notes = notes,
         };
 
@@ -558,5 +572,6 @@ public static partial class ParityScenarioCatalog
             PgsqlCoverage = EngineCoverage.NotApplicable,
             MssqlCoverage = EngineCoverage.NotApplicable,
             Classification = ParityClassification.Na,
+            ProviderSpecificEntryPointRationale = ProfileNaProviderSpecificRationale,
         };
 }

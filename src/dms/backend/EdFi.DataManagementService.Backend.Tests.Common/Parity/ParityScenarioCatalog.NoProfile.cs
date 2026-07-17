@@ -625,7 +625,7 @@ public static partial class ParityScenarioCatalog
                     [
                         "It_populates_persisted_reference_identity_columns_on_create",
                         "It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
-                        "It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback",
+                        "It_should_keep_runtime_written_rows_participating_in_native_identity_cascades",
                     ]
                 ),
                 Loc(
@@ -682,7 +682,8 @@ public static partial class ParityScenarioCatalog
             ProductionBoundary.RelationalReadback,
             SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_returns_the_changed_put_etag_from_follow_up_get_by_id"]
+            ["It_returns_the_changed_put_etag_from_follow_up_get_by_id"],
+            providerSpecificRationale: ReadbackProviderSpecificRationale
         ),
         Gap(
             "NoProfile/RelationalReadback/RepeatPutEtag",
@@ -690,7 +691,8 @@ public static partial class ParityScenarioCatalog
             ProductionBoundary.RelationalReadback,
             SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_returns_the_repeat_put_etag_from_follow_up_get_by_id"]
+            ["It_returns_the_repeat_put_etag_from_follow_up_get_by_id"],
+            providerSpecificRationale: ReadbackProviderSpecificRationale
         ),
     ];
 
@@ -707,7 +709,8 @@ public static partial class ParityScenarioCatalog
         string sharedEntryPoint = "",
         string? boundaryDetail = null,
         string? notes = null,
-        DialectDifference? diff = null
+        DialectDifference? diff = null,
+        string? providerSpecificRationale = null
     ) =>
         new()
         {
@@ -723,8 +726,16 @@ public static partial class ParityScenarioCatalog
             DialectDifference = diff,
             Classification = ParityClassification.KnownGap,
             MssqlGapOwner = DmsGapOwner,
+            ProviderSpecificEntryPointRationale = providerSpecificRationale,
             Notes = notes,
         };
+
+    // The relational read-back ETag gaps are a PostgreSQL-only read-path mechanic with no extracted provider-
+    // neutral shared contract (their Both parent NoProfile/RelationalReadback is itself provider-specific), so
+    // they resolve ProviderSpecific from the PostgreSQL fixture recorded on the row.
+    private const string ReadbackProviderSpecificRationale =
+        "PostgreSQL-only relational read-back ETag check with no extracted provider-neutral shared contract; the "
+        + "PostgreSQL fixture recorded on this row is the effective assertion entry point.";
 
     private static ParityScenario CreateVariant(string variant, string contract, string method) =>
         Gap(
@@ -846,6 +857,13 @@ public static partial class ParityScenarioCatalog
             CoveredByScenarioId = coveredBy,
         };
 
+    // A first-class cross-engine mechanic already covered on both engines by provider-specific fixtures, with no
+    // extracted provider-neutral shared contract; it resolves ProviderSpecific from its per-engine locations.
+    private const string NoProfileBothProviderSpecificRationale =
+        "Already covered on both PostgreSQL and SQL Server by the provider-specific fixtures recorded on this row; "
+        + "this first-class cross-engine mechanic has no extracted provider-neutral shared contract, so those "
+        + "existing per-engine fixtures are the effective entry points.";
+
     private static ParityScenario NoProfileBoth(
         string id,
         string contract,
@@ -865,6 +883,7 @@ public static partial class ParityScenarioCatalog
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
             Classification = ParityClassification.Both,
+            ProviderSpecificEntryPointRationale = NoProfileBothProviderSpecificRationale,
             Notes = notes,
         };
 }

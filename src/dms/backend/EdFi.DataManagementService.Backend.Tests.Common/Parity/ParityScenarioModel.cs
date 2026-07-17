@@ -75,6 +75,31 @@ public enum ParityClassification
 }
 
 /// <summary>
+/// How a scenario's effective reusable assertion/helper entry point is recorded. Every catalog row must
+/// resolve to exactly one of these modes.
+/// </summary>
+public enum EntryPointKind
+{
+    /// <summary>The row names its own provider-neutral shared contract in <see cref="ParityScenario.SharedEntryPoint"/>.</summary>
+    Direct,
+
+    /// <summary>
+    /// The row reuses the shared contract of the scenario it defers to
+    /// (<see cref="ParityScenario.CoveredByScenarioId"/>) or of its canonical family
+    /// (via <c>ParityScenarioCatalog.CanonicalIdOf</c>).
+    /// </summary>
+    Inherited,
+
+    /// <summary>
+    /// No provider-neutral shared contract applies; the effective fixture/assertion entry points are the row's
+    /// existing per-engine (<see cref="ParityScenario.PgsqlLocations"/>/<see cref="ParityScenario.MssqlLocations"/>)
+    /// or <see cref="ParityScenario.UnitLocations"/> test locations, justified by
+    /// <see cref="ParityScenario.ProviderSpecificEntryPointRationale"/>.
+    /// </summary>
+    ProviderSpecific,
+}
+
+/// <summary>
 /// The production boundary a parity scenario exercises. A no-profile scenario must never
 /// declare <see cref="ProfilePersistExecutor"/>; a profile scenario declares it. This makes
 /// same-boundary supporting-smoke deferral mechanically checkable.
@@ -125,6 +150,22 @@ public enum ProductionBoundary
 /// </summary>
 public sealed record ScenarioLocation(string File, string Fixture, ImmutableArray<string> Methods);
 
+/// <summary>
+/// The resolved effective reusable assertion/helper entry point for a parity row. For
+/// <see cref="EntryPointKind.Direct"/> and <see cref="EntryPointKind.Inherited"/>, <see cref="SharedValue"/>
+/// names the shared contract (and <see cref="InheritedFromScenarioId"/> its source scenario id when inherited).
+/// For <see cref="EntryPointKind.ProviderSpecific"/>, the applicable per-engine and/or unit location collections
+/// carry the effective entry points (a Both row exposes both engines; an Na row exposes its unit locations).
+/// </summary>
+public sealed record EffectiveEntryPoint(
+    EntryPointKind Kind,
+    string? SharedValue,
+    string? InheritedFromScenarioId,
+    ImmutableArray<ScenarioLocation> PgsqlLocations,
+    ImmutableArray<ScenarioLocation> MssqlLocations,
+    ImmutableArray<ScenarioLocation> UnitLocations
+);
+
 /// <summary>An intentional dialect difference and the rationale that justifies it.</summary>
 public sealed record DialectDifference(string Description, string Rationale);
 
@@ -144,8 +185,23 @@ public sealed record ParityScenario
     /// <summary>Short statement of the externally visible + authoritative storage behavior asserted.</summary>
     public required string BehavioralContract { get; init; }
 
-    /// <summary>The provider-neutral shared contract entry point in Backend.Tests.Common, or empty when mapped-only.</summary>
+    /// <summary>
+    /// The row's <b>direct</b> provider-neutral shared contract entry point: a Backend.Tests.Common class
+    /// (or an <c>A + B</c> composite of them), or for an API row a <c>Type.Method</c> resolvable in the API
+    /// test assembly. Empty when the effective entry point is <b>inherited</b> (from the canonical family or the
+    /// covered-by scenario) or <b>provider-specific</b> (the per-engine/unit locations plus
+    /// <see cref="ProviderSpecificEntryPointRationale"/>). Resolve the effective entry point and its
+    /// <see cref="EntryPointKind"/> through <c>ParityEntryPointResolution.ResolveEffectiveEntryPoint</c>.
+    /// </summary>
     public string SharedEntryPoint { get; init; } = "";
+
+    /// <summary>
+    /// Rationale required when a row's effective entry point is <see cref="EntryPointKind.ProviderSpecific"/> —
+    /// i.e., it has no direct or inherited shared contract and resolves through its existing per-engine
+    /// (<see cref="PgsqlLocations"/>/<see cref="MssqlLocations"/>) or <see cref="UnitLocations"/> entry points.
+    /// Must be empty for Direct/Inherited rows so the resolution mode stays unambiguous.
+    /// </summary>
+    public string? ProviderSpecificEntryPointRationale { get; init; }
 
     /// <summary>The production boundary exercised.</summary>
     public required ProductionBoundary Boundary { get; init; }

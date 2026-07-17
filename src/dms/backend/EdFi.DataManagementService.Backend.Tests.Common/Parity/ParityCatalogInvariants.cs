@@ -63,6 +63,7 @@ public static class ParityCatalogInvariants
             ValidateEngineOwner(id, "PostgreSQL", scenario.PgsqlCoverage, scenario.PgsqlGapOwner, violations);
             ValidateEngineOwner(id, "SQL Server", scenario.MssqlCoverage, scenario.MssqlGapOwner, violations);
             ValidateClassification(scenario, id, byId, canonical, violations);
+            ValidateEffectiveEntryPoint(scenario, id, scenarios, violations);
 
             if (
                 scenario.DialectDifference is { } difference
@@ -144,6 +145,55 @@ public static class ParityCatalogInvariants
             {
                 violations.Add($"{id}: a {engine} location requires at least one non-blank test method.");
             }
+        }
+    }
+
+    private static void ValidateEffectiveEntryPoint(
+        ParityScenario scenario,
+        string id,
+        IReadOnlyList<ParityScenario> scenarios,
+        List<string> violations
+    )
+    {
+        EffectiveEntryPoint? effective = ParityEntryPointResolution.ResolveEffectiveEntryPoint(
+            scenario,
+            scenarios
+        );
+        bool hasRationale = !string.IsNullOrWhiteSpace(scenario.ProviderSpecificEntryPointRationale);
+
+        if (effective is not null)
+        {
+            // Keep the mode unambiguous: a provider-specific rationale is only meaningful when the row actually
+            // resolves provider-specific (it has no direct or inherited shared contract).
+            if (effective.Kind != EntryPointKind.ProviderSpecific && hasRationale)
+            {
+                violations.Add(
+                    $"{id}: ProviderSpecificEntryPointRationale is only valid when the effective entry point is "
+                        + $"ProviderSpecific (this row resolves as {effective.Kind})."
+                );
+            }
+
+            return;
+        }
+
+        bool hasLocation =
+            !scenario.PgsqlLocations.IsDefaultOrEmpty
+            || !scenario.MssqlLocations.IsDefaultOrEmpty
+            || !scenario.UnitLocations.IsDefaultOrEmpty;
+
+        if (hasLocation && !hasRationale)
+        {
+            violations.Add(
+                $"{id}: a provider-specific effective entry point (no direct or inherited shared contract) requires a "
+                    + "ProviderSpecificEntryPointRationale."
+            );
+        }
+        else
+        {
+            violations.Add(
+                $"{id}: no effective reusable assertion/helper entry point resolves — record a direct SharedEntryPoint, "
+                    + "an inherited family/covered-by contract, or provider-specific locations with a ProviderSpecificEntryPointRationale."
+            );
         }
     }
 

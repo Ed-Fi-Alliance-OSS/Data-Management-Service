@@ -174,4 +174,165 @@ public static class ParityCatalogResolution
             }
         }
     }
+
+    /// <summary>
+    /// Validates every unit-test location declared by any catalog row against <paramref name="unitAssembly"/>
+    /// (Na rows record their provider-independent synthesizer entry points as unit locations), returning an
+    /// actionable violation per unresolved target. Applies the same exactly-one-class / exactly-one-[Test]-method
+    /// contract as backend locations.
+    /// </summary>
+    public static IReadOnlyList<string> ResolveUnitLocations(Assembly unitAssembly)
+    {
+        ArgumentNullException.ThrowIfNull(unitAssembly);
+
+        List<string> violations = [];
+
+        foreach (ParityScenario scenario in ParityScenarioCatalog.All)
+        {
+            foreach (ScenarioLocation location in scenario.UnitLocations)
+            {
+                ResolveLocation(scenario.Id, "unit", location, unitAssembly, violations);
+            }
+        }
+
+        return violations;
+    }
+
+    /// <summary>
+    /// Validates every Profile/NoProfile row whose effective entry point is Direct or Inherited: its shared
+    /// value names Backend.Tests.Common type(s). A class-level value (including an <c>A + B</c> composite) must
+    /// resolve every named type in <paramref name="commonAssembly"/>; a <c>Type.Method</c> value must also
+    /// resolve the member. API shared entry points are validated separately against the API assembly.
+    /// </summary>
+    public static IReadOnlyList<string> ResolveCommonSharedEntryPoints(Assembly commonAssembly)
+    {
+        ArgumentNullException.ThrowIfNull(commonAssembly);
+
+        List<string> violations = [];
+
+        foreach (
+            ParityScenario scenario in ParityScenarioCatalog.All.Where(scenario =>
+                scenario.Layer is ParityLayer.Profile or ParityLayer.NoProfile
+            )
+        )
+        {
+            EffectiveEntryPoint? effective = ParityEntryPointResolution.ResolveEffectiveEntryPoint(scenario);
+
+            if (
+                effective is null
+                || effective.Kind == EntryPointKind.ProviderSpecific
+                || string.IsNullOrWhiteSpace(effective.SharedValue)
+            )
+            {
+                continue;
+            }
+
+            ResolveSharedEntryPointValue(scenario.Id, effective.SharedValue, commonAssembly, violations);
+        }
+
+        return violations;
+    }
+
+    /// <summary>
+    /// Validates every Api-layer row's Direct shared value (a <c>Type.Method</c>) against
+    /// <paramref name="apiAssembly"/>, returning an actionable violation per unresolved target.
+    /// </summary>
+    public static IReadOnlyList<string> ResolveApiSharedEntryPoints(Assembly apiAssembly)
+    {
+        ArgumentNullException.ThrowIfNull(apiAssembly);
+
+        List<string> violations = [];
+
+        foreach (
+            ParityScenario scenario in ParityScenarioCatalog.All.Where(scenario =>
+                scenario.Layer == ParityLayer.Api
+            )
+        )
+        {
+            EffectiveEntryPoint? effective = ParityEntryPointResolution.ResolveEffectiveEntryPoint(scenario);
+
+            if (effective is null || string.IsNullOrWhiteSpace(effective.SharedValue))
+            {
+                continue;
+            }
+
+            ResolveSharedEntryPointValue(scenario.Id, effective.SharedValue, apiAssembly, violations);
+        }
+
+        return violations;
+    }
+
+    private static void ResolveSharedEntryPointValue(
+        string scenarioId,
+        string sharedValue,
+        Assembly assembly,
+        List<string> violations
+    )
+    {
+        foreach (
+            string part in sharedValue.Split(
+                '+',
+                StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries
+            )
+        )
+        {
+            int lastDot = part.LastIndexOf('.');
+
+            if (lastDot < 0)
+            {
+                ResolveSharedType(scenarioId, sharedValue, part, assembly, violations);
+                continue;
+            }
+
+            string typeName = part[..lastDot];
+            string memberName = part[(lastDot + 1)..];
+
+            Type? type = ResolveSharedType(scenarioId, sharedValue, typeName, assembly, violations);
+            if (type is null)
+            {
+                continue;
+            }
+
+            MethodInfo[] members =
+            [
+                .. type.GetMethods(
+                        BindingFlags.Instance
+                            | BindingFlags.Static
+                            | BindingFlags.Public
+                            | BindingFlags.DeclaredOnly
+                    )
+                    .Where(method => method.Name == memberName),
+            ];
+
+            if (members.Length != 1)
+            {
+                violations.Add(
+                    $"{scenarioId} shared entry point '{sharedValue}': expected exactly one method named "
+                        + $"'{memberName}' on '{typeName}' in assembly '{assembly.GetName().Name}', but found {members.Length}."
+                );
+            }
+        }
+    }
+
+    private static Type? ResolveSharedType(
+        string scenarioId,
+        string sharedValue,
+        string typeName,
+        Assembly assembly,
+        List<string> violations
+    )
+    {
+        Type[] types = [.. assembly.GetTypes().Where(type => type.Name == typeName)];
+
+        if (types.Length != 1)
+        {
+            violations.Add(
+                $"{scenarioId} shared entry point '{sharedValue}': expected exactly one type named "
+                    + $"'{typeName}' in assembly '{assembly.GetName().Name}', but found {types.Length}."
+            );
+            return null;
+        }
+
+        return types[0];
+    }
 }
