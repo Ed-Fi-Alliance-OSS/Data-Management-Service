@@ -259,7 +259,13 @@ param(
     # start-local-dms.ps1 -DataStandardVersion, whose shared .env.ds<NN> overlays carry the
     # E2E/SDK surfaces (Sample/Homograph test extensions).
     [ValidateSet("5.2", "6.1")]
-    [string]$DataStandardVersion = "5.2"
+    [string]$DataStandardVersion = "5.2",
+
+    # Local database topology, forwarded to the bootstrap wrapper and start script. Omitted
+    # (shared, the default): the Configuration Service uses the selected DMS datastore database.
+    # Supplied (separate): the Configuration Service uses the dedicated edfi_configurationservice
+    # database, without changing the DMS datastore selection.
+    [Switch]$SeparateConfigDatabase
 )
 
 $ErrorActionPreference = "Stop"

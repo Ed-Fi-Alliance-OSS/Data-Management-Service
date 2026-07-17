@@ -267,8 +267,10 @@ function Invoke-ConfigureLocalDataStore {
     # this script with a custom -EnvironmentFile (still gets the overlay layered on top) and the
     # bootstrap wrapper path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already
     # composed via DMS_DATASTORE=mssql and returns the file unchanged, avoiding a
-    # derived-of-derived file).
-    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot
+    # derived-of-derived file). This phase composes the overlay only for the DMS datastore and never
+    # reads the CMS connection string, so it skips the shared-only CMS-database invariant (owned by
+    # the start script) - which is topology-blind and would reject a separate configuration database.
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
@@ -330,7 +332,10 @@ function Invoke-ConfigureLocalDataStore {
     # host-side mapped port before invoking SchemaTools.
     $dataStoreConnectionString = ""
     if ($DatabaseEngine -eq "mssql") {
-        $mssqlPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        # The DMS datastore lives on the same SQL Server container; resolve its SA password the way the
+        # container is initialized (docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell export over
+        # the env file) so the datastore connection stored in CMS matches it under a shell override.
+        $mssqlPassword = Resolve-EffectiveMssqlSaPassword -EnvValues $envValues -DefaultValue "abcdefgh1!"
         $mssqlDbName =
             if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                 Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"

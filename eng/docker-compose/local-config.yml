@@ -14,7 +14,7 @@ services:
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
       AppSettings__Datastore: ${DMS_CONFIG_DATASTORE:-postgresql}
-      DatabaseSettings__DatabaseConnection: ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
+      DatabaseSettings__DatabaseConnection: ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};}
       DatabaseSettings__EncryptionKey: ${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:-}
       IdentitySettings__AllowRegistration: ${DMS_CONFIG_IDENTITY_ALLOW_REGISTRATION:-false}
       IdentitySettings__ConfigServiceRole: ${DMS_CONFIG_IDENTITY_SERVICE_ROLE:-cms-client}

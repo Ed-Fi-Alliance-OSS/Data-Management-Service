@@ -121,7 +121,14 @@ param (
     # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
-    $DatabaseEngine = "postgresql"
+    $DatabaseEngine = "postgresql",
+
+    # Local database topology. Omitted (shared, the default): the Configuration Service uses the
+    # selected DMS datastore database. Supplied (separate): the Configuration Service uses the
+    # dedicated edfi_configurationservice database, without changing the DMS datastore selection.
+    # Orthogonal to the database engine - the topology is never inferred from the engine.
+    [Switch]
+    $SeparateConfigDatabase
 )
 
 $databaseOnlyStartup = $DbOnly -and -not $d
@@ -167,7 +174,13 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
-$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
+# Resolve the local database topology: DMS_CONFIG_DATABASE_NAME is materialized to a concrete name
+# (the DMS datastore database by default, or the dedicated edfi_configurationservice database with
+# -SeparateConfigDatabase) so docker-compose interpolation and every host-side consumer - including
+# setup-openiddict.ps1 - target the same Configuration Service database. The connection-string
+# agreement check is skipped only for the database-only diagnostic startup and teardown.
+$EnvironmentFile = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -SkipCmsDatabaseValidation:($databaseOnlyStartup -or $d)
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
@@ -458,13 +471,10 @@ else {
         }
 
         if ($DatabaseEngine -eq "mssql") {
-            $mssqlSaPassword =
-                if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                    "abcdefgh1!"
-                }
-                else {
-                    $envValues.MSSQL_SA_PASSWORD
-                }
+            # Resolve the SA password the way the container is initialized (docker-compose's
+            # ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell export over the env file) so the readiness poll
+            # authenticates with the credential the container actually uses.
+            $mssqlSaPassword = Resolve-EffectiveMssqlSaPassword -EnvValues $envValues -DefaultValue "abcdefgh1!"
             Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
         }
         else {
@@ -503,30 +513,27 @@ else {
     }
 
     if ($DatabaseEngine -eq "mssql") {
-        # SQL Server accepts connections noticeably later than its container reports running;
-        # poll before the phase commands need it. Default matches mssql.yml's compose default.
-        $mssqlSaPassword =
-            if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                "abcdefgh1!"
-            }
-            else {
-                $envValues.MSSQL_SA_PASSWORD
-            }
+        # SQL Server accepts connections noticeably later than its container reports running; poll before
+        # the phase commands need it. Resolve the SA password the way the container is initialized -
+        # docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!} gives a shell export precedence over the env
+        # file - so the readiness poll AND the setup-openiddict.ps1 calls below authenticate with the
+        # credential the container actually uses, not a shell-blind env-file value.
+        $mssqlSaPassword = Resolve-EffectiveMssqlSaPassword -EnvValues $envValues -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below (mirrors
-    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the shared DMS
-    # datastore database (MSSQL_DB_NAME), which CMS also uses now that the two share one
-    # database; -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS
-    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared
-    # POSTGRES_DB_NAME database).
+    # start-local-config.ps1). The OpenIddict key store lives in the Configuration Service
+    # database, DMS_CONFIG_DATABASE_NAME, which the topology resolver has materialized to a
+    # concrete name (the shared DMS datastore database by default, or the dedicated
+    # edfi_configurationservice database with -SeparateConfigDatabase). -InitDb creates that
+    # database (and the dmscs schema) when missing, ahead of the CMS startup deploy.
     $identityDbParams =
         if ($DatabaseEngine -eq "mssql") {
-            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME" }
+            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME"; DbPassword = $mssqlSaPassword }
         }
         else {
-            @{}
+            @{ DbName = "ENV:DMS_CONFIG_DATABASE_NAME" }
         }
 
     Start-Sleep 20
@@ -595,6 +602,19 @@ else {
     }
 
 
+    # Self-contained OpenIddict initialization runs before the Configuration Service starts:
+    # -InitDb creates the Configuration Service database (when missing) and its OpenIddict key
+    # store, which CMS reads at startup. The database container is already running (started above),
+    # so this mirrors the -InfraOnly path and the local start script rather than initializing after
+    # the full stack is up. The ordering is required for the separate topology, where the dedicated
+    # configuration database must exist before CMS starts, and it also lets CMS find its signing key
+    # on first boot in the shared topology.
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Init db public and private keys for OpenIddict..."
+        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
+    }
+
     Write-Output "Starting published DMS"
     if ($bootstrapManifestPresent) {
         Write-Output "Bootstrap manifest detected; starting published DMS."
@@ -610,14 +630,6 @@ else {
     }
 
     Start-Sleep 20
-
-    if($IdentityProvider -eq "self-contained")
-    {
-        Write-Output "Init db public and private keys for OpenIddict..."
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
-    }
-
-    Start-Sleep 10
 
     if($IdentityProvider -eq "self-contained")
     {
@@ -689,13 +701,11 @@ else {
             # Postgres* values.
             $dataStoreConnectionString = ""
             if ($DatabaseEngine -eq "mssql") {
-                $mssqlPassword =
-                    if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                        "abcdefgh1!"
-                    }
-                    else {
-                        $envValues.MSSQL_SA_PASSWORD
-                    }
+                # The DMS datastore lives on the same SQL Server container; resolve its SA password the way
+                # the container is initialized (docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell
+                # export over the env file) so the datastore connection stored in CMS matches it under a
+                # shell override.
+                $mssqlPassword = Resolve-EffectiveMssqlSaPassword -EnvValues $envValues -DefaultValue "abcdefgh1!"
                 $mssqlDbName =
                     if (-not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                         $DataStoreDatabaseName
