@@ -1,7 +1,7 @@
 {
   "dialect": "mssql",
-  "effective_schema_hash": "9060f2839ae31d81b6d2b460c1517a6a7378d2daaae2962a6a26051f437780d3",
-  "relational_mapping_version": "v1",
+  "effective_schema_hash": "136957ea965b4c23f513963a407ed08e9203a723da63135a3543a74e48e58136",
+  "relational_mapping_version": "v2",
   "projects": [
     {
       "project_endpoint_name": "ed-fi",
@@ -407,7 +407,7 @@
       ]
     },
     {
-      "name": "IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_DocumentId",
+      "name": "IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_EdOrgDependentResourceId_EdOrgDependentResourceReferen_3459d40e7c",
       "table": {
         "schema": "edfi",
         "name": "EdOrgDependentChildResource"
@@ -415,6 +415,8 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
+        "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+        "EdOrgDependentResourceReference_EducationOrganizationId",
         "EdOrgDependentResourceReference_DocumentId"
       ]
     },
@@ -456,7 +458,7 @@
       ]
     },
     {
-      "name": "IX_EdOrgDependentResource_EducationOrganization_DocumentId",
+      "name": "IX_EdOrgDependentResource_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "EdOrgDependentResource"
@@ -464,6 +466,7 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
+        "EducationOrganization_EducationOrganizationId",
         "EducationOrganization_DocumentId"
       ]
     },
@@ -556,7 +559,7 @@
       ]
     },
     {
-      "name": "IX_KeyUnifiedResource_ResourceAReference_DocumentId",
+      "name": "IX_KeyUnifiedResource_ResourceAReference_ResourceAId_StudentUniqueId_Unified_ResourceAReference_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "KeyUnifiedResource"
@@ -564,11 +567,13 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
+        "ResourceAReference_ResourceAId",
+        "StudentUniqueId_Unified",
         "ResourceAReference_DocumentId"
       ]
     },
     {
-      "name": "IX_KeyUnifiedResource_ResourceBReference_DocumentId",
+      "name": "IX_KeyUnifiedResource_ResourceBReference_ResourceBId_StudentUniqueId_Unified_ResourceBReference_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "KeyUnifiedResource"
@@ -576,6 +581,8 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
+        "ResourceBReference_ResourceBId",
+        "StudentUniqueId_Unified",
         "ResourceBReference_DocumentId"
       ]
     },
@@ -618,7 +625,7 @@
       ]
     },
     {
-      "name": "IX_ResourceA_StudentReference_DocumentId",
+      "name": "IX_ResourceA_StudentReference_StudentUniqueId_StudentReference_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "ResourceA"
@@ -626,6 +633,7 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
+        "StudentReference_StudentUniqueId",
         "StudentReference_DocumentId"
       ]
     },
@@ -681,7 +689,7 @@
       ]
     },
     {
-      "name": "IX_ResourceB_StudentReference_DocumentId",
+      "name": "IX_ResourceB_StudentReference_StudentUniqueId_StudentReference_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "ResourceB"
@@ -689,6 +697,7 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
+        "StudentReference_StudentUniqueId",
         "StudentReference_DocumentId"
       ]
     },
@@ -842,7 +851,7 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAssociation_SchoolReference_DocumentId",
+      "name": "IX_StudentSchoolAssociation_SchoolReference_SchoolId_SchoolReference_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
@@ -850,6 +859,7 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
+        "SchoolReference_SchoolId",
         "SchoolReference_DocumentId"
       ]
     },
@@ -1103,41 +1113,6 @@
       }
     },
     {
-      "name": "TR_EdOrgDependentResource_PropagateIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "EdOrgDependentResource"
-      },
-      "kind": "MssqlIdentityPropagationTrigger",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "EdOrgDependentResourceId",
-        "EducationOrganization_EducationOrganizationId"
-      ],
-      "referrer_updates": [
-        {
-          "referrer_table": {
-            "schema": "edfi",
-            "name": "EdOrgDependentChildResource"
-          },
-          "referrer_fk_column": "EdOrgDependentResourceReference_DocumentId",
-          "target_column_mappings": [
-            {
-              "source_column": "EdOrgDependentResourceId",
-              "target_column": "EdOrgDependentResourceReference_EdOrgDependentResourceId"
-            },
-            {
-              "source_column": "EducationOrganization_EducationOrganizationId",
-              "target_column": "EdOrgDependentResourceReference_EducationOrganizationId"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "TR_EdOrgDependentResource_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -1189,35 +1164,6 @@
           "name": "EdOrgDependentResource"
         }
       }
-    },
-    {
-      "name": "TR_EducationOrganizationIdentity_PropagateIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "EducationOrganizationIdentity"
-      },
-      "kind": "MssqlIdentityPropagationTrigger",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "EducationOrganizationId"
-      ],
-      "referrer_updates": [
-        {
-          "referrer_table": {
-            "schema": "edfi",
-            "name": "EdOrgDependentResource"
-          },
-          "referrer_fk_column": "EducationOrganization_DocumentId",
-          "target_column_mappings": [
-            {
-              "source_column": "EducationOrganizationId",
-              "target_column": "EducationOrganization_EducationOrganizationId"
-            }
-          ]
-        }
-      ]
     },
     {
       "name": "TR_KeyUnifiedResource_ReferentialIdentity",
@@ -1289,41 +1235,6 @@
       }
     },
     {
-      "name": "TR_ResourceA_PropagateIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "ResourceA"
-      },
-      "kind": "MssqlIdentityPropagationTrigger",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "StudentReference_DocumentId",
-        "ResourceAId",
-        "StudentReference_StudentUniqueId"
-      ],
-      "referrer_updates": [
-        {
-          "referrer_table": {
-            "schema": "edfi",
-            "name": "KeyUnifiedResource"
-          },
-          "referrer_fk_column": "ResourceAReference_DocumentId",
-          "target_column_mappings": [
-            {
-              "source_column": "ResourceAId",
-              "target_column": "ResourceAReference_ResourceAId"
-            },
-            {
-              "source_column": "StudentReference_StudentUniqueId",
-              "target_column": "StudentUniqueId_Unified"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "TR_ResourceA_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -1375,41 +1286,6 @@
           "name": "ResourceA"
         }
       }
-    },
-    {
-      "name": "TR_ResourceB_PropagateIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "ResourceB"
-      },
-      "kind": "MssqlIdentityPropagationTrigger",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "StudentReference_DocumentId",
-        "ResourceBId",
-        "StudentReference_StudentUniqueId"
-      ],
-      "referrer_updates": [
-        {
-          "referrer_table": {
-            "schema": "edfi",
-            "name": "KeyUnifiedResource"
-          },
-          "referrer_fk_column": "ResourceBReference_DocumentId",
-          "target_column_mappings": [
-            {
-              "source_column": "ResourceBId",
-              "target_column": "ResourceBReference_ResourceBId"
-            },
-            {
-              "source_column": "StudentReference_StudentUniqueId",
-              "target_column": "StudentUniqueId_Unified"
-            }
-          ]
-        }
-      ]
     },
     {
       "name": "TR_ResourceB_ReferentialIdentity",
@@ -1518,37 +1394,6 @@
       "parent_fks": []
     },
     {
-      "name": "TR_School_PropagateIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "MssqlIdentityPropagationTrigger",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "EducationOrganizationId",
-        "NameOfInstitution",
-        "SchoolId"
-      ],
-      "referrer_updates": [
-        {
-          "referrer_table": {
-            "schema": "edfi",
-            "name": "StudentSchoolAssociation"
-          },
-          "referrer_fk_column": "SchoolReference_DocumentId",
-          "target_column_mappings": [
-            {
-              "source_column": "SchoolId",
-              "target_column": "SchoolReference_SchoolId"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "TR_School_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -1605,49 +1450,6 @@
           "name": "School"
         }
       }
-    },
-    {
-      "name": "TR_Student_PropagateIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Student"
-      },
-      "kind": "MssqlIdentityPropagationTrigger",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "FirstName",
-        "StudentUniqueId"
-      ],
-      "referrer_updates": [
-        {
-          "referrer_table": {
-            "schema": "edfi",
-            "name": "ResourceA"
-          },
-          "referrer_fk_column": "StudentReference_DocumentId",
-          "target_column_mappings": [
-            {
-              "source_column": "StudentUniqueId",
-              "target_column": "StudentReference_StudentUniqueId"
-            }
-          ]
-        },
-        {
-          "referrer_table": {
-            "schema": "edfi",
-            "name": "ResourceB"
-          },
-          "referrer_fk_column": "StudentReference_DocumentId",
-          "target_column_mappings": [
-            {
-              "source_column": "StudentUniqueId",
-              "target_column": "StudentReference_StudentUniqueId"
-            }
-          ]
-        }
-      ]
     },
     {
       "name": "TR_Student_ReferentialIdentity",
@@ -3134,8 +2936,10 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_EdOrgDependentChildResource_EdOrgDependentResourceReference",
+              "name": "FK_EdOrgDependentChildResource_EdOrgDependentResourceReference_RefKey",
               "columns": [
+                "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+                "EdOrgDependentResourceReference_EducationOrganizationId",
                 "EdOrgDependentResourceReference_DocumentId"
               ],
               "target_table": {
@@ -3143,10 +2947,12 @@
                 "name": "EdOrgDependentResource"
               },
               "target_columns": [
+                "EdOrgDependentResourceId",
+                "EducationOrganization_EducationOrganizationId",
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "AllOrNoneNullability",
@@ -3339,8 +3145,9 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_EdOrgDependentResource_EducationOrganization",
+              "name": "FK_EdOrgDependentResource_EducationOrganization_RefKey",
               "columns": [
+                "EducationOrganization_EducationOrganizationId",
                 "EducationOrganization_DocumentId"
               ],
               "target_table": {
@@ -3348,10 +3155,11 @@
                 "name": "EducationOrganizationIdentity"
               },
               "target_columns": [
+                "EducationOrganizationId",
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "AllOrNoneNullability",
@@ -3607,8 +3415,10 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_KeyUnifiedResource_ResourceAReference",
+              "name": "FK_KeyUnifiedResource_ResourceAReference_RefKey",
               "columns": [
+                "ResourceAReference_ResourceAId",
+                "StudentUniqueId_Unified",
                 "ResourceAReference_DocumentId"
               ],
               "target_table": {
@@ -3616,15 +3426,19 @@
                 "name": "ResourceA"
               },
               "target_columns": [
+                "ResourceAId",
+                "StudentReference_StudentUniqueId",
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_KeyUnifiedResource_ResourceBReference",
+              "name": "FK_KeyUnifiedResource_ResourceBReference_RefKey",
               "columns": [
+                "ResourceBReference_ResourceBId",
+                "StudentUniqueId_Unified",
                 "ResourceBReference_DocumentId"
               ],
               "target_table": {
@@ -3632,6 +3446,8 @@
                 "name": "ResourceB"
               },
               "target_columns": [
+                "ResourceBId",
+                "StudentReference_StudentUniqueId",
                 "DocumentId"
               ],
               "on_delete": "NoAction",
@@ -3875,8 +3691,9 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ResourceA_StudentReference",
+              "name": "FK_ResourceA_StudentReference_RefKey",
               "columns": [
+                "StudentReference_StudentUniqueId",
                 "StudentReference_DocumentId"
               ],
               "target_table": {
@@ -3884,10 +3701,11 @@
                 "name": "Student"
               },
               "target_columns": [
+                "StudentUniqueId",
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "AllOrNoneNullability",
@@ -4075,8 +3893,9 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ResourceB_StudentReference",
+              "name": "FK_ResourceB_StudentReference_RefKey",
               "columns": [
+                "StudentReference_StudentUniqueId",
                 "StudentReference_DocumentId"
               ],
               "target_table": {
@@ -4084,10 +3903,11 @@
                 "name": "Student"
               },
               "target_columns": [
+                "StudentUniqueId",
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "AllOrNoneNullability",
@@ -4558,8 +4378,9 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_SchoolReference",
+              "name": "FK_StudentSchoolAssociation_SchoolReference_RefKey",
               "columns": [
+                "SchoolReference_SchoolId",
                 "SchoolReference_DocumentId"
               ],
               "target_table": {
@@ -4567,10 +4388,11 @@
                 "name": "School"
               },
               "target_columns": [
+                "SchoolId",
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "AllOrNoneNullability",

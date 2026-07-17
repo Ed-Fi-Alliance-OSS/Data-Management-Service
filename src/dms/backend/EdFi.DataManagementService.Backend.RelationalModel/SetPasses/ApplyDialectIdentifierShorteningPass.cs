@@ -1519,16 +1519,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     }
                     : parameters;
             }
-            case TriggerKindParameters.MssqlIdentityPropagationTrigger propagation:
-            {
-                var updatedReferrers = ShortenPropagationReferrerTargets(
-                    propagation.ReferrerUpdates,
-                    dialectRules,
-                    out var referrersChanged
-                );
-                changed = referrersChanged;
-                return changed ? propagation with { ReferrerUpdates = updatedReferrers } : parameters;
-            }
             case TriggerKindParameters.AuthHierarchyMaintenance auth:
             {
                 var updatedEntity = ShortenAuthEdOrgEntity(auth.Entity, dialectRules, out var entityChanged);
@@ -1592,47 +1582,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
 
         return changed ? updated : mappings;
-    }
-
-    /// <summary>
-    /// Shortens identifiers in propagation referrer targets using dialect rules.
-    /// </summary>
-    private static IReadOnlyList<PropagationReferrerTarget> ShortenPropagationReferrerTargets(
-        IReadOnlyList<PropagationReferrerTarget> referrers,
-        ISqlDialectRules dialectRules,
-        out bool changed
-    )
-    {
-        changed = false;
-        var updated = new PropagationReferrerTarget[referrers.Count];
-
-        for (var i = 0; i < referrers.Count; i++)
-        {
-            var referrer = referrers[i];
-            var updatedReferrerTable = ShortenTable(referrer.ReferrerTable, dialectRules);
-            var updatedFkColumn = ShortenColumn(referrer.ReferrerFkColumn, dialectRules);
-            var updatedMappings = ShortenTriggerColumnMappings(
-                referrer.ColumnMappings,
-                dialectRules,
-                out var mappingsChanged
-            );
-
-            var referrerChanged =
-                mappingsChanged
-                || !updatedReferrerTable.Equals(referrer.ReferrerTable)
-                || !updatedFkColumn.Equals(referrer.ReferrerFkColumn);
-
-            if (referrerChanged)
-            {
-                changed = true;
-            }
-
-            updated[i] = referrerChanged
-                ? new PropagationReferrerTarget(updatedReferrerTable, updatedFkColumn, updatedMappings)
-                : referrer;
-        }
-
-        return changed ? updated : referrers;
     }
 
     /// <summary>

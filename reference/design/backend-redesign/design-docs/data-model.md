@@ -403,7 +403,7 @@ Canonical JSON contract (normative for `canonicalizeJson(...)`):
 
 `RelationalMappingVersion` contract:
 
-- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v1`).
+- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v2`).
 - The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
 - Changing mapping rules requires bumping `RelationalMappingVersion` (or, if the hash algorithm itself changes, bump the hash header/version).
 
@@ -417,7 +417,7 @@ Algorithm (suggested):
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
-   - a constant mapping version (e.g., `relationalMappingVersion=v1`)
+   - a constant mapping version (e.g., `relationalMappingVersion=v2`)
    - `ApiSchemaFormatVersion`
    - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
@@ -425,7 +425,7 @@ Pseudocode:
 
 ```text
 const HashVersion = "dms-effective-schema-hash:v1"
-const RelationalMappingVersion = "v1"
+const RelationalMappingVersion = "v2"
 
 projects = []
 apiSchemaFormatVersion = null

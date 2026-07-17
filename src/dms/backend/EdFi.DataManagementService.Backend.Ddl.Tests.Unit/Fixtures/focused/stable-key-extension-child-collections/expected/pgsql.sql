@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> 'ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b';
         END IF;
     END IF;
 END $$;
@@ -1676,7 +1676,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea', 2, '\x3F4100845FD234C31689525E02A344E042EC3E11C81EF4405143942137997C00'::bytea)
+VALUES (1, '1.0.0', 'ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b', 2, '\x3F4100845FD234C31689525E02A344E042EC3E11C81EF4405143942137997C00'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -1704,10 +1704,10 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea', 'ed-fi', 'Ed-Fi', '1.0.0', false)
+VALUES ('ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b', 'ed-fi', 'Ed-Fi', '1.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea', 'sample', 'Sample', '1.0.0', true)
+VALUES ('ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b', 'sample', 'Sample', '1.0.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -1717,14 +1717,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea'
+    WHERE sc."EffectiveSchemaHash" = 'ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '1.0.0', false),
@@ -1740,7 +1740,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '60037ca0d1357cab3f3c898dba14e939e3b12f2d01fcc7cb62364733958827ea'
+            WHERE sc."EffectiveSchemaHash" = 'ca87198cee723cd5080f5f5676c6b647f4948f45cba08d73c9bf7172f438aa4b'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '1.0.0', false),

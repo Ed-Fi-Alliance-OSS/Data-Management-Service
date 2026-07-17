@@ -331,24 +331,11 @@ public abstract record TriggerKindParameters
         string DiscriminatorValue
     ) : TriggerKindParameters;
 
-    // Retired pending DMS-1258. This legacy shape remains only to describe the current implementation;
-    // SQL Server foreign-key pruning emits no such trigger intent.
-    public sealed record MssqlIdentityPropagationTrigger(
-        IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates
-    ) : TriggerKindParameters;
-
     public sealed record AuthHierarchyMaintenance(
         AuthEdOrgEntity Entity,
         AuthHierarchyTriggerEvent TriggerEvent
     ) : TriggerKindParameters;
 }
-
-// Retired pending DMS-1258 with MssqlIdentityPropagationTrigger.
-public sealed record PropagationReferrerTarget(
-    DbTableName ReferrerTable,
-    DbColumnName ReferrerFkColumn,
-    IReadOnlyList<TriggerColumnMapping> ColumnMappings
-);
 
 public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnName TargetColumn);
 

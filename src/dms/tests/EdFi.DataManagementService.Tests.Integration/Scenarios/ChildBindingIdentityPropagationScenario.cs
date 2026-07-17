@@ -12,22 +12,22 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 /// <summary>
 /// Public HTTP regression for DMS-1166: when an upstream resource's identity is
-/// changed via PUT, the MSSQL identity-propagation trigger emitted for that
-/// resource must reach stored child-collection bindings on referencing roots, and
-/// the resulting child stamp triggers must bump the owning root document's
-/// content version so a subsequent GET returns the propagated identity value and
-/// an advanced ETag/_etag.
+/// changed via PUT, the SQL Server native ON UPDATE CASCADE reference foreign keys
+/// must reach stored child-collection bindings on referencing roots, and the
+/// resulting child stamp triggers must bump the owning root document's content
+/// version so a subsequent GET returns the propagated identity value and an
+/// advanced ETag/_etag.
 ///
 /// Concrete shape: ClassPeriod is the upstream identity holder, BellSchedule is
 /// the referencing root, and BellSchedule.classPeriods[*].classPeriodReference is
 /// the child binding. Changing the ClassPeriod's classPeriodName via PUT must
 /// flow into the BellSchedule's nested classPeriodReference on the very next
 /// GET, with the BellSchedule's representation ETag advanced to reflect the
-/// trigger-driven content-version bump.
+/// stamp-trigger-driven content-version bump.
 ///
 /// Bound to <c>FixtureKey.AuthoritativeDs52</c> because reproducing this end to
 /// end requires the production School/ClassPeriod/BellSchedule shapes and the
-/// production trigger emission those resource shapes drive.
+/// production cascade and stamping behavior those resource shapes drive.
 /// </summary>
 internal static class ChildBindingIdentityPropagationScenario
 {

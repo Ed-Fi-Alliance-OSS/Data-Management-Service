@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d';
         END IF;
     END IF;
 END $$;
@@ -1042,7 +1042,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46', 2, '\x5B23660DAD5043287A28FF5C5D048A8BA519B836EB51BDB5A02AEAE548BBDDE6'::bytea)
+VALUES (1, '1.0.0', 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d', 2, '\x5B23660DAD5043287A28FF5C5D048A8BA519B836EB51BDB5A02AEAE548BBDDE6'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -1070,10 +1070,10 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46', 'aligned', 'Aligned', '1.0.0', true)
+VALUES ('f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d', 'aligned', 'Aligned', '1.0.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46', 'ed-fi', 'Ed-Fi', '1.0.0', false)
+VALUES ('f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d', 'ed-fi', 'Ed-Fi', '1.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -1083,14 +1083,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46'
+    WHERE sc."EffectiveSchemaHash" = 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('aligned', 'Aligned', '1.0.0', true),
@@ -1106,7 +1106,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '628937b1d59bfba2ee05f07eb5a91568107f8d3da5374d8a6fc1e309f0629f46'
+            WHERE sc."EffectiveSchemaHash" = 'f3612acf9def461d2363a5a1600b4f75d2ed6717f8f9d5809852cd98ad78dc9d'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('aligned', 'Aligned', '1.0.0', true),

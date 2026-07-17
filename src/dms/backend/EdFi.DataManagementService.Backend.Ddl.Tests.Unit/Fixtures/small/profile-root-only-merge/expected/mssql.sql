@@ -9,9 +9,9 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0', N'''');
         THROW 50000, @preflight_msg, 1;
     END
 END
@@ -906,7 +906,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10', 3, 0xA72B6D85B70E1147001E9503787A2F7173C575DDBED1DFD867AAFECC5ACD13D9);
+    VALUES (1, N'1.0.0', N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0', 3, 0xA72B6D85B70E1147001E9503787A2F7173C575DDBED1DFD867AAFECC5ACD13D9);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -935,16 +935,16 @@ BEGIN
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
+    VALUES (N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0';
 IF @sc_actual_count <> 1
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 1, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -953,7 +953,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10'
+WHERE sc.[EffectiveSchemaHash] = N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
@@ -969,7 +969,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10'
+        WHERE sc.[EffectiveSchemaHash] = N'c0c29ac6d172df544bdf4eeff052ed2767eb15c7961c6cf0e8d7e61f2d19bff0'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)

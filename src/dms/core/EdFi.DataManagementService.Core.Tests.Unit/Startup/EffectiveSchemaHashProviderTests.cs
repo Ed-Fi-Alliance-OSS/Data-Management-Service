@@ -343,7 +343,7 @@ public class EffectiveSchemaHashProviderTests
         // If canonicalization, manifest format, hash algorithm, or fixture content changes,
         // this value must be updated intentionally via a "bless" workflow.
         private const string ExpectedHash =
-            "76508a0692e6a4856b5315c8e331b3f7b35c1c8d0b8b3b7ff545cad92c8f689f";
+            "4994be5692aaccb7f5969618d3655f6014a97e334e98e1213541f54e8d2ee849";
 
         [SetUp]
         public void Setup()
