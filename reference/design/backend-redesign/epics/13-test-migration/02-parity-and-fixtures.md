@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1023
 
 Ensure the relational redesign behaves consistently across PostgreSQL and SQL Server:
 
-- Same fixtures and test cases run against both dialects, including the shared runtime scenario baselines from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` and `reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor.md`.
+- Behavioral parity holds across both dialects: equivalent PostgreSQL and SQL Server cases exercise the same production boundary and assert the same externally visible and authoritative storage semantics through provider-neutral shared contracts and thin per-engine adapters, rather than sharing identical fixture instances. This covers the shared runtime scenario baselines from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` and `reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor.md`.
 - Differences are intentional and documented (e.g., error messages where dialect limits differ).
 - This story owns the compact shared profile scenario matrix that keeps `DMS-1106`, `DMS-1105`, `DMS-984`, `DMS-1124`, `DMS-1104`, `DMS-1022`, and `DMS-1023` aligned on fixture names and coverage expectations.
 
@@ -59,7 +59,7 @@ Story alignment:
 - `DMS-984` owns runtime execution for `NoProfileWriteBehavior` and `FullSurfaceCollectionReorder`.
 - `DMS-1124` owns runtime execution for the profiled scenario set.
 - `DMS-1104` owns the failure semantics for `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, plus invalid usage/forbidden-data cases that are not separate matrix scenarios.
-- `DMS-1022` and `DMS-1023` execute the full matrix end-to-end on both engines.
+- `DMS-1022` executes the API matrix on both engines. `DMS-1023` establishes the authoritative catalog and the provider-neutral shared no-profile contracts, and delivers the PostgreSQL executions and proofs; the SQL Server no-profile executions are owned by `DMS-1285`.
 
 ## Acceptance Criteria
 
@@ -80,7 +80,7 @@ Story alignment:
 ## Tasks
 
 1. Define and maintain the shared profile scenario matrix above as the canonical feature-by-scenario fixture map, including the ordering variants nested under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`, plus the creatability variants nested under `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`.
-2. Implement a harness that runs each test case against both engines and compares results.
+2. Provide thin per-engine adapters that execute each scenario independently against its own engine through the provider-neutral shared contracts, plus per-assembly catalog-resolution meta-tests that prove each engine's declared coverage resolves to real tests. The engines execute independently; there is no in-process cross-engine comparison harness or byte-for-byte provider-output comparison.
 3. Add documentation for expected/allowed differences and how to add new parity cases using the shared scenario names, including which ordering variants belong under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`, and which creatability variants belong under `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`.
 
 ## Contributor workflow
@@ -109,4 +109,4 @@ Intentional dialect differences are recorded on the catalog row with a rationale
 ## Gap ownership
 
 - **`DMS-1285`** owns adding the missing SQL Server no-profile executions — the thin MSSQL wrappers and any bounded MSSQL production defects they expose. No-profile family rows are recorded `KnownGap` with `MssqlGapOwner = DMS-1285` until those twins land.
-- **`DMS-1023`** still owes one PostgreSQL proof — the changed-PUT standalone-extension-child-collection deletion case (`NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection`), added in this story's later no-profile-contract unit. That row is `KnownGap` with `PgsqlGapOwner = DMS-1023` and `MssqlGapOwner = DMS-1285` until then.
+- **`DMS-1023`** closed the PostgreSQL standalone-extension-child-collection deletion proof — the changed-PUT case (`NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection`), added in this story's no-profile-contract work (`PostgresqlRelationalWriteStandaloneExtensionChildDeleteTests.cs`). That row is now PostgreSQL `Covered` with no PostgreSQL owner; it remains `KnownGap` only for SQL Server, with `MssqlGapOwner = DMS-1285`, until the SQL Server twin lands.
