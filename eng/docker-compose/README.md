@@ -184,11 +184,12 @@ endpoints, etc.) still comes from the base environment file; pass `-EnvironmentF
 override those base settings, and the overlay still composes on top of it.
 
 > [!NOTE]
-> **Database topology.** Local deployments host the Configuration Service and DMS in one shared
-> physical database on both engines: the CMS `dmscs` schema, and the self-contained (OpenIddict)
-> identity stores, live inside the same database as the DMS datastore (`POSTGRES_DB_NAME` on
-> PostgreSQL, `MSSQL_DB_NAME` on MSSQL) rather than a separate Configuration Service database. An
-> opt-in separate-CMS-database mode is planned (DMS-1270).
+> **Database topology.** Local deployments default to a *shared* database on both engines: the CMS
+> `dmscs` schema and the self-contained (OpenIddict) identity stores live inside the same database
+> as the DMS datastore (`POSTGRES_DB_NAME` on PostgreSQL, `MSSQL_DB_NAME` on MSSQL). Pass
+> `-SeparateConfigDatabase` for a production-like *separate* topology in which the Configuration
+> Service uses a dedicated `edfi_configurationservice` database while the DMS datastore selection is
+> unchanged. See "Configuration Service database topology" below.
 
 A few things are specific to the MSSQL path:
 
@@ -233,6 +234,53 @@ After the stack is up, run the smoke tests the same way as for PostgreSQL:
 ```pwsh
 ../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
+
+## Configuration Service database topology
+
+The Configuration Service (CMS) database is selected independently of the database engine through
+`DMS_CONFIG_DATABASE_NAME`, the single configuration-database name that both PostgreSQL and SQL
+Server interpolate into `DMS_CONFIG_DATABASE_CONNECTION_STRING`. Two topologies are available on
+both engines; the choice is never inferred from the engine:
+
+* **Shared (default).** `DMS_CONFIG_DATABASE_NAME` resolves to the DMS datastore database
+  (`POSTGRES_DB_NAME` / `MSSQL_DB_NAME`), so CMS shares that database.
+* **Separate (`-SeparateConfigDatabase`).** `DMS_CONFIG_DATABASE_NAME` resolves to the dedicated
+  `edfi_configurationservice` database. The DMS datastore selection is unchanged; only CMS moves.
+
+`-SeparateConfigDatabase` is available on `start-local-dms.ps1`, `start-published-dms.ps1`,
+`bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, the shared bootstrap wrapper, and
+`build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase. A
+caller-authored `DMS_CONFIG_DATABASE_CONNECTION_STRING` must target the effective
+`DMS_CONFIG_DATABASE_NAME`; an invalid, database-less, or conflicting target fails early with a
+clear diagnostic.
+
+```pwsh
+# Shared (default): CMS shares the DMS datastore database
+./bootstrap-local-dms.ps1 -EnableSwaggerUI
+
+# Separate: CMS uses a dedicated edfi_configurationservice database
+./bootstrap-local-dms.ps1 -SeparateConfigDatabase -EnableSwaggerUI
+
+# Separate on SQL Server (topology is orthogonal to the engine)
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -SeparateConfigDatabase -EnableSwaggerUI
+```
+
+### Who creates the configuration database
+
+Creation of a missing configuration database depends only on the identity provider, and is
+idempotent on both engines:
+
+* **Keycloak.** The Configuration Service's engine-neutral DbUp `EnsureDatabase` deployment creates
+  the database during normal CMS startup, for both PostgreSQL and SQL Server.
+* **Self-contained (OpenIddict).** `setup-openiddict.ps1 -InitDb` runs before CMS starts and creates
+  the database: SQL Server through its guarded `master`-database creation, PostgreSQL through an
+  equivalent guarded creation via the `postgres` maintenance database (with database-name
+  validation). It then initializes the OpenIddict key store that CMS reads at startup.
+
+The PostgreSQL container entrypoint (`postgresql-init.sh`) creates only the DMS datastore database
+on a fresh volume; it never creates a dedicated Configuration Service database, so the two creation
+owners above are not duplicated. (In the shared topology the datastore database is also the
+configuration database, and the guarded pre-CMS creation then no-ops idempotently.)
 
 ## Selecting a Data Standard version (bootstrap)
 

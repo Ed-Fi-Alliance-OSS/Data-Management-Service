@@ -555,7 +555,14 @@ function Invoke-BootstrapWrapper {
         # E2E-shaped .env.ds<NN> overlays (which add the Sample/Homograph test extensions) and
         # would override this surface.
         [ValidateSet("5.2", "6.1")]
-        [string]$DataStandardVersion = "5.2"
+        [string]$DataStandardVersion = "5.2",
+
+        # Local database topology, forwarded verbatim to every start-script phase (infrastructure,
+        # health-wait continuation, and DMS-only) so repeated environment resolution stays
+        # consistent and never resets separate mode back to shared. Shared (default): the
+        # Configuration Service uses the DMS datastore database. Separate: the Configuration
+        # Service uses the dedicated edfi_configurationservice database.
+        [Switch]$SeparateConfigDatabase
     )
 
     $ErrorActionPreference = "Stop"
@@ -702,13 +709,20 @@ function Invoke-BootstrapWrapper {
         # composition order is deterministic; the two overlays touch disjoint keys. Guarded for
         # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
         # env-utility sibling module.
+        # The wrapper composes the engine overlay only to source the DMS datastore settings for the
+        # phases; it never reads the CMS connection string. Skip the engine resolver's shared-only
+        # CMS-database invariant here - it is topology-blind and would reject a caller-authored
+        # separate Database=edfi_configurationservice. The start script owns validating the CMS
+        # connection against the effective configuration database (the shared invariant, or the
+        # topology-aware check in separate mode) before CMS starts.
         $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
         if ($DatabaseEngine -eq "mssql" -and (Test-Path -LiteralPath $envUtilityPathForEngineOverlay)) {
             Import-Module $envUtilityPathForEngineOverlay -Force
             $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -BaseEnvironmentFile $baseEnvFile `
-                -DockerComposeRoot $PSScriptRoot
+                -DockerComposeRoot $PSScriptRoot `
+                -SkipMssqlCmsDatabaseValidation
         }
 
         # Resolve identity provider once and forward the same value to both phases. This runs before
@@ -828,6 +842,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.DatabaseEngine = $DatabaseEngine
+        $startArgs.SeparateConfigDatabase = $SeparateConfigDatabase
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -946,6 +961,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
             $healthWaitArgs.DatabaseEngine = $DatabaseEngine
+            $healthWaitArgs.SeparateConfigDatabase = $SeparateConfigDatabase
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -985,6 +1001,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
         $dmsStartArgs.DatabaseEngine = $DatabaseEngine
+        $dmsStartArgs.SeparateConfigDatabase = $SeparateConfigDatabase
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

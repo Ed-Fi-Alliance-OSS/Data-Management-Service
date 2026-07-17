@@ -141,7 +141,14 @@ param(
     # matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
     [string]
     [ValidateSet("5.2", "6.1")]
-    $DataStandardVersion
+    $DataStandardVersion,
+
+    # For StartEnvironment only: select the separate local database topology. Forwarded to the
+    # bootstrap wrapper. Omitted keeps the shared-database default (the Configuration Service uses
+    # the DMS datastore database); supplied points the Configuration Service at a dedicated
+    # edfi_configurationservice database without changing the DMS datastore selection.
+    [switch]
+    $SeparateConfigDatabase
 )
 
 # Captured here (script scope) rather than at the point of use: $PSBoundParameters inside the
@@ -880,7 +887,10 @@ function Start-BootstrapDockerEnvironment {
         $DataStandardVersion,
 
         [switch]
-        $DataStandardVersionSupplied
+        $DataStandardVersionSupplied,
+
+        [switch]
+        $SeparateConfigDatabase
     )
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
@@ -922,6 +932,10 @@ function Start-BootstrapDockerEnvironment {
 
             if ($DataStandardVersionSupplied) {
                 $bootstrapArgs.DataStandardVersion = $DataStandardVersion
+            }
+
+            if ($SeparateConfigDatabase) {
+                $bootstrapArgs.SeparateConfigDatabase = $true
             }
 
             Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
@@ -1460,7 +1474,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied -SeparateConfigDatabase:$SeparateConfigDatabase } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

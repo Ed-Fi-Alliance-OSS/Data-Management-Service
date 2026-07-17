@@ -89,11 +89,12 @@ Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
             Should -BeGreaterOrEqual 2
     }
 
-    It "defaults MSSQL_SA_PASSWORD to the documented dev password when the env file omits it" {
-        # Matches the abcdefgh1! default baked into mssql.yml and start-local-dms.ps1's
-        # readiness poll, so a custom env file that omits the key does not bring SQL Server
-        # up on the default password while leaving the resolved connection string blank.
-        $script:configureSource | Should -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"'
+    It "resolves the datastore SA password shell-over-file with the documented dev-password default" {
+        # The DMS datastore is on the same SQL Server container as CMS, whose password is compose's
+        # ${MSSQL_SA_PASSWORD:-abcdefgh1!} (a shell export wins over the env file). Resolve it the same way
+        # so the datastore connection stored in CMS matches the container under a shell override, still
+        # falling back to the abcdefgh1! default when neither the shell nor the env file sets it.
+        $script:configureSource | Should -Match 'Resolve-EffectiveMssqlSaPassword -EnvValues \$envValues -DefaultValue "abcdefgh1!"'
     }
 
     It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {
@@ -124,10 +125,12 @@ Describe "start-published-dms.ps1 MSSQL data-store wiring (DMS-1255)" {
             Should -BeGreaterOrEqual 2
     }
 
-    It "defaults MSSQL_SA_PASSWORD to the documented dev password when the env file omits it" {
-        # Matches the abcdefgh1! default baked into mssql.yml and the script's own
-        # Wait-MssqlReady readiness polls.
-        $script:startPublishedSource | Should -Match '(?s)\$mssqlPassword =\s*if \(\[string\]::IsNullOrWhiteSpace\(\$envValues\.MSSQL_SA_PASSWORD\)\)\s*\{\s*"abcdefgh1!"'
+    It "resolves the datastore SA password shell-over-file with the documented dev-password default" {
+        # The DMS datastore is on the same SQL Server container, whose password is compose's
+        # ${MSSQL_SA_PASSWORD:-abcdefgh1!} (a shell export wins over the env file). Resolve it the same way
+        # so the datastore connection stored in CMS matches the container under a shell override, still
+        # falling back to the abcdefgh1! default when neither the shell nor the env file sets it.
+        $script:startPublishedSource | Should -Match '\$mssqlPassword = Resolve-EffectiveMssqlSaPassword -EnvValues \$envValues -DefaultValue "abcdefgh1!"'
     }
 
     It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {

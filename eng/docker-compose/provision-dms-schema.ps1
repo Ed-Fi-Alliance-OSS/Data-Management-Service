@@ -318,6 +318,8 @@ function Resolve-TargetDialect {
     # ambiguous alias keys and none of the four definitive PostgreSQL keys - e.g. Server= plus
     # User Id= with no host/username/port/sslmode - is genuinely indistinguishable from SQL
     # Server and defaults to mssql via the marker loop below.
+    # env-utility.psm1's Test-MssqlConnectionStringValue mirrors this exact key set and precedence for
+    # docker-compose engine detection; keep the two marker lists in sync.
     $definitivePostgresqlMarkers = @("host", "username", "port", "sslmode")
     foreach ($marker in $definitivePostgresqlMarkers) {
         if ($Builder.ContainsKey($marker)) {
@@ -964,8 +966,10 @@ function Invoke-ProvisionDmsSchema {
     # configure-local-data-store.ps1 and start-local-dms.ps1. Direct invocation with
     # -DatabaseEngine mssql layers the overlay onto a custom -EnvironmentFile; wrapper-forwarded
     # files are already composed and no-op via the DMS_DATASTORE guard in
-    # Resolve-DatabaseEngineEnvironmentFile.
-    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot
+    # Resolve-DatabaseEngineEnvironmentFile. Like configure, this phase composes the overlay only for
+    # the DMS datastore and never reads the CMS connection string, so it skips the shared-only
+    # CMS-database invariant (owned by the start script), which would reject a separate database.
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
