@@ -164,6 +164,7 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/Create",
         "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/ChangedPut",
         "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/RepeatPutNoOp",
+        "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPutNoOp",
         "NoProfile/ReferenceIdentityRuntime",
         "NoProfile/RelationalReadback",
         "NoProfile/RelationalReadback/ChangedPutEtag",
@@ -437,10 +438,9 @@ public class Given_The_Parity_Scenario_Catalog
         }
     }
 
-    private static readonly string[] ExpectedNoProfileExtPgTriples =
+    private static readonly string[] ExpectedNoProfileExtCreatePgTriples =
     [
         "PostgresqlRelationalWriteCreateBaselineTests.cs::Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_persists_root_extensions_collection_extensions_and_extension_child_collections",
-        "PostgresqlRelationalWriteUpdateSemanticsTests.cs::Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture::It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows",
     ];
 
     private static readonly string[] ExpectedSiblingOrdinalPgTriples =
@@ -458,10 +458,10 @@ public class Given_The_Parity_Scenario_Catalog
     ];
 
     [Test]
-    public void It_records_both_no_profile_ext_entry_points()
+    public void It_records_the_no_profile_ext_create_entry_point()
     {
         ParityScenario row = _all.Single(s => s.Id == "NoProfileWriteBehavior/NoProfileExt");
-        Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtPgTriples);
+        Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtCreatePgTriples);
     }
 
     [Test]

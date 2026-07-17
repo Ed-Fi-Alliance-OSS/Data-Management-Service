@@ -123,18 +123,18 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileWriteBehavior (umbrella) ----------------------------------------------
         Gap(
             "NoProfileWriteBehavior",
-            "Umbrella no-profile changed-write control path: standard full-surface present/absent semantics including an omitted non-collection scope and a no-profile _ext case.",
+            "Umbrella no-profile write control path at the persister boundary: the changed-write flow is orchestrated to update success, and the no-profile _ext surface persists on create.",
             ProductionBoundary.NoProfilePersister,
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_returns_update_success_and_bumps_content_version_for_the_put_flow"],
             sharedEntryPoint: "NoProfileCreateBaselineScenarios + NoProfileUpdateSemanticsScenarios",
-            notes: "Realized by NoProfileFullSurfaceCreate (no-profile _ext create) and NoProfileChangedPutOmissionSemantics (omitted non-collection scope)."
+            notes: "Realized by NoProfileFullSurfaceCreate (no-profile _ext create); merge-level omission and deletion semantics are owned by NoProfileChangedPutOmissionSemantics at the NoProfileMerge boundary."
         ),
         Gap(
             "NoProfileWriteBehavior/OmittedNonCollectionScope",
-            "The control changed-write clears an omitted non-collection (inlined) scope rather than preserving hidden data.",
-            ProductionBoundary.NoProfilePersister,
+            "A changed PUT clears an omitted non-collection (inlined) scope rather than preserving hidden data.",
+            ProductionBoundary.NoProfileMerge,
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"]
@@ -144,21 +144,16 @@ public static partial class ParityScenarioCatalog
             Id = "NoProfileWriteBehavior/NoProfileExt",
             Layer = ParityLayer.NoProfile,
             BehavioralContract =
-                "The control full-surface write persists no-profile _ext storage on create and deletes omitted collection-aligned extension scope rows on a changed PUT.",
+                "The control full-surface write persists the no-profile _ext surface (root extension, collection-aligned extension, and extension-child collection rows) on create.",
             Boundary = ProductionBoundary.NoProfilePersister,
             BoundaryDetail =
-                "Umbrella variant spanning NoProfilePersister (create _ext, via NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild) and NoProfileMerge (delete omitted aligned-extension scope, via NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope).",
+                "No-profile _ext create surface persisted via NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild; the omitted-aligned-extension deletion on a changed PUT is a merge mechanic cataloged under NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope.",
             PgsqlLocations =
             [
                 Loc(
                     "PostgresqlRelationalWriteCreateBaselineTests.cs",
                     "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
                     ["It_persists_root_extensions_collection_extensions_and_extension_child_collections"]
-                ),
-                Loc(
-                    "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
-                    "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
-                    ["It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows"]
                 ),
             ],
             PgsqlCoverage = EngineCoverage.Covered,
@@ -412,16 +407,24 @@ public static partial class ParityScenarioCatalog
         ),
         Gap(
             "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",
-            "Authoritative StudentAcademicRecord POST-as-update updates root/extension in place, retains child stable ids with omitted-row replacement, and repeat POST-as-update is a no-op.",
+            "Authoritative StudentAcademicRecord POST-as-update preserves the existing document uuid and updates root/extension rows in place.",
             ProductionBoundary.NoProfilePersister,
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             [
                 "It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid",
                 "It_updates_root_and_extension_rows_in_place_for_authoritative_student_academic_record_post_as_update",
-                "It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows",
-                "It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update",
             ]
+        ),
+        // This fixture also exercises retained-and-omitted child-collection replacement, which is a merge
+        // behavior owned by the DeletedAndReplacedChildCollectionRows omission-semantics variant, and a
+        // repeat POST-as-update guarded no-op, recorded as the supporting smoke below.
+        PgSmokeNoOp(
+            "SampleStudentAcademicRecord",
+            "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op.",
+            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update"]
         ),
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
         Gap(
