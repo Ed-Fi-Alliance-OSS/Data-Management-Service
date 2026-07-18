@@ -42,7 +42,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CrudRoundTrip/PagesStudentsViaQuery",
-            "limit/offset paging returns the expected window sizes and the union covers every seeded row.",
+            "limit/offset paging returns deterministic DocumentId-ordered windows with complete, non-overlapping coverage of every seeded row.",
             "CrudRoundTripScenario.It_pages_students_via_query",
             "It_pages_students_via_query"
         ),

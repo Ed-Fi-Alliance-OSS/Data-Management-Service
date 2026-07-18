@@ -355,6 +355,18 @@ public static partial class ParityScenarioCatalog
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             ["It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put"]
         ),
+        Gap(
+            "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
+            "A changed PUT that replaces a non-identity attribute on more than MaxRowsPerBatch existing rows (keeping each city and order) partitions the collection update-by-stable-row-identity commands into two batches at the compiled limit, preserving the full rowset, stable ids, parent, and contiguous ordinals.",
+            ProductionBoundary.BatchSqlEmitter,
+            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture",
+            [
+                "It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
+                "It_partitions_collection_update_commands_using_the_compiled_batch_limit",
+            ],
+            boundaryDetail: "RelationalWriteNoProfilePersister batching through WritePlanBatchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch"
+        ),
         // --- NoProfilePostAsUpdate + variants -----------------------------------------------
         Gap(
             "NoProfilePostAsUpdate",

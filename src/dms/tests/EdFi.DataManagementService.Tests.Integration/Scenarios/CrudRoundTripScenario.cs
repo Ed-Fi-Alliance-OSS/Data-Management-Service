@@ -243,10 +243,10 @@ internal static class CrudRoundTripScenario
 
     public static async Task It_pages_students_via_query(ApiIntegrationHarness harness)
     {
-        // Seed three students. ValidateQueryMiddleware rejects orderBy when the
-        // resource has an empty queryFieldMapping (this fixture does), so the
-        // scenario asserts only the limit/offset window sizes rather than a
-        // specific element order.
+        // Seed three students serially so their surrogate DocumentIds ascend in seed order. The
+        // relational query paging applies a dialect-neutral deterministic ORDER BY DocumentId, so
+        // limit/offset windows are stable across repeats and engines: the scenario asserts the exact
+        // ordered window for each page (which also proves complete, non-overlapping coverage).
         string[] ids = ["smoke-page-001", "smoke-page-002", "smoke-page-003"];
         foreach (string id in ids)
         {
@@ -266,28 +266,30 @@ internal static class CrudRoundTripScenario
         );
         string firstPageBody = await firstPage.Content.ReadAsStringAsync();
         firstPage.StatusCode.Should().Be(HttpStatusCode.OK, firstPageBody);
-        JsonArray firstPageArray = JsonNode.Parse(firstPageBody)!.AsArray();
-        firstPageArray.Count.Should().Be(2, "limit=2 returns the first two seeded students");
+        string[] firstPageIds = PageStudentUniqueIds(firstPageBody);
+        firstPageIds
+            .Should()
+            .Equal(
+                ["smoke-page-001", "smoke-page-002"],
+                "limit=2 returns the first two seeded students in DocumentId order"
+            );
 
         using HttpResponseMessage secondPage = await harness.HttpClient.GetAsync(
             $"{StudentsEndpoint}?offset=2&limit=2"
         );
         string secondPageBody = await secondPage.Content.ReadAsStringAsync();
         secondPage.StatusCode.Should().Be(HttpStatusCode.OK, secondPageBody);
-        JsonArray secondPageArray = JsonNode.Parse(secondPageBody)!.AsArray();
-        secondPageArray.Count.Should().Be(1, "offset=2 leaves only one of three seeded students");
-
-        string[] returnedIds = firstPageArray
-            .Concat(secondPageArray)
-            .Select(node => node!["studentUniqueId"]!.GetValue<string>())
-            .ToArray();
-        returnedIds
+        string[] secondPageIds = PageStudentUniqueIds(secondPageBody);
+        secondPageIds
             .Should()
-            .BeEquivalentTo(
-                ids,
-                "the union of the two pages must cover every seeded student without overlap"
+            .Equal(
+                ["smoke-page-003"],
+                "offset=2 returns the remaining seeded student, deterministically ordered after the first page"
             );
     }
+
+    private static string[] PageStudentUniqueIds(string pageBody) =>
+        [.. JsonNode.Parse(pageBody)!.AsArray().Select(node => node!["studentUniqueId"]!.GetValue<string>())];
 
     public static async Task It_rejects_create_with_missing_reference(ApiIntegrationHarness harness)
     {

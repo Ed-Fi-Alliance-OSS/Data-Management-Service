@@ -56,6 +56,15 @@ public static class NoProfileMultiBatchCollectionScenarios
         string Zone
     );
 
+    /// <summary>A base collection address row plus its resolved AddressType descriptor id, used by the changed-descriptor update-batch scenario.</summary>
+    public sealed record SchoolAddressWithDescriptorRow(
+        long CollectionItemId,
+        long SchoolDocumentId,
+        int Ordinal,
+        string City,
+        long AddressTypeDescriptorId
+    );
+
     /// <summary>
     /// Asserts a multi-batch create (request count exceeding the compiled batch limit) returned
     /// InsertSuccess and persisted the full large base collection with the expected document/root
@@ -130,6 +139,90 @@ public static class NoProfileMultiBatchCollectionScenarios
         int maxRowsPerBatch,
         int parametersPerRow
     ) => deleteParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, parametersPerRow);
+
+    /// <summary>
+    /// Asserts a changed PUT that replaces a non-identity attribute (the AddressType descriptor) on every one
+    /// of MaxRowsPerBatch + 2 existing base collection rows, keeping each city and the request order, returns
+    /// UpdateSuccess and reduces to a pure collection-update: the full rowset is preserved one-for-one, every
+    /// stable CollectionItemId is reused in place (matched by unchanged city/ordinal), the parent id and the
+    /// contiguous 0-based ordinals are unchanged, every city is unchanged, and every row's descriptor identity
+    /// moved from the original to the replacement. Non-vacuous: the two descriptor identities must differ and
+    /// the change must span more than one full update batch.
+    /// </summary>
+    public static void AssertLargeCollectionChangedDescriptorUpdatePersisted(
+        UpdateResult result,
+        DocumentUuid documentUuid,
+        long documentId,
+        int maxRowsPerBatch,
+        long originalAddressTypeDescriptorId,
+        long replacementAddressTypeDescriptorId,
+        IReadOnlyList<SchoolAddressWithDescriptorRow> addressesBefore,
+        IReadOnlyList<SchoolAddressWithDescriptorRow> addressesAfter
+    )
+    {
+        originalAddressTypeDescriptorId
+            .Should()
+            .NotBe(
+                replacementAddressTypeDescriptorId,
+                "the original and replacement AddressType descriptor identities must differ"
+            );
+        addressesBefore
+            .Should()
+            .HaveCount(
+                maxRowsPerBatch + 2,
+                "the create seeds maxRowsPerBatch + 2 existing rows before the changed-descriptor update"
+            );
+        addressesBefore
+            .Should()
+            .OnlyContain(
+                address => address.AddressTypeDescriptorId == originalAddressTypeDescriptorId,
+                "every created row starts with the original AddressType descriptor"
+            );
+
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        result.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(documentUuid);
+
+        addressesAfter
+            .Should()
+            .HaveCount(
+                addressesBefore.Count,
+                "a changed-descriptor update over existing rows preserves the full rowset"
+            );
+        addressesAfter
+            .Select(address => address.Ordinal)
+            .Should()
+            .Equal(Enumerable.Range(0, addressesBefore.Count), "ordinals stay contiguous and unchanged");
+        addressesAfter.Select(address => address.CollectionItemId).Should().OnlyHaveUniqueItems();
+
+        for (int index = 0; index < addressesAfter.Count; index++)
+        {
+            SchoolAddressWithDescriptorRow before = addressesBefore[index];
+
+            addressesAfter[index]
+                .Should()
+                .Be(
+                    new SchoolAddressWithDescriptorRow(
+                        before.CollectionItemId,
+                        documentId,
+                        index,
+                        before.City,
+                        replacementAddressTypeDescriptorId
+                    ),
+                    "the row at ordinal {0} keeps its stable CollectionItemId, parent, ordinal, and city while its AddressType descriptor is replaced",
+                    index
+                );
+        }
+    }
+
+    /// <summary>
+    /// Asserts the collection update-by-stable-row-identity commands were partitioned into exactly two batches
+    /// at the compiled limit: parameter counts <c>[maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow]</c>.
+    /// </summary>
+    public static void AssertUpdateBatchPartitions(
+        IReadOnlyList<int> updateParameterCounts,
+        int maxRowsPerBatch,
+        int parametersPerRow
+    ) => updateParameterCounts.Should().Equal(maxRowsPerBatch * parametersPerRow, 2 * parametersPerRow);
 
     /// <summary>
     /// Asserts a multi-batch delete/update reduced a large base collection to a single retained row: the

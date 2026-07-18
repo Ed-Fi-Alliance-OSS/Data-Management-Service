@@ -374,6 +374,262 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             .Select(command => command.ParametersByName.Count)
             .ToArray();
 
+    // Base-collection update-by-stable-row-identity commands against the edfi.SchoolAddress table only, so the
+    // Document/School single-row updates and any sample.SchoolExtensionAddress commands are excluded.
+    public static IReadOnlyList<int> SchoolAddressUpdateParameterCounts(MultiBatchCommandRecorder recorder) =>
+        recorder
+            .Commands.Where(command =>
+                command.CommandText.Contains("update", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("\"edfi\".\"SchoolAddress\"", StringComparison.Ordinal)
+            )
+            .Select(command => command.ParametersByName.Count)
+            .ToArray();
+
+    // --- Changed-descriptor multi-batch update scenario support (NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions) ---
+
+    public static readonly QualifiedResourceName AddressTypeDescriptorResource = new(
+        "Ed-Fi",
+        "AddressTypeDescriptor"
+    );
+
+    public const string OriginalAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
+    public const string ReplacementAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
+
+    public static JsonNode CreateAddressRequestBodyWithDescriptor(
+        int addressCount,
+        string addressTypeDescriptorUri
+    )
+    {
+        JsonArray addresses = [];
+
+        for (var index = 0; index < addressCount; index++)
+        {
+            addresses.Add(
+                new JsonObject
+                {
+                    ["addressTypeDescriptor"] = addressTypeDescriptorUri,
+                    ["city"] = CreateCity(index),
+                }
+            );
+        }
+
+        return new JsonObject
+        {
+            ["schoolId"] = 255901,
+            ["shortName"] = "BATCH",
+            ["addresses"] = addresses,
+        };
+    }
+
+    // The focused DDL fixture's ApiSchema is trimmed to what the DDL emitter needs, so the ResourceSchema
+    // extraction helpers are unavailable. The School identity is fixed ($.schoolId) and the per-address
+    // AddressType descriptor references are constructed directly so the reference resolver can populate each
+    // SchoolAddress row's AddressTypeDescriptorId.
+    public static DocumentInfo CreateSchoolDocumentInfoWithAddressDescriptors(
+        int addressCount,
+        string addressTypeDescriptorUri
+    )
+    {
+        var schoolIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+        ]);
+        var descriptorResourceInfo = new BaseResourceInfo(
+            new ProjectName("Ed-Fi"),
+            new ResourceName("AddressTypeDescriptor"),
+            IsDescriptor: true
+        );
+        var descriptorIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(
+                DocumentIdentity.DescriptorIdentityJsonPath,
+                addressTypeDescriptorUri.ToLowerInvariant()
+            ),
+        ]);
+        var descriptorReferentialId = ReferentialIdCalculator.ReferentialIdFrom(
+            descriptorResourceInfo,
+            descriptorIdentity
+        );
+
+        DescriptorReference[] descriptorReferences =
+        [
+            .. Enumerable
+                .Range(0, addressCount)
+                .Select(index => new DescriptorReference(
+                    ResourceInfo: descriptorResourceInfo,
+                    DocumentIdentity: descriptorIdentity,
+                    ReferentialId: descriptorReferentialId,
+                    Path: new JsonPath($"$.addresses[{index}].addressTypeDescriptor")
+                )),
+        ];
+
+        return new DocumentInfo(
+            DocumentIdentity: schoolIdentity,
+            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            DocumentReferences: [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: descriptorReferences,
+            SuperclassIdentity: null
+        );
+    }
+
+    public static UpsertRequest CreateCreateRequestWithDescriptor(
+        MappingSet mappingSet,
+        JsonNode edfiDoc,
+        int addressCount,
+        string addressTypeDescriptorUri,
+        DocumentUuid documentUuid,
+        string traceId
+    ) =>
+        new(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfoWithAddressDescriptors(
+                addressCount,
+                addressTypeDescriptorUri
+            ),
+            MappingSet: mappingSet,
+            EdfiDoc: edfiDoc,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid
+        );
+
+    public static UpdateRequest CreateUpdateRequestWithDescriptor(
+        MappingSet mappingSet,
+        JsonNode edfiDoc,
+        int addressCount,
+        string addressTypeDescriptorUri,
+        DocumentUuid documentUuid,
+        string traceId
+    ) =>
+        new(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfoWithAddressDescriptors(
+                addressCount,
+                addressTypeDescriptorUri
+            ),
+            MappingSet: mappingSet,
+            EdfiDoc: edfiDoc,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid
+        );
+
+    public static async Task<long> SeedAddressTypeDescriptorAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        MappingSet mappingSet,
+        Guid documentUuid,
+        string uri,
+        string codeValue
+    )
+    {
+        short resourceKeyId = mappingSet.ResourceKeyIdByResource[AddressTypeDescriptorResource];
+
+        long documentId = await database.ExecuteScalarAsync<long>(
+            """
+            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
+            VALUES (@documentUuid, @resourceKeyId)
+            RETURNING "DocumentId";
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        await database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."Descriptor" (
+                "DocumentId",
+                "Namespace",
+                "CodeValue",
+                "ShortDescription",
+                "Description",
+                "Discriminator",
+                "Uri"
+            )
+            VALUES (
+                @documentId,
+                @namespace,
+                @codeValue,
+                @shortDescription,
+                @description,
+                @discriminator,
+                @uri
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
+            new NpgsqlParameter("codeValue", codeValue),
+            new NpgsqlParameter("shortDescription", codeValue),
+            new NpgsqlParameter("description", codeValue),
+            new NpgsqlParameter("discriminator", "Ed-Fi:AddressTypeDescriptor"),
+            new NpgsqlParameter("uri", uri)
+        );
+
+        var referentialId = CreateDescriptorReferentialId("Ed-Fi", "AddressTypeDescriptor", uri);
+        var existing = await database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        if (existing.Count == 0)
+        {
+            await database.ExecuteNonQueryAsync(
+                """
+                INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+                VALUES (@referentialId, @documentId, @resourceKeyId);
+                """,
+                new NpgsqlParameter("referentialId", referentialId.Value),
+                new NpgsqlParameter("documentId", documentId),
+                new NpgsqlParameter("resourceKeyId", resourceKeyId)
+            );
+        }
+
+        return documentId;
+    }
+
+    private static ReferentialId CreateDescriptorReferentialId(
+        string projectName,
+        string resourceName,
+        string uri
+    ) =>
+        ReferentialIdCalculator.ReferentialIdFrom(
+            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
+            new DocumentIdentity([
+                new DocumentIdentityElement(
+                    new JsonPath(DocumentIdentity.DescriptorIdentityJsonPath.Value),
+                    uri.ToLowerInvariant()
+                ),
+            ])
+        );
+
+    public static async Task<
+        IReadOnlyList<NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow>
+    > ReadSchoolAddressesWithDescriptorAsync(PostgresqlGeneratedDdlTestDatabase database, long documentId)
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId", "School_DocumentId", "Ordinal", "City", "AddressTypeDescriptor_DescriptorId"
+            FROM "edfi"."SchoolAddress"
+            WHERE "School_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow(
+                GetInt64(row, "CollectionItemId"),
+                GetInt64(row, "School_DocumentId"),
+                GetInt32(row, "Ordinal"),
+                GetString(row, "City"),
+                GetInt64(row, "AddressTypeDescriptor_DescriptorId")
+            ))
+            .ToArray();
+    }
+
     public static NoProfileMultiBatchCollectionScenarios.DocumentRow ToNeutral(
         MultiBatchCollectionPersistedDocumentRow document
     ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
@@ -915,6 +1171,191 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_
                 ),
                 SchoolDocumentUuid,
                 "pg-multi-batch-collection-aligned-extensions"
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture
+    : MultiBatchCollectionsGeneratedDdlFixtureTestBase
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("0f0f0f0f-0000-0000-0000-000000000004")
+    );
+    private static readonly Guid OriginalDescriptorDocumentUuid = Guid.Parse(
+        "0f0f0f0f-0000-0000-0000-0000000000d1"
+    );
+    private static readonly Guid ReplacementDescriptorDocumentUuid = Guid.Parse(
+        "0f0f0f0f-0000-0000-0000-0000000000d2"
+    );
+
+    private long _originalDescriptorId;
+    private long _replacementDescriptorId;
+    private long _documentId;
+    private UpdateResult _result = null!;
+    private IReadOnlyList<NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow> _addressesBefore =
+        null!;
+    private IReadOnlyList<NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow> _addressesAfter =
+        null!;
+    private int _maxRowsPerBatch;
+    private int _parametersPerRow;
+    private int _createdAddressCount;
+
+    protected override Task OneTimeSetUpTestAsync()
+    {
+        var schoolAddressTablePlan = MultiBatchCollectionsIntegrationTestSupport.GetSchoolAddressTablePlan(
+            _mappingSet
+        );
+
+        _maxRowsPerBatch = schoolAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
+        _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
+        _createdAddressCount = _maxRowsPerBatch + 2;
+
+        return Task.CompletedTask;
+    }
+
+    protected override async Task SetUpTestAsync()
+    {
+        _originalDescriptorId =
+            await MultiBatchCollectionsIntegrationTestSupport.SeedAddressTypeDescriptorAsync(
+                _database,
+                _mappingSet,
+                OriginalDescriptorDocumentUuid,
+                MultiBatchCollectionsIntegrationTestSupport.OriginalAddressTypeDescriptorUri,
+                "Physical"
+            );
+        _replacementDescriptorId =
+            await MultiBatchCollectionsIntegrationTestSupport.SeedAddressTypeDescriptorAsync(
+                _database,
+                _mappingSet,
+                ReplacementDescriptorDocumentUuid,
+                MultiBatchCollectionsIntegrationTestSupport.ReplacementAddressTypeDescriptorUri,
+                "Mailing"
+            );
+
+        await ExecuteCreateAsync();
+
+        var stateBeforeUpdate = await MultiBatchCollectionsIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+        _documentId = stateBeforeUpdate.Document.DocumentId;
+        _addressesBefore =
+            await MultiBatchCollectionsIntegrationTestSupport.ReadSchoolAddressesWithDescriptorAsync(
+                _database,
+                _documentId
+            );
+
+        // Only the changed PUT's commands must be observed for the update-batch partition assertion.
+        _commandRecorder.Reset();
+
+        _result = await ExecuteUpdateAsync();
+        _addressesAfter =
+            await MultiBatchCollectionsIntegrationTestSupport.ReadSchoolAddressesWithDescriptorAsync(
+                _database,
+                _documentId
+            );
+    }
+
+    [Test]
+    public void It_returns_update_success_and_applies_the_changed_descriptor_to_every_row() =>
+        NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted(
+            _result,
+            SchoolDocumentUuid,
+            _documentId,
+            _maxRowsPerBatch,
+            _originalDescriptorId,
+            _replacementDescriptorId,
+            _addressesBefore,
+            _addressesAfter
+        );
+
+    [Test]
+    public void It_partitions_collection_update_commands_using_the_compiled_batch_limit()
+    {
+        MultiBatchCollectionsIntegrationTestSupport
+            .SchoolAddressInsertParameterCounts(_commandRecorder)
+            .Should()
+            .BeEmpty("a pure changed-descriptor update inserts no SchoolAddress rows");
+        MultiBatchCollectionsIntegrationTestSupport
+            .SchoolAddressDeleteParameterCounts(_commandRecorder)
+            .Should()
+            .BeEmpty("a pure changed-descriptor update deletes no SchoolAddress rows");
+
+        NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions(
+            MultiBatchCollectionsIntegrationTestSupport.SchoolAddressUpdateParameterCounts(_commandRecorder),
+            _maxRowsPerBatch,
+            _parametersPerRow
+        );
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
+                    Id: 1,
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteMultiBatchCollectionChangedDescriptorUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        var createResult = await repository.UpsertDocument(
+            MultiBatchCollectionsIntegrationTestSupport.CreateCreateRequestWithDescriptor(
+                _mappingSet,
+                MultiBatchCollectionsIntegrationTestSupport.CreateAddressRequestBodyWithDescriptor(
+                    _createdAddressCount,
+                    MultiBatchCollectionsIntegrationTestSupport.OriginalAddressTypeDescriptorUri
+                ),
+                _createdAddressCount,
+                MultiBatchCollectionsIntegrationTestSupport.OriginalAddressTypeDescriptorUri,
+                SchoolDocumentUuid,
+                "pg-multi-batch-collection-changed-descriptor-create"
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteUpdateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
+                    Id: 1,
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalWriteMultiBatchCollectionChangedDescriptorUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            MultiBatchCollectionsIntegrationTestSupport.CreateUpdateRequestWithDescriptor(
+                _mappingSet,
+                MultiBatchCollectionsIntegrationTestSupport.CreateAddressRequestBodyWithDescriptor(
+                    _createdAddressCount,
+                    MultiBatchCollectionsIntegrationTestSupport.ReplacementAddressTypeDescriptorUri
+                ),
+                _createdAddressCount,
+                MultiBatchCollectionsIntegrationTestSupport.ReplacementAddressTypeDescriptorUri,
+                SchoolDocumentUuid,
+                "pg-multi-batch-collection-changed-descriptor-update"
             )
         );
     }

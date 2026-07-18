@@ -138,6 +138,7 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfileMultiBatchCollection/AlignedExtensionCreate",
         "NoProfileMultiBatchCollection/AuthoritativeParameterPressure",
         "NoProfileMultiBatchCollection/AuthoritativeChangedPutIdentity",
+        "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
         "NoProfilePostAsUpdate",
         "NoProfilePostAsUpdate/FocusedStableKey",
         "NoProfilePostAsUpdate/ImmutableIdentityRejected",
@@ -463,6 +464,30 @@ public class Given_The_Parity_Scenario_Catalog
     {
         ParityScenario row = _all.Single(s => s.Id == "NoProfileWriteBehavior/NoProfileExt");
         Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtCreatePgTriples);
+    }
+
+    private static readonly string[] ExpectedChangedUpdateBatchPartitionsPgTriples =
+    [
+        "PostgresqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
+        "PostgresqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_partitions_collection_update_commands_using_the_compiled_batch_limit",
+    ];
+
+    [Test]
+    public void It_records_the_changed_update_batch_partitions_entry_point()
+    {
+        ParityScenario row = _all.Single(s =>
+            s.Id == "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions"
+        );
+        row.Boundary.Should().Be(ProductionBoundary.BatchSqlEmitter);
+        row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
+        row.MssqlCoverage.Should().Be(EngineCoverage.Gap);
+        row.MssqlGapOwner.Should().Be("DMS-1285");
+        row.Classification.Should().Be(ParityClassification.KnownGap);
+        Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedChangedUpdateBatchPartitionsPgTriples);
+        ParityEntryPointResolution
+            .ResolveEffectiveEntryPoint(row)!
+            .Kind.Should()
+            .Be(EntryPointKind.Inherited);
     }
 
     [Test]
