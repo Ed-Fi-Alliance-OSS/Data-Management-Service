@@ -178,6 +178,19 @@ public static class NoProfileMultiBatchCollectionScenarios
                 address => address.AddressTypeDescriptorId == originalAddressTypeDescriptorId,
                 "every created row starts with the original AddressType descriptor"
             );
+        addressesBefore
+            .Should()
+            .OnlyContain(
+                address => address.SchoolDocumentId == documentId,
+                "every created row is keyed to the document under test"
+            );
+        addressesBefore
+            .Select(address => address.Ordinal)
+            .Should()
+            .Equal(
+                Enumerable.Range(0, addressesBefore.Count),
+                "the create seeds contiguous 0-based ordinals as the no-reorder baseline"
+            );
 
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
         result.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(documentUuid);
@@ -188,10 +201,6 @@ public static class NoProfileMultiBatchCollectionScenarios
                 addressesBefore.Count,
                 "a changed-descriptor update over existing rows preserves the full rowset"
             );
-        addressesAfter
-            .Select(address => address.Ordinal)
-            .Should()
-            .Equal(Enumerable.Range(0, addressesBefore.Count), "ordinals stay contiguous and unchanged");
         addressesAfter.Select(address => address.CollectionItemId).Should().OnlyHaveUniqueItems();
 
         for (int index = 0; index < addressesAfter.Count; index++)
@@ -203,8 +212,8 @@ public static class NoProfileMultiBatchCollectionScenarios
                 .Be(
                     new SchoolAddressWithDescriptorRow(
                         before.CollectionItemId,
-                        documentId,
-                        index,
+                        before.SchoolDocumentId,
+                        before.Ordinal,
                         before.City,
                         replacementAddressTypeDescriptorId
                     ),
