@@ -230,7 +230,7 @@ internal class ApiService : IApiService
             new UpsertHandler(_logger, _resiliencePipeline),
         ]);
 
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "POST.Upsert");
     }
 
     private PipelineProvider CreateGetByIdPipeline()
@@ -250,7 +250,7 @@ internal class ApiService : IApiService
             new GetByIdHandler(_logger, _resiliencePipeline),
         ]);
 
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "GET.ById");
     }
 
     private PipelineProvider CreateQueryPipeline()
@@ -271,7 +271,7 @@ internal class ApiService : IApiService
             new QueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "GET.Query");
     }
 
     private PipelineProvider CreateUpdatePipeline()
@@ -319,7 +319,7 @@ internal class ApiService : IApiService
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new UpdateByIdHandler(_logger, _resiliencePipeline),
         ]);
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "PUT.Update");
     }
 
     private PipelineProvider CreateDeleteByIdPipeline()
@@ -339,7 +339,7 @@ internal class ApiService : IApiService
             new DeleteByIdHandler(_logger, _resiliencePipeline),
         ]);
 
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "DELETE.ById");
     }
 
     private PipelineProvider CreateGetTokenInfoPipeline()
@@ -353,7 +353,7 @@ internal class ApiService : IApiService
             _serviceProvider.GetRequiredService<GetTokenInfoHandler>(),
         ]);
 
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "POST.TokenInfo");
     }
 
     private PipelineProvider CreateGetAvailableChangeVersionsPipeline()
@@ -368,7 +368,7 @@ internal class ApiService : IApiService
             _serviceProvider.GetRequiredService<AvailableChangeVersionsHandler>(),
         ]);
 
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "GET.AvailableChangeVersions");
     }
 
     private PipelineProvider CreateGetTrackedChangesPipeline()
@@ -393,7 +393,7 @@ internal class ApiService : IApiService
             new TrackedChangeQueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 
-        return new PipelineProvider(steps);
+        return new PipelineProvider(steps, "GET.TrackedChanges");
     }
 
     /// <summary>

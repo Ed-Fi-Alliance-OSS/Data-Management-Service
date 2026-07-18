@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
+using EdFi.DataManagementService.Core.External.Diagnostics;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -41,17 +43,27 @@ public interface IRelationalWriteSession : IAsyncDisposable
     Task RollbackAsync(CancellationToken cancellationToken = default);
 }
 
-internal sealed class RelationalWriteSession(DbConnection connection, DbTransaction transaction)
-    : IRelationalWriteSession
+internal sealed class RelationalWriteSession : IRelationalWriteSession
 {
     private RelationalWriteSessionState _state = RelationalWriteSessionState.Pending;
     private bool _disposed;
 
-    public DbConnection Connection { get; } =
-        connection ?? throw new ArgumentNullException(nameof(connection));
+    // DMS-1236 instrumentation: session span (creation to dispose) approximates the
+    // transaction-open window; while it is open, Npgsql command spans are attributed
+    // to Db.Command.InTxn so the idle-in-transaction gap can be derived.
+    private readonly long _createdTimestamp = Stopwatch.GetTimestamp();
+    private readonly RequestTiming? _timing = RequestTimingContext.Current;
 
-    public DbTransaction Transaction { get; } =
-        transaction ?? throw new ArgumentNullException(nameof(transaction));
+    public RelationalWriteSession(DbConnection connection, DbTransaction transaction)
+    {
+        Connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        Transaction = transaction ?? throw new ArgumentNullException(nameof(transaction));
+        _timing?.EnterDbSession();
+    }
+
+    public DbConnection Connection { get; }
+
+    public DbTransaction Transaction { get; }
 
     public DbCommand CreateCommand(RelationalCommand command)
     {
@@ -75,7 +87,9 @@ internal sealed class RelationalWriteSession(DbConnection connection, DbTransact
             );
         }
 
+        long commitStart = Stopwatch.GetTimestamp();
         await Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        _timing?.Record(RequestTimingRegistry.DbPhases.Commit, commitStart);
         _state = RelationalWriteSessionState.Committed;
     }
 
@@ -95,7 +109,9 @@ internal sealed class RelationalWriteSession(DbConnection connection, DbTransact
             );
         }
 
+        long rollbackStart = Stopwatch.GetTimestamp();
         await Transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        _timing?.Record(RequestTimingRegistry.DbPhases.Rollback, rollbackStart);
         _state = RelationalWriteSessionState.RolledBack;
     }
 
@@ -110,6 +126,12 @@ internal sealed class RelationalWriteSession(DbConnection connection, DbTransact
 
         await Transaction.DisposeAsync().ConfigureAwait(false);
         await Connection.DisposeAsync().ConfigureAwait(false);
+
+        if (_timing is not null)
+        {
+            _timing.Record(RequestTimingRegistry.DbPhases.Session, _createdTimestamp);
+            _timing.ExitDbSession();
+        }
     }
 
     private enum RelationalWriteSessionState

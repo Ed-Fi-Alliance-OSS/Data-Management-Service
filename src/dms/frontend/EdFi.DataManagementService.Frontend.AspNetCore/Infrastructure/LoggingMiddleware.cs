@@ -5,7 +5,9 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using EdFi.DataManagementService.Core.External.Diagnostics;
 using EdFi.DataManagementService.Core.External.Logging;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -13,11 +15,17 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
-public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSettings)
+public class LoggingMiddleware(
+    RequestDelegate next,
+    IOptions<AppSettings> appSettings,
+    IOptions<RequestTimingOptions>? requestTimingOptions = null
+)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly IOptions<AppSettings> _appSettings =
         appSettings ?? throw new ArgumentNullException(nameof(appSettings));
+    private readonly IOptions<RequestTimingOptions> _requestTimingOptions =
+        requestTimingOptions ?? Options.Create(new RequestTimingOptions());
     private const string ApplicationName = "EdFi.DataManagementService";
     private const string RequestLayer = "Frontend";
 
@@ -29,6 +37,17 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
         var rawTraceId = ExtractTraceId(context) ?? string.Empty;
         var traceId = LoggingSanitizer.SanitizeForLogging(rawTraceId);
+
+        // DMS-1236: start the ambient per-request phase timing context.
+        RequestTiming? timing = null;
+        if (RequestTimingContext.Enabled)
+        {
+            timing = RequestTimingContext.Begin(
+                context.Request.Method,
+                NormalizeResourcePath(context.Request.Path.Value)
+            );
+            RequestTimingRegistry.IncrementInFlight();
+        }
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -47,13 +66,15 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
             scopeValues["SpanId"] = activity.SpanId.ToString();
         }
 
-        using (logger.BeginScope(scopeValues))
-        {
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug("Request started");
-            }
+        using var requestScope = logger.BeginScope(scopeValues);
 
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            logger.LogDebug("Request started");
+        }
+
+        try
+        {
             try
             {
                 await _next(context);
@@ -182,6 +203,112 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                 );
             }
         }
+        finally
+        {
+            if (timing is not null)
+            {
+                CompleteRequestTiming(timing, context, logger);
+            }
+        }
+    }
+
+    /// <summary>
+    /// DMS-1236: finalizes the request's timing context, folds it into the global
+    /// registry, and emits a detailed phase breakdown for slow or sampled requests.
+    /// </summary>
+    private void CompleteRequestTiming(RequestTiming timing, HttpContext context, ILogger logger)
+    {
+        RequestTimingRegistry.DecrementInFlight();
+        timing.Stop();
+        RequestTimingRegistry.FoldRequest(timing);
+
+        RequestTimingOptions options = _requestTimingOptions.Value;
+        bool isSlow = options.SlowRequestThresholdMs > 0 && timing.TotalMs >= options.SlowRequestThresholdMs;
+        bool isSampled = RequestTimingRegistry.ShouldSampleDetail(options.DetailSampleEveryN);
+
+        if (isSlow || isSampled)
+        {
+            LogLevel level = isSlow ? LogLevel.Warning : LogLevel.Information;
+            if (logger.IsEnabled(level))
+            {
+                logger.Log(
+                    level,
+                    "RequestTimingDetail{Kind}: {Method} {Resource} pipeline={Pipeline} status={StatusCode} total={TotalMs}ms phases: {Phases}",
+                    isSlow ? "(slow)" : "(sampled)",
+                    timing.Method,
+                    timing.Resource,
+                    timing.Pipeline,
+                    context.Response?.StatusCode ?? 0,
+                    Math.Round(timing.TotalMs, 2),
+                    FormatPhases(timing)
+                );
+            }
+        }
+
+        RequestTimingContext.End();
+    }
+
+    /// <summary>
+    /// Renders the recorded phases as "+offset phase duration [detail]" entries in
+    /// chronological order, on a single line for log friendliness.
+    /// </summary>
+    private static string FormatPhases(RequestTiming timing)
+    {
+        List<PhaseSample> samples = [.. timing.SnapshotSamples()];
+        samples.Sort((a, b) => a.OffsetMs.CompareTo(b.OffsetMs));
+
+        StringBuilder builder = new(samples.Count * 48);
+        foreach (PhaseSample sample in samples)
+        {
+            if (builder.Length > 0)
+            {
+                builder.Append(" | ");
+            }
+
+            builder
+                .Append('+')
+                .Append(sample.OffsetMs.ToString("F1"))
+                .Append(' ')
+                .Append(sample.Phase)
+                .Append(' ')
+                .Append(sample.DurationMs.ToString("F2"))
+                .Append("ms");
+
+            if (sample.Detail is not null)
+            {
+                builder.Append(" [").Append(sample.Detail).Append(']');
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Normalizes a request path into a low-cardinality endpoint key: empty segments are
+    /// dropped and GUID segments (document ids) are replaced with "{id}".
+    /// </summary>
+    internal static string NormalizeResourcePath(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return "(root)";
+        }
+
+        string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return "(root)";
+        }
+
+        for (int i = 0; i < segments.Length; i++)
+        {
+            if (Guid.TryParse(segments[i], out _))
+            {
+                segments[i] = "{id}";
+            }
+        }
+
+        return string.Join('/', segments);
     }
 
     private string? ExtractTraceId(HttpContext context)

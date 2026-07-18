@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Diagnostics;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
@@ -64,6 +65,9 @@ public static class WebApplicationBuilderExtensions
             .Configure<ResourceLinksOptions>(
                 webAppBuilder.Configuration.GetSection("DataManagement:ResourceLinks")
             )
+            .Configure<RequestTimingOptions>(
+                webAppBuilder.Configuration.GetSection(RequestTimingOptions.SectionName)
+            )
             .AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
             .AddSingleton<IStartupProcessExit, EnvironmentStartupProcessExit>()
             .AddSingleton<StartupPhaseExecutor>()
@@ -83,6 +87,8 @@ public static class WebApplicationBuilderExtensions
             logger.Information("Injecting rate limiting");
             ConfigureRateLimit(webAppBuilder);
         }
+
+        ConfigureRequestTimingInstrumentation(webAppBuilder, logger);
 
         ConfigureDatastore(webAppBuilder, logger);
 
@@ -185,6 +191,41 @@ public static class WebApplicationBuilderExtensions
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
+    }
+
+    /// <summary>
+    /// DMS-1236: enables the request phase timing instrumentation (ambient per-request
+    /// context, Npgsql command span listener, periodic reporters). On by default;
+    /// disable with RequestTimings:Enabled=false.
+    /// </summary>
+    private static void ConfigureRequestTimingInstrumentation(
+        WebApplicationBuilder webAppBuilder,
+        Serilog.ILogger logger
+    )
+    {
+        var timingOptions =
+            webAppBuilder.Configuration.GetSection(RequestTimingOptions.SectionName).Get<RequestTimingOptions>()
+            ?? new RequestTimingOptions();
+
+        if (!timingOptions.Enabled)
+        {
+            logger.Information("DMS-1236 request timing instrumentation is disabled");
+            return;
+        }
+
+        RequestTimingContext.Enable();
+        NpgsqlActivityTimingListener.Start();
+        webAppBuilder.Services.AddHostedService<RequestTimingReportingService>();
+        logger.Information(
+            "DMS-1236 request timing instrumentation is ENABLED "
+                + "(slowRequestThresholdMs={SlowMs}, detailSampleEveryN={EveryN}, "
+                + "runtimeStatsIntervalSeconds={RuntimeSecs}, summaryIntervalSeconds={SummarySecs}); "
+                + "snapshot at GET /instrumentation",
+            timingOptions.SlowRequestThresholdMs,
+            timingOptions.DetailSampleEveryN,
+            timingOptions.RuntimeStatsIntervalSeconds,
+            timingOptions.SummaryIntervalSeconds
+        );
     }
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)

@@ -10,6 +10,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using EdFi.DataManagementService.Core.External.Diagnostics;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -489,10 +490,14 @@ public static class AspNetCoreFrontend
         bool parseJsonBody = true
     )
     {
-        JsonBodyExtractionResult jsonBody =
-            includeBody && parseJsonBody
-                ? await ExtractJsonBodyFrom(httpRequest)
-                : JsonBodyExtractionResult.Empty;
+        JsonBodyExtractionResult jsonBody = JsonBodyExtractionResult.Empty;
+        if (includeBody && parseJsonBody)
+        {
+            long parseStart = RequestTiming.Now();
+            jsonBody = await ExtractJsonBodyFrom(httpRequest);
+            RequestTimingContext.Current?.Record("Frontend.ParseBody", parseStart);
+        }
+
         string? rawBody = includeBody && !parseJsonBody ? await ExtractRawBodyFrom(httpRequest) : null;
 
         return new(
@@ -619,11 +624,17 @@ public static class AspNetCoreFrontend
             }
         }
 
+        string? content = null;
+        if (frontendResponse.Body != null)
+        {
+            long serializeStart = RequestTiming.Now();
+            content = JsonSerializer.Serialize(frontendResponse.Body, SharedSerializerOptions);
+            RequestTimingContext.Current?.Record("Frontend.SerializeBody", serializeStart);
+        }
+
         return Results.Content(
             statusCode: frontendResponse.StatusCode,
-            content: frontendResponse.Body == null
-                ? null
-                : JsonSerializer.Serialize(frontendResponse.Body, SharedSerializerOptions),
+            content: content,
             contentType: frontendResponse.ContentType,
             contentEncoding: Encoding.UTF8
         );

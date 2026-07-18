@@ -5,8 +5,10 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.External.Diagnostics;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -41,13 +43,19 @@ internal sealed class PostgresqlRelationalWriteSessionFactory : IRelationalWrite
 
     public async Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
     {
+        RequestTiming? timing = RequestTimingContext.Current;
+
+        long openStart = Stopwatch.GetTimestamp();
         var connection = await _openConnectionAsync(cancellationToken).ConfigureAwait(false);
+        timing?.Record(RequestTimingRegistry.DbPhases.OpenConnection, openStart);
 
         try
         {
+            long beginStart = Stopwatch.GetTimestamp();
             var transaction = await connection
                 .BeginTransactionAsync(_isolationLevel, cancellationToken)
                 .ConfigureAwait(false);
+            timing?.Record(RequestTimingRegistry.DbPhases.BeginTransaction, beginStart);
             return new RelationalWriteSession(connection, transaction);
         }
         catch

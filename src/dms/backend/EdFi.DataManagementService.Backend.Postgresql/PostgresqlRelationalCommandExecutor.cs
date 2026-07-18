@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.External.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -54,7 +56,11 @@ internal sealed class PostgresqlRelationalCommandExecutor : IRelationalCommandEx
             command.Parameters.Count
         );
 
+        RequestTiming? timing = RequestTimingContext.Current;
+        long openStart = Stopwatch.GetTimestamp();
         await using var connection = await _openConnectionAsync(cancellationToken).ConfigureAwait(false);
+        timing?.Record(RequestTimingRegistry.DbPhases.OpenConnection, openStart);
+
         await using var dbCommand = connection.CreateCommand();
         dbCommand.CommandText = command.CommandText;
 

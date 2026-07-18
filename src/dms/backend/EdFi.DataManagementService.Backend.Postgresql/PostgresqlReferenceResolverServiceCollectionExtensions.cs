@@ -4,11 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.External.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -91,7 +93,9 @@ internal sealed class PostgresqlDocumentHydrator(NpgsqlDataSourceProvider dataSo
         CancellationToken ct
     )
     {
+        long openStart = Stopwatch.GetTimestamp();
         await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync(ct);
+        RequestTimingContext.Current?.Record(RequestTimingRegistry.DbPhases.OpenConnection, openStart);
 
         return await HydrationExecutor.ExecuteAsync(
             connection,
