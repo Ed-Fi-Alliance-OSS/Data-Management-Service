@@ -29,6 +29,8 @@ until the source table and projector guarantees are in place.
 ## Acceptance Criteria
 
 - Health reports projector mode and whether required `dms.DocumentCache` objects exist.
+- Health and CDC readiness are addressable per `(tenant key, DataStoreId)` and do not depend on the current HTTP
+  route selection.
 - Health reports initial backfill status, epoch id, target content version, and progress.
 - Health reports projector lag by `ContentVersion` and by age of oldest missing/stale work where practical.
 - Health reports unresolved failure count, oldest unresolved failure age, last failure kind, and last successful
@@ -44,15 +46,17 @@ until the source table and projector guarantees are in place.
   - projector lag above the completed backfill target exceeds the configured threshold,
   - provider-specific delete-source behavior has not been verified.
 - Non-CDC cache-backed reads can remain available when CDC readiness is false.
+- A deployment aggregate may fail when any configured CDC data store is not ready, but it also exposes each
+  data-store result and a failure in one data store does not stop health evaluation or projection for others.
 - Metrics/logs cover projection attempts, successes, retries, failures, stale skips, backfill epoch target
   capture, backfill progress, cache hit/miss/stale fallback, pre-delete materialization, and projector lag.
 - Tests cover healthy async mode, healthy CDC-required mode, missing objects, incomplete backfill, unresolved
   current projection failures, dead letters, excessive lag above the completed backfill target, and missing
-  provider verification.
+  provider verification, including mixed healthy/unhealthy data stores across tenants.
 
 ## Tasks
 
-1. Define the DocumentCache health/readiness abstraction.
+1. Define the per-data-store DocumentCache health/readiness abstraction and deployment aggregate.
 2. Implement health checks and readiness diagnostics.
 3. Add metrics and structured logs.
 4. Add configuration for CDC lag thresholds.

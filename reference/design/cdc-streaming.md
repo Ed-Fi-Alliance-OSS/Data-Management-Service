@@ -62,7 +62,7 @@ Recommended topic pattern:
 <topic-prefix>.instance.<instance-key>.documents.v1
 ```
 
-Default local topic prefix:
+Default local-only topic prefix:
 
 ```text
 edfi.dms
@@ -73,6 +73,11 @@ Example:
 ```text
 edfi.dms.instance.data-store-12.documents.v1
 ```
+
+Production topic prefixes must include a stable opaque deployment/environment key that
+is unique among every DMS/CMS deployment sharing the Kafka cluster. `DataStoreId` alone
+is not unique across CMS installations. The short `edfi.dms` prefix is valid only on an
+isolated local/test broker (or a broker explicitly dedicated to one deployment).
 
 Create/update/snapshot values have this public shape:
 
@@ -152,6 +157,11 @@ and one topic. SQL Server connector consolidation is an advanced host optimizati
 when the same per-instance topic, key, tombstone, ACL, and operational contracts are
 preserved.
 
+The CDC topology must also preserve a one-to-one relationship between a logical instance
+topic and a physical `dms.DocumentCache`. If two tenant/data-store records resolve to the
+same physical database, CDC readiness rejects both aliases rather than publishing the same
+document set under independently authorized topics.
+
 ## Transform Pipeline
 
 The connector pipeline must produce the relational v1 public contract while preserving
@@ -187,6 +197,12 @@ backfill epoch has completed and connector/projector lag above the completed bac
 target is acceptable. Connector templates must be generated or parameterized from the
 selected data-store context instead of using hard-coded database names.
 
+Dynamic production deployments require a deployment-owned reconciler in addition to this
+one-shot bootstrap path. It starts connectors for newly ready data stores, replaces them
+after physical connection/provider changes, ignores route-qualifier-only changes, and
+stops removed connectors without automatically deleting topics, offsets, ACLs, or database
+CDC artifacts.
+
 ## Multitenancy and Security
 
 Topic-per-instance segregation is the recommended Kafka isolation model. Shared topics
@@ -196,6 +212,11 @@ cross-instance data leakage risk.
 Kafka ACLs should grant consumers access only to the instance topics they are authorized
 to read. Kafka Connect internal topics, connector REST APIs, and database credentials
 must not be exposed to third-party consumers.
+
+The DMS projector and CDC readiness are scoped per `(tenant key, DataStoreId)` and run
+independently of request JWT/route selection. Process-wide v1 enablement applies to every
+loaded data store with a usable connection string; connector registration and status
+remain per data store.
 
 Database connector credentials should be least-privilege. Local development defaults may
 use insecure credentials, but production deployments must replace them.

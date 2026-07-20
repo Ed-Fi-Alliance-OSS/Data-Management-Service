@@ -37,6 +37,7 @@ row guarantee; operators should treat failures in that path as write-path blocki
   - cleanup and retention considerations.
 - Kafka guidance covers:
   - topic-per-instance ACLs,
+  - deployment-unique production topic prefixes and the local-only `edfi.dms` default,
   - compacted topic behavior,
   - tombstone retention,
   - `etag` as the opaque DMS API `_etag` derived from `contentVersion` and the Kafka
@@ -50,6 +51,10 @@ row guarantee; operators should treat failures in that path as write-path blocki
   - delete failure behavior when the source row cannot be materialized.
 - Runbooks cover connector health, lag, last error, snapshot completion, restart, offset reset, resnapshot, and
   topic recreation.
+- Runbooks cover dynamic data-store addition, physical connection/provider change, route-qualifier-only change,
+  removal, connector retirement, and shared-physical-database conflict diagnostics.
+- Runbooks state that a missing CMS record stops reconciliation only after the configured confirmation policy and
+  never automatically deletes topics, offsets, ACLs, replication slots, or SQL Server capture state.
 - Runbooks clearly mark offset reset, resnapshot, and topic deletion as destructive or replay-producing
   operations.
 - Documentation explains that `-EnableKafkaUI` does not enable CDC.

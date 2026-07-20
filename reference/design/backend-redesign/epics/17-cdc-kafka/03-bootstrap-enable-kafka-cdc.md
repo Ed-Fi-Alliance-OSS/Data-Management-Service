@@ -32,6 +32,8 @@ database names.
   readiness cutover marker.
 - Connector registration is idempotent for the same selected data store and connector name.
 - Bootstrap prints the connector name, provider, database, instance key, and target topic.
+- Non-local bootstrap requires a deployment-unique topic prefix and rejects the local `edfi.dms` default unless
+  the broker is explicitly declared dedicated to this deployment.
 - Teardown removes local connector registrations and Kafka state when the local stack is torn down with volumes.
 - E2E setup can opt into CDC and register the connector before test writes are issued.
 - Failure messages identify whether the problem is Kafka infrastructure, connector REST API, database CDC setup,
@@ -53,3 +55,4 @@ database names.
 - Publishing production deployment automation for managed Kafka providers.
 - Replacing the Kafka Connect image.
 - Defining the projector's CDC health semantics.
+- Continuous production reconciliation of dynamic CMS changes; that belongs to Story 07.

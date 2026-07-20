@@ -21,6 +21,9 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
 - SQL Server connector template captures only the selected instance database's `dms.DocumentCache`.
 - Connector templates do not contain hard-coded database names, topic names, replication slot names, or data
   store IDs.
+- Topic prefix is a required input. Production validation requires a stable opaque deployment/environment key
+  unique among DMS/CMS deployments sharing Kafka; the short `edfi.dms` prefix is local/test-only unless the
+  broker is explicitly declared dedicated to one deployment.
 - Connector configuration sets the Kafka key to `DocumentUuid` for create/update/delete records.
 - Connector templates configure the public wire serialization contract:
   - key converter is `org.apache.kafka.connect.storage.StringConverter`,
@@ -46,7 +49,7 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
 ## Tasks
 
 1. Define connector template inputs: provider, host, port, database name, credentials, data store ID or instance
-   key, topic prefix, replication slot/capture names, and snapshot mode.
+   key, deployment-unique topic prefix, replication slot/capture names, and snapshot mode.
 2. Build PostgreSQL connector template generation.
 3. Build SQL Server connector template generation.
 4. Implement or configure transform pipeline for value shaping, JSON expansion, key simplification, tombstone

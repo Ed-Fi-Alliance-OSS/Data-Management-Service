@@ -28,6 +28,11 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
   selected data store.
 - When CDC is enabled, startup/bootstrap validation verifies that the DocumentCache projector mode required by
   DMS-1246 is enabled for the selected data store.
+- Readiness is keyed by `(tenant key, DataStoreId)` and is evaluated from that data store's explicit execution
+  context rather than an HTTP request's route/JWT selection.
+- CDC readiness fails for every conflicting data-store record when two active records resolve to the same
+  physical database. Physical identity comparison does not rely only on raw connection-string text, and
+  diagnostics never log credentials.
 - When CDC is enabled, readiness fails until the bounded initial backfill epoch has materialized a fresh
   `dms.DocumentCache` row for every still-current `dms.Document` row at or below the epoch's captured
   `BackfillTargetContentVersion`.
@@ -63,8 +68,10 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
    required projector state is absent.
 5. Add checks/tests that CDC enablement fails when pre-delete materialization or stale-write fencing is not
    available for the selected data store.
-6. Add tests that non-CDC DMS startup remains valid without `dms.DocumentCache`.
-7. Document the handoff to DMS-1246 for projector backfill, delete materialization, lag, retry, and health
+6. Add provider-specific physical-database identity resolution and tests for duplicate/semantically equivalent
+   data-store connection targets.
+7. Add tests that non-CDC DMS startup remains valid without `dms.DocumentCache`.
+8. Document the handoff to DMS-1246 for projector backfill, delete materialization, lag, retry, and health
    semantics.
 
 ## Out of Scope

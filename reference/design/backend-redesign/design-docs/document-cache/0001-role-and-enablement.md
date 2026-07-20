@@ -63,6 +63,20 @@ should continue to assemble responses directly from relational tables.
 Kafka UI, Kafka infrastructure startup, and connector registration are separate concerns.
 Starting Kafka UI must not imply `KafkaCdc:Enabled`.
 
+### Scope Across Data Stores
+
+The v1 settings are process-wide defaults, not per-data-store CMS options. Each loaded
+data store with a usable connection string is therefore a projection target when
+`Projector:Mode` is `Async` or `CdcRequired`. With `KafkaCdc:Enabled = true`, every such
+data store must run in `CdcRequired` mode and expose its own readiness result; v1 does not
+silently enable CDC for only the data store selected by the most recent HTTP request.
+
+Connector registration remains per data store. A failed or incomplete projector makes
+that data store's CDC readiness false without making normal API correctness for other data
+stores depend on it. Deployment health may also expose an aggregate result that is false
+when any configured CDC data store is not ready. A future CMS-backed per-data-store opt-in
+may override the process default, but it is not part of v1.
+
 ## Cached Shape
 
 `DocumentJson` contains the caller-agnostic, pre-profile, full API resource body emitted

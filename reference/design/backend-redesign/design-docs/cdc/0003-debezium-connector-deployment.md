@@ -29,6 +29,12 @@ The connector deployment is instance-oriented:
 - Advanced SQL Server deployments may consolidate connector registrations only if they
   preserve the same per-instance topic, key, tombstone, ACL, and operational contracts.
 
+The logical connector identity is `(deployment key, tenant key, DataStoreId)`. The tenant
+key is retained only in the deployment controller's administrative state; it is not
+published in the Kafka topic or message. The topic is derived from the deployment-unique
+topic prefix and opaque instance key defined in
+[0002-kafka-topic-and-message-contract.md](0002-kafka-topic-and-message-contract.md).
+
 ## Preconditions
 
 CDC can be enabled only after these conditions are true for the target DMS instance:
@@ -42,10 +48,60 @@ CDC can be enabled only after these conditions are true for the target DMS insta
 - Kafka and Kafka Connect are reachable,
 - the connector principal has the least database permissions required for CDC,
 - the target Kafka topic and ACLs are configured or can be created by the deployment.
+- no other CDC-enabled data-store record in the deployment resolves to the same physical
+  database.
 
 `-EnableKafkaUI` or equivalent local UI flags do not enable CDC. Bootstrap should add a
 separate explicit CDC opt-in, such as `-EnableKafkaCdc`, before registering source
 connectors.
+
+## One Stream per Physical Document Set
+
+The v1 contract requires a one-to-one mapping between a logical instance topic and the
+physical database containing its `dms.DocumentCache`. CMS may allow multiple data-store
+records to reference the same database, but CDC must not register a separate connector and
+topic for each alias. `dms.DocumentCache` has no tenant or data-store discriminator, so
+those topics would expose duplicate copies of the same physical document set under
+potentially different ACLs.
+
+The CDC prerequisite implementation must resolve a provider-specific physical database
+identity from each configured connection and reject CDC enablement when two active
+`(tenant key, DataStoreId)` entries resolve to the same identity. Comparison must not rely
+only on raw connection-string text; semantically equivalent connection strings and server
+aliases must be normalized or confirmed after connecting. The diagnostic identifies the
+conflicting opaque data-store IDs without logging credentials or tenant display names.
+
+Rejecting the conflict is safer than choosing an arbitrary canonical alias: it avoids
+silently changing a topic's security boundary or making topic stability depend on which
+alias happens to load first. Ordinary non-CDC DMS operation is unaffected by this CDC
+validation failure.
+
+## Multi-Instance Reconciliation
+
+Connector registration is not a one-time single-instance startup action in a dynamic CMS
+deployment. A deployment-owned CDC reconciler must periodically compare the tenant-scoped
+data-store inventory with its logical connector registrations and per-data-store CDC
+readiness:
+
+- a newly discovered data store starts with CDC not ready; after schema validation,
+  projector backfill, and per-data-store readiness pass, its connector and ACL/topic
+  resources may be created,
+- a connection/provider/physical-database change stops the old connector before replacing
+  it and requires the new physical source to complete the applicable backfill/snapshot
+  procedure before readiness returns,
+- route-qualifier-only changes do not rename the topic or restart the connector while the
+  `DataStoreId` and physical database remain unchanged,
+- a removed data store stops its connector, but topic deletion, offset deletion, slot/capture
+  cleanup, and ACL retirement remain explicit retention-policy actions and are never
+  inferred from one missing refresh,
+- a physical-database alias conflict makes every conflicting logical connector not ready
+  until the CMS configuration is corrected.
+
+The DMS hosted projector owns per-data-store projection lifecycle; it does not call the
+Kafka Connect REST API. Local bootstrap may perform a one-shot reconciliation for its
+selected data store. Production reconciliation may be implemented by deployment
+automation or a dedicated controller, but it must implement the same state transitions
+and idempotency contract.
 
 ## Captured Table
 
@@ -264,6 +320,11 @@ Each connector registration must expose enough status for operators to answer:
 - what is the current connector lag,
 - what was the last error,
 - has the initial snapshot completed.
+
+Status and readiness are per logical data store. An aggregate deployment signal may report
+not ready when any CDC-enabled data store is not ready, but one instance's connector or
+projector failure must not stop unrelated DMS API instances or conceal their individual
+status.
 
 Connector failures should not corrupt DMS writes. DMS write correctness remains tied to
 the relational store and `dms.Document` stamps, not to Kafka delivery.

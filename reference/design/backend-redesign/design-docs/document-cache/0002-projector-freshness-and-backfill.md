@@ -19,11 +19,23 @@ The projector uses the same relational reconstitution and materialization pipeli
 GET/query response assembly. Database triggers, database jobs, and external workers are
 not the v1 projector ownership model.
 
-The projector work unit is:
+Inside one database execution context, the projector work unit is:
 
 ```text
 (DocumentId, target ContentVersion)
 ```
+
+At the hosted-process boundary it is:
+
+```text
+(tenant key, DataStoreId, DocumentId, target ContentVersion)
+```
+
+`DocumentId` and `ContentVersion` are database-local. Every in-memory queue, retry
+scheduler, or other state shared across data stores must retain the tenant-scoped data
+store identity and dispatch the work into that data store's explicit execution context.
+State stored inside the target database does not need redundant tenant or data-store
+columns.
 
 Projection is idempotent and monotonic per document. A retry or backfill for a lower
 `ContentVersion` must not overwrite a newer cache row, and queued work must not recreate
@@ -83,6 +95,31 @@ row.
 The implementation may use an in-memory queue, persisted state, or both, but the database
 write itself must enforce the stale-write guard so process restarts and retry races do
 not corrupt cache state.
+
+### Multi-Instance Supervision
+
+The application-hosted component is a supervisor with one logical projector execution
+context per loaded `(tenant key, DataStoreId)`. It enumerates tenant-partitioned data-store
+configuration independently of JWTs and route qualifiers. For each unit of work it creates
+a non-HTTP service scope, explicitly selects the target `DataStore`/connection, and then
+uses the shared repository and materialization services. It must not wait for
+`ResolveDataStoreMiddleware` or reuse whichever request-scoped `IDataStoreSelection`
+happened to run most recently.
+
+The supervisor periodically refreshes/reconciles the CMS-backed inventory:
+
+- start a projector and initial backfill for a newly discovered data store,
+- cancel/drain and replace the execution context when its connection/provider changes,
+- leave the execution context unchanged for route-qualifier-only changes,
+- stop accepting work and retire the projector when a data store or tenant is removed,
+- isolate failures and concurrency limits so one unavailable database cannot stop
+  projection for unrelated data stores.
+
+Removal from one refresh is not authority to delete `dms.DocumentCache`, projector state,
+Kafka topics, offsets, or database CDC artifacts. Destructive retirement remains an
+explicit operator/deployment action. The supervisor publishes inventory and readiness
+changes for the separate connector reconciler defined by DMS-1245; it does not manage
+Kafka Connect itself.
 
 ## Backfill and Rebuild
 

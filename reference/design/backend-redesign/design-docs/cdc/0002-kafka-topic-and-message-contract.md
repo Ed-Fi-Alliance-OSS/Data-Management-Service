@@ -36,7 +36,7 @@ Recommended topic pattern:
 <topic-prefix>.instance.<instance-key>.documents.v1
 ```
 
-Default local topic prefix:
+Default local-only topic prefix:
 
 ```text
 edfi.dms
@@ -54,8 +54,20 @@ instance registry. Hosted deployments may use a different stable opaque alias, b
 topic name must not include district names, tenant display names, school years, or other
 human-readable sensitive identifiers.
 
-The `<topic-prefix>` may include deployment, environment, or tenant scoping when a host
-needs another namespace boundary, for example `edfi.prod.us-east`.
+`DataStoreId` is scoped to one CMS deployment; it is not globally unique across separate
+CMS installations. Therefore, a production `<topic-prefix>` must include a stable,
+Kafka-safe, opaque deployment/environment key that is unique among all DMS deployments
+sharing the Kafka cluster. For example:
+
+```text
+edfi.deployment-a.prod.dms.instance.data-store-12.documents.v1
+```
+
+The short `edfi.dms` prefix is allowed only for an isolated local/test broker. Production
+startup or connector generation must reject that default unless the host explicitly
+asserts that the Kafka cluster is dedicated to one DMS/CMS deployment. Tenant names must
+not be used to provide uniqueness; they remain administrative routing scope and are not
+part of the public topic contract.
 
 ## Topic Shape
 

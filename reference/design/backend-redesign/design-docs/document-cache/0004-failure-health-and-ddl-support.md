@@ -101,6 +101,12 @@ DocumentCache health should report:
 - whether CDC-mode pre-delete materialization support is available for the selected
   provider.
 
+Every signal is evaluated and exposed per `(tenant key, DataStoreId)` execution context.
+Logs and metrics should use opaque/sanitized identifiers and must not include connection
+strings or tenant display names. A deployment-level aggregate may be reported in addition
+to, but never instead of, the per-data-store results. One failed data store must not hide
+healthy peers or stop their projector loops.
+
 CDC readiness requires all of the following:
 
 - `Projector:Mode = CdcRequired`,
@@ -156,7 +162,8 @@ The implementation should emit structured logs and metrics for:
 - projector lag by version and age.
 
 Metrics should be tagged by provider, projector mode, project/resource where safe, and
-failure kind. They should not include document bodies or raw student data.
+failure kind, plus an opaque data-store identity where cardinality policy permits. They
+should not include document bodies or raw student data.
 
 ## Consequences
 

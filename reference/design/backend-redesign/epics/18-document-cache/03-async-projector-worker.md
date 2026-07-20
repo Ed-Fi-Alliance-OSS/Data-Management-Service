@@ -13,8 +13,10 @@ related:
 Implement the DMS-owned background projector that keeps `dms.DocumentCache` caught up with relational
 representation changes.
 
-The projector consumes work by `(DocumentId, target ContentVersion)`, materializes the caller-agnostic document,
-and upserts `dms.DocumentCache` only when the target version is still current.
+The hosted supervisor consumes work by `(tenant key, DataStoreId, DocumentId, target ContentVersion)`, dispatches
+it through an explicit non-HTTP execution context for that data store, materializes the caller-agnostic document,
+and upserts `dms.DocumentCache` only when the target version is still current. Within one database, the persisted
+work/fencing key remains `(DocumentId, target ContentVersion)`.
 
 ## Dependencies
 
@@ -29,9 +31,14 @@ and upserts `dms.DocumentCache` only when the target version is still current.
 ## Acceptance Criteria
 
 - DMS starts the projector only when projector mode is `Async` or `CdcRequired`.
-- The projector scans `dms.Document` in `ContentVersion` order for missing or stale cache rows.
+- A supervisor enumerates all loaded tenant/data-store configurations and runs one logically isolated projector
+  execution context per `(tenant key, DataStoreId)` with a usable connection string.
+- Background execution explicitly selects the target data store in a new service scope; it does not depend on
+  request-scoped route resolution, JWT claims, or the most recently handled request.
+- Each projector scans its own database's `dms.Document` in `ContentVersion` order for missing or stale cache
+  rows.
 - The projector can also accept queued/enqueued work from write/read paths for specific `(DocumentId,
-  ContentVersion)` targets.
+  ContentVersion)` targets, but any shared queue retains `(tenant key, DataStoreId)` as part of the dispatch key.
 - The projector materializes documents through the shared materialization service.
 - The projector does not write cache rows when the materialized `DocumentJson` server metadata disagrees with
   the cache columns; it records the attempt as a projection failure.
@@ -39,17 +46,25 @@ and upserts `dms.DocumentCache` only when the target version is still current.
 - The projector updates projection state for scanned/projected versions and last successful projection time.
 - The projector skips work for deleted documents without recreating cache rows.
 - The projector stops gracefully during application shutdown and does not leave partial cache rows.
-- Tests cover create, update, stale queued work, deleted-document work, and disabled-mode behavior.
+- The supervisor reconciles refreshed CMS configuration: it starts/backfills newly discovered data stores,
+  replaces execution contexts after connection/provider changes, ignores route-qualifier-only changes, and stops
+  workers for removed data stores without deleting database or Kafka artifacts.
+- Work queues, concurrency limits, failures, and cancellation are isolated so one unavailable data store does not
+  stop projection for its peers.
+- Tests cover multiple tenants/data stores with colliding `DocumentId`/`ContentVersion` values, create, update,
+  stale queued work, deleted-document work, dynamic add/change/remove, failure isolation, and disabled-mode
+  behavior.
 
 ## Tasks
 
-1. Add hosted-service lifecycle wiring for the projector.
-2. Implement candidate scanning over `dms.Document` and stale/missing cache detection.
-3. Add an internal enqueue API for targeted projection work.
-4. Call the shared materializer and guarded cache upsert.
-5. Surface materializer invariant failures through the projection failure path.
-6. Persist projector progress in `dms.DocumentCacheProjectionState`.
-7. Add provider integration tests for PostgreSQL and SQL Server.
+1. Add hosted supervisor lifecycle wiring and a non-HTTP per-data-store execution-scope factory.
+2. Reconcile the tenant-partitioned `IDataStoreProvider` inventory throughout process lifetime.
+3. Implement candidate scanning over each target database's `dms.Document` and stale/missing cache detection.
+4. Add an internal enqueue API whose process-level work key includes tenant and data-store identity.
+5. Call the shared materializer and guarded cache upsert in the explicitly selected data-store scope.
+6. Surface materializer invariant failures through the projection failure path.
+7. Persist projector progress in each database's `dms.DocumentCacheProjectionState`.
+8. Add multi-instance and provider integration tests for PostgreSQL and SQL Server.
 
 ## Out of Scope
 

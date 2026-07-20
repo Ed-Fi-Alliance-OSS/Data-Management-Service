@@ -39,6 +39,7 @@ streaming feature.
 - `TBD` — `04-message-contract-tests.md` — Add Kafka message contract tests
 - `TBD` — `05-e2e-kafka-scenarios.md` — Replace legacy Kafka E2E expectations with relational CDC scenarios
 - `TBD` — `06-ops-docs-runbooks.md` — Add CDC setup, monitoring, recovery, and security runbooks
+- `TBD` — `07-dynamic-instance-connector-reconciliation.md` — Reconcile dynamic multi-instance CDC connectors
 
 ## Cross-Story Dependency Notes
 
@@ -59,6 +60,9 @@ streaming feature.
   `deleted=true` / `EdFiDoc` expectations.
 - Story 06 can draft docs in parallel but should not publish production guidance until Stories 00-03 settle the
   actual command and connector surfaces.
+- Story 07 depends on Stories 00, 02, and 03 plus the per-data-store projector/readiness work from DMS-1246. It
+  owns continuous connector lifecycle for dynamic CMS changes; Story 03 remains the one-shot local/bootstrap
+  entry point.
 
 ## Dependency Matrix with `18-document-cache`
 
@@ -71,12 +75,14 @@ streaming feature.
 | `17-04-message-contract-tests.md` | 18-02, 18-06, 18-07, 18-10 | Mixed | Fixture-only tests can start earlier. Source-level delete tests require materialization, fencing, and provider verification. |
 | `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-06, 18-07, 18-09, 18-10, plus 17-00 through 17-04 | Hard | API-driven Kafka scenarios need projector, readiness, immediate-delete path, and provider proof. |
 | `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | CDC runbooks must document DocumentCache failure, readiness, recovery, and delete blocking behavior. |
+| `17-07-dynamic-instance-connector-reconciliation.md` | 18-03, 18-04, 18-09, 18-10, plus 17-00, 17-02, 17-03 | Hard | Dynamic reconciliation consumes per-data-store projector lifecycle/readiness, physical source validation, templates, and idempotent registration. |
 
 ## Scope Guardrails
 
 - Do not capture normalized resource tables directly.
 - Do not capture `dms.Document` as the source payload.
 - Do not publish shared cross-instance Kafka topics that rely on an instance field in the value.
+- Do not publish two independently authorized instance topics from the same physical `dms.DocumentCache`.
 - Do not include `DocumentId` in the public Kafka key or value contract.
 - Do not add DMS request-path dual writes to Kafka.
 - Do not make `-EnableKafkaUI` imply connector registration.
@@ -96,4 +102,6 @@ streaming feature.
 - Published records conform to the v1 topic/message contract from DMS-1245.
 - Local setup and E2E flows can register connectors against the selected data store without hard-coded database
   names.
+- Production topic prefixes are unique across DMS/CMS deployments sharing Kafka, and dynamic data-store
+  add/change/remove transitions reconcile connector state without automatic destructive cleanup.
 - Documentation covers setup, security, monitoring, restart, offset reset, resnapshot, and teardown.
