@@ -222,6 +222,32 @@ public class Given_A_Known_Gap_Whose_Sql_Server_Side_Is_Marked_Covered
 }
 
 [TestFixture]
+public class Given_A_Known_Gap_That_Lost_Its_Postgresql_Coverage
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // KnownGap means the case is proven on PostgreSQL but missing on SQL Server. A row that loses its
+        // PostgreSQL proof (coverage drops to Gap) must not still validate as a well-formed KnownGap. The
+        // dropped PostgreSQL location and added owner isolate the mutation to the coverage state under test.
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[1] = scenarios[1] with
+        {
+            PgsqlCoverage = EngineCoverage.Gap,
+            PgsqlLocations = [],
+            PgsqlGapOwner = "DMS-1285",
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_a_known_gap_must_stay_postgresql_covered() =>
+        _violations.Should().Contain(v => v.Contains("PgsqlCoverage=Covered", StringComparison.Ordinal));
+}
+
+[TestFixture]
 public class Given_A_Gap_Owner_On_A_Non_Known_Gap_Row
 {
     private IReadOnlyList<string> _violations = null!;

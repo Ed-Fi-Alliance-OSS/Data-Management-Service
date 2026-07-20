@@ -10,9 +10,15 @@ namespace EdFi.DataManagementService.Backend.Tests.Common.Parity;
 /// <see cref="EntryPointKind"/>. The catalog records the fixture and reusable assertion/helper entry point
 /// separately from the per-engine test locations: a row is <see cref="EntryPointKind.Direct"/> when it names
 /// its own provider-neutral shared contract, <see cref="EntryPointKind.Inherited"/> when it reuses the shared
-/// contract of the scenario it defers to or of its canonical family, and
+/// contract of the scenario it defers to or of its canonical family <b>at the same production boundary</b>, and
 /// <see cref="EntryPointKind.ProviderSpecific"/> when no shared contract applies and its existing per-engine or
 /// unit test locations are the effective entry points (justified by a recorded rationale).
+///
+/// Inheritance is boundary-scoped on purpose. A shared assertion pins one production mechanic
+/// (<see cref="ParityScenario.Boundary"/>), and a variant may deliberately exercise a different mechanic than its
+/// canonical family (for example an immutable-identity rejection variant of a persister family). Inheriting a
+/// contract across mechanics would certify assertions the variant never runs, so a variant whose boundary differs
+/// from the scenario it would inherit from resolves from its own recorded entry point instead.
 /// </summary>
 public static class ParityEntryPointResolution
 {
@@ -51,7 +57,11 @@ public static class ParityEntryPointResolution
         if (!string.IsNullOrWhiteSpace(scenario.CoveredByScenarioId))
         {
             ParityScenario? covered = FindById(catalog, scenario.CoveredByScenarioId);
-            if (covered is not null && !string.IsNullOrWhiteSpace(covered.SharedEntryPoint))
+            if (
+                covered is not null
+                && covered.Boundary == scenario.Boundary
+                && !string.IsNullOrWhiteSpace(covered.SharedEntryPoint)
+            )
             {
                 return new EffectiveEntryPoint(
                     EntryPointKind.Inherited,
@@ -68,7 +78,16 @@ public static class ParityEntryPointResolution
         if (!string.Equals(canonicalId, scenario.Id, StringComparison.Ordinal))
         {
             ParityScenario? family = FindById(catalog, canonicalId);
-            if (family is not null && !string.IsNullOrWhiteSpace(family.SharedEntryPoint))
+
+            // Only inherit the family's shared contract when the variant pins the same production mechanic.
+            // A variant at a different boundary asserts a different behavior, so the family's assertions would
+            // be the wrong contract for it; such a variant must record its own Direct entry point (or a
+            // provider-specific rationale) and is resolved by the branches below.
+            if (
+                family is not null
+                && family.Boundary == scenario.Boundary
+                && !string.IsNullOrWhiteSpace(family.SharedEntryPoint)
+            )
             {
                 return new EffectiveEntryPoint(
                     EntryPointKind.Inherited,

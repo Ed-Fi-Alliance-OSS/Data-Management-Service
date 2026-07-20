@@ -141,7 +141,8 @@ public static partial class ParityScenarioCatalog
             ProductionBoundary.NoProfileMerge,
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
-            ["It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"]
+            ["It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"],
+            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertClearedOmittedInlinedColumn"
         ),
         new ParityScenario
         {
@@ -362,7 +363,8 @@ public static partial class ParityScenarioCatalog
             ProductionBoundary.NoProfileMerge,
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
-            ["It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put"]
+            ["It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put"],
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionChangedPutIdentity"
         ),
         Gap(
             "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
@@ -411,6 +413,8 @@ public static partial class ParityScenarioCatalog
                 "It_returns_explicit_immutable_identity_failure_for_post_as_update",
                 "It_does_not_commit_row_changes_for_rejected_post_as_update",
             ],
+            sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertImmutableIdentityRejected"
+                + " + NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges",
             boundaryDetail: "RelationalWriteIdentityStability.TryBuildFailureResult"
         ),
         Gap(

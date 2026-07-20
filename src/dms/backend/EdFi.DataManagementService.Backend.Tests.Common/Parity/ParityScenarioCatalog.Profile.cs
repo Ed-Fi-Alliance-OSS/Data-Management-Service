@@ -403,15 +403,15 @@ public static partial class ParityScenarioCatalog
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionCollectionItem",
-            "A non-creatable new extension-scope item is rejected; provider-independent, validated at the synthesizer unit level.",
-            "Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_Creatable_False",
-            ["It_identifies_the_extension_scope_as_the_rejected_scope"]
+            "A non-creatable new extension-child collection item is rejected even though its parent extension scope is visible-and-creatable for matched-update; provider-independent, validated at the synthesizer unit level.",
+            "Given_extension_child_non_creatable_insert_with_existing_visible_parent_update_allowed",
+            ["It_identifies_the_extension_child_collection_scope_as_the_rejected_scope"]
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
-            "The three-level chain (existing middle parent allows descendant create; a new middle parent denies it) is provider-independent, validated at the synthesizer unit level.",
+            "A three-level chain where the top-level parent and the level-2 child are matched-updates and a new non-creatable level-3 grandchild with no stored match is rejected, the rejection carrying the level-3 (grandchildren) scope so walker recursion is proven to thread the rejection through both nested levels; provider-independent, validated at the synthesizer unit level.",
             "Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3",
-            ["It_returns_a_rejection"]
+            ["It_returns_a_rejection", "It_identifies_the_grandchildren_scope_in_the_rejection"]
         ),
         // ProfileHiddenExtensionChildCollectionPreservation + variant
         Profile(

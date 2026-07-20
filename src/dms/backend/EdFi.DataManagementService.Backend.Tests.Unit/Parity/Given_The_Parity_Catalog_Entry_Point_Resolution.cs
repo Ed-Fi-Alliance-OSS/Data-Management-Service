@@ -45,3 +45,113 @@ public class Given_The_Parity_Catalog_Entry_Point_Resolution
         ParityCatalogResolution.ResolveSourceFileLocations(sourceSearchRoot).Should().BeEmpty();
     }
 }
+
+/// <summary>
+/// A variant may deliberately pin a different production mechanic than its canonical family. Because a shared
+/// assertion pins one mechanic, inheriting the family's contract across mechanics would certify assertions the
+/// variant never runs, so effective-entry-point resolution must not inherit a family contract across boundaries.
+/// </summary>
+[TestFixture]
+public class Given_A_Variant_At_A_Different_Boundary_Than_Its_Canonical_Family
+{
+    private EffectiveEntryPoint _resolved = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // A real canonical id so CanonicalIdOf recognizes the "/variant" row as belonging to this family.
+        var family = new ParityScenario
+        {
+            Id = "NoProfilePostAsUpdate",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "canonical family at the persister boundary",
+            SharedEntryPoint = "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace",
+            Boundary = ProductionBoundary.NoProfilePersister,
+            PgsqlLocations = [new("Family.cs", "Given_A_Family", ["It_updates"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Gap,
+            Classification = ParityClassification.KnownGap,
+            MssqlGapOwner = "DMS-1285",
+        };
+        var variant = new ParityScenario
+        {
+            Id = "NoProfilePostAsUpdate/RejectedAtADifferentBoundary",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "variant that pins a different mechanic than its family",
+            Boundary = ProductionBoundary.IdentityStability,
+            PgsqlLocations = [new("Sample.cs", "Given_A_Sample", ["It_rejects"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Gap,
+            Classification = ParityClassification.KnownGap,
+            MssqlGapOwner = "DMS-1285",
+            ProviderSpecificEntryPointRationale =
+                "distinct-boundary variant; the recorded fixture is its entry point",
+        };
+
+        _resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(variant, [family, variant])!;
+    }
+
+    [Test]
+    public void It_does_not_inherit_the_family_shared_contract() =>
+        _resolved.Kind.Should().Be(EntryPointKind.ProviderSpecific);
+
+    [Test]
+    public void It_does_not_carry_the_family_shared_value() => _resolved.SharedValue.Should().BeNull();
+}
+
+/// <summary>
+/// The complement: a variant that pins the same production mechanic as its canonical family still inherits the
+/// family's shared contract, so the boundary guard narrows inheritance without disabling it.
+/// </summary>
+[TestFixture]
+public class Given_A_Variant_At_The_Same_Boundary_As_Its_Canonical_Family
+{
+    private EffectiveEntryPoint _resolved = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var family = new ParityScenario
+        {
+            Id = "NoProfilePostAsUpdate",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "canonical family at the persister boundary",
+            SharedEntryPoint = "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace",
+            Boundary = ProductionBoundary.NoProfilePersister,
+            PgsqlLocations = [new("Family.cs", "Given_A_Family", ["It_updates"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Gap,
+            Classification = ParityClassification.KnownGap,
+            MssqlGapOwner = "DMS-1285",
+        };
+        var variant = new ParityScenario
+        {
+            Id = "NoProfilePostAsUpdate/SameBoundaryVariant",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "variant pinning the same mechanic as its family",
+            Boundary = ProductionBoundary.NoProfilePersister,
+            PgsqlLocations = [new("Sample.cs", "Given_A_Sample", ["It_updates"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Gap,
+            Classification = ParityClassification.KnownGap,
+            MssqlGapOwner = "DMS-1285",
+        };
+
+        _resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(variant, [family, variant])!;
+    }
+
+    [Test]
+    public void It_inherits_the_family_shared_contract() =>
+        _resolved.Kind.Should().Be(EntryPointKind.Inherited);
+
+    [Test]
+    public void It_carries_the_family_shared_value_and_source() =>
+        (_resolved.SharedValue, _resolved.InheritedFromScenarioId)
+            .Should()
+            .Be(
+                (
+                    "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace",
+                    "NoProfilePostAsUpdate"
+                )
+            );
+}

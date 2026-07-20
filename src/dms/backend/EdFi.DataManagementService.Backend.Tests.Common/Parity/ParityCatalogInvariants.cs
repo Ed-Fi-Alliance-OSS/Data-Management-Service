@@ -280,10 +280,24 @@ public static class ParityCatalogInvariants
     {
         switch (scenario.Classification)
         {
-            case ParityClassification.KnownGap when scenario.MssqlCoverage != EngineCoverage.Gap:
-                violations.Add(
-                    $"{id}: a KnownGap row must have MssqlCoverage=Gap because its SQL Server twin is missing."
-                );
+            case ParityClassification.KnownGap:
+                // A KnownGap row records a case that IS proven on PostgreSQL but whose SQL Server twin is missing.
+                // Both halves of that meaning must hold: PostgreSQL must be Covered (or the row has silently lost
+                // its only proof) and SQL Server must be a Gap.
+                if (scenario.PgsqlCoverage != EngineCoverage.Covered)
+                {
+                    violations.Add(
+                        $"{id}: a KnownGap row must have PgsqlCoverage=Covered because the classification means the case is proven on PostgreSQL while its SQL Server twin is missing."
+                    );
+                }
+
+                if (scenario.MssqlCoverage != EngineCoverage.Gap)
+                {
+                    violations.Add(
+                        $"{id}: a KnownGap row must have MssqlCoverage=Gap because its SQL Server twin is missing."
+                    );
+                }
+
                 break;
 
             case ParityClassification.Both

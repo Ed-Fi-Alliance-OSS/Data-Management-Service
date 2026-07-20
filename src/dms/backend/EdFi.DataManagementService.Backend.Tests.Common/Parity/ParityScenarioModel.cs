@@ -86,7 +86,9 @@ public enum EntryPointKind
     /// <summary>
     /// The row reuses the shared contract of the scenario it defers to
     /// (<see cref="ParityScenario.CoveredByScenarioId"/>) or of its canonical family
-    /// (via <c>ParityScenarioCatalog.CanonicalIdOf</c>).
+    /// (via <c>ParityScenarioCatalog.CanonicalIdOf</c>), and only when that scenario pins the same production
+    /// <see cref="ParityScenario.Boundary"/> — inheriting a contract across mechanics would certify assertions
+    /// the row never exercises.
     /// </summary>
     Inherited,
 
