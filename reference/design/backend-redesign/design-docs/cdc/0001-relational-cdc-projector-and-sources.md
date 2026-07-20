@@ -27,9 +27,10 @@ One Debezium connector uses two complementary sources:
 | `dms.DocumentCache` delete or truncate | Ignore |
 | Any other `dms.Document` operation or snapshot/read | Ignore |
 
-`dms.DocumentCache.DocumentJson` supplies the caller-agnostic API-shaped upsert payload.
-`dms.Document` supplies the authoritative lifecycle delete and stable `DocumentUuid`.
-Cache deletion has no domain meaning.
+`dms.DocumentCache.DocumentJson` supplies the caller-agnostic API-shaped upsert payload,
+and `dms.DocumentCache.StreamEtag` supplies the DMS-computed ETag for that fixed stream
+representation. `dms.Document` supplies the authoritative lifecycle delete and stable
+`DocumentUuid`. Cache deletion has no domain meaning.
 
 The projector uses the current source/cache difference as both durable work inventory
 and completeness evidence. A cache row is fresh exactly when its `ContentVersion` equals
@@ -85,6 +86,8 @@ and restart rediscovery safe.
   connector snapshot/topic recovery.
 - Both source tables use `DocumentUuid` as the connector key and share one connector task
   so a committed upsert preceding canonical deletion retains per-key order.
+- DMS, not Kafka Connect or a downstream consumer, owns stream ETag derivation; the
+  connector copies the projected opaque value into the public message shape.
 - Consumers tolerate duplicate/replayed upserts and tombstones without a prior upsert,
   using `contentVersion` as their stale-write guard.
 

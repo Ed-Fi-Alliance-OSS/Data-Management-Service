@@ -480,8 +480,7 @@ the authoritative enablement, projection, lifecycle, and CDC behavior is defined
 The cached `DocumentJson` is the caller-agnostic, pre-profile, full API resource body
 emitted by reconstitution. It includes top-level `id` and `_lastModifiedDate`, with
 `link` subtrees already present when link injection is compiled into the read plan. It
-does not store one reusable `_etag`; `_etag` is composed for the served representation
-from `ContentVersion` and the request's `variantKey`.
+does not contain a reusable `_etag`.
 Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
 strip pass runs on the projected document immediately before serialization. The served `_etag` is
 then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
@@ -489,8 +488,15 @@ participate in the request's `variantKey` (see
 [link-injection.md](link-injection.md#cache-and-etag)).
 
 `ContentVersion` and `LastModifiedAt` are the representation metadata associated with
-`DocumentJson`; `_etag` is not stored in this table. See the authoritative cached-document
-contract for consistency and freshness rules.
+`DocumentJson`. `StreamEtag` is a separate opaque value computed by the DMS
+cache-projection materializer through the shared served-ETag composer. It applies only to
+the fixed CDC representation: JSON, no readable profile, the cached document's link mode,
+and identity content coding. Ordinary resource rows use the link-bearing context even
+when API resource links are disabled; descriptor rows use the descriptor context with
+links off. Kafka Connect copies `StreamEtag` into the public stream envelope and expanded
+document. API cache reads ignore it and compose their request-specific ETag from
+`ContentVersion` and the active request `variantKey`. See the authoritative
+cached-document contract for consistency and freshness rules.
 
 Denormalized resource naming:
 
@@ -508,6 +514,7 @@ CREATE TABLE dms.DocumentCache (
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
+    StreamEtag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
@@ -529,6 +536,7 @@ CREATE TABLE dms.DocumentCache (
     ResourceName nvarchar(256) NOT NULL,
     ResourceVersion nvarchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
+    StreamEtag varchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),

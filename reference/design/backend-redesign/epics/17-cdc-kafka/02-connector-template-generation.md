@@ -25,11 +25,14 @@ source routing and serialized public contract.
    prefix, replication/capture identity, and snapshot behavior.
 2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
    instance values.
-3. Configure source classification, value shaping, JSON expansion, key simplification,
-   tombstone handling, and topic routing.
+3. Configure source classification, value shaping, JSON expansion, opaque `StreamEtag`
+   copying to envelope `etag` and `document._etag`, key simplification, tombstone
+   handling, and topic routing.
 4. Add a small Ed-Fi routing/shaping SMT only if verified stock transforms cannot safely
    implement the contract.
-5. Validate all version-specific properties and transform classes against the pinned
+5. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
+   of connector transforms.
+6. Validate all version-specific properties and transform classes against the pinned
    `edfialliance/ed-fi-kafka-connect` image.
 
 ## Acceptance Evidence
@@ -38,7 +41,10 @@ source routing and serialized public contract.
   prefixes or incomplete inputs.
 - Fixture tests cover every retained and dropped operation from each source table.
 - Serialized-record tests enforce the topic/message ADR, including exact key/value byte
-  forms, expanded JSON, timestamp formatting, and tombstones.
+  forms, exact copying of `StreamEtag` to both public locations, expanded JSON,
+  timestamp formatting, and tombstones.
+- Tests fail when either public ETag differs from the projected source value and prove
+  the transform does not attempt to derive a variant key.
 - A pinned-image smoke test proves configured transform classes load.
 
 ## Out of Scope

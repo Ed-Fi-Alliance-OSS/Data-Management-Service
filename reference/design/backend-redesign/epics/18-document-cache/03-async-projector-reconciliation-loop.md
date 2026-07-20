@@ -41,7 +41,7 @@ defined by the authoritative design.
 - Concurrency tests cover source update and deletion during materialization through the
   shared guard.
 - Completeness tests prove lower-version gaps remain visible and no timestamp, epoch, or
-  high-watermark becomes a second work predicate.
+  `StreamEtag` comparison, or high-watermark becomes a second work predicate.
 
 ## Out of Scope
 

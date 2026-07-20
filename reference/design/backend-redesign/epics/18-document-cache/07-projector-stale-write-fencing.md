@@ -25,7 +25,8 @@ optional direct fill.
 ## Deliverables
 
 1. Define the guarded cache write contract.
-2. Implement PostgreSQL and SQL Server guarded upserts.
+2. Implement PostgreSQL and SQL Server guarded upserts that persist `StreamEtag` in the
+   same row as its `ContentVersion` and `DocumentJson`.
 3. Route every projector/direct-fill write through the shared guard.
 4. Report guarded no-ops as observable stale skips.
 
@@ -33,6 +34,8 @@ optional direct fill.
 
 - Provider integration tests cover out-of-order candidates, concurrent source update,
   deletion racing materialization, duplicate loops, and parity.
+- Tests prove a stale materialization cannot pair an old `StreamEtag` with a newer cache
+  row or replace the ETag for a higher `ContentVersion`.
 - Tests prove payload timestamps do not become a second guard input.
 - Telemetry distinguishes stale skips from unexpected database failures.
 

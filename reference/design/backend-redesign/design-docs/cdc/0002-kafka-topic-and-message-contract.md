@@ -126,9 +126,16 @@ Database Pascal-case columns are renamed to lower camel case. `contractVersion` 
 
 The stream `variantKey` uses the API five-component shape
 `{schemaEpoch}.j._.{linkFlag}.i`: JSON, no readable profile, the published document's link
-mode, and identity content coding. `etag` is composed from `contentVersion` and that
-variant key. It is not a digest, an HTTP quoted entity-tag, or a value read from a cache
-`Etag` column. Consumers treat it as opaque and use `contentVersion` for ordering.
+mode, and identity content coding. Ordinary resource documents are the link-bearing
+cache intermediate and use `l` regardless of the API `ResourceLinks:Enabled` setting;
+descriptors use the backend's descriptor representation context and use `n`.
+
+DMS computes `StreamEtag` while materializing `dms.DocumentCache` by calling the same
+served-ETag composer as the API with that fixed stream context. Kafka Connect copies the
+opaque value to envelope `etag` and embedded `document._etag`; it does not derive
+`schemaEpoch`, interpret link configuration, or implement DMS ETag encoding. `etag` is
+not a digest or an HTTP quoted entity-tag. Consumers preserve it as opaque and use
+`contentVersion` for ordering.
 
 `document` is caller-agnostic, pre-profile full resource JSON. It includes `id`, the
 stream `_etag`, and `_lastModifiedDate`. When the compiled read plan injects reference
@@ -137,9 +144,11 @@ projection. It excludes authorization arrays, EdOrg hierarchy JSON, API client i
 and readable-profile-specific output.
 
 Envelope `documentUuid`, `etag`, and `lastModifiedAt` exactly match embedded `id`,
-`_etag`, and `_lastModifiedDate`. If Debezium exposes `DocumentJson` as a string, the
-DMS-1240 Ed-Fi expand-JSON SMT runs with `sourceFields=document`; another implementation
-may replace that SMT only while preserving the identical structured contract.
+`_etag`, and `_lastModifiedDate`. The source cache row carries the DMS-computed
+`StreamEtag`; both public ETag locations are copies of that single source value. If
+Debezium exposes `DocumentJson` as a string, the DMS-1240 Ed-Fi expand-JSON SMT runs with
+`sourceFields=document`; another implementation may replace that SMT only while
+preserving the identical structured contract.
 
 A non-null value is an upsert. Duplicates, replays, and snapshots are allowed. Consumers
 apply a record only when its `contentVersion` is newer than the state they retain for the
@@ -176,7 +185,8 @@ The public topic never exposes:
 - Debezium `before`, `after`, `source`, or `op` envelopes,
 - Kafka Connect `schema` / `payload` wrappers,
 - JSON-quoted keys or escaped `DocumentJson`,
-- internal `DocumentId` or operational `ComputedAt`,
+- internal `DocumentId`, the source-only `StreamEtag` column name, or operational
+  `ComputedAt`,
 - Avro, Protobuf, or Schema Registry subjects,
 - legacy `EdFiDoc` or `deleted=true` shapes.
 
@@ -186,6 +196,11 @@ The public topic never exposes:
 - One ACL protects one instance while resource metadata supports downstream routing.
 - Public identity and per-document ordering survive canonical deletion because the key
   is independent of the value.
+- Consumers can preserve the exact DMS stream-representation ETag without access to
+  `EffectiveSchemaHash` or duplicating DMS representation rules.
+- `StreamEtag` is not a reusable ETag for a differently profiled, link-shaped, formatted,
+  or content-coded HTTP response; an HTTP server composes its own validator for the
+  representation it serves.
 - DMS-1232 KafkaMessaging coverage must replace the shared-topic,
   `deleted=false`/`deleted=true`, and `EdFiDoc` expectations.
 
@@ -198,3 +213,5 @@ The public topic never exposes:
 | Shared topic with `instanceId` in the value | Rejected: consumer filtering is not a security boundary and tombstones have no value. |
 | Include `DocumentId` | Rejected: it is an internal surrogate with no public contract role. |
 | Publish delete envelopes | Rejected: compacted state streams use Kafka tombstones and no deleted body is guaranteed. |
+| Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |
+| Compose `_etag` in Kafka Connect | Rejected: schema and representation selection belong to DMS; the connector treats the projected `StreamEtag` as opaque and only copies it into the public shape. |

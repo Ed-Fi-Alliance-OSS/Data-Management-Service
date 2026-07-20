@@ -358,14 +358,20 @@ profile namespace; nevertheless, the flag participates in served `_etag` derivat
 `link` subtrees already present (since the plan always emits them). The `ResourceLinks:Enabled`
 flag is applied as the final response-shaping pass in the repository wrapper — after the
 readable-profile projection (when applicable) runs and before serialization. The cache stores the
-`ContentVersion` and `LastModifiedAt` associated with `DocumentJson`, not a materialized
-`_etag`. At the serving boundary, DMS composes `_etag` from that cached `ContentVersion`
-plus the request's full `variantKey`, including the active `profileCode`, `linkFlag`, and
-`contentCoding`. Flag-on, flag-off, profiled, unprofiled, identity, and compressed
-responses can therefore share one caller-agnostic cached document while carrying distinct
-validators whenever their served bytes differ. CDC and indexing consumers observe the
-unprojected intermediate (with `link` subtrees); DMS does not maintain a second link-free
-projection. See
+`ContentVersion` and `LastModifiedAt` associated with `DocumentJson`; `DocumentJson` does
+not contain a reusable `_etag`. At the serving boundary, DMS composes `_etag` from that
+cached `ContentVersion` plus the request's full `variantKey`, including the active
+`profileCode`, `linkFlag`, and `contentCoding`. Flag-on, flag-off, profiled, unprofiled,
+identity, and compressed responses can therefore share one caller-agnostic cached
+document while carrying distinct validators whenever their served bytes differ.
+
+The row also stores a separate opaque `StreamEtag`, computed by the cache-projection
+materializer through the shared DMS served-ETag composer for the fixed CDC representation.
+For ordinary resources that representation is the unprojected, link-bearing, unprofiled
+JSON document with identity content coding, so its `linkFlag` is `l` regardless of
+`ResourceLinks:Enabled`. Descriptors retain their backend-defined links-off context.
+Kafka Connect copies this value; API reads ignore it. CDC and indexing consumers observe
+the unprojected intermediate, and DMS does not maintain a second link-free projection. See
 [update-tracking.md](update-tracking.md) §Serving API metadata for the normative derivation.
 
 A flag flip does not require cache truncation, fingerprint reconciliation, or an advisory lock:

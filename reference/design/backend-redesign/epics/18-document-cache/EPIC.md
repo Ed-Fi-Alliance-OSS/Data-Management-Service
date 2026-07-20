@@ -41,6 +41,9 @@ implementation inputs.
 - Capability combinations select and isolate the intended startup projection targets.
 - Both providers pass materialization, reconciliation, fencing, restart, retry, rebuild,
   health, and read-fallback integration coverage.
+- Every projected row carries a `StreamEtag` produced by the shared DMS served-ETag
+  composer for the fixed CDC representation; API reads continue to compose their own
+  request-specific validators.
 - Exact database mismatches establish projection work and completeness without durable
   workflow state.
 - Projection absence or failure never compromises canonical API behavior or deletion.

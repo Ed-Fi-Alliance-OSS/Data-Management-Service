@@ -25,7 +25,8 @@ authorization, candidate selection, fallback, and response shaping.
 ## Deliverables
 
 1. Integrate optional cache lookup and the canonical freshness test into the read path.
-2. Reuse existing profile, link, and `_etag` shaping after cache or relational assembly.
+2. Ignore the cache row's CDC-only `StreamEtag` and reuse existing profile, link, and
+   request-specific `_etag` shaping after cache or relational assembly.
 3. Add relational fallback and an optional guarded direct fill.
 4. Emit cache hit, miss, stale miss, and fallback telemetry.
 

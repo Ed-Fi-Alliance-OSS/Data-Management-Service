@@ -34,8 +34,8 @@ E17-owned provider/source checks.
    data-store execution context.
 3. Resolve provider-specific physical database identity, detect alias conflicts, and
    retain startup source bindings for drift observation.
-4. Validate provider tables, keys, replica/capture setup, and installed source-operation
-   shaping before registration.
+4. Validate provider tables, including the projected `StreamEtag`, keys, replica/capture
+   setup, and installed source-operation shaping before registration.
 5. Emit sanitized, condition-specific diagnostics without changing request routing.
 
 ## Acceptance Evidence

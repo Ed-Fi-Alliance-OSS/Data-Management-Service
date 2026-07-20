@@ -43,6 +43,8 @@ implementation inputs.
 
 - Both providers pass database CDC/key smoke tests and real routed-topic ordering tests.
 - Generated and published records pass the topic/message contract suite.
+- Connector transforms copy the DMS-projected opaque stream ETag and contain no schema,
+  link-configuration, or ETag-composition rules.
 - Local and E2E setup registers against selected provisioned data stores without
   hard-coded instance values.
 - API deletion remains correct when projection is absent or failing.

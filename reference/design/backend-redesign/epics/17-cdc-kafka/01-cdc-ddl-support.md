@@ -30,6 +30,8 @@ relational CDC source/key design.
 - PostgreSQL DB-apply tests validate publication, replica identity, and a
   `DocumentUuid`-keyed canonical delete source record.
 - SQL Server DB-apply tests validate capture instances and the equivalent delete key.
+- Cache-source records for both providers expose the DMS-projected `StreamEtag` required
+  by connector shaping.
 - Both providers distinguish cache maintenance records for later filtering.
 - Ordinary relational provisioning tests prove CDC artifacts remain opt-in.
 

@@ -108,6 +108,7 @@ per current document. Its row contains:
 - `ResourceName`
 - `ResourceVersion`
 - `ContentVersion`
+- `StreamEtag`
 - `LastModifiedAt`
 - `DocumentJson`
 - `ComputedAt`
@@ -121,10 +122,20 @@ GET/query response assembly. It includes stable top-level `id` and
 reference `link` subtrees. It does not contain authorization arrays, EdOrg hierarchy
 JSON, API client identity, or readable-profile-specific projections.
 
-The cache does not store a reusable `_etag`. Serving and stream-shaping boundaries
-compose `_etag` from `ContentVersion` and their active `variantKey`. Readable-profile
-projection and `DataManagement:ResourceLinks:Enabled` stripping happen after cache
-retrieval and do not create additional cache rows.
+The cache does not store an `_etag` inside `DocumentJson` and does not store an ETag
+reusable for arbitrary API responses. It does store `StreamEtag`, the ETag for the fixed
+CDC representation of that document kind. The cache-projection materializer computes it
+by calling the same DMS served-ETag composer used by the API with the row's
+`ContentVersion`, the selected mapping set's `EffectiveSchemaHash`, JSON format, no
+readable profile, the published document's link mode, and identity content coding.
+Ordinary resource documents are link-bearing in the cache and therefore use `l` even
+when `DataManagement:ResourceLinks:Enabled` is false; descriptors use the backend's
+descriptor representation context and therefore use `n`.
+
+API serving ignores `StreamEtag` and composes `_etag` from `ContentVersion` and the
+request's active `variantKey`. Readable-profile projection and
+`DataManagement:ResourceLinks:Enabled` stripping happen after cache retrieval and do not
+create additional cache rows.
 
 A dedicated cache-projection materializer returns the row metadata and `DocumentJson` as
 one coherent result. Before a cache write it validates:
@@ -132,6 +143,7 @@ one coherent result. Before a cache write it validates:
 ```text
 DocumentJson.id == DocumentUuid
 DocumentJson._lastModifiedDate == formatted LastModifiedAt
+StreamEtag == DMS served-etag composition for the fixed stream representation
 ```
 
 An invariant failure is a materialization failure and produces no cache write.
@@ -148,7 +160,8 @@ DocumentCache.ContentVersion == Document.ContentVersion
 
 `LastModifiedAt` is payload and diagnostic metadata. `ComputedAt` is operational
 metadata. Neither participates in cache freshness, completeness, API semantics,
-Change Queries, or `_etag` state.
+Change Queries, or `_etag` state. `StreamEtag` is derived output validated during
+materialization; comparing or recomputing it is not another reconciliation predicate.
 
 The current database difference is both the durable work inventory and the projection
 completeness source:
@@ -374,21 +387,26 @@ in this logical order:
    `tombstones.on.delete=false` and converts only the retained canonical delete envelope.
 5. Unwrap retained cache rows and rename public fields from database Pascal case to the
    lower-camel contract.
-6. Compose the stream `_etag` from `contentVersion` and the stream `variantKey`, and
-   inject it into the document.
-7. Remove internal/operational columns, add `contractVersion`, and expand
-   `DocumentJson` into structured JSON with the DMS-1240 Ed-Fi SMT when necessary.
+6. Expand `DocumentJson` into structured JSON with the DMS-1240 Ed-Fi SMT when
+   necessary.
+7. Copy the DMS-computed `StreamEtag` to public `etag` and `document._etag`; remove the
+   internal source field and other internal/operational columns, and add
+   `contractVersion`.
 8. Simplify the Debezium key struct to lowercase `DocumentUuid` text and route both
    physical topics to the instance document topic.
 
 All value transforms apply only to retained cache upserts. Key simplification and topic
 routing apply to upserts and authoritative tombstones.
 
-Stock predicates and SMTs may be used when they safely produce the exact contract. If
-they cannot classify both tables and operations or emit exactly one tombstone without
-scripting-engine risk, add a small Ed-Fi document-state routing/shaping SMT. Tests assert
-published record bytes and semantics, not only generated connector JSON. Version-specific
-properties and transform classes are verified against the pinned
+Kafka Connect does not calculate `schemaEpoch`, interpret
+`DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
+opaque connector input; the connector only copies it to the two public locations. Stock
+predicates and SMTs may be used when they safely produce the exact contract. If they
+cannot classify both tables and operations, copy the nested ETag, or emit exactly one
+tombstone without scripting-engine risk, add a small Ed-Fi document-state
+routing/shaping SMT. Tests assert published record bytes and semantics, not only
+generated connector JSON. Version-specific properties and transform classes are
+verified against the pinned
 `edfialliance/ed-fi-kafka-connect` image.
 
 ## Enablement and Initial Readiness Sequence
@@ -441,6 +459,8 @@ access paths:
 
 - `DocumentCache(DocumentId)` remains the primary/foreign key with cascade deletion.
 - `DocumentCache.DocumentUuid` remains unique for connector keys.
+- `DocumentCache.StreamEtag` stores the DMS-computed opaque ETag for the fixed CDC
+  representation; it is not used by API reads.
 - Provider-specific constraints ensure `DocumentJson` is a JSON object.
 - Add `dms.Document(ContentVersion, DocumentId)` only when realistic provider query-plan
   measurements show the ordered bounded scan needs it.
@@ -484,8 +504,11 @@ destructive and always explicit; removal from configuration is not cleanup autho
 ## Verification
 
 Fast contract and transform tests cover every retained and dropped source operation,
-serialized key/value bytes, duplicate-tombstone suppression, JSON expansion, timestamp
-format, metadata consistency, and topic routing.
+serialized key/value bytes, duplicate-tombstone suppression, JSON expansion, exact
+copying of the DMS-computed stream ETag, timestamp format, metadata consistency, and
+topic routing. Materializer tests prove `StreamEtag` is produced by the shared DMS
+served-ETag composer for the fixed stream representation and remains coherent with the
+row's `ContentVersion` and effective schema.
 
 PostgreSQL and SQL Server integration/E2E coverage proves:
 

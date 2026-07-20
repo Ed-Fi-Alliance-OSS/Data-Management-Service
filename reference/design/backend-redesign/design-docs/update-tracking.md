@@ -185,8 +185,12 @@ the representation's `_lastModifiedDate` payload metadata. `_etag` additionally 
 representation selectors via `variantKey`.
 
 `dms.DocumentCache` stores the `ContentVersion` needed by this document's `_etag`
-composition rules, but not a reusable `_etag`. Its projection and freshness behavior is
-defined in [Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation).
+composition rules, but `DocumentJson` does not contain a reusable `_etag`. The row also
+stores a separate opaque `StreamEtag`, produced through the same served-ETag composer for
+the fixed CDC representation. API reads ignore `StreamEtag` and compose their
+request-specific validator from `ContentVersion` and the active request `variantKey`.
+The cache projection and freshness behavior is defined in
+[Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation).
 
 ### `variantKey` encoding (normative)
 

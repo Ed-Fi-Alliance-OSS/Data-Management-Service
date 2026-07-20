@@ -38,6 +38,9 @@ coverage against the actual provisioned data store and routed public topic.
   shards permit.
 - PostgreSQL and SQL Server use real connectors and public routed topics.
 - Consumed records conform to the topic/message ADR and never assert legacy fields.
+- Consumed upserts carry the exact DMS-projected stream ETag in both public locations;
+  ordinary resource scenarios prove API link disabling does not change the link-bearing
+  stream variant.
 - Provider scenarios prove the deletion, cache-maintenance, and ordering cases required
   by the authoritative verification section.
 
