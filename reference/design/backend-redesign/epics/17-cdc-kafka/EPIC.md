@@ -33,7 +33,7 @@ Kafka source.
 
 ## Stories
 
-- `TBD` — `00-documentcache-cdc-prerequisites.md` — Wire CDC enablement to two-table source guarantees
+- `TBD` — `00-documentcache-cdc-prerequisites.md` — Wire CDC targets to two-table source guarantees
 - `TBD` — `01-cdc-ddl-support.md` — Emit/provision two-table CDC key and database support
 - `TBD` — `02-connector-template-generation.md` — Generate PostgreSQL and SQL Server connector templates
 - `TBD` — `03-bootstrap-enable-kafka-cdc.md` — Add explicit local/bootstrap connector registration

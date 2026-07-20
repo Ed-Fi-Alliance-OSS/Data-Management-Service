@@ -21,7 +21,7 @@ API or persisted projector workflow state is introduced.
 
 ## Dependencies
 
-- Depends on `18-00-documentcache-configuration-and-mode-boundaries.md`,
+- Depends on `18-00-documentcache-configuration-and-target-selection.md`,
   `18-02-document-materializer-service.md`, and the core `dms.Document` /
   `dms.DocumentCache` DDL from E02.
 - Depends on the guarded write contract from
@@ -33,10 +33,10 @@ API or persisted projector workflow state is introduced.
 
 ## Acceptance Criteria
 
-- DMS starts reconciliation only when projector mode is `Async`.
-- A supervisor snapshots all loaded tenant/data-store configurations at startup and runs
-  one isolated logical loop per `(tenant key, DataStoreId)` with a usable connection
-  string.
+- DMS starts reconciliation only for the effective projection target set derived from
+  `DocumentCache:Enabled`, `ReadAcceleration:Enabled`, and `KafkaCdc:Targets`.
+- A supervisor snapshots that de-duplicated target set at startup and runs one isolated
+  logical loop per selected `(tenant key, DataStoreId)`.
 - Background execution explicitly selects the target data store in a non-HTTP service
   scope; it does not depend on route resolution, JWT claims, or the most recent request.
 - Each loop selects bounded batches from its own database where:
@@ -68,14 +68,15 @@ API or persisted projector workflow state is introduced.
 - Duplicate loops from multiple DMS replicas remain correct through idempotent guarded
   upserts; deployments may designate projector hosts to avoid redundant scans without a
   required distributed lease.
-- Tests cover colliding local ids across data stores, empty-cache population, create,
+- Tests cover each projection-selection source, overlapping selection sources, no
+  selected targets, colliding local ids across data stores, empty-cache population, create,
   update, concurrent source change, delete, transient and persistent failures, restart,
-  truncation/rebuild, failure isolation, multiple replicas, and disabled mode.
+  truncation/rebuild, failure isolation, and multiple replicas.
 
 ## Tasks
 
-1. Add hosted supervisor lifecycle wiring and a non-HTTP per-data-store execution-scope
-   factory.
+1. Add hosted supervisor lifecycle wiring, effective-target selection, and a non-HTTP
+   per-data-store execution-scope factory.
 2. Implement the bounded anti-join/version-mismatch candidate query for PostgreSQL and
    SQL Server; measure realistic plans and add a provider-appropriate ordered-scan index
    only if needed.

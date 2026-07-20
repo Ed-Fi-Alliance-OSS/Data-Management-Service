@@ -198,7 +198,7 @@ This index links design documents under `reference/design/backend-redesign/epics
 ## Proposed Epics Pending Jira Creation
 
 - `TBD` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/17-cdc-kafka/EPIC.md`
-  - `TBD` — Wire CDC enablement to two-table source guarantees — `reference/design/backend-redesign/epics/17-cdc-kafka/00-documentcache-cdc-prerequisites.md`
+  - `TBD` — Wire CDC targets to two-table source guarantees — `reference/design/backend-redesign/epics/17-cdc-kafka/00-documentcache-cdc-prerequisites.md`
   - `TBD` — Emit/provision two-table CDC key and database support — `reference/design/backend-redesign/epics/17-cdc-kafka/01-cdc-ddl-support.md`
   - `TBD` — Generate PostgreSQL and SQL Server connector templates — `reference/design/backend-redesign/epics/17-cdc-kafka/02-connector-template-generation.md`
   - `TBD` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/17-cdc-kafka/03-bootstrap-enable-kafka-cdc.md`
@@ -207,7 +207,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `TBD` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/17-cdc-kafka/06-ops-docs-runbooks.md`
 
 - `TBD` — `dms.DocumentCache` Projection — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
-  - `TBD` — Add DocumentCache configuration boundaries — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-mode-boundaries.md`
+  - `TBD` — Add DocumentCache configuration and target selection — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-target-selection.md`
   - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md`
   - `TBD` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/03-async-projector-reconciliation-loop.md`
   - `TBD` — Add fresh-cache read path with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`

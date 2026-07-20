@@ -6,11 +6,12 @@ related:
   - DMS-1246
 ---
 
-# Story: Wire CDC Enablement to Two-Table Source Guarantees
+# Story: Wire CDC Targets to Two-Table Source Guarantees
 
 ## Description
 
-Make CDC enablement validate the complementary source roles defined by DMS-1245:
+Make every configured CDC target validate the complementary source roles defined by
+DMS-1245:
 
 - `dms.DocumentCache` create/update/snapshot events supply document upserts,
 - `dms.Document` deletes supply authoritative tombstones,
@@ -22,12 +23,17 @@ API deletion because domain lifecycle comes from `dms.Document`.
 
 ## Acceptance Criteria
 
-- CDC has explicit enablement separate from read acceleration and Kafka UI startup.
-- CDC applies only to an explicit deployment-configured target list keyed by
-  `(tenant key, DataStoreId)`.
+- `KafkaCdc:Targets` is the sole runtime CDC enablement contract: an empty list disables
+  CDC, and every `(tenant key, DataStoreId)` entry opts in exactly that data store.
+- Every target entry implies asynchronous DocumentCache projection for that data store;
+  it does not require `DocumentCache:Enabled` or `ReadAcceleration:Enabled` and does not
+  select unlisted CMS data stores.
+- Kafka UI and process-wide DocumentCache/read-acceleration settings do not add CDC
+  targets.
 - Registration prerequisites verify, per target:
   - `dms.DocumentCache` and `dms.Document` exist,
-  - asynchronous projection and stale-write fencing are enabled,
+  - asynchronous projection selected by the target entry and stale-write fencing are
+    available,
   - provider-specific CDC setup captures exactly both tables,
   - `DocumentUuid` key setup is valid for both tables,
   - PostgreSQL `dms.Document` replica identity is valid for non-primary-key delete capture,
@@ -60,15 +66,17 @@ API deletion because domain lifecycle comes from `dms.Document`.
 
 1. Add a data-store-specific prerequisite/readiness abstraction that distinguishes
    `CanRegisterConnector` from completed end-to-end readiness.
-2. Bind CDC enablement and the explicit target list separately from read acceleration and
-   Kafka UI settings.
+2. Bind the explicit target list as CDC enablement and contribute each entry to the
+   effective projection target set, independently of read acceleration and Kafka UI
+   settings.
 3. Add provider-specific physical database identity resolution and conflict tests.
 4. Validate two-table capture, `DocumentUuid` keys, PostgreSQL replica identity, and
    source-operation filtering before registration.
 5. Consume DMS-1246's mismatch-derived projection health/completeness for the
    upsert-readiness portion.
 6. Add post-start configured-target/source-binding diagnostics without changing routing.
-7. Add tests that non-CDC startup remains valid without `dms.DocumentCache`.
+7. Add tests that an empty target list performs no CDC setup and remains valid without
+   `dms.DocumentCache` when no other capability selects projection.
 8. Add tests proving cache failure does not block API deletion.
 
 ## Out of Scope

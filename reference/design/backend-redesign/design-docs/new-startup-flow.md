@@ -58,9 +58,9 @@ This means the first request can pay:
 The new lifecycle splits startup into explicit phases:
 
 1. **Load DMS instances** (already done today) so we know all connection strings to validate.
-   When Kafka CDC is enabled, bind and validate the explicit deployment-configured CDC
-   target keys at the end of this phase; physical source resolution waits until the target
-   databases are available.
+   When `DataManagement:KafkaCdc:Targets` is non-empty, bind and validate those explicit
+   deployment-configured target keys at the end of this phase; physical source resolution
+   waits until the target databases are available.
 2. **Load + validate ApiSchemas** in Core (startup-time, one-time).
 3. **Build the effective schema view** in Core (startup-time, one-time):
    - apply extension merges,
@@ -73,7 +73,7 @@ The new lifecycle splits startup into explicit phases:
      - read the database fingerprint (`dms.EffectiveSchema`, `dms.SchemaComponent`),
      - validate `ResourceKeySeedHash/Count` (fast path),
      - fail fast on mismatch.
-5. **Resolve CDC source bindings** (startup-time, when Kafka CDC is enabled):
+5. **Resolve CDC source bindings** (startup-time, when `KafkaCdc:Targets` is non-empty):
    - resolve only the explicit CDC targets,
    - capture provider-specific physical database identity for readiness,
    - leave normal request routing unchanged.
@@ -90,7 +90,7 @@ In `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`,
 becomes:
 
 1. `InitializeDataStores(app)` (already present)
-2. When Kafka CDC is enabled, bind and validate the explicit CDC target keys
+2. When `KafkaCdc:Targets` is non-empty, bind and validate the explicit target keys
 3. Optional DB deploy (`InitializeDatabase(app)`; already present)
 4. **New**: `InitializeApiSchemas(app)` (Core)
 5. **New**: `InitializeBackendMappings(app)` (backend-specific)

@@ -129,7 +129,7 @@ DMS-1246 DocumentCache implementation epic. It does not regenerate the full depe
 
 | `17-cdc-kafka` story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-03, 18-07, 18-09 | Hard for upsert readiness | Consumes projector configuration, reconciliation, fencing, and exact completeness health; core E02 supplies source/cache DDL and E17 owns `dms.Document` lifecycle capture. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-03, 18-07, 18-09 | Hard for upsert readiness | Consumes capability-derived projection targets, reconciliation, fencing, and exact completeness health; core E02 supplies source/cache DDL and E17 owns `dms.Document` lifecycle capture. |
 | `17-01-cdc-ddl-support.md` | — | No E18 dependency | Core E02 supplies `dms.DocumentCache`; E17 owns two-table CDC/key/replica setup and provider proof. |
 | `17-02-connector-template-generation.md` | — | No E18 dependency until upsert smoke tests | Fixture-based template work can proceed before the projector is complete. |
 | `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-03, 18-09, plus 17-00 | Hard | Bootstrap registers before reconciliation traffic and waits for zero mismatches plus connector/source-position readiness. |
@@ -139,7 +139,7 @@ DMS-1246 DocumentCache implementation epic. It does not regenerate the full depe
 
 | `18-document-cache` story | Unblocks / informs `17-cdc-kafka` |
 | --- | --- |
-| 18-00 | Simplified `Disabled | Async` projection/read-cache configuration boundaries for 17-00 and 17-03. |
+| 18-00 | Capability-derived projection targets for standalone cache, read acceleration, and per-target Kafka CDC; consumed by 17-00 and 17-03. |
 | 18-02 | Materialized `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for 17-04 and 17-05. |
 | 18-03 | One current-state reconciliation loop for initial population, ongoing projection, restart, rebuild, and retry; consumed by 17-00, 17-03, 17-05, and 17-06. |
 | 18-05 | Optional cache read behavior; no hard CDC dependency. |

@@ -61,7 +61,7 @@ authorization/query sources before cached JSON is used for response-body assembl
 
 ## Reconciliation Loop
 
-Each configured projection data store has one logical reconciliation loop. The loop:
+Each effective projection target has one logical reconciliation loop. The loop:
 
 1. Selects a bounded batch of current `dms.Document` rows whose cache row is missing or
    has another `ContentVersion`.
@@ -103,9 +103,12 @@ service scopes, explicitly selects its target connection, and uses the shared re
 and materialization services. It must not rely on `ResolveDataStoreMiddleware` or reuse
 request-scoped `IDataStoreSelection`.
 
-The supervisor snapshots the projection inventory at startup. Adding, removing, or
-changing a target requires a configuration change and deployment/restart. An unavailable
-database delays only its own loop.
+The supervisor snapshots the effective projection target set at startup. That set is
+derived from standalone DocumentCache enablement, read acceleration, and explicit Kafka
+CDC targets as defined in
+[0001-role-and-enablement.md](0001-role-and-enablement.md). Adding, removing, or changing
+a target requires a configuration change and deployment/restart. An unavailable database
+delays only its own loop.
 
 When multiple DMS replicas run the projector, deployments may designate projector hosts
 to avoid duplicate scans. Correctness does not require a distributed lease: duplicate
@@ -135,15 +138,15 @@ the version sequence. In particular, a maximum or
 `LastProjectedContentVersion` cannot prove completeness: version 100 may be fresh while
 version 99 is still missing.
 
-For `Projector:Mode = Async`, normal API traffic continues while mismatches exist because
-cache misses fall back to relational reconstitution.
+Whenever projection is selected, normal API traffic continues while mismatches exist
+because cache misses fall back to relational reconstitution.
 
-When Kafka CDC is enabled, connector capture is established before projector writes that
-must be observed. Projection completeness for CDC is observed when the mismatch count is
-zero. DMS-1245 then combines that observation with connector snapshot/catch-up and
-source-position checks. No persisted projector epoch or cutover marker is needed. A
-subsequent document write may temporarily create a new mismatch and is reflected by the
-same health query.
+For every entry in `KafkaCdc:Targets`, connector capture is established before projector
+writes that must be observed. The entry itself selects projection for that data store.
+Projection completeness for CDC is observed when the mismatch count is zero. DMS-1245
+then combines that observation with connector snapshot/catch-up and source-position
+checks. No persisted projector epoch or cutover marker is needed. A subsequent document
+write may temporarily create a new mismatch and is reflected by the same health query.
 
 Cache deletion remains projection maintenance, not domain deletion. The connector ignores
 cache deletes; reconciliation publishes guarded upserts for documents that still exist.

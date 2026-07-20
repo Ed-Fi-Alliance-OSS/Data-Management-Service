@@ -30,10 +30,11 @@ produce the public non-null Kafka value. It is not the authority for document ex
 Capturing this table does not make it a payload source; all `dms.Document` creates,
 updates, and snapshot records are filtered out.
 
-`dms.DocumentCache` remains optional when CDC/Kafka is not enabled. When CDC is enabled,
-it and its asynchronous projector are required to produce document upserts, but cache
-health never participates in the supported API delete transaction. A missing, stale, or
-unhealthy cache row does not block deletion of the canonical document.
+`dms.DocumentCache` remains optional for data stores not selected by another projection
+capability. Every `KafkaCdc:Targets` entry selects asynchronous projection for that data
+store so it can produce document upserts, but cache health never participates in the
+supported API delete transaction. A missing, stale, or unhealthy cache row does not block
+deletion of the canonical document.
 
 ## Context
 
@@ -66,8 +67,9 @@ streaming source.
 
 ## Consequences
 
-- Enabling relational CDC/Kafka provisions `dms.DocumentCache`, its projector, and CDC
-  capture for both `dms.DocumentCache` and `dms.Document` in the same connector.
+- Adding a data store to `KafkaCdc:Targets` selects its `dms.DocumentCache` projection and
+  provisions CDC capture for both `dms.DocumentCache` and `dms.Document` in the same
+  connector.
 - Kafka consumers observe caller-agnostic cached API bodies for upserts and authoritative
   `dms.Document` lifecycle deletes for tombstones.
 - Cache deletion, truncation, rebuild, and schema reprovisioning do not publish public

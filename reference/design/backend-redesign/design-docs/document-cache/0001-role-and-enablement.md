@@ -34,49 +34,63 @@ continue to depend on the relational source tables and `dms.Document`, not on ca
 
 ## Configuration Contract
 
-Use separate settings for projection, read acceleration, and Kafka CDC. The projector has
-one enabled behavior: asynchronous, eventually consistent reconciliation. CDC readiness
-may observe its mismatch count and oldest mismatch age, but it does not introduce a
-distinct projector mode or request-path delete behavior.
+Configure the capabilities that need projected documents and derive projector execution
+from them. There is no independently configurable projector mode and no process-wide
+Kafka CDC enablement flag. Every selected projection uses the same asynchronous,
+eventually consistent reconciler. CDC readiness may observe its mismatch count and oldest
+mismatch age, but it does not introduce different projection or request-path delete
+behavior.
 
 Recommended design-level settings:
 
 ```text
-DataManagement:DocumentCache:Projector:Mode = Disabled | Async
+DataManagement:DocumentCache:Enabled = false | true
 DataManagement:DocumentCache:ReadAcceleration:Enabled = false | true
-DataManagement:KafkaCdc:Enabled = false | true
 DataManagement:KafkaCdc:Targets = [{ TenantKey, DataStoreId }, ...]
 ```
 
-Mode semantics:
+The defaults are `false`, `false`, and an empty target list. All combinations are valid;
+the three selectors are additive rather than prerequisites for one another.
+
+Setting semantics:
 
 | Setting | Meaning |
 | --- | --- |
-| `Projector:Mode = Disabled` | DMS does not write `dms.DocumentCache`. The table may be absent unless provisioned for another purpose. |
-| `Projector:Mode = Async` | DMS maintains `dms.DocumentCache` asynchronously for read acceleration, indexing, or diagnostics. Rows may be missing or stale. |
-| `ReadAcceleration:Enabled = true` | GET/query response assembly may read fresh cache rows, but must fall back to relational reconstitution for misses or stale rows. |
-| `KafkaCdc:Enabled = true` | Requires `Projector:Mode = Async` and a provisioned `dms.DocumentCache` for upserts. One connector also captures `dms.Document` for deletes. Source prerequisites must pass before registration, and source/connector readiness must pass before CDC is advertised as ready. |
-| `KafkaCdc:Targets` | Explicit deployment-owned list of `(tenant key, DataStoreId)` values for which CDC is provisioned. No CMS data store becomes a CDC target merely because it is loaded at startup or discovered later. |
+| `DocumentCache:Enabled = true` | Enables standalone asynchronous projection for indexing, diagnostics, or another non-read, non-Kafka consumer. It selects every loaded data store with a usable connection string. |
+| `ReadAcceleration:Enabled = true` | Enables asynchronous projection for every loaded data store with a usable connection string. GET/query response assembly may read fresh cache rows, but must fall back to relational reconstitution for misses or stale rows. It does not require `DocumentCache:Enabled = true`. |
+| `KafkaCdc:Targets` | Each `(tenant key, DataStoreId)` entry enables asynchronous projection and CDC only for that target. One connector captures `dms.DocumentCache` for upserts and `dms.Document` for deletes. An empty list means that Kafka CDC is disabled. |
 
-When `KafkaCdc:Enabled = true`, `Targets` must be non-empty and unique after tenant-key
-normalization. The target list is bound once at startup; configuration reload does not add
-or retire CDC targets inside a running deployment.
+`KafkaCdc:Targets` entries must be unique after tenant-key normalization. The target list
+is bound once at startup; configuration reload does not add or retire CDC targets inside
+a running deployment. Source prerequisites must pass before a target's connector is
+registered, and source/connector readiness must pass before that target is advertised as
+ready.
 
 Indexing or external integration use cases that do not need Kafka CDC should use
-`Projector:Mode = Async`. They may leave `ReadAcceleration:Enabled = false` if the API
-should continue to assemble responses directly from relational tables.
+`DocumentCache:Enabled = true`. They may leave `ReadAcceleration:Enabled = false` if the
+API should continue to assemble responses directly from relational tables.
 
 Kafka UI, Kafka infrastructure startup, and connector registration are separate concerns.
-Starting Kafka UI must not imply `KafkaCdc:Enabled`.
+Starting Kafka UI must not add an entry to `KafkaCdc:Targets`.
 
 ### Scope Across Data Stores
 
-The v1 projector and read-acceleration settings are process-wide defaults, not per-data-store
-CMS options. Each data store loaded from the startup configuration with a usable connection
-string is therefore a projection target when `Projector:Mode` is `Async`.
-CDC target selection is deliberately narrower: `KafkaCdc:Targets` is an explicit
-deployment-owned list, and only listed data stores receive connector registration and CDC
-readiness. V1 does not infer CDC target membership from the most recent HTTP request, the
+`DocumentCache:Enabled` and `ReadAcceleration:Enabled` are process-wide settings, not
+per-data-store CMS options. Either setting selects every data store loaded at startup with
+a usable connection string. `KafkaCdc:Targets` is deliberately narrower: every entry
+selects only that data store for projection, connector registration, and CDC readiness.
+
+The effective projection target set is the union of:
+
+- all loaded usable data stores when `DocumentCache:Enabled` is true,
+- all loaded usable data stores when `ReadAcceleration:Enabled` is true,
+- the explicit data stores in `KafkaCdc:Targets`.
+
+The supervisor de-duplicates that union and runs one logical reconciliation loop per
+selected data store. Consequently, a Kafka target receives projection even when both
+process-wide settings are false, while an unlisted CMS data store does not acquire
+projection or replication infrastructure merely because some other store uses Kafka CDC.
+V1 does not infer CDC target membership from the most recent HTTP request, the complete
 set returned by CMS, or JWT `DataStoreIds`.
 
 Connector registration remains per configured CDC target. Outstanding projection
@@ -94,8 +108,7 @@ DMS deployment workflow.
 Target/source binding and drift are connector-deployment concerns owned by DMS-1245; see
 [../cdc/0003-debezium-connector-deployment.md](../cdc/0003-debezium-connector-deployment.md).
 The DocumentCache projector exposes per-data-store projection health for those targets but
-does not resolve physical connector identity, reconcile Kafka Connect, or introduce a
-different projector mode.
+does not resolve physical connector identity or reconcile Kafka Connect.
 
 All CDC readiness remains observational. Missing targets, source drift, projection
 failure, and connector failure do not alter `IDataStoreSelection` or block API requests.
@@ -154,13 +167,13 @@ part of the public Kafka contract.
 
 ## Consequences
 
-- DMS can run without `dms.DocumentCache` when neither cache-backed reads nor Kafka CDC
-  are enabled.
+- DMS can run without `dms.DocumentCache` when standalone projection and cache-backed
+  reads are disabled and `KafkaCdc:Targets` is empty.
 - Cache-backed reads are opportunistic. A missing, stale, unhealthy, or disabled cache
   must not break GET/query behavior.
-- CDC enablement is stricter than cache-backed reads. Connector registration and CDC
-  readiness report when `dms.DocumentCache` cannot supply the DMS-1245 upsert contract,
-  but this never changes API behavior.
+- Each CDC target has stricter operational prerequisites than cache-backed reads.
+  Connector registration and CDC readiness report when `dms.DocumentCache` cannot supply
+  the DMS-1245 upsert contract, but this never changes API behavior.
 - Authorization must run against relational authorization sources. Cached JSON must not
   contain authorization arrays, EdOrg hierarchy JSON, API client identity, or
   readable-profile-specific projections.
@@ -181,8 +194,14 @@ Rejected. Existing backend-redesign documents intentionally use it as a material
 projection for downstream indexing and CDC upserts. Calling it only a cache obscures the
 projector-health and payload responsibilities.
 
-### Use a single enablement flag
+### Configure the projector independently
 
-Rejected. Projection, read acceleration, and connector registration are independently
-useful capabilities. Separate settings preserve those boundaries even though the
-projector itself has only one asynchronous enabled mode.
+Rejected. An independent projector mode duplicates the capabilities that require
+projection and creates invalid combinations that startup validation must reject. The
+capability settings can derive the exact projection target set directly.
+
+### Use a process-wide Kafka CDC enablement flag
+
+Rejected. Target-list membership is already the CDC opt-in. A second flag must always
+agree with whether the list is empty and risks applying projection or replication
+infrastructure to unrelated CMS data stores.

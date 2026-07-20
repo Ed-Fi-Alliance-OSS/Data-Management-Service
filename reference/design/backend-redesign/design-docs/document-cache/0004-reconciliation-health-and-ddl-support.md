@@ -16,10 +16,10 @@ durable projector workflow table.
 
 The current difference between `dms.Document` and `dms.DocumentCache` is both the work
 inventory and the source of projection health. Failures remain observable as current
-missing/stale rows plus structured process telemetry. In `Projector:Mode = Async`,
-projection degradation does not break normal API correctness. When Kafka CDC is enabled,
-DMS-1245 combines the current projection-completeness observation with connector and
-source readiness without requiring a persisted backfill epoch.
+missing/stale rows plus structured process telemetry. For every selected projection
+target, projection degradation does not break normal API correctness. For targets listed
+in `KafkaCdc:Targets`, DMS-1245 combines the current projection-completeness observation
+with connector and source readiness without requiring a persisted backfill epoch.
 
 ## Health and Completeness
 
@@ -35,8 +35,9 @@ over the current source and cache rows to report at least:
 
 Freshness and mismatch counts compare `ContentVersion` alone. `LastModifiedAt` remains
 payload metadata and may supply the source timestamp used for mismatch-age diagnostics;
-it is not a second completeness condition. Health must also report projector mode,
-whether `dms.DocumentCache` exists, and whether the in-process loop is running.
+it is not a second completeness condition. Health must also report why the data store is
+selected for projection, whether `dms.DocumentCache` exists, and whether the in-process
+loop is running.
 Process-local telemetry may report the last scan time and duration, last successful
 upsert, and last observed error, but those values are diagnostic and do not prove
 database completeness.
@@ -57,7 +58,7 @@ as ready.
 
 Registration prerequisites are the subset available before the cache is complete:
 
-- `Projector:Mode = Async`,
+- the data store is present in `KafkaCdc:Targets`, which selects it for projection,
 - `dms.Document` and `dms.DocumentCache` are provisioned,
 - the reconciliation loop can be started for the explicit data-store context,
 - the guarded cache upsert is available.
@@ -123,9 +124,9 @@ Emit structured logs and metrics for:
 - mismatch count and oldest mismatch age,
 - read cache hits, misses, stale misses, and fallback reconstitution.
 
-Metrics are tagged by provider, projector mode, project/resource where safe, and failure
-kind, plus an opaque data-store identity where cardinality policy permits. They do not
-include document bodies or raw student data.
+Metrics are tagged by provider, projection-selection reason where useful,
+project/resource where safe, and failure kind, plus an opaque data-store identity where
+cardinality policy permits. They do not include document bodies or raw student data.
 
 ## Consequences
 

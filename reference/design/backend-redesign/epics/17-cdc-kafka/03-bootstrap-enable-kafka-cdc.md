@@ -28,7 +28,8 @@ list. Runtime discovery, addition, removal, and physical-source replacement are 
   - the data store is selected,
   - the target database is provisioned,
   - `dms.DocumentCache` and `dms.Document` are provisioned,
-  - projector mode is `Async`,
+  - the data store's `KafkaCdc:Targets` entry has selected an active asynchronous
+    reconciliation loop,
   - stale-write fencing is available,
   - provider-specific two-table capture, `DocumentUuid` keys, PostgreSQL replica
     identity, and source-operation filtering are applied or validated.

@@ -17,10 +17,10 @@ GET/query behavior because DMS can always fall back to relational reconstitution
 
 ## Dependencies
 
-- Depends on `18-00-documentcache-configuration-and-mode-boundaries.md` and
+- Depends on `18-00-documentcache-configuration-and-target-selection.md` and
   `18-02-document-materializer-service.md`.
 - Benefits from `18-03-async-projector-reconciliation-loop.md` but must behave correctly
-  when the projector is behind or disabled.
+  when reconciliation is behind or the data store is not selected for projection.
 - No hard dependency on `17-cdc-kafka`; this story documents the non-CDC fallback boundary that
   `17-cdc-kafka/06-ops-docs-runbooks.md` must not misstate.
 

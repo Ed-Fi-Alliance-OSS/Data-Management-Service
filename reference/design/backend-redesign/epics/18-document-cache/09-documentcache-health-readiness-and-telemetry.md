@@ -19,7 +19,7 @@ authoritative Kafka deletes come independently from `dms.Document`.
 
 ## Dependencies
 
-- Depends on `18-00-documentcache-configuration-and-mode-boundaries.md`,
+- Depends on `18-00-documentcache-configuration-and-target-selection.md`,
   `18-03-async-projector-reconciliation-loop.md`, and
   `18-07-projector-stale-write-fencing.md`.
 - Consumed by `17-cdc-kafka/00-documentcache-cdc-prerequisites.md` and
@@ -30,8 +30,8 @@ authoritative Kafka deletes come independently from `dms.Document`.
 
 - Health is evaluated per explicit `(tenant key, DataStoreId)` context and does not
   depend on current HTTP route selection.
-- Health reports projector mode, required table existence, and whether the in-process
-  reconciliation loop is running.
+- Health reports whether and why the data store is selected for projection, required
+  table existence, and whether the in-process reconciliation loop is running.
 - A provider-equivalent current-state query reports:
   - total mismatch count,
   - missing-row count,
@@ -44,8 +44,8 @@ authoritative Kafka deletes come independently from `dms.Document`.
 - Neither `LastScannedContentVersion` nor `LastProjectedContentVersion` is stored or used;
   tests prove a higher successful version does not hide a missing lower version.
 - Connector-registration prerequisites are exposed independently of projection
-  completeness and require async mode, source/cache tables, a startable loop, and guarded
-  upsert support.
+  completeness and require membership in `KafkaCdc:Targets`, source/cache tables, a
+  startable loop, and guarded upsert support. Target membership itself selects projection.
 - Projection completeness for CDC is true only when the current mismatch count is zero.
 - CDC/Kafka combines this result with explicit target/source binding, provider delete
   capture, connector snapshot/catch-up, source-position, and connector-lag checks.
@@ -56,9 +56,10 @@ authoritative Kafka deletes come independently from `dms.Document`.
 - Metrics/logs cover scans, candidate count, projection attempts/successes/failures,
   in-memory retry deferrals, stale skips, mismatch count/age, and cache
   hit/miss/stale fallback without exposing connection values or document data.
-- Tests cover healthy async mode, disabled mode, missing table, zero and nonzero mismatch
-  counts, a missing lower version with a higher projected version, oldest mismatch age,
-  persistent failure with bounded retry, unblocked API deletion, and mixed targets.
+- Tests cover every selection reason, no selected capability, overlapping reasons,
+  missing table, zero and nonzero mismatch counts, a missing lower version with a higher
+  projected version, oldest mismatch age, persistent failure with bounded retry,
+  unblocked API deletion, and mixed targets.
 
 ## Tasks
 

@@ -108,8 +108,8 @@ topic partition.
 - Cache truncation/rebuild cannot look like mass domain deletion.
 - DMS does not need CDC-specific per-document locks, pre-delete reconstitution, delete
   materialization telemetry, or provider materialize-then-delete verification.
-- The DocumentCache epic can use one asynchronous enabled projector mode for reads,
-  indexing, and CDC upserts.
+- The DocumentCache epic can use one asynchronous reconciler for every target selected by
+  standalone projection, read acceleration, or Kafka CDC.
 - Provider-specific delete key, filtering, routing, tombstone, and ordering tests belong
   to the CDC/Kafka epic because they exercise `dms.Document`, Debezium, and Kafka rather
   than cache materialization.

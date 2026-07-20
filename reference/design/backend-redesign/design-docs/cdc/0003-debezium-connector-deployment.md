@@ -46,9 +46,10 @@ CDC can be enabled only after these conditions are true for the target DMS insta
 
 - the relational schema is provisioned and validated,
 - `dms.DocumentCache` is provisioned,
-- the asynchronous `dms.DocumentCache` projector is enabled and has the projection
-  guarantees from DMS-1246: current-state reconciliation, stale-write fencing,
-  mismatch-derived health, and bounded in-memory retry (see
+- the instance is present in `DataManagement:KafkaCdc:Targets`, which selects its
+  asynchronous `dms.DocumentCache` reconciliation, and the projector has the DMS-1246
+  guarantees: current-state reconciliation, stale-write fencing, mismatch-derived
+  health, and bounded in-memory retry (see
   [../document-cache/](../document-cache/)),
 - `dms.Document` is configured as the authoritative delete source and both captured
   tables support a `DocumentUuid` connector key,
@@ -73,7 +74,7 @@ those topics would expose duplicate copies of the same physical document set und
 potentially different ACLs.
 
 The CDC prerequisite implementation must resolve a provider-specific physical database
-identity for each entry in `DataManagement:KafkaCdc:Targets` and reject CDC enablement
+identity for each entry in `DataManagement:KafkaCdc:Targets` and reject the target set
 when two listed `(tenant key, DataStoreId)` entries resolve to the same identity. Comparison must not rely
 only on raw connection-string text; semantically equivalent connection strings and server
 aliases must be normalized or confirmed after connecting. The diagnostic identifies the
@@ -91,7 +92,9 @@ The v1 CDC target set is an explicit deployment configuration, represented by
 Deployment/bootstrap automation performs the one-shot provisioning and
 connector-registration workflow explicitly for each listed target. It does not treat the
 complete CMS inventory as CDC-enabled, continuously discover CMS additions, or run a
-background Kafka Connect reconciler.
+background Kafka Connect reconciler. The target list is the runtime CDC enablement
+contract: an empty list disables CDC, and each entry also selects DocumentCache projection
+for only that data store.
 
 The target-list contract is:
 
@@ -308,8 +311,9 @@ Recommended CDC enablement sequence for a new instance:
 
 1. Provision relational schema and `dms.DocumentCache`.
 2. Apply provider-specific database CDC/key setup and create the instance topic/ACLs.
-3. Enable the asynchronous DocumentCache projector and verify that stale-write fencing
-   and the mismatch-health surface are available.
+3. Add the instance to `KafkaCdc:Targets`; this selects asynchronous DocumentCache
+   reconciliation. Verify that stale-write fencing and the mismatch-health surface are
+   available.
 4. Register the connector before allowing write traffic that must be observed by CDC.
 5. Start DMS and let the ordinary reconciliation loop populate every current missing or
    version-mismatched cache row while its guarded upserts flow through Debezium.
@@ -319,8 +323,8 @@ Recommended CDC enablement sequence for a new instance:
 
 Recommended CDC enablement sequence for an existing instance:
 
-1. Enable `dms.DocumentCache` and the asynchronous projector, including stale-write
-   fencing.
+1. Add the instance to `KafkaCdc:Targets`; this selects asynchronous DocumentCache
+   reconciliation, including stale-write fencing.
 2. Apply provider-specific database CDC/key setup and create the instance topic/ACLs.
 3. Register the connector with initial snapshot behavior before allowing write/delete
    traffic that the host expects Kafka CDC to observe. If that is not possible, quiesce

@@ -24,13 +24,13 @@ durable work inventory.
 
 `dms.DocumentCache` remains optional for ordinary DMS correctness. Authorization, writes,
 identity resolution, Change Queries, and normal GET/query correctness continue to use
-canonical relational sources. When Kafka CDC is enabled, cache create/update/snapshot
-events supply document upserts, while authoritative deletes come independently from
-`dms.Document`. Cache deletion never represents domain deletion.
+canonical relational sources. For each `KafkaCdc:Targets` entry, cache
+create/update/snapshot events supply document upserts, while authoritative deletes come
+independently from `dms.Document`. Cache deletion never represents domain deletion.
 
 ## Stories
 
-- `TBD` — `00-documentcache-configuration-and-mode-boundaries.md` — Add DocumentCache configuration boundaries
+- `TBD` — `00-documentcache-configuration-and-target-selection.md` — Add DocumentCache configuration and target selection
 - `TBD` — `02-document-materializer-service.md` — Add reusable caller-agnostic document materialization
 - `TBD` — `03-async-projector-reconciliation-loop.md` — Add the asynchronous DocumentCache reconciliation loop
 - `TBD` — `05-cache-backed-read-path.md` — Add fresh-cache read path with relational fallback
@@ -47,8 +47,9 @@ remain excluded; delete capture belongs to `17-cdc-kafka` and uses `dms.Document
 
 ## Cross-Story Dependency Notes
 
-- Story 00 defines the `Disabled | Async` projector configuration. Kafka CDC requires
-  `Async`, but it does not create another projector mode or mutation gate.
+- Story 00 derives the projection target set from standalone DocumentCache enablement,
+  read acceleration, and `KafkaCdc:Targets`. Each Kafka target selects projection for
+  itself without a separate projector mode or process-wide CDC flag.
 - Story 02 is the common materialization path for reconciliation and optional direct
   read-through fill.
 - Story 03 owns one loop per data store for initial population, ongoing catch-up, restart,
@@ -88,10 +89,10 @@ remain excluded; delete capture belongs to `17-cdc-kafka` and uses `dms.Document
 
 ## Completion Criteria
 
-- DMS can run with `dms.DocumentCache` disabled when neither read acceleration nor Kafka
-  CDC is enabled.
+- DMS can run without projection when standalone DocumentCache and read acceleration are
+  disabled and `KafkaCdc:Targets` is empty.
 - A hosted supervisor runs isolated reconciliation loops for the startup projection
-  inventory without request-scoped routing dependence.
+  target set without request-scoped routing dependence.
 - One loop per data store handles empty-cache population, ongoing writes, restart,
   rebuild, and retries by repeatedly querying current missing/version-mismatched
   rows.

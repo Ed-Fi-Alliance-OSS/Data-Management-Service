@@ -24,9 +24,10 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
 
 ## Acceptance Criteria
 
-- Integration tests cover DocumentCache disabled mode.
-- Integration tests cover async projection mode with create, update, empty-cache initial
-  population, cache hit, stale miss, and relational fallback.
+- Integration tests cover no selected projection capabilities.
+- Integration tests cover asynchronous projection selected independently by standalone
+  DocumentCache, read acceleration, and a Kafka CDC target, with create, update,
+  empty-cache initial population, cache hit, stale miss, and relational fallback.
 - Integration tests cover CDC projection completeness before and after the mismatch count
   reaches zero.
 - Integration tests prove a projected higher `ContentVersion` does not hide a missing
@@ -41,7 +42,7 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
   reconciliation query and that health changes remain observational.
 - Integration tests run against PostgreSQL and SQL Server where provider support exists.
 - Runbooks document:
-  - configuration modes,
+  - capability settings and the derived projection target set,
   - initial population/rebuild through the ordinary reconciliation loop,
   - cache hit/miss/stale fallback semantics,
   - bounded in-memory retry and fixing the underlying failure,
@@ -54,7 +55,8 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
 
 ## Tasks
 
-1. Add integration test fixtures for DocumentCache modes and provider variants.
+1. Add integration test fixtures for DocumentCache capability combinations and provider
+   variants.
 2. Add tests that exercise projection and read fallback end to end.
 3. Add tests that exercise failure, bounded retry, restart, and automatic recovery.
 4. Add tests that exercise CDC projection-readiness transitions without changing API
