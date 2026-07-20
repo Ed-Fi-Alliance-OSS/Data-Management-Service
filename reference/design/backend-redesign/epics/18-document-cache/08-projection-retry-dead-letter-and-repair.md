@@ -12,9 +12,10 @@ related:
 
 Add retry and dead-letter behavior for DocumentCache projection failures.
 
-Projection failures should be visible and actionable. In `Async` mode they degrade cache/indexing health but do
-not break normal API correctness. In `CdcRequired` mode unresolved current projection failures, including
-dead-lettered failures, make CDC not ready.
+Projection failures should be visible and actionable. In `Async` mode they degrade
+cache/indexing health but do not break normal API correctness. When Kafka CDC is enabled,
+unresolved current projection failures, including dead-lettered failures, make upsert
+projection readiness false without changing API behavior.
 
 ## Dependencies
 

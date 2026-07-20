@@ -41,7 +41,8 @@ RedHat's edge-case behavior.
 The legacy backend is being **retired**, so its connector configs and the
 six-field `edfidoc` shape are going away — they are not a migration target. The
 relational stream is the only forward consumer. DMS-1245 will finalize the
-relational CDC/Kafka design: Debezium captures `dms.DocumentCache`, the public
+relational CDC/Kafka design: Debezium captures `dms.DocumentCache` for upserts and
+`dms.Document` for deletes, the public
 Kafka payload field is `document`, and the connector config uses
 `sourceFields=document`. DMS-1232 remains the E2E follow-up that replaces the
 legacy KafkaMessaging expectations.
@@ -157,7 +158,8 @@ Queries API (`ContentVersion`), a separate mechanism from Debezium/Kafka.
 
 **Consequence:** DMS-911 must not encode the relational stream shape inside the
 SMT itself. The stream shape is now owned by the DMS-1245 CDC decision records:
-capture `dms.DocumentCache`, rename `DocumentJson` to `document`, and configure
+capture cache upserts plus authoritative document deletes, rename
+`DocumentCache.DocumentJson` to `document`, and configure
 the SMT with `sourceFields=document`. Because the legacy backend is being
 retired, its connector configs are **not a migration target** — they are removed
 as part of legacy retirement. DMS-1232 should validate the DMS-1245 relational
@@ -305,7 +307,8 @@ Acceptance criteria:
 ### Dependencies / handoffs (not part of this ticket)
 
 - **Relational connector wiring is owned by the CDC/Kafka implementation epic
-  produced by DMS-1245.** It captures `dms.DocumentCache`, renames
+  produced by DMS-1245.** It captures `dms.DocumentCache` upserts and
+  `dms.Document` deletes, renames
   `DocumentJson` to `document`, configures `sourceFields=document`, and points
   the connector at `org.edfi.kafka.connect.transforms.ExpandJson$Value` once the
   image is available and the contract validation passes.

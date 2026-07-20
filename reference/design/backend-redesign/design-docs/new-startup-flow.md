@@ -313,10 +313,8 @@ validation automatically, since these may resolve without operator intervention.
 > correlated via `TraceId`). Deterministic failures are cached
 > permanently; transient failures are evicted so the next request retries. A DMS restart is
 > required to clear deterministic failure cache entries (e.g., after reprovisioning the
-> database). Kafka CDC source-binding drift is a separate readiness concern and does not
-> alter this request-routing behavior. Only the explicit, default-off
-> `KafkaCdc:BlockMutationsWhenNotReady` host policy may return `503` for mutations after
-> normal data-store selection; it never blocks GETs or other read-only requests.
+> database). Kafka CDC source-binding drift is a separate observational readiness concern
+> and does not alter request routing or API mutation availability.
 
 ### Container-oriented “fail fast”
 

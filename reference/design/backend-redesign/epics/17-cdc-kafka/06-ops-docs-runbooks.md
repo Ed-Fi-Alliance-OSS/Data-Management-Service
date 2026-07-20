@@ -12,8 +12,9 @@ Document how to operate relational DMS CDC/Kafka streaming in local and producti
 
 The runbooks should make clear that Kafka CDC is optional, `dms.DocumentCache` is conditionally required when
 CDC is enabled, and the stream is a compacted document-state topic rather than a complete event history.
-They should also document that CDC-mode deletes depend on a synchronous pre-delete `dms.DocumentCache` source
-row guarantee; operators should treat failures in that path as write-path blocking while CDC is enabled.
+They should also document the source split: cache upserts carry payload, authoritative
+`dms.Document` deletes carry lifecycle, and cache deletion/rebuild never means domain
+deletion.
 
 ## Acceptance Criteria
 
@@ -28,7 +29,8 @@ row guarantee; operators should treat failures in that path as write-path blocki
   - logical replication requirements,
   - least-privilege replication user,
   - publication and replication slot naming,
-  - `DocumentUuid` replica identity/key setup,
+  - two-table publication, `DocumentUuid` key setup, and `dms.Document`
+    `REPLICA IDENTITY FULL`,
   - connector restart and slot cleanup.
 - SQL Server production guidance covers:
   - database/table CDC enablement,
@@ -47,8 +49,12 @@ row guarantee; operators should treat failures in that path as write-path blocki
   - bounded initial backfill before CDC readiness,
   - projector lag readiness above the completed backfill target,
   - stale-write fencing by `ContentVersion`,
-  - synchronous pre-delete materialization,
-  - delete failure behavior when the source row cannot be materialized.
+  - observational projection failures that never block API mutations.
+- Documentation explains source-operation filtering and proves that cache deletion,
+  truncation, and rebuild publish no domain tombstones.
+- Documentation explains that canonical deletes come from `dms.Document`, including a
+  delete with no prior cache row, and that both provider runbooks verify same-key ordering
+  through the routed public topic.
 - Runbooks cover connector health, lag, last error, snapshot completion, restart, offset reset, resnapshot, and
   topic recreation.
 - Runbooks cover the explicit deployment-configured target list, repeating one-shot provisioning for each target,
@@ -59,8 +65,6 @@ row guarantee; operators should treat failures in that path as write-path blocki
   drift. None of these conditions alter normal request routing.
 - Runbooks distinguish observing source drift from reconciliation: DMS does not move a projector/connector to a
   different physical source, call Kafka Connect, or clean up artifacts in response to a CMS refresh.
-- Runbooks document that `BlockMutationsWhenNotReady` defaults off. If a host opts in, only mutations to a
-  configured not-ready target return `503`; GETs and other read-only requests remain available.
 - Runbooks state that moving a `DataStoreId` to a different physical document set requires an explicit migration
   with a new topic/source generation or a deliberate topic/connector reset before resnapshotting.
 - Runbooks state that removing a configured target never automatically deletes topics, offsets, ACLs, replication
@@ -79,8 +83,9 @@ row guarantee; operators should treat failures in that path as write-path blocki
 4. Add PostgreSQL setup and recovery runbook.
 5. Add SQL Server setup and recovery runbook.
 6. Add Kafka topic/ACL/consumer guidance.
-7. Add troubleshooting guidance for incomplete backfill, projector dead letters, pre-delete materialization
-   failures, missing targets, source identity resolution, and `CdcSourceDriftRequiresDeployment` remediation.
+7. Add troubleshooting guidance for incomplete backfill, projector dead letters,
+   two-table key/filter/order failures, missing targets, source identity resolution, and
+   `CdcSourceDriftRequiresDeployment` remediation.
 8. Add troubleshooting commands for connector status, connector logs, topic listing, and sample consumption.
 9. Review documentation against the implemented scripts/templates before closing.
 

@@ -1,6 +1,6 @@
 ---
 status: proposed
-date: 2026-07-07
+date: 2026-07-20
 jira: DMS-1246
 related:
   - DMS-1245
@@ -16,9 +16,9 @@ every cache row.
 
 Projection failures must be retryable, observable, and actionable. In
 `Projector:Mode = Async`, unresolved failures degrade cache/indexing health but do not
-break normal API correctness. In `Projector:Mode = CdcRequired`, unresolved current
-projection failures, incomplete bounded initial backfill, missing delete-source support,
-or lag above the completed backfill target make CDC not ready.
+break normal API correctness. When Kafka CDC is enabled, unresolved current projection
+failures, incomplete bounded initial backfill, or lag above the completed backfill target
+make projection readiness false without changing API behavior.
 
 ## Required Projector State
 
@@ -30,7 +30,7 @@ Logical `dms.DocumentCacheProjectionState` fields:
 | Field | Purpose |
 | --- | --- |
 | `ProjectionName` | Stable key for the default DocumentCache projection. |
-| `Mode` | Last observed projector mode: `Async` or `CdcRequired`. |
+| `Mode` | Last observed projector mode: `Async`. |
 | `BackfillEpochId` | Stable identifier for the current/last bounded backfill or rebuild epoch. |
 | `BackfillStatus` | `NotStarted`, `Running`, `Complete`, or `Failed`. |
 | `BackfillTargetContentVersion` | `max(dms.Document.ContentVersion)` captured when the current backfill epoch started. |
@@ -97,47 +97,33 @@ DocumentCache health should report:
 - unresolved failure count,
 - oldest unresolved failure age,
 - last successful projection timestamp,
-- last failure timestamp and failure kind,
-- whether CDC-mode pre-delete materialization support is available for the selected
-  provider,
-- for every deployment-configured CDC target, whether the current CMS entry resolves to its
-  startup physical source binding, using `CdcSourceDriftRequiresDeployment` for confirmed
-  provider/physical-database drift and `SourceIdentityVerificationPending` while identity
-  is being resolved or cannot yet be resolved.
+- last failure timestamp and failure kind.
 
-Projector/source signals are evaluated and exposed per `(tenant key, DataStoreId)` execution
-context. A configured target that is missing from CMS remains representable even without a
-current projector execution context. CMS entries outside `KafkaCdc:Targets` have no CDC
-readiness because they are not CDC targets.
+Projection signals are evaluated and exposed per `(tenant key, DataStoreId)` execution
+context.
 Logs and metrics should use opaque/sanitized identifiers and must not include connection
 strings or tenant display names. A deployment-level aggregate may be reported in addition
 to, but never instead of, the per-data-store results. One failed data store must not hide
 healthy peers or stop their projector loops.
 
-DocumentCache source readiness requires all of the following:
+DocumentCache projection readiness requires all of the following:
 
-- `Projector:Mode = CdcRequired`,
+- `Projector:Mode = Async`,
 - `dms.DocumentCache` and required companion objects are provisioned,
 - the bounded initial backfill epoch is complete,
 - stale-write fencing is active,
-- pre-delete source-row materialization is supported and provider-verified,
-- the configured target is present and still resolves to its startup physical source
-  binding, with no confirmed drift latched,
 - no unresolved current projection failures exist, including dead-lettered failures,
 - projector lag above the completed backfill target is within the configured threshold.
 
-Registration prerequisites are the subset that can be established before initial backfill:
-the required objects, `CdcRequired` mode, stale-write fencing, pre-delete materialization,
-and provider verification. The physical source-binding match is a post-start source-readiness
-condition rather than a pre-DMS connector-registration prerequisite. DMS-1245 owns database
-CDC setup, connector registration, snapshot/catch-up, and the overall end-to-end CDC
-readiness result.
+Registration prerequisites are the subset that can be established before initial
+backfill: required cache/state objects, asynchronous projection, and stale-write fencing.
+DMS-1245 owns configured-target/source binding, capture of both
+`dms.DocumentCache` and `dms.Document`, provider delete-key setup, connector registration,
+snapshot/catch-up, and overall end-to-end CDC readiness.
 
-CDC readiness does not gate normal routing or read availability. Cache-backed reads remain
-correct through relational fallback, and `GET`, `HEAD`, `OPTIONS`, Change Queries, and other
-read-only requests remain available when CDC is not ready. The default-off
-`KafkaCdc:BlockMutationsWhenNotReady` host policy may gate mutations to configured targets;
-readiness alone never enables that coupling.
+CDC readiness does not gate normal routing or API availability. Cache-backed reads remain
+correct through relational fallback, and mutations—including deletes—do not depend on
+projection readiness.
 
 ## DDL and Index Support
 
@@ -157,8 +143,8 @@ Additional DDL support should focus on projector scans and diagnostics:
 
 - add an index on `dms.Document(ContentVersion, DocumentId)` so the projector can scan
   candidate work in representation-version order,
-- keep `dms.DocumentCache.DocumentUuid` unique so connectors can key deletes by the
-  public document id,
+- keep `dms.DocumentCache.DocumentUuid` unique so connector upserts use the public
+  document id,
 - keep `dms.DocumentCache(DocumentId)` as the primary key and FK with
   `ON DELETE CASCADE`,
 - consider an index on `dms.DocumentCache(ContentVersion, DocumentId)` only if health
@@ -176,10 +162,7 @@ The implementation should emit structured logs and metrics for:
 - backfill epoch start, target capture, progress, completion, and failure,
 - stale-write skips,
 - read cache hits, misses, stale misses, and fallback reconstitution,
-- CDC pre-delete materialization attempts, successes, and failures,
-- projector lag by version and age,
-- configured-target absence, retryable source-identity resolution failures, and latched CDC
-  physical-source drift by sanitized reason.
+- projector lag by version and age.
 
 Metrics should be tagged by provider, projector mode, project/resource where safe, and
 failure kind, plus an opaque data-store identity where cardinality policy permits. They
@@ -189,8 +172,8 @@ should not include document bodies or raw student data.
 
 - Operators can distinguish an optional read-cache degradation from an unsupported CDC
   state.
-- CDC connector registration can fail with actionable diagnostics instead of publishing a
-  stream that later loses tombstones.
+- CDC connector registration/readiness can fail with actionable upsert-projection
+  diagnostics while canonical delete capture remains independent.
 - Keeping projector state out of `dms.DocumentCache` prevents operational retry metadata
   from leaking into the CDC row contract.
 
@@ -208,5 +191,5 @@ back to relational reconstitution.
 
 ### Make CDC readiness depend only on connector status
 
-Rejected. A running connector cannot compensate for missing/stale source rows, incomplete
-backfill, projector dead letters, or missing pre-delete materialization support.
+Rejected. A running connector cannot compensate for missing/stale projected upserts,
+incomplete backfill, or projector dead letters.

@@ -1,6 +1,6 @@
 ---
 status: proposed
-date: 2026-07-06
+date: 2026-07-20
 jira: DMS-1245
 related:
   - DMS-1246
@@ -13,8 +13,9 @@ related:
 
 ## Decision
 
-Relational DMS CDC publishes a compacted document-state stream sourced from
-`dms.DocumentCache`.
+Relational DMS CDC publishes a compacted document-state stream from two complementary
+tables captured by one connector: `dms.DocumentCache` supplies document upserts and
+`dms.Document` supplies authoritative deletes.
 
 The v1 public Kafka contract is:
 
@@ -23,7 +24,8 @@ The v1 public Kafka contract is:
 - Kafka key = `DocumentUuid`,
 - Kafka value = an envelope containing `dms.DocumentCache` metadata and the expanded
   `DocumentJson` payload,
-- delete = Kafka tombstone for the same `DocumentUuid` key.
+- delete = Kafka tombstone for the same `DocumentUuid` key, sourced only from a
+  `dms.Document` delete.
 
 The stream is an upsert/delete state stream, not an immutable event log and not the
 Change Queries API.
@@ -110,11 +112,12 @@ f81d4fae-7dec-11d0-a765-00a0c91e6bf6
 `DocumentUuid` is the stable public document identity. `DocumentId` is an internal
 surrogate and is not part of the public key or value contract.
 
-Connector and database setup must guarantee that deletes are keyed by `DocumentUuid`, not
-by `DocumentId`. For PostgreSQL this may require replica-identity or connector-key
-configuration for `dms.DocumentCache`; for SQL Server this may require equivalent
-connector key-column configuration. The connector deployment design owns the exact
-engine-specific mechanism.
+Connector and database setup must configure `DocumentUuid` as the custom key for both
+captured tables. In particular, a `dms.Document` delete must be keyed by `DocumentUuid`,
+not by `DocumentId`. PostgreSQL uses `REPLICA IDENTITY FULL` on `dms.Document` so the
+non-primary-key `DocumentUuid` is available to the delete event; SQL Server CDC must
+capture that column. The connector deployment design owns the exact pinned-version
+configuration.
 
 The connector must not rely on deriving the key only from the unwrapped value, because
 delete tombstones have a null value. `DocumentUuid` must be available in the Debezium key
@@ -238,16 +241,21 @@ This replaces the legacy KafkaMessaging scenario shape that expected `deleted=fa
 `deleted=true` and an `EdFiDoc` body. DMS-1232 should update or replace those scenarios
 to assert the relational v1 contract.
 
-The tombstone depends on a real `dms.DocumentCache` row delete. Therefore, in CDC mode
-DMS must not delete `dms.Document` until the delete transaction has verified or created a
-corresponding `dms.DocumentCache` row for the target document. If the row is missing or
-stale, DMS must synchronously materialize the current pre-delete projection first, then
-delete `dms.Document` so the `ON DELETE CASCADE` path deletes the cache row captured by
-Debezium.
+The tombstone is derived only from the authoritative `dms.Document` delete event. The
+connector drops the accompanying non-null Debezium delete envelope and emits a Kafka
+record-level null value with the event's `DocumentUuid` key. It ignores all
+`dms.DocumentCache` deletes, including cascades, truncation/rebuild cleanup, and operator
+cache maintenance.
 
-If DMS cannot materialize or verify that cache source row while CDC is enabled, the API
-delete must fail with a retryable server-side error. It must not complete the resource
-delete and silently lose the Kafka tombstone.
+API deletion therefore does not depend on cache presence, freshness, projector health,
+or synchronous pre-delete reconstitution. A create followed by delete before the
+asynchronous projector writes a cache row may produce a tombstone without a preceding
+upsert; that is valid state-stream behavior.
+
+Both tables are captured by the same connector task and routed to this topic with the
+same key. A cache upsert committed before a canonical document delete must appear before
+the tombstone in the key's partition. Provider E2E tests lock down this same-key ordering
+through the routed public topic.
 
 ## Security and Authorization
 
@@ -314,20 +322,20 @@ Future outbox/event topics can carry richer delete events if needed.
 DMS-1245 should next define the connector deployment model:
 
 - PostgreSQL and SQL Server source connector settings,
-- table include list for `dms.DocumentCache`,
-- key-column and delete-key guarantees for `DocumentUuid`,
-- transform order for unwrap, field renames, static `contractVersion`, JSON expansion,
-  key simplification from the Debezium key, tombstone preservation, and topic routing,
+- table include list for `dms.DocumentCache` and `dms.Document`,
+- key-column and authoritative `dms.Document` delete-key guarantees for `DocumentUuid`,
+- transform order for source-operation filtering, unwrap, field renames, static
+  `contractVersion`, JSON expansion, key simplification, document-delete-to-tombstone
+  conversion, and topic routing,
 - snapshot mode and backfill behavior,
 - local Docker Compose/bootstrap registration.
 
 The DMS-1246 decision records in [../document-cache/](../document-cache/) define the
-projector guarantees this contract depends on:
+projector guarantees this contract depends on for upserts:
 
-- cache materialization before delete when CDC is enabled,
 - lag and health signals for projection,
 - retry and dead-letter behavior,
-- rebuild/backfill semantics that do not create stale lower-`contentVersion` messages
-  after newer values for the same `documentUuid`,
-- projector fencing so an older queued projection cannot recreate a cache row after a
-  CDC-mode delete has removed the document.
+- rebuild/backfill semantics that publish upserts only and do not create stale
+  lower-`contentVersion` messages after newer values for the same `documentUuid`,
+- projector fencing so queued work cannot recreate a cache row after canonical
+  `dms.Document` deletion.

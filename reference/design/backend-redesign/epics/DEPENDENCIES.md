@@ -90,8 +90,9 @@ graph TD
 Notes:
 - `E07` and `E09` are tightly coupled in practice (write correctness requires transactional identity maintenance + propagation + deadlock retry), but are shown as a one-way dependency to keep the graph readable.
 - `E05` is optional; `E06` can select runtime-compiled mapping sets without packs.
-- `E17` can develop connector templates and fixture tests in parallel, but supported CDC readiness depends on
-  `E18` source guarantees.
+- `E17` can develop connector templates and fixture tests in parallel, but complete CDC
+  upsert readiness depends on `E18` projection guarantees. E17 independently owns
+  authoritative `dms.Document` delete capture.
 
 ---
 
@@ -117,7 +118,7 @@ Notes:
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
 | E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
 | E17 | [Relational CDC/Kafka Streaming](17-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks |
-| E18 | [`dms.DocumentCache` Projector and CDC Source Guarantees](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Optional cache projection, projector/backfill/failure handling, read-cache fallback, and CDC delete source-row guarantees |
+| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Optional cache projection, projector/backfill/failure handling, and read-cache fallback; E17 owns authoritative delete capture |
 
 ---
 
@@ -128,27 +129,25 @@ DMS-1246 DocumentCache implementation epic. It does not regenerate the full depe
 
 | `17-cdc-kafka` story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | CDC readiness consumes configuration, explicit targets/source bindings, projector state, backfill, pre-delete materialization, fencing, failure state, health, and provider verification. |
-| `17-01-cdc-ddl-support.md` | 18-01, 18-10 | Hard for final verification | CDC key/replica setup can start independently, but final proof depends on the source table/state DDL and provider delete verification. |
-| `17-02-connector-template-generation.md` | 18-01, 18-10 | Soft until smoke tests | Fixture-based template work can proceed before the projector is complete. |
-| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap validates DocumentCache registration prerequisites, registers before backfill traffic, and waits for source plus connector readiness before advertising CDC. |
-| `17-04-message-contract-tests.md` | 18-02, 18-06, 18-07, 18-10 | Mixed | Fixture-only transform tests can start earlier; source-level delete tests require DocumentCache delete support. |
-| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-06, 18-07, 18-09, 18-10, plus 17-00 through 17-04 | Hard | API-driven Kafka scenarios require the projector, readiness, immediate-delete path, and provider proof. |
-| `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | CDC runbooks consume DocumentCache retry/dead-letter, health/readiness, recovery, and delete-blocking behavior. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-07, 18-08, 18-09 | Hard for upsert readiness | Consumes projector configuration/state, backfill, fencing, failures, and health; E17 owns `dms.Document` lifecycle capture. |
+| `17-01-cdc-ddl-support.md` | 18-01 | Soft | Uses projected table DDL; E17 owns two-table CDC/key/replica setup and provider proof. |
+| `17-02-connector-template-generation.md` | 18-01 | Soft until upsert smoke tests | Fixture-based template work can proceed before the projector is complete. |
+| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, plus 17-00 | Hard | Bootstrap registers before backfill traffic and waits for projection plus connector readiness. |
+| `17-04-message-contract-tests.md` | 18-02 | Soft | Uses realistic cache payloads; delete/filter/order tests are E17-owned. |
+| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-09, plus 17-00 through 17-04 | Hard for complete upsert coverage | Missing-cache deletes are independent of the projector. |
+| `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | CDC runbooks consume projection failure/readiness/recovery guidance. |
 
 | `18-document-cache` story | Unblocks / informs `17-cdc-kafka` |
 | --- | --- |
-| 18-00 | CDC/read-cache configuration boundaries plus explicit targets, source bindings, and optional mutation policy for 17-00 and 17-03. |
+| 18-00 | Simplified `Disabled | Async` projection/read-cache configuration boundaries for 17-00 and 17-03. |
 | 18-01 | Source/state DDL for 17-00 and 17-01. |
 | 18-02 | Materialized `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for 17-04 and 17-05. |
 | 18-03 | Startup-projection-inventory lifecycle, ongoing projection, and lag semantics for 17-00, 17-05, and 17-06. |
 | 18-04 | Bounded initial backfill epoch completion signal for 17-00 and 17-03. |
 | 18-05 | Optional cache read behavior; no hard CDC dependency. |
-| 18-06 | CDC-mode delete source-row guarantee for 17-00, 17-04, and 17-05. |
-| 18-07 | Stale-write and post-delete fencing for 17-00, 17-04, and 17-05. |
+| 18-07 | Stale-write and post-delete fencing for CDC upserts. |
 | 18-08 | Projection failure/dead-letter state for 17-00, 17-03 diagnostics, and 17-06. |
-| 18-09 | Per-target readiness, physical-source-drift signal, and telemetry consumed by 17-00, 17-03, 17-05, and 17-06. |
-| 18-10 | PostgreSQL/SQL Server proof for 17-01, 17-04, and 17-05. |
+| 18-09 | Projection readiness and telemetry consumed by 17-00, 17-03, 17-05, and 17-06. |
 | 18-11 | DocumentCache operator guidance consumed by 17-06. |
 
 ---

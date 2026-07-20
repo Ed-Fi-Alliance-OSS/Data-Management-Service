@@ -4,7 +4,7 @@
 > This document is the high-level CDC/Kafka reference. The relational backend-specific
 > source, message, and connector decisions are now recorded in:
 >
-> - `reference/design/backend-redesign/design-docs/cdc/0001-document-cache-cdc-source.md`
+> - `reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-sources.md`
 > - `reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md`
 > - `reference/design/backend-redesign/design-docs/cdc/0003-debezium-connector-deployment.md`
 >
@@ -18,9 +18,11 @@ DMS CDC uses database-log-based capture to publish document-state changes to Kaf
 The reference implementation uses Kafka Connect with Debezium source connectors for
 PostgreSQL and SQL Server.
 
-The relational backend source is `dms.DocumentCache`, not the normalized resource
-tables and not `dms.Document` alone. `dms.DocumentCache` is optional for ordinary DMS
-correctness, but it is required when relational Debezium/Kafka CDC is enabled.
+One relational connector captures two complementary sources. `dms.DocumentCache`
+create/update/snapshot events supply document upserts; authoritative `dms.Document`
+deletes supply tombstones. Cache deletes/truncates and all other document operations are
+ignored. `dms.DocumentCache` remains optional for ordinary DMS correctness but is
+required for CDC upserts.
 
 Change Queries are separate from Debezium/Kafka CDC. Change Queries are a polling API
 compatibility feature based on `ContentVersion`, `ContentLastModifiedAt`, and
@@ -123,33 +125,32 @@ value = null
 
 The relational v1 topic does not publish the legacy `deleted=true` / `EdFiDoc` shape.
 
-Because the tombstone comes from a captured `dms.DocumentCache` row delete, CDC mode
-requires a stronger projector guarantee than ordinary cache-backed reads. Upsert
-projection may be asynchronous, but DMS must not delete `dms.Document` unless a
-corresponding `dms.DocumentCache` row exists in the same transaction. If the cache row is
-missing or stale at delete time, DMS materializes the current pre-delete projection first;
-if it cannot, the API delete fails rather than losing the Kafka tombstone.
+The tombstone comes only from the authoritative `dms.Document` delete. The connector
+ignores the cascaded cache delete. API deletion therefore does not depend on cache
+presence, freshness, projector health, or synchronous pre-delete materialization. Cache
+truncation/rebuild does not publish mass domain tombstones.
 
 ## Connector Deployment
 
-The source connector captures only `dms.DocumentCache`.
+The source connector captures exactly `dms.DocumentCache` and `dms.Document` in one task.
 
 PostgreSQL reference deployment:
 
 - use the Debezium PostgreSQL connector with `pgoutput`,
 - configure PostgreSQL for logical replication,
 - create a least-privilege replication user,
-- use a publication scoped to `dms.DocumentCache`,
+- use a publication scoped to both captured tables,
 - use one replication slot and one connector per DMS instance database,
-- ensure delete tombstones are keyed by `DocumentUuid`.
+- configure `DocumentUuid` as the custom key for both tables,
+- set `dms.Document` to `REPLICA IDENTITY FULL` for delete-key capture.
 
 SQL Server reference deployment:
 
 - use the Debezium SQL Server connector,
 - enable SQL Server CDC for the DMS instance database,
-- enable CDC on `dms.DocumentCache` only,
+- enable CDC on both captured tables only,
 - use a least-privilege connector login,
-- ensure delete tombstones are keyed by `DocumentUuid`.
+- configure `DocumentUuid` as the custom key for both tables.
 
 Debezium SQL Server can process multiple databases from one connector, but the reference
 DMS implementation still treats each DMS instance as one logical connector registration
@@ -158,28 +159,30 @@ when the same per-instance topic, key, tombstone, ACL, and operational contracts
 preserved.
 
 The CDC topology must also preserve a one-to-one relationship between a logical instance
-topic and a physical `dms.DocumentCache`. If two tenant/data-store records resolve to the
-same physical database, CDC readiness rejects both aliases rather than publishing the same
-document set under independently authorized topics.
+topic and the physical database containing both captured tables. If two tenant/data-store
+records resolve to the same physical database, CDC readiness rejects both aliases rather
+than publishing the same document set under independently authorized topics.
 
 ## Transform Pipeline
 
-The connector pipeline must produce the relational v1 public contract while preserving
-tombstones:
+The connector pipeline must produce the relational v1 public contract while separating
+cache and domain lifecycles:
 
-1. Capture `dms.DocumentCache` with a Debezium key containing `DocumentUuid`.
-2. Unwrap Debezium create/update values into the current row shape.
-3. Preserve delete tombstones.
-4. Rename value fields to lower camel case.
+1. Capture both tables with Debezium keys containing `DocumentUuid` and one connector task.
+2. Before unwrapping/routing, retain cache `c/u/r` as upserts, convert document `d` to a
+   Kafka tombstone, and drop cache `d/t` plus document `c/u/r`.
+3. Suppress Debezium's automatic extra tombstones so one canonical delete emits exactly
+   one public tombstone and cache deletion emits none.
+4. Unwrap retained cache values and rename fields to lower camel case.
 5. Remove internal fields such as `DocumentId` and `ComputedAt`.
-6. Add `contractVersion = 1`.
+6. Add `contractVersion = 1` and compose/inject the stream `_etag`.
 7. Expand `document` into structured JSON using the Ed-Fi expand-JSON SMT when Debezium
    emits `DocumentJson` as an escaped string.
 8. Simplify the Kafka key to the lowercase `DocumentUuid` string.
-9. Route the physical Debezium topic to the instance document topic.
+9. Route both physical Debezium topics to the instance document topic.
 
-All value-shaping transforms must pass null tombstone values through unchanged. Key
-simplification and topic routing still apply to tombstones.
+Provider E2E coverage must prove same-key ordering through the routed topic: a cache
+upsert committed before canonical deletion appears before its tombstone.
 
 ## Local Bootstrap
 
@@ -191,9 +194,10 @@ connectors.
 
 Connector registration should occur after the target data store is selected, the target
 database is provisioned, provider-specific CDC setup is applied, and
-`dms.DocumentCache` verifies that the required projector/delete source guarantees are
-available. Registration establishes capture before the bounded initial backfill and before
-writes that must be observed by CDC. CDC is advertised as ready only after the backfill
+the asynchronous `dms.DocumentCache` projector verifies the required upsert projection
+guarantees. Registration also verifies two-table keys, PostgreSQL replica identity, and
+source-operation filtering. It establishes capture before the bounded initial backfill and
+before writes that must be observed by CDC. CDC is advertised as ready only after the backfill
 epoch, connector snapshot/catch-up, connector lag, and projector lag above the completed
 backfill target are acceptable. Connector templates must be generated or parameterized
 from the selected data-store context instead of using hard-coded database names.
@@ -214,12 +218,9 @@ they resolve to the same physical database. A missing configured target or confi
 physical-source change makes that target's CDC readiness false, and confirmed drift remains
 latched as `CdcSourceDriftRequiresDeployment` until the coordinated workflow reruns.
 
-CDC readiness does not change normal CMS-driven request routing. Entries outside the target
-list remain ordinary DMS data stores, and GETs continue to be served even when CDC is not
-ready. A host that requires zero-loss CDC may explicitly enable the default-off
-`BlockMutationsWhenNotReady` policy; only then do mutations to a configured not-ready target
-return `503`. The policy never blocks GET, HEAD, OPTIONS, Change Queries, or other read-only
-requests, and it does not reconcile connectors or perform destructive cleanup.
+CDC readiness does not change normal CMS-driven request routing or API availability.
+Entries outside the target list remain ordinary DMS data stores, and projection/connector
+failure never blocks reads or mutations.
 
 ## Multitenancy and Security
 

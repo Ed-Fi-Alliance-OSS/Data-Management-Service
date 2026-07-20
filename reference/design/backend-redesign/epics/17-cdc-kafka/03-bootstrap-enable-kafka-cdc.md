@@ -28,9 +28,10 @@ list. Runtime discovery, addition, removal, and physical-source replacement are 
   - the data store is selected,
   - the target database is provisioned,
   - `dms.DocumentCache` and its projector/state objects are provisioned,
-  - projector mode is `CdcRequired`,
-  - stale-write fencing and the CDC-mode pre-delete materialization guarantee are available,
-  - provider-specific CDC DDL/setup is applied or validated.
+  - projector mode is `Async`,
+  - stale-write fencing is available,
+  - provider-specific two-table capture, `DocumentUuid` keys, PostgreSQL replica
+    identity, and source-operation filtering are applied or validated.
 - Connector registration establishes capture before the bounded initial backfill and before E2E or deployment
   writes that must be observed by CDC.
 - CDC is advertised as ready only after:
@@ -51,9 +52,9 @@ list. Runtime discovery, addition, removal, and physical-source replacement are 
 - E2E setup can opt into CDC and register the connector before test writes are issued.
 - Failure messages identify whether the problem is Kafka infrastructure, connector REST API, database CDC setup,
   DocumentCache registration prerequisites, incomplete bounded backfill, projector lag above the completed
-  backfill target, connector snapshot/catch-up, missing pre-delete materialization support,
-  missing configured target, retryable source-identity resolution, `CdcSourceDriftRequiresDeployment`, or
-  connector validation.
+  backfill target, connector snapshot/catch-up, invalid two-table key/filter setup, missing
+  configured target, retryable source-identity resolution,
+  `CdcSourceDriftRequiresDeployment`, or connector validation.
 
 ## Tasks
 

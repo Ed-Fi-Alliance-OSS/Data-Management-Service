@@ -26,7 +26,7 @@ projection result whose cache columns and embedded server metadata were produced
 
 - Depends on relational read/reconstitution and update-tracking metadata semantics.
 - Unblocks `18-03-async-projector-worker.md`, `18-04-initial-backfill-and-rebuild.md`,
-  `18-05-cache-backed-read-path.md`, and `18-06-cdc-pre-delete-materialization.md`.
+  and `18-05-cache-backed-read-path.md`.
 - Provides realistic `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for
   `17-cdc-kafka/04-message-contract-tests.md` and `17-cdc-kafka/05-e2e-kafka-scenarios.md`.
 

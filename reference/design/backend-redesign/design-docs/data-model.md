@@ -472,7 +472,8 @@ Conformance tests (required):
 ##### 5) `dms.DocumentCache` (optional projection; required when CDC/Kafka is enabled)
 
 Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
-It is conditionally required when relational Debezium/Kafka CDC is enabled because CDC captures this table.
+It is conditionally required when relational Debezium/Kafka CDC is enabled because CDC captures its
+create/update/snapshot operations as document upserts.
 
 This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
 
@@ -480,16 +481,18 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 - when enabled, DMS should materialize documents into this table via a write-driven/background projector
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously.
-For the normative role, enablement, projector, freshness, backfill, failure, and CDC source guarantees, see
+For the normative role, enablement, projector, freshness, backfill, failure, and
+cache/domain lifecycle separation, see
 [document-cache/](document-cache/). For transaction ordering context, see
 [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
-CDC mode narrows the eventual-consistency contract for deletes: upsert projection may lag,
-but DMS must not delete the corresponding `dms.Document` row unless a `dms.DocumentCache`
-source row exists in the same transaction. The `ON DELETE CASCADE` cleanup of that cache
-row is the database event Debezium captures to publish the Kafka tombstone.
+Cache deletion has no domain meaning. The CDC connector ignores `dms.DocumentCache`
+deletes and derives Kafka tombstones only from authoritative `dms.Document` deletes. API
+deletion therefore does not depend on cache presence, freshness, or projector health, and
+cache truncation/rebuild does not publish mass domain deletion.
 
-For the relational CDC source and Kafka contract, see [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md)
+For the two-table relational CDC source and Kafka contract, see
+[cdc/0001-relational-cdc-sources.md](cdc/0001-relational-cdc-sources.md)
 and [cdc/0002-kafka-topic-and-message-contract.md](cdc/0002-kafka-topic-and-message-contract.md).
 
 The cached `DocumentJson` is the caller-agnostic, pre-profile, full API resource body

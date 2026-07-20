@@ -44,12 +44,15 @@ The DDL generation utility is responsible for database objects derived from the 
   - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
 - Optional projection objects (performance / integrations; required when CDC/Kafka is enabled):
-  - `dms.DocumentCache` (materialized JSON projection and relational CDC source; see
+  - `dms.DocumentCache` (materialized JSON projection and relational CDC upsert source; see
     [data-model.md](data-model.md), [document-cache/](document-cache/), and
-    [cdc/0001-document-cache-cdc-source.md](cdc/0001-document-cache-cdc-source.md))
+    [cdc/0001-relational-cdc-sources.md](cdc/0001-relational-cdc-sources.md))
   - `dms.DocumentCacheProjectionState` and `dms.DocumentCacheProjectionFailure`
     companion objects when the projector is enabled (see
     [document-cache/0004-failure-health-and-ddl-support.md](document-cache/0004-failure-health-and-ddl-support.md))
+  - provider-specific optional CDC setup captures both `dms.DocumentCache` and
+    `dms.Document`, configures `DocumentUuid` keys, and sets PostgreSQL
+    `dms.Document` replica identity for authoritative delete capture
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
   - `auth` schema
   - `auth.EducationOrganizationIdToEducationOrganizationId` (table) and its maintenance triggers/functions

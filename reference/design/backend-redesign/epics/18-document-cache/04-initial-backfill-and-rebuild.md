@@ -29,7 +29,7 @@ lag readiness rather than extending the backfill target.
 ## Acceptance Criteria
 
 - Initial backfill starts automatically or through an explicit internal startup path when projector mode is
-  `Async` or `CdcRequired` and backfill is not complete.
+  `Async` and backfill is not complete.
 - Backfill creates a `BackfillEpochId` and captures `BackfillTargetContentVersion` at epoch start.
 - Backfill scans existing `dms.Document` rows with current `ContentVersion <= BackfillTargetContentVersion` and
   materializes the current representation stamp for each still-current row.
@@ -43,12 +43,16 @@ lag readiness rather than extending the backfill target.
 - Backfill progress exposes epoch id, target content version, scanned/projected content versions, and counts
   where practical.
 - In `Async` mode, normal API traffic can continue while backfill is running.
-- In `CdcRequired` mode, CDC readiness remains false until the bounded backfill epoch completes, no unresolved
-  current projection failures are known, and normal projector lag above the epoch target is within threshold.
+- When Kafka CDC is enabled, projection readiness remains false until the bounded
+  backfill epoch completes, no unresolved current projection failures are known, and
+  normal projector lag above the epoch target is within threshold. This never gates API
+  availability.
 - The completed backfill epoch id and target content version are exposed as the CDC readiness cutover marker:
   versions at or below the target are covered by the bounded epoch, and versions above the target are covered by
   normal projector catch-up lag.
-- Cache truncation or rebuild resets readiness, starts a new epoch, and captures a new target content version.
+- Cache truncation or rebuild resets projection readiness, starts a new epoch, and
+  captures a new target content version. Connector filtering ensures cache deletion
+  publishes no domain tombstones.
 - Tests cover empty database, existing documents, restart/resume, concurrent update during backfill, and cache
   truncation/rebuild.
 

@@ -12,19 +12,24 @@ related:
 
 Generate or parameterize Debezium source connector configurations for relational CDC.
 
-The templates capture only `dms.DocumentCache`, key records by `DocumentUuid`, publish to the instance document
-topic, preserve tombstones, and shape create/update values into the v1 Kafka contract.
+The templates capture `dms.DocumentCache` and `dms.Document` in one connector, key both
+tables by `DocumentUuid`, publish to the instance document topic, shape cache upserts,
+convert document deletes to tombstones, and drop every other captured operation.
 
 ## Acceptance Criteria
 
-- PostgreSQL connector template captures only the selected instance database's `dms.DocumentCache`.
-- SQL Server connector template captures only the selected instance database's `dms.DocumentCache`.
+- PostgreSQL connector template captures only the selected instance database's
+  `dms.DocumentCache` and `dms.Document`.
+- SQL Server connector template captures only the selected instance database's
+  `dms.DocumentCache` and `dms.Document`.
 - Connector templates do not contain hard-coded database names, topic names, replication slot names, or data
   store IDs.
 - Topic prefix is a required input. Production validation requires a stable opaque deployment/environment key
   unique among DMS/CMS deployments sharing Kafka; the short `edfi.dms` prefix is local/test-only unless the
   broker is explicitly declared dedicated to one deployment.
-- Connector configuration sets the Kafka key to `DocumentUuid` for create/update/delete records.
+- Connector configuration sets the Kafka key to `DocumentUuid` for both captured tables.
+- Connector configuration uses one task for the instance so both source tables retain
+  source order before routed-topic publication.
 - Connector templates configure the public wire serialization contract:
   - key converter is `org.apache.kafka.connect.storage.StringConverter`,
   - key bytes are UTF-8 lowercase `DocumentUuid` text with no JSON quoting,
@@ -38,10 +43,12 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
   - no public `DocumentId`,
   - no public `ComputedAt`,
   - structured `document`, using the Ed-Fi expand-JSON SMT from DMS-1240 when needed,
-  - Kafka record-level tombstones with null values passed through unchanged, not JSON `null`,
+  - cache create/update/snapshot records as non-null upserts,
+  - document deletes as exactly one Kafka record-level tombstone,
+  - no output for cache deletes/truncates or other document operations,
   - topic routing to `<topic-prefix>.instance.<instance-key>.documents.v1`.
-- If stock Kafka Connect SMTs cannot produce the exact contract without breaking tombstones, the story adds a
-  small Ed-Fi value-shaping SMT and tests it directly.
+- If stock predicates/SMTs cannot produce the exact source-aware contract safely, the
+  story adds a small Ed-Fi document-state routing/shaping SMT and tests it directly.
 - Template validation tests assert the published Kafka record bytes and parsed shape, not only the connector JSON.
 - Version-specific Debezium and SMT property names are verified against the pinned
   `edfialliance/ed-fi-kafka-connect` image.
@@ -52,12 +59,12 @@ topic, preserve tombstones, and shape create/update values into the v1 Kafka con
    key, deployment-unique topic prefix, replication slot/capture names, and snapshot mode.
 2. Build PostgreSQL connector template generation.
 3. Build SQL Server connector template generation.
-4. Implement or configure transform pipeline for value shaping, JSON expansion, key simplification, tombstone
-   preservation, and topic routing.
+4. Implement or configure source-operation filtering, cache value shaping, JSON
+   expansion, key simplification, document-delete-to-tombstone conversion, duplicate
+   tombstone suppression, and topic routing.
 5. Add unit tests for rendered connector JSON from representative PostgreSQL and SQL Server inputs.
 6. Add a connector smoke test that starts the pinned Connect image and verifies the transform classes load.
-7. Add a fixture-based test that feeds representative Debezium records through the transform pipeline and asserts
-   the v1 contract.
+7. Add fixture-based tests for every retained and dropped operation from both tables.
 8. Add serialized-record tests that catch schema-wrapper, quoted-key, escaped-document, timestamp-format, and
    tombstone rewrites.
 

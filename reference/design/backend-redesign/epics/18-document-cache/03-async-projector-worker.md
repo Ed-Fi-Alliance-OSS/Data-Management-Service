@@ -30,7 +30,7 @@ work/fencing key remains `(DocumentId, target ContentVersion)`.
 
 ## Acceptance Criteria
 
-- DMS starts the projector only when projector mode is `Async` or `CdcRequired`.
+- DMS starts the projector only when projector mode is `Async`.
 - A supervisor enumerates all loaded tenant/data-store configurations and runs one logically isolated projector
   execution context per `(tenant key, DataStoreId)` with a usable connection string.
 - Background execution explicitly selects the target data store in a new service scope; it does not depend on
@@ -46,21 +46,19 @@ work/fencing key remains `(DocumentId, target ContentVersion)`.
 - The projector updates projection state for scanned/projected versions and last successful projection time.
 - The projector skips work for deleted documents without recreating cache rows.
 - The projector stops gracefully during application shutdown and does not leave partial cache rows.
-- The supervisor snapshots its projection execution targets at startup. For entries in Story 00's explicit CDC
-  target list, it retains the startup physical source binding and does not follow a CMS change to a different
-  source. Same-source credential or operational connection-setting refreshes may be adopted after provider-specific
-  identity verification; confirmed source drift makes CDC readiness false and requires coordinated deployment.
+- The supervisor snapshots its projection execution targets at startup. Adding, removing,
+  or replacing a projection target requires explicit configuration and restart; the
+  projector does not follow request-scoped routing state.
 - Work queues, concurrency limits, failures, and cancellation are isolated so one unavailable data store does not
   stop projection for its peers.
 - Tests cover multiple statically configured tenants/data stores with colliding `DocumentId`/`ContentVersion`
-  values, create, update, stale queued work, deleted-document work, failure isolation, restart with a changed
-  configured target list, same-source credential refresh, physical-source drift, and disabled-mode behavior.
+  values, create, update, stale queued work, deleted-document work, failure isolation,
+  restart with a changed projection inventory, and disabled-mode behavior.
 
 ## Tasks
 
 1. Add hosted supervisor lifecycle wiring and a non-HTTP per-data-store execution-scope factory.
-2. Create execution contexts from the tenant-partitioned projection inventory and apply Story 00's explicit CDC
-   target bindings to listed contexts.
+2. Create execution contexts from the tenant-partitioned projection inventory.
 3. Implement candidate scanning over each target database's `dms.Document` and stale/missing cache detection.
 4. Add an internal enqueue API whose process-level work key includes tenant and data-store identity.
 5. Call the shared materializer and guarded cache upsert in the explicitly selected data-store scope.

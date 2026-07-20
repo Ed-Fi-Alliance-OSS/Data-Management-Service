@@ -22,7 +22,7 @@ contract.
 - Unblocks `18-03-async-projector-worker.md`, `18-04-initial-backfill-and-rebuild.md`,
   `18-08-projection-retry-dead-letter-and-repair.md`, and
   `18-09-documentcache-health-readiness-and-telemetry.md`.
-- Provides required source/state objects consumed by `17-cdc-kafka/00-documentcache-cdc-prerequisites.md` and
+- Provides required projection/state objects consumed by `17-cdc-kafka/00-documentcache-cdc-prerequisites.md` and
   `17-cdc-kafka/01-cdc-ddl-support.md`.
 
 ## Acceptance Criteria

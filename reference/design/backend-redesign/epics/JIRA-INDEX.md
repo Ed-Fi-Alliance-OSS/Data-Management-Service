@@ -198,24 +198,22 @@ This index links design documents under `reference/design/backend-redesign/epics
 ## Proposed Epics Pending Jira Creation
 
 - `TBD` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/17-cdc-kafka/EPIC.md`
-  - `TBD` — Wire CDC enablement to `dms.DocumentCache` projector guarantees — `reference/design/backend-redesign/epics/17-cdc-kafka/00-documentcache-cdc-prerequisites.md`
-  - `TBD` — Emit/provision CDC key and database setup support for `dms.DocumentCache` — `reference/design/backend-redesign/epics/17-cdc-kafka/01-cdc-ddl-support.md`
+  - `TBD` — Wire CDC enablement to two-table source guarantees — `reference/design/backend-redesign/epics/17-cdc-kafka/00-documentcache-cdc-prerequisites.md`
+  - `TBD` — Emit/provision two-table CDC key and database support — `reference/design/backend-redesign/epics/17-cdc-kafka/01-cdc-ddl-support.md`
   - `TBD` — Generate PostgreSQL and SQL Server connector templates — `reference/design/backend-redesign/epics/17-cdc-kafka/02-connector-template-generation.md`
   - `TBD` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/17-cdc-kafka/03-bootstrap-enable-kafka-cdc.md`
-  - `TBD` — Add Kafka message contract tests — `reference/design/backend-redesign/epics/17-cdc-kafka/04-message-contract-tests.md`
+  - `TBD` — Add Kafka message and source-routing contract tests — `reference/design/backend-redesign/epics/17-cdc-kafka/04-message-contract-tests.md`
   - `TBD` — Replace legacy Kafka E2E expectations with relational CDC scenarios — `reference/design/backend-redesign/epics/17-cdc-kafka/05-e2e-kafka-scenarios.md`
   - `TBD` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/17-cdc-kafka/06-ops-docs-runbooks.md`
 
-- `TBD` — `dms.DocumentCache` Projector and CDC Source Guarantees — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
-  - `TBD` — Add DocumentCache configuration and mode boundaries — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-mode-boundaries.md`
+- `TBD` — `dms.DocumentCache` Projection — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
+  - `TBD` — Add DocumentCache configuration boundaries — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-mode-boundaries.md`
   - `TBD` — Emit DocumentCache projector state and failure DDL — `reference/design/backend-redesign/epics/18-document-cache/01-documentcache-ddl-and-projector-state.md`
   - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md`
   - `TBD` — Add asynchronous DocumentCache projector worker — `reference/design/backend-redesign/epics/18-document-cache/03-async-projector-worker.md`
   - `TBD` — Add restartable initial backfill and rebuild support — `reference/design/backend-redesign/epics/18-document-cache/04-initial-backfill-and-rebuild.md`
   - `TBD` — Add fresh-cache read path with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`
-  - `TBD` — Add CDC-mode pre-delete source-row materialization — `reference/design/backend-redesign/epics/18-document-cache/06-cdc-pre-delete-materialization.md`
   - `TBD` — Enforce projector stale-write and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/07-projector-stale-write-fencing.md`
   - `TBD` — Add projection retry, dead-letter, and repair handling — `reference/design/backend-redesign/epics/18-document-cache/08-projection-retry-dead-letter-and-repair.md`
   - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/09-documentcache-health-readiness-and-telemetry.md`
-  - `TBD` — Verify provider CDC delete source-row behavior — `reference/design/backend-redesign/epics/18-document-cache/10-provider-cdc-delete-verification.md`
   - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/11-documentcache-integration-tests-and-runbooks.md`

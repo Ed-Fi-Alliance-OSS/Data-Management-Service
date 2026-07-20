@@ -1,6 +1,6 @@
 ---
 status: proposed
-date: 2026-07-07
+date: 2026-07-20
 jira: DMS-1246
 related:
   - DMS-1245
@@ -11,9 +11,7 @@ related:
 ## Decision
 
 DMS owns the v1 `dms.DocumentCache` projector. It runs as an application-hosted
-background service, with request-path helpers for enqueueing projection work and for the
-CDC-mode delete guarantee described in
-[0003-cdc-delete-and-downstream-guarantees.md](0003-cdc-delete-and-downstream-guarantees.md).
+background service, with request-path helpers for enqueueing projection work.
 
 The projector uses the same relational reconstitution and materialization pipeline as
 GET/query response assembly. Database triggers, database jobs, and external workers are
@@ -112,18 +110,14 @@ queues, failures, and concurrency limits so one unavailable database cannot stop
 for unrelated data stores. It does not refresh CMS inventory or add, replace, or retire
 execution contexts while the process is running.
 
-For CDC, the supervisor consumes the explicit deployment-configured target list and its
-provider-resolved physical source bindings. A later CMS refresh may update ordinary routing
-data. If a configured target resolves to a different physical source, DMS does not move the
-fixed projector or connector implicitly: that target's CDC readiness becomes false and a
-coordinated deployment is required. Normal request routing remains independent. The
-optional, default-off zero-loss host policy may block mutations while readiness is false,
-but it never blocks GETs or other read-only requests.
+CDC/Kafka may consume the projector's per-data-store health for its explicit target list,
+but target/source binding and connector reconciliation are not projector responsibilities.
+Normal request routing and mutation availability remain independent.
 
 Adding, removing, or changing a projector target requires an explicit configuration change
 and deployment/restart. Destructive retirement of `dms.DocumentCache`, projector state,
 Kafka topics, offsets, or database CDC artifacts remains an explicit operator/deployment
-action. The supervisor exposes per-data-store source readiness for the DMS-1245 one-shot
+action. The supervisor exposes per-data-store projection readiness for the DMS-1245 one-shot
 connector-registration workflow; it does not manage Kafka Connect itself.
 
 ## Backfill and Rebuild
@@ -175,18 +169,19 @@ For `Projector:Mode = Async`, DMS may serve normal API traffic before the bounde
 backfill epoch completes because cache misses fall back to relational reconstitution.
 Health should report backfill progress and lag.
 
-For `Projector:Mode = CdcRequired`, CDC readiness is false until initial backfill has
-completed for the bounded epoch, no unresolved current projection failures are known,
-and ongoing projector lag for versions above `BackfillTargetContentVersion` is within
-the configured readiness threshold.
+When Kafka CDC is enabled, CDC readiness is false until initial backfill has completed for
+the bounded epoch, no unresolved current projection failures are known, and ongoing
+projector lag for versions above `BackfillTargetContentVersion` is within the configured
+readiness threshold. Readiness is observational and does not change API behavior.
 
 Cache truncation or rebuild follows the same rule:
 
-- In non-CDC modes, DMS may truncate/rebuild the cache and rely on read fallback while
-  the bounded backfill epoch catches up.
-- In CDC mode, truncation/rebuild makes CDC not ready. Operators must either quiesce CDC
-  expectations until a bounded backfill epoch completes again or use a
-  provider-specific resnapshot procedure from the CDC runbook.
+- DMS may truncate/rebuild the cache and rely on read fallback while the bounded backfill
+  epoch catches up.
+- When CDC is enabled, truncation/rebuild makes projection readiness false until the new
+  bounded epoch completes. Cache deletes are ignored by the connector, so the operation
+  does not publish document tombstones; the rebuild publishes upserts for current
+  documents.
 
 Schema reprovisioning must not reuse cache rows across incompatible effective schemas.
 The existing `EffectiveSchemaHash` preflight prevents DMS from serving a database with a
@@ -201,8 +196,8 @@ cache and must backfill before CDC readiness can pass.
 - The projector does not need reverse dependency expansion. Direct changes and indirect
   reference-identity changes already bump the affected document's
   `dms.Document.ContentVersion` through the update-tracking/stamping design.
-- CDC mode does not make all projection synchronous. Only the delete source-row guarantee
-  is synchronous because deletes remove the row Debezium needs for the Kafka tombstone.
+- CDC does not make projection synchronous and does not add request-path materialization.
+  Canonical deletes are captured independently from `dms.Document`.
 
 ## Alternatives Considered
 
