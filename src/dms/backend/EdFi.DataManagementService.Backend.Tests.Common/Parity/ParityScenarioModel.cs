@@ -155,6 +155,30 @@ public enum ProductionBoundary
     /// executor. Used by rows whose only coverage is a synthesizer unit test.
     /// </summary>
     ProfileMergeSynthesizer,
+
+    /// <summary>
+    /// Provider-independent profile creatability derivation (<c>CreatabilityAnalyzer</c> in Core): deriving whether
+    /// a scope or collection item is creatable — for example demoting a newly created parent to non-creatable
+    /// because a required member is hidden, which then blocks its descendants. Exercised by Core unit tests.
+    /// Distinct from the downstream <see cref="ProfileMergeSynthesizer"/>, which consumes already-derived
+    /// creatability flags rather than deriving them.
+    /// </summary>
+    ProfileCreatabilityAnalysis,
+}
+
+/// <summary>
+/// The unit-test assembly that owns a provider-independent <see cref="ParityScenario.UnitLocations"/> entry.
+/// A unit location is machine-resolved only against its owning assembly, so the profile merge-synthesizer proofs
+/// in Backend.Tests.Unit and the creatability-analyzer derivation proofs in Core.Tests.Unit each resolve against
+/// their own assembly rather than being cross-checked against an assembly that cannot contain them.
+/// </summary>
+public enum UnitTestAssembly
+{
+    /// <summary>EdFi.DataManagementService.Backend.Tests.Unit (profile merge-synthesizer unit proofs).</summary>
+    BackendTestsUnit,
+
+    /// <summary>EdFi.DataManagementService.Core.Tests.Unit (Core creatability-analyzer derivation proofs).</summary>
+    CoreTestsUnit,
 }
 
 /// <summary>
@@ -162,7 +186,16 @@ public enum ProductionBoundary
 /// exercise the scenario. Names are recorded independently per engine because the provider suites
 /// do not mechanically mirror each other's names.
 /// </summary>
-public sealed record ScenarioLocation(string File, string Fixture, ImmutableArray<string> Methods);
+public sealed record ScenarioLocation(string File, string Fixture, ImmutableArray<string> Methods)
+{
+    /// <summary>
+    /// The test assembly that owns this location when it is a <see cref="ParityScenario.UnitLocations"/> entry, so a
+    /// unit-location resolution pass validates each unit location only against its owning assembly. Required
+    /// (non-null) on a unit location and must be null on per-engine <see cref="ParityScenario.PgsqlLocations"/>/
+    /// <see cref="ParityScenario.MssqlLocations"/> locations (which are resolved per engine, not per unit assembly).
+    /// </summary>
+    public UnitTestAssembly? UnitOwner { get; init; }
+}
 
 /// <summary>
 /// The resolved effective reusable assertion/helper entry point for a parity row. For

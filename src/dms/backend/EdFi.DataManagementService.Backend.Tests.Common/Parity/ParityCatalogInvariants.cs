@@ -83,9 +83,9 @@ public static class ParityCatalogInvariants
 
     private static void ValidateLocations(ParityScenario scenario, string id, List<string> violations)
     {
-        CheckLocations(scenario.PgsqlLocations, id, "PostgreSQL", violations);
-        CheckLocations(scenario.MssqlLocations, id, "SQL Server", violations);
-        CheckLocations(scenario.UnitLocations, id, "unit", violations);
+        CheckLocations(scenario.PgsqlLocations, id, "PostgreSQL", isUnitLocation: false, violations);
+        CheckLocations(scenario.MssqlLocations, id, "SQL Server", isUnitLocation: false, violations);
+        CheckLocations(scenario.UnitLocations, id, "unit", isUnitLocation: true, violations);
 
         CheckCoverageLocationConsistency(
             id,
@@ -127,6 +127,7 @@ public static class ParityCatalogInvariants
         ImmutableArray<ScenarioLocation> locations,
         string id,
         string engine,
+        bool isUnitLocation,
         List<string> violations
     )
     {
@@ -145,6 +146,22 @@ public static class ParityCatalogInvariants
             if (location.Methods.IsDefaultOrEmpty || location.Methods.Any(string.IsNullOrWhiteSpace))
             {
                 violations.Add($"{id}: a {engine} location requires at least one non-blank test method.");
+            }
+
+            // Unit-location ownership: a unit location must name its owning test assembly so a unit-resolution pass
+            // validates it only against that assembly, and a per-engine provider location must never carry unit
+            // ownership (it is resolved per engine, not per unit assembly).
+            if (isUnitLocation && location.UnitOwner is null)
+            {
+                violations.Add(
+                    $"{id}: a unit location must declare an owning test assembly (UnitOwner) so it resolves only against that assembly."
+                );
+            }
+            else if (!isUnitLocation && location.UnitOwner is not null)
+            {
+                violations.Add(
+                    $"{id}: a {engine} provider location must not declare a unit owning assembly (UnitOwner is only valid on a unit location)."
+                );
             }
         }
     }
@@ -226,7 +243,8 @@ public static class ParityCatalogInvariants
             ParityLayer.Api => scenario.Boundary == ProductionBoundary.HttpPipeline,
             ParityLayer.Profile => scenario.Boundary
                 is ProductionBoundary.ProfilePersistExecutor
-                    or ProductionBoundary.ProfileMergeSynthesizer,
+                    or ProductionBoundary.ProfileMergeSynthesizer
+                    or ProductionBoundary.ProfileCreatabilityAnalysis,
             ParityLayer.NoProfile => scenario.Boundary
                 is ProductionBoundary.NoProfilePersister
                     or ProductionBoundary.NoProfileMerge

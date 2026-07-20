@@ -116,11 +116,14 @@ public static partial class ParityScenarioCatalog
         ),
         UpdateVariant(
             "DeletedAndReplacedChildCollectionRows",
-            "A changed PUT reuses retained child-collection ids and replaces omitted rows across multiple child tables.",
+            "A POST-as-update that resolves to an existing document reuses retained child-collection ids and replaces omitted rows across multiple child tables.",
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             "It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows",
-            "NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse"
+            "NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse",
+            notes: "POST-as-update execution of the shared NoProfileMerge retained-id/omitted-row mechanic (the fixture "
+                + "reaches the merge through UpsertDocument, not a changed PUT). The changed-PUT twin of this "
+                + "collection-identity behavior is recorded by NoProfileMultiBatchCollection/AuthoritativeChangedPutIdentity."
         ),
         Gap(
             "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection",
@@ -408,6 +411,7 @@ public static partial class ParityScenarioCatalog
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             ["It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put"],
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionChangedPutIdentity"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers"
         ),
         Gap(
             "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
@@ -873,7 +877,8 @@ public static partial class ParityScenarioCatalog
         string file,
         string fixture,
         string method,
-        string sharedEntryPoint
+        string sharedEntryPoint,
+        string? notes = null
     ) =>
         Gap(
             $"NoProfileChangedPutOmissionSemantics/{variant}",
@@ -882,7 +887,8 @@ public static partial class ParityScenarioCatalog
             file,
             fixture,
             [method],
-            sharedEntryPoint: sharedEntryPoint
+            sharedEntryPoint: sharedEntryPoint,
+            notes: notes
         );
 
     private static ParityScenario ReorderVariant(

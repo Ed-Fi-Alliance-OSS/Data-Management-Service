@@ -613,7 +613,6 @@
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
           "Npgsql": "[8.0.4, )"
         }
@@ -622,6 +621,18 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.tests.common": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "FluentAssertions": "[6.12.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "NUnit": "[4.2.2, )"
         }
       },
       "edfi.datamanagementservice.core": {

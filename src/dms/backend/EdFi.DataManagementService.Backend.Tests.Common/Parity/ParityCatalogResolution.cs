@@ -177,12 +177,15 @@ public static class ParityCatalogResolution
     }
 
     /// <summary>
-    /// Validates every unit-test location declared by any catalog row against <paramref name="unitAssembly"/>
-    /// (Na rows record their provider-independent synthesizer entry points as unit locations), returning an
-    /// actionable violation per unresolved target. Applies the same exactly-one-class / exactly-one-[Test]-method
-    /// contract as backend locations.
+    /// Validates every unit-test location <b>owned by <paramref name="owner"/></b> against
+    /// <paramref name="unitAssembly"/> (Na rows record their provider-independent synthesizer/analyzer entry points
+    /// as unit locations, each owned by the assembly that contains it), returning an actionable violation per
+    /// unresolved target. Each owning assembly runs its own meta-test passing its own
+    /// <see cref="Assembly.GetExecutingAssembly"/> and matching <paramref name="owner"/>, so a unit location is only
+    /// ever resolved against the assembly that can contain it. Applies the same exactly-one-class /
+    /// exactly-one-[Test]-method contract as backend locations.
     /// </summary>
-    public static IReadOnlyList<string> ResolveUnitLocations(Assembly unitAssembly)
+    public static IReadOnlyList<string> ResolveUnitLocations(Assembly unitAssembly, UnitTestAssembly owner)
     {
         ArgumentNullException.ThrowIfNull(unitAssembly);
 
@@ -190,7 +193,7 @@ public static class ParityCatalogResolution
 
         foreach (ParityScenario scenario in ParityScenarioCatalog.All)
         {
-            foreach (ScenarioLocation location in scenario.UnitLocations)
+            foreach (ScenarioLocation location in scenario.UnitLocations.Where(l => l.UnitOwner == owner))
             {
                 ResolveLocation(scenario.Id, "unit", location, unitAssembly, violations);
             }

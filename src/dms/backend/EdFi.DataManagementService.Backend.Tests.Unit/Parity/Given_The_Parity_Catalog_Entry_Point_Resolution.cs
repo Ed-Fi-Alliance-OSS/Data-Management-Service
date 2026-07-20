@@ -14,8 +14,9 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Parity;
 
 /// <summary>
 /// Reflection meta-tests proving the catalog's effective entry points name real members: every unit-test
-/// location resolves to a declared <c>[Test]</c> method in this Backend.Tests.Unit assembly (the provider-
-/// independent Na synthesizer entry points), and every Direct/Inherited Backend.Tests.Common shared entry point
+/// location owned by this Backend.Tests.Unit assembly resolves to a declared <c>[Test]</c> method here (the
+/// provider-independent Na merge-synthesizer entry points; Core.Tests.Unit-owned unit locations are resolved by
+/// the Core meta-test against the Core assembly), and every Direct/Inherited Backend.Tests.Common shared entry point
 /// resolves every named type and member in the common assembly. The API shared entry points are validated
 /// separately by <c>Given_The_Api_Parity_Catalog_Resolution</c> against the API assembly, and the backend
 /// provider locations by the per-engine backend meta-tests. A filesystem pass additionally proves every recorded
@@ -27,7 +28,10 @@ public class Given_The_Parity_Catalog_Entry_Point_Resolution
 {
     [Test]
     public void It_resolves_every_unit_location_to_a_declared_test_method() =>
-        ParityCatalogResolution.ResolveUnitLocations(Assembly.GetExecutingAssembly()).Should().BeEmpty();
+        ParityCatalogResolution
+            .ResolveUnitLocations(Assembly.GetExecutingAssembly(), UnitTestAssembly.BackendTestsUnit)
+            .Should()
+            .BeEmpty();
 
     [Test]
     public void It_resolves_every_common_shared_entry_point_to_a_real_type() =>

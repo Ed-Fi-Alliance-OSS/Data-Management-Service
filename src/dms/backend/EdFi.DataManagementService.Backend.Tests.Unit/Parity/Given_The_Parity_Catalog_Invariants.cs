@@ -74,7 +74,10 @@ internal static class ParityInvariantSamples
             Boundary = ProductionBoundary.ProfileMergeSynthesizer,
             UnitLocations =
             [
-                new("SampleSynthesizerTests.cs", "Given_Sample_Unit_Fixture", ["It_returns_a_rejection"]),
+                new("SampleSynthesizerTests.cs", "Given_Sample_Unit_Fixture", ["It_returns_a_rejection"])
+                {
+                    UnitOwner = UnitTestAssembly.BackendTestsUnit,
+                },
             ],
             PgsqlCoverage = EngineCoverage.NotApplicable,
             MssqlCoverage = EngineCoverage.NotApplicable,
@@ -453,7 +456,10 @@ public class Given_A_Unit_Location_On_A_Non_Na_Row
         {
             UnitLocations =
             [
-                new("SampleSynthesizerTests.cs", "Given_Sample_Unit_Fixture", ["It_returns_a_rejection"]),
+                new("SampleSynthesizerTests.cs", "Given_Sample_Unit_Fixture", ["It_returns_a_rejection"])
+                {
+                    UnitOwner = UnitTestAssembly.BackendTestsUnit,
+                },
             ],
         };
         _violations = ParityInvariantSamples.Validate(scenarios);
@@ -464,6 +470,64 @@ public class Given_A_Unit_Location_On_A_Non_Na_Row
         _violations
             .Should()
             .Contain(v => v.Contains("Unit locations are only valid on an Na row", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Unit_Location_Without_An_Owning_Assembly
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // A unit location must declare its owning test assembly so it is resolved only against that assembly.
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[3] = scenarios[3] with
+        {
+            UnitLocations =
+            [
+                new("SampleSynthesizerTests.cs", "Given_Sample_Unit_Fixture", ["It_returns_a_rejection"]),
+            ],
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_missing_unit_owner() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("must declare an owning test assembly", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Provider_Location_That_Declares_A_Unit_Owner
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // A per-engine provider location must never carry a unit owning assembly (that is only valid on a unit
+        // location resolved against a specific unit assembly).
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[1] = scenarios[1] with
+        {
+            PgsqlLocations =
+            [
+                new("PostgresqlSample.cs", "Given_A_Postgresql_Sample", ["It_persists"])
+                {
+                    UnitOwner = UnitTestAssembly.BackendTestsUnit,
+                },
+            ],
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_provider_location_carrying_a_unit_owner() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("must not declare a unit owning assembly", StringComparison.Ordinal));
 }
 
 [TestFixture]

@@ -120,7 +120,7 @@ public static partial class ParityScenarioCatalog
             "ProfileSeparateTableMergeFixtureTests",
             "Given_A_ProfiledUpdate_WithHiddenDescriptorFKOn_SeparateTable_PreservesFK",
             "Given_A_Mssql_ProfiledUpdate_WithHiddenDescriptorFKOn_SeparateTable_PreservesFK",
-            ["It_preserves_the_hidden_descriptor_fk"]
+            ["It_updates_the_visible_scalar", "It_preserves_the_hidden_descriptor_fk"]
         ),
         // ProfileVisibleRowUpdateWithHiddenRowPreservation + variants
         Profile(
@@ -133,11 +133,33 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/TopLevel",
-            "Top-level-collection shape: a profiled PUT updates visible rows and preserves hidden rows.",
-            "ProfileTopLevelCollectionMergeTests",
-            "Given_A_Postgresql_Profiled_TopLevelCollection_Merge",
-            "Given_A_Mssql_Profiled_TopLevelCollection_Merge",
-            ["It_updates_visible_rows_and_preserves_hidden_rows"]
+            "Top-level-collection shape: a profiled PUT updates visible rows and preserves hidden rows, in both the "
+                + "ordinary and the reference-backed-identity top-level forms.",
+            [
+                PgLoc(
+                    "ProfileTopLevelCollectionMergeTests",
+                    "Given_A_Postgresql_Profiled_TopLevelCollection_Merge",
+                    ["It_updates_visible_rows_and_preserves_hidden_rows"]
+                ),
+                PgLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_updates_in_place_when_request_item_matches_stored_visible_row_by_reference_identity"]
+                ),
+            ],
+            [
+                MsLoc(
+                    "ProfileTopLevelCollectionMergeTests",
+                    "Given_A_Mssql_Profiled_TopLevelCollection_Merge",
+                    ["It_updates_visible_rows_and_preserves_hidden_rows"]
+                ),
+                MsLoc(
+                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
+                    "Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
+                    ["It_updates_in_place_when_request_item_matches_stored_visible_row_by_reference_identity"]
+                ),
+            ],
+            providerSpecificRationale: ProfileMixedFixtureProviderSpecificRationale
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/NoPreviouslyVisibleRows",
@@ -187,32 +209,12 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
-            "A profiled PUT updates a root-level extension child collection (nested and reference-backed forms).",
-            [
-                PgLoc(
-                    "ProfileNestedCollectionMergeTests",
-                    "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
-                    ["It_updates_the_root_extension_child_values", "It_updates_the_root_extension_scalars"]
-                ),
-                PgLoc(
-                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
-                    "Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
-                    ["It_updates_in_place_when_request_item_matches_stored_visible_row_by_reference_identity"]
-                ),
-            ],
-            [
-                MsLoc(
-                    "ProfileNestedCollectionMergeTests",
-                    "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
-                    ["It_updates_the_root_extension_child_values", "It_updates_the_root_extension_scalars"]
-                ),
-                MsLoc(
-                    "ProfileTopLevelCollectionReferenceBackedMergeTests",
-                    "Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
-                    ["It_updates_in_place_when_request_item_matches_stored_visible_row_by_reference_identity"]
-                ),
-            ],
-            providerSpecificRationale: ProfileMixedFixtureProviderSpecificRationale
+            "A profiled PUT updates a root-level extension child collection (nested form).",
+            "ProfileNestedCollectionMergeTests",
+            "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
+            "Given_a_ProfileNested_put_request_updating_root_extension_child_collection",
+            ["It_updates_the_root_extension_child_values", "It_updates_the_root_extension_scalars"],
+            sharedEntryPoint: NestedCollectionSharedEntryPoint
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/CollectionAlignedExtensionChildCollection",
@@ -409,7 +411,7 @@ public static partial class ParityScenarioCatalog
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
-            "A three-level chain contrasting descendant create under an existing visible middle-level parent (allowed — the new grandchild is inserted) with descendant create under a newly created, non-creatable visible middle-level parent (rejected at the middle scope, the descendant never reached); provider-independent, validated at the synthesizer unit level.",
+            "A three-level chain contrasting descendant create under an existing visible middle-level parent (allowed — the new grandchild is inserted) with descendant create under a newly created, non-creatable visible middle-level parent (rejected at the middle scope, the descendant never reached). This row proves the downstream synthesizer merge/rejection behavior from supplied creatability flags; the upstream hidden-required-member derivation that produces those flags is proved by ThreeLevelChainCreatabilityDerivation. Provider-independent, validated at the merge-synthesizer unit level.",
             "Given_three_level_chain_contrasts_descendant_create_under_an_existing_versus_a_newly_created_middle_parent",
             [
                 "It_allows_the_descendant_create_under_an_existing_middle_parent",
@@ -417,6 +419,21 @@ public static partial class ParityScenarioCatalog
                 "It_rejects_the_descendant_create_under_a_newly_created_middle_parent",
                 "It_identifies_the_new_middle_parent_scope_in_the_rejection",
             ]
+        ),
+        ProfileNa(
+            "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChainCreatabilityDerivation",
+            "The upstream creatability derivation for the three-level chain: the Core CreatabilityAnalyzer marks a descendant collection item creatable under an existing parent instance but non-creatable under a newly created parent instance that a hidden required member makes non-creatable, emitting the parent-scope and descendant-item rejection failures. This is the derivation that produces the creatability flags the synthesizer-level ThreeLevelChain row consumes; provider-independent, validated at the Core analyzer unit level.",
+            "Given_Collection_Items_Under_Different_Parent_Instances",
+            [
+                "It_should_mark_alpha_collection_item_as_creatable",
+                "It_should_mark_beta_collection_item_as_non_creatable",
+                "It_should_emit_failure_for_beta_parent",
+                "It_should_emit_failure_for_beta_collection_item",
+            ],
+            ProductionBoundary.ProfileCreatabilityAnalysis,
+            "CreatabilityAnalyzerTests.cs",
+            UnitTestAssembly.CoreTestsUnit,
+            ProfileCreatabilityDerivationProviderSpecificRationale
         ),
         // ProfileHiddenExtensionChildCollectionPreservation + variant
         Profile(
@@ -554,6 +571,13 @@ public static partial class ParityScenarioCatalog
         + "level; the unit fixture recorded on this row is the effective assertion entry point and no cross-engine "
         + "shared contract applies.";
 
+    // The upstream creatability derivation is proved in Core (CreatabilityAnalyzer), a different unit assembly than
+    // the synthesizer proofs, so its row records a Core.Tests.Unit-owned unit location resolved against that assembly.
+    private const string ProfileCreatabilityDerivationProviderSpecificRationale =
+        "Provider-independent hidden-required-member creatability derivation validated at the Core CreatabilityAnalyzer "
+        + "unit level; the Core.Tests.Unit fixture recorded on this row is the effective assertion entry point and no "
+        + "cross-engine shared contract applies.";
+
     private static ScenarioLocation PgLoc(string stem, string fixture, string[] methods) =>
         new($"Postgresql{stem}.cs", fixture, [.. methods]);
 
@@ -616,25 +640,26 @@ public static partial class ParityScenarioCatalog
         string id,
         string contract,
         string unitFixture,
-        string[] unitMethods
+        string[] unitMethods,
+        ProductionBoundary boundary = ProductionBoundary.ProfileMergeSynthesizer,
+        string unitFile = "RelationalWriteProfileMergeSynthesizerTests.cs",
+        UnitTestAssembly owner = UnitTestAssembly.BackendTestsUnit,
+        string? providerSpecificRationale = null
     ) =>
         new()
         {
             Id = id,
             Layer = ParityLayer.Profile,
             BehavioralContract = contract,
-            Boundary = ProductionBoundary.ProfileMergeSynthesizer,
+            Boundary = boundary,
             UnitLocations =
             [
-                new ScenarioLocation(
-                    "RelationalWriteProfileMergeSynthesizerTests.cs",
-                    unitFixture,
-                    [.. unitMethods]
-                ),
+                new ScenarioLocation(unitFile, unitFixture, [.. unitMethods]) { UnitOwner = owner },
             ],
             PgsqlCoverage = EngineCoverage.NotApplicable,
             MssqlCoverage = EngineCoverage.NotApplicable,
             Classification = ParityClassification.Na,
-            ProviderSpecificEntryPointRationale = ProfileNaProviderSpecificRationale,
+            ProviderSpecificEntryPointRationale =
+                providerSpecificRationale ?? ProfileNaProviderSpecificRationale,
         };
 }

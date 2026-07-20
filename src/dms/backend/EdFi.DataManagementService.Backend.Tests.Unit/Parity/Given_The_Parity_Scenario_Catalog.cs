@@ -89,6 +89,7 @@ public class Given_The_Parity_Scenario_Catalog
         "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NestedCommonTypeScope",
         "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ExtensionCollectionItem",
         "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
+        "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChainCreatabilityDerivation",
         "ProfileHiddenExtensionChildCollectionPreservation",
         "ProfileHiddenExtensionChildCollectionPreservation/CollectionAlignedExtensionHidden",
         "ProfileUnchangedWriteGuardedNoOp",
@@ -433,7 +434,7 @@ public class Given_The_Parity_Scenario_Catalog
             string id in (string[])
                 [
                     "ProfileVisibleRowUpdateWithHiddenRowPreservation/InterleavedUpdatePlusInsert",
-                    "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
+                    "ProfileVisibleRowUpdateWithHiddenRowPreservation/TopLevel",
                     "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NewVisible1To1Scope",
                 ]
         )
@@ -460,9 +461,35 @@ public class Given_The_Parity_Scenario_Catalog
             row.Classification.Should().Be(ParityClassification.Na);
             row.Boundary.Should().Be(ProductionBoundary.ProfileMergeSynthesizer);
             row.UnitLocations.Should().NotBeEmpty();
+            row.UnitLocations.Should().OnlyContain(l => l.UnitOwner == UnitTestAssembly.BackendTestsUnit);
             row.PgsqlCoverage.Should().Be(EngineCoverage.NotApplicable);
             row.MssqlCoverage.Should().Be(EngineCoverage.NotApplicable);
         }
+    }
+
+    private static readonly string[] ExpectedThreeLevelChainDerivationUnitTriples =
+    [
+        "CreatabilityAnalyzerTests.cs::Given_Collection_Items_Under_Different_Parent_Instances::It_should_mark_alpha_collection_item_as_creatable",
+        "CreatabilityAnalyzerTests.cs::Given_Collection_Items_Under_Different_Parent_Instances::It_should_mark_beta_collection_item_as_non_creatable",
+        "CreatabilityAnalyzerTests.cs::Given_Collection_Items_Under_Different_Parent_Instances::It_should_emit_failure_for_beta_parent",
+        "CreatabilityAnalyzerTests.cs::Given_Collection_Items_Under_Different_Parent_Instances::It_should_emit_failure_for_beta_collection_item",
+    ];
+
+    [Test]
+    public void It_records_the_creatability_derivation_variant_against_the_core_analyzer_assembly()
+    {
+        ParityScenario row = _all.Single(s =>
+            s.Id
+            == "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChainCreatabilityDerivation"
+        );
+
+        row.Classification.Should().Be(ParityClassification.Na);
+        row.Boundary.Should().Be(ProductionBoundary.ProfileCreatabilityAnalysis);
+        row.PgsqlCoverage.Should().Be(EngineCoverage.NotApplicable);
+        row.MssqlCoverage.Should().Be(EngineCoverage.NotApplicable);
+        row.UnitLocations.Should().ContainSingle();
+        row.UnitLocations[0].UnitOwner.Should().Be(UnitTestAssembly.CoreTestsUnit);
+        Flatten(row.UnitLocations).Should().BeEquivalentTo(ExpectedThreeLevelChainDerivationUnitTriples);
     }
 
     private static readonly string[] ExpectedNoProfileExtCreatePgTriples =
