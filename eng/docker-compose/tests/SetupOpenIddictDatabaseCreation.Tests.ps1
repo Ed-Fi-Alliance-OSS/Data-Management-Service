@@ -169,127 +169,112 @@ Describe "start-local-config.ps1 self-contained OpenIddict ordering" {
         $insertDataIndex | Should -BeGreaterThan $configStartIndex
     }
 
-    It "enforces the process-environment agreement before starting the database (for both identity providers)" {
-        # Docker Compose gives shell state precedence over --env-file, so the standalone lane must verify no
-        # process override would point CMS at a different database than the selected topology - for BOTH
-        # identity providers (Keycloak's EnsureDatabase would silently create a shell-redirected database) -
-        # and it must do so before the database starts and before -InitDb writes to the file-derived database.
-        $guardIndex = $script:localConfigSource.IndexOf('Assert-ConfigDatabaseProcessEnvironmentAgreement')
+    It "resolves the effective runtime contract before starting the database (for both identity providers)" {
+        # The standalone lane resolves one runtime contract that enforces engine agreement, the connection
+        # engine/database invariant, and datastore-name agreement - for BOTH identity providers (Keycloak's
+        # EnsureDatabase would otherwise silently create a shell-redirected database) - before the database
+        # starts and before -InitDb.
+        $contractIndex = $script:localConfigSource.IndexOf('Resolve-EffectiveConfigRuntimeContract')
         $dbStartIndex = $script:localConfigSource.IndexOf('Write-Output "Starting database..."')
         $initDbIndex = $script:localConfigSource.IndexOf('./setup-openiddict.ps1 -InitDb')
 
-        $guardIndex | Should -BeGreaterThan -1 -Because "the standalone Configuration Service lane must run the process-environment precedence guard"
-        $guardIndex | Should -BeLessThan $dbStartIndex -Because "the guard must fail fast before any docker action, for both identity providers"
-        $guardIndex | Should -BeLessThan $initDbIndex -Because "the guard must run before OpenIddict initializes the file-derived database"
+        $contractIndex | Should -BeGreaterThan -1 -Because "the standalone lane must resolve the runtime contract"
+        $contractIndex | Should -BeLessThan $dbStartIndex -Because "the contract must fail fast before any docker action, for both identity providers"
+        $contractIndex | Should -BeLessThan $initDbIndex -Because "the contract must be resolved before OpenIddict initialization"
     }
 
-    It "runs the process-environment agreement guard for both identity providers (not gated on self-contained)" {
-        # Regression guard: the guard previously ran only inside the self-contained identity branch, so
-        # Keycloak accepted shell overrides docker-compose applies over the env file - a shell
-        # DMS_CONFIG_DATABASE_NAME=rogue_db redirects the CMS connection and Keycloak's EnsureDatabase
-        # silently creates/uses rogue_db, and a wrong-engine shell connection reaches CMS unguarded. Assert
-        # via AST that the guard call has NO enclosing if/elseif clause whose condition references
-        # $IdentityProvider, so it runs for self-contained AND Keycloak.
+    It "resolves the runtime contract for both identity providers (not gated on self-contained)" {
+        # Regression guard: agreement validation previously ran only inside the self-contained branch, so
+        # Keycloak accepted shell overrides docker-compose applies over the env file (a shell
+        # DMS_CONFIG_DATABASE_NAME=rogue_db redirects CMS; a wrong-engine shell connection reaches it). The
+        # single runtime contract now runs for both providers. Assert via AST that the contract call has NO
+        # enclosing if/elseif clause whose condition references $IdentityProvider.
         $parseErrors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseInput($script:localConfigSource, [ref]$null, [ref]$parseErrors)
         $parseErrors | Should -BeNullOrEmpty -Because "start-local-config.ps1 must parse cleanly for the AST assertion to be meaningful"
 
-        $guardCalls = $ast.FindAll(
+        $contractCalls = $ast.FindAll(
             {
                 param($node)
                 $node -is [System.Management.Automation.Language.CommandAst] -and
-                $node.GetCommandName() -eq 'Assert-ConfigDatabaseProcessEnvironmentAgreement'
+                $node.GetCommandName() -eq 'Resolve-EffectiveConfigRuntimeContract'
             },
             $true
         )
-        $guardCalls.Count | Should -Be 1 -Because "the standalone lane runs the guard exactly once, for both identity providers"
+        $contractCalls.Count | Should -Be 1 -Because "the standalone lane resolves the contract exactly once, for both identity providers"
 
-        # Walk every ancestor: no if/elseif clause condition may reference $IdentityProvider, or the guard
-        # would run for only one provider (leaving Keycloak's EnsureDatabase to honor a shell override).
-        $node = $guardCalls[0]
+        $node = $contractCalls[0]
         while ($null -ne $node.Parent) {
             $node = $node.Parent
             if ($node -is [System.Management.Automation.Language.IfStatementAst]) {
                 foreach ($clause in $node.Clauses) {
-                    $clause.Item1.Extent.Text | Should -Not -Match 'IdentityProvider' -Because "the guard must not be nested in an identity-provider branch; it must validate shell overrides for both self-contained and Keycloak before CMS boots"
+                    $clause.Item1.Extent.Text | Should -Not -Match 'IdentityProvider' -Because "the contract must not be nested in an identity-provider branch; it validates shell overrides for both self-contained and Keycloak before CMS boots"
                 }
             }
         }
     }
 
-    It "passes -ConfigDatabaseNameNotMaterialized on the production guard invocation" {
-        # The standalone lane hands docker-compose the RAW env file (DMS_CONFIG_DATABASE_NAME is NOT
-        # materialized to a concrete literal), so the guard must model compose re-resolving the seam with
-        # shell precedence via -ConfigDatabaseNameNotMaterialized. Without it, a shell POSTGRES_DB_NAME
-        # override that the CMS connection string routes through would silently redirect CMS while
-        # setup-openiddict.ps1 initializes the file-derived database. The switch's BEHAVIOR is unit-tested by
-        # passing it directly to the guard; assert via AST that the PRODUCTION invocation actually passes it,
-        # so dropping it from start-local-config.ps1 fails here rather than silently restoring the split-brain.
+    It "resolves the standalone contract against the RAW env file (never -ConfigDatabaseNameMaterialized)" {
+        # The standalone lane hands docker-compose the RAW env file (DMS_CONFIG_DATABASE_NAME is not a
+        # materialized literal), so the contract must model compose re-resolving the seam with shell
+        # precedence. Passing -ConfigDatabaseNameMaterialized would pin the name and hide a shell
+        # POSTGRES_DB_NAME override the connection routes through.
         $parseErrors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseInput($script:localConfigSource, [ref]$null, [ref]$parseErrors)
-        $parseErrors | Should -BeNullOrEmpty -Because "start-local-config.ps1 must parse cleanly for the AST assertion to be meaningful"
+        $parseErrors | Should -BeNullOrEmpty
 
-        $guardCalls = $ast.FindAll(
+        $contractCalls = $ast.FindAll(
             {
                 param($node)
                 $node -is [System.Management.Automation.Language.CommandAst] -and
-                $node.GetCommandName() -eq 'Assert-ConfigDatabaseProcessEnvironmentAgreement'
+                $node.GetCommandName() -eq 'Resolve-EffectiveConfigRuntimeContract'
             },
             $true
         )
-        $guardCalls.Count | Should -BeGreaterThan 0 -Because "the standalone lane must invoke the process-environment precedence guard"
-
-        foreach ($guardCall in $guardCalls) {
-            $switchParameter = $guardCall.CommandElements | Where-Object {
+        $contractCalls.Count | Should -BeGreaterThan 0
+        foreach ($contractCall in $contractCalls) {
+            $materializedSwitch = $contractCall.CommandElements | Where-Object {
                 $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
-                $_.ParameterName -eq 'ConfigDatabaseNameNotMaterialized'
+                $_.ParameterName -eq 'ConfigDatabaseNameMaterialized'
             }
-            $switchParameter | Should -Not -BeNullOrEmpty -Because "start-local-config.ps1 passes the RAW env file, so every Assert-ConfigDatabaseProcessEnvironmentAgreement invocation must pass -ConfigDatabaseNameNotMaterialized; removing it restores the shell-reference split-brain"
+            $materializedSwitch | Should -BeNullOrEmpty -Because "the standalone lane passes the RAW env file; pinning the name would hide a shell override the connection routes through"
         }
     }
 
-    It "materializes a SQL Server connection for both identity providers before the Configuration Service starts" {
-        # On a SQL Server stack with no connection string, docker-compose would substitute the
-        # PostgreSQL-only compose fallback in local-config.yml. The standalone lane must materialize a
-        # SQL Server connection (exported so docker-compose reads it with precedence) BEFORE the config
-        # service starts, and OUTSIDE any identity-provider branch so Keycloak - whose CMS EnsureDatabase
-        # would otherwise receive the fallback - is covered too. An index-only check would be fooled by the
-        # earlier OAuth/JWT `elseif ($IdentityProvider -eq "self-contained")` block (which also precedes
-        # "Starting database..."), so assert via AST that the materialization call has NO enclosing if/elseif
-        # whose condition references $IdentityProvider.
+    It "exports the materialized connection for both identity providers before the Configuration Service starts" {
+        # On a SQL Server stack with no connection string the contract materializes a connection; the lane
+        # exports it so docker-compose reads it (shell over --env-file), for both identity providers - an
+        # index-only check would be fooled by the earlier OAuth/JWT self-contained block. Assert via AST that
+        # the export assignment has NO enclosing if/elseif clause whose condition references $IdentityProvider.
         $parseErrors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseInput($script:localConfigSource, [ref]$null, [ref]$parseErrors)
         $parseErrors | Should -BeNullOrEmpty -Because "start-local-config.ps1 must parse cleanly for the AST assertion to be meaningful"
 
-        $materializeCalls = $ast.FindAll(
+        $exportAssignments = $ast.FindAll(
             {
                 param($node)
-                $node -is [System.Management.Automation.Language.CommandAst] -and
-                $node.GetCommandName() -eq 'Resolve-StandaloneCmsConnectionStringMaterialization'
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -eq '$env:DMS_CONFIG_DATABASE_CONNECTION_STRING'
             },
             $true
         )
-        $materializeCalls.Count | Should -Be 1 -Because "the standalone lane materializes the connection exactly once, for both identity providers"
+        $exportAssignments.Count | Should -Be 1 -Because "the standalone lane exports the materialized connection exactly once"
 
-        # Walk every ancestor: no if/elseif clause condition may reference $IdentityProvider, or
-        # materialization would run for only one provider.
-        $node = $materializeCalls[0]
+        # Its only enclosing condition is the Source='Materialized' guard, never an identity-provider branch.
+        $node = $exportAssignments[0]
         while ($null -ne $node.Parent) {
             $node = $node.Parent
             if ($node -is [System.Management.Automation.Language.IfStatementAst]) {
                 foreach ($clause in $node.Clauses) {
-                    $clause.Item1.Extent.Text | Should -Not -Match 'IdentityProvider' -Because "materialization must not be nested in an identity-provider branch; it runs for both self-contained and Keycloak"
+                    $clause.Item1.Extent.Text | Should -Not -Match 'IdentityProvider' -Because "the materialized export must run for both self-contained and Keycloak"
                 }
             }
         }
 
-        # It must also run before the config service starts (so compose picks up the exported value) and
-        # before the database starts (fail fast, ahead of any provider-specific work).
-        $materializeIndex = $script:localConfigSource.IndexOf('Resolve-StandaloneCmsConnectionStringMaterialization')
-        $dbStartIndex = $script:localConfigSource.IndexOf('Write-Output "Starting database..."')
+        $exportIndex = $script:localConfigSource.IndexOf('$env:DMS_CONFIG_DATABASE_CONNECTION_STRING =')
         $configStartIndex = $script:localConfigSource.IndexOf('Write-Output "Starting locally-built DMS config service"')
-        $materializeIndex | Should -BeLessThan $dbStartIndex -Because "materialization must run before the database starts"
-        $materializeIndex | Should -BeLessThan $configStartIndex -Because "the materialized connection must be exported before the Configuration Service container starts"
+        $exportIndex | Should -BeGreaterThan -1
+        $exportIndex | Should -BeLessThan $configStartIndex -Because "the materialized connection must be exported before the Configuration Service container starts"
     }
 
     It "restores DMS_CONFIG_DATABASE_CONNECTION_STRING in a finally so the materialized export cannot leak into a later invocation" {
@@ -342,20 +327,17 @@ Describe "start-local-config.ps1 self-contained OpenIddict ordering" {
         $snapshotIndex | Should -BeLessThan $enclosingTry.Extent.StartOffset -Because "the snapshot must be taken before the try, capturing the pre-export state"
     }
 
-    It "passes the effective shell-over-file SA password to every setup-openiddict.ps1 call on the MSSQL path" {
-        # Regression guard: the container's SA password is docker-compose's ${MSSQL_SA_PASSWORD:-...} (a shell
-        # export wins over the env file) and the materialized CMS connection embeds it, but setup-openiddict.ps1
-        # resolves DbPassword from the env-file map only. Without passing the effective password, -InitDb
-        # (pre-CMS) and the -InsertData calls authenticate with the env-file value and fail against a
-        # shell-overridden container. The lane must resolve the effective password (MSSQL only) and splat it
-        # into every setup-openiddict.ps1 invocation.
+    It "sources every setup-openiddict.ps1 database parameter from the runtime contract" {
+        # Regression guard: -InitDb (pre-CMS) and the -InsertData calls must authenticate with exactly the
+        # engine, database, and SA credential Compose uses for CMS. Those all come from the one runtime
+        # contract's OpenIddict target, splatted via @identityDbArgs (DbPassword only on the SQL Server path).
         $script:localConfigSource |
-            Should -Match '(?s)if \(\$datastore -eq "mssql"\)\s*\{\s*\$identityDbArgs\.DbPassword = Resolve-EffectiveMssqlSaPassword -EnvValues \$envValues'
+            Should -Match '\$identityDbArgs\.DbPassword = \$contract\.OpenIddict\.DbPassword'
 
         $openiddictCalls = [regex]::Matches($script:localConfigSource, '(?m)^.*\./setup-openiddict\.ps1 .*$')
         $openiddictCalls.Count | Should -BeGreaterThan 0
         foreach ($call in $openiddictCalls) {
-            $call.Value | Should -Match '@identityDbArgs' -Because "the effective SA password travels to setup-openiddict.ps1 via the splatted @identityDbArgs"
+            $call.Value | Should -Match '@identityDbArgs' -Because "every setup-openiddict.ps1 call takes its engine, database, and credential from the splatted @identityDbArgs"
         }
     }
 }
