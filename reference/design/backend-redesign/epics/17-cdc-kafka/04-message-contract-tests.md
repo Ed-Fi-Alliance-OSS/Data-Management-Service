@@ -6,57 +6,36 @@ epic: TBD
 
 # Story: Add Kafka Message and Source-Routing Contract Tests
 
-## Description
+## Design References
 
-Add fast tests for the relational CDC v1 key, value, source-operation filtering, topic,
-tombstone, and ordering contract without requiring a complete API E2E path for every
-case.
+- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
+- [Connector transform pipeline](../../../cdc-streaming.md#connector-transform-pipeline)
+- [Verification](../../../cdc-streaming.md#verification)
 
-## Acceptance Criteria
+## Outcome
 
-- Contract tests cover `dms.DocumentCache` create/update/snapshot inputs and assert:
-  - key bytes are UTF-8 lowercase `DocumentUuid` text, not JSON,
-  - topic matches `<topic-prefix>.instance.<instance-key>.documents.v1`,
-  - value is a UTF-8 JSON object without a Connect schema wrapper,
-  - `contractVersion = 1`, lower-camel metadata, opaque API `etag`, UTC
-    `lastModifiedAt`, and expanded structured `document`,
-  - no public `DocumentId` or `ComputedAt`,
-  - envelope metadata matches embedded document metadata.
-- Contract tests cover `dms.Document` delete input and assert exactly one output:
-  - the same UTF-8 `DocumentUuid` key,
-  - the same routed topic,
-  - Kafka record-level null value,
-  - no JSON `null` and no `deleted=true` envelope.
-- Contract tests assert no output for:
-  - `dms.DocumentCache` delete/truncate and its automatic tombstone if present,
-  - `dms.Document` create, update, snapshot/read, and any automatic extra tombstone.
-- PostgreSQL fixtures verify a `dms.Document` delete includes the custom key under the
-  required replica identity; SQL Server fixtures verify the equivalent CDC key.
-- Provider integration coverage proves same-key ordering through the routed topic: a
-  cache upsert committed before a canonical document delete is consumed before its
-  tombstone.
-- Tests cover a canonical delete when no cache row exists and prove it still emits the
-  tombstone.
-- Tests cover cache truncation/rebuild cleanup and prove it emits no tombstones.
-- Tests include a realistic nested Ed-Fi document with reference links and assert absence
-  of readable-profile/authorization metadata.
-- Tests assert `etag` is derived from `contentVersion` and the Kafka variant key, not a
-  cache `Etag` column.
+Add fast serialized-record and provider integration tests that pin the v1 public contract
+without requiring an API E2E path for every source operation.
 
-## Tasks
+## Deliverables
 
-1. Add canonical Debezium fixtures for cache `c/u/r/d` and document `c/u/r/d` records for
-   both providers.
-2. Add expected retained/dropped Kafka output fixtures.
-3. Exercise source-aware filtering, delete-to-tombstone conversion, key simplification,
-   value shaping, JSON expansion, and topic routing.
-4. Add regression coverage for duplicate tombstone suppression and cache-delete dropping.
-5. Add serialized-record tests for schema wrappers, quoted keys, escaped document JSON,
-   timestamp format, and Kafka null semantics.
-6. Add provider integration tests for missing-cache delete and same-key routed ordering.
+1. Add canonical PostgreSQL and SQL Server Debezium fixtures for every source operation.
+2. Exercise classification, tombstone conversion/suppression, key and value shaping,
+   JSON expansion, and topic routing.
+3. Add realistic nested/reference-link payload fixtures from the shared materializer.
+4. Add real-provider delete-key and routed-topic ordering coverage.
+
+## Acceptance Evidence
+
+- Every retained fixture produces exactly the record required by the topic/message ADR.
+- Every dropped fixture produces no public record, including automatic extra tombstones.
+- Regression tests catch wrapper, quoting, escaped-JSON, timestamp, metadata, internal
+  field, and Kafka-null contract violations.
+- Provider tests cover canonical deletion without a cache row, cache rebuild cleanup,
+  and same-key routed ordering.
 
 ## Out of Scope
 
 - Full API-driven E2E scenarios.
-- Projector reconciliation/completeness tests.
+- Projector reconciliation/completeness testing.
 - Kafka ACL testing.

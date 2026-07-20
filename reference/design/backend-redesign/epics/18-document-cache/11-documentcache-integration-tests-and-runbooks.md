@@ -8,64 +8,38 @@ related:
 
 # Story: Add DocumentCache Integration Coverage and Runbooks
 
-## Description
+## Design References
 
-Add end-to-end DocumentCache coverage and operator guidance for reconciliation,
-cache-backed reads, rebuild, failures, and CDC upsert readiness.
+- [Authoritative projection and CDC design](../../../cdc-streaming.md)
+- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
-This story closes the DocumentCache implementation epic by validating the story set as a coherent runtime
-feature and documenting operational behavior that CDC/Kafka runbooks consume.
+## Outcome
+
+Validate the completed projection feature across providers and publish operator guidance
+that links to, rather than restates, the authoritative design.
 
 ## Dependencies
 
-- Depends on the remaining implementation stories in this epic for final completion.
-- Informs `17-cdc-kafka/06-ops-docs-runbooks.md`.
-- Provides diagnostic expectations used by `17-cdc-kafka/05-e2e-kafka-scenarios.md`.
+- Depends on the remaining E18 stories and informs CDC story 17-06.
 
-## Acceptance Criteria
+## Deliverables
 
-- Integration tests cover no selected projection capabilities.
-- Integration tests cover asynchronous projection selected independently by standalone
-  DocumentCache, read acceleration, and a Kafka CDC target, with create, update,
-  empty-cache initial population, cache hit, stale miss, and relational fallback.
-- Integration tests cover CDC projection completeness before and after the mismatch count
-  reaches zero.
-- Integration tests prove a projected higher `ContentVersion` does not hide a missing
-  lower version.
-- Integration tests cover `DocumentJson` server-metadata consistency with cache row `DocumentUuid` and
-  `LastModifiedAt`.
-- Integration tests cover transient and persistent projection failures, fair bounded
-  in-memory retry, restart rediscovery, and mismatch-health impact.
-- Integration tests prove cache absence, projector failure, and rebuild never block API
-  deletion and never require synchronous cache materialization.
-- Integration tests prove cache truncation/rebuild is recovered by the ordinary
-  reconciliation query and that health changes remain observational.
-- Integration tests run against PostgreSQL and SQL Server where provider support exists.
-- Runbooks document:
-  - capability settings and the derived projection target set,
-  - initial population/rebuild through the ordinary reconciliation loop,
-  - cache hit/miss/stale fallback semantics,
-  - bounded in-memory retry and fixing the underlying failure,
-  - health/readiness fields,
-  - cache/domain lifecycle separation,
-  - the fact that CDC target binding, provider delete capture, and connector recovery
-    belong to the CDC/Kafka runbook.
-- Runbooks distinguish DocumentCache operations from Kafka connector operations.
-- Documentation links to the DMS-1246 decision records and to the DMS-1245 CDC/Kafka decision records.
+1. Add provider fixtures for capability combinations, projection, fallback, failure,
+   restart, fencing, health, and rebuild.
+2. Exercise CDC projection-completeness transitions without requiring a Kafka connector.
+3. Publish DocumentCache operation/troubleshooting guidance and cross-link CDC connector
+   operations separately.
 
-## Tasks
+## Acceptance Evidence
 
-1. Add integration test fixtures for DocumentCache capability combinations and provider
-   variants.
-2. Add tests that exercise projection and read fallback end to end.
-3. Add tests that exercise failure, bounded retry, restart, and automatic recovery.
-4. Add tests that exercise CDC projection-readiness transitions without changing API
-   behavior.
-5. Add tests for cache rebuild and delete-path independence.
-6. Add DocumentCache runbook documentation.
-7. Cross-link CDC/Kafka runbooks to DocumentCache upsert health and lifecycle-separation guidance.
+- PostgreSQL and SQL Server integration tests cover all completed E18 story outcomes,
+  including metadata consistency, lower-version gaps, fair retry, and API independence.
+- Rebuild tests use ordinary reconciliation and never introduce a separate backfill
+  workflow.
+- Runbook procedures are checked against implemented configuration, health output, and
+  recovery behavior.
 
 ## Out of Scope
 
-- Kafka connector setup, ACLs, offset reset, and topic management.
-- Consumer application implementation guidance.
+- Kafka connector setup, ACLs, offsets, and topic management.
+- Consumer application guidance.

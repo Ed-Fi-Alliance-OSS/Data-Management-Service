@@ -8,69 +8,42 @@ related:
 
 # Story: Add Reusable Caller-Agnostic Document Materialization
 
-## Description
+## Design References
 
-Add a reusable service that materializes the caller-agnostic full resource document used by `dms.DocumentCache`.
+- [Cached document contract](../../../cdc-streaming.md#cached-document-contract)
+- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
-The service must use the same relational reconstitution rules as GET/query response assembly, derive
-`_lastModifiedDate`, return the `ContentVersion` needed for later `_etag` composition, and produce the
-metadata needed by the cache row and CDC stream.
-Readable-profile projection and `ResourceLinks:Enabled` response stripping happen after cache retrieval and are
-not part of the cached shape.
+## Outcome
 
-The service is a cache-projection materializer, not a generic response serializer. It returns one coherent
-projection result whose cache columns and embedded server metadata were produced from the same source
-`dms.Document` stamps.
+Add a cache-projection materializer that reuses relational response reconstitution and
+returns one coherent cache-row result for reconciliation, optional direct fill, and CDC
+payload fixtures.
 
 ## Dependencies
 
-- Depends on relational read/reconstitution and update-tracking metadata semantics.
-- Unblocks `18-03-async-projector-reconciliation-loop.md` and
-  `18-05-cache-backed-read-path.md`.
-- Provides realistic `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for
-  `17-cdc-kafka/04-message-contract-tests.md` and `17-cdc-kafka/05-e2e-kafka-scenarios.md`.
+- Depends on relational read/reconstitution and update-tracking metadata.
+- Unblocks 18-03 and 18-05 and supplies realistic data to CDC contract/E2E tests.
 
-## Acceptance Criteria
+## Deliverables
 
-- Materialization accepts a current `DocumentId` and mapping-set/resource context and returns:
-  - `DocumentUuid`,
-  - `ProjectName`,
-  - `ResourceName`,
-  - `ResourceVersion`,
-  - `ContentVersion`,
-  - `LastModifiedAt`,
-  - `DocumentJson`.
-- `DocumentJson` is the caller-agnostic, pre-profile, full API resource body.
-- `DocumentJson` includes top-level `id` and `_lastModifiedDate`; `_etag` is composed later from
-  `ContentVersion` and the active `variantKey`.
-- When link injection is compiled into the read plan, `DocumentJson` includes reference `link` subtrees.
-- `DocumentUuid` and `LastModifiedAt` match the embedded `id` and `_lastModifiedDate` values in
-  `DocumentJson`.
-- `DocumentJson` does not include authorization arrays, EdOrg hierarchy JSON, API client identity, or
-  readable-profile-specific projection.
-- `LastModifiedAt` is sourced from `dms.Document.ContentLastModifiedAt`.
-- Materialization validates the server-metadata invariant before any cache write:
-  - `DocumentJson.id == DocumentUuid`,
-  - `DocumentJson._lastModifiedDate == formatted LastModifiedAt`.
-- A server-metadata invariant mismatch is reported as a projection/materialization failure and does not produce a
-  writable cache result.
-- Materialization fails cleanly when the document no longer exists or cannot be reconstituted.
-- Unit/integration coverage includes at least one nested-array resource and one reference with link data.
+1. Define the materializer interface and result type from the canonical cached-document
+   contract.
+2. Reuse compiled read plans and reconstitution instead of adding another JSON builder.
+3. Load resource identity/version metadata and validate embedded/column consistency
+   before returning a writable result.
+4. Report disappearance, reconstitution, and invariant failures without emitting a
+   partial cache result.
 
-## Tasks
+## Acceptance Evidence
 
-1. Define the materialization service contract and result type.
-2. Reuse existing read-plan/reconstitution code instead of duplicating JSON assembly rules.
-3. Add metadata lookup for `DocumentUuid`, resource names, resource version, `ContentVersion`, and
-   `ContentLastModifiedAt`.
-4. Return `ContentVersion` without composing or embedding `_etag`; API serving and Kafka stream shaping compose
-   `_etag` later from `ContentVersion` and the active `variantKey`.
-5. Add invariant validation before handing a result to the cache upsert path.
-6. Add tests for shape, embedded metadata, cache-column/embedded-field consistency, links, and absence of
-   authorization/profile data.
+- Unit/integration tests cover every cache result field and metadata invariant.
+- Shape tests cover nested arrays, reference links, and excluded authorization/profile
+  data.
+- Tests prove the materializer leaves served/stream `_etag` composition to its designated
+  boundary.
 
 ## Out of Scope
 
-- Reconciliation scheduling and in-memory backoff.
+- Reconciliation scheduling/backoff.
 - Kafka envelope shaping.
 - Readable-profile response projection.

@@ -38,14 +38,11 @@ expands a configured JSON-string field into a structured value — but its
 behavioral contract is defined by Ed-Fi's needs (below), **not** by matching
 RedHat's edge-case behavior.
 
-The legacy backend is being **retired**, so its connector configs and the
-six-field `edfidoc` shape are going away — they are not a migration target. The
-relational stream is the only forward consumer. DMS-1245 will finalize the
-relational CDC/Kafka design: Debezium captures `dms.DocumentCache` for upserts and
-`dms.Document` for deletes, the public
-Kafka payload field is `document`, and the connector config uses
-`sourceFields=document`. DMS-1232 remains the E2E follow-up that replaces the
-legacy KafkaMessaging expectations.
+The legacy backend and its six-field `edfidoc` connector shape are not a migration
+target. The relational connector is the only forward DMS consumer and follows
+[Relational CDC and Document Projection](../../cdc-streaming.md) and the
+[topic/message contract](cdc/0002-kafka-topic-and-message-contract.md). Its local SMT
+integration point is `sourceFields=document`; DMS-1232 owns replacement E2E coverage.
 
 ## Background
 
@@ -157,13 +154,9 @@ relational CDC contract. Relational change tracking today is the polling Change
 Queries API (`ContentVersion`), a separate mechanism from Debezium/Kafka.
 
 **Consequence:** DMS-911 must not encode the relational stream shape inside the
-SMT itself. The stream shape is now owned by the DMS-1245 CDC decision records:
-capture cache upserts plus authoritative document deletes, rename
-`DocumentCache.DocumentJson` to `document`, and configure
-the SMT with `sourceFields=document`. Because the legacy backend is being
-retired, its connector configs are **not a migration target** — they are removed
-as part of legacy retirement. DMS-1232 should validate the DMS-1245 relational
-contract in E2E rather than preserve the legacy topic/value shape.
+SMT. The connector contract owns that shape and configures this generic transform
+with `sourceFields=document`. Legacy connector configs are removed rather than
+repointed; DMS-1232 validates the relational contract instead of the legacy shape.
 
 ## Decision
 
@@ -196,11 +189,9 @@ and Kafka 4 / Java 17 ready, using Connect JSON / Jackson rather than BSON.
 
 ### Relationship to DMS-1245 and DMS-1232
 
-DMS-1245 owns relational Kafka streaming architecture: the captured table,
-message contract, topic strategy, and connector deployment model. DMS-911 /
-DMS-1240 deliver a generic, Kafka-4-ready transform that the DMS-1245 connector
-pipeline can use with `sourceFields=document`. DMS-1232 is the E2E follow-up for
-the quarantined Kafka scenarios.
+DMS-1245 owns the linked relational CDC architecture and public contract. DMS-911 /
+DMS-1240 deliver a generic, Kafka-4-ready transform that its connector can use with
+`sourceFields=document`. DMS-1232 is the E2E follow-up.
 
 ## Scope
 
@@ -306,12 +297,10 @@ Acceptance criteria:
 
 ### Dependencies / handoffs (not part of this ticket)
 
-- **Relational connector wiring is owned by the CDC/Kafka implementation epic
-  produced by DMS-1245.** It captures `dms.DocumentCache` upserts and
-  `dms.Document` deletes, renames
-  `DocumentJson` to `document`, configures `sourceFields=document`, and points
-  the connector at `org.edfi.kafka.connect.transforms.ExpandJson$Value` once the
-  image is available and the contract validation passes.
+- **Relational connector wiring is owned by the DMS-1245 CDC/Kafka epic.** It
+  follows the authoritative transform pipeline, configures `sourceFields=document`,
+  and points to `org.edfi.kafka.connect.transforms.ExpandJson$Value` after image and
+  contract validation.
 - **Legacy connector configs** (`postgresql_connector.json`,
   `data_store_connector_template.json`) and `DebeziumConnectorClient.cs` are
   removed as part of legacy backend retirement.
@@ -353,8 +342,7 @@ Acceptance criteria:
   `eng/docker-compose/data_store_connector_template.json`,
   `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Infrastructure/DebeziumConnectorClient.cs`
 - Streaming status: DMS-1232 owns replacement relational CDC E2E coverage;
-  reference architecture `reference/design/cdc-streaming.md` and
-  `reference/design/backend-redesign/design-docs/cdc/`
+  reference architecture `reference/design/cdc-streaming.md`
 - Local context: `eng/docker-compose/kafka.yml` (Kafka 3.9.0 broker; Connect
   image `edfialliance/ed-fi-kafka-connect:pre`)
 - Upstream: [RedHatInsights/expandjsonsmt](https://github.com/RedHatInsights/expandjsonsmt)

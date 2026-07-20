@@ -8,86 +8,43 @@ related:
 
 # Story: Add the Asynchronous DocumentCache Reconciliation Loop
 
-## Description
+## Design References
 
-Implement the DMS-owned background reconciler that keeps `dms.DocumentCache` aligned
-with current relational representations.
+- [Freshness and reconciliation](../../../cdc-streaming.md#freshness-and-reconciliation)
+- [Projection health and CDC readiness](../../../cdc-streaming.md#projection-health-and-cdc-readiness)
+- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
-For each data store, the loop queries `dms.Document` for rows whose cache row is absent,
-has another `ContentVersion`, or violates the paired timestamp invariant. It materializes
-a bounded batch, performs the guarded upsert, and repeats. That one loop handles an empty
-cache, ongoing writes, process restart, cache rebuild, and retry. No request-path enqueue
-API or persisted projector workflow state is introduced.
+## Outcome
+
+Implement the hosted, per-data-store reconciler and bounded in-memory retry behavior
+defined by the authoritative design.
 
 ## Dependencies
 
-- Depends on `18-00-documentcache-configuration-and-target-selection.md`,
-  `18-02-document-materializer-service.md`, and the core `dms.Document` /
-  `dms.DocumentCache` DDL from E02.
-- Depends on the guarded write contract from
-  `18-07-projector-stale-write-fencing.md` for final correctness.
-- Provides projection completeness and mismatch-age signals consumed by
-  `17-cdc-kafka/00-documentcache-cdc-prerequisites.md`,
-  `17-cdc-kafka/05-e2e-kafka-scenarios.md`, and
-  `17-cdc-kafka/06-ops-docs-runbooks.md`.
+- Depends on 18-00, 18-02, 18-07, and core source/cache DDL.
+- Supplies projection signals to 18-09 and CDC stories 17-00, 17-05, and 17-06.
 
-## Acceptance Criteria
+## Deliverables
 
-- DMS starts reconciliation only for the effective projection target set derived from
-  `DocumentCache:Enabled`, `ReadAcceleration:Enabled`, and `KafkaCdc:Targets`.
-- A supervisor snapshots that de-duplicated target set at startup and runs one isolated
-  logical loop per selected `(tenant key, DataStoreId)`.
-- Background execution explicitly selects the target data store in a non-HTTP service
-  scope; it does not depend on route resolution, JWT claims, or the most recent request.
-- Each loop selects bounded batches from its own database where:
-  - `dms.DocumentCache` is absent for the `DocumentId`, or
-  - cached `ContentVersion` differs from current `dms.Document.ContentVersion`.
-- `ContentVersion` is the sole freshness key. `LastModifiedAt` remains payload metadata
-  and is not a reconciliation candidate condition.
-- The loop materializes candidates through the shared materialization service and writes
-  only through the guarded cache upsert.
-- Metadata-invariant failures do not produce cache rows and emit sanitized structured
-  diagnostics.
-- A source update during materialization causes a stale-write no-op; the next scan
-  discovers the new current version.
-- A delete during materialization cannot recreate a cache row.
-- Failures use bounded in-memory exponential backoff with jitter keyed by data store,
-  `DocumentId`, and current `ContentVersion`.
-- Backoff candidates are skipped without starving other mismatches; entries disappear
-  when the version changes, the document is deleted, or the cache becomes fresh.
-- Restart discards only in-memory delay and rediscovers all remaining work from the
-  database mismatch query.
-- Empty-cache initial population and truncation/rebuild require no separate phase, epoch,
-  or reset operation.
-- No projection queue, enqueue API, persisted cursor/high-watermark, projection-state
-  row, failure row, retry classification, dead-letter transition, requeue, or manual
-  resolution workflow is implemented.
-- A zero current mismatch count is the completeness signal. A highest scanned or
-  projected `ContentVersion` is never used to infer completeness.
-- One unavailable data store does not stop reconciliation for peers.
-- Duplicate loops from multiple DMS replicas remain correct through idempotent guarded
-  upserts; deployments may designate projector hosts to avoid redundant scans without a
-  required distributed lease.
-- Tests cover each projection-selection source, overlapping selection sources, no
-  selected targets, colliding local ids across data stores, empty-cache population, create,
-  update, concurrent source change, delete, transient and persistent failures, restart,
-  truncation/rebuild, failure isolation, and multiple replicas.
+1. Add supervisor lifecycle and isolated non-HTTP execution scopes for startup targets.
+2. Implement provider-equivalent bounded candidate queries.
+3. Invoke the shared materializer and guarded upsert with fair retry and idle polling.
+4. Add graceful cancellation and sanitized scan/retry/failure telemetry.
+5. Measure realistic provider plans and add an ordered-scan index only if evidence
+   requires it.
 
-## Tasks
+## Acceptance Evidence
 
-1. Add hosted supervisor lifecycle wiring, effective-target selection, and a non-HTTP
-   per-data-store execution-scope factory.
-2. Implement the bounded anti-join/version-mismatch candidate query for PostgreSQL and
-   SQL Server; measure realistic plans and add a provider-appropriate ordered-scan index
-   only if needed.
-3. Call the shared materializer and guarded cache upsert for each candidate.
-4. Add fair bounded in-memory retry backoff and idle polling.
-5. Expose current mismatch count and oldest mismatch timestamp to the health abstraction.
-6. Add graceful cancellation and sanitized structured telemetry.
-7. Add provider and multi-data-store integration tests.
+- Provider and multi-data-store tests cover selection overlap, no targets, colliding local
+  ids, population, create/update, restart, rebuild, transient/persistent failure, fairness,
+  peer isolation, and multiple replicas.
+- Concurrency tests cover source update and deletion during materialization through the
+  shared guard.
+- Completeness tests prove lower-version gaps remain visible and no timestamp, epoch, or
+  high-watermark becomes a second work predicate.
 
 ## Out of Scope
 
-- Durable workflow or retry state.
-- Kafka connector readiness and source-position checks.
-- Dynamic CMS projection-target discovery.
+- Durable workflow/retry state.
+- Connector status/source-position readiness.
+- Dynamic CMS target discovery.

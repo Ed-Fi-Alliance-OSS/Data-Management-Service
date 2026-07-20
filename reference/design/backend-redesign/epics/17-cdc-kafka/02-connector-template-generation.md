@@ -8,68 +8,41 @@ related:
 
 # Story: Generate PostgreSQL and SQL Server Connector Templates
 
-## Description
+## Design References
 
-Generate or parameterize Debezium source connector configurations for relational CDC.
+- [Connector transform pipeline](../../../cdc-streaming.md#connector-transform-pipeline)
+- [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
+- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
-The templates capture `dms.DocumentCache` and `dms.Document` in one connector, key both
-tables by `DocumentUuid`, publish to the instance document topic, shape cache upserts,
-convert document deletes to tombstones, and drop every other captured operation.
+## Outcome
 
-## Acceptance Criteria
+Generate parameterized provider connector configurations that implement the authoritative
+source routing and serialized public contract.
 
-- PostgreSQL connector template captures only the selected instance database's
-  `dms.DocumentCache` and `dms.Document`.
-- SQL Server connector template captures only the selected instance database's
-  `dms.DocumentCache` and `dms.Document`.
-- Connector templates do not contain hard-coded database names, topic names, replication slot names, or data
-  store IDs.
-- Topic prefix is a required input. Production validation requires a stable opaque deployment/environment key
-  unique among DMS/CMS deployments sharing Kafka; the short `edfi.dms` prefix is local/test-only unless the
-  broker is explicitly declared dedicated to one deployment.
-- Connector configuration sets the Kafka key to `DocumentUuid` for both captured tables.
-- Connector configuration uses one task for the instance so both source tables retain
-  source order before routed-topic publication.
-- Connector templates configure the public wire serialization contract:
-  - key converter is `org.apache.kafka.connect.storage.StringConverter`,
-  - key bytes are UTF-8 lowercase `DocumentUuid` text with no JSON quoting,
-  - value converter is `org.apache.kafka.connect.json.JsonConverter` with `value.converter.schemas.enable=false`,
-  - values do not include a Kafka Connect `schema` / `payload` wrapper.
-- Transform pipeline produces:
-  - lower-camel envelope fields,
-  - `contractVersion = 1`,
-  - `etag` as the opaque API `_etag` derived from `contentVersion` and the Kafka document-state
-    `variantKey`,
-  - no public `DocumentId`,
-  - no public `ComputedAt`,
-  - structured `document`, using the Ed-Fi expand-JSON SMT from DMS-1240 when needed,
-  - cache create/update/snapshot records as non-null upserts,
-  - document deletes as exactly one Kafka record-level tombstone,
-  - no output for cache deletes/truncates or other document operations,
-  - topic routing to `<topic-prefix>.instance.<instance-key>.documents.v1`.
-- If stock predicates/SMTs cannot produce the exact source-aware contract safely, the
-  story adds a small Ed-Fi document-state routing/shaping SMT and tests it directly.
-- Template validation tests assert the published Kafka record bytes and parsed shape, not only the connector JSON.
-- Version-specific Debezium and SMT property names are verified against the pinned
-  `edfialliance/ed-fi-kafka-connect` image.
+## Deliverables
 
-## Tasks
+1. Define inputs for provider/source, credentials, instance identity, deployment topic
+   prefix, replication/capture identity, and snapshot behavior.
+2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
+   instance values.
+3. Configure source classification, value shaping, JSON expansion, key simplification,
+   tombstone handling, and topic routing.
+4. Add a small Ed-Fi routing/shaping SMT only if verified stock transforms cannot safely
+   implement the contract.
+5. Validate all version-specific properties and transform classes against the pinned
+   `edfialliance/ed-fi-kafka-connect` image.
 
-1. Define connector template inputs: provider, host, port, database name, credentials, data store ID or instance
-   key, deployment-unique topic prefix, replication slot/capture names, and snapshot mode.
-2. Build PostgreSQL connector template generation.
-3. Build SQL Server connector template generation.
-4. Implement or configure source-operation filtering, cache value shaping, JSON
-   expansion, key simplification, document-delete-to-tombstone conversion, duplicate
-   tombstone suppression, and topic routing.
-5. Add unit tests for rendered connector JSON from representative PostgreSQL and SQL Server inputs.
-6. Add a connector smoke test that starts the pinned Connect image and verifies the transform classes load.
-7. Add fixture-based tests for every retained and dropped operation from both tables.
-8. Add serialized-record tests that catch schema-wrapper, quoted-key, escaped-document, timestamp-format, and
-   tombstone rewrites.
+## Acceptance Evidence
+
+- Rendering tests cover representative providers and reject invalid production topic
+  prefixes or incomplete inputs.
+- Fixture tests cover every retained and dropped operation from each source table.
+- Serialized-record tests enforce the topic/message ADR, including exact key/value byte
+  forms, expanded JSON, timestamp formatting, and tombstones.
+- A pinned-image smoke test proves configured transform classes load.
 
 ## Out of Scope
 
 - Bootstrap command wiring.
-- E2E API-driven Kafka scenarios.
+- Full API-driven E2E scenarios.
 - Production credential provisioning.

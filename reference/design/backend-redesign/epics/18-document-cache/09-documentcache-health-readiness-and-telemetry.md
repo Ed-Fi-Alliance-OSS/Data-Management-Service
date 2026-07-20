@@ -8,72 +8,41 @@ related:
 
 # Story: Add DocumentCache Health, Readiness, and Telemetry
 
-## Description
+## Design References
 
-Expose DocumentCache projection health directly from the current mismatch between
-`dms.Document` and `dms.DocumentCache`.
+- [Projection health and CDC readiness](../../../cdc-streaming.md#projection-health-and-cdc-readiness)
+- [Security, telemetry, and operations](../../../cdc-streaming.md#security-telemetry-and-operations)
 
-The health surface distinguishes optional cache degradation from CDC projection
-completeness. It does not participate in API routing or mutation decisions;
-authoritative Kafka deletes come independently from `dms.Document`.
+## Outcome
+
+Expose per-data-store projection health, exact completeness, registration-prerequisite
+inputs, and sanitized telemetry from current database and process state.
 
 ## Dependencies
 
-- Depends on `18-00-documentcache-configuration-and-target-selection.md`,
-  `18-03-async-projector-reconciliation-loop.md`, and
-  `18-07-projector-stale-write-fencing.md`.
-- Consumed by `17-cdc-kafka/00-documentcache-cdc-prerequisites.md` and
-  `17-cdc-kafka/03-bootstrap-enable-kafka-cdc.md`.
-- Supplies operational signals for `17-cdc-kafka/06-ops-docs-runbooks.md`.
+- Depends on 18-00, 18-03, and 18-07.
+- Consumed by CDC stories 17-00, 17-03, and 17-06.
 
-## Acceptance Criteria
+## Deliverables
 
-- Health is evaluated per explicit `(tenant key, DataStoreId)` context and does not
-  depend on current HTTP route selection.
-- Health reports whether and why the data store is selected for projection, required
-  table existence, and whether the in-process reconciliation loop is running.
-- A provider-equivalent current-state query reports:
-  - total mismatch count,
-  - missing-row count,
-  - version-mismatched-row count,
-  - oldest mismatch source timestamp and age,
-  - same-version stamp-integrity mismatch count.
-- Health thresholds use mismatch count and oldest mismatch age.
-- Process-local last scan, scan duration, last successful upsert, and last error may be
-  reported as diagnostics but are not completeness evidence.
-- Neither `LastScannedContentVersion` nor `LastProjectedContentVersion` is stored or used;
-  tests prove a higher successful version does not hide a missing lower version.
-- Connector-registration prerequisites are exposed independently of projection
-  completeness and require membership in `KafkaCdc:Targets`, source/cache tables, a
-  startable loop, and guarded upsert support. Target membership itself selects projection.
-- Projection completeness for CDC is true only when the current mismatch count is zero.
-- CDC/Kafka combines this result with explicit target/source binding, provider delete
-  capture, connector snapshot/catch-up, source-position, and connector-lag checks.
-- Projection health/readiness never changes normal routing and never blocks reads or
-  mutations. Cache-backed reads continue through relational fallback.
-- A deployment aggregate can fail while still exposing every per-data-store result; one
-  unavailable target does not stop peer evaluation or reconciliation.
-- Metrics/logs cover scans, candidate count, projection attempts/successes/failures,
-  in-memory retry deferrals, stale skips, mismatch count/age, and cache
-  hit/miss/stale fallback without exposing connection values or document data.
-- Tests cover every selection reason, no selected capability, overlapping reasons,
-  missing table, zero and nonzero mismatch counts, a missing lower version with a higher
-  projected version, oldest mismatch age, persistent failure with bounded retry,
-  unblocked API deletion, and mixed targets.
+1. Define per-data-store health/completeness and deployment aggregate models.
+2. Implement provider-equivalent mismatch/age queries and configurable health thresholds.
+3. Expose projector-side registration prerequisites without taking ownership of
+   connector/source readiness.
+4. Add the canonical structured logs and metrics.
 
-## Tasks
+## Acceptance Evidence
 
-1. Define the per-data-store health/completeness abstraction and deployment aggregate.
-2. Implement provider-equivalent mismatch count and oldest-age queries.
-3. Add configurable health thresholds for mismatch count and age.
-4. Add structured logs and metrics.
-5. Expose registration prerequisites and zero-mismatch completeness to Kafka bootstrap.
-6. Add tests for health output, exact completeness, and API independence.
+- Tests cover every selection reason, none/overlap, missing tables, zero/nonzero
+  mismatches, lower-version gaps, oldest age, persistent bounded failure, and mixed
+  targets.
+- Tests distinguish diagnostic process timestamps from database completeness evidence.
+- A metadata-invariant failure remains visible as projection failure but does not add a
+  timestamp-based freshness condition.
+- API integration proves individual and aggregate health remain observational.
 
 ## Out of Scope
 
-- Durable projection progress or failure records.
-- Kafka connector status and source-position checks.
-- CDC target/source-binding checks.
-- Provider delete capture or ordering verification.
-- External monitoring dashboard implementation.
+- Durable progress/failure records.
+- Connector status, source binding, delete capture, or ordering checks.
+- External dashboard implementation.

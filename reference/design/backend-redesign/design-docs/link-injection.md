@@ -372,13 +372,9 @@ A flag flip does not require cache truncation, fingerprint reconciliation, or an
 the cached state and `ContentVersion` remain valid, while per-request composition changes
 `linkFlag` and therefore rotates the served `_etag`.
 
-Cache freshness follows the resource-state stamp:
-
-```
-cached ContentVersion == dms.Document.ContentVersion
-```
-
-Cached `LastModifiedAt` remains payload metadata and is not a second freshness input.
+Cache selection and freshness are defined by
+[Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation),
+not by link configuration.
 
 Cached hrefs are bound to `EffectiveSchemaHash`: any change to a `projectEndpointName` or
 `resourceNameMapping` entry shifts the hash, and the DDL-generator preflight refuses a mismatched

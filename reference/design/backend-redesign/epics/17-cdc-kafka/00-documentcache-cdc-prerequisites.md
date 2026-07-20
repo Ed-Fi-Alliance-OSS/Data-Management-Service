@@ -6,81 +6,51 @@ related:
   - DMS-1246
 ---
 
-# Story: Wire CDC Targets to Two-Table Source Guarantees
+# Story: Wire CDC Target Registration and Readiness Prerequisites
 
-## Description
+## Design References
 
-Make every configured CDC target validate the complementary source roles defined by
-DMS-1245:
+- [Configuration and projection targets](../../../cdc-streaming.md#configuration-and-projection-target-selection)
+- [Projection health and CDC readiness](../../../cdc-streaming.md#projection-health-and-cdc-readiness)
+- [Physical source binding](../../../cdc-streaming.md#cdc-target-and-physical-source-binding)
+- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
-- `dms.DocumentCache` create/update/snapshot events supply document upserts,
-- `dms.Document` deletes supply authoritative tombstones,
-- cache deletes/truncates and all other document operations are ignored.
+## Outcome
 
-`dms.DocumentCache` is optional for normal API correctness but conditionally required for
-CDC upserts. Its projector remains asynchronous. Cache absence or failure never blocks
-API deletion because domain lifecycle comes from `dms.Document`.
+Add a target-specific abstraction that distinguishes connector-registration
+prerequisites from completed end-to-end readiness and combines projector signals with
+E17-owned provider/source checks.
 
-## Acceptance Criteria
+## Dependencies
 
-- `KafkaCdc:Targets` is the sole runtime CDC enablement contract: an empty list disables
-  CDC, and every `(tenant key, DataStoreId)` entry opts in exactly that data store.
-- Every target entry implies asynchronous DocumentCache projection for that data store;
-  it does not require `DocumentCache:Enabled` or `ReadAcceleration:Enabled` and does not
-  select unlisted CMS data stores.
-- Kafka UI and process-wide DocumentCache/read-acceleration settings do not add CDC
-  targets.
-- Registration prerequisites verify, per target:
-  - `dms.DocumentCache` and `dms.Document` exist,
-  - asynchronous projection selected by the target entry and stale-write fencing are
-    available,
-  - provider-specific CDC setup captures exactly both tables,
-  - `DocumentUuid` key setup is valid for both tables,
-  - PostgreSQL `dms.Document` replica identity is valid for non-primary-key delete capture,
-  - the source-aware operation filter/tombstone transform is installed,
-  - no other configured target resolves to the same physical database.
-- Registration occurs before reconciliation writes that must be observed. CDC is not
-  advertised as ready until the exact current projection mismatch count is zero and the
-  connector has snapshotted/caught up through a source position at or after that
-  observation.
-- Readiness does not use a backfill epoch or maximum projected `ContentVersion` as an
-  upsert cutover marker.
-- Readiness is keyed by `(tenant key, DataStoreId)` and evaluated from explicit execution
-  context rather than HTTP route/JWT selection.
-- The configured target must remain present and resolve to its startup provider/physical
-  source binding. Confirmed drift is latched as
-  `CdcSourceDriftRequiresDeployment`; same-source credential/operational changes are not
-  drift.
-- Duplicate or semantically equivalent physical database targets are rejected without
-  logging credentials or unsanitized physical identifiers.
-- Diagnostics distinguish missing tables, projector disabled/unhealthy, nonzero
-  mismatch count/age, invalid key/replica setup, missing operation filter,
-  unsupported provider, missing configured target, retryable source-identity resolution,
-  and confirmed source drift.
-- API correctness, authorization, routing, GET/query, Change Queries, and all mutations
-  remain independent of CDC readiness.
-- Delete readiness does not inspect DocumentCache. Provider CDC tests prove
-  `dms.Document` delete key/filter/tombstone behavior in the CDC epic.
+- Consumes 18-00 target selection, 18-03 reconciliation, 18-07 fencing, and 18-09
+  projection health.
+- Does not implement the projector or connector registration.
 
-## Tasks
+## Deliverables
 
-1. Add a data-store-specific prerequisite/readiness abstraction that distinguishes
-   `CanRegisterConnector` from completed end-to-end readiness.
-2. Bind the explicit target list as CDC enablement and contribute each entry to the
-   effective projection target set, independently of read acceleration and Kafka UI
-   settings.
-3. Add provider-specific physical database identity resolution and conflict tests.
-4. Validate two-table capture, `DocumentUuid` keys, PostgreSQL replica identity, and
-   source-operation filtering before registration.
-5. Consume DMS-1246's mismatch-derived projection health/completeness for the
-   upsert-readiness portion.
-6. Add post-start configured-target/source-binding diagnostics without changing routing.
-7. Add tests that an empty target list performs no CDC setup and remains valid without
-   `dms.DocumentCache` when no other capability selects projection.
-8. Add tests proving cache failure does not block API deletion.
+1. Bind explicit configured CDC targets into the effective projection set.
+2. Implement `CanRegisterConnector` and end-to-end readiness evaluations for an explicit
+   data-store execution context.
+3. Resolve provider-specific physical database identity, detect alias conflicts, and
+   retain startup source bindings for drift observation.
+4. Validate provider tables, keys, replica/capture setup, and installed source-operation
+   shaping before registration.
+5. Emit sanitized, condition-specific diagnostics without changing request routing.
+
+## Acceptance Evidence
+
+- Tests cover empty, single, overlapping, duplicate-normalized, and unlisted target
+  configurations.
+- Provider tests cover equivalent physical aliases, conflicting targets, transient
+  identity-resolution failure, missing targets, and latched source drift.
+- Readiness tests cover registration-ready versus fully-ready transitions using the
+  authoritative readiness sequence.
+- API integration tests prove every reported CDC/projector failure remains observational,
+  including deletion with unavailable cache state.
 
 ## Out of Scope
 
-- Implementing the projector.
-- Implementing connector registration.
+- Projector implementation.
+- Kafka Connect REST registration.
 - Publishing Kafka records.

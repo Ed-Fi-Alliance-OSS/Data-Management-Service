@@ -183,10 +183,8 @@ descriptor resources and delegates.
      paging, direct seeding, and invariant failures, but one POST-created full API scenario is needed to prove Core routing,
      descriptor write/read integration, auth guard, and profile projection are wired.
 
-  10. Materialize directly from dms.Document + dms.Descriptor for DMS-994. Do not wire dms.DocumentCache in this story. The cache
-     design is caller-agnostic and optional, but descriptor read support should first be a simple direct read path; cache
-     participation can land with the broader cache/projector work described in reference/design/backend-redesign/design-docs/
-     data-model.md:519.
+  10. Materialize directly from dms.Document + dms.Descriptor for DMS-994. Do not wire dms.DocumentCache in this story. Descriptor
+     cache participation belongs to the broader [projection design](../../../cdc-streaming.md), not this read-handler story.
 
 ### Questions 3
 

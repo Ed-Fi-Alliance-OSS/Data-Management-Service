@@ -523,54 +523,11 @@ Invalidation approaches:
 - CDC streaming (e.g., Debezium → Kafka), and
 - downstream indexing and external integrations.
 
-When relational CDC/Kafka is enabled, `dms.DocumentCache` is conditionally required as the Debezium
-upsert payload source. The same connector captures `dms.Document` as the authoritative delete source.
-Projector lag affects upsert freshness, while delete capture remains independent of projection. See
-[document-cache/0001-role-and-enablement.md](document-cache/0001-role-and-enablement.md),
-[document-cache/0002-projector-freshness-and-reconciliation.md](document-cache/0002-projector-freshness-and-reconciliation.md),
-[document-cache/0003-cache-and-domain-lifecycle-separation.md](document-cache/0003-cache-and-domain-lifecycle-separation.md),
-[cdc/0001-relational-cdc-sources.md](cdc/0001-relational-cdc-sources.md) and
-[cdc/0003-debezium-connector-deployment.md](cdc/0003-debezium-connector-deployment.md).
-
-Cache deletion is not domain deletion. The connector ignores all `dms.DocumentCache`
-deletes, including cascades and rebuild cleanup, and emits tombstones only for
-`dms.Document` deletes. API deletion never verifies or materializes a cache row and is not
-blocked by projection health.
-
-Correctness must not depend on this table:
-- rows may be missing/stale and rebuilt asynchronously,
-- authorization must not use it as a source of truth.
-
-### Freshness contract (recommended)
-
-When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare cached `ContentVersion` to the current `dms.Document.ContentVersion`,
-- if mismatched (or missing), fall back to relational reconstitution; the background
-  reconciliation query rediscovers the row without an enqueue API.
-
-`ContentVersion` is the sole monotonic freshness stamp. Cached `LastModifiedAt` remains
-payload metadata and is not a second freshness comparison.
-
-### Rebuild/invalidation triggers (eventual consistency)
-
-Because indirect representation changes are materialized as local updates to referrers through retained native FK
-cascades, referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes.
-`dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on
-referrers, without reverse dependency expansion at the projector layer.
-
-A minimal reconciliation approach:
-
-1. Query current `dms.Document` rows whose cache row is missing or has another
-   `ContentVersion`, in bounded `ContentVersion, DocumentId` batches.
-2. Reconstitute each candidate and use a guarded upsert only if the source still exists
-   at the captured version.
-3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the
-   freshness contract above. Store `LastModifiedAt` as payload metadata; `_etag` is
-   composed per request from `ContentVersion` + `variantKey` and is not stored in the
-   cache.
-4. Repeat the mismatch query for initial population, ongoing writes, restart, rebuild,
-   and retry. Fence writes so a lower `ContentVersion` cannot overwrite a newer cache
-   row or recreate one after the document has been deleted.
+Its concurrency boundary is intentionally small: correctness and authorization do not
+depend on projection, and every asynchronous/direct-fill write is fenced by current
+canonical state. The authoritative freshness, reconciliation, retry, read-fallback, and
+cache/domain lifecycle behavior is defined in
+[Relational CDC and Document Projection](../../cdc-streaming.md).
 
 ---
 
@@ -578,7 +535,7 @@ A minimal reconciliation approach:
 
 1. Resolve `DocumentUuid` → `DocumentId`.
 2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the Change Queries tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
-3. Delete the corresponding `dms.Document` row. This authoritative lifecycle event is the CDC source for the Kafka tombstone. Remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize relational cleanup; the connector ignores the cache delete.
+3. Delete the corresponding `dms.Document` row. Remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize relational cleanup. The CDC lifecycle consequence is defined in [Relational CDC and Document Projection](../../cdc-streaming.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
 Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.

@@ -530,8 +530,8 @@ prepare-dms-schema.ps1
 > `SCHEMA_PACKAGES` so `run.sh` performs no second download. `bootstrap-dms.yml` (re-introduced) mounts
 > `.bootstrap/ApiSchema` into the DMS container; staged claims are activated per manifest `claims.mode`.
 > In bootstrap mode, Debezium connector registration is skipped unless a future explicit CDC opt-in (for example
-> `-EnableKafkaCdc`) is supplied. Relational CDC targets `dms.DocumentCache` and the v1 topic-per-instance
-> contract in `../cdc/`; it must not reuse the legacy connector that targeted `dms.document`,
+> `-EnableKafkaCdc`) is supplied. The relational connector follows
+> [Relational CDC and Document Projection](../../../cdc-streaming.md); it must not reuse the legacy connector that targeted `dms.document`,
 > `dms.educationorganizationhierarchytermslookup`, or the `to_debezium` publication. Non-bootstrap local startup
 > can still use the existing `SCHEMA_PACKAGES` downloader path.
 

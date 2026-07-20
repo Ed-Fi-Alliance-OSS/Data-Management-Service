@@ -1,254 +1,516 @@
-# DMS Feature: Change Data Capture to Kafka
+---
+status: proposed
+date: 2026-07-20
+jira:
+  - DMS-1245
+  - DMS-1246
+related:
+  - DMS-1232
+  - DMS-1240
+  - DMS-1089
+---
 
-> [!NOTE]
-> This document is the high-level CDC/Kafka reference. The relational backend-specific
-> source, message, and connector decisions are now recorded in:
->
-> - `reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-sources.md`
-> - `reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md`
-> - `reference/design/backend-redesign/design-docs/cdc/0003-debezium-connector-deployment.md`
->
-> Older references to legacy `dms.Document` JSON columns, `EdfiDoc`, OpenSearch, or a
-> shared `edfi.dms.document` topic are historical and are not active relational CDC
-> contracts.
+# Relational CDC and Document Projection
 
-## Overview
+## Authority and Document Ownership
 
-DMS CDC uses database-log-based capture to publish document-state changes to Kafka.
-The reference implementation uses Kafka Connect with Debezium source connectors for
-PostgreSQL and SQL Server.
+This is the authoritative integration and deployment design for relational DMS change
+data capture (CDC) and the `dms.DocumentCache` projection that supplies its upsert
+payloads. It owns configuration, target selection, projection mechanics, readiness,
+provider deployment, bootstrap, operations, and verification.
 
-One relational connector captures two complementary sources. `dms.DocumentCache`
-create/update/snapshot events supply document upserts; authoritative `dms.Document`
-deletes supply tombstones. Cache deletes/truncates and all other document operations are
-ignored. `dms.DocumentCache` remains optional for ordinary DMS correctness but is
-required for CDC upserts.
+Two focused decision records own the decisions and contracts they name:
 
-Change Queries are separate from Debezium/Kafka CDC. Change Queries are a polling API
-compatibility feature based on `ContentVersion`, `ContentLastModifiedAt`, and
-`tracked_changes_*` tables. They are not the Kafka source.
+- [Relational CDC projector and sources](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
+  owns the projector/source choice, freshness rule, and cache/domain lifecycle boundary.
+- [Kafka topic and message contract](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md)
+  owns the public topic, key, value, tombstone, and compatibility contract.
 
-## Why Debezium and Kafka
+Epics and stories are delivery plans, not additional design authorities. Supporting
+backend documents may state facts local to their subject and link here, but must not
+redefine the cross-cutting behavior in these three documents.
 
-CDC reads database transaction logs instead of adding DMS request-path dual writes to
-Kafka. This avoids coupling API write success to a second write target and keeps DMS
-write correctness tied to the relational store.
+Older references to legacy `dms.Document` JSON columns, `EdfiDoc`, OpenSearch, a shared
+`edfi.dms.document` topic, or `deleted=true` messages are historical and are not active
+relational CDC contracts.
 
-Debezium remains the preferred CDC tool because it has mature PostgreSQL and SQL Server
-connectors and fits the existing Ed-Fi Kafka Connect image and local Docker Compose
-infrastructure. Kafka remains the durable stream store for hosts with streaming use
-cases.
+## Scope and Architecture
 
-Debezium Server and embedded Debezium are deferred. Kafka Connect is the relational CDC
-v1 reference deployment model.
+DMS publishes a compacted document-state stream by reading database transaction logs
+with Debezium in Kafka Connect. CDC is not a request-path dual write: API write
+correctness remains tied to the relational database even when Kafka or projection is
+unavailable.
 
-## Relational Document Stream Contract
+One connector captures two complementary relational sources. The exact source-operation
+mapping and lifecycle rationale are defined in the
+[projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md).
+In summary, projected cache state supplies document upserts and canonical document
+lifecycle supplies deletes.
 
-Relational DMS publishes a compacted document-state stream:
+`dms.DocumentCache` is optional for ordinary DMS operation and required only for
+capabilities that consume projected documents. The canonical relational tables remain
+the authority for writes, authorization, identity resolution, Change Queries, and
+correct GET/query behavior.
 
-- one document topic per DMS instance,
-- one topic for all resource types in that instance,
-- Kafka key is the public `DocumentUuid`,
-- Kafka value is a small lower-camel envelope plus the expanded `DocumentJson` payload,
-- delete is a Kafka tombstone for the same `DocumentUuid` key.
+Change Queries remain a separate polling API compatibility surface, including
+`/deletes`, `/keyChanges`, and live-resource version filters based on `ContentVersion`,
+`ContentLastModifiedAt`, and `tracked_changes_*` tables. They are not a Kafka source.
 
-The v1 wire format uses a Kafka Connect `org.apache.kafka.connect.storage.StringConverter`
-key and `org.apache.kafka.connect.json.JsonConverter` value with
-`value.converter.schemas.enable=false`: keys are UTF-8 lowercase `DocumentUuid` text,
-create/update/snapshot values are UTF-8 JSON objects without a Kafka Connect `schema` /
-`payload` wrapper, and deletes are Kafka record-level null values.
+Kafka Connect is the v1 deployment model. Debezium Server is deferred, embedded
+Debezium is not a reference path, and DMS does not publish directly to Kafka.
 
-Recommended topic pattern:
+## Configuration and Projection Target Selection
 
-```text
-<topic-prefix>.instance.<instance-key>.documents.v1
-```
-
-Default local-only topic prefix:
+Capabilities select projection; there is no independently configured projector mode and
+no process-wide Kafka CDC boolean.
 
 ```text
-edfi.dms
+DataManagement:DocumentCache:Enabled = false | true
+DataManagement:DocumentCache:ReadAcceleration:Enabled = false | true
+DataManagement:KafkaCdc:Targets = [{ TenantKey, DataStoreId }, ...]
 ```
 
-Example:
+The defaults are `false`, `false`, and an empty target list. The settings are additive:
+
+| Selector | Projection scope | Additional behavior |
+| --- | --- | --- |
+| `DocumentCache:Enabled` | Every loaded data store with a usable connection string | Standalone projection for indexing, diagnostics, or another consumer |
+| `ReadAcceleration:Enabled` | Every loaded data store with a usable connection string | Fresh cache rows may accelerate GET/query body assembly |
+| `KafkaCdc:Targets` | Only the listed `(tenant key, DataStoreId)` entries | Connector provisioning, registration, and CDC readiness for those targets |
+
+The effective projection target set is the de-duplicated union of those selections. DMS
+runs one logical reconciliation loop for each selected data store. A Kafka target is
+projected when both process-wide settings are false, and an unlisted data store does not
+acquire CDC infrastructure because another data store uses it.
+
+`KafkaCdc:Targets` is the sole runtime CDC enablement contract. An empty list disables
+CDC. Entries must be unique after applying the same case-insensitive tenant-key
+normalization as `IDataStoreProvider`. Kafka infrastructure and `-EnableKafkaUI` do not
+select targets or register connectors.
+
+The effective set is bound at startup. DMS does not infer projection or CDC membership
+from HTTP requests, route qualifiers, JWT `DataStoreIds`, the most recent request, or the
+complete CMS inventory. Adding or removing a target requires configuration change and a
+coordinated deployment. V1 has no dynamic target discovery or automatic connector
+retirement.
+
+All projection and CDC health is observational. It never changes `IDataStoreSelection`,
+normal request routing, or API read/mutation availability.
+
+## Cached Document Contract
+
+`dms.DocumentCache` contains one caller-agnostic, pre-profile, full API-shaped projection
+per current document. Its row contains:
+
+- `DocumentId`
+- `DocumentUuid`
+- `ProjectName`
+- `ResourceName`
+- `ResourceVersion`
+- `ContentVersion`
+- `LastModifiedAt`
+- `DocumentJson`
+- `ComputedAt`
+
+`DocumentId` is the internal primary key and an `ON DELETE CASCADE` foreign key to
+`dms.Document`. `DocumentUuid` is unique and is the public identity used by CDC.
+
+`DocumentJson` is produced by the same relational read-plan and reconstitution rules as
+GET/query response assembly. It includes stable top-level `id` and
+`_lastModifiedDate`. When link injection is compiled into the read plan, it also includes
+reference `link` subtrees. It does not contain authorization arrays, EdOrg hierarchy
+JSON, API client identity, or readable-profile-specific projections.
+
+The cache does not store a reusable `_etag`. Serving and stream-shaping boundaries
+compose `_etag` from `ContentVersion` and their active `variantKey`. Readable-profile
+projection and `DataManagement:ResourceLinks:Enabled` stripping happen after cache
+retrieval and do not create additional cache rows.
+
+A dedicated cache-projection materializer returns the row metadata and `DocumentJson` as
+one coherent result. Before a cache write it validates:
 
 ```text
-edfi.dms.instance.data-store-12.documents.v1
+DocumentJson.id == DocumentUuid
+DocumentJson._lastModifiedDate == formatted LastModifiedAt
 ```
 
-Production topic prefixes must include a stable opaque deployment/environment key that
-is unique among every DMS/CMS deployment sharing the Kafka cluster. `DataStoreId` alone
-is not unique across CMS installations. The short `edfi.dms` prefix is valid only on an
-isolated local/test broker (or a broker explicitly dedicated to one deployment).
+An invariant failure is a materialization failure and produces no cache write.
+`LastModifiedAt` is sourced from `dms.Document.ContentLastModifiedAt`; this payload
+invariant does not make the timestamp a freshness condition.
 
-Create/update/snapshot values have this public shape:
+## Freshness and Reconciliation
 
-```json
-{
-  "contractVersion": 1,
-  "documentUuid": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
-  "projectName": "EdFi",
-  "resourceName": "Student",
-  "resourceVersion": "5.2.0",
-  "contentVersion": 123456,
-  "etag": "123456-a1b2c3d4.j._.l.i",
-  "lastModifiedAt": "2026-07-06T15:30:45.1234567Z",
-  "document": {
-    "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
-    "_etag": "123456-a1b2c3d4.j._.l.i",
-    "_lastModifiedDate": "2026-07-06T15:30:45.1234567Z"
-  }
-}
-```
-
-The published value does not include `DocumentId`, `ComputedAt`, authorization arrays,
-EdOrg hierarchy arrays, API client identity, or readable-profile-specific projections.
-The `etag` value is the DMS API `_etag` for the Kafka document-state variant. It is
-derived from `contentVersion` and the stream `variantKey`, using the same
-`{schemaEpoch}.j._.{linkFlag}.i` variant-key shape as API ETags for the published JSON
-document. It is not read from a `dms.DocumentCache.Etag` column.
-
-The `document` field is produced from the caller-agnostic, pre-profile, full API
-resource body stored in `dms.DocumentCache.DocumentJson`. The stream shaper injects
-`_etag` from the envelope `etag`, so the published document includes top-level `id`,
-`_etag`, and `_lastModifiedDate`. If link injection is compiled into the read plan, the
-cached document includes reference `link` subtrees. DMS does not maintain a second
-link-free Kafka projection. Envelope `documentUuid`, `etag`, and `lastModifiedAt` values
-must match the embedded metadata fields in `document`.
-
-Deletes publish:
+`ContentVersion` is the sole cache freshness and reconciliation key:
 
 ```text
-key = <DocumentUuid>
-value = null
+DocumentCache.ContentVersion == Document.ContentVersion
 ```
 
-The relational v1 topic does not publish the legacy `deleted=true` / `EdFiDoc` shape.
+`LastModifiedAt` is payload and diagnostic metadata. `ComputedAt` is operational
+metadata. Neither participates in cache freshness, completeness, API semantics,
+Change Queries, or `_etag` state.
 
-The tombstone comes only from the authoritative `dms.Document` delete. The connector
-ignores the cascaded cache delete. API deletion therefore does not depend on cache
-presence, freshness, projector health, or synchronous pre-delete materialization. Cache
-truncation/rebuild does not publish mass domain tombstones.
+The current database difference is both the durable work inventory and the projection
+completeness source:
 
-## Connector Deployment
+```text
+dms.Document
+LEFT JOIN dms.DocumentCache ON DocumentId
+WHERE DocumentCache.DocumentId IS NULL
+   OR DocumentCache.ContentVersion <> Document.ContentVersion
+ORDER BY Document.ContentVersion, Document.DocumentId
+```
 
-The source connector captures exactly `dms.DocumentCache` and `dms.Document` in one task.
+For each selected data store, a background loop:
 
-PostgreSQL reference deployment:
+1. Selects a bounded batch of missing or version-mismatched current documents.
+2. Captures `(DocumentId, ContentVersion)` and the source metadata needed by the
+   materializer.
+3. Reconstitutes the caller-agnostic cached document.
+4. Validates the embedded/relational metadata invariant.
+5. Performs the shared guarded cache upsert.
+6. Repeats until no mismatch remains, then polls after a bounded idle delay.
 
-- use the Debezium PostgreSQL connector with `pgoutput`,
-- configure PostgreSQL for logical replication,
-- create a least-privilege replication user,
-- use a publication scoped to both captured tables,
-- use one replication slot and one connector per DMS instance database,
-- configure `DocumentUuid` as the custom key for both tables,
-- set `dms.Document` to `REPLICA IDENTITY FULL` for delete-key capture.
+The database guard writes only when the source `dms.Document` still exists at the
+captured `ContentVersion`. A stale materialization no-ops and is rediscovered at its
+current version; a deleted document cannot be recreated; and a lower version cannot
+overwrite a higher cache version. Reconciliation and optional direct fill after a
+relational read use the same guard.
 
-SQL Server reference deployment:
+There are no projection queues, enqueue APIs, persisted cursors, backfill epochs,
+high-watermarks, projector-state rows, failure rows, retry classifications, dead-letter
+transitions, requeue APIs, or manual repair workflows in v1. Empty-cache population,
+ongoing projection, restart, truncation/rebuild, and recovery all use the same mismatch
+query. A maximum scanned or projected version cannot prove completeness because a lower
+current version may still be missing.
 
-- use the Debezium SQL Server connector,
-- enable SQL Server CDC for the DMS instance database,
-- enable CDC on both captured tables only,
-- use a least-privilege connector login,
-- configure `DocumentUuid` as the custom key for both tables.
+Failures use bounded in-memory exponential backoff with jitter keyed by opaque data-store
+identity, `DocumentId`, and current `ContentVersion`. A deferred candidate does not
+starve other work. Its entry is removed when the version changes, the document is
+deleted, or the cache becomes fresh. Restart loses only the delay and rediscovers work
+from database state. V1 has no retry budget or persisted attempt count; a persistent
+failure remains visible until its underlying data, mapping, or service cause is fixed.
 
-Debezium SQL Server can process multiple databases from one connector, but the reference
-DMS implementation still treats each DMS instance as one logical connector registration
-and one topic. SQL Server connector consolidation is an advanced host optimization only
-when the same per-instance topic, key, tombstone, ACL, and operational contracts are
-preserved.
+The hosted supervisor creates an isolated, non-HTTP service scope for each startup
+target and explicitly selects its data store. It does not depend on
+`ResolveDataStoreMiddleware` or reuse request-scoped `IDataStoreSelection`. One
+unavailable data store does not stop peers. Multiple DMS replicas may perform duplicate
+scans safely because candidate discovery is read-only and writes are idempotently fenced.
+Deployments may designate projector hosts to avoid redundant work; correctness does not
+require a distributed lease.
 
-The CDC topology must also preserve a one-to-one relationship between a logical instance
-topic and the physical database containing both captured tables. If two tenant/data-store
-records resolve to the same physical database, CDC readiness rejects both aliases rather
-than publishing the same document set under independently authorized topics.
+## Cache-Backed Reads and Domain Lifecycle
 
-## Transform Pipeline
+When read acceleration is enabled, authorization and query candidate selection still
+use relational sources. A cache row may supply response-body assembly only when it is
+fresh. Missing or stale rows fall back to relational reconstitution; readable-profile
+projection, link stripping, and served `_etag` composition then run identically for both
+paths. The read path does not enqueue projection work, though it may perform the shared
+guarded direct fill after fallback as an optional optimization.
 
-The connector pipeline must produce the relational v1 public contract while separating
-cache and domain lifecycles:
+Deleting a cache row is projection maintenance and never means domain deletion. A
+supported API delete continues to:
 
-1. Capture both tables with Debezium keys containing `DocumentUuid` and one connector task.
-2. Before unwrapping/routing, retain cache `c/u/r` as upserts, convert document `d` to a
-   Kafka tombstone, and drop cache `d/t` plus document `c/u/r`.
-3. Suppress Debezium's automatic extra tombstones so one canonical delete emits exactly
-   one public tombstone and cache deletion emits none.
-4. Unwrap retained cache values and rename fields to lower camel case.
-5. Remove internal fields such as `DocumentId` and `ComputedAt`.
-6. Add `contractVersion = 1` and compose/inject the stream `_etag`.
-7. Expand `document` into structured JSON using the Ed-Fi expand-JSON SMT when Debezium
-   emits `DocumentJson` as an escaped string.
-8. Simplify the Kafka key to the lowercase `DocumentUuid` string.
-9. Route both physical Debezium topics to the instance document topic.
+1. Resolve and authorize the canonical target.
+2. Delete the concrete resource row, or descriptor row, while `dms.Document` still
+   exists so Change Queries can record its tombstone.
+3. Delete `dms.Document`, cascading relational cleanup including the cache row.
 
-Provider E2E coverage must prove same-key ordering through the routed topic: a cache
-upsert committed before canonical deletion appears before its tombstone.
+The API transaction does not verify cache existence or freshness, synchronously
+materialize a pre-delete document, acquire a CDC-specific lock, wait for projector
+readiness, or fail because projection is unavailable. Create followed by delete before
+projection may therefore publish only a tombstone; state-stream consumers must tolerate
+that case.
 
-## Local Bootstrap
+Cache truncation, eviction, cleanup, and rebuild publish no domain tombstones.
+Reconciliation recreates upserts only for canonical documents that still exist. An
+intentional compacted-topic rebuild is a connector snapshot/topic recovery operation,
+not a cache-delete operation. Schema reprovisioning must not reuse cache rows across
+incompatible effective schemas.
 
-Kafka and Kafka UI infrastructure can be useful without CDC. Local bootstrap should use
-an explicit CDC opt-in, such as `-EnableKafkaCdc`, before registering DMS source
-connectors.
+## Projection Health and CDC Readiness
 
-`-EnableKafkaUI` starts Kafka UI only and must not imply connector registration.
+Projection health is evaluated for each explicit `(tenant key, DataStoreId)` execution
+context with provider-equivalent current-state queries. It reports at least:
 
-Connector registration should occur after the target data store is selected, the target
-database is provisioned, provider-specific CDC setup is applied, and
-the asynchronous `dms.DocumentCache` projector verifies the required upsert projection
-guarantees. Registration also verifies two-table keys, PostgreSQL replica identity, and
-source-operation filtering. It establishes capture before the bounded initial backfill and
-before writes that must be observed by CDC. CDC is advertised as ready only after the backfill
-epoch, connector snapshot/catch-up, connector lag, and projector lag above the completed
-backfill target are acceptable. Connector templates must be generated or parameterized
-from the selected data-store context instead of using hard-coded database names.
+- selection reason and required-table existence,
+- whether the in-process loop is running,
+- total mismatch count,
+- missing-row count,
+- version-mismatched-row count,
+- oldest mismatch source timestamp and age, derived from
+  `dms.Document.ContentLastModifiedAt`.
 
-The v1 CDC target list is explicit deployment configuration. Production-like automation
-repeats the one-shot provisioning and registration workflow for every listed target. Adding
-or removing a target requires an explicit configuration change and coordinated deployment.
-Moving a `DataStoreId` to a different
-physical document set requires an explicit migration with a new topic/source generation or
-a deliberate topic/connector reset; v1 does not automatically replace physical sources or
-infer destructive cleanup from target-list changes.
+Optional counts by project/resource may be exposed when operationally safe. Process-local
+last scan, duration, successful upsert, and last error are diagnostic only.
+`LastScannedContentVersion`, `LastProjectedContentVersion`, and last-success timestamps
+are never completeness evidence.
 
-Kafka CDC uses an explicit deployment-configured target list of `(tenant key, DataStoreId)`
-values. At startup DMS resolves a provider-specific physical database identity for each
-listed target; it does not fingerprint complete connection configuration. Credential,
-timeout, pooling, application-name, and equivalent-alias changes are not source drift when
-they resolve to the same physical database. A missing configured target or confirmed
-physical-source change makes that target's CDC readiness false, and confirmed drift remains
-latched as `CdcSourceDriftRequiresDeployment` until the coordinated workflow reruns.
+Configurable mismatch-count and oldest-age thresholds distinguish brief asynchronous lag
+from sustained degradation. CDC projection completeness is stricter: the exact current
+mismatch count must be zero. A same-version timestamp comparison is not another
+freshness or completeness test; embedded metadata consistency is enforced when a row is
+materialized and written.
 
-CDC readiness does not change normal CMS-driven request routing or API availability.
-Entries outside the target list remain ordinary DMS data stores, and projection/connector
-failure never blocks reads or mutations.
+Connector registration prerequisites are the subset available before completeness:
 
-## Multitenancy and Security
+- explicit target membership,
+- provisioned `dms.Document` and `dms.DocumentCache`,
+- a startable reconciliation execution context,
+- the guarded upsert,
+- provider CDC/key prerequisites and the source-operation transform.
 
-Topic-per-instance segregation is the recommended Kafka isolation model. Shared topics
-with instance filtering are not part of the relational CDC contract because they increase
-cross-instance data leakage risk.
+End-to-end CDC readiness additionally requires:
 
-Kafka ACLs should grant consumers access only to the instance topics they are authorized
-to read. Kafka Connect internal topics, connector REST APIs, and database credentials
-must not be exposed to third-party consumers.
+- the configured target still resolves to its startup provider/physical source binding,
+- zero current projection mismatches,
+- connector snapshot/catch-up through a database source position observed at or after
+  the zero-mismatch observation,
+- connector lag within its configured threshold.
 
-The DMS projector and CDC readiness are scoped per `(tenant key, DataStoreId)` and run
-independently of request JWT/route selection. Process-wide v1 projector mode may apply to
-every loaded data store with a usable connection string; connector registration and CDC
-readiness apply only to the explicit deployment-configured targets.
+There is no backfill epoch, completed backfill target, or maximum projected version in
+this readiness calculation. Connector/source checks belong to CDC; the projector does
+not call Kafka Connect.
 
-Database connector credentials should be least-privilege. Local development defaults may
-use insecure credentials, but production deployments must replace them.
+Readiness and health are per data store. A deployment aggregate may be not ready while
+retaining each target's result. No failure gates normal API traffic.
+
+## CDC Target and Physical Source Binding
+
+Each logical instance topic maps to exactly one physical database containing the
+captured tables. Registering separately authorized topics for multiple CMS aliases of
+the same physical document set is rejected because the rows contain no tenant or
+data-store discriminator.
+
+The logical connector identity is `(deployment key, tenant key, DataStoreId)`. Tenant
+identity remains deployment/administrative state and is not published in the topic or
+message. Route-qualifier-only changes do not affect connector or topic identity.
+
+Deployment resolves a provider-specific physical database identity for every configured
+target. Comparison does not rely only on raw connection-string text: semantically
+equivalent strings and server aliases must be normalized or confirmed after connection.
+Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
+display names, or unsanitized physical identifiers.
+
+At successful provisioning DMS records an immutable binding from the configured target
+to provider and provider-resolved physical database identity. Credential, timeout,
+pooling, application-name, host-alias, or equivalent connection changes are not drift
+when the provider and physical database are unchanged.
+
+After a successful CMS refresh, DMS reevaluates source identity only for configured CDC
+targets. A missing target or confirmed provider/physical-source change makes that target
+not ready. Confirmed drift is latched as `CdcSourceDriftRequiresDeployment` until a
+coordinated deployment reruns the one-shot workflow, even if CMS later returns to the
+original source. A transient identity-resolution failure is retryable and is not latched.
+
+Source observation is not source reconciliation. Runtime DMS does not move projectors,
+call Kafka Connect, stop connectors, or delete topics, offsets, ACLs, PostgreSQL
+slots/publications, or SQL Server capture state in response to CMS changes. Moving a
+`DataStoreId` to another physical document set requires an explicit migration choosing a
+new topic/source generation or deliberately resetting the existing topic and connector
+state before resnapshotting. Removing a target requires explicit decisions for every
+retained or deleted artifact.
+
+The provisioning workflow is idempotent for the same logical connector and physical
+source and rejects reuse of an existing instance topic for a different physical document
+set without an explicit migration/reset decision.
+
+## Connector Topology and Provider Setup
+
+The reference architecture registers one logical connector per DMS instance with
+`tasks.max = 1`, so both source tables share a connector task before routing to the
+public topic.
+
+### PostgreSQL
+
+- Use the Debezium PostgreSQL connector with `pgoutput` and logical replication.
+- Use a least-privilege replication/login principal rather than a superuser.
+- Create one narrowly scoped publication and one replication slot per instance
+  connector; include only `dms.DocumentCache` and `dms.Document`.
+- Configure `DocumentUuid` as the Debezium message key for both tables.
+- Set `dms.Document` to `REPLICA IDENTITY FULL` so its non-primary-key
+  `DocumentUuid` is available in delete records.
+- Verify exact quoted table identifiers, `message.key.columns`, replica-identity SQL,
+  and connector properties against the pinned Connect/Debezium image.
+
+Generated PostgreSQL DDL may expose a quoted identifier such as
+`dms."DocumentCache"`; template tests resolve the emitted name rather than assuming it.
+
+PostgreSQL replication slots are database-scoped, so one connector cannot span the
+database-per-instance isolation model.
+
+### SQL Server
+
+- Use the Debezium SQL Server connector and enable CDC for the instance database.
+- Enable capture only on `dms.DocumentCache` and `dms.Document`, including
+  `DocumentUuid`.
+- Use a least-privilege login with CDC read access.
+- Configure `DocumentUuid` as the Debezium message key for both tables.
+
+SQL Server can capture multiple databases in one connector, but the reference deployment
+still registers one logical connector per instance for offset, routing, failure, and
+runbook parity with PostgreSQL. Advanced hosts may consolidate only when they preserve
+per-instance topics and ACLs, `DocumentUuid` tombstones, and acceptable failure/offset
+isolation.
+
+Provider CDC/key setup is opt-in and does not run during ordinary relational provisioning
+when CDC is not selected.
+
+## Connector Transform Pipeline
+
+The connector implements the source mapping from the
+[projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
+and the serialized contract from the
+[topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md)
+in this logical order:
+
+1. Capture both tables with `DocumentUuid` in each Debezium key.
+2. Classify original Debezium records by source table and operation before unwrap or
+   routing.
+3. Retain cache create/update/snapshot inputs, convert canonical document deletes to
+   record-level tombstones, and drop every other captured operation.
+4. Suppress Debezium's additional automatic tombstones so one canonical delete produces
+   one public tombstone and cache deletion produces none. One valid implementation sets
+   `tombstones.on.delete=false` and converts only the retained canonical delete envelope.
+5. Unwrap retained cache rows and rename public fields from database Pascal case to the
+   lower-camel contract.
+6. Compose the stream `_etag` from `contentVersion` and the stream `variantKey`, and
+   inject it into the document.
+7. Remove internal/operational columns, add `contractVersion`, and expand
+   `DocumentJson` into structured JSON with the DMS-1240 Ed-Fi SMT when necessary.
+8. Simplify the Debezium key struct to lowercase `DocumentUuid` text and route both
+   physical topics to the instance document topic.
+
+All value transforms apply only to retained cache upserts. Key simplification and topic
+routing apply to upserts and authoritative tombstones.
+
+Stock predicates and SMTs may be used when they safely produce the exact contract. If
+they cannot classify both tables and operations or emit exactly one tombstone without
+scripting-engine risk, add a small Ed-Fi document-state routing/shaping SMT. Tests assert
+published record bytes and semantics, not only generated connector JSON. Version-specific
+properties and transform classes are verified against the pinned
+`edfialliance/ed-fi-kafka-connect` image.
+
+## Enablement and Initial Readiness Sequence
+
+The connector supports an initial snapshot of `dms.DocumentCache`. It may snapshot both
+included tables, but the operation filter drops every `dms.Document` snapshot record.
+
+For a new instance:
+
+1. Provision and validate the relational schema and cache table.
+2. Apply provider CDC/key setup and create the instance topic and ACLs.
+3. Add the target to `KafkaCdc:Targets`, making the projector execution context and
+   fencing available.
+4. Register the connector before reconciliation or application writes that must be
+   observed.
+5. Start DMS reconciliation so guarded cache upserts flow through established capture.
+6. Observe zero mismatches and a database source position at or after that observation;
+   advertise readiness only after snapshot/catch-up reaches that position and connector
+   lag is acceptable.
+
+For an existing instance, perform the same one-shot sequence before write/delete traffic
+that the host expects CDC to observe. If capture cannot be registered first, quiesce
+traffic until it is registered. Existing cache rows are handled by the connector's
+initial snapshot; remaining mismatches are repaired by ordinary reconciliation.
+
+## Local Bootstrap and CI
+
+Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
+
+- `-EnableKafkaUI` starts only Kafka UI.
+- CDC opt-in starts Kafka and Kafka Connect if needed, resolves the selected configured
+  target, verifies registration prerequisites, and generates a connector without
+  hard-coded database, topic, slot/capture, or data-store values.
+- Registration is idempotent for the same connector and source.
+- Bootstrap prints connector name, provider, database, opaque instance key, and topic;
+  secrets are excluded.
+- It waits for the readiness sequence above and reports which prerequisite or readiness
+  condition failed.
+- E2E setup registers capture against the same provisioned database used by the DMS test
+  process before issuing writes it expects to consume.
+- Local teardown removes connector and Kafka state with the local stack and volumes.
+
+Production-like automation repeats this one-shot workflow for each explicit target.
+
+## DDL and Query Support
+
+No `DocumentCacheProjectionState`, `DocumentCacheProjectionFailure`, or other durable
+workflow table is provisioned. Supporting DDL is limited to the projection and measured
+access paths:
+
+- `DocumentCache(DocumentId)` remains the primary/foreign key with cascade deletion.
+- `DocumentCache.DocumentUuid` remains unique for connector keys.
+- Provider-specific constraints ensure `DocumentJson` is a JSON object.
+- Add `dms.Document(ContentVersion, DocumentId)` only when realistic provider query-plan
+  measurements show the ordered bounded scan needs it.
+- Add no additional projector/diagnostic index beyond the data-model-defined access
+  paths until mismatch-query measurements demonstrate a need.
+
+PostgreSQL and SQL Server may use different plans while exposing equivalent logical
+reconciliation, health, and fencing behavior.
+
+## Security, Telemetry, and Operations
+
+Topic-per-instance ACLs are the Kafka authorization boundary. Shared topics requiring
+consumer-side instance filtering are not supported. The stream contains sensitive data;
+Kafka Connect internal topics, its REST API, and database credentials are not exposed to
+third-party consumers. Local insecure defaults must be replaced in production.
+
+Structured logs and metrics cover:
+
+- reconciliation scans, candidates, attempts, successes, failures, and durations,
+- retry deferrals and backoff duration,
+- guarded stale-write skips,
+- mismatch count and oldest mismatch age,
+- cache hits, misses, stale misses, and relational fallback,
+- connector running state, lag, last error, and snapshot completion,
+- missing targets, retryable source-resolution failures, and latched drift.
+
+Use provider, safe project/resource identity, failure category, projection-selection
+reason, and opaque data-store identity only where cardinality policy permits. Never log
+document bodies, raw student data, connection strings, credentials, tenant display
+names, or unsanitized physical identifiers.
+
+Operator status identifies connector, provider/source, topic, PostgreSQL slot or SQL
+Server capture instance, snapshot state, lag, and last error. A failure for one target
+does not conceal peer status or stop unrelated DMS API instances.
+
+Runbooks cover connector restart, cache rebuild, offset reset, resnapshot, topic
+recreation, target migration/retirement, and provider artifact cleanup. Offset reset and
+resnapshot can replay current document state. Topic/offset/ACL/slot/capture deletion is
+destructive and always explicit; removal from configuration is not cleanup authority.
+
+## Verification
+
+Fast contract and transform tests cover every retained and dropped source operation,
+serialized key/value bytes, duplicate-tombstone suppression, JSON expansion, timestamp
+format, metadata consistency, and topic routing.
+
+PostgreSQL and SQL Server integration/E2E coverage proves:
+
+- provider key and delete-record prerequisites,
+- create/update/snapshot upserts conform to the topic/message ADR,
+- canonical deletion emits a tombstone when no cache row exists,
+- cache delete/truncate/rebuild emits no domain tombstone,
+- a cache upsert committed before canonical deletion appears before its tombstone for
+  that key in the routed public topic,
+- projection selection, empty-cache population, update, restart, retry, rebuild,
+  fencing, health, cache fallback, and mixed-target isolation,
+- a higher projected `ContentVersion` cannot hide a missing lower current version,
+- projection or connector failure never blocks normal API deletion.
+
+The quarantined KafkaMessaging scenarios are replaced only after the relational scenarios
+pass consistently. SQL Server ordering requires a real connector and routed Kafka topic;
+fixture-only transform coverage is insufficient.
 
 ## Historical and Deferred Material
 
-Legacy document-store connector configs targeted JSON columns such as `EdfiDoc`,
-`SecurityElements`, authorization EdOrg arrays, and hierarchy JSON. Those columns do not
-exist in the relational schema and are not migration targets.
+Legacy document-store connector configurations referenced JSON columns such as
+`EdfiDoc`, security elements, authorization EdOrg arrays, and hierarchy JSON that do not
+exist in the relational schema. OpenSearch/Elasticsearch read-store support has been
+dropped.
 
-OpenSearch/Elasticsearch read-store support has been dropped. Any prior OpenSearch sink
-connector settings in this area are historical.
-
-A domain-event outbox remains a possible future design if DMS needs event shapes that are
-different from the materialized document-state stream. It is not part of the relational
-CDC v1 contract.
+A relational outbox remains a future option if DMS needs explicit domain events rather
+than a compacted document-state stream. Debezium Server and provider-specific managed
+Kafka deployment guides are also outside v1.

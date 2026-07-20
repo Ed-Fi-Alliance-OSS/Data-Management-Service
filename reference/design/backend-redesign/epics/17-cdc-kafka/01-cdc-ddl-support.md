@@ -4,48 +4,36 @@ source_spike: DMS-1245
 epic: TBD
 ---
 
-# Story: Emit/Provision Two-Table CDC Key and Database Support
+# Story: Emit/Provision Provider CDC Key and Database Support
 
-## Description
+## Design References
 
-Add provider-specific DDL/provisioning for one Debezium connector to capture
-`dms.DocumentCache` upserts and authoritative `dms.Document` deletes with the shared
-`DocumentUuid` key.
+- [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
+- [DDL and query support](../../../cdc-streaming.md#ddl-and-query-support)
+- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
-Both tables are physically keyed by `DocumentId`, so CDC setup must explicitly make
-`DocumentUuid` the connector key. PostgreSQL must make that non-primary-key column
-available in `dms.Document` delete records.
+## Outcome
 
-## Acceptance Criteria
+Implement opt-in PostgreSQL and SQL Server database provisioning required by the
+relational CDC source/key design.
 
-- PostgreSQL provisioning creates or validates a publication scoped to
-  `dms.DocumentCache` and `dms.Document`.
-- PostgreSQL CDC setup sets `dms.Document` to `REPLICA IDENTITY FULL` and validates that
-  `DocumentUuid` is present in delete events.
-- SQL Server setup enables CDC on both captured tables and includes `DocumentUuid` in the
-  capture instances.
-- Connector key configuration can use `DocumentUuid` for both tables on both providers.
-- Setup artifacts are opt-in and do not run for ordinary relational provisioning unless
-  CDC is enabled.
-- Generated SQL/manifests expose both captured tables, key setup, publication/capture
-  instance, and replica identity for diagnostics.
-- Provider smoke tests prove a `dms.Document` delete can produce a `DocumentUuid`-keyed
-  source record.
-- Provider smoke tests prove cache deletion is distinguishable and available for the
-  connector pipeline to drop; they do not require materialize-then-delete behavior.
+## Deliverables
 
-## Tasks
+1. Add provider-specific publication/capture and delete-key setup.
+2. Extend generated provisioning manifests and diagnostics with CDC setup status.
+3. Verify exact provider identifiers and syntax against generated DDL and the pinned
+   connector version.
+4. Add negative validation for missing key, replica-identity, or capture prerequisites.
 
-1. Identify exact provider table/index identifiers for `dms.Document` and
-   `dms.DocumentCache`.
-2. Add optional PostgreSQL publication and `REPLICA IDENTITY FULL` setup.
-3. Add optional SQL Server database/table CDC setup for both tables.
-4. Extend provisioning output/manifests with two-table CDC setup status.
-5. Add DB-apply and delete-key smoke tests for both providers.
-6. Add negative tests for missing `DocumentUuid`/replica/capture support.
+## Acceptance Evidence
+
+- PostgreSQL DB-apply tests validate publication, replica identity, and a
+  `DocumentUuid`-keyed canonical delete source record.
+- SQL Server DB-apply tests validate capture instances and the equivalent delete key.
+- Both providers distinguish cache maintenance records for later filtering.
+- Ordinary relational provisioning tests prove CDC artifacts remain opt-in.
 
 ## Out of Scope
 
-- Connector JSON template generation.
-- Kafka Connect REST registration.
+- Connector JSON generation or REST registration.
 - Projector implementation.

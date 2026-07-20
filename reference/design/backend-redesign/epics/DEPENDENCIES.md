@@ -124,28 +124,18 @@ Notes:
 
 ## Focused E17/E18 Story Dependency Addendum
 
-This section records the story-level dependency between the DMS-1245 CDC/Kafka implementation epic and the
-DMS-1246 DocumentCache implementation epic. It does not regenerate the full dependency matrix below.
+This is the single cross-epic story dependency index. Design behavior is linked from the
+epics and is not repeated here.
 
-| `17-cdc-kafka` story | Depends on `18-document-cache` | Dependency type | Notes |
-| --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-03, 18-07, 18-09 | Hard for upsert readiness | Consumes capability-derived projection targets, reconciliation, fencing, and exact completeness health; core E02 supplies source/cache DDL and E17 owns `dms.Document` lifecycle capture. |
-| `17-01-cdc-ddl-support.md` | — | No E18 dependency | Core E02 supplies `dms.DocumentCache`; E17 owns two-table CDC/key/replica setup and provider proof. |
-| `17-02-connector-template-generation.md` | — | No E18 dependency until upsert smoke tests | Fixture-based template work can proceed before the projector is complete. |
-| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-03, 18-09, plus 17-00 | Hard | Bootstrap registers before reconciliation traffic and waits for zero mismatches plus connector/source-position readiness. |
-| `17-04-message-contract-tests.md` | 18-02 | Soft | Uses realistic cache payloads; delete/filter/order tests are E17-owned. |
-| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-09, plus 17-00 through 17-04 | Hard for complete upsert coverage | Missing-cache deletes are independent of the projector. |
-| `17-06-ops-docs-runbooks.md` | 18-03, 18-09, 18-11 | Hard for final docs | CDC runbooks consume mismatch health, bounded retry, and recovery guidance. |
-
-| `18-document-cache` story | Unblocks / informs `17-cdc-kafka` |
+| `17-cdc-kafka` story | `18-document-cache` dependency |
 | --- | --- |
-| 18-00 | Capability-derived projection targets for standalone cache, read acceleration, and per-target Kafka CDC; consumed by 17-00 and 17-03. |
-| 18-02 | Materialized `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for 17-04 and 17-05. |
-| 18-03 | One current-state reconciliation loop for initial population, ongoing projection, restart, rebuild, and retry; consumed by 17-00, 17-03, 17-05, and 17-06. |
-| 18-05 | Optional cache read behavior; no hard CDC dependency. |
-| 18-07 | Stale-write and post-delete fencing for CDC upserts. |
-| 18-09 | Mismatch-derived health, zero-mismatch completeness, and telemetry consumed by 17-00, 17-03, 17-05, and 17-06. |
-| 18-11 | DocumentCache operator guidance consumed by 17-06. |
+| 17-00 | 18-00, 18-03, 18-07, 18-09 |
+| 17-01 | — |
+| 17-02 | — until upsert smoke tests |
+| 17-03 | 18-00, 18-03, 18-09, plus 17-00 |
+| 17-04 | 18-02 (soft) |
+| 17-05 | 18-00, 18-03, 18-09, plus 17-00 through 17-04 |
+| 17-06 | 18-03, 18-09, 18-11 |
 
 ---
 

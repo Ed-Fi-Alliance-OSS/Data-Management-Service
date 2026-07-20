@@ -184,11 +184,9 @@ Representation-state change is tracked by stored `ContentVersion`; `ContentLastM
 the representation's `_lastModifiedDate` payload metadata. `_etag` additionally reflects the
 representation selectors via `variantKey`.
 
-Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile
-document keyed by `(DocumentId, ContentVersion)`. The cache does **not** store a single materialized
-`_etag`, because `_etag` is representation-specific; instead the server composes `_etag` per request
-from the cached `ContentVersion` and the request's `variantKey`. Freshness is judged on
-`ContentVersion` alone.
+`dms.DocumentCache` stores the `ContentVersion` needed by this document's `_etag`
+composition rules, but not a reusable `_etag`. Its projection and freshness behavior is
+defined in [Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation).
 
 ### `variantKey` encoding (normative)
 

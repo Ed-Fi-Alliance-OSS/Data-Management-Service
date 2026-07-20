@@ -18,9 +18,10 @@ Source documents:
 - Transactions & concurrency: `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
 - Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/design-docs/update-tracking.md`
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, ContentVersion mirror): `reference/design/backend-redesign/design-docs/change-queries.md`
-- DocumentCache role, projector, freshness, backfill, failure, and lifecycle separation:
-  `reference/design/backend-redesign/design-docs/document-cache/`
-- CDC/Kafka (DocumentCache upserts, `dms.Document` deletes, topic/message contract, connector deployment): `reference/design/backend-redesign/design-docs/cdc/`
+- Authoritative DocumentCache projection and relational CDC design:
+  `reference/design/cdc-streaming.md`
+- Focused projector/source and topic/message decisions:
+  `reference/design/backend-redesign/design-docs/cdc/`
 - DDL generation: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 - DDL generator verification harness: `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`
 - Strengths/risks: `reference/design/backend-redesign/design-docs/strengths-risks.md`
@@ -34,15 +35,9 @@ Source documents:
 - Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
-- Relational Debezium/Kafka CDC, when enabled, uses one connector to capture
-  `dms.DocumentCache` create/update/snapshot events as upserts and authoritative
-  `dms.Document` deletes as tombstones. It publishes a compacted topic-per-instance
-  document-state stream keyed by `DocumentUuid`; `dms.DocumentCache` remains optional
-  when CDC/Kafka is not enabled.
-- Cache deletion never represents domain deletion. The connector ignores cache deletes,
-  so API deletion does not depend on projection health and cache truncation/rebuild does
-  not publish mass tombstones. The detailed projector and lifecycle-separation contract
-  is defined in `design-docs/document-cache/`.
+- Optional DocumentCache projection and relational CDC follow the authoritative
+  configuration, lifecycle, readiness, and deployment design in
+  [`cdc-streaming.md`](../../cdc-streaming.md).
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
   - token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens),
   - `auth.*` companion objects, and

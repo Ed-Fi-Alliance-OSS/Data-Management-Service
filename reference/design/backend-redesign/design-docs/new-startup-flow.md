@@ -58,9 +58,6 @@ This means the first request can pay:
 The new lifecycle splits startup into explicit phases:
 
 1. **Load DMS instances** (already done today) so we know all connection strings to validate.
-   When `DataManagement:KafkaCdc:Targets` is non-empty, bind and validate those explicit
-   deployment-configured target keys at the end of this phase; physical source resolution
-   waits until the target databases are available.
 2. **Load + validate ApiSchemas** in Core (startup-time, one-time).
 3. **Build the effective schema view** in Core (startup-time, one-time):
    - apply extension merges,
@@ -73,10 +70,9 @@ The new lifecycle splits startup into explicit phases:
      - read the database fingerprint (`dms.EffectiveSchema`, `dms.SchemaComponent`),
      - validate `ResourceKeySeedHash/Count` (fast path),
      - fail fast on mismatch.
-5. **Resolve CDC source bindings** (startup-time, when `KafkaCdc:Targets` is non-empty):
-   - resolve only the explicit CDC targets,
-   - capture provider-specific physical database identity for readiness,
-   - leave normal request routing unchanged.
+5. **Initialize configured projection/CDC contexts** according to
+   [Relational CDC and Document Projection](../../cdc-streaming.md). Target keys can be
+   bound after instances load; physical-source checks wait for provisioned databases.
 6. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
    - warm OIDC discovery/JWKS metadata (if configured),
    - retrieve and cache claim-set/strategy metadata used by request authorization (see `auth.md`),
@@ -90,14 +86,12 @@ In `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`,
 becomes:
 
 1. `InitializeDataStores(app)` (already present)
-2. When `KafkaCdc:Targets` is non-empty, bind and validate the explicit target keys
-3. Optional DB deploy (`InitializeDatabase(app)`; already present)
-4. **New**: `InitializeApiSchemas(app)` (Core)
-5. **New**: `InitializeBackendMappings(app)` (backend-specific)
-6. Resolve configured CDC targets to physical source bindings for readiness (without
-   changing normal request routing)
-7. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
-8. Start request routing
+2. Optional DB deploy (`InitializeDatabase(app)`; already present)
+3. **New**: `InitializeApiSchemas(app)` (Core)
+4. **New**: `InitializeBackendMappings(app)` (backend-specific)
+5. Initialize configured projection/CDC contexts using the authoritative design
+6. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
+7. Start request routing
 
 ApiSchema loading can occur before or after DB deploy. Mapping initialization must occur after instances are
 loaded and after DBs are provisioned (if provisioning is done on startup).

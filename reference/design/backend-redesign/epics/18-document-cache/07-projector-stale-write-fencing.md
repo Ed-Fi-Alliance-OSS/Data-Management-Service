@@ -8,44 +8,35 @@ related:
 
 # Story: Enforce Projector Stale-Write and Post-Delete Fencing
 
-## Description
+## Design References
 
-Implement the database-enforced guard that makes reconciliation and optional read-through
-materialization monotonic per document.
+- [Freshness and reconciliation](../../../cdc-streaming.md#freshness-and-reconciliation)
+- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
-The guard prevents a candidate captured at an older source version from overwriting a
-newer cache row or recreating a cache row after the corresponding `dms.Document` row has
-been deleted.
+## Outcome
+
+Implement one provider-equivalent guarded cache write shared by reconciliation and
+optional direct fill.
 
 ## Dependencies
 
-- Depends on the `dms.Document` representation stamps from update tracking.
-- Required by `18-03-async-projector-reconciliation-loop.md`.
-- Supplies upsert-projection ordering guarantees to `17-cdc-kafka`.
+- Depends on canonical `dms.Document` representation stamps and is required by 18-03.
 
-## Acceptance Criteria
-
-- All writes to `dms.DocumentCache` use a single guarded upsert path or equivalent shared guard.
-- The guard writes a cache row only when the current `dms.Document` row still exists.
-- The guard writes a cache row only when current `dms.Document.ContentVersion` matches
-  the target work item. `ContentLastModifiedAt` is payload metadata, not a guard input.
-- A lower captured `ContentVersion` cannot overwrite a higher cache version.
-- A work item for a deleted `DocumentId` cannot recreate `dms.DocumentCache`.
-- The guard works consistently for reconciliation and optional read-through fill.
-- Guard failures are observable as stale skips rather than generic unexpected errors.
-- Tests cover out-of-order candidates, concurrent update during projection, delete racing
-  materialization, and provider parity for PostgreSQL and SQL Server.
-
-## Tasks
+## Deliverables
 
 1. Define the guarded cache write contract.
-2. Implement PostgreSQL guarded upsert.
-3. Implement SQL Server guarded upsert.
-4. Route reconciliation and read-through writes through the shared guard.
-5. Add stale-skip metrics and diagnostic logging.
-6. Add concurrency-focused integration tests for both providers.
+2. Implement PostgreSQL and SQL Server guarded upserts.
+3. Route every projector/direct-fill write through the shared guard.
+4. Report guarded no-ops as observable stale skips.
+
+## Acceptance Evidence
+
+- Provider integration tests cover out-of-order candidates, concurrent source update,
+  deletion racing materialization, duplicate loops, and parity.
+- Tests prove payload timestamps do not become a second guard input.
+- Telemetry distinguishes stale skips from unexpected database failures.
 
 ## Out of Scope
 
-- Distributed lock manager design beyond the per-document fencing needed by cache writes.
+- A distributed lock manager.
 - Kafka consumer stale-message handling.

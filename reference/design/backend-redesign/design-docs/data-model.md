@@ -469,32 +469,13 @@ Conformance tests (required):
   - and deterministic inclusion of `RelationalMappingVersion`.
 - Any intentional change to canonicalization or the hashed schema surface must update fixtures in a controlled “bless” workflow (see `ddl-generator-testing.md`).
 
-##### 5) `dms.DocumentCache` (optional projection; required when CDC/Kafka is enabled)
+##### 5) `dms.DocumentCache` (optional materialized projection)
 
-Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
-It is conditionally required when relational Debezium/Kafka CDC is enabled because CDC captures its
-create/update/snapshot operations as document upserts.
-
-This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
-
-- it is not purely a “cache-aside” optimization
-- when enabled, DMS materializes documents with a background reconciliation loop and may
-  directly fill a row after relational read fallback as an optimization
-
-Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously.
-For the normative role, enablement, projector freshness, reconciliation, health, and
-cache/domain lifecycle separation, see
-[document-cache/](document-cache/). For transaction ordering context, see
-[transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
-
-Cache deletion has no domain meaning. The CDC connector ignores `dms.DocumentCache`
-deletes and derives Kafka tombstones only from authoritative `dms.Document` deletes. API
-deletion therefore does not depend on cache presence, freshness, or projector health, and
-cache truncation/rebuild does not publish mass domain deletion.
-
-For the two-table relational CDC source and Kafka contract, see
-[cdc/0001-relational-cdc-sources.md](cdc/0001-relational-cdc-sources.md)
-and [cdc/0002-kafka-topic-and-message-contract.md](cdc/0002-kafka-topic-and-message-contract.md).
+Optional materialized JSON representation used for read acceleration, downstream
+integrations, and relational CDC upserts. This section owns its relational row shape;
+the authoritative enablement, projection, lifecycle, and CDC behavior is defined in
+[Relational CDC and Document Projection](../../cdc-streaming.md), with rationale in the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md).
 
 The cached `DocumentJson` is the caller-agnostic, pre-profile, full API resource body
 emitted by reconstitution. It includes top-level `id` and `_lastModifiedDate`, with
@@ -507,14 +488,9 @@ then specific to that representation context: `profileCode`, `linkFlag`, and `co
 participate in the request's `variantKey` (see
 [link-injection.md](link-injection.md#cache-and-etag)).
 
-Update tracking note: `dms.DocumentCache` stores the `ContentVersion` and `LastModifiedAt`
-associated with the cached document, not one reusable `_etag`. Cache reads validate freshness
-against the current `dms.Document.ContentVersion` alone; `LastModifiedAt` remains payload metadata.
-The server composes `_etag` per request from that version and the request's `variantKey`. The cached
-`DocumentUuid` and `LastModifiedAt` columns must match the embedded `id` and
-`_lastModifiedDate` values in `DocumentJson`. Projection must validate this invariant
-before writing `dms.DocumentCache`; a mismatch is a projection failure, not a writable
-cache row.
+`ContentVersion` and `LastModifiedAt` are the representation metadata associated with
+`DocumentJson`; `_etag` is not stored in this table. See the authoritative cached-document
+contract for consistency and freshness rules.
 
 Denormalized resource naming:
 
