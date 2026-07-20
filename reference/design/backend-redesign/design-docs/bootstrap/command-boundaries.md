@@ -153,6 +153,10 @@ state. DMS compose services do not consume claimset fragment files, so `local-dm
 | **Failure conditions** | Docker compose start failure; health-wait timeout for any service; malformed or incomplete bootstrap manifest when present |
 | **Must NOT do** | Resolve or validate ApiSchema files; inspect or write the staged-schema or staged-claims workspace; provision databases; enable the legacy `NEED_DATABASE_SETUP` / `EdFi.DataManagementService.Backend.Installer.dll` startup provisioning path; accept schema or claims parameters; configure data stores; create smoke-test or seed-loading CMS application credentials; load seed data. `-DbOnly` must not start Keycloak, run identity setup, start the Config Service, run the claims-ready gate, or start Kafka - it starts and waits on the database container only. **Note:** `start-published-dms.ps1` retains `-NoDataStore`, `-SchoolYearRange`, and `-AddSmokeTestCredentials` as transitional flags for the published-image workflow; the local `start-local-dms.ps1` is infrastructure-lifecycle-only as of DMS-1153. `start-published-dms.ps1` no longer accepts a `-LoadSeedData` switch of its own (removed; seed delivery on the published flow uses the same wrapper-level, API-based `-LoadSeedData` opt-in as the local flow); it also accepts `-DatabaseEngine`, mirroring the local flow's engine selection. |
 
+The future `-EnableKafkaCdc` workflow may accept `-CdcBindingStatePath`, defaulting to the
+separate persistent `.cdc-state` root defined by the CDC design. It must not add mutable
+binding, connector, topic, or readiness state to `.bootstrap/bootstrap-manifest.json`.
+
 **Boundary note:** Story 00 makes staged schema/security the prepared bootstrap contract. Story 04 (DMS-1154,
 delivered) makes it the Docker runtime source of truth by activating staged schema and staged claims together
 at startup when a valid manifest is present — activating only one side while the other remains on the

@@ -532,7 +532,10 @@ prepare-dms-schema.ps1
 > In bootstrap mode, Debezium connector registration is skipped unless a future explicit CDC opt-in (for example
 > `-EnableKafkaCdc`) is supplied. The relational connector follows
 > [Relational CDC and Document Projection](../../../cdc-streaming.md); it must not reuse the legacy connector that targeted `dms.document`,
-> `dms.educationorganizationhierarchytermslookup`, or the `to_debezium` publication. Non-bootstrap local startup
+> `dms.educationorganizationhierarchytermslookup`, or the `to_debezium` publication. The future opt-in uses
+> deployment-owned binding state under a separate `.cdc-state` root (or an explicit persistent override), never
+> the root bootstrap manifest; DMS consumes only its explicit `DocumentCache:Targets` configuration and exposes
+> per-database projection health. Non-bootstrap local startup
 > can still use the existing `SCHEMA_PACKAGES` downloader path.
 
 This reuses the existing host-side pattern already present in `eng/preflight-dms-schema-compile.ps1`: the

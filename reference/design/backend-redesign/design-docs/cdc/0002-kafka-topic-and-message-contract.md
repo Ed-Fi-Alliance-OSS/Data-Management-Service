@@ -30,20 +30,25 @@ The v1 public contract is:
 ## Topic
 
 ```text
-<topic-prefix>.instance.<instance-key>.documents.v1
+<topic-prefix>.instance.<instance-key>-g<generation>.documents.v1
 ```
 
-`<instance-key>` is a stable, deployment-controlled, Kafka-safe opaque identifier. The
-recommended CMS-backed default is `data-store-<DataStoreId>`. It must not contain
+`<instance-key>` is a stable, deployment-controlled, Kafka-safe opaque identifier unique
+within the topic prefix. `data-store-<DataStoreId>` is the recommended CMS-backed default
+only when that ID is unique across the deployment; otherwise deployment automation
+assigns another opaque key for the `(tenant key, DataStoreId)` target. It must not contain
 district names, tenant display names, school years, or other human-readable sensitive
-identifiers.
+identifiers. `<generation>` is the positive integer from the deployment-owned immutable
+binding record. It starts at `1` and advances whenever a different physical source or a
+new topic/consumer state namespace is required. It is an administrative namespace, not a
+projector generation or a public per-record ordering field.
 
 `DataStoreId` is not globally unique across CMS deployments. A production
 `<topic-prefix>` therefore includes a stable opaque deployment/environment key unique
 among every DMS deployment sharing the Kafka cluster, for example:
 
 ```text
-edfi.deployment-a.prod.dms.instance.data-store-12.documents.v1
+edfi.deployment-a.prod.dms.instance.data-store-12-g1.documents.v1
 ```
 
 The short `edfi.dms` prefix is allowed only on an isolated local/test broker or one
@@ -187,8 +192,8 @@ inputs, such as a canonical document update that advances `ContentVersion`, rema
 behavior; changing how unchanged inputs are interpreted is not. An
 `EffectiveSchemaHash` change is also a different input rather than an ETag-algorithm
 change, but schema reprovisioning must discard incompatible cache rows and follow the
-CDC design's explicit topic/source migration or reset-and-resnapshot rules when retained
-consumer state could otherwise observe reused document keys and versions.
+CDC design's explicit new-binding-generation and new-topic rules when retained consumer
+state could otherwise observe reused document keys and versions.
 
 A DMS change that would produce a different `StreamEtag` for the same inputs, change the
 fixed stream selectors, or otherwise change the published document representation for
@@ -256,8 +261,9 @@ The public topic never exposes:
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
 - The v1 stream representation and ETag composer are immutable for unchanged inputs;
-  output-changing fixes require complete reprojection and publication to a new
-  versioned topic rather than same-version replacement in `documents.v1`.
+  output-changing fixes require a new binding generation, complete reprojection, and
+  publication to a new versioned topic rather than same-version replacement in
+  `documents.v1`.
 - DMS-1232 KafkaMessaging coverage must replace the shared-topic,
   `deleted=false`/`deleted=true`, and `EdFiDoc` expectations.
 

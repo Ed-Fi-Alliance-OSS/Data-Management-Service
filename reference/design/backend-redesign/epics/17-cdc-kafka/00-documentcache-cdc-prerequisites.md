@@ -6,46 +6,56 @@ related:
   - DMS-1246
 ---
 
-# Story: Wire CDC Target Registration and Readiness Prerequisites
+# Story: Add Deployment-Owned CDC Binding and Readiness
 
 ## Design References
 
 - [Configuration and projection targets](../../../cdc-streaming.md#configuration-and-projection-target-selection)
-- [Projection health and CDC readiness](../../../cdc-streaming.md#projection-health-and-cdc-readiness)
-- [Physical source binding](../../../cdc-streaming.md#cdc-target-and-physical-source-binding)
+- [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
+- [Deployment-owned physical source binding](../../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
 ## Outcome
 
-Add a target-specific abstraction that distinguishes connector-registration
-prerequisites from completed end-to-end readiness and combines projector signals with
-E17-owned provider/source checks.
+Add the deployment-owned durable binding state and status operation that combine DMS
+per-database projection health with E17-owned provider, topic, and connector checks.
 
 ## Dependencies
 
-- Consumes 18-00 target selection, 18-03 reconciliation, 18-07 fencing, and 18-09
-  projection health.
-- Does not implement the projector or connector registration.
+- Consumes the explicit target contract from 18-00 and projection health from 18-09.
+- Supplies binding and readiness behavior to 17-03; does not implement the projector or
+  connector REST registration.
 
 ## Deliverables
 
-1. Bind explicit configured CDC targets into the effective projection set.
-2. Implement `CanRegisterConnector` and end-to-end readiness evaluations for an explicit
-   data-store execution context.
-3. Resolve provider-specific physical database identity, detect alias conflicts, and
-   retain startup source bindings for drift observation.
-4. Validate provider tables, including the projected `StreamEtag`, keys, replica/capture
-   setup, and installed source-operation shaping before registration.
-5. Emit sanitized, condition-specific diagnostics without changing request routing.
+1. Define the deployment CDC target input and require each selected target to be present
+   in DMS `DocumentCache:Targets` without adding Kafka-specific runtime DMS options.
+2. Resolve provider-specific physical database identity through the current-source
+   observation contract from 18-09 and detect aliases that conflict with
+   topic-per-instance isolation.
+3. Define the versioned immutable binding-record schema and a state-store abstraction
+   with atomic create/compare-and-set behavior. Provide the single-controller local JSON
+   implementation under `.cdc-state/bindings`, its Git ignore rule, and optional
+   `-CdcBindingStatePath`; do not write binding state into the bootstrap manifest.
+4. Enforce fail-closed creation, exact-match retry, artifact-without-state rejection,
+   immutable lifetime, cleanup ordering, and new-generation source migration.
+5. Validate provider tables, projected `StreamEtag`, keys, replica/capture setup, topic,
+   ACL, and installed source-operation shaping against the binding before registration.
+6. Implement per-target and deployment aggregate status by combining the binding, DMS
+   current-source projection health, connector snapshot/catch-up, and lag checks.
+7. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
 
 ## Acceptance Evidence
 
-- Tests cover empty, single, overlapping, duplicate-normalized, and unlisted target
-  configurations.
+- State tests cover atomic first creation, exact-match retry, immutable mismatch,
+  artifacts without state, normal-stop retention, destructive cleanup ordering, and
+  generation migration.
 - Provider tests cover equivalent physical aliases, conflicting targets, transient
-  identity-resolution failure, missing targets, and latched source drift.
-- Readiness tests cover registration-ready versus fully-ready transitions using the
-  authoritative readiness sequence.
+  identity-resolution failure, missing targets, and confirmed binding mismatch without a
+  DMS-owned drift latch.
+- Readiness tests cover binding, migration, projection, post-audit source position,
+  connector snapshot/catch-up, second projection-health observation, lag, per-target
+  isolation, and aggregate results.
 - API integration tests prove every reported CDC/projector failure remains observational,
   including deletion with unavailable cache state.
 
@@ -54,3 +64,6 @@ E17-owned provider/source checks.
 - Projector implementation.
 - Kafka Connect REST registration.
 - Publishing Kafka records.
+- A new production state service; production integrations adapt the existing deployment
+  state backend.
+- In-place rebinding or topic reuse for a different physical source.

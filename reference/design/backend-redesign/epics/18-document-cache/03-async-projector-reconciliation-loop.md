@@ -11,7 +11,7 @@ related:
 ## Design References
 
 - [Freshness and reconciliation](../../../cdc-streaming.md#freshness-and-reconciliation)
-- [Projection health and CDC readiness](../../../cdc-streaming.md#projection-health-and-cdc-readiness)
+- [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
 ## Outcome
@@ -26,7 +26,8 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 
 ## Deliverables
 
-1. Add supervisor lifecycle and isolated non-HTTP execution scopes for startup targets.
+1. Add supervisor lifecycle and isolated non-HTTP execution scopes for explicit targets,
+   including bounded re-resolution of configured targets that are not yet available.
 2. Implement provider-equivalent bounded incremental keyset scans using a disposable
    process-local `(ContentVersion, DocumentId)` cursor.
 3. Implement startup, periodic, rebuild, and readiness-triggered full anti-join audits,
@@ -39,9 +40,9 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 
 ## Acceptance Evidence
 
-- Provider and multi-data-store tests cover selection overlap, no targets, colliding local
-  ids, population, create/update, restart, rebuild, transient/persistent failure, fairness,
-  peer isolation, and multiple replicas.
+- Provider and multi-data-store tests cover no targets, unresolved targets, late
+  resolution, colliding local ids, population, create/update, restart, rebuild,
+  transient/persistent failure, fairness, peer isolation, and multiple replicas.
 - Concurrency tests cover source update and deletion during materialization through the
   shared guard.
 - Query-plan tests prove ordinary high-version updates use indexed incremental discovery
@@ -56,4 +57,4 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 
 - Durable workflow/retry state.
 - Connector status/source-position readiness.
-- Dynamic CMS target discovery.
+- Discovery of unlisted CMS targets.

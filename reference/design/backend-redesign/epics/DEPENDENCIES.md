@@ -91,8 +91,10 @@ Notes:
 - `E07` and `E09` are tightly coupled in practice (write correctness requires transactional identity maintenance + propagation + deadlock retry), but are shown as a one-way dependency to keep the graph readable.
 - `E05` is optional; `E06` can select runtime-compiled mapping sets without packs.
 - `E17` can develop connector templates and fixture tests in parallel, but complete CDC
-  upsert readiness depends on `E18` projection guarantees. E17 independently owns
-  authoritative `dms.Document` delete capture.
+  upsert readiness depends on `E18` per-database projection guarantees. E17 owns durable
+  source bindings, provider/topic/connector lifecycle, combined readiness, and
+  authoritative `dms.Document` delete capture; E18 neither stores connector bindings nor
+  calls Kafka Connect.
 
 ---
 

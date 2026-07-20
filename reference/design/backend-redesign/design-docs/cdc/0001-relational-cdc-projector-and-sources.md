@@ -56,7 +56,7 @@ inventory or readiness evidence because sequence allocation is not transaction c
 order and cache work can appear below it. V1 adds no durable projection queue,
 progress/high-watermark, backfill epoch, failure table, or repair workflow. An exact zero
 finishing audit count is projection completeness at its observation;
-connector/source-position catch-up is a separate CDC readiness concern.
+connector/source-position catch-up is a separate deployment-owned CDC readiness concern.
 
 API deletion remains independent of projection. It deletes the canonical relational
 document and lets the connector derive the tombstone from that delete. It does not wait
@@ -88,8 +88,9 @@ guarded idempotent upsert makes duplicate projectors and restart rediscovery saf
 
 ## Consequences
 
-- Kafka CDC targets require cache projection for upserts, but non-CDC data stores may run
-  without `dms.DocumentCache`.
+- Every deployment-selected Kafka CDC target must also be an explicit DMS
+  `DocumentCache:Targets` entry, but non-target data stores may run without
+  `dms.DocumentCache`.
 - Authorization, identity, writes, Change Queries, and correct GET/query results continue
   to use relational sources.
 - Reads may use only fresh cache rows and always retain relational fallback.

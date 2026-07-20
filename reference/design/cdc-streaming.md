@@ -16,8 +16,11 @@ related:
 
 This is the authoritative integration and deployment design for relational DMS change
 data capture (CDC) and the `dms.DocumentCache` projection that supplies its upsert
-payloads. It owns configuration, target selection, projection mechanics, readiness,
-provider deployment, bootstrap, operations, and verification.
+payloads. Runtime DMS owns explicit projection targets, projection mechanics, and
+per-database projection health. Deployment automation owns CDC target selection,
+durable connector/source bindings, topics, provider migrations, connector lifecycle,
+combined CDC readiness, bootstrap, and CDC operations. Verification follows the same
+boundary.
 
 Two focused decision records own the decisions and contracts they name:
 
@@ -36,10 +39,11 @@ relational CDC contracts.
 
 ## Scope and Architecture
 
-DMS publishes a compacted document-state stream by reading database transaction logs
-with Debezium in Kafka Connect. CDC is not a request-path dual write: API write
-correctness remains tied to the relational database even when Kafka or projection is
-unavailable.
+The CDC deployment publishes a compacted document-state stream by reading database
+transaction logs with Debezium in Kafka Connect. Runtime DMS supplies the projected
+upsert source but does not control Kafka Connect. CDC is not a request-path dual write:
+API write correctness remains tied to the relational database even when Kafka or
+projection is unavailable.
 
 One connector captures two complementary relational sources. The exact source-operation
 mapping and lifecycle rationale are defined in the
@@ -61,41 +65,43 @@ Debezium is not a reference path, and DMS does not publish directly to Kafka.
 
 ## Configuration and Projection Target Selection
 
-Capabilities select projection; there is no independently configured projector mode and
-no process-wide Kafka CDC boolean.
+Runtime DMS has one explicit projection-target contract and no Kafka-specific target or
+process-wide projection selector.
 
 ```text
-DataManagement:DocumentCache:Enabled = false | true
+DataManagement:DocumentCache:Targets = [{ TenantKey, DataStoreId }, ...]
 DataManagement:DocumentCache:ReadAcceleration:Enabled = false | true
-DataManagement:KafkaCdc:Targets = [{ TenantKey, DataStoreId }, ...]
 ```
 
-The defaults are `false`, `false`, and an empty target list. The settings are additive:
+The defaults are an empty target list and `false`. A target entry enables projection for
+that logical `(tenant key, DataStoreId)` whether the consumer is CDC, diagnostics,
+indexing, or another deployment-selected capability. `ReadAcceleration:Enabled` is only
+a use-path gate: when enabled, DMS may use fresh cache rows for explicitly listed
+targets, but it does not select every loaded or subsequently discovered data store.
 
-| Selector | Projection scope | Additional behavior |
-| --- | --- | --- |
-| `DocumentCache:Enabled` | Every loaded data store with a usable connection string | Standalone projection for indexing, diagnostics, or another consumer |
-| `ReadAcceleration:Enabled` | Every loaded data store with a usable connection string | Fresh cache rows may accelerate GET/query body assembly |
-| `KafkaCdc:Targets` | Only the listed `(tenant key, DataStoreId)` entries | Connector provisioning, registration, and CDC readiness for those targets |
+Entries must be unique after applying the same case-insensitive tenant-key normalization
+as `IDataStoreProvider`. DMS runs one logical reconciliation execution context for each
+entry. The configured membership set is bound at startup; adding or removing an entry
+requires a configuration rollout. DMS does not infer membership from HTTP requests,
+route qualifiers, JWT `DataStoreIds`, the most recent request, or the complete CMS
+inventory.
 
-The effective projection target set is the de-duplicated union of those selections. DMS
-runs one logical reconciliation loop for each selected data store. A Kafka target is
-projected when both process-wide settings are false, and an unlisted data store does not
-acquire CDC infrastructure because another data store uses it.
+Target membership and target resolution have different lifetimes. An entry that is not
+yet present in CMS remains an explicit unresolved projection target and is retried after
+CMS refresh or on the bounded supervisor interval. A tenant or data store created after
+DMS startup can therefore begin projection only when it was already listed. An unlisted
+late-created target remains relational-only until a configuration rollout. If an
+already-resolved entry receives replacement connection metadata from CMS, DMS replaces
+that target's execution context, resets its projection-health evidence, and reports the
+new context's current source fingerprint. DMS does not classify the old and new
+observations as the same or different physical database, compare either observation with
+a connector binding, or change Kafka artifacts.
 
-`KafkaCdc:Targets` is the sole runtime CDC enablement contract. An empty list disables
-CDC. Entries must be unique after applying the same case-insensitive tenant-key
-normalization as `IDataStoreProvider`. Kafka infrastructure and `-EnableKafkaUI` do not
-select targets or register connectors.
-
-The effective set is bound at startup. DMS does not infer projection or CDC membership
-from HTTP requests, route qualifiers, JWT `DataStoreIds`, the most recent request, or the
-complete CMS inventory. Adding or removing a target requires configuration change and a
-coordinated deployment. V1 has no dynamic target discovery or automatic connector
-retirement.
-
-All projection and CDC health is observational. It never changes `IDataStoreSelection`,
-normal request routing, or API read/mutation availability.
+Deployment automation selects CDC targets separately and must configure every CDC target
+as a DMS `DocumentCache:Targets` entry. Kafka infrastructure, `-EnableKafkaUI`, and
+`-EnableKafkaCdc` do not implicitly select DMS projection targets. All projection and CDC
+health remains observational and never changes `IDataStoreSelection`, normal request
+routing, or API read/mutation availability.
 
 ## Cached Document Contract
 
@@ -329,12 +335,14 @@ intentional compacted-topic rebuild is a connector snapshot/topic recovery opera
 not a cache-delete operation. Schema reprovisioning must not reuse cache rows across
 incompatible effective schemas.
 
-## Projection Health and CDC Readiness
+## Projection Health and Deployment-Owned CDC Readiness
 
 Projection health is evaluated for each explicit `(tenant key, DataStoreId)` execution
 context. It reports at least:
 
-- selection reason and required-table existence,
+- target resolution and required-table existence,
+- the current provider and an opaque provider-resolved physical-source fingerprint
+  computed with the same provider-specific algorithm used by deployment automation,
 - whether the in-process loop is running,
 - whether an incremental scan or full audit is in progress,
 - the latest completed full audit's observation time, duration, and age,
@@ -358,72 +366,129 @@ while that known candidate or retry remains unresolved, but successful repair do
 force another full scan; the last exact-zero audit retains its original observation time
 and must still satisfy the audit-age threshold. A same-version timestamp comparison is
 not another freshness or completeness test; embedded metadata consistency is enforced
-when a row is materialized and written.
+when a row is materialized and written. DMS projection readiness for one target requires
+a resolved execution context, a sufficiently recent exact-zero finishing audit, and no
+currently known unresolved incremental candidate or retry deferral.
 
-Connector registration prerequisites are the subset available before completeness:
+DMS exposes only this per-database projection result. It does not expose
+`CanRegisterConnector`, compare the current source fingerprint with an expected source,
+retain source-drift state, inspect provider capture artifacts, call Kafka Connect, or
+calculate a deployment aggregate.
 
-- explicit target membership,
-- provisioned `dms.Document` and `dms.DocumentCache`,
-- a startable reconciliation execution context,
-- the guarded upsert,
-- provider CDC/key prerequisites and the source-operation transform.
+Deployment automation calculates end-to-end CDC readiness for each binding from:
 
-End-to-end CDC readiness additionally requires:
-
-- the configured target still resolves to its startup provider/physical source binding,
-- a sufficiently recent completed full audit whose exact finishing mismatch count is
-  zero,
-- no currently known unresolved incremental candidate or retry deferral,
-- connector snapshot/catch-up through a database source position observed at or after
-  the zero-mismatch observation,
+- a durable binding record that matches the target's currently resolved physical source,
+- a DMS projection-health result whose current source fingerprint matches that binding,
+- provisioned `dms.Document` and `dms.DocumentCache` tables and provider CDC/key
+  prerequisites,
+- topic, ACL, transform, and connector configuration that match the binding record,
+- a running connector with completed snapshot/catch-up through a database source
+  position observed after DMS reported a sufficiently recent exact-zero audit,
+- a second DMS projection-health observation that remains ready for the same source, and
 - connector lag within its configured threshold.
 
 There is no backfill epoch, completed backfill target, or maximum projected version in
-this readiness calculation. Connector/source checks belong to CDC; the projector does
-not call Kafka Connect.
+this readiness calculation. The external status operation retains each target's result
+when calculating a deployment aggregate. A combined-readiness failure does not gate
+normal DMS traffic.
 
-Readiness and health are per data store. A deployment aggregate may be not ready while
-retaining each target's result. No failure gates normal API traffic.
-
-## CDC Target and Physical Source Binding
+## Deployment-Owned CDC Target and Physical Source Binding
 
 Each logical instance topic maps to exactly one physical database containing the
 captured tables. Registering separately authorized topics for multiple CMS aliases of
 the same physical document set is rejected because the rows contain no tenant or
 data-store discriminator.
 
-The logical connector identity is `(deployment key, tenant key, DataStoreId)`. Tenant
-identity remains deployment/administrative state and is not published in the topic or
-message. Route-qualifier-only changes do not affect connector or topic identity.
+The logical CDC target identity is `(deployment key, tenant key, DataStoreId)`. Each
+immutable connector/topic generation adds a positive integer `generation` to that
+identity. Tenant identity remains deployment/administrative state and is not published
+in the topic or message. Route-qualifier-only changes do not affect connector or topic
+identity.
 
-Deployment resolves a provider-specific physical database identity for every configured
-target. Comparison does not rely only on raw connection-string text: semantically
-equivalent strings and server aliases must be normalized or confirmed after connection.
+Deployment resolves a provider-specific physical database identity for every
+deployment-selected CDC target. Comparison does not rely only on raw connection-string
+text: semantically equivalent strings and server aliases must be normalized or confirmed
+after connection.
 Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
 display names, or unsanitized physical identifiers.
 
-At successful provisioning DMS records an immutable binding from the configured target
-to provider and provider-resolved physical database identity. Credential, timeout,
-pooling, application-name, host-alias, or equivalent connection changes are not drift
-when the provider and physical database are unchanged.
+Deployment automation durably records the immutable binding before creating external CDC
+artifacts. Runtime DMS records no expected binding and latches no source-drift condition.
+Its health surface reports only the current database being projected. The deployment
+status operation compares that observation with the durable binding; a missing target,
+retryable resolution failure, or confirmed mismatch makes combined CDC readiness false
+without changing DMS request routing.
 
-After a successful CMS refresh, DMS reevaluates source identity only for configured CDC
-targets. A missing target or confirmed provider/physical-source change makes that target
-not ready. Confirmed drift is latched as `CdcSourceDriftRequiresDeployment` until a
-coordinated deployment reruns the one-shot workflow, even if CMS later returns to the
-original source. A transient identity-resolution failure is retryable and is not latched.
+The portable binding-record shape is:
 
-Source observation is not source reconciliation. Runtime DMS does not move projectors,
-call Kafka Connect, stop connectors, or delete topics, offsets, ACLs, PostgreSQL
-slots/publications, or SQL Server capture state in response to CMS changes. Moving a
-`DataStoreId` to another physical document set requires an explicit migration choosing a
-new topic/source generation or deliberately resetting the existing topic and connector
-state before resnapshotting. Removing a target requires explicit decisions for every
-retained or deleted artifact.
+```json
+{
+  "version": 1,
+  "deploymentKey": "dms-local",
+  "tenantKey": "default",
+  "dataStoreId": "1",
+  "instanceKey": "data-store-1",
+  "generation": 1,
+  "provider": "postgresql",
+  "physicalSourceFingerprint": "sha256:...",
+  "connectorName": "dms-local-data-store-1-g1",
+  "topicName": "edfi.dms.instance.data-store-1-g1.documents.v1",
+  "contractVersion": "1"
+}
+```
 
-The provisioning workflow is idempotent for the same logical connector and physical
-source and rejects reuse of an existing instance topic for a different physical document
-set without an explicit migration/reset decision.
+The record contains no connection string or credential. Credential, timeout, pooling,
+application-name, host-alias, or equivalent connection changes produce the same
+fingerprint when the provider and physical database are unchanged.
+
+For local development and CI, the deployment automation stores one JSON record per
+generation under a deployment-owned persistent state root, with the default layout:
+
+```text
+eng/docker-compose/.cdc-state/bindings/
+  {filesystemSafeDeploymentKey}/{instanceKey}/{generation}.json
+```
+
+`instanceKey` is the deployment-controlled Kafka-safe opaque identifier from the topic
+contract; it does not contain a tenant or other display name. Path components are
+filesystem-safe encodings rather than unsanitized administrative values. `.cdc-state`
+must be ignored by Git and is separate from
+`.bootstrap/bootstrap-manifest.json`; the bootstrap manifest remains prepared-input
+handoff, not mutable CDC control-plane state. JSON files use owner-only permissions where
+the platform supports them. The local implementation is supported only when one
+deployment controller owns a persistent filesystem. Production or
+multi-controller automation stores the same logical record in its existing durable state
+backend, such as remote infrastructure state or operator state, with atomic create or
+compare-and-set semantics.
+
+Binding creation and cleanup follow a fail-closed order:
+
+1. Resolve the provider-specific physical database identity and intended artifact names.
+2. Atomically create the immutable binding record before creating a topic, connector, or
+   provider capture artifact. A record that already exists must match exactly; automation
+   never rewrites its binding fields.
+3. If any governed artifact exists without its binding record, or differs from the
+   record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
+   binding from an existing topic name or connector configuration. Explicit adoption
+   requires an operator-supplied complete record plus live verification of the physical
+   source and every retained artifact.
+4. On retirement, either retain the binding record with every retained governed
+   artifact, or delete every governed topic, offset, ACL, PostgreSQL slot/publication,
+   and SQL Server capture artifact before deleting the binding record. A normal process
+   restart or stack stop deletes neither.
+
+The binding record lives at least as long as any governed artifact. Local teardown may
+remove it only in the same destructive volume-removal workflow that removes all of those
+artifacts. A crash may leave an unused record, which safely supports an idempotent retry;
+it must never leave surviving artifacts reusable after automatic record deletion.
+
+V1 never reassigns an existing topic or connector generation to a different physical
+database. Moving a `DataStoreId` to another physical document set creates a new binding
+generation, connector, topic, and consumer state namespace. Removing a target requires
+explicit retain-or-delete decisions for every generation. In-place source reset and
+topic reuse are deferred. The same-source provisioning workflow remains idempotent for
+an exact binding match, and deployment automation rejects separately authorized bindings
+for multiple CMS aliases of the same physical document set.
 
 ## Connector Topology and Provider Setup
 
@@ -568,18 +633,20 @@ document/schema state, operators perform this coordinated cutover:
 
 1. Pause the v1 connector, stop every old-contract projector writer, and report the CDC
    target not ready before new-contract cache rows can be written.
-2. Provision a new versioned topic and ACLs and prepare the new DMS
-   materializer/composer and connector contract, but keep new-contract projector writers
-   stopped. The topic suffix and value `contractVersion` advance together.
+2. Atomically reserve a new immutable binding generation, provision its new versioned
+   topic and ACLs, and prepare the new DMS materializer/composer and connector contract,
+   but keep new-contract projector writers stopped. The binding generation, topic suffix,
+   and value `contractVersion` advance together.
 3. While all projector writers remain stopped, truncate `dms.DocumentCache`, or provision
    an equivalently empty cache, so the same-`ContentVersion` guarded-upsert rule cannot
    preserve old-contract rows.
 4. Deploy and start only new-contract projector writers, then run ordinary full
    reconciliation until an exact finishing audit reports zero missing or
    version-mismatched rows.
-5. Register the new connector with a fresh initial snapshot of the completely
-   reprojected cache, catch it up through the required post-audit source position, and
-   advertise readiness only after the ordinary readiness checks pass.
+5. Register the new connector from the new binding with a fresh initial snapshot of the
+   completely reprojected cache, catch it up through the required post-audit source
+   position, and advertise readiness only after the deployment-owned combined checks
+   pass.
 6. Bootstrap consumers from the new topic's independent state namespace. Retain or
    retire the now-frozen old topic only through explicit operator policy.
 
@@ -604,17 +671,19 @@ included tables, but the operation filter drops every `dms.Document` snapshot re
 
 For a new instance:
 
-1. Provision and validate the relational schema and cache table.
-2. Apply provider CDC/key setup and create the instance topic and ACLs.
-3. Add the target to `KafkaCdc:Targets`, making the projector execution context and
-   fencing available.
-4. Register the connector before reconciliation or application writes that must be
-   observed.
-5. Start DMS reconciliation so guarded cache upserts flow through established capture.
-6. Complete a full audit with an exact finishing count of zero mismatches and observe a
-   database source position at or after that audit observation; advertise readiness only
-   after snapshot/catch-up reaches that position, no known projection work remains, and
-   connector lag is acceptable.
+1. Select the deployment CDC target and ensure the same `(tenant key, DataStoreId)` is an
+   explicit DMS `DocumentCache:Targets` entry.
+2. Resolve the physical source and atomically create its deployment-owned immutable
+   binding record.
+3. Provision and validate the relational schema and cache table, apply provider CDC/key
+   setup, and create the binding's instance topic and ACLs.
+4. Register the connector from that exact binding before DMS reconciliation or
+   application writes that must be observed.
+5. Start or roll out DMS so guarded cache upserts flow through established capture.
+6. Wait for DMS projection readiness, observe a database source position afterward, and
+   wait for connector snapshot/catch-up through that position.
+7. Recheck DMS projection readiness for the same source fingerprint and advertise
+   combined CDC readiness only when connector lag is also acceptable.
 
 For an existing instance, perform the same one-shot sequence before write/delete traffic
 that the host expects CDC to observe. If capture cannot be registered first, quiesce
@@ -627,24 +696,31 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 
 - `-EnableKafkaUI` starts only Kafka UI.
 - CDC opt-in starts Kafka and Kafka Connect if needed, resolves the selected configured
-  target, verifies registration prerequisites, and generates a connector without
-  hard-coded database, topic, slot/capture, or data-store values.
-- Registration is idempotent for the same connector and source.
+  deployment target, verifies that it is an explicit DMS projection target, and generates
+  a connector without hard-coded database, topic, slot/capture, or data-store values.
+- The local default binding state root is `eng/docker-compose/.cdc-state`; an explicit
+  `-CdcBindingStatePath` may select another persistent deployment-owned location. It is
+  never placed in `.bootstrap/bootstrap-manifest.json`.
+- Binding reservation and registration are idempotent for an exact binding match and
+  fail closed for missing or mismatched state around existing artifacts.
 - Bootstrap prints connector name, provider, database, opaque instance key, and topic;
   secrets are excluded.
-- It waits for the readiness sequence above and reports which prerequisite or readiness
-  condition failed.
+- It calculates the combined readiness sequence above and reports whether binding,
+  migration, DMS projection, connector catch-up, or lag failed.
 - E2E setup registers capture against the same provisioned database used by the DMS test
   process before issuing writes it expects to consume.
-- Local teardown removes connector and Kafka state with the local stack and volumes.
+- A normal local stop retains binding, connector, and Kafka state. Destructive local
+  volume teardown removes governed artifacts first and their binding records last.
 
-Production-like automation repeats this one-shot workflow for each explicit target.
+Production-like automation repeats this one-shot workflow for each deployment-selected
+CDC target using its durable state backend.
 
 ## DDL and Query Support
 
-No `DocumentCacheProjectionState`, `DocumentCacheProjectionFailure`, or other durable
-workflow table is provisioned. Supporting DDL is limited to the projection and measured
-access paths:
+No DMS relational `DocumentCacheProjectionState`, `DocumentCacheProjectionFailure`, or
+other durable projection-workflow table is provisioned. This does not replace the
+deployment-owned CDC binding record. Supporting DDL is limited to the projection and
+measured access paths:
 
 - `DocumentCache(DocumentId)` remains the primary/foreign key with cascade deletion.
 - `DocumentCache.DocumentUuid` remains unique for connector keys.
@@ -681,21 +757,29 @@ Structured logs and metrics cover:
 - guard lock-wait duration, timeout, deadlock, and serialization-retry counts,
 - mismatch count and oldest mismatch age,
 - cache hits, misses, stale misses, and relational fallback,
-- connector running state, lag, last error, and snapshot completion,
-- missing targets, retryable source-resolution failures, and latched drift.
+- unresolved explicit targets, retryable source-resolution failures, and the current
+  opaque projection-source fingerprint.
 
-Use provider, safe project/resource identity, failure category, projection-selection
-reason, and opaque data-store identity only where cardinality policy permits. Never log
+Deployment-owned CDC status additionally covers binding presence and match, connector
+running state, lag, last error, snapshot completion, existing artifacts without binding
+state, source mismatch, and generation migration state.
+
+Use provider, safe project/resource identity, failure category, target-resolution state,
+and opaque data-store identity only where cardinality policy permits. Never log
 document bodies, raw student data, connection strings, credentials, tenant display
 names, or unsanitized physical identifiers.
 
-Operator status identifies connector, provider/source, topic, PostgreSQL slot or SQL
-Server capture instance, snapshot state, lag, and last error. A failure for one target
-does not conceal peer status or stop unrelated DMS API instances.
+The deployment status operation identifies binding generation, connector,
+provider/source, topic, PostgreSQL slot or SQL Server capture instance, DMS projection
+health, snapshot state, lag, and last error. A failure for one target does not conceal
+peer status or stop unrelated DMS API instances.
 
 Runbooks cover connector restart, cache rebuild, guard-lock contention and timeout
 diagnosis, offset reset, resnapshot, topic recreation, target migration/retirement, and
-provider artifact cleanup. They also cover the coordinated immutable-contract cutover:
+provider artifact cleanup. They cover binding-state backup, fail-closed missing-state
+recovery, explicit adoption, cleanup ordering, and new-generation source migration; they
+never repair a mismatch by rewriting an immutable binding record. They also cover the
+coordinated immutable-contract cutover:
 freeze v1 publication, completely reproject the cache, snapshot into a new versioned
 topic, and bootstrap consumer state without advancing canonical `ContentVersion`. Offset
 reset and resnapshot can replay current document state. Topic/offset/ACL/slot/capture
@@ -714,6 +798,13 @@ inputs retain the exact ETag and contractual public fields and values across ref
 An intentional fixture change requires a new topic suffix, matching `contractVersion`,
 and version-cutover coverage; tests reject blessing an output-changing composer change
 as v1.
+
+Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
+mismatch, provider aliases that resolve to the same fingerprint, existing artifacts with
+missing state, cleanup ordering, normal-stop retention, destructive-teardown removal,
+and new-generation source migration. Multi-controller state backends additionally prove
+compare-and-set behavior. No test repairs a mismatch by rewriting a binding or reuses a
+topic generation for a different source.
 
 SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.
 Transform tests use realistic `io.debezium.time.NanoTimestamp` values with zero, one,

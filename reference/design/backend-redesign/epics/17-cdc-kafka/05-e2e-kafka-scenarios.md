@@ -25,7 +25,8 @@ coverage against the actual provisioned data store and routed public topic.
 
 ## Deliverables
 
-1. Opt E2E setup into CDC and wait for target readiness before observed writes.
+1. Opt E2E setup into CDC, persist its local JSON binding record, and wait for
+   deployment-owned combined target readiness before observed writes.
 2. Add a consumer helper that selects the instance topic and filters by document key.
 3. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
    and same-key ordering scenarios.
@@ -43,6 +44,8 @@ coverage against the actual provisioned data store and routed public topic.
   not change the link-bearing stream variant.
 - Provider scenarios prove the deletion, cache-maintenance, and ordering cases required
   by the authoritative verification section.
+- Setup/teardown evidence proves normal restart retains binding state and destructive
+  teardown removes governed artifacts before the binding record.
 
 ## Out of Scope
 

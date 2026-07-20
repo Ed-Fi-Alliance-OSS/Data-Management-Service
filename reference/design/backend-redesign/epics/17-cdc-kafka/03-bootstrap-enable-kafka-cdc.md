@@ -10,12 +10,13 @@ epic: TBD
 
 - [Enablement and initial readiness sequence](../../../cdc-streaming.md#enablement-and-initial-readiness-sequence)
 - [Local bootstrap and CI](../../../cdc-streaming.md#local-bootstrap-and-ci)
-- [Physical source binding](../../../cdc-streaming.md#cdc-target-and-physical-source-binding)
+- [Deployment-owned physical source binding](../../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 
 ## Outcome
 
 Add explicit, idempotent local connector registration for a selected configured target,
-and document how production-like deployment repeats the same one-shot workflow.
+using deployment-owned binding state, and document how production-like deployment
+repeats the same one-shot workflow with its durable state backend.
 
 ## Dependencies
 
@@ -23,26 +24,35 @@ and document how production-like deployment repeats the same one-shot workflow.
 
 ## Deliverables
 
-1. Add `-EnableKafkaCdc` to the appropriate local/bootstrap entry points while retaining
-   Kafka UI as an independent option.
+1. Add `-EnableKafkaCdc` and optional `-CdcBindingStatePath` to the appropriate
+   local/bootstrap entry points while retaining Kafka UI as an independent option.
 2. Reuse bootstrap data-store selection and generated provider connector templates.
-3. Implement idempotent Kafka Connect create/update, status polling, timeout, and
-   condition-specific diagnostics.
-4. Print sanitized connector/source/topic identity and integrate local teardown.
-5. Expose the same workflow to E2E setup before observed test traffic begins.
+3. Require the selected deployment target to be present in DMS
+   `DocumentCache:Targets`, and reserve or exact-match its immutable binding before
+   creating governed artifacts.
+4. Implement idempotent Kafka Connect create/update, external combined-status polling,
+   timeout, and condition-specific diagnostics.
+5. Print sanitized binding-generation/connector/source/topic identity. Retain binding
+   and artifacts on normal stop; remove artifacts before binding state during explicit
+   destructive volume teardown.
+6. Expose the same workflow to E2E setup before observed test traffic begins.
 
 ## Acceptance Evidence
 
-- Script/integration tests cover disabled, UI-only, invalid target, successful, repeated,
-  timeout, and teardown flows.
-- Sequence tests prove registration and readiness follow the authoritative algorithm and
-  do not depend on a backfill epoch or high-watermark.
-- Production-like validation rejects unsafe topic-prefix use and source/topic reuse.
+- Script/integration tests cover disabled, UI-only, invalid or unprojected target,
+  successful, repeated, timeout, normal-stop retention, missing binding around existing
+  artifacts, and destructive teardown flows.
+- Sequence tests prove binding reservation precedes artifact creation and that external
+  combined readiness follows the authoritative algorithm without a backfill epoch or
+  high-watermark.
+- Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
+  and source/topic-generation reuse.
 - Diagnostics identify infrastructure, REST, provider setup, projector completeness,
-  connector catch-up, target/source, and drift failures without secrets.
+  connector catch-up, target/source binding, and mismatch failures without secrets.
 
 ## Out of Scope
 
 - Managed-Kafka-provider deployment automation.
 - Runtime target discovery, retirement, or source replacement.
 - Projector health semantics.
+- In-place source rebinding or topic-generation reuse.

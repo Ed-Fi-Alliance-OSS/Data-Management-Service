@@ -10,14 +10,14 @@ related:
 
 ## Design References
 
-- [Projection health and CDC readiness](../../../cdc-streaming.md#projection-health-and-cdc-readiness)
+- [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
 - [Security, telemetry, and operations](../../../cdc-streaming.md#security-telemetry-and-operations)
 
 ## Outcome
 
-Expose per-data-store projection health, audit-backed exact completeness,
-registration-prerequisite inputs, and sanitized telemetry from the latest completed full
-audit and current process state.
+Expose per-data-store projection health, audit-backed exact completeness, current-source
+observation, and sanitized telemetry from the latest completed full audit and current
+process state.
 
 ## Dependencies
 
@@ -26,28 +26,36 @@ audit and current process state.
 
 ## Deliverables
 
-1. Define per-data-store health/completeness and deployment aggregate models.
+1. Define only the per-data-store projection health/completeness model, including target
+   resolution and provider. Define the provider-specific algorithm that observes an
+   opaque current physical-source fingerprint for the active execution context without
+   retaining or comparing an expected value; deployment automation consumes the same
+   observation contract.
 2. Record exact mismatch/age snapshots from completed provider-equivalent full audits,
    expose their observation time and age, and add configurable health thresholds without
    running a full anti-join synchronously on health reads.
-3. Expose projector-side registration prerequisites without taking ownership of
-   connector/source readiness.
-4. Add the canonical structured logs and metrics.
+3. Add the canonical structured logs and metrics without retaining an expected source
+   binding, drift latch, connector state, or deployment aggregate.
 
 ## Acceptance Evidence
 
-- Tests cover every selection reason, none/overlap, missing tables, zero/nonzero
-  mismatches, lower-version gaps, oldest age, stale audits, known unresolved incremental
-  work, nonzero-audit invalidation, persistent bounded failure, and mixed targets.
+- Tests cover unresolved/resolved targets, a new fingerprint observation and health reset
+  after connection-context replacement, missing tables, zero/nonzero mismatches,
+  lower-version gaps, oldest age, stale audits, known unresolved incremental work,
+  nonzero-audit invalidation, persistent bounded failure, and mixed targets.
 - Tests prove health reads reuse the latest audit snapshot and readiness requires a
   sufficiently recent exact-zero finishing audit with no known unresolved work.
 - Tests distinguish diagnostic process timestamps from database completeness evidence.
+- Provider tests prove equivalent connection aliases for one physical database produce
+  the same opaque fingerprint, different databases produce different fingerprints, and
+  no credential or unsanitized identifier is exposed.
 - A metadata-invariant failure remains visible as projection failure but does not add a
   timestamp-based freshness condition.
-- API integration proves individual and aggregate health remain observational.
+- API integration proves per-database projection health remains observational.
 
 ## Out of Scope
 
 - Durable progress/failure records.
-- Connector status, source binding, delete capture, or ordering checks.
+- Connector status, durable or expected source binding, source comparison/drift latching,
+  combined CDC readiness, deployment aggregation, delete capture, or ordering checks.
 - External dashboard implementation.

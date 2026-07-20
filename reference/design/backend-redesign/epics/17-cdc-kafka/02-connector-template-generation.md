@@ -21,8 +21,9 @@ source routing and serialized public contract.
 
 ## Deliverables
 
-1. Define inputs for provider/source, credentials, instance identity, deployment topic
-   prefix, replication/capture identity, and snapshot behavior.
+1. Define inputs from the immutable deployment binding for provider/source fingerprint,
+   target and generation identity, connector/topic names, `contractVersion`,
+   credentials, replication/capture identity, and snapshot behavior.
 2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
    instance values.
 3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
@@ -48,7 +49,8 @@ source routing and serialized public contract.
 ## Acceptance Evidence
 
 - Rendering tests cover representative providers and reject invalid production topic
-  prefixes or incomplete inputs.
+  prefixes, incomplete binding inputs, or generated identities that differ from the
+  binding record.
 - Fixture tests cover every retained and dropped operation from each source table.
 - Serialized-record tests enforce the topic/message ADR, including exact key/value byte
   forms, exact copying of `StreamEtag` to `document._etag`, expanded JSON, timestamp

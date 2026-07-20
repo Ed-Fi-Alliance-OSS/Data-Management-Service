@@ -14,31 +14,42 @@ related:
 
 ## Outcome
 
-Implement the configuration surface and startup calculation of the effective projection
-target set.
+Implement the single explicit DMS projection-target configuration surface and the
+target-resolution lifecycle.
 
 ## Dependencies
 
-- Informs CDC stories 17-00 and 17-03; does not depend on connector implementation.
+- Informs CDC stories 17-00 and 17-03; does not depend on connector implementation or
+  deployment-owned CDC binding state.
 
 ## Deliverables
 
-1. Define and bind strongly typed standalone projection, read acceleration, and CDC
-   target options.
-2. Derive the de-duplicated startup target set and selection reasons.
-3. Create data-store-specific execution inputs without request/JWT inference.
-4. Add supported appsettings examples that link to the authoritative semantics.
+1. Define and bind strongly typed `DataManagement:DocumentCache:Targets` entries and the
+   independent `ReadAcceleration:Enabled` use-path gate.
+2. Validate normalized uniqueness and create one logical execution context for every
+   explicit startup target without selecting every loaded data store.
+3. Keep unresolved configured targets visible and retry their CMS resolution on the
+   bounded supervisor interval or after CMS refresh; never discover unlisted targets.
+4. Replace a resolved target's execution context and reset its health evidence when CMS
+   supplies replacement connection metadata. Make the new context observable to 18-09
+   without classifying old/new source identity, comparing a CDC binding, or changing
+   Kafka artifacts.
+5. Create data-store-specific execution inputs without request/JWT inference.
+6. Add supported appsettings examples that link to the authoritative semantics.
 
 ## Acceptance Evidence
 
-- Tests cover each selector, all-disabled behavior, additive overlap, normalized duplicate
-  targets, unavailable stores, and per-store isolation.
-- Tests distinguish process-wide projection selectors from explicit CDC target selection.
+- Tests cover empty configuration, normalized duplicate targets, unavailable stores,
+  late resolution of an already-listed tenant/data store, connection-context
+  replacement with health reset, unlisted late-created stores, and per-store isolation.
+- Tests prove read acceleration selects no additional data stores and that adding or
+  removing membership requires configuration rollout.
 - Health/routing integration proves configuration errors remain data-store-specific and
   observational.
 
 ## Out of Scope
 
 - Projector worker implementation.
-- CDC physical source binding or connector registration.
+- CDC target selection, durable physical-source binding, connector registration, or
+  combined CDC readiness.
 - Kafka topic/message design.

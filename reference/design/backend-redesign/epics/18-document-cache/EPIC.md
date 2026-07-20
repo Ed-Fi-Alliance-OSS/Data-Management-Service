@@ -38,7 +38,8 @@ implementation inputs.
 
 ## Completion Evidence
 
-- Capability combinations select and isolate the intended startup projection targets.
+- The explicit target list selects and isolates projection, unresolved listed targets can
+  become available after startup, and read acceleration selects no additional stores.
 - Both providers pass materialization, reconciliation, fencing, restart, retry, rebuild,
   health, and read-fallback integration coverage.
 - Every projected row carries a `StreamEtag` produced by the shared DMS served-ETag

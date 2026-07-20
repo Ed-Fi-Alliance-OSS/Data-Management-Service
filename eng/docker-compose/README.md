@@ -406,7 +406,12 @@ into core.
 Bootstrap mode provisions the relational DMS schema only. Relational DMS
 CDC/Kafka connector registration is pending a separate implementation and should
 be controlled by an explicit CDC opt-in such as `-EnableKafkaCdc`; bootstrap
-startup does not register DMS source connectors today.
+startup does not register DMS source connectors today. The planned opt-in keeps
+immutable deployment-owned binding records under a separate persistent `.cdc-state`
+root (or an explicit `-CdcBindingStatePath`) and never stores them in the bootstrap
+manifest. Runtime DMS receives only explicit `DocumentCache:Targets` and exposes
+per-database projection health; deployment automation owns connector registration and
+combined CDC readiness.
 
 The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
 Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize

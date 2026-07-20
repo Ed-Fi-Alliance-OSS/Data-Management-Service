@@ -21,9 +21,12 @@ relational CDC source/key design.
 
 1. Add provider-specific publication/capture and delete-key setup.
 2. Extend generated provisioning manifests and diagnostics with CDC setup status.
-3. Verify exact provider identifiers and syntax against generated DDL and the pinned
+3. Derive publication/slot or capture-instance identity from the immutable deployment
+   binding generation and validate existing artifacts against that binding.
+4. Verify exact provider identifiers and syntax against generated DDL and the pinned
    connector version.
-4. Add negative validation for missing key, replica-identity, or capture prerequisites.
+5. Add negative validation for missing key, replica-identity, capture prerequisites, or
+   artifacts that exist without matching binding state.
 
 ## Acceptance Evidence
 

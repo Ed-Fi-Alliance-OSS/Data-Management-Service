@@ -19,13 +19,15 @@ related:
 ## Outcome
 
 Implement the relational Debezium/Kafka CDC capability defined by the design references,
-including provider setup, connector generation and registration, contract verification,
-API-driven E2E coverage, and operator guidance. This epic owns connector-side lifecycle
-capture; `18-document-cache` owns the reusable projected upsert source.
+including deployment-owned durable binding state, provider setup, connector generation
+and registration, combined readiness, contract verification, API-driven E2E coverage,
+and operator guidance. This epic owns connector-side lifecycle capture;
+`18-document-cache` owns explicit projection targets and the reusable projected upsert
+source.
 
 ## Stories
 
-- `TBD` — `00-documentcache-cdc-prerequisites.md` — Wire target-specific registration and readiness prerequisites
+- `TBD` — `00-documentcache-cdc-prerequisites.md` — Add deployment-owned CDC binding and readiness
 - `TBD` — `01-cdc-ddl-support.md` — Emit/provision provider CDC key and database support
 - `TBD` — `02-connector-template-generation.md` — Generate PostgreSQL and SQL Server connector templates
 - `TBD` — `03-bootstrap-enable-kafka-cdc.md` — Add explicit local/bootstrap connector registration
@@ -50,6 +52,10 @@ implementation inputs.
   reprojection and a new versioned topic rather than same-`contentVersion` replacement.
 - Local and E2E setup registers against selected provisioned data stores without
   hard-coded instance values.
+- Binding state survives DMS and connector restarts, fails closed around missing or
+  mismatched state, and prevents a topic generation from changing physical source.
+- DMS exposes only per-database projection health; deployment automation combines it
+  with binding, migration, connector catch-up, and lag status.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported setup, security, observation, recovery,
   migration, immutable-contract version cutover, and explicit destructive cleanup.
