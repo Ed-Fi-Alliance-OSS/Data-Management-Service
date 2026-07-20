@@ -849,49 +849,41 @@ $failureStatement
             $startScript | Should -Not -Match '\$files \+= @\("-f", "mssql\.yml"\)'
         }
 
-        It "start-local-dms.ps1 passes engine-aware database parameters to every setup-openiddict.ps1 call" {
+        It "start-local-dms.ps1 sources the setup-openiddict.ps1 and readiness parameters from the runtime contract" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # The OpenIddict stores live in the Configuration Service database
-            # (DMS_CONFIG_DATABASE_NAME), created by -InitDb when missing; every invocation must
-            # splat the shared engine-aware parameters targeting that database.
-            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME"'
+            # The full-stack lane resolves one Resolve-EffectiveConfigRuntimeContract and reads every
+            # OpenIddict parameter, the readiness credential, and the SA password from it (modeling
+            # ${MSSQL_SA_PASSWORD:-abcdefgh1!} shell-over-file) - so a shell override cannot split the
+            # container (and CMS) from pre-CMS OpenIddict initialization.
+            $startScript | Should -Match 'Resolve-EffectiveConfigRuntimeContract .*-MssqlSaPasswordDefault "abcdefgh1!"'
+            $startScript | Should -Match 'DbType = \$contract\.OpenIddict\.DbType'
+            $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\.Value'
+            ([regex]::Matches($startScript, 'Resolve-EffectiveMssqlSaPassword')).Count | Should -Be 0 -Because "the full-stack lane must derive the SA password from the runtime contract, not a separate shell-blind helper"
+
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
             foreach ($call in $openiddictCalls) {
                 $call.Value | Should -Match '@identityDbParams'
             }
-
-            # The SA password must come from the shell-over-file resolver (matching the container's
-            # ${MSSQL_SA_PASSWORD:-abcdefgh1!}) and travel to setup-openiddict.ps1 via the MSSQL params, so a
-            # shell override cannot split the container (and CMS) from pre-CMS OpenIddict initialization.
-            $startScript | Should -Match '\$mssqlSaPassword = Resolve-EffectiveMssqlSaPassword -EnvValues \$envValues -DefaultValue "abcdefgh1!"'
-            $startScript | Should -Match 'DbType = "MSSQL";[^}]*DbPassword = \$mssqlSaPassword'
-            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$mssqlSaPassword'
-            $saAssignments = [regex]::Matches($startScript, '\$mssqlSaPassword\s*=')
-            $saHelperAssignments = [regex]::Matches($startScript, '\$mssqlSaPassword = Resolve-EffectiveMssqlSaPassword')
-            $saAssignments.Count | Should -BeGreaterThan 0
-            $saAssignments.Count | Should -Be $saHelperAssignments.Count -Because "every SA-password assignment feeding readiness and setup-openiddict.ps1 must use the shell-over-file resolver, not a shell-blind env-file read"
         }
 
-        It "start-published-dms.ps1 resolves the effective SA password for readiness and every setup-openiddict.ps1 call" {
+        It "start-published-dms.ps1 sources the setup-openiddict.ps1, readiness, and datastore parameters from the runtime contract" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            # Same shell-over-file password contract as start-local-dms.ps1 (both full-stack lanes). The SQL
-            # Server container's password is docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!}, so a shell
-            # override reaches the container; readiness polls and OpenIddict initialization must resolve the
-            # same effective value rather than a shell-blind env-file read.
-            $startScript | Should -Match '\$mssqlSaPassword = Resolve-EffectiveMssqlSaPassword -EnvValues \$envValues -DefaultValue "abcdefgh1!"'
-            $saAssignments = [regex]::Matches($startScript, '\$mssqlSaPassword\s*=')
-            $saHelperAssignments = [regex]::Matches($startScript, '\$mssqlSaPassword = Resolve-EffectiveMssqlSaPassword')
-            $saAssignments.Count | Should -BeGreaterThan 0
-            $saAssignments.Count | Should -Be $saHelperAssignments.Count -Because "every SA-password assignment feeding readiness and setup-openiddict.ps1 must use the shell-over-file resolver, not a shell-blind env-file read"
-            $startScript | Should -Match 'DbType = "MSSQL";[^}]*DbPassword = \$mssqlSaPassword'
-            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$mssqlSaPassword'
+            # Same runtime-contract wiring as start-local-dms.ps1 (both full-stack lanes), extended to the DMS
+            # datastore connection stored in CMS, so every SQL Server credential is the one effective value.
+            $startScript | Should -Match 'Resolve-EffectiveConfigRuntimeContract .*-MssqlSaPasswordDefault "abcdefgh1!"'
+            $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\.Value'
+            $startScript | Should -Match '\$mssqlPassword = \$contract\.MssqlSaPassword\.Value'
+            ([regex]::Matches($startScript, 'Resolve-EffectiveMssqlSaPassword')).Count | Should -Be 0 -Because "the full-stack lane must derive every SA password from the runtime contract, not a separate shell-blind helper"
+
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
             foreach ($call in $openiddictCalls) {
