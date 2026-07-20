@@ -12,7 +12,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
-/// PostgreSQL parity counterpart to <c>MssqlChildBindingIdentityPropagationTests</c>. Proves that a
+/// PostgreSQL parity counterpart to the MSSQL
+/// <c>Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedule_Child_Binding</c> fixture. Proves that a
 /// rename of an upstream resource's identity (<c>ClassPeriod</c>) reaches a stored child-collection
 /// binding through the native <c>ON UPDATE CASCADE</c> foreign key and preserves update tracking for
 /// the owning root, using the same acyclic authoritative <c>ds-5.2</c> scenario
@@ -157,6 +158,13 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
             .ToString(childRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
             .Should()
             .Be(NewClassPeriodName);
+
+        // The unchanged composite identity half (School) must NOT cascade — only the renamed
+        // ClassPeriodName component may move on the projected child row.
+        Convert
+            .ToInt64(childRow["ClassPeriod_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId, "the unchanged composite identity half must not cascade");
 
         // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE.
         var childRowsAfter = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);

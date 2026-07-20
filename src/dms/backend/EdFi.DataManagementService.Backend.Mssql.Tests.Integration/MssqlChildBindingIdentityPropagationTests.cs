@@ -29,7 +29,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard3)]
-public class MssqlChildBindingIdentityPropagationTests
+public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedule_Child_Binding
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
 
@@ -76,7 +76,7 @@ public class MssqlChildBindingIdentityPropagationTests
     }
 
     [Test]
-    public async Task Updating_ClassPeriod_identity_propagates_to_BellScheduleClassPeriod_and_bumps_BellSchedule_ContentVersion()
+    public async Task It_should_propagate_a_ClassPeriod_identity_rename_through_the_BellSchedule_child_binding_and_preserve_update_tracking()
     {
         // Arrange — seed the dependency chain
         //   School(id=100, doc=schoolDoc)
@@ -173,6 +173,13 @@ public class MssqlChildBindingIdentityPropagationTests
             .ToString(childRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
             .Should()
             .Be(NewClassPeriodName);
+
+        // The unchanged composite identity half (School) must NOT cascade — only the renamed
+        // ClassPeriodName component may move on the projected child row.
+        Convert
+            .ToInt64(childRow["ClassPeriod_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId, "the unchanged composite identity half must not cascade");
 
         // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE.
         var childRowsAfter = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
@@ -286,7 +293,7 @@ public class MssqlChildBindingIdentityPropagationTests
     }
 
     [Test]
-    public async Task Updating_ClassPeriod_identity_propagates_to_SectionClassPeriod_and_bumps_Section_ContentVersion()
+    public async Task It_should_propagate_a_ClassPeriod_identity_rename_through_the_SectionClassPeriod_child_binding_and_bump_the_owning_Section_ContentVersion()
     {
         // Arrange — seed a School document, a ClassPeriod referencing that School, a
         // synthetic Section root, and a SectionClassPeriod child binding referencing both
@@ -376,7 +383,7 @@ public class MssqlChildBindingIdentityPropagationTests
     }
 
     [Test]
-    public async Task Updating_ClassPeriod_identity_within_a_held_transaction_stamps_atomically_before_commit_and_rolls_back_cleanly()
+    public async Task It_should_stamp_atomically_before_commit_and_roll_back_cleanly_when_a_ClassPeriod_rename_runs_in_a_held_transaction()
     {
         // Same-transaction atomicity (genuine pre-commit observation, no rollback-only fallback): the
         // cascade, the owning-root/upstream stamps, both root-table mirrors, and the ClassPeriod
