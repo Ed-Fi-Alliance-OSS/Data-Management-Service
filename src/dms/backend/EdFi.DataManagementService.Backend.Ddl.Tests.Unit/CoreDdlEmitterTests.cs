@@ -492,6 +492,12 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("\"EffectiveEndDate\" date NULL");
     }
 
+    [Test]
+    public void It_should_have_nullable_created_by_ownership_token_id_in_document()
+    {
+        _ddl.Should().Contain("\"CreatedByOwnershipTokenId\" smallint NULL");
+    }
+
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
@@ -537,6 +543,15 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_have_index_descriptor_uri_discriminator()
     {
         _ddl.Should().Contain("\"IX_Descriptor_Uri_Discriminator\"");
+    }
+
+    [Test]
+    public void It_should_have_created_by_ownership_token_id_index()
+    {
+        _ddl.Should()
+            .Contain(
+                "CREATE INDEX IF NOT EXISTS \"IX_Document_CreatedByOwnershipTokenId\" ON \"dms\".\"Document\" (\"CreatedByOwnershipTokenId\");"
+            );
     }
 
     [Test]
@@ -1098,6 +1113,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("[EffectiveEndDate] date NULL");
     }
 
+    [Test]
+    public void It_should_have_nullable_created_by_ownership_token_id_in_document()
+    {
+        _ddl.Should().Contain("[CreatedByOwnershipTokenId] smallint NULL");
+    }
+
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
@@ -1126,9 +1147,19 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Indexes ─────────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_four_indexes()
+    public void It_should_have_created_by_ownership_token_id_index()
+    {
+        _ddl.Should()
+            .Contain(
+                "CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]);"
+            );
+    }
+
+    [Test]
+    public void It_should_have_all_five_indexes()
     {
         _ddl.Should().Contain("[IX_Descriptor_Uri_Discriminator]");
+        _ddl.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
         _ddl.Should().Contain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
         _ddl.Should().Contain("[IX_ReferentialIdentity_DocumentId]");

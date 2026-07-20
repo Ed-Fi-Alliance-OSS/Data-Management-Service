@@ -370,6 +370,9 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
             );
             writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("CreatedByOwnershipTokenId"), _dialect.SmallintColumnType, true)},"
+            );
+            writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Document_ContentVersion", SequenceDefault)},"
             );
             writer.AppendLine(
@@ -778,6 +781,15 @@ public sealed class CoreDdlEmitter
                 _descriptorTable,
                 "IX_Descriptor_Uri_Discriminator",
                 [Col("Uri"), Col("Discriminator")]
+            )
+        );
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.CreateIndexIfNotExists(
+                _documentTable,
+                "IX_Document_CreatedByOwnershipTokenId",
+                [Col("CreatedByOwnershipTokenId")]
             )
         );
         writer.AppendLine();
