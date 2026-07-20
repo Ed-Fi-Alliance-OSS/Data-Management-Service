@@ -58,5 +58,5 @@ case.
 ## Out of Scope
 
 - Full API-driven E2E scenarios.
-- Projector lag/backfill tests.
+- Projector reconciliation/completeness tests.
 - Kafka ACL testing.

@@ -527,7 +527,7 @@ When relational CDC/Kafka is enabled, `dms.DocumentCache` is conditionally requi
 upsert payload source. The same connector captures `dms.Document` as the authoritative delete source.
 Projector lag affects upsert freshness, while delete capture remains independent of projection. See
 [document-cache/0001-role-and-enablement.md](document-cache/0001-role-and-enablement.md),
-[document-cache/0002-projector-freshness-and-backfill.md](document-cache/0002-projector-freshness-and-backfill.md),
+[document-cache/0002-projector-freshness-and-reconciliation.md](document-cache/0002-projector-freshness-and-reconciliation.md),
 [document-cache/0003-cache-and-domain-lifecycle-separation.md](document-cache/0003-cache-and-domain-lifecycle-separation.md),
 [cdc/0001-relational-cdc-sources.md](cdc/0001-relational-cdc-sources.md) and
 [cdc/0003-debezium-connector-deployment.md](cdc/0003-debezium-connector-deployment.md).
@@ -546,7 +546,8 @@ Correctness must not depend on this table:
 When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
 - compare cached `ContentVersion` / `LastModifiedAt` to the current
   `dms.Document.ContentVersion` / `ContentLastModifiedAt`,
-- if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
+- if mismatched (or missing), fall back to relational reconstitution; the background
+  reconciliation query rediscovers the row without an enqueue API.
 
 ### Rebuild/invalidation triggers (eventual consistency)
 
@@ -555,16 +556,19 @@ cascades, referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that
 `dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on
 referrers, without reverse dependency expansion at the projector layer.
 
-A minimal projector approach:
+A minimal reconciliation approach:
 
-1. Consume `dms.Document` in `ContentVersion` order.
-2. Rebuild `dms.DocumentCache` for `(DocumentId, ContentVersion)` rows not yet applied.
+1. Query current `dms.Document` rows whose cache row is missing, has another
+   `ContentVersion`, or violates the paired `LastModifiedAt` invariant, in bounded
+   `ContentVersion, DocumentId` batches.
+2. Reconstitute each candidate and use a guarded upsert only if the source still exists
+   at the captured version.
 3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` and `LastModifiedAt`
    to enforce the freshness contract above; `_etag` is composed per request from
    `ContentVersion` + `variantKey` and is not stored in the cache.
-4. Fence projector/backfill writes so a lower `ContentVersion` cannot overwrite a newer
-   cache row, and queued work cannot recreate a cache row after the document has been
-   deleted.
+4. Repeat the mismatch query for initial population, ongoing writes, restart, rebuild,
+   and retry. Fence writes so a lower `ContentVersion` cannot overwrite a newer cache
+   row or recreate one after the document has been deleted.
 
 ---
 

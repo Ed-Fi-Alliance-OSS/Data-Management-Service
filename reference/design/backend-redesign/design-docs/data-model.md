@@ -478,10 +478,11 @@ create/update/snapshot operations as document upserts.
 This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
 
 - it is not purely a “cache-aside” optimization
-- when enabled, DMS should materialize documents into this table via a write-driven/background projector
+- when enabled, DMS materializes documents with a background reconciliation loop and may
+  directly fill a row after relational read fallback as an optimization
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously.
-For the normative role, enablement, projector, freshness, backfill, failure, and
+For the normative role, enablement, projector freshness, reconciliation, health, and
 cache/domain lifecycle separation, see
 [document-cache/](document-cache/). For transaction ordering context, see
 [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).

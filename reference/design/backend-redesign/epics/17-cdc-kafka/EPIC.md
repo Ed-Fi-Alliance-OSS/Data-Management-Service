@@ -43,8 +43,8 @@ Kafka source.
 
 ## Cross-Story Dependency Notes
 
-- E18 supplies the asynchronous DocumentCache upsert projection, bounded backfill,
-  fencing, failures, and health. It does not own delete capture.
+- E18 supplies the asynchronous DocumentCache reconciliation loop, fencing, bounded
+  in-memory retry, and mismatch-derived health. It does not own delete capture.
 - Story 00 combines projection prerequisites with E17-owned two-table key/filter/source
   binding prerequisites.
 - Story 01 supplies PostgreSQL publication/replica identity and SQL Server capture setup
@@ -52,8 +52,8 @@ Kafka source.
 - Story 02 owns source-operation classification, cache value shaping,
   document-delete-to-tombstone conversion, duplicate tombstone suppression, key
   simplification, and routed-topic publication.
-- Story 03 registers the connector before backfill/test traffic and waits for completed
-  source plus connector readiness.
+- Story 03 registers the connector before reconciliation/test traffic and waits for zero
+  projection mismatches plus connector/source-position readiness.
 - Story 04 begins with fixtures and adds real-provider routed-topic key/order coverage.
 - Story 05 depends on Stories 00-04 and replaces DMS-1232's legacy `deleted=true` /
   `EdFiDoc` expectations.
@@ -63,13 +63,13 @@ Kafka source.
 
 | This story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-07, 18-08, 18-09 | Hard for upsert readiness | Consumes configuration, state, bounded backfill, fencing, failures, and health. E17 owns lifecycle capture. |
-| `17-01-cdc-ddl-support.md` | 18-01 | Soft | Uses the projected table DDL; two-table CDC setup is owned here. |
-| `17-02-connector-template-generation.md` | 18-01 | Soft until upsert smoke tests | Templates can be built with fixtures. |
-| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, plus 17-00 | Hard | Waits for projection and connector readiness. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-03, 18-07, 18-09 | Hard for upsert readiness | Consumes configuration, reconciliation, fencing, and exact completeness health. Core E02 supplies source/cache DDL; E17 owns lifecycle capture. |
+| `17-01-cdc-ddl-support.md` | — | No E18 dependency | Core E02 supplies `dms.DocumentCache`; two-table CDC setup is owned here. |
+| `17-02-connector-template-generation.md` | — | No E18 dependency until upsert smoke tests | Templates can be built with fixtures. |
+| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-03, 18-09, plus 17-00 | Hard | Waits for zero projection mismatches and connector/source-position catch-up. |
 | `17-04-message-contract-tests.md` | 18-02 | Soft | Uses realistic cache payloads; delete/filter/order tests are E17-owned. |
-| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-09, plus 17-00 through 17-04 | Hard for complete upsert coverage | Missing-cache delete remains independently testable. |
-| `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | Consumes projection failure/readiness/recovery guidance. |
+| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-09, plus 17-00 through 17-04 | Hard for complete upsert coverage | Missing-cache delete remains independently testable. |
+| `17-06-ops-docs-runbooks.md` | 18-03, 18-09, 18-11 | Hard for final docs | Consumes mismatch health, bounded retry, and recovery guidance. |
 
 ## Scope Guardrails
 

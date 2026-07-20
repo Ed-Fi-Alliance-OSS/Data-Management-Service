@@ -27,23 +27,22 @@ list. Runtime discovery, addition, removal, and physical-source replacement are 
 - Connector registration runs only after:
   - the data store is selected,
   - the target database is provisioned,
-  - `dms.DocumentCache` and its projector/state objects are provisioned,
+  - `dms.DocumentCache` and `dms.Document` are provisioned,
   - projector mode is `Async`,
   - stale-write fencing is available,
   - provider-specific two-table capture, `DocumentUuid` keys, PostgreSQL replica
     identity, and source-operation filtering are applied or validated.
-- Connector registration establishes capture before the bounded initial backfill and before E2E or deployment
-  writes that must be observed by CDC.
+- Connector registration establishes capture before projector reconciliation and before
+  E2E or deployment writes that must be observed by CDC.
 - CDC is advertised as ready only after:
   - the selected data store is in the explicit deployment target list and still resolves to its startup physical
     source binding,
-  - the bounded initial `dms.DocumentCache` backfill epoch is complete for existing documents at or below the
-    captured target content version,
-  - projector lag above the completed backfill target is within threshold,
-  - connector snapshot/catch-up is complete,
+  - the exact current `dms.Document`/`dms.DocumentCache` mismatch count is zero,
+  - connector snapshot/catch-up has reached a source position at or after the
+    zero-mismatch observation,
   - connector lag is within threshold.
-- Bootstrap diagnostics include the completed backfill epoch id and target content version used as the CDC
-  readiness cutover marker.
+- Bootstrap diagnostics include mismatch count and oldest mismatch age; they do not use
+  a backfill epoch or maximum projected version as a cutover marker.
 - Connector registration is idempotent for the same selected data store and connector name.
 - Bootstrap prints the connector name, provider, database, instance key, and target topic.
 - Non-local bootstrap requires a deployment-unique topic prefix and rejects the local `edfi.dms` default unless
@@ -51,8 +50,8 @@ list. Runtime discovery, addition, removal, and physical-source replacement are 
 - Teardown removes local connector registrations and Kafka state when the local stack is torn down with volumes.
 - E2E setup can opt into CDC and register the connector before test writes are issued.
 - Failure messages identify whether the problem is Kafka infrastructure, connector REST API, database CDC setup,
-  DocumentCache registration prerequisites, incomplete bounded backfill, projector lag above the completed
-  backfill target, connector snapshot/catch-up, invalid two-table key/filter setup, missing
+  DocumentCache registration prerequisites, nonzero mismatch count/age, connector
+  snapshot/catch-up, invalid two-table key/filter setup, missing
   configured target, retryable source-identity resolution,
   `CdcSourceDriftRequiresDeployment`, or connector validation.
 

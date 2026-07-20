@@ -35,9 +35,9 @@ continue to depend on the relational source tables and `dms.Document`, not on ca
 ## Configuration Contract
 
 Use separate settings for projection, read acceleration, and Kafka CDC. The projector has
-one enabled behavior: asynchronous, eventually consistent projection. CDC readiness may
-observe its backfill, lag, and failures, but it does not introduce a distinct projector
-mode or request-path delete behavior.
+one enabled behavior: asynchronous, eventually consistent reconciliation. CDC readiness
+may observe its mismatch count and oldest mismatch age, but it does not introduce a
+distinct projector mode or request-path delete behavior.
 
 Recommended design-level settings:
 
@@ -79,11 +79,11 @@ deployment-owned list, and only listed data stores receive connector registratio
 readiness. V1 does not infer CDC target membership from the most recent HTTP request, the
 set returned by CMS, or JWT `DataStoreIds`.
 
-Connector registration remains per configured CDC target. A failed or incomplete projector
-makes that target's CDC readiness false without making normal API correctness or routing
-depend on it. Deployment health may also expose an aggregate result that is false when any
-configured CDC target is not ready. A future CMS-backed per-data-store opt-in may replace
-the deployment list, but it is not part of v1.
+Connector registration remains per configured CDC target. Outstanding projection
+mismatches make that target's CDC readiness false without making normal API correctness
+or routing depend on it. Deployment health may also expose an aggregate result that is
+false when any configured CDC target is not ready. A future CMS-backed per-data-store
+opt-in may replace the deployment list, but it is not part of v1.
 
 V1 does not discover CDC targets dynamically. Adding or removing a target requires an
 explicit deployment-configuration change and the coordinated provisioning, connector, and

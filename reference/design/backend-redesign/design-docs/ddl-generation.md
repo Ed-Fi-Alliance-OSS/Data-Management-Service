@@ -47,9 +47,9 @@ The DDL generation utility is responsible for database objects derived from the 
   - `dms.DocumentCache` (materialized JSON projection and relational CDC upsert source; see
     [data-model.md](data-model.md), [document-cache/](document-cache/), and
     [cdc/0001-relational-cdc-sources.md](cdc/0001-relational-cdc-sources.md))
-  - `dms.DocumentCacheProjectionState` and `dms.DocumentCacheProjectionFailure`
-    companion objects when the projector is enabled (see
-    [document-cache/0004-failure-health-and-ddl-support.md](document-cache/0004-failure-health-and-ddl-support.md))
+  - no projector workflow tables; reconciliation work and health are derived from the
+    current `dms.Document`/`dms.DocumentCache` mismatch (see
+    [document-cache/0004-reconciliation-health-and-ddl-support.md](document-cache/0004-reconciliation-health-and-ddl-support.md))
   - provider-specific optional CDC setup captures both `dms.DocumentCache` and
     `dms.Document`, configures `DocumentUuid` keys, and sets PostgreSQL
     `dms.Document` replica identity for authoritative delete capture
@@ -158,8 +158,6 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.Descriptor`
 - Optional projections (required when CDC/Kafka is enabled):
   - `dms.DocumentCache`
-  - `dms.DocumentCacheProjectionState`
-  - `dms.DocumentCacheProjectionFailure`
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:

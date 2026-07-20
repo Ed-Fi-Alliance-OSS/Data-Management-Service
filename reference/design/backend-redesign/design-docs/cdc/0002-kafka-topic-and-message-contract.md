@@ -308,7 +308,7 @@ leakage risk. This conflicts with the multitenancy analysis.
 ### Include `DocumentId` in the public value
 
 Rejected. `DocumentId` is an internal storage surrogate. Including it would invite
-consumers to depend on a non-API identifier that can vary across backfills,
+consumers to depend on a non-API identifier that can vary across rebuilds,
 reprovisioning, and database restores.
 
 ### Publish delete envelopes instead of tombstones
@@ -327,15 +327,15 @@ DMS-1245 should next define the connector deployment model:
 - transform order for source-operation filtering, unwrap, field renames, static
   `contractVersion`, JSON expansion, key simplification, document-delete-to-tombstone
   conversion, and topic routing,
-- snapshot mode and backfill behavior,
+- snapshot mode and projection-completeness behavior,
 - local Docker Compose/bootstrap registration.
 
 The DMS-1246 decision records in [../document-cache/](../document-cache/) define the
 projector guarantees this contract depends on for upserts:
 
-- lag and health signals for projection,
-- retry and dead-letter behavior,
-- rebuild/backfill semantics that publish upserts only and do not create stale
+- mismatch count/age and exact completeness signals for projection,
+- bounded in-memory retry behavior,
+- reconciliation/rebuild semantics that publish upserts only and do not create stale
   lower-`contentVersion` messages after newer values for the same `documentUuid`,
-- projector fencing so queued work cannot recreate a cache row after canonical
-  `dms.Document` deletion.
+- projector fencing so a stale materialization candidate cannot recreate a cache row
+  after canonical `dms.Document` deletion.

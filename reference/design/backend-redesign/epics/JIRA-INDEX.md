@@ -208,12 +208,9 @@ This index links design documents under `reference/design/backend-redesign/epics
 
 - `TBD` — `dms.DocumentCache` Projection — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
   - `TBD` — Add DocumentCache configuration boundaries — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-mode-boundaries.md`
-  - `TBD` — Emit DocumentCache projector state and failure DDL — `reference/design/backend-redesign/epics/18-document-cache/01-documentcache-ddl-and-projector-state.md`
   - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md`
-  - `TBD` — Add asynchronous DocumentCache projector worker — `reference/design/backend-redesign/epics/18-document-cache/03-async-projector-worker.md`
-  - `TBD` — Add restartable initial backfill and rebuild support — `reference/design/backend-redesign/epics/18-document-cache/04-initial-backfill-and-rebuild.md`
+  - `TBD` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/03-async-projector-reconciliation-loop.md`
   - `TBD` — Add fresh-cache read path with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`
   - `TBD` — Enforce projector stale-write and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/07-projector-stale-write-fencing.md`
-  - `TBD` — Add projection retry, dead-letter, and repair handling — `reference/design/backend-redesign/epics/18-document-cache/08-projection-retry-dead-letter-and-repair.md`
   - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/09-documentcache-health-readiness-and-telemetry.md`
   - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/11-documentcache-integration-tests-and-runbooks.md`

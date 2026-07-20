@@ -25,8 +25,8 @@ projection result whose cache columns and embedded server metadata were produced
 ## Dependencies
 
 - Depends on relational read/reconstitution and update-tracking metadata semantics.
-- Unblocks `18-03-async-projector-worker.md`, `18-04-initial-backfill-and-rebuild.md`,
-  and `18-05-cache-backed-read-path.md`.
+- Unblocks `18-03-async-projector-reconciliation-loop.md` and
+  `18-05-cache-backed-read-path.md`.
 - Provides realistic `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for
   `17-cdc-kafka/04-message-contract-tests.md` and `17-cdc-kafka/05-e2e-kafka-scenarios.md`.
 
@@ -71,6 +71,6 @@ projection result whose cache columns and embedded server metadata were produced
 
 ## Out of Scope
 
-- Projector queueing and scheduling.
+- Reconciliation scheduling and in-memory backoff.
 - Kafka envelope shaping.
 - Readable-profile response projection.

@@ -46,10 +46,11 @@ deletion.
     document-state `variantKey`,
   - consumer stale-write handling with `contentVersion`.
 - Documentation explains the CDC-mode `dms.DocumentCache` guarantees:
-  - bounded initial backfill before CDC readiness,
-  - projector lag readiness above the completed backfill target,
+  - exact zero-mismatch projection completeness before CDC readiness,
+  - mismatch-count and oldest-mismatch-age health,
   - stale-write fencing by `ContentVersion`,
-  - observational projection failures that never block API mutations.
+  - bounded in-memory retry and observational projection failures that never block API
+    mutations.
 - Documentation explains source-operation filtering and proves that cache deletion,
   truncation, and rebuild publish no domain tombstones.
 - Documentation explains that canonical deletes come from `dms.Document`, including a
@@ -83,7 +84,7 @@ deletion.
 4. Add PostgreSQL setup and recovery runbook.
 5. Add SQL Server setup and recovery runbook.
 6. Add Kafka topic/ACL/consumer guidance.
-7. Add troubleshooting guidance for incomplete backfill, projector dead letters,
+7. Add troubleshooting guidance for persistent projection mismatches, bounded retry,
    two-table key/filter/order failures, missing targets, source identity resolution, and
    `CdcSourceDriftRequiresDeployment` remediation.
 8. Add troubleshooting commands for connector status, connector logs, topic listing, and sample consumption.

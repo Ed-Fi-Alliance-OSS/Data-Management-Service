@@ -53,13 +53,13 @@ not observe.
 
 ## Projector Fencing
 
-Projection, backfill, retry, and read-through cache writes use the same monotonic guard:
+Reconciliation and optional read-through cache writes use the same monotonic guard:
 
 - a lower `ContentVersion` cannot overwrite a higher cache version,
 - the target `dms.Document` row and representation stamp must still exist at cache-write
   time,
 - a work item for a deleted `DocumentId` cannot recreate `dms.DocumentCache`,
-- a stale retry either no-ops or requeues the current document stamp.
+- a stale candidate no-ops; the next mismatch scan discovers the current document stamp.
 
 These are general projection-correctness rules. They do not serialize the API delete with
 materialization and do not create a separate CDC write path.
@@ -70,11 +70,11 @@ Cache truncation, row eviction, operator cleanup, and rebuild are projection ope
 
 - cache deletes are filtered before public topic routing,
 - no cache maintenance operation publishes a domain tombstone,
-- rebuild backfill emits upserts for canonical documents that still exist,
+- reconciliation emits upserts for canonical documents that still exist,
 - cache-backed reads fall back to relational reconstitution while rows are absent or
   stale,
-- CDC projection readiness may be false until the new bounded backfill epoch completes,
-  but API reads and mutations continue normally.
+- CDC projection readiness is false while current mismatches remain, but API reads and
+  mutations continue normally.
 
 If an operator intentionally needs to rebuild the compacted public topic, that is an
 explicit connector snapshot/topic recovery procedure. It must not be simulated by

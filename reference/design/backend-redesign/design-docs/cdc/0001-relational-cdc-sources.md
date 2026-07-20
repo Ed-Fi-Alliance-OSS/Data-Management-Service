@@ -95,12 +95,12 @@ streaming source.
 - Create followed by delete before asynchronous projection may legitimately produce only
   a tombstone. Consumers already treat the topic as an upsert/delete state stream and
   must tolerate a delete for a key whose upsert they did not observe.
-- Projector and backfill writes remain fenced by the current `dms.Document` row and its
-  representation stamp. This prevents lower-version overwrites and prevents projection
-  work from recreating cache state after canonical deletion; it is ordinary projector
+- Reconciliation writes remain fenced by the current `dms.Document` row and its
+  representation stamp. This prevents lower-version overwrites and prevents a candidate
+  from recreating cache state after canonical deletion; it is ordinary projector
   correctness, not a special delete-path contract.
-- CDC readiness may report initial backfill, projector failures/lag, connector status,
-  and source-binding drift. These signals are observational and never change normal API
+- CDC readiness may report current projection mismatch count/age, connector status, and
+  source-binding drift. These signals are observational and never change normal API
   routing or mutation behavior.
 
 ## Alternatives Considered
@@ -146,7 +146,7 @@ DMS-1245 should implement:
 - local Docker Compose/bootstrap connector registration,
 - replacement of the quarantined KafkaMessaging scenarios.
 
-DMS-1246 owns only the reusable `dms.DocumentCache` projection behavior: projector
-lifecycle, initial backfill and rebuild, freshness, stale-write fencing, retry,
-dead-letter handling, telemetry, and optional cache-backed reads. It does not add a
+DMS-1246 owns only the reusable `dms.DocumentCache` projection behavior: the
+reconciliation loop, freshness, stale-write fencing, bounded in-memory retry,
+mismatch-derived health, telemetry, and optional cache-backed reads. It does not add a
 CDC-specific pre-delete path or provider materialize-then-delete contract.

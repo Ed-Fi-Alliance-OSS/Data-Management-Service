@@ -10,17 +10,17 @@ related:
 
 ## Description
 
-Implement the database-enforced guard that makes projection, backfill, retry, and read-through
+Implement the database-enforced guard that makes reconciliation and optional read-through
 materialization monotonic per document.
 
-The guard prevents older projection work from overwriting newer cache rows and prevents queued work from
-recreating a cache row after the corresponding `dms.Document` row has been deleted.
+The guard prevents a candidate captured at an older source version from overwriting a
+newer cache row or recreating a cache row after the corresponding `dms.Document` row has
+been deleted.
 
 ## Dependencies
 
 - Depends on the `dms.Document` representation stamps from update tracking.
-- Required by `18-03-async-projector-worker.md`, `18-04-initial-backfill-and-rebuild.md`,
-  and `18-08-projection-retry-dead-letter-and-repair.md`.
+- Required by `18-03-async-projector-reconciliation-loop.md`.
 - Supplies upsert-projection ordering guarantees to `17-cdc-kafka`.
 
 ## Acceptance Criteria
@@ -29,19 +29,19 @@ recreating a cache row after the corresponding `dms.Document` row has been delet
 - The guard writes a cache row only when the current `dms.Document` row still exists.
 - The guard writes a cache row only when current `dms.Document.ContentVersion` and
   `ContentLastModifiedAt` match the target work item.
-- A lower `ContentVersion` retry/backfill cannot overwrite a higher `ContentVersion` cache row.
+- A lower captured `ContentVersion` cannot overwrite a higher cache version.
 - A work item for a deleted `DocumentId` cannot recreate `dms.DocumentCache`.
-- The guard works consistently for projector, backfill, read-through fill, and retry.
+- The guard works consistently for reconciliation and optional read-through fill.
 - Guard failures are observable as stale skips rather than generic unexpected errors.
-- Tests cover out-of-order work, concurrent update during projection, delete racing queued work, and provider
-  parity for PostgreSQL and SQL Server.
+- Tests cover out-of-order candidates, concurrent update during projection, delete racing
+  materialization, and provider parity for PostgreSQL and SQL Server.
 
 ## Tasks
 
 1. Define the guarded cache write contract.
 2. Implement PostgreSQL guarded upsert.
 3. Implement SQL Server guarded upsert.
-4. Route projector/backfill/retry/read-through writes through the shared guard.
+4. Route reconciliation and read-through writes through the shared guard.
 5. Add stale-skip metrics and diagnostic logging.
 6. Add concurrency-focused integration tests for both providers.
 

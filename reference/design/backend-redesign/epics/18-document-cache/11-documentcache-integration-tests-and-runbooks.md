@@ -10,8 +10,8 @@ related:
 
 ## Description
 
-Add end-to-end DocumentCache coverage and operator guidance for projection, cache-backed reads, backfill,
-failures, and CDC upsert readiness.
+Add end-to-end DocumentCache coverage and operator guidance for reconciliation,
+cache-backed reads, rebuild, failures, and CDC upsert readiness.
 
 This story closes the DocumentCache implementation epic by validating the story set as a coherent runtime
 feature and documenting operational behavior that CDC/Kafka runbooks consume.
@@ -25,25 +25,26 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
 ## Acceptance Criteria
 
 - Integration tests cover DocumentCache disabled mode.
-- Integration tests cover async projection mode with create, update, backfill, cache hit, stale miss, and
-  relational fallback.
-- Integration tests cover CDC projection readiness before and after a bounded backfill epoch completes.
-- Integration tests cover backfill high-watermark behavior: writes above the captured target are handled by
-  normal projector catch-up and lag readiness, not by moving the epoch target.
+- Integration tests cover async projection mode with create, update, empty-cache initial
+  population, cache hit, stale miss, and relational fallback.
+- Integration tests cover CDC projection completeness before and after the mismatch count
+  reaches zero.
+- Integration tests prove a projected higher `ContentVersion` does not hide a missing
+  lower version.
 - Integration tests cover `DocumentJson` server-metadata consistency with cache row `DocumentUuid` and
   `LastModifiedAt`.
-- Integration tests cover projection failure, retry, dead-letter, repair/requeue, and readiness impact.
+- Integration tests cover transient and persistent projection failures, fair bounded
+  in-memory retry, restart rediscovery, and mismatch-health impact.
 - Integration tests prove cache absence, projector failure, and rebuild never block API
   deletion and never require synchronous cache materialization.
-- Integration tests prove cache truncation/rebuild starts a new epoch and that projection
-  health changes remain observational.
+- Integration tests prove cache truncation/rebuild is recovered by the ordinary
+  reconciliation query and that health changes remain observational.
 - Integration tests run against PostgreSQL and SQL Server where provider support exists.
 - Runbooks document:
   - configuration modes,
-  - backfill/rebuild behavior,
-  - backfill epoch id and target content version semantics,
+  - initial population/rebuild through the ordinary reconciliation loop,
   - cache hit/miss/stale fallback semantics,
-  - retry/dead-letter handling and repair,
+  - bounded in-memory retry and fixing the underlying failure,
   - health/readiness fields,
   - cache/domain lifecycle separation,
   - the fact that CDC target binding, provider delete capture, and connector recovery
@@ -55,7 +56,7 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
 
 1. Add integration test fixtures for DocumentCache modes and provider variants.
 2. Add tests that exercise projection and read fallback end to end.
-3. Add tests that exercise failure/retry/dead-letter/repair.
+3. Add tests that exercise failure, bounded retry, restart, and automatic recovery.
 4. Add tests that exercise CDC projection-readiness transitions without changing API
    behavior.
 5. Add tests for cache rebuild and delete-path independence.

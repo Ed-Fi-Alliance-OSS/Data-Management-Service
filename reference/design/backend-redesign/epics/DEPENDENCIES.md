@@ -43,7 +43,7 @@ graph TD
   E15["E15 Runtime plan compilation + caching"]
   E16["E16 Bootstrap developer environment"]
   E17["E17 Relational CDC/Kafka streaming"]
-  E18["E18 DocumentCache projector + CDC guarantees"]
+  E18["E18 DocumentCache reconciler + CDC guarantees"]
 
   E00 --> E01 --> E02 --> E03 --> E04
 
@@ -118,7 +118,7 @@ Notes:
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
 | E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
 | E17 | [Relational CDC/Kafka Streaming](17-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks |
-| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Optional cache projection, projector/backfill/failure handling, and read-cache fallback; E17 owns authoritative delete capture |
+| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Optional cache reconciliation, mismatch-derived health, bounded in-memory retry, and read fallback; E17 owns authoritative delete capture |
 
 ---
 
@@ -129,25 +129,22 @@ DMS-1246 DocumentCache implementation epic. It does not regenerate the full depe
 
 | `17-cdc-kafka` story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-07, 18-08, 18-09 | Hard for upsert readiness | Consumes projector configuration/state, backfill, fencing, failures, and health; E17 owns `dms.Document` lifecycle capture. |
-| `17-01-cdc-ddl-support.md` | 18-01 | Soft | Uses projected table DDL; E17 owns two-table CDC/key/replica setup and provider proof. |
-| `17-02-connector-template-generation.md` | 18-01 | Soft until upsert smoke tests | Fixture-based template work can proceed before the projector is complete. |
-| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, plus 17-00 | Hard | Bootstrap registers before backfill traffic and waits for projection plus connector readiness. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-03, 18-07, 18-09 | Hard for upsert readiness | Consumes projector configuration, reconciliation, fencing, and exact completeness health; core E02 supplies source/cache DDL and E17 owns `dms.Document` lifecycle capture. |
+| `17-01-cdc-ddl-support.md` | — | No E18 dependency | Core E02 supplies `dms.DocumentCache`; E17 owns two-table CDC/key/replica setup and provider proof. |
+| `17-02-connector-template-generation.md` | — | No E18 dependency until upsert smoke tests | Fixture-based template work can proceed before the projector is complete. |
+| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-03, 18-09, plus 17-00 | Hard | Bootstrap registers before reconciliation traffic and waits for zero mismatches plus connector/source-position readiness. |
 | `17-04-message-contract-tests.md` | 18-02 | Soft | Uses realistic cache payloads; delete/filter/order tests are E17-owned. |
-| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-09, plus 17-00 through 17-04 | Hard for complete upsert coverage | Missing-cache deletes are independent of the projector. |
-| `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | CDC runbooks consume projection failure/readiness/recovery guidance. |
+| `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-09, plus 17-00 through 17-04 | Hard for complete upsert coverage | Missing-cache deletes are independent of the projector. |
+| `17-06-ops-docs-runbooks.md` | 18-03, 18-09, 18-11 | Hard for final docs | CDC runbooks consume mismatch health, bounded retry, and recovery guidance. |
 
 | `18-document-cache` story | Unblocks / informs `17-cdc-kafka` |
 | --- | --- |
 | 18-00 | Simplified `Disabled | Async` projection/read-cache configuration boundaries for 17-00 and 17-03. |
-| 18-01 | Source/state DDL for 17-00 and 17-01. |
 | 18-02 | Materialized `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for 17-04 and 17-05. |
-| 18-03 | Startup-projection-inventory lifecycle, ongoing projection, and lag semantics for 17-00, 17-05, and 17-06. |
-| 18-04 | Bounded initial backfill epoch completion signal for 17-00 and 17-03. |
+| 18-03 | One current-state reconciliation loop for initial population, ongoing projection, restart, rebuild, and retry; consumed by 17-00, 17-03, 17-05, and 17-06. |
 | 18-05 | Optional cache read behavior; no hard CDC dependency. |
 | 18-07 | Stale-write and post-delete fencing for CDC upserts. |
-| 18-08 | Projection failure/dead-letter state for 17-00, 17-03 diagnostics, and 17-06. |
-| 18-09 | Projection readiness and telemetry consumed by 17-00, 17-03, 17-05, and 17-06. |
+| 18-09 | Mismatch-derived health, zero-mismatch completeness, and telemetry consumed by 17-00, 17-03, 17-05, and 17-06. |
 | 18-11 | DocumentCache operator guidance consumed by 17-06. |
 
 ---

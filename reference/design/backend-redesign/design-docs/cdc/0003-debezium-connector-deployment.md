@@ -47,8 +47,8 @@ CDC can be enabled only after these conditions are true for the target DMS insta
 - the relational schema is provisioned and validated,
 - `dms.DocumentCache` is provisioned,
 - the asynchronous `dms.DocumentCache` projector is enabled and has the projection
-  guarantees from DMS-1246: bounded initial backfill, stale-write fencing, visible
-  health/lag, and retry/dead-letter handling (see
+  guarantees from DMS-1246: current-state reconciliation, stale-write fencing,
+  mismatch-derived health, and bounded in-memory retry (see
   [../document-cache/](../document-cache/)),
 - `dms.Document` is configured as the authoritative delete source and both captured
   tables support a `DocumentUuid` connector key,
@@ -297,7 +297,7 @@ modes must be verified against the pinned `edfialliance/ed-fi-kafka-connect` ima
 implementation time. Tests should assert the published Kafka record shape and ordering,
 not only connector JSON.
 
-## Snapshot and Backfill
+## Snapshot and Projection Reconciliation
 
 Initial connector registration should support an initial snapshot of `dms.DocumentCache`
 so existing materialized documents are published to the instance topic. The connector may
@@ -309,12 +309,13 @@ Recommended CDC enablement sequence for a new instance:
 1. Provision relational schema and `dms.DocumentCache`.
 2. Apply provider-specific database CDC/key setup and create the instance topic/ACLs.
 3. Enable the asynchronous DocumentCache projector and verify that stale-write fencing
-   and the required health/state surfaces are available.
+   and the mismatch-health surface are available.
 4. Register the connector before allowing write traffic that must be observed by CDC.
-5. Start DMS and the projector, run the bounded initial backfill, and let projector writes
-   flow through Debezium.
-6. Advertise CDC as ready only after the backfill epoch, connector snapshot/catch-up,
-   projector lag, and connector lag satisfy their readiness thresholds.
+5. Start DMS and let the ordinary reconciliation loop populate every current missing or
+   version-mismatched cache row while its guarded upserts flow through Debezium.
+6. Observe a zero projection mismatch count, then advertise CDC as ready only after the
+   connector has caught up through a database source position at or after that
+   observation and connector lag satisfies its threshold.
 
 Recommended CDC enablement sequence for an existing instance:
 
@@ -324,24 +325,21 @@ Recommended CDC enablement sequence for an existing instance:
 3. Register the connector with initial snapshot behavior before allowing write/delete
    traffic that the host expects Kafka CDC to observe. If that is not possible, quiesce
    writes/deletes until connector registration completes.
-4. Run or resume the bounded projector backfill epoch until every still-current
-   `dms.Document` row at or below the epoch's captured `BackfillTargetContentVersion`
-   has a fresh `dms.DocumentCache` row.
-5. Monitor until connector snapshot/catch-up, connector lag, projector lag above the
-   completed backfill target, and backfill status reach acceptable thresholds, and only
-   then advertise CDC as ready.
-   The completed backfill epoch id and target content version are the readiness cutover
-   marker for this bootstrap.
+4. Run the ordinary projector reconciliation loop until the exact current mismatch count
+   is zero. Do not infer completeness from a maximum scanned or projected version.
+5. Record a connector/source position at or after the zero-mismatch observation. Monitor
+   until connector snapshot/catch-up reaches that position and connector lag is within
+   threshold, and only then advertise CDC as ready.
 
 DMS-1246 owns the projector-side details that make this safe (see
 [../document-cache/](../document-cache/)), especially:
 
-- backfill must not write an older `contentVersion` after a newer one for the same
+- reconciliation must not write an older `contentVersion` after a newer one for the same
   `documentUuid`,
-- older queued projection work must not recreate a cache row after canonical
+- a stale materialization candidate must not recreate a cache row after canonical
   `dms.Document` deletion,
-- projector failures must be visible through health, metrics, and retry/dead-letter
-  signals.
+- current failures remain visible through mismatch count/age, structured logs, and
+  bounded retry metrics.
 
 Canonical deletes are captured independently from `dms.Document` and remain valid while
 the cache is missing, stale, rebuilding, or unhealthy. No projector-side pre-delete
@@ -360,9 +358,8 @@ Recommended local behavior:
 - `-EnableKafkaUI` starts Kafka UI only.
 - `-EnableKafkaCdc` starts Kafka and Kafka Connect if needed, verifies that both captured
   tables, key/replica setup, `dms.DocumentCache`, and projector guarantees are
-  provisioned, registers the instance connector before backfill/test writes, waits for
-  backfill and connector
-  catch-up readiness, and prints the target topic.
+  provisioned, registers the instance connector before reconciliation/test writes, waits
+  for zero projection mismatches and connector catch-up, and prints the target topic.
 - E2E setup that opts into CDC registers the connector after database provisioning and
   before the test writes it expects to observe.
 - The quarantined KafkaMessaging scenarios should be replaced or updated to assert:
@@ -459,8 +456,8 @@ DMS-1245 should next define the implementation epic and stories for relational C
 
 - DDL changes for two-table CDC capture, `DocumentUuid` keys, and PostgreSQL
   `dms.Document` replica identity,
-- CDC readiness checks for `DocumentCache` backfill/projector health and authoritative
-  `dms.Document` delete capture,
+- CDC readiness checks for `DocumentCache` mismatch-derived completeness/health and
+  authoritative `dms.Document` delete capture,
 - connector template generation for PostgreSQL and SQL Server,
 - bootstrap `-EnableKafkaCdc` behavior,
 - E2E Kafka scenario replacement,

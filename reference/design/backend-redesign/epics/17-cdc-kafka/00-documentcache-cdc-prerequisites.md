@@ -26,18 +26,18 @@ API deletion because domain lifecycle comes from `dms.Document`.
 - CDC applies only to an explicit deployment-configured target list keyed by
   `(tenant key, DataStoreId)`.
 - Registration prerequisites verify, per target:
-  - `dms.DocumentCache`, `dms.Document`, and projector state objects exist,
+  - `dms.DocumentCache` and `dms.Document` exist,
   - asynchronous projection and stale-write fencing are enabled,
   - provider-specific CDC setup captures exactly both tables,
   - `DocumentUuid` key setup is valid for both tables,
   - PostgreSQL `dms.Document` replica identity is valid for non-primary-key delete capture,
   - the source-aware operation filter/tombstone transform is installed,
   - no other configured target resolves to the same physical database.
-- Registration may occur before initial DocumentCache backfill. CDC is not advertised as
-  ready until the bounded backfill epoch is complete, unresolved current projection
-  failures are absent, projection lag is within threshold, and the connector has
-  snapshotted/caught up.
-- Readiness exposes the completed backfill epoch id and target content version as the
+- Registration occurs before reconciliation writes that must be observed. CDC is not
+  advertised as ready until the exact current projection mismatch count is zero and the
+  connector has snapshotted/caught up through a source position at or after that
+  observation.
+- Readiness does not use a backfill epoch or maximum projected `ContentVersion` as an
   upsert cutover marker.
 - Readiness is keyed by `(tenant key, DataStoreId)` and evaluated from explicit execution
   context rather than HTTP route/JWT selection.
@@ -47,8 +47,8 @@ API deletion because domain lifecycle comes from `dms.Document`.
   drift.
 - Duplicate or semantically equivalent physical database targets are rejected without
   logging credentials or unsanitized physical identifiers.
-- Diagnostics distinguish missing tables, projector disabled/unhealthy, incomplete
-  backfill, projection lag/failures, invalid key/replica setup, missing operation filter,
+- Diagnostics distinguish missing tables, projector disabled/unhealthy, nonzero
+  mismatch count/age, invalid key/replica setup, missing operation filter,
   unsupported provider, missing configured target, retryable source-identity resolution,
   and confirmed source drift.
 - API correctness, authorization, routing, GET/query, Change Queries, and all mutations
@@ -65,7 +65,8 @@ API deletion because domain lifecycle comes from `dms.Document`.
 3. Add provider-specific physical database identity resolution and conflict tests.
 4. Validate two-table capture, `DocumentUuid` keys, PostgreSQL replica identity, and
    source-operation filtering before registration.
-5. Consume DMS-1246's projector/backfill/failure health for the upsert-readiness portion.
+5. Consume DMS-1246's mismatch-derived projection health/completeness for the
+   upsert-readiness portion.
 6. Add post-start configured-target/source-binding diagnostics without changing routing.
 7. Add tests that non-CDC startup remains valid without `dms.DocumentCache`.
 8. Add tests proving cache failure does not block API deletion.
