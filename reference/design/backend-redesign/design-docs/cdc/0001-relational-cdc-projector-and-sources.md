@@ -39,10 +39,15 @@ metadata; `ComputedAt` remains operational metadata. Neither is another freshnes
 Frequent candidate discovery uses a disposable process-local content-version cursor;
 periodic full source/cache anti-join audits remain the only completeness proof.
 
-All cache writes are fenced by existence of the current `dms.Document` row and equality
-with the captured `ContentVersion`. This prevents an older result from replacing a newer
-row or recreating cache state after canonical deletion. The same guard supports ordinary
-reconciliation and optional direct fill after relational read fallback.
+All cache writes use a strong commit-order fence: after materialization, a short
+single-document transaction locks the current `dms.Document` row with a lock that
+conflicts with canonical version updates, verifies equality with the captured
+`ContentVersion` on the locked current row, and retains that lock through the monotonic
+cache upsert and commit. This prevents an older result from committing after a newer
+canonical version, replacing a newer cache row, or recreating cache state after canonical
+deletion. The same guard supports ordinary reconciliation and optional direct fill after
+relational read fallback. The authoritative design specifies the PostgreSQL and SQL
+Server locking semantics.
 
 Initial population, restart, rebuild, and readiness require a full audit. Steady-state
 catch-up normally uses the incremental cursor and the required
@@ -89,6 +94,10 @@ guarded idempotent upsert makes duplicate projectors and restart rediscovery saf
   to use relational sources.
 - Reads may use only fresh cache rows and always retain relational fallback.
 - Projection lag and failure are observable but never gate normal API traffic.
+- Guarded writes add one short per-document source-row lock after materialization.
+  Different documents remain concurrent; a hot canonical writer or duplicate projector
+  may wait through only the guarded cache upsert and commit. V1 does not hold source-row
+  locks during materialization or across a batch of candidates.
 - Ordinary updates use indexed incremental discovery; full relationship scans are
   reserved for startup, rebuild, periodic audit, and readiness verification.
 - Cache truncate/rebuild emits no domain tombstones; an intentional topic rebuild uses
@@ -115,6 +124,7 @@ guarded idempotent upsert makes duplicate projectors and restart rediscovery saf
 | Use the full mismatch anti-join for every steady-state poll | Rejected: it makes ordinary high-version update discovery scale with the complete document set. |
 | Build JSON in database triggers | Rejected: it duplicates application reconstitution and increases provider-specific logic. |
 | Require synchronous read-through population | Rejected for correctness; direct fill remains an optional guarded optimization. |
+| Allow a stale materialization to commit when only the cache version is monotonic | Rejected: read freshness and reconciliation would preserve API correctness, but CDC could capture an old cache upsert after a newer canonical version commits, contradicting the selected stale-write fence. |
 | Use the incremental cursor, a high-watermark, `ComputedAt`, or `LastModifiedAt` as completeness evidence | Rejected: none proves that every current document is projected at its current representation version. |
 | Store retry state on the cache row | Rejected: missing rows have nowhere to store it and operational fields would enter the captured row contract. |
 | Fail normal reads when projection is unhealthy | Rejected: relational fallback preserves API correctness. |

@@ -216,7 +216,7 @@ For each candidate from either lane, the projector:
 
 1. Captures `(DocumentId, ContentVersion)` and the source metadata needed by the
    materializer.
-2. Reconstitutes the caller-agnostic cached document.
+2. Reconstitutes the caller-agnostic cached document without holding a source-row lock.
 3. Validates the embedded/relational metadata invariant.
 4. Performs the shared guarded cache upsert.
 
@@ -229,11 +229,53 @@ are continuously successful. On startup the projector establishes its process-lo
 cursor from the maximum current source key observed at or after the required finishing
 audit; restart may repeat work but cannot lose it.
 
-The database guard writes only when the source `dms.Document` still exists at the
-captured `ContentVersion`. A stale materialization no-ops and is rediscovered at its
-current version; a deleted document cannot be recreated; and a lower version cannot
-overwrite a higher cache version. Reconciliation and optional direct fill after a
-relational read use the same guard.
+The database guard is a strong commit-order fence, not only a conditional read from an
+MVCC snapshot. It writes only when the source `dms.Document` still exists at the captured
+`ContentVersion`, and it prevents that source row from changing until the cache write
+commits. A stale materialization no-ops and is rediscovered at its current version; a
+deleted document cannot be recreated; and a lower version cannot overwrite a higher
+cache version. Reconciliation and optional direct fill after a relational read use the
+same guard.
+
+Materialization and invariant validation finish before the guard transaction begins. V1
+then performs one candidate per short transaction:
+
+1. Acquire a write-conflicting lock on the current `dms.Document` row identified by
+   `DocumentId`, and evaluate `ContentVersion == captured ContentVersion` against the row
+   obtained after any concurrent writer finishes.
+2. If the row is missing or its version differs, make no cache write and report a stale
+   skip.
+3. While retaining the source-row lock, insert the cache row when absent or replace it
+   only when the existing cache version is lower than the captured version. A duplicate
+   same-version result is already fresh and does not need another captured update.
+4. Commit the cache write and release the source-row lock together.
+
+This transaction is the linearization boundary. If the projector acquires the source-row
+lock first, its cache write commits before a later canonical update can advance the
+version. If the canonical writer acquires the lock first, the projector observes the new
+version after waiting and skips its stale result. The `DocumentCache(DocumentId)` foreign
+key remains the delete fence, but its referential lock is not the content-version fence.
+
+The provider contract is:
+
+- PostgreSQL uses `READ COMMITTED` and a keyed `SELECT ... FOR NO KEY UPDATE` (or a
+  strictly stronger equivalent) with both `DocumentId` and captured `ContentVersion` in
+  the predicate. PostgreSQL re-evaluates that locking predicate after a concurrent row
+  update completes. `FOR NO KEY UPDATE` conflicts with the ordinary non-key update that
+  advances `ContentVersion` without unnecessarily blocking `FOR KEY SHARE` checks. A
+  plain conditional `INSERT ... SELECT` and the foreign-key check alone are insufficient.
+- SQL Server runs the guard transaction at `READ COMMITTED`, whether or not
+  `READ_COMMITTED_SNAPSHOT` is enabled, and uses a keyed locking read with `UPDLOCK` (or a
+  strictly stronger equivalent). It evaluates the captured version on the locked current
+  row and retains the update lock through the cache upsert and transaction completion. It
+  must not use a row-versioned source read as the fence.
+
+Deadlock, serialization, and bounded lock-timeout outcomes produce no cache write. The
+projector handles them through its existing retry/backoff path. Optional direct fill uses
+a short bounded lock wait and abandons the fill on contention without affecting the
+relational response. Guard transactions do not span candidates or materialization;
+future batching requires a separate measured design with stable lock ordering and proven
+lock-escalation and tail-latency bounds.
 
 There are no projection queues, enqueue APIs, persisted cursors, backfill epochs,
 projector-state rows, failure rows, retry classifications, dead-letter transitions,
@@ -568,6 +610,7 @@ Structured logs and metrics cover:
 - projection attempts, successes, and failures,
 - retry deferrals and backoff duration,
 - guarded stale-write skips,
+- guard lock-wait duration, timeout, deadlock, and serialization-retry counts,
 - mismatch count and oldest mismatch age,
 - cache hits, misses, stale misses, and relational fallback,
 - connector running state, lag, last error, and snapshot completion,
@@ -582,10 +625,11 @@ Operator status identifies connector, provider/source, topic, PostgreSQL slot or
 Server capture instance, snapshot state, lag, and last error. A failure for one target
 does not conceal peer status or stop unrelated DMS API instances.
 
-Runbooks cover connector restart, cache rebuild, offset reset, resnapshot, topic
-recreation, target migration/retirement, and provider artifact cleanup. Offset reset and
-resnapshot can replay current document state. Topic/offset/ACL/slot/capture deletion is
-destructive and always explicit; removal from configuration is not cleanup authority.
+Runbooks cover connector restart, cache rebuild, guard-lock contention and timeout
+diagnosis, offset reset, resnapshot, topic recreation, target migration/retirement, and
+provider artifact cleanup. Offset reset and resnapshot can replay current document state.
+Topic/offset/ACL/slot/capture deletion is destructive and always explicit; removal from
+configuration is not cleanup authority.
 
 ## Verification
 
@@ -610,6 +654,12 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - cache delete/truncate/rebuild emits no domain tombstone,
 - a cache upsert committed before canonical deletion appears before its tombstone for
   that key in the routed public topic,
+- when a canonical update wins the source-row lock, a projector that captured the prior
+  version observes the new version after waiting and commits no cache row,
+- when the projector wins the source-row lock, its cache write commits before the
+  canonical update advances `ContentVersion`, and the resulting mismatch is repaired,
+- a foreign-key check or conditional MVCC source read without the provider locking guard
+  is not treated as sufficient stale-write fencing,
 - projection selection, empty-cache population, update, restart, retry, rebuild,
   fencing, health, cache fallback, and mixed-target isolation,
 - ordinary high-version updates are discovered through the incremental lane without a
@@ -621,6 +671,13 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   in-memory retry,
 - a higher projected `ContentVersion` cannot hide a missing lower current version,
 - projection or connector failure never blocks normal API deletion.
+
+Performance qualification compares projector-disabled and projector-enabled source-write
+throughput and p95/p99 latency for uniformly distributed writes, a deliberately hot
+single document, duplicate projector replicas, and optional direct fill. Rebuild tests
+also measure PostgreSQL WAL/page-write amplification from source-row locking and SQL
+Server lock waits or escalation. The lock is never held during materialization, and V1
+does not batch multiple guarded candidates into one transaction.
 
 The quarantined KafkaMessaging scenarios are replaced only after the relational scenarios
 pass consistently. SQL Server ordering requires a real connector and routed Kafka topic;

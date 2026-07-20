@@ -20,14 +20,16 @@ authorization, candidate selection, fallback, and response shaping.
 
 ## Dependencies
 
-- Depends on 18-00 and 18-02; it remains correct while 18-03 is disabled or behind.
+- Depends on 18-00 and 18-02; optional direct fill additionally depends on 18-07. The
+  read path remains correct while 18-03 is disabled or behind.
 
 ## Deliverables
 
 1. Integrate optional cache lookup and the canonical freshness test into the read path.
 2. Ignore the cache row's CDC-only `StreamEtag` and reuse existing profile, link, and
    request-specific `_etag` shaping after cache or relational assembly.
-3. Add relational fallback and an optional guarded direct fill.
+3. Add relational fallback and an optional guarded direct fill. Direct fill uses 18-07's
+   short bounded lock wait and is abandoned on contention without affecting the response.
 4. Emit cache hit, miss, stale miss, and fallback telemetry.
 
 ## Acceptance Evidence
@@ -38,6 +40,8 @@ authorization, candidate selection, fallback, and response shaping.
   candidate selection.
 - Tests prove reads do not enqueue projector work and remain correct if direct fill
   fails.
+- Tests prove direct-fill lock contention or timeout does not delay beyond its bounded
+  wait or fail the relational response.
 
 ## Out of Scope
 
