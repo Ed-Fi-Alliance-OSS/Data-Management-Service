@@ -1553,6 +1553,28 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
+    public void It_should_gate_the_non_root_child_collection_stamp_on_a_null_safe_value_diff_not_update_of_column()
+    {
+        // DMS-1127: pins the "never UPDATE(column)" invariant on the non-root child-collection stamp
+        // path — the path a mutable parent-identity rename actually cascades through into a child
+        // binding. The attached-Resource key-change path is already pinned by
+        // It_should_capture_identity_changed_docs_and_not_gate_on_update_function, and the immutable
+        // ConcreteAbstract identity-stamp path deliberately requires UPDATE(column) in
+        // It_should_emit_tombstone_but_no_key_change; this closes the third path at the unit layer.
+        // SchoolAddress is a child collection of the (immutable) School, so it exercises the
+        // child-collection stamp path structurally: the change is detected by a null-safe stored-value
+        // diff (CAST(...) <> CAST(...) with explicit IS NULL / IS NOT NULL handling), never by an
+        // UPDATE(column) probe. The mutable-cascade behavior itself is proven end-to-end by the
+        // integration tests (ClassPeriod -> BellSchedule); this is the DB-free structural backstop.
+        var childStampTriggerBody = GetStampTriggerBody("SchoolAddress");
+
+        childStampTriggerBody.Should().NotContain("UPDATE(");
+        childStampTriggerBody.Should().Contain("AS varbinary(max)) <> CAST(");
+        childStampTriggerBody.Should().Contain(" IS NULL AND ");
+        childStampTriggerBody.Should().Contain(" IS NOT NULL");
+    }
+
+    [Test]
     public void It_should_filter_no_op_updates_by_comparing_stored_row_values()
     {
         _ddl.Should()

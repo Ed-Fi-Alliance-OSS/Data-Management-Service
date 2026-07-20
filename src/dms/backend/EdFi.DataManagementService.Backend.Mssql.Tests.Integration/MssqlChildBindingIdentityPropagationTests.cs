@@ -375,6 +375,233 @@ public class MssqlChildBindingIdentityPropagationTests
             );
     }
 
+    [Test]
+    public async Task Updating_ClassPeriod_identity_within_a_held_transaction_stamps_atomically_before_commit_and_rolls_back_cleanly()
+    {
+        // Same-transaction atomicity (genuine pre-commit observation, no rollback-only fallback): the
+        // cascade, the owning-root/upstream stamps, both root-table mirrors, and the ClassPeriod
+        // key-change row must all be observable on the same connection BEFORE commit, and a ROLLBACK
+        // must restore every baseline (sequence values excepted — allocation is non-transactional).
+        const int SchoolId = 100;
+        const string OldClassPeriodName = "Period 1";
+        const string NewClassPeriodName = "Period 1A";
+        const string BellScheduleName = "BS1";
+
+        var schoolDocumentId = await InsertSchoolDocumentAsync(SchoolId);
+        var classPeriodDocumentId = await InsertClassPeriodAsync(
+            schoolDocumentId,
+            SchoolId,
+            OldClassPeriodName
+        );
+        var bellScheduleDocumentId = await InsertBellScheduleAsync(
+            schoolDocumentId,
+            SchoolId,
+            BellScheduleName
+        );
+        await InsertBellScheduleClassPeriodAsync(
+            bellScheduleDocumentId,
+            ordinal: 1,
+            classPeriodDocumentId: classPeriodDocumentId,
+            classPeriodName: OldClassPeriodName,
+            classPeriodSchoolId: SchoolId
+        );
+
+        var classPeriodDocumentUuid = await QueryDocumentUuidAsync(classPeriodDocumentId);
+        var bellScheduleDocumentUuid = await QueryDocumentUuidAsync(bellScheduleDocumentId);
+
+        // Committed baselines (each read opens a fresh connection).
+        var baselineClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var baselineBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
+        var baselineClassPeriodMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "ClassPeriod",
+            classPeriodDocumentId
+        );
+        var baselineBellScheduleMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "BellSchedule",
+            bellScheduleDocumentId
+        );
+        var baselineClassPeriodKeyChanges = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+        var baselineBellScheduleKeyChanges = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "BellSchedule",
+            bellScheduleDocumentUuid
+        );
+
+        // Distinct-timestamp gap so the in-transaction sysutcdatetime() stamps are strictly later.
+        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        // await using guarantees ROLLBACK + disposal even if an assertion throws (an uncommitted
+        // SqlTransaction rolls back on dispose), so an assertion failure cannot leave an open transaction.
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        // Act — rename the upstream ClassPeriod identity inside the held transaction.
+        await ExecuteNonQueryInTransactionAsync(
+            connection,
+            transaction,
+            """
+            UPDATE [edfi].[ClassPeriod]
+            SET [ClassPeriodName] = @newName
+            WHERE [DocumentId] = @classPeriodDocumentId;
+            """,
+            new SqlParameter("@newName", NewClassPeriodName),
+            new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId)
+        );
+
+        // Pre-commit, on the held connection: the source identity changed and the child binding cascaded.
+        (
+            await ExecuteScalarStringInTransactionAsync(
+                connection,
+                transaction,
+                "SELECT [ClassPeriodName] FROM [edfi].[ClassPeriod] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", classPeriodDocumentId)
+            )
+        )
+            .Should()
+            .Be(NewClassPeriodName);
+        (
+            await ExecuteScalarStringInTransactionAsync(
+                connection,
+                transaction,
+                "SELECT [ClassPeriod_ClassPeriodName] FROM [edfi].[BellScheduleClassPeriod] WHERE [BellSchedule_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", bellScheduleDocumentId)
+            )
+        )
+            .Should()
+            .Be(NewClassPeriodName);
+
+        var pendingClassPeriod = await GetDocumentStampStateInTransactionAsync(
+            connection,
+            transaction,
+            classPeriodDocumentId
+        );
+        var pendingBellSchedule = await GetDocumentStampStateInTransactionAsync(
+            connection,
+            transaction,
+            bellScheduleDocumentId
+        );
+        var pendingClassPeriodMirror = await GetRootMirrorStampStateInTransactionAsync(
+            connection,
+            transaction,
+            "edfi",
+            "ClassPeriod",
+            classPeriodDocumentId
+        );
+        var pendingBellScheduleMirror = await GetRootMirrorStampStateInTransactionAsync(
+            connection,
+            transaction,
+            "edfi",
+            "BellSchedule",
+            bellScheduleDocumentId
+        );
+
+        // Upstream ClassPeriod: all four stamps advance; mirror tracks the document.
+        pendingClassPeriod.ContentVersion.Should().BeGreaterThan(baselineClassPeriod.ContentVersion);
+        pendingClassPeriod.ContentLastModifiedAt.Should().BeAfter(baselineClassPeriod.ContentLastModifiedAt);
+        pendingClassPeriod.IdentityVersion.Should().BeGreaterThan(baselineClassPeriod.IdentityVersion);
+        pendingClassPeriod
+            .IdentityLastModifiedAt.Should()
+            .BeAfter(baselineClassPeriod.IdentityLastModifiedAt);
+        AssertMirrorContentMatchesDocument(pendingClassPeriodMirror, pendingClassPeriod);
+
+        // Owning root BellSchedule: content stamps advance, identity stamps frozen, mirror tracks.
+        pendingBellSchedule.ContentVersion.Should().BeGreaterThan(baselineBellSchedule.ContentVersion);
+        pendingBellSchedule
+            .ContentLastModifiedAt.Should()
+            .BeAfter(baselineBellSchedule.ContentLastModifiedAt);
+        pendingBellSchedule.IdentityVersion.Should().Be(baselineBellSchedule.IdentityVersion);
+        pendingBellSchedule.IdentityLastModifiedAt.Should().Be(baselineBellSchedule.IdentityLastModifiedAt);
+        AssertMirrorContentMatchesDocument(pendingBellScheduleMirror, pendingBellSchedule);
+
+        // ClassPeriod key-change delta is exactly one, with the full composite identity and three-way linkage.
+        (
+            await CountTrackedChangeRowsInTransactionAsync(
+                connection,
+                transaction,
+                "tracked_changes_edfi",
+                "ClassPeriod",
+                classPeriodDocumentUuid
+            )
+        )
+            .Should()
+            .Be(baselineClassPeriodKeyChanges + 1);
+        var pendingKeyChange = await GetLatestTrackedChangeRowInTransactionAsync(
+            connection,
+            transaction,
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+        Convert
+            .ToString(pendingKeyChange["OldClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(OldClassPeriodName);
+        Convert
+            .ToString(pendingKeyChange["NewClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(NewClassPeriodName);
+        Convert
+            .ToInt64(pendingKeyChange["OldSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        Convert
+            .ToInt64(pendingKeyChange["NewSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        Convert
+            .ToInt64(pendingKeyChange["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(pendingClassPeriod.ContentVersion);
+        pendingClassPeriodMirror.ContentVersion.Should().Be(pendingClassPeriod.ContentVersion);
+
+        // Owning root BellSchedule emits no key-change row (its identity did not change).
+        (
+            await CountTrackedChangeRowsInTransactionAsync(
+                connection,
+                transaction,
+                "tracked_changes_edfi",
+                "BellSchedule",
+                bellScheduleDocumentUuid
+            )
+        )
+            .Should()
+            .Be(baselineBellScheduleKeyChanges);
+
+        await transaction.RollbackAsync();
+
+        // After ROLLBACK, every source/binding/document/mirror/tracked-change baseline is restored
+        // (verified through fresh connections). Sequence values are intentionally NOT asserted to roll back.
+        (await QueryClassPeriodNameAsync(classPeriodDocumentId))
+            .Should()
+            .Be(OldClassPeriodName);
+        var restoredChildRow = await QuerySingleBellScheduleClassPeriodAsync(bellScheduleDocumentId);
+        Convert
+            .ToString(restoredChildRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(OldClassPeriodName);
+        (await GetDocumentStampStateAsync(classPeriodDocumentId)).Should().Be(baselineClassPeriod);
+        (await GetDocumentStampStateAsync(bellScheduleDocumentId)).Should().Be(baselineBellSchedule);
+        (await GetRootMirrorStampStateAsync("edfi", "ClassPeriod", classPeriodDocumentId))
+            .Should()
+            .Be(baselineClassPeriodMirror);
+        (await GetRootMirrorStampStateAsync("edfi", "BellSchedule", bellScheduleDocumentId))
+            .Should()
+            .Be(baselineBellScheduleMirror);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "ClassPeriod", classPeriodDocumentUuid))
+            .Should()
+            .Be(baselineClassPeriodKeyChanges);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "BellSchedule", bellScheduleDocumentUuid))
+            .Should()
+            .Be(baselineBellScheduleKeyChanges);
+    }
+
     private async Task<long> InsertSchoolDocumentAsync(int schoolId)
     {
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
@@ -871,5 +1098,204 @@ public class MssqlChildBindingIdentityPropagationTests
                 $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
             ),
         };
+    }
+
+    private async Task<string?> QueryClassPeriodNameAsync(long classPeriodDocumentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT [ClassPeriodName]
+            FROM [edfi].[ClassPeriod]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", classPeriodDocumentId)
+        );
+
+        return Convert.ToString(rows.Single()["ClassPeriodName"], CultureInfo.InvariantCulture);
+    }
+
+    // The pooled QueryRowsAsync/ExecuteScalarAsync helpers open a fresh connection per call and cannot
+    // observe uncommitted state, so pre-commit reads issue transaction-bound commands on the held
+    // connection/transaction.
+    private static async Task ExecuteNonQueryInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string?> ExecuteScalarStringInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+        var result = await command.ExecuteScalarAsync();
+        return result is null or DBNull ? null : Convert.ToString(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<long> CountRowsInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<
+        IReadOnlyList<IReadOnlyDictionary<string, object?>>
+    > QueryRowsInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+
+        List<IReadOnlyDictionary<string, object?>> rows = [];
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            Dictionary<string, object?> row = new(StringComparer.Ordinal);
+            for (var ordinal = 0; ordinal < reader.FieldCount; ordinal++)
+            {
+                row[reader.GetName(ordinal)] = await reader.IsDBNullAsync(ordinal)
+                    ? null
+                    : reader.GetValue(ordinal);
+            }
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
+    private static async Task<DocumentStampState> GetDocumentStampStateInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long documentId
+    )
+    {
+        var row = (
+            await QueryRowsInTransactionAsync(
+                connection,
+                transaction,
+                """
+                SELECT
+                    [ContentVersion],
+                    [IdentityVersion],
+                    [ContentLastModifiedAt],
+                    [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            ReadDateTimeOffset(row["IdentityLastModifiedAt"])
+        );
+    }
+
+    private static async Task<DocumentStampState> GetRootMirrorStampStateInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string schemaName,
+        string tableName,
+        long documentId
+    )
+    {
+        var row = (
+            await QueryRowsInTransactionAsync(
+                connection,
+                transaction,
+                $"""
+                SELECT
+                    [ContentVersion],
+                    [ContentLastModifiedAt]
+                FROM [{schemaName}].[{tableName}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            IdentityVersion: 0,
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+        );
+    }
+
+    private static async Task<long> CountTrackedChangeRowsInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        return await CountRowsInTransactionAsync(
+            connection,
+            transaction,
+            $"""
+            SELECT COUNT(*)
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+    }
+
+    private static async Task<
+        IReadOnlyDictionary<string, object?>
+    > GetLatestTrackedChangeRowInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        var rows = await QueryRowsInTransactionAsync(
+            connection,
+            transaction,
+            $"""
+            SELECT TOP (1) *
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid
+            ORDER BY [ChangeVersion] DESC;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+
+        return rows.Single();
     }
 }
