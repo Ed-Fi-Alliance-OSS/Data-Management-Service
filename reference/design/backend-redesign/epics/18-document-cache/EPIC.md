@@ -93,7 +93,7 @@ remain excluded; delete capture belongs to `17-cdc-kafka` and uses `dms.Document
 - A hosted supervisor runs isolated reconciliation loops for the startup projection
   inventory without request-scoped routing dependence.
 - One loop per data store handles empty-cache population, ongoing writes, restart,
-  rebuild, and retries by repeatedly querying current missing/version-or-stamp-mismatched
+  rebuild, and retries by repeatedly querying current missing/version-mismatched
   rows.
 - Current mismatch count and oldest mismatch age are observable per data store; zero
   mismatches is the projection-completeness signal for CDC.

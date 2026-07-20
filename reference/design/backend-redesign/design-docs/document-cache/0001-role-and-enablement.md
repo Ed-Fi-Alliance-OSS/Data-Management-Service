@@ -115,7 +115,8 @@ Readable-profile projection and `DataManagement:ResourceLinks:Enabled` stripping
 after cache retrieval. They do not create separate cache rows.
 
 The cache row also stores `DocumentUuid`, `ContentVersion`, and `LastModifiedAt` as
-relational columns for freshness checks, diagnostics, indexing, and CDC metadata.
+relational columns. `ContentVersion` is the sole freshness stamp; the other values are
+payload metadata used for diagnostics, indexing, and CDC.
 `DocumentUuid` and `LastModifiedAt` must match the corresponding values embedded in
 `DocumentJson`.
 

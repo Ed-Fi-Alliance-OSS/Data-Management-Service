@@ -33,11 +33,13 @@ over the current source and cache rows to report at least:
   `dms.Document.ContentLastModifiedAt`,
 - optional counts by project/resource where operationally safe.
 
-A same-version `LastModifiedAt` disagreement is reported as an integrity mismatch and is
-included in the total. Health must also report projector mode, whether
-`dms.DocumentCache` exists, and whether the in-process loop is running. Process-local
-telemetry may report the last scan time and duration, last successful upsert, and last
-observed error, but those values are diagnostic and do not prove database completeness.
+Freshness and mismatch counts compare `ContentVersion` alone. `LastModifiedAt` remains
+payload metadata and may supply the source timestamp used for mismatch-age diagnostics;
+it is not a second completeness condition. Health must also report projector mode,
+whether `dms.DocumentCache` exists, and whether the in-process loop is running.
+Process-local telemetry may report the last scan time and duration, last successful
+upsert, and last observed error, but those values are diagnostic and do not prove
+database completeness.
 
 The mismatch query is authoritative. `LastScannedContentVersion`,
 `LastProjectedContentVersion`, and a last-success timestamp must not be used as

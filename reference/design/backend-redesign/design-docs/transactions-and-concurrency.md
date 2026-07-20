@@ -544,10 +544,12 @@ Correctness must not depend on this table:
 ### Freshness contract (recommended)
 
 When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare cached `ContentVersion` / `LastModifiedAt` to the current
-  `dms.Document.ContentVersion` / `ContentLastModifiedAt`,
+- compare cached `ContentVersion` to the current `dms.Document.ContentVersion`,
 - if mismatched (or missing), fall back to relational reconstitution; the background
   reconciliation query rediscovers the row without an enqueue API.
+
+`ContentVersion` is the sole monotonic freshness stamp. Cached `LastModifiedAt` remains
+payload metadata and is not a second freshness comparison.
 
 ### Rebuild/invalidation triggers (eventual consistency)
 
@@ -558,14 +560,14 @@ referrers, without reverse dependency expansion at the projector layer.
 
 A minimal reconciliation approach:
 
-1. Query current `dms.Document` rows whose cache row is missing, has another
-   `ContentVersion`, or violates the paired `LastModifiedAt` invariant, in bounded
-   `ContentVersion, DocumentId` batches.
+1. Query current `dms.Document` rows whose cache row is missing or has another
+   `ContentVersion`, in bounded `ContentVersion, DocumentId` batches.
 2. Reconstitute each candidate and use a guarded upsert only if the source still exists
    at the captured version.
-3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` and `LastModifiedAt`
-   to enforce the freshness contract above; `_etag` is composed per request from
-   `ContentVersion` + `variantKey` and is not stored in the cache.
+3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the
+   freshness contract above. Store `LastModifiedAt` as payload metadata; `_etag` is
+   composed per request from `ContentVersion` + `variantKey` and is not stored in the
+   cache.
 4. Repeat the mismatch query for initial population, ongoing writes, restart, rebuild,
    and retry. Fence writes so a lower `ContentVersion` cannot overwrite a newer cache
    row or recreate one after the document has been deleted.

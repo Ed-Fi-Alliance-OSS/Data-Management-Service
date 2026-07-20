@@ -27,9 +27,9 @@ GET/query behavior because DMS can always fall back to relational reconstitution
 ## Acceptance Criteria
 
 - Read acceleration is used only when `ReadAcceleration:Enabled = true`.
-- A cache row is usable only when:
-  - `DocumentCache.ContentVersion == Document.ContentVersion`,
-  - `DocumentCache.LastModifiedAt == Document.ContentLastModifiedAt`.
+- A cache row is usable only when
+  `DocumentCache.ContentVersion == Document.ContentVersion`.
+- `LastModifiedAt` remains payload metadata and is not a second freshness input.
 - Missing or stale cache rows fall back to relational reconstitution.
 - Authorization and query candidate selection are evaluated against relational sources before cached JSON is
   used for response-body assembly.

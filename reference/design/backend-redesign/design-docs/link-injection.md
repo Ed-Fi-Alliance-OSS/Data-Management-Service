@@ -376,8 +376,9 @@ Cache freshness follows the resource-state stamp:
 
 ```
 cached ContentVersion == dms.Document.ContentVersion
-AND cached LastModifiedAt == dms.Document.ContentLastModifiedAt
 ```
+
+Cached `LastModifiedAt` remains payload metadata and is not a second freshness input.
 
 Cached hrefs are bound to `EffectiveSchemaHash`: any change to a `projectEndpointName` or
 `resourceNameMapping` entry shifts the hash, and the DDL-generator preflight refuses a mismatched

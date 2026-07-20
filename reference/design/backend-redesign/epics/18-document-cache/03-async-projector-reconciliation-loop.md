@@ -42,8 +42,8 @@ API or persisted projector workflow state is introduced.
 - Each loop selects bounded batches from its own database where:
   - `dms.DocumentCache` is absent for the `DocumentId`, or
   - cached `ContentVersion` differs from current `dms.Document.ContentVersion`.
-- A same-version `LastModifiedAt` disagreement is detected and repaired through the same
-  loop as an integrity mismatch.
+- `ContentVersion` is the sole freshness key. `LastModifiedAt` remains payload metadata
+  and is not a reconciliation candidate condition.
 - The loop materializes candidates through the shared materialization service and writes
   only through the guarded cache upsert.
 - Metadata-invariant failures do not produce cache rows and emit sanitized structured

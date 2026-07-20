@@ -60,14 +60,14 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 
 ## Core concepts
 
-### Representation stamps (served metadata)
+### Representation tracking metadata
 
-Each persisted document maintains a **representation stamp** on `dms.Document`:
+Each persisted document maintains representation-tracking metadata on `dms.Document`:
 
-- `ContentVersion` (`bigint`, globally monotonic)
-- `ContentLastModifiedAt` (UTC timestamp)
+- `ContentVersion` (`bigint`, globally monotonic), the representation stamp
+- `ContentLastModifiedAt` (UTC timestamp), payload metadata served as `_lastModifiedDate`
 
-Note: `dms.Document` also carries non-stamp metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Stamping rules defined in this document are unchanged by those additional columns.
+Note: `dms.Document` also carries metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Update-tracking rules defined in this document are unchanged by those additional columns.
 
 These are the source of truth for:
 
@@ -89,7 +89,7 @@ These are updated only when the document’s own identity/URI projection changes
 
 ### Global sequence
 
-All stamps are allocated from a single global sequence:
+All version stamps are allocated from a single global sequence:
 
 - PostgreSQL: `nextval('dms.ChangeVersionSequence')`
 - SQL Server: `NEXT VALUE FOR dms.ChangeVersionSequence`
@@ -180,8 +180,9 @@ For a document `P`:
     hydrate-materialize-hash readback of the document that this design eliminates.
 
 This design does not compute `_etag` from the document body or from dependency scans at read time.
-Representation-state change is tracked by stored `ContentVersion`/`ContentLastModifiedAt`; `_etag`
-additionally reflects the representation selectors via `variantKey`.
+Representation-state change is tracked by stored `ContentVersion`; `ContentLastModifiedAt` supplies
+the representation's `_lastModifiedDate` payload metadata. `_etag` additionally reflects the
+representation selectors via `variantKey`.
 
 Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile
 document keyed by `(DocumentId, ContentVersion)`. The cache does **not** store a single materialized

@@ -23,12 +23,8 @@ dms.Document
 LEFT JOIN dms.DocumentCache ON DocumentId
 WHERE DocumentCache.DocumentId IS NULL
    OR DocumentCache.ContentVersion <> Document.ContentVersion
-   OR DocumentCache.LastModifiedAt <> Document.ContentLastModifiedAt
 ORDER BY Document.ContentVersion, Document.DocumentId
 ```
-
-A same-version `LastModifiedAt` difference is an integrity mismatch. The same query and
-loop repair it without a separate work type or workflow.
 
 The current missing or version-mismatched `dms.Document` row is itself the durable retry
 item. A restart reruns the query and rediscovers all remaining work. Database triggers,
@@ -36,20 +32,21 @@ database jobs, and external workers are not the v1 projector ownership model.
 
 ## Freshness Contract
 
-A cache row is usable only when its stored representation stamps match the current
+A cache row is usable only when its monotonic representation stamp matches the current
 `dms.Document` row:
 
 ```text
 DocumentCache.ContentVersion == Document.ContentVersion
-AND DocumentCache.LastModifiedAt == Document.ContentLastModifiedAt
 ```
 
-`ContentVersion` is the reconciliation key. `LastModifiedAt` is checked as a consistency
-invariant because the two source stamps are maintained together. `_etag` is not stored
-with the cache row. It is composed from `ContentVersion` and the active `variantKey` at
-the serving or stream-shaping boundary. `ComputedAt` is operational metadata only; it
-must not affect API response semantics, `_etag`, `_lastModifiedDate`, Change Queries, or
-the Kafka value contract.
+`ContentVersion` is the sole freshness and reconciliation key. `LastModifiedAt` remains
+payload metadata and is not compared again for freshness. This avoids provider
+timestamp-precision concerns without losing a distinct correctness guarantee: every
+representation change allocates a new `ContentVersion`. `_etag` is not stored with the
+cache row. It is composed from `ContentVersion` and the active `variantKey` at the serving
+or stream-shaping boundary. `ComputedAt` is operational metadata only; it must not affect
+API response semantics, `_etag`, `_lastModifiedDate`, Change Queries, or the Kafka value
+contract.
 
 When a cache row is missing or stale:
 
@@ -66,9 +63,10 @@ authorization/query sources before cached JSON is used for response-body assembl
 
 Each configured projection data store has one logical reconciliation loop. The loop:
 
-1. Selects a bounded batch of current `dms.Document` rows whose cache row is missing, has
-   another `ContentVersion`, or violates the paired `LastModifiedAt` invariant.
-2. Captures the candidate's `(DocumentId, ContentVersion, ContentLastModifiedAt)` stamp.
+1. Selects a bounded batch of current `dms.Document` rows whose cache row is missing or
+   has another `ContentVersion`.
+2. Captures the candidate's `(DocumentId, ContentVersion)` freshness stamp and
+   `ContentLastModifiedAt` payload metadata.
 3. Uses the dedicated cache-projection materializer to reconstitute the caller-agnostic
    full resource document from relational tables.
 4. Computes `_lastModifiedDate` using the update-tracking rules and returns one coherent
@@ -76,12 +74,13 @@ Each configured projection data store has one logical reconciliation loop. The l
 5. Validates that `DocumentJson.id` and `DocumentJson._lastModifiedDate` match
    `DocumentUuid` and `LastModifiedAt`.
 6. Upserts `dms.DocumentCache` only if `dms.Document` still exists at the captured
-   `ContentVersion` and `ContentLastModifiedAt`.
+   `ContentVersion`.
 7. Repeats until no mismatch remains, then polls again after a bounded idle delay.
 
-The metadata invariant check is part of projection correctness. If embedded server
-metadata and cache columns disagree, the projector logs the failure and does not write
-`dms.DocumentCache`.
+The cache-internal metadata invariant check is part of projection correctness. If
+embedded server metadata and cache columns disagree, the projector logs the failure and
+does not write `dms.DocumentCache`. This payload check does not add `LastModifiedAt` to
+the source-versus-cache freshness contract.
 
 The database write enforces the stale-write guard. If the source version changed during
 materialization, the guarded write is a no-op and the next scan discovers the new
@@ -131,8 +130,8 @@ separate projector phases:
   repairing workflow state.
 
 There is no bounded backfill epoch or high-watermark. Completeness is established by an
-exact anti-join/version-or-stamp-mismatch query over current source rows, not by progress
-through the version sequence. In particular, a maximum or
+exact anti-join/version-mismatch query over current source rows, not by progress through
+the version sequence. In particular, a maximum or
 `LastProjectedContentVersion` cannot prove completeness: version 100 may be fresh while
 version 99 is still missing.
 
@@ -197,5 +196,4 @@ the work inventory and the completeness test.
 ### Use `ComputedAt` as freshness
 
 Rejected. `ComputedAt` is useful for diagnostics, but representation freshness is defined
-by the stored DMS representation stamps: `ContentVersion` and
-`ContentLastModifiedAt`.
+by the stored DMS `ContentVersion` stamp alone. `LastModifiedAt` is payload metadata.

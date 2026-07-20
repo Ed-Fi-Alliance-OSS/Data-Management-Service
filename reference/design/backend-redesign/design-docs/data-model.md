@@ -509,8 +509,8 @@ participate in the request's `variantKey` (see
 
 Update tracking note: `dms.DocumentCache` stores the `ContentVersion` and `LastModifiedAt`
 associated with the cached document, not one reusable `_etag`. Cache reads validate freshness
-against the current `dms.Document.ContentVersion` and `ContentLastModifiedAt`; the server composes
-`_etag` per request from that version and the request's `variantKey`. The cached
+against the current `dms.Document.ContentVersion` alone; `LastModifiedAt` remains payload metadata.
+The server composes `_etag` per request from that version and the request's `variantKey`. The cached
 `DocumentUuid` and `LastModifiedAt` columns must match the embedded `id` and
 `_lastModifiedDate` values in `DocumentJson`. Projection must validate this invariant
 before writing `dms.DocumentCache`; a mismatch is a projection failure, not a writable

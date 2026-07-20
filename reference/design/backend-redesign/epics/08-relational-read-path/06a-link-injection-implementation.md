@@ -123,10 +123,10 @@ Soft dependency:
 - Runtime configuration binds `DataManagement:ResourceLinks` to a dedicated `ResourceLinksOptions`
   type; the story must not assume a nested `AppSettings.DataManagement` object already exists in
   Core.
-- When `dms.DocumentCache` is provisioned, materialized-document cache freshness uses a two-input
-  check (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==
-  dms.Document.ContentLastModifiedAt`). `dms.DocumentCache` stores cached `ContentVersion`
-  and `LastModifiedAt`; it does not store a reusable `_etag`.
+- When `dms.DocumentCache` is provisioned, materialized-document cache freshness compares cached
+  `ContentVersion` to `dms.Document.ContentVersion` alone. `dms.DocumentCache` stores cached
+  `ContentVersion` and `LastModifiedAt`, but `LastModifiedAt` is payload metadata rather than a
+  second freshness input. The cache does not store a reusable `_etag`.
 - `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document with
   `link` subtrees already present. The `ResourceLinks:Enabled` strip pass runs as the final
   response-shaping pass in the repository wrapper after readable-profile projection. `_etag` is
@@ -254,13 +254,12 @@ Soft dependency:
    (`_lastModifiedDate`) are untouched. Compose `_etag` at the serving boundary from `ContentVersion`
    plus the active `variantKey`; readable profile, link mode, format, and content coding participate
    through their `variantKey` segments per `design-docs/update-tracking.md` §Serving API metadata.
-7. When `dms.DocumentCache` is provisioned: store cached `ContentVersion` and `LastModifiedAt` so the two-input freshness check
-   (`cached ContentVersion == dms.Document.ContentVersion AND cached LastModifiedAt ==
-   dms.Document.ContentLastModifiedAt`) is representable in the schema. Cache entries store the
-   caller-agnostic intermediate document with `link` subtrees already present. No plan-shape
-   fingerprint, no advisory lock, no `dms.DocumentCachePlanFingerprint` table, no cache truncate,
-   and no `ResourceLinksFlag` column are introduced. Flag flips do not invalidate cache rows; they
-   only change the served `variantKey.linkFlag`.
+7. When `dms.DocumentCache` is provisioned: store cached `ContentVersion` as the sole freshness
+   stamp and store `LastModifiedAt` as payload metadata. Cache entries store the caller-agnostic
+   intermediate document with `link` subtrees already present. No plan-shape fingerprint, no
+   advisory lock, no `dms.DocumentCachePlanFingerprint` table, no cache truncate, and no
+   `ResourceLinksFlag` column are introduced. Flag flips do not invalidate cache rows; they only
+   change the served `variantKey.linkFlag`.
 8. Tests: add unit, fixture, integration, contract, and E2E tests per the acceptance criteria.
    Include feature-flag-on and flag-off coverage; a flag-flip-across-restart regression;
    source-readable / target-denied authorization coverage (deferred — see the bullet above; the

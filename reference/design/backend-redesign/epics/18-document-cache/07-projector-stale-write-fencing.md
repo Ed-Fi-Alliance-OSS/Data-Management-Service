@@ -27,8 +27,8 @@ been deleted.
 
 - All writes to `dms.DocumentCache` use a single guarded upsert path or equivalent shared guard.
 - The guard writes a cache row only when the current `dms.Document` row still exists.
-- The guard writes a cache row only when current `dms.Document.ContentVersion` and
-  `ContentLastModifiedAt` match the target work item.
+- The guard writes a cache row only when current `dms.Document.ContentVersion` matches
+  the target work item. `ContentLastModifiedAt` is payload metadata, not a guard input.
 - A lower captured `ContentVersion` cannot overwrite a higher cache version.
 - A work item for a deleted `DocumentId` cannot recreate `dms.DocumentCache`.
 - The guard works consistently for reconciliation and optional read-through fill.
