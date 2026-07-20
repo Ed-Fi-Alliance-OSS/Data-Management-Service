@@ -123,6 +123,10 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         var childRowsBefore = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
         var childAnchorBefore = await QueryBellScheduleClassPeriodAnchorAsync(bellScheduleDocumentId);
         childRowsBefore.Should().Be(1);
+        var childCollectionItemIdBefore = Convert.ToInt64(
+            (await QuerySingleBellScheduleClassPeriodAsync(bellScheduleDocumentId))["CollectionItemId"],
+            CultureInfo.InvariantCulture
+        );
 
         var beforeBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
         var beforeClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
@@ -183,6 +187,16 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
             .Be(
                 childAnchorBefore,
                 "ClassPeriod_DocumentId is the reference anchor and must not change during an identity cascade"
+            );
+
+        // CollectionItemId must survive the cascade — row-count and anchor stability alone would
+        // also pass a DELETE + re-INSERT with identical values; the sequence-assigned value cannot.
+        Convert
+            .ToInt64(childRow["CollectionItemId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(
+                childCollectionItemIdBefore,
+                "the cascade must update the child row in place, not delete and re-insert it"
             );
 
         var afterBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
