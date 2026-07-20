@@ -205,7 +205,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             );
 
         // CollectionItemId must survive the cascade — row-count and anchor stability alone would
-        // also pass a DELETE + re-INSERT with identical values; the IDENTITY value cannot.
+        // also pass a DELETE + re-INSERT with identical values; the sequence-assigned value cannot.
         Convert
             .ToInt64(childRow["CollectionItemId"], CultureInfo.InvariantCulture)
             .Should()
