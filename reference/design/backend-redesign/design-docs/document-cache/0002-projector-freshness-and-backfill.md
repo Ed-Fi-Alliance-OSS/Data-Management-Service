@@ -106,11 +106,19 @@ uses the shared repository and materialization services. It must not wait for
 `ResolveDataStoreMiddleware` or reuse whichever request-scoped `IDataStoreSelection`
 happened to run most recently.
 
-The supervisor enumerates this fixed inventory once during startup. It starts one projector
-and any required initial backfill for each configured target, and isolates work queues,
-failures, and concurrency limits so one unavailable database cannot stop projection for
-unrelated data stores. It does not refresh CMS inventory or add, replace, or retire
+The supervisor enumerates this startup projection inventory once. It starts one projector
+and any required initial backfill for each configured projection target, and isolates work
+queues, failures, and concurrency limits so one unavailable database cannot stop projection
+for unrelated data stores. It does not refresh CMS inventory or add, replace, or retire
 execution contexts while the process is running.
+
+For CDC, the supervisor consumes the explicit deployment-configured target list and its
+provider-resolved physical source bindings. A later CMS refresh may update ordinary routing
+data. If a configured target resolves to a different physical source, DMS does not move the
+fixed projector or connector implicitly: that target's CDC readiness becomes false and a
+coordinated deployment is required. Normal request routing remains independent. The
+optional, default-off zero-loss host policy may block mutations while readiness is false,
+but it never blocks GETs or other read-only requests.
 
 Adding, removing, or changing a projector target requires an explicit configuration change
 and deployment/restart. Destructive retirement of `dms.DocumentCache`, projector state,

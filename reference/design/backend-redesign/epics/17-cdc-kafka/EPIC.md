@@ -49,7 +49,8 @@ streaming feature.
 - Story 00 consumes DMS-1246 and distinguishes connector-registration prerequisites from completed source
   readiness. Connector work can be developed with fakes or fixtures, but CDC should not be exposed as supported
   until the projector's CDC guarantees are implemented:
-  bounded initial backfill, stale-write fencing, synchronous pre-delete materialization, and visible health/lag.
+  bounded initial backfill, stale-write fencing, synchronous pre-delete materialization, configured-target
+  physical source binding, and visible health/lag.
 - Story 01 provides engine-specific database support that Story 02 connector templates consume, especially
   delete tombstone keys based on `DocumentUuid`.
 - Story 02 owns connector shape and transform order. Story 03 should register generated or parameterized
@@ -61,13 +62,13 @@ streaming feature.
 - Story 06 can draft docs in parallel but should not publish production guidance until Stories 00-03 settle the
   actual command and connector surfaces.
 - Story 03 owns the one-shot registration workflow. Production-like automation repeats that workflow explicitly
-  for every statically configured CDC data store; runtime inventory reconciliation is not part of v1.
+  for every deployment-configured CDC target; runtime target discovery or reconciliation is not part of v1.
 
 ## Dependency Matrix with `18-document-cache`
 
 | This story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | Consumes configuration, projector state, bounded backfill status/target, delete source-row materialization, fencing, failure state, health, and provider verification. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | Consumes configuration, explicit targets/source bindings, projector state, bounded backfill status/target, delete source-row materialization, fencing, failure state, health, and provider verification. |
 | `17-01-cdc-ddl-support.md` | 18-01, 18-10 | Hard for final verification | CDC setup can start from the existing cache table shape, but final provider proof depends on projector state DDL and delete-source verification. |
 | `17-02-connector-template-generation.md` | 18-01, 18-10 | Soft until smoke tests | Templates can be built with fixture records; final delete/tombstone smoke coverage needs provider-verified cache deletes. |
 | `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap validates DocumentCache registration prerequisites, registers before backfill traffic, and waits for source plus connector readiness before advertising CDC. |
@@ -86,6 +87,9 @@ streaming feature.
 - Do not make `-EnableKafkaUI` imply connector registration.
 - Do not require Change Queries to be enabled for Kafka CDC.
 - Do not discover, add, remove, or replace CDC data-store targets automatically at runtime.
+- Do not infer CDC target membership from CMS; use the explicit deployment list.
+- Do not let CDC source drift change normal request routing. A zero-loss host may opt into mutation blocking, but
+  GETs and other read-only requests must never be blocked by that policy.
 - Do not reuse an existing instance topic for a different physical document set without an explicit
   migration/reset decision.
 - Do not expose authorization metadata, EdOrg hierarchy arrays, API client identity, or readable-profile-specific
@@ -104,7 +108,10 @@ streaming feature.
 - Local setup and E2E flows can register connectors against the selected data store without hard-coded database
   names.
 - Production topic prefixes are unique across DMS/CMS deployments sharing Kafka, and deployment automation can
-  repeat the one-shot workflow for every statically configured CDC data store.
-- Inventory additions/removals and physical-source migrations are explicit deployment operations with no
+  repeat the one-shot workflow for every explicitly listed CDC target.
+- Target-list additions/removals and physical-source migrations are explicit deployment operations with no
   automatic destructive cleanup or topic reuse across different physical document sets.
+- Successful CMS refreshes continue to drive normal API routing. For configured CDC targets, confirmed physical
+  source drift makes readiness false and requires coordinated deployment; same-source credential or harmless
+  connection-setting changes do not count as drift.
 - Documentation covers setup, security, monitoring, restart, offset reset, resnapshot, and teardown.

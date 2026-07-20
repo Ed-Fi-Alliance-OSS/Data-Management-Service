@@ -58,6 +58,9 @@ This means the first request can pay:
 The new lifecycle splits startup into explicit phases:
 
 1. **Load DMS instances** (already done today) so we know all connection strings to validate.
+   When Kafka CDC is enabled, bind and validate the explicit deployment-configured CDC
+   target keys at the end of this phase; physical source resolution waits until the target
+   databases are available.
 2. **Load + validate ApiSchemas** in Core (startup-time, one-time).
 3. **Build the effective schema view** in Core (startup-time, one-time):
    - apply extension merges,
@@ -70,7 +73,11 @@ The new lifecycle splits startup into explicit phases:
      - read the database fingerprint (`dms.EffectiveSchema`, `dms.SchemaComponent`),
      - validate `ResourceKeySeedHash/Count` (fast path),
      - fail fast on mismatch.
-5. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
+5. **Resolve CDC source bindings** (startup-time, when Kafka CDC is enabled):
+   - resolve only the explicit CDC targets,
+   - capture provider-specific physical database identity for readiness,
+   - leave normal request routing unchanged.
+6. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
    - warm OIDC discovery/JWKS metadata (if configured),
    - retrieve and cache claim-set/strategy metadata used by request authorization (see `auth.md`),
    - fail fast only when configured as required for the deployment.
@@ -83,11 +90,14 @@ In `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`,
 becomes:
 
 1. `InitializeDataStores(app)` (already present)
-2. Optional DB deploy (`InitializeDatabase(app)`; already present)
-3. **New**: `InitializeApiSchemas(app)` (Core)
-4. **New**: `InitializeBackendMappings(app)` (backend-specific)
-5. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
-6. Start request routing
+2. When Kafka CDC is enabled, bind and validate the explicit CDC target keys
+3. Optional DB deploy (`InitializeDatabase(app)`; already present)
+4. **New**: `InitializeApiSchemas(app)` (Core)
+5. **New**: `InitializeBackendMappings(app)` (backend-specific)
+6. Resolve configured CDC targets to physical source bindings for readiness (without
+   changing normal request routing)
+7. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
+8. Start request routing
 
 ApiSchema loading can occur before or after DB deploy. Mapping initialization must occur after instances are
 loaded and after DBs are provisioned (if provisioning is done on startup).
@@ -297,12 +307,16 @@ without re-validating, and a DMS restart is required after reprovisioning the da
 failures (network errors, timeouts) are evicted from the cache so the next request retries
 validation automatically, since these may resolve without operator intervention.
 
-> **Implementation note:** Both startup-known and dynamically-discovered instances follow the
-> same failure model: validation failures result in `503 Service Unavailable` with a
+> **Implementation note:** Both startup-known and dynamically discovered instances follow
+> the same failure model: validation failures result in `503 Service Unavailable` with a
 > remediation-guidance error body (the detailed diff report is logged server-side only,
-> correlated via `TraceId`). Deterministic failures are cached permanently; transient
-> failures are evicted so the next request retries. A DMS restart is required to clear
-> deterministic failure cache entries (e.g., after reprovisioning the database).
+> correlated via `TraceId`). Deterministic failures are cached
+> permanently; transient failures are evicted so the next request retries. A DMS restart is
+> required to clear deterministic failure cache entries (e.g., after reprovisioning the
+> database). Kafka CDC source-binding drift is a separate readiness concern and does not
+> alter this request-routing behavior. Only the explicit, default-off
+> `KafkaCdc:BlockMutationsWhenNotReady` host policy may return `503` for mutations after
+> normal data-store selection; it never blocks GETs or other read-only requests.
 
 ### Container-oriented “fail fast”
 

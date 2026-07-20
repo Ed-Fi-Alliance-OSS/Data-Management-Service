@@ -34,6 +34,11 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
   `LastModifiedAt`.
 - Integration tests cover projection failure, retry, dead-letter, repair/requeue, and readiness impact.
 - Integration tests cover CDC-mode delete source-row materialization and non-CDC delete behavior.
+- Integration tests cover CDC-mode CMS refresh/reload with non-target additions, missing configured targets,
+  provider/physical-source changes, same-source credential and operational connection changes, name-only changes,
+  and route-only changes. All cases verify unchanged default routing, latched confirmed drift, case-insensitive
+  tenant keys, and unaffected-peer isolation. Separate opt-in-policy tests verify only mutations receive `503`
+  while not ready and GETs remain available.
 - Integration tests run against PostgreSQL and SQL Server where provider support exists.
 - Runbooks document:
   - configuration modes,
@@ -43,6 +48,8 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
   - retry/dead-letter handling and repair,
   - health/readiness fields,
   - CDC-mode delete blocking behavior,
+  - target-list and physical-source-drift diagnostics, coordinated-deployment remediation, and the default-off
+    mutation-blocking policy,
   - provider verification requirements and known limitations.
 - Runbooks distinguish DocumentCache operations from Kafka connector operations.
 - Documentation links to the DMS-1246 decision records and to the DMS-1245 CDC/Kafka decision records.
@@ -53,8 +60,10 @@ feature and documenting operational behavior that CDC/Kafka runbooks consume.
 2. Add tests that exercise projection and read fallback end to end.
 3. Add tests that exercise failure/retry/dead-letter/repair.
 4. Add tests that exercise CDC-required readiness transitions.
-5. Add DocumentCache runbook documentation.
-6. Cross-link CDC/Kafka runbooks to DocumentCache health and delete-source guidance.
+5. Add tests for explicit CDC targets, source-binding readiness, the optional mutation gate, and unchanged normal
+   dynamic routing behavior.
+6. Add DocumentCache runbook documentation.
+7. Cross-link CDC/Kafka runbooks to DocumentCache health and delete-source guidance.
 
 ## Out of Scope
 

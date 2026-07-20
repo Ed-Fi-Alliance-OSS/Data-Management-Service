@@ -40,6 +40,9 @@ advertising CDC as ready.
 - Health reports unresolved failure count, oldest unresolved failure age, last failure kind, and last successful
   projection timestamp.
 - Health reports whether CDC-mode pre-delete materialization is configured and available.
+- Health reports source-binding status for each deployment-configured CDC target. It distinguishes a missing CMS
+  target, `SourceIdentityVerificationPending`, and confirmed provider/physical-database drift; the stable
+  confirmed-drift reason is `CdcSourceDriftRequiresDeployment`.
 - Health exposes whether connector-registration prerequisites are satisfied independently of initial backfill
   completion and steady-state projector lag.
 - CDC readiness fails when:
@@ -48,17 +51,23 @@ advertising CDC as ready.
   - the bounded initial backfill epoch is incomplete,
   - stale-write fencing is unavailable,
   - pre-delete materialization is unavailable,
+  - the configured target is missing, its physical identity cannot currently be resolved, or confirmed source
+    drift has been latched,
   - unresolved current projection failures exist, including dead-lettered failures,
   - projector lag above the completed backfill target exceeds the configured threshold,
   - provider-specific delete-source behavior has not been verified.
 - Non-CDC cache-backed reads can remain available when CDC readiness is false.
+- CDC readiness does not change normal request routing. The default-off `BlockMutationsWhenNotReady` policy may
+  couple mutation availability to readiness for configured targets, but it never blocks GETs or other reads.
 - A deployment aggregate may fail when any configured CDC data store is not ready, but it also exposes each
   data-store result and a failure in one data store does not stop health evaluation or projection for others.
 - Metrics/logs cover projection attempts, successes, retries, failures, stale skips, backfill epoch target
-  capture, backfill progress, cache hit/miss/stale fallback, pre-delete materialization, and projector lag.
+  capture, backfill progress, cache hit/miss/stale fallback, pre-delete materialization, projector lag, and
+  configured-target/source-binding status without exposing connection values or physical identifiers.
 - Tests cover healthy async mode, healthy CDC-required mode, missing objects, incomplete backfill, unresolved
   current projection failures, dead letters, excessive lag above the completed backfill target, and missing
-  provider verification, including mixed healthy/unhealthy data stores across tenants.
+  provider verification, plus non-target CMS additions, missing configured targets, same-source credential
+  changes, physical-source drift, optional mutation blocking, unblocked GETs, and mixed healthy/unhealthy targets.
 
 ## Tasks
 
@@ -66,8 +75,8 @@ advertising CDC as ready.
 2. Implement health checks and readiness diagnostics.
 3. Add metrics and structured logs.
 4. Add configuration for CDC lag thresholds.
-5. Integrate registration prerequisites and source readiness into the CDC abstraction consumed by Kafka
-   bootstrap.
+5. Integrate registration prerequisites, the post-start physical source-binding check, and source
+   readiness into the CDC abstraction consumed by Kafka bootstrap.
 6. Add tests for readiness failure reasons and health output.
 
 ## Out of Scope

@@ -46,19 +46,21 @@ work/fencing key remains `(DocumentId, target ContentVersion)`.
 - The projector updates projection state for scanned/projected versions and last successful projection time.
 - The projector skips work for deleted documents without recreating cache rows.
 - The projector stops gracefully during application shutdown and does not leave partial cache rows.
-- The supervisor enumerates the fixed startup inventory once and does not add, replace, or retire execution
-  contexts while the process is running. Inventory changes require an explicit configuration change and
-  deployment/restart.
+- The supervisor snapshots its projection execution targets at startup. For entries in Story 00's explicit CDC
+  target list, it retains the startup physical source binding and does not follow a CMS change to a different
+  source. Same-source credential or operational connection-setting refreshes may be adopted after provider-specific
+  identity verification; confirmed source drift makes CDC readiness false and requires coordinated deployment.
 - Work queues, concurrency limits, failures, and cancellation are isolated so one unavailable data store does not
   stop projection for its peers.
 - Tests cover multiple statically configured tenants/data stores with colliding `DocumentId`/`ContentVersion`
   values, create, update, stale queued work, deleted-document work, failure isolation, restart with a changed
-  startup inventory, and disabled-mode behavior.
+  configured target list, same-source credential refresh, physical-source drift, and disabled-mode behavior.
 
 ## Tasks
 
 1. Add hosted supervisor lifecycle wiring and a non-HTTP per-data-store execution-scope factory.
-2. Enumerate the tenant-partitioned `IDataStoreProvider` inventory once during startup.
+2. Create execution contexts from the tenant-partitioned projection inventory and apply Story 00's explicit CDC
+   target bindings to listed contexts.
 3. Implement candidate scanning over each target database's `dms.Document` and stale/missing cache detection.
 4. Add an internal enqueue API whose process-level work key includes tenant and data-store identity.
 5. Call the shared materializer and guarded cache upsert in the explicitly selected data-store scope.

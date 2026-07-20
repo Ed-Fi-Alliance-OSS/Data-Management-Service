@@ -44,6 +44,8 @@ Recommended design-level settings:
 DataManagement:DocumentCache:Projector:Mode = Disabled | Async | CdcRequired
 DataManagement:DocumentCache:ReadAcceleration:Enabled = false | true
 DataManagement:KafkaCdc:Enabled = false | true
+DataManagement:KafkaCdc:Targets = [{ TenantKey, DataStoreId }, ...]
+DataManagement:KafkaCdc:BlockMutationsWhenNotReady = false | true
 ```
 
 Mode semantics:
@@ -55,6 +57,13 @@ Mode semantics:
 | `Projector:Mode = CdcRequired` | DMS maintains `dms.DocumentCache` with CDC readiness, stale-write fencing, bounded initial backfill, visible health, and pre-delete source-row guarantees. |
 | `ReadAcceleration:Enabled = true` | GET/query response assembly may read fresh cache rows, but must fall back to relational reconstitution for misses or stale rows. |
 | `KafkaCdc:Enabled = true` | Requires `Projector:Mode = CdcRequired` and a provisioned `dms.DocumentCache`; source prerequisites must pass before connector registration, and completed source/connector readiness must pass before CDC is advertised as supported. |
+| `KafkaCdc:Targets` | Explicit deployment-owned list of `(tenant key, DataStoreId)` values for which CDC is provisioned. No CMS data store becomes a CDC target merely because it is loaded at startup or discovered later. |
+| `KafkaCdc:BlockMutationsWhenNotReady = true` | Optional host availability policy that returns `503` for mutations to a configured CDC target while its CDC readiness is false. The default is `false`, and read-only requests are never blocked by this policy. |
+
+When `KafkaCdc:Enabled = true`, `Targets` must be non-empty and unique after tenant-key
+normalization. `BlockMutationsWhenNotReady = true` is invalid unless Kafka CDC is enabled.
+The target list is bound once at startup; configuration reload does not add or retire CDC
+targets inside a running deployment.
 
 Indexing or external integration use cases that do not need Kafka CDC should use
 `Projector:Mode = Async`. They may leave `ReadAcceleration:Enabled = false` if the API
@@ -65,21 +74,78 @@ Starting Kafka UI must not imply `KafkaCdc:Enabled`.
 
 ### Scope Across Data Stores
 
-The v1 settings are process-wide defaults, not per-data-store CMS options. Each data store
-loaded from the fixed startup configuration with a usable connection string is therefore
-a projection target when `Projector:Mode` is `Async` or `CdcRequired`. With
-`KafkaCdc:Enabled = true`, every such data store must run in `CdcRequired` mode and expose
-its own readiness result; v1 does not silently enable CDC for only the data store selected
-by the most recent HTTP request.
+The v1 projector and read-acceleration settings are process-wide defaults, not per-data-store
+CMS options. Each data store loaded from the startup configuration with a usable connection
+string is therefore a projection target when `Projector:Mode` is `Async` or `CdcRequired`.
+CDC target selection is deliberately narrower: `KafkaCdc:Targets` is an explicit
+deployment-owned list, and only listed data stores receive connector registration and CDC
+readiness. V1 does not infer CDC target membership from the most recent HTTP request, the
+set returned by CMS, or JWT `DataStoreIds`.
 
-Connector registration remains per data store. A failed or incomplete projector makes
-that data store's CDC readiness false without making normal API correctness for other data
-stores depend on it. Deployment health may also expose an aggregate result that is false
-when any configured CDC data store is not ready. A future CMS-backed per-data-store opt-in
-may override the process default, but it is not part of v1.
+Connector registration remains per configured CDC target. A failed or incomplete projector
+makes that target's CDC readiness false without making normal API correctness or routing
+depend on it. Deployment health may also expose an aggregate result that is false when any
+configured CDC target is not ready. A future CMS-backed per-data-store opt-in may replace
+the deployment list, but it is not part of v1.
 
-V1 does not discover CDC targets dynamically after startup. Adding, removing, or changing
-a target requires an explicit configuration change and deployment/restart.
+V1 does not discover CDC targets dynamically. Adding or removing a target requires an
+explicit deployment-configuration change and the coordinated provisioning, connector, and
+DMS deployment workflow.
+
+### CDC Target Binding and Source Drift
+
+When `KafkaCdc:Enabled = true`, startup resolves each entry in `KafkaCdc:Targets` and
+captures an immutable CDC source binding. Tenant keys use the same case-insensitive
+normalization as `IDataStoreProvider`. Each binding contains `(tenant key, DataStoreId)` and
+a provider-resolved physical database identity. DMS must not fingerprint the complete
+connection configuration: passwords, application names, pool settings, timeouts, and
+equivalent server aliases do not define the CDC source. Physical identity comparison uses
+the same provider-specific resolution required to prevent two targets from capturing the
+same database. Connection strings, credentials, and unsanitized physical identifiers must
+not be logged, persisted, or exposed through health responses.
+
+The ordinary `IDataStoreProvider` may still refresh or reload CMS data for request routing.
+A successful reload does not change the configured target list or reconcile Kafka Connect.
+It updates normal request routing as usual. CDC source readiness compares only configured
+targets with their startup source bindings:
+
+- a CMS data store not present in `KafkaCdc:Targets` is ordinary routing data and is ignored
+  by CDC readiness,
+- a configured target that is absent from CMS is not CDC-ready,
+- a credential rotation or other connection-setting change that resolves to the same
+  provider and physical database is not source drift,
+- a configured target that resolves to a different provider or physical database has
+  source drift,
+- a data-store name or route-qualifier-only change does not affect CDC source identity.
+
+When a configured target's provider or connection settings change, its CDC readiness is
+`SourceIdentityVerificationPending` until provider-specific resolution completes. A
+same-source result clears that transient state; a different source latches drift. This
+readiness transition does not delay or roll back the CMS routing refresh. It matters to API
+availability only when the host has explicitly enabled mutation blocking.
+
+Confirmed source drift is latched for the lifetime of the process. Restoring the CMS entry
+to its previous value does not clear the failure. A coordinated deployment that reruns
+physical-source validation, provisioning, connector registration, and DMS startup is the
+explicit point that accepts a new binding. Inability to resolve physical identity because
+of a transient connection failure reports a retryable not-ready reason; it is not evidence
+of drift and is not latched as a source change.
+
+CDC readiness is observational by default. A missing target, source drift, projector
+failure, or connector failure does not alter `IDataStoreSelection` and does not block normal
+API requests. In particular, GET/query, Change Queries, discovery, and other read-only
+requests continue to use the current CMS routing configuration.
+
+Deployments that choose API availability coupling for zero-loss CDC may explicitly set
+`KafkaCdc:BlockMutationsWhenNotReady = true`. After ordinary routing selects a configured
+CDC target, this policy returns HTTP `503` for mutation requests (`POST`, `PUT`, `DELETE`,
+and any future write method) while that target's end-to-end CDC readiness is false. It does
+not apply to non-targets, defaults to `false`, and never blocks `GET`, `HEAD`, or `OPTIONS`.
+The readiness check and optional mutation gate never call Kafka Connect or perform cleanup.
+
+The stable confirmed-drift reason is `CdcSourceDriftRequiresDeployment`. Health and optional
+mutation error responses may expose that reason plus the opaque tenant/data-store key and a
+sanitized drift kind, but not the physical identity or connection details.
 
 ## Cached Shape
 

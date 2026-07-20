@@ -65,8 +65,8 @@ those topics would expose duplicate copies of the same physical document set und
 potentially different ACLs.
 
 The CDC prerequisite implementation must resolve a provider-specific physical database
-identity from each configured connection and reject CDC enablement when two active
-`(tenant key, DataStoreId)` entries resolve to the same identity. Comparison must not rely
+identity for each entry in `DataManagement:KafkaCdc:Targets` and reject CDC enablement
+when two listed `(tenant key, DataStoreId)` entries resolve to the same identity. Comparison must not rely
 only on raw connection-string text; semantically equivalent connection strings and server
 aliases must be normalized or confirmed after connecting. The diagnostic identifies the
 conflicting opaque data-store IDs without logging credentials or tenant display names.
@@ -76,35 +76,64 @@ silently changing a topic's security boundary or making topic stability depend o
 alias happens to load first. Ordinary non-CDC DMS operation is unaffected by this CDC
 validation failure.
 
-## Fixed Deployment Inventory
+## Explicit Deployment Target List
 
-The v1 CDC inventory is fixed for the lifetime of a DMS deployment. Deployment/bootstrap
-automation enumerates the configured tenant-scoped data stores at startup and performs the
-one-shot provisioning and connector-registration workflow explicitly for each CDC target.
-V1 does not continuously discover CMS additions, removals, or connection changes and does
-not run a background Kafka Connect reconciler.
+The v1 CDC target set is an explicit deployment configuration, represented by
+`DataManagement:KafkaCdc:Targets` entries containing `(tenant key, DataStoreId)`.
+Deployment/bootstrap automation performs the one-shot provisioning and
+connector-registration workflow explicitly for each listed target. It does not treat the
+complete CMS inventory as CDC-enabled, continuously discover CMS additions, or run a
+background Kafka Connect reconciler.
 
-The fixed-inventory contract is:
+The target-list contract is:
 
-- every CDC-enabled data store is selected explicitly during deployment, validated against
-  the physical-database uniqueness rule above, and given one connector and one instance
-  topic,
+- every CDC-enabled data store appears in the target list, is resolved explicitly during
+  deployment, is validated against the physical-database uniqueness rule above, and is
+  given one connector and one instance topic,
+- DMS captures an immutable source binding for each listed target using the provider and
+  provider-resolved physical database identity; tenant keys use the same case-insensitive
+  normalization as `IDataStoreProvider`,
+- DMS does not fingerprint the complete connection configuration. Credential, timeout,
+  pooling, application-name, and equivalent-alias changes are not source drift when they
+  resolve to the same provider and physical database,
 - the DMS hosted projector supervisor creates one isolated execution context for every
-  configured startup target, but it does not call the Kafka Connect REST API,
+  deployment-configured target, but it does not call the Kafka Connect REST API,
+- after a successful CMS refresh/reload, DMS reevaluates physical source identity for only
+  the listed targets. A missing target or confirmed provider/physical-database mismatch is
+  not reconciled and makes that target's CDC readiness false,
+- CMS entries outside the target list remain ordinary DMS routing data and do not become CDC
+  targets or CDC drift,
 - adding or removing a CDC-enabled data store requires an explicit configuration change and
-  deployment/restart that runs the provisioning workflow again,
+  coordinated deployment that runs the provisioning workflow again,
 - removing a target requires an explicit operator decision for connector shutdown, topic
   retention/deletion, offset deletion, PostgreSQL slot/publication cleanup, SQL Server CDC
   cleanup, and ACL retirement; absence from a later configuration is not authority for
   destructive cleanup,
-- credential, host-name, or server-alias changes that resolve to the same physical database
-  may use an explicit connector update/restart while preserving the topic identity,
+- credential, host-name, server-alias, or other connection-setting changes may preserve the
+  topic and source binding when provider-resolved physical-database identity is unchanged;
+  connector credential updates remain an explicit deployment concern,
 - changing a `DataStoreId` to a different provider or physical document set is not an
   automatic replacement operation. CDC remains unsupported/not ready until an explicit
   migration chooses a new topic/source generation or deliberately resets the existing
   topic and connector state before resnapshotting,
 - route-qualifier-only changes do not affect the connector or topic because request routing
   is outside the CDC source identity.
+
+Source-binding comparison observes drift without becoming a reconciler. It marks the
+affected target not ready, but it does not alter normal request routing, call Kafka Connect,
+change a projector context, stop a connector, or delete topics, offsets, ACLs, or database
+CDC artifacts. A missing configured target is reported as not ready and handled by the
+explicit operator/deployment procedure above. Unrelated targets remain independent.
+Confirmed physical-source drift is latched until a coordinated deployment reruns the
+one-shot workflow, even if CMS later returns to the original source binding. A transient failure to
+resolve physical identity is retryable and is not latched as drift.
+
+By default, CDC readiness is observational and connector/projector failures do not affect
+DMS routing or relational write correctness. A deployment may explicitly set
+`DataManagement:KafkaCdc:BlockMutationsWhenNotReady = true` when zero-loss CDC is a hard
+host availability policy. That opt-in returns `503` only for mutations to the affected
+configured target while CDC is not ready; it never blocks `GET`, `HEAD`, `OPTIONS`, Change
+Queries, or other read-only requests.
 
 The one-shot workflow must remain idempotent for repeated deployment of the same logical
 connector and physical source. It must reject an attempt to reuse an existing instance
@@ -308,8 +337,8 @@ Recommended local behavior:
 Connector JSON templates should be generated or parameterized from the selected data
 store context rather than checked in with a single hard-coded database name.
 
-Production-like deployment automation repeats this same one-shot workflow for every
-statically configured CDC data store. Runtime discovery, automatic connector retirement,
+Production-like deployment automation repeats this same one-shot workflow for every target
+in `DataManagement:KafkaCdc:Targets`. Runtime discovery, automatic connector retirement,
 and automatic physical-source replacement are outside the v1 contract.
 
 ## Security
@@ -344,6 +373,12 @@ Status and readiness are per logical data store. An aggregate deployment signal 
 not ready when any CDC-enabled data store is not ready, but one instance's connector or
 projector failure must not stop unrelated DMS API instances or conceal their individual
 status.
+
+Status also reports missing configured targets, retryable physical-identity resolution
+failures, and latched source drift using only the opaque data-store key and a sanitized
+reason. These conditions do not alter request routing. If the optional mutation-blocking
+policy is enabled, mutations to a not-ready target return `503`; reads and unrelated targets
+remain available.
 
 Connector failures should not corrupt DMS writes. DMS write correctness remains tied to
 the relational store and `dms.Document` stamps, not to Kafka delivery.

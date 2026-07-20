@@ -198,13 +198,28 @@ epoch, connector snapshot/catch-up, connector lag, and projector lag above the c
 backfill target are acceptable. Connector templates must be generated or parameterized
 from the selected data-store context instead of using hard-coded database names.
 
-The v1 CDC inventory is fixed for the lifetime of a deployment. Production-like
-automation repeats the one-shot provisioning and registration workflow for every
-statically configured CDC data store. Adding or removing a target requires an explicit
-configuration change and deployment/restart. Moving a `DataStoreId` to a different
+The v1 CDC target list is explicit deployment configuration. Production-like automation
+repeats the one-shot provisioning and registration workflow for every listed target. Adding
+or removing a target requires an explicit configuration change and coordinated deployment.
+Moving a `DataStoreId` to a different
 physical document set requires an explicit migration with a new topic/source generation or
 a deliberate topic/connector reset; v1 does not automatically replace physical sources or
-infer destructive cleanup from inventory changes.
+infer destructive cleanup from target-list changes.
+
+Kafka CDC uses an explicit deployment-configured target list of `(tenant key, DataStoreId)`
+values. At startup DMS resolves a provider-specific physical database identity for each
+listed target; it does not fingerprint complete connection configuration. Credential,
+timeout, pooling, application-name, and equivalent-alias changes are not source drift when
+they resolve to the same physical database. A missing configured target or confirmed
+physical-source change makes that target's CDC readiness false, and confirmed drift remains
+latched as `CdcSourceDriftRequiresDeployment` until the coordinated workflow reruns.
+
+CDC readiness does not change normal CMS-driven request routing. Entries outside the target
+list remain ordinary DMS data stores, and GETs continue to be served even when CDC is not
+ready. A host that requires zero-loss CDC may explicitly enable the default-off
+`BlockMutationsWhenNotReady` policy; only then do mutations to a configured not-ready target
+return `503`. The policy never blocks GET, HEAD, OPTIONS, Change Queries, or other read-only
+requests, and it does not reconcile connectors or perform destructive cleanup.
 
 ## Multitenancy and Security
 
@@ -217,9 +232,9 @@ to read. Kafka Connect internal topics, connector REST APIs, and database creden
 must not be exposed to third-party consumers.
 
 The DMS projector and CDC readiness are scoped per `(tenant key, DataStoreId)` and run
-independently of request JWT/route selection. Process-wide v1 enablement applies to every
-loaded data store with a usable connection string; connector registration and status
-remain per data store.
+independently of request JWT/route selection. Process-wide v1 projector mode may apply to
+every loaded data store with a usable connection string; connector registration and CDC
+readiness apply only to the explicit deployment-configured targets.
 
 Database connector credentials should be least-privilege. Local development defaults may
 use insecure credentials, but production deployments must replace them.

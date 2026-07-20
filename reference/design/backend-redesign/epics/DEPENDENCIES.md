@@ -128,7 +128,7 @@ DMS-1246 DocumentCache implementation epic. It does not regenerate the full depe
 
 | `17-cdc-kafka` story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | CDC readiness consumes configuration, projector state, backfill, pre-delete materialization, fencing, failure state, health, and provider verification. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | CDC readiness consumes configuration, explicit targets/source bindings, projector state, backfill, pre-delete materialization, fencing, failure state, health, and provider verification. |
 | `17-01-cdc-ddl-support.md` | 18-01, 18-10 | Hard for final verification | CDC key/replica setup can start independently, but final proof depends on the source table/state DDL and provider delete verification. |
 | `17-02-connector-template-generation.md` | 18-01, 18-10 | Soft until smoke tests | Fixture-based template work can proceed before the projector is complete. |
 | `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap validates DocumentCache registration prerequisites, registers before backfill traffic, and waits for source plus connector readiness before advertising CDC. |
@@ -138,16 +138,16 @@ DMS-1246 DocumentCache implementation epic. It does not regenerate the full depe
 
 | `18-document-cache` story | Unblocks / informs `17-cdc-kafka` |
 | --- | --- |
-| 18-00 | CDC/read-cache configuration boundaries for 17-00 and 17-03. |
+| 18-00 | CDC/read-cache configuration boundaries plus explicit targets, source bindings, and optional mutation policy for 17-00 and 17-03. |
 | 18-01 | Source/state DDL for 17-00 and 17-01. |
 | 18-02 | Materialized `DocumentJson`, `ContentVersion`, and `LastModifiedAt` source data for 17-04 and 17-05. |
-| 18-03 | Fixed-inventory multi-instance projector lifecycle, ongoing projection, and lag semantics for 17-00, 17-05, and 17-06. |
+| 18-03 | Startup-projection-inventory lifecycle, ongoing projection, and lag semantics for 17-00, 17-05, and 17-06. |
 | 18-04 | Bounded initial backfill epoch completion signal for 17-00 and 17-03. |
 | 18-05 | Optional cache read behavior; no hard CDC dependency. |
 | 18-06 | CDC-mode delete source-row guarantee for 17-00, 17-04, and 17-05. |
 | 18-07 | Stale-write and post-delete fencing for 17-00, 17-04, and 17-05. |
 | 18-08 | Projection failure/dead-letter state for 17-00, 17-03 diagnostics, and 17-06. |
-| 18-09 | Per-data-store readiness and telemetry surface consumed by 17-00, 17-03, 17-05, and 17-06. |
+| 18-09 | Per-target readiness, physical-source-drift signal, and telemetry consumed by 17-00, 17-03, 17-05, and 17-06. |
 | 18-10 | PostgreSQL/SQL Server proof for 17-01, 17-04, and 17-05. |
 | 18-11 | DocumentCache operator guidance consumed by 17-06. |
 

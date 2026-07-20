@@ -33,7 +33,12 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
   backfill completion and steady-state projector lag are not registration prerequisites.
 - Readiness is keyed by `(tenant key, DataStoreId)` and is evaluated from that data store's explicit execution
   context rather than an HTTP request's route/JWT selection.
-- CDC readiness fails for every conflicting data-store record when two active records resolve to the same
+- CDC applies only to the explicit deployment-configured target list. Completed source readiness consumes
+  DMS-1246's provider-resolved physical source binding after DMS starts. A missing configured target or confirmed
+  provider/physical-database drift cannot remain CDC-ready and requires coordinated deployment; CMS entries
+  outside the list and same-source credential/connection-setting changes are not drift. This runtime match is not
+  a pre-DMS connector-registration prerequisite, and confirmed source drift remains latched until deployment.
+- CDC readiness fails for every conflicting configured target when two listed targets resolve to the same
   physical database. Physical identity comparison does not rely only on raw connection-string text, and
   diagnostics never log credentials.
 - When CDC is enabled, readiness fails until the bounded initial backfill epoch has materialized a fresh
@@ -56,9 +61,13 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
   - projector lag above the completed backfill target,
   - unresolved current projection failures, including dead-lettered failures,
   - missing pre-delete materialization support,
-  - unsupported database provider.
-- The CDC readiness contract does not make API write correctness, authorization, normal GET/query behavior, or
-  Change Queries depend on `dms.DocumentCache`.
+  - unsupported database provider,
+  - a configured target missing from CMS,
+  - a retryable physical-source identity resolution failure,
+  - `CdcSourceDriftRequiresDeployment` after confirmed physical-source drift.
+- The CDC readiness contract does not make API correctness, authorization, normal routing, GET/query behavior, or
+  Change Queries depend on `dms.DocumentCache`. A separate default-off host policy may block mutations to a
+  not-ready configured CDC target; it never blocks GETs or other read-only requests.
 - Delete coverage required by CDC is implemented by the DMS-1246 projector/delete design and is explicitly
   consumed here as a prerequisite.
 
@@ -75,9 +84,11 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
    available for the selected data store.
 6. Add provider-specific physical-database identity resolution and tests for duplicate/semantically equivalent
    data-store connection targets.
-7. Add tests that non-CDC DMS startup remains valid without `dms.DocumentCache`.
-8. Document the handoff to DMS-1246 for projector backfill, delete materialization, lag, retry, and health
-   semantics.
+7. Bind the explicit CDC target list and consume DMS-1246's source-binding signal in post-start readiness
+   diagnostics without changing normal request routing.
+8. Add tests that non-CDC DMS startup remains valid without `dms.DocumentCache` and retains dynamic CMS refresh.
+9. Document the handoff to DMS-1246 for projector backfill, delete materialization, lag, retry, source-binding
+   readiness, the optional mutation policy, and health semantics.
 
 ## Out of Scope
 
