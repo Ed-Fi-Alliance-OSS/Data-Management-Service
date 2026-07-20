@@ -15,8 +15,9 @@ related:
 
 ## Outcome
 
-Expose per-data-store projection health, exact completeness, registration-prerequisite
-inputs, and sanitized telemetry from current database and process state.
+Expose per-data-store projection health, audit-backed exact completeness,
+registration-prerequisite inputs, and sanitized telemetry from the latest completed full
+audit and current process state.
 
 ## Dependencies
 
@@ -26,7 +27,9 @@ inputs, and sanitized telemetry from current database and process state.
 ## Deliverables
 
 1. Define per-data-store health/completeness and deployment aggregate models.
-2. Implement provider-equivalent mismatch/age queries and configurable health thresholds.
+2. Record exact mismatch/age snapshots from completed provider-equivalent full audits,
+   expose their observation time and age, and add configurable health thresholds without
+   running a full anti-join synchronously on health reads.
 3. Expose projector-side registration prerequisites without taking ownership of
    connector/source readiness.
 4. Add the canonical structured logs and metrics.
@@ -34,8 +37,10 @@ inputs, and sanitized telemetry from current database and process state.
 ## Acceptance Evidence
 
 - Tests cover every selection reason, none/overlap, missing tables, zero/nonzero
-  mismatches, lower-version gaps, oldest age, persistent bounded failure, and mixed
-  targets.
+  mismatches, lower-version gaps, oldest age, stale audits, known unresolved incremental
+  work, nonzero-audit invalidation, persistent bounded failure, and mixed targets.
+- Tests prove health reads reuse the latest audit snapshot and readiness requires a
+  sufficiently recent exact-zero finishing audit with no known unresolved work.
 - Tests distinguish diagnostic process timestamps from database completeness evidence.
 - A metadata-invariant failure remains visible as projection failure but does not add a
   timestamp-based freshness condition.

@@ -16,8 +16,8 @@ related:
 
 ## Outcome
 
-Implement the hosted, per-data-store reconciler and bounded in-memory retry behavior
-defined by the authoritative design.
+Implement the hosted, per-data-store incremental discovery and full-audit reconciler,
+including the bounded in-memory retry behavior defined by the authoritative design.
 
 ## Dependencies
 
@@ -27,11 +27,15 @@ defined by the authoritative design.
 ## Deliverables
 
 1. Add supervisor lifecycle and isolated non-HTTP execution scopes for startup targets.
-2. Implement provider-equivalent bounded candidate queries.
-3. Invoke the shared materializer and guarded upsert with fair retry and idle polling.
-4. Add graceful cancellation and sanitized scan/retry/failure telemetry.
-5. Measure realistic provider plans and add an ordered-scan index only if evidence
-   requires it.
+2. Implement provider-equivalent bounded incremental keyset scans using a disposable
+   process-local `(ContentVersion, DocumentId)` cursor.
+3. Implement startup, periodic, rebuild, and readiness-triggered full anti-join audits,
+   including bounded audit-local paging and an exact finishing aggregate.
+4. Provision the required `dms.Document(ContentVersion, DocumentId)` index whenever
+   `dms.DocumentCache` is provisioned.
+5. Invoke the shared materializer and guarded upsert with fair retry and idle polling.
+6. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
+   telemetry, and measure realistic plans for both providers.
 
 ## Acceptance Evidence
 
@@ -40,8 +44,13 @@ defined by the authoritative design.
   peer isolation, and multiple replicas.
 - Concurrency tests cover source update and deletion during materialization through the
   shared guard.
-- Completeness tests prove lower-version gaps remain visible and no timestamp, epoch, or
-  `StreamEtag` comparison, or high-watermark becomes a second work predicate.
+- Query-plan tests prove ordinary high-version updates use indexed incremental discovery
+  without a full relationship scan and that a full audit covers the relationship once
+  rather than rescanning each repaired prefix.
+- Completeness tests prove late lower-version commits and cache-row loss below the cursor
+  are repaired by full audit, advancing past failures retains bounded retry, and no
+  timestamp, epoch, `StreamEtag` comparison, or cursor/high-watermark becomes a second
+  completeness predicate.
 
 ## Out of Scope
 

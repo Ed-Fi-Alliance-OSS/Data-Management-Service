@@ -34,7 +34,7 @@ that links to, rather than restates, the authoritative design.
 
 - PostgreSQL and SQL Server integration tests cover all completed E18 story outcomes,
   including `StreamEtag` consistency, metadata consistency, lower-version gaps, fair
-  retry, and API independence.
+  retry, indexed incremental discovery, periodic full audits, and API independence.
 - Rebuild tests use ordinary reconciliation and never introduce a separate backfill
   workflow.
 - Runbook procedures are checked against implemented configuration, health output, and

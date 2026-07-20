@@ -36,16 +36,22 @@ The projector uses the current source/cache difference as both durable work inve
 and completeness evidence. A cache row is fresh exactly when its `ContentVersion` equals
 the current `dms.Document.ContentVersion`. `LastModifiedAt` remains payload/diagnostic
 metadata; `ComputedAt` remains operational metadata. Neither is another freshness test.
+Frequent candidate discovery uses a disposable process-local content-version cursor;
+periodic full source/cache anti-join audits remain the only completeness proof.
 
 All cache writes are fenced by existence of the current `dms.Document` row and equality
 with the captured `ContentVersion`. This prevents an older result from replacing a newer
 row or recreating cache state after canonical deletion. The same guard supports ordinary
 reconciliation and optional direct fill after relational read fallback.
 
-Initial population, steady-state catch-up, restart, retry, and rebuild use the same
-mismatch query. V1 adds no durable projection queue, progress/high-watermark, backfill
-epoch, failure table, or repair workflow. Exact zero current mismatches is projection
-completeness; connector/source-position catch-up is a separate CDC readiness concern.
+Initial population, restart, rebuild, and readiness require a full audit. Steady-state
+catch-up normally uses the incremental cursor and the required
+`dms.Document(ContentVersion, DocumentId)` index. The cursor is never durable work
+inventory or readiness evidence because sequence allocation is not transaction commit
+order and cache work can appear below it. V1 adds no durable projection queue,
+progress/high-watermark, backfill epoch, failure table, or repair workflow. An exact zero
+finishing audit count is projection completeness at its observation;
+connector/source-position catch-up is a separate CDC readiness concern.
 
 API deletion remains independent of projection. It deletes the canonical relational
 document and lets the connector derive the tombstone from that delete. It does not wait
@@ -70,9 +76,10 @@ deletes alongside cache upserts keeps API mutation correctness independent of pr
 makes cache maintenance safe, and avoids application/Kafka dual-write transactions.
 
 The database mismatch is sufficient durable projector state. Every representation change
-allocates a monotonic `ContentVersion`, so timestamp comparison adds provider precision
-risks without adding correctness. A guarded idempotent upsert makes duplicate projectors
-and restart rediscovery safe.
+allocates a monotonic `ContentVersion`, making it an efficient incremental discovery key,
+while full audits recover lower versions that commit late or cache rows lost below the
+cursor. Timestamp comparison adds provider precision risks without adding correctness. A
+guarded idempotent upsert makes duplicate projectors and restart rediscovery safe.
 
 ## Consequences
 
@@ -82,6 +89,8 @@ and restart rediscovery safe.
   to use relational sources.
 - Reads may use only fresh cache rows and always retain relational fallback.
 - Projection lag and failure are observable but never gate normal API traffic.
+- Ordinary updates use indexed incremental discovery; full relationship scans are
+  reserved for startup, rebuild, periodic audit, and readiness verification.
 - Cache truncate/rebuild emits no domain tombstones; an intentional topic rebuild uses
   connector snapshot/topic recovery.
 - Both source tables use `DocumentUuid` as the connector key and share one connector task
@@ -102,10 +111,11 @@ and restart rediscovery safe.
 | Add a relational outbox | Deferred until DMS needs explicit domain-event semantics rather than current document state. |
 | Make the cache mandatory or only a read cache | Rejected: both descriptions lose its optional multi-consumer projection role. |
 | Configure a projector mode or separate Kafka boolean | Rejected: consuming capabilities already determine the exact target set and avoid invalid flag combinations. |
-| Persist queues, epochs, progress, retry, or failure rows | Rejected for v1: current mismatches already preserve all outstanding work and completeness. |
+| Persist queues, epochs, progress, retry, or failure rows | Rejected for v1: current mismatches already preserve all outstanding work and completeness; add a small pending-work table or flag only if indexed incremental-discovery and full-audit benchmarks require it. |
+| Use the full mismatch anti-join for every steady-state poll | Rejected: it makes ordinary high-version update discovery scale with the complete document set. |
 | Build JSON in database triggers | Rejected: it duplicates application reconstitution and increases provider-specific logic. |
 | Require synchronous read-through population | Rejected for correctness; direct fill remains an optional guarded optimization. |
-| Use a high-watermark, `ComputedAt`, or `LastModifiedAt` for freshness | Rejected: none proves that every current document is projected at its current representation version. |
+| Use the incremental cursor, a high-watermark, `ComputedAt`, or `LastModifiedAt` as completeness evidence | Rejected: none proves that every current document is projected at its current representation version. |
 | Store retry state on the cache row | Rejected: missing rows have nowhere to store it and operational fields would enter the captured row contract. |
 | Fail normal reads when projection is unhealthy | Rejected: relational fallback preserves API correctness. |
 | Treat connector status alone as CDC readiness | Rejected: a running connector cannot supply current documents that remain unprojected. |

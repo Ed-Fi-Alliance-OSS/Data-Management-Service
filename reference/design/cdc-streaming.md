@@ -163,26 +163,71 @@ metadata. Neither participates in cache freshness, completeness, API semantics,
 Change Queries, or `_etag` state. `StreamEtag` is derived output validated during
 materialization; comparing or recomputing it is not another reconciliation predicate.
 
-The current database difference is both the durable work inventory and the projection
-completeness source:
+The current database difference remains both the durable work inventory and the
+projection-completeness source:
 
 ```text
 dms.Document
 LEFT JOIN dms.DocumentCache ON DocumentId
 WHERE DocumentCache.DocumentId IS NULL
    OR DocumentCache.ContentVersion <> Document.ContentVersion
-ORDER BY Document.ContentVersion, Document.DocumentId
 ```
 
-For each selected data store, a background loop:
+Candidate discovery is separate from completeness verification. For each selected data
+store, the projector has two cooperating lanes:
 
-1. Selects a bounded batch of missing or version-mismatched current documents.
-2. Captures `(DocumentId, ContentVersion)` and the source metadata needed by the
+1. A frequent incremental lane keyset-pages current `dms.Document` rows after a
+   process-local `(ContentVersion, DocumentId)` cursor, ordered by those columns. Each
+   page left-joins `dms.DocumentCache` by `DocumentId`, and only missing or
+   version-mismatched rows become materialization candidates. The cursor advances to the
+   last source row examined whether the cache row was stale or already fresh; failed
+   candidates remain in the in-memory retry set described below.
+2. A periodic full-audit lane evaluates the complete source/cache anti-join above. It
+   repairs every mismatch it finds, including rows below the incremental cursor, and
+   finishes with one exact aggregate observation of total, missing-row, and
+   version-mismatched-row counts plus the oldest mismatch timestamp. Startup, restart,
+   cache rebuild, and any attempt to establish readiness require a completed full audit.
+
+The logical incremental page is:
+
+```text
+dms.Document
+LEFT JOIN dms.DocumentCache ON DocumentId
+WHERE (Document.ContentVersion, Document.DocumentId) > incremental cursor
+ORDER BY Document.ContentVersion, Document.DocumentId
+LIMIT bounded source-row batch
+```
+
+The row-value cursor predicate is logical notation; each provider may render its
+equivalent scalar predicate and bounded-fetch syntax. The page returns source/cache
+version pairs even when they match so the cursor can advance across source rows another
+replica has already projected.
+
+A full repair audit may use one provider-optimized anti-join or bounded keyset pages of
+source/cache version pairs, but one audit pass must cover the complete current
+relationship. Bounded paging must carry an audit-local scan position forward so that
+repairing an early page does not cause every later page to rescan the already-fresh
+prefix. An audit may race with writes; guarded upserts make its repairs safe, and a
+nonzero finishing aggregate causes repair to continue. The full-audit interval is
+bounded so it also bounds discovery latency for work that the incremental lane cannot
+see.
+
+For each candidate from either lane, the projector:
+
+1. Captures `(DocumentId, ContentVersion)` and the source metadata needed by the
    materializer.
-3. Reconstitutes the caller-agnostic cached document.
-4. Validates the embedded/relational metadata invariant.
-5. Performs the shared guarded cache upsert.
-6. Repeats until no mismatch remains, then polls after a bounded idle delay.
+2. Reconstitutes the caller-agnostic cached document.
+3. Validates the embedded/relational metadata invariant.
+4. Performs the shared guarded cache upsert.
+
+The incremental cursor is an optimization, never durable work inventory or completeness
+evidence. `ContentVersion` values come from a monotonic sequence, but sequence allocation
+is not transaction commit order: a transaction can commit a lower allocated version
+after the cursor has advanced past it. Cache-row loss or truncation can likewise create
+work below the cursor. Full audits are therefore required even when incremental scans
+are continuously successful. On startup the projector establishes its process-local
+cursor from the maximum current source key observed at or after the required finishing
+audit; restart may repeat work but cannot lose it.
 
 The database guard writes only when the source `dms.Document` still exists at the
 captured `ContentVersion`. A stale materialization no-ops and is rediscovered at its
@@ -191,11 +236,12 @@ overwrite a higher cache version. Reconciliation and optional direct fill after 
 relational read use the same guard.
 
 There are no projection queues, enqueue APIs, persisted cursors, backfill epochs,
-high-watermarks, projector-state rows, failure rows, retry classifications, dead-letter
-transitions, requeue APIs, or manual repair workflows in v1. Empty-cache population,
-ongoing projection, restart, truncation/rebuild, and recovery all use the same mismatch
-query. A maximum scanned or projected version cannot prove completeness because a lower
-current version may still be missing.
+projector-state rows, failure rows, retry classifications, dead-letter transitions,
+requeue APIs, or manual repair workflows in v1. The process-local incremental and audit
+cursors are disposable scan positions only. Empty-cache population,
+truncation/rebuild, recovery, and completeness all derive from the current database
+difference. A maximum scanned or projected version cannot prove completeness because a
+lower current version may still be missing.
 
 Failures use bounded in-memory exponential backoff with jitter keyed by opaque data-store
 identity, `DocumentId`, and current `ContentVersion`. A deferred candidate does not
@@ -244,26 +290,33 @@ incompatible effective schemas.
 ## Projection Health and CDC Readiness
 
 Projection health is evaluated for each explicit `(tenant key, DataStoreId)` execution
-context with provider-equivalent current-state queries. It reports at least:
+context. It reports at least:
 
 - selection reason and required-table existence,
 - whether the in-process loop is running,
-- total mismatch count,
-- missing-row count,
-- version-mismatched-row count,
-- oldest mismatch source timestamp and age, derived from
-  `dms.Document.ContentLastModifiedAt`.
+- whether an incremental scan or full audit is in progress,
+- the latest completed full audit's observation time, duration, and age,
+- that audit's exact total mismatch, missing-row, and version-mismatched-row counts,
+- its oldest mismatch source timestamp and age, derived from
+  `dms.Document.ContentLastModifiedAt`,
+- currently known unresolved incremental candidates and retry deferrals, identified as
+  process-local observations rather than exact database counts.
 
 Optional counts by project/resource may be exposed when operationally safe. Process-local
-last scan, duration, successful upsert, and last error are diagnostic only.
+incremental cursor, last scan, successful upsert, and last error are diagnostic only.
 `LastScannedContentVersion`, `LastProjectedContentVersion`, and last-success timestamps
 are never completeness evidence.
 
-Configurable mismatch-count and oldest-age thresholds distinguish brief asynchronous lag
-from sustained degradation. CDC projection completeness is stricter: the exact current
-mismatch count must be zero. A same-version timestamp comparison is not another
-freshness or completeness test; embedded metadata consistency is enforced when a row is
-materialized and written.
+Health reads return the latest audit snapshot; they do not synchronously execute a full
+anti-join. Configurable audit-age, mismatch-count, and oldest-mismatch-age thresholds
+distinguish a fresh zero observation or brief asynchronous lag from a stale audit or
+sustained degradation. A nonzero finishing audit invalidates completeness until a later
+exact finishing aggregate returns zero. Incremental discovery makes readiness false
+while that known candidate or retry remains unresolved, but successful repair does not
+force another full scan; the last exact-zero audit retains its original observation time
+and must still satisfy the audit-age threshold. A same-version timestamp comparison is
+not another freshness or completeness test; embedded metadata consistency is enforced
+when a row is materialized and written.
 
 Connector registration prerequisites are the subset available before completeness:
 
@@ -276,7 +329,9 @@ Connector registration prerequisites are the subset available before completenes
 End-to-end CDC readiness additionally requires:
 
 - the configured target still resolves to its startup provider/physical source binding,
-- zero current projection mismatches,
+- a sufficiently recent completed full audit whose exact finishing mismatch count is
+  zero,
+- no currently known unresolved incremental candidate or retry deferral,
 - connector snapshot/catch-up through a database source position observed at or after
   the zero-mismatch observation,
 - connector lag within its configured threshold.
@@ -446,9 +501,10 @@ For a new instance:
 4. Register the connector before reconciliation or application writes that must be
    observed.
 5. Start DMS reconciliation so guarded cache upserts flow through established capture.
-6. Observe zero mismatches and a database source position at or after that observation;
-   advertise readiness only after snapshot/catch-up reaches that position and connector
-   lag is acceptable.
+6. Complete a full audit with an exact finishing count of zero mismatches and observe a
+   database source position at or after that audit observation; advertise readiness only
+   after snapshot/catch-up reaches that position, no known projection work remains, and
+   connector lag is acceptable.
 
 For an existing instance, perform the same one-shot sequence before write/delete traffic
 that the host expects CDC to observe. If capture cannot be registered first, quiesce
@@ -485,10 +541,15 @@ access paths:
 - `DocumentCache.StreamEtag` stores the DMS-computed opaque ETag for the fixed CDC
   representation; it is not used by API reads.
 - Provider-specific constraints ensure `DocumentJson` is a JSON object.
-- Add `dms.Document(ContentVersion, DocumentId)` only when realistic provider query-plan
-  measurements show the ordered bounded scan needs it.
+- `dms.Document(ContentVersion, DocumentId)` supports incremental discovery and bounded
+  full-audit paging and is required when `dms.DocumentCache` is provisioned.
 - Add no additional projector/diagnostic index beyond the data-model-defined access
-  paths until mismatch-query measurements demonstrate a need.
+  paths until realistic provider query-plan measurements demonstrate a need.
+
+If realistic steady-state and audit benchmarks remain unacceptable with the incremental
+lane and required index, the next design step is a small transactionally maintained
+pending-work table or flag. That durable optimization is deferred from v1 and must not
+replace full audits as completeness evidence without a separate correctness decision.
 
 PostgreSQL and SQL Server may use different plans while exposing equivalent logical
 reconciliation, health, and fencing behavior.
@@ -502,7 +563,9 @@ third-party consumers. Local insecure defaults must be replaced in production.
 
 Structured logs and metrics cover:
 
-- reconciliation scans, candidates, attempts, successes, failures, and durations,
+- incremental source rows examined, candidates, cursor advances, and scan durations,
+- full-audit rows examined, finishing counts, observation age, and durations,
+- projection attempts, successes, and failures,
 - retry deferrals and backoff duration,
 - guarded stale-write skips,
 - mismatch count and oldest mismatch age,
@@ -549,6 +612,13 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   that key in the routed public topic,
 - projection selection, empty-cache population, update, restart, retry, rebuild,
   fencing, health, cache fallback, and mixed-target isolation,
+- ordinary high-version updates are discovered through the incremental lane without a
+  full relationship scan,
+- a lower version committed after the incremental cursor advances is repaired by the
+  next full audit,
+- cache-row loss below the incremental cursor is repaired by the next full audit,
+- advancing the cursor past a failed candidate retains that candidate for bounded
+  in-memory retry,
 - a higher projected `ContentVersion` cannot hide a missing lower current version,
 - projection or connector failure never blocks normal API deletion.
 
