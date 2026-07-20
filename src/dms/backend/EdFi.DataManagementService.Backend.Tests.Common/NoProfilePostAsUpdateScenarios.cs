@@ -208,18 +208,46 @@ public static class NoProfilePostAsUpdateScenarios
             .Be(expectedFailureMessage);
     }
 
-    /// <summary>Asserts a rejected POST-as-update committed no row changes: the document and School rows are byte-for-byte unchanged, exactly one document remains, and no row was created for the rejected request UUID.</summary>
+    /// <summary>
+    /// Asserts a rejected POST-as-update committed no row changes across the full seeded surface: the document
+    /// and School rows are byte-for-byte unchanged, the seeded base-address and collection-aligned extension
+    /// rows are unchanged, the School referential-identity row is unchanged, exactly one document remains, and
+    /// no row was created for the rejected request UUID. The base-address and aligned-extension collections must
+    /// be non-empty so a rejection that silently mutated those rows (or the referential identity) cannot pass a
+    /// document/School-only comparison.
+    /// </summary>
     public static void AssertRejectedPostAsUpdateCommittedNoChanges(
         DocumentRow documentBefore,
         DocumentRow documentAfter,
         SchoolRow schoolBefore,
         SchoolRow schoolAfter,
+        IReadOnlyList<SchoolAddressRow> addressesBefore,
+        IReadOnlyList<SchoolAddressRow> addressesAfter,
+        IReadOnlyList<SchoolExtensionAddressRow> extensionAddressesBefore,
+        IReadOnlyList<SchoolExtensionAddressRow> extensionAddressesAfter,
+        Guid schoolReferentialIdBefore,
+        Guid schoolReferentialIdAfter,
         long documentCount,
         long incomingDocumentUuidCount
     )
     {
+        // The seeded fixture creates two base-address rows and two collection-aligned extension rows; requiring
+        // them non-empty keeps the unchanged-rowset comparison from passing vacuously against an empty readback.
+        addressesBefore.Should().HaveCount(2);
+        extensionAddressesBefore.Should().HaveCount(2);
+
         documentAfter.Should().Be(documentBefore);
         schoolAfter.Should().Be(schoolBefore);
+        // Order-sensitive equality (each collection is read back ordered) proves every base-address and aligned
+        // extension row is byte-for-byte unchanged, not merely that the counts match.
+        addressesAfter.Should().Equal(addressesBefore);
+        extensionAddressesAfter.Should().Equal(extensionAddressesBefore);
+        schoolReferentialIdAfter
+            .Should()
+            .Be(
+                schoolReferentialIdBefore,
+                "a rejected immutable-identity change leaves the School referential identity unchanged"
+            );
         documentCount.Should().Be(1);
         incomingDocumentUuidCount.Should().Be(0);
     }

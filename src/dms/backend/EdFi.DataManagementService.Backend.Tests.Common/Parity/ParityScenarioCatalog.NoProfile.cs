@@ -50,17 +50,20 @@ public static partial class ParityScenarioCatalog
         CreateVariant(
             "InsertSuccess",
             "Create returns InsertSuccess with a persisted Document row.",
-            "It_returns_insert_success_for_the_repository_create_flow"
+            "It_returns_insert_success_for_the_repository_create_flow",
+            "NoProfileCreateBaselineScenarios.AssertInsertSuccess"
         ),
         CreateVariant(
             "RootAndNestedCollectionStableIds",
             "Root and nested collection rows persist with unique, positive, stable CollectionItemIds and 0-based ordinals.",
-            "It_persists_root_and_nested_collection_rows_with_stable_collection_ids"
+            "It_persists_root_and_nested_collection_rows_with_stable_collection_ids",
+            "NoProfileCreateBaselineScenarios.AssertRootAndNestedCollectionRows"
         ),
         CreateVariant(
             "RootAndCollectionExtensionAndExtensionChild",
             "Root extension, collection-aligned extension, and extension-child collection rows all persist on create.",
-            "It_persists_root_extensions_collection_extensions_and_extension_child_collections"
+            "It_persists_root_extensions_collection_extensions_and_extension_child_collections",
+            "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows"
         ),
         // --- NoProfileChangedPutOmissionSemantics + variants --------------------------------
         Gap(
@@ -84,35 +87,40 @@ public static partial class ParityScenarioCatalog
             "A changed PUT clears an omitted inlined root column instead of preserving the old value.",
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
-            "It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"
+            "It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value",
+            "NoProfileUpdateSemanticsScenarios.AssertClearedOmittedInlinedColumn"
         ),
         UpdateVariant(
             "DeletedAlignedExtensionScope",
             "A changed PUT deletes omitted collection-aligned extension scope rows without deleting the base rows.",
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
-            "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows"
+            "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows",
+            "NoProfileUpdateSemanticsScenarios.AssertDeletedOmittedAlignedExtensionScope"
         ),
         UpdateVariant(
             "ContentVersionBump",
             "A changed PUT returns UpdateSuccess and bumps ContentVersion.",
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
-            "It_returns_update_success_and_bumps_content_version_for_the_put_flow"
+            "It_returns_update_success_and_bumps_content_version_for_the_put_flow",
+            "NoProfileUpdateSemanticsScenarios.AssertUpdateSuccessAndContentVersionBump"
         ),
         UpdateVariant(
             "DeletedBaseCollectionRows",
             "A changed PUT reduces a large base collection to the retained rows, deleting omitted rows in batches.",
             "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
-            "It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches"
+            "It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches",
+            "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow"
         ),
         UpdateVariant(
             "DeletedAndReplacedChildCollectionRows",
             "A changed PUT reuses retained child-collection ids and replaces omitted rows across multiple child tables.",
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
-            "It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows"
+            "It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows",
+            "NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse"
         ),
         Gap(
             "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection",
@@ -187,17 +195,20 @@ public static partial class ParityScenarioCatalog
         ReorderVariant(
             "OrdinalReuseStableIds",
             "Reorder reuses CollectionItemIds while recomputing ordinals.",
-            "It_reuses_collection_item_ids_while_recomputing_ordinals_for_a_full_surface_reorder"
+            "It_reuses_collection_item_ids_while_recomputing_ordinals_for_a_full_surface_reorder",
+            "NoProfileCollectionReorderScenarios.AssertReusesCollectionItemIdsWhileRecomputingOrdinals"
         ),
         ReorderVariant(
             "TwoRowSwapUnderSiblingUniqueness",
             "A two-row ordinal swap commits under the sibling-ordinal uniqueness constraint.",
-            "It_succeeds_for_a_two_row_swap_under_the_db_sibling_ordinal_uniqueness_constraint"
+            "It_succeeds_for_a_two_row_swap_under_the_db_sibling_ordinal_uniqueness_constraint",
+            "NoProfileCollectionReorderScenarios.AssertTwoRowSwapCommitsUnderSiblingUniqueness"
         ),
         ReorderVariant(
             "ContentVersionBump",
             "A full-surface reorder returns UpdateSuccess and bumps ContentVersion.",
-            "It_returns_update_success_and_bumps_content_version_for_a_full_surface_reorder"
+            "It_returns_update_success_and_bumps_content_version_for_a_full_surface_reorder",
+            "NoProfileCollectionReorderScenarios.AssertUpdateSuccessAndContentVersionBump"
         ),
         // --- NoProfileGuardedNoOp (10 variants) ---------------------------------------------
         Gap(
@@ -220,7 +231,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_for_an_unchanged_put",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
         ),
         GuardedNoOp(
             "PostAsUpdate",
@@ -228,7 +241,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_and_preserves_the_existing_document_for_an_unchanged_post_as_update",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
         ),
         GuardedNoOp(
             "PutCurrentStateRefresh",
@@ -236,7 +251,10 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_without_a_repository_retry_when_current_state_refreshes_the_content_version",
                 "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_put",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         GuardedNoOp(
             "PostAsUpdateCurrentStateRefresh",
@@ -244,7 +262,10 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_without_a_repository_retry_when_post_as_update_refreshes_current_state_freshness",
                 "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_post_as_update",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         GuardedNoOp(
             "PutAfterReorder",
@@ -252,7 +273,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_for_an_unchanged_put_after_reorder",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put_after_reorder",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedAfterReorder"
         ),
         GuardedNoOp(
             "PostAsUpdateAfterReorder",
@@ -260,7 +283,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_and_preserves_the_existing_document_for_an_unchanged_post_as_update_after_reorder",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update_after_reorder",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedAfterReorder"
         ),
         GuardedNoOp(
             "StalePut",
@@ -268,7 +293,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_retries_and_returns_update_success_after_the_no_op_compare_goes_stale",
                 "It_preserves_the_rowsets_but_keeps_the_concurrent_content_version_bump",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         GuardedNoOp(
             "StalePostAsUpdate",
@@ -276,7 +303,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_retries_and_returns_update_success_for_a_stale_post_as_update_no_op_compare",
                 "It_preserves_the_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         GuardedNoOp(
             "PutCommitWindowRace",
@@ -284,7 +313,10 @@ public static partial class ParityScenarioCatalog
             [
                 "It_retries_the_no_op_after_the_commit_window_race_and_returns_update_success",
                 "It_preserves_rowsets_but_keeps_the_concurrent_content_version_bump",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         GuardedNoOp(
             "PostAsUpdateCommitWindowRace",
@@ -292,7 +324,10 @@ public static partial class ParityScenarioCatalog
             [
                 "It_retries_the_no_op_after_the_commit_window_race_and_preserves_the_existing_document",
                 "It_preserves_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
-            ]
+            ],
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
         ),
         // --- NoProfileMultiBatchCollection + variants ---------------------------------------
         Gap(
@@ -322,7 +357,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_insert_success_and_persists_the_full_large_collection",
                 "It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit",
-            ]
+            ],
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions"
         ),
         Gap(
             "NoProfileMultiBatchCollection/DeleteUpdate",
@@ -333,7 +370,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches",
                 "It_partitions_collection_delete_commands_using_the_compiled_batch_limit",
-            ]
+            ],
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions"
         ),
         Gap(
             "NoProfileMultiBatchCollection/AlignedExtensionCreate",
@@ -344,7 +383,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_insert_success_and_persists_the_full_large_collection_aligned_extension_scope",
                 "It_partitions_collection_aligned_extension_insert_commands_using_the_compiled_batch_limit",
-            ]
+            ],
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionAlignedExtensionCreatePersisted"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions"
         ),
         Gap(
             "NoProfileMultiBatchCollection/AuthoritativeParameterPressure",
@@ -355,7 +396,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_persists_authoritative_student_academic_record_root_extension_and_large_collection_rows_on_create",
                 "It_uses_a_payload_large_enough_to_exercise_real_parameter_pressure",
-            ]
+            ],
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionCreatePersisted"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertParameterPressurePayload"
         ),
         Gap(
             "NoProfileMultiBatchCollection/AuthoritativeChangedPutIdentity",
@@ -376,6 +419,8 @@ public static partial class ParityScenarioCatalog
                 "It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
                 "It_partitions_collection_update_commands_using_the_compiled_batch_limit",
             ],
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions",
             boundaryDetail: "RelationalWriteNoProfilePersister batching through WritePlanBatchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch"
         ),
         // --- NoProfilePostAsUpdate + variants -----------------------------------------------
@@ -401,7 +446,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update",
                 "It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update",
-            ]
+            ],
+            sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
+                + " + NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied"
         ),
         Gap(
             "NoProfilePostAsUpdate/ImmutableIdentityRejected",
@@ -426,7 +473,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits",
                 "It_applies_last_writer_state_to_the_existing_document_instead_of_creating_duplicate_rows",
-            ]
+            ],
+            sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertStaleCreateConvertedToPostAsUpdate"
+                + " + NoProfilePostAsUpdateScenarios.AssertLastWriterStateApplied"
         ),
         Gap(
             "NoProfilePostAsUpdate/AuthoritativeDs52SchoolYearType",
@@ -437,7 +486,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid",
                 "It_updates_the_authoritative_ds52_row_in_place_for_post_as_update",
-            ]
+            ],
+            sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
+                + " + NoProfilePostAsUpdateScenarios.AssertAuthoritativeSchoolYearTypeRowInPlace"
         ),
         Gap(
             "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",
@@ -448,7 +499,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid",
                 "It_updates_root_and_extension_rows_in_place_for_authoritative_student_academic_record_post_as_update",
-            ]
+            ],
+            sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
+                + " + NoProfilePostAsUpdateScenarios.AssertAuthoritativeRootAndExtensionInPlace"
         ),
         // This fixture also exercises retained-and-omitted child-collection replacement, which is a merge
         // behavior owned by the DeletedAndReplacedChildCollectionRows omission-semantics variant, and a
@@ -501,7 +554,9 @@ public static partial class ParityScenarioCatalog
             [
                 "It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted",
                 "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
-            ]
+            ],
+            sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites"
+                + " + NoProfileAtomicRollbackAssertions.AssertNoPartialRelationalStateAfterRollback"
         ),
         Gap(
             "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically",
@@ -793,14 +848,23 @@ public static partial class ParityScenarioCatalog
         "PostgreSQL-only relational read-back ETag check with no extracted provider-neutral shared contract; the "
         + "PostgreSQL fixture recorded on this row is the effective assertion entry point.";
 
-    private static ParityScenario CreateVariant(string variant, string contract, string method) =>
+    // Every variant names its own SharedEntryPoint: belonging to a canonical family does not resolve a contract
+    // (a shared production boundary does not imply running the family's assertion helpers), so each variant must
+    // declare the exact reusable helper(s) its adapter executes.
+    private static ParityScenario CreateVariant(
+        string variant,
+        string contract,
+        string method,
+        string sharedEntryPoint
+    ) =>
         Gap(
             $"NoProfileFullSurfaceCreate/{variant}",
             contract,
             ProductionBoundary.NoProfilePersister,
             "PostgresqlRelationalWriteCreateBaselineTests.cs",
             "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
-            [method]
+            [method],
+            sharedEntryPoint: sharedEntryPoint
         );
 
     private static ParityScenario UpdateVariant(
@@ -808,7 +872,8 @@ public static partial class ParityScenarioCatalog
         string contract,
         string file,
         string fixture,
-        string method
+        string method,
+        string sharedEntryPoint
     ) =>
         Gap(
             $"NoProfileChangedPutOmissionSemantics/{variant}",
@@ -816,27 +881,40 @@ public static partial class ParityScenarioCatalog
             ProductionBoundary.NoProfileMerge,
             file,
             fixture,
-            [method]
+            [method],
+            sharedEntryPoint: sharedEntryPoint
         );
 
-    private static ParityScenario ReorderVariant(string variant, string contract, string method) =>
+    private static ParityScenario ReorderVariant(
+        string variant,
+        string contract,
+        string method,
+        string sharedEntryPoint
+    ) =>
         Gap(
             $"FullSurfaceCollectionReorder/{variant}",
             contract,
             ProductionBoundary.NoProfileMerge,
             "PostgresqlRelationalWriteCollectionReorderTests.cs",
             "Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
-            [method]
+            [method],
+            sharedEntryPoint: sharedEntryPoint
         );
 
-    private static ParityScenario GuardedNoOp(string variant, string pgFixture, string[] pgMethods) =>
+    private static ParityScenario GuardedNoOp(
+        string variant,
+        string pgFixture,
+        string[] pgMethods,
+        string sharedEntryPoint
+    ) =>
         Gap(
             $"NoProfileGuardedNoOp/{variant}",
             $"Guarded no-op variant: {variant}.",
             ProductionBoundary.GuardedNoOp,
             "PostgresqlRelationalWriteGuardedNoOpTests.cs",
             pgFixture,
-            pgMethods
+            pgMethods,
+            sharedEntryPoint: sharedEntryPoint
         );
 
     private static ParityScenario PgSmokeCreate(

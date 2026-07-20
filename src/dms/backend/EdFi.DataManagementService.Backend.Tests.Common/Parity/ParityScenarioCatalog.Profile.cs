@@ -409,9 +409,14 @@ public static partial class ParityScenarioCatalog
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/ThreeLevelChain",
-            "A three-level chain where the top-level parent and the level-2 child are matched-updates and a new non-creatable level-3 grandchild with no stored match is rejected, the rejection carrying the level-3 (grandchildren) scope so walker recursion is proven to thread the rejection through both nested levels; provider-independent, validated at the synthesizer unit level.",
-            "Given_three_level_chain_with_update_allowed_at_levels_1_and_2_create_denied_at_level_3",
-            ["It_returns_a_rejection", "It_identifies_the_grandchildren_scope_in_the_rejection"]
+            "A three-level chain contrasting descendant create under an existing visible middle-level parent (allowed — the new grandchild is inserted) with descendant create under a newly created, non-creatable visible middle-level parent (rejected at the middle scope, the descendant never reached); provider-independent, validated at the synthesizer unit level.",
+            "Given_three_level_chain_contrasts_descendant_create_under_an_existing_versus_a_newly_created_middle_parent",
+            [
+                "It_allows_the_descendant_create_under_an_existing_middle_parent",
+                "It_inserts_the_descendant_row_under_the_existing_middle_parent",
+                "It_rejects_the_descendant_create_under_a_newly_created_middle_parent",
+                "It_identifies_the_new_middle_parent_scope_in_the_rejection",
+            ]
         ),
         // ProfileHiddenExtensionChildCollectionPreservation + variant
         Profile(
@@ -439,7 +444,14 @@ public static partial class ParityScenarioCatalog
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
-            ["It_returns_update_success_for_an_unchanged_profiled_put", "It_does_not_change_rowsets"]
+            [
+                "It_returns_update_success_for_an_unchanged_profiled_put",
+                "It_does_not_change_rowsets",
+                "It_does_not_change_content_version",
+                "It_does_not_change_content_last_modified_at",
+                "It_does_not_change_identity_version",
+                "It_does_not_change_identity_last_modified_at",
+            ]
         ),
         Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPut",
@@ -447,7 +459,14 @@ public static partial class ParityScenarioCatalog
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
-            ["It_returns_update_success_for_an_unchanged_profiled_put", "It_does_not_change_rowsets"]
+            [
+                "It_returns_update_success_for_an_unchanged_profiled_put",
+                "It_does_not_change_rowsets",
+                "It_does_not_change_content_version",
+                "It_does_not_change_content_last_modified_at",
+                "It_does_not_change_identity_version",
+                "It_does_not_change_identity_last_modified_at",
+            ]
         ),
         Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPostAsUpdate",

@@ -9,16 +9,20 @@ namespace EdFi.DataManagementService.Backend.Tests.Common.Parity;
 /// Resolves each parity row's effective reusable assertion/helper entry point into exactly one unambiguous
 /// <see cref="EntryPointKind"/>. The catalog records the fixture and reusable assertion/helper entry point
 /// separately from the per-engine test locations: a row is <see cref="EntryPointKind.Direct"/> when it names
-/// its own provider-neutral shared contract, <see cref="EntryPointKind.Inherited"/> when it reuses the shared
-/// contract of the scenario it defers to or of its canonical family <b>at the same production boundary</b>, and
-/// <see cref="EntryPointKind.ProviderSpecific"/> when no shared contract applies and its existing per-engine or
-/// unit test locations are the effective entry points (justified by a recorded rationale).
+/// its own provider-neutral shared contract, <see cref="EntryPointKind.Inherited"/> when it explicitly defers to
+/// another scenario's shared contract through <see cref="ParityScenario.CoveredByScenarioId"/> at the same
+/// production boundary (a supporting-smoke deferral), and <see cref="EntryPointKind.ProviderSpecific"/> when no
+/// shared contract applies and its existing per-engine or unit test locations are the effective entry points
+/// (justified by a recorded rationale).
 ///
-/// Inheritance is boundary-scoped on purpose. A shared assertion pins one production mechanic
-/// (<see cref="ParityScenario.Boundary"/>), and a variant may deliberately exercise a different mechanic than its
-/// canonical family (for example an immutable-identity rejection variant of a persister family). Inheriting a
-/// contract across mechanics would certify assertions the variant never runs, so a variant whose boundary differs
-/// from the scenario it would inherit from resolves from its own recorded entry point instead.
+/// Inheritance is only ever explicit. Belonging to a canonical family (a shared id prefix, see
+/// <c>ParityScenarioCatalog.CanonicalIdOf</c>) is used for grouping and naming validation, not contract
+/// resolution: sharing a production boundary with the family does not imply running the family's assertion
+/// helpers, so a variant that shares a boundary but exercises different helpers would otherwise silently
+/// advertise the wrong reusable contract. Every ordinary variant therefore names its own
+/// <see cref="ParityScenario.SharedEntryPoint"/> (or a provider-specific rationale); a variant that records
+/// neither, and no <see cref="ParityScenario.CoveredByScenarioId"/> deferral, resolves to <c>null</c>
+/// (unresolved) rather than inheriting a family contract by boundary alone.
 /// </summary>
 public static class ParityEntryPointResolution
 {
@@ -74,32 +78,10 @@ public static class ParityEntryPointResolution
             }
         }
 
-        string canonicalId = ParityScenarioCatalog.CanonicalIdOf(scenario.Id);
-        if (!string.Equals(canonicalId, scenario.Id, StringComparison.Ordinal))
-        {
-            ParityScenario? family = FindById(catalog, canonicalId);
-
-            // Only inherit the family's shared contract when the variant pins the same production mechanic.
-            // A variant at a different boundary asserts a different behavior, so the family's assertions would
-            // be the wrong contract for it; such a variant must record its own Direct entry point (or a
-            // provider-specific rationale) and is resolved by the branches below.
-            if (
-                family is not null
-                && family.Boundary == scenario.Boundary
-                && !string.IsNullOrWhiteSpace(family.SharedEntryPoint)
-            )
-            {
-                return new EffectiveEntryPoint(
-                    EntryPointKind.Inherited,
-                    family.SharedEntryPoint,
-                    family.Id,
-                    [],
-                    [],
-                    []
-                );
-            }
-        }
-
+        // Belonging to a canonical family (a shared id prefix) does not resolve a contract: sharing a production
+        // boundary with the family does not imply running the family's assertion helpers, so a variant must name
+        // its own SharedEntryPoint or defer explicitly through CoveredByScenarioId above. A variant that records
+        // neither falls through to the provider-specific branch or resolves unresolved (null) below.
         bool hasLocation =
             !scenario.PgsqlLocations.IsDefaultOrEmpty
             || !scenario.MssqlLocations.IsDefaultOrEmpty

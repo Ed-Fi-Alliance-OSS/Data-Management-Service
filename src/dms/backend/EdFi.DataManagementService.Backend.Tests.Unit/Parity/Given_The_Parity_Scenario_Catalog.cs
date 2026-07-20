@@ -509,10 +509,17 @@ public class Given_The_Parity_Scenario_Catalog
         row.MssqlGapOwner.Should().Be("DMS-1285");
         row.Classification.Should().Be(ParityClassification.KnownGap);
         Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedChangedUpdateBatchPartitionsPgTriples);
-        ParityEntryPointResolution
-            .ResolveEffectiveEntryPoint(row)!
-            .Kind.Should()
-            .Be(EntryPointKind.Inherited);
+
+        // The changed-update batch row runs update-specific helpers, not its family's create-batch contract, so
+        // it names its own Direct entry point rather than inheriting the family contract by shared boundary.
+        EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
+        resolved.Kind.Should().Be(EntryPointKind.Direct);
+        resolved
+            .SharedValue.Should()
+            .Be(
+                "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted"
+                    + " + NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions"
+            );
     }
 
     [Test]

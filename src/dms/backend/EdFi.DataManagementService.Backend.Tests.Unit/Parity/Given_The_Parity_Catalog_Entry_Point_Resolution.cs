@@ -47,20 +47,23 @@ public class Given_The_Parity_Catalog_Entry_Point_Resolution
 }
 
 /// <summary>
-/// A variant may deliberately pin a different production mechanic than its canonical family. Because a shared
-/// assertion pins one mechanic, inheriting the family's contract across mechanics would certify assertions the
-/// variant never runs, so effective-entry-point resolution must not inherit a family contract across boundaries.
+/// Belonging to a canonical family (a shared id prefix) never inherits a contract. A shared assertion pins one
+/// mechanic, and sharing a production boundary with the family does not imply running the family's assertion
+/// helpers, so a same-boundary variant that records neither its own <c>SharedEntryPoint</c> nor a
+/// <c>CoveredByScenarioId</c> deferral resolves unresolved (null) rather than silently inheriting the family
+/// contract by boundary alone.
 /// </summary>
 [TestFixture]
-public class Given_A_Variant_At_A_Different_Boundary_Than_Its_Canonical_Family
+public class Given_A_Same_Boundary_Variant_Without_An_Explicit_Entry_Point
 {
-    private EffectiveEntryPoint _resolved = null!;
+    private ParityScenario _family = null!;
+    private ParityScenario _variant = null!;
 
     [SetUp]
     public void Setup()
     {
         // A real canonical id so CanonicalIdOf recognizes the "/variant" row as belonging to this family.
-        var family = new ParityScenario
+        _family = new ParityScenario
         {
             Id = "NoProfilePostAsUpdate",
             Layer = ParityLayer.NoProfile,
@@ -73,62 +76,13 @@ public class Given_A_Variant_At_A_Different_Boundary_Than_Its_Canonical_Family
             Classification = ParityClassification.KnownGap,
             MssqlGapOwner = "DMS-1285",
         };
-        var variant = new ParityScenario
-        {
-            Id = "NoProfilePostAsUpdate/RejectedAtADifferentBoundary",
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract = "variant that pins a different mechanic than its family",
-            Boundary = ProductionBoundary.IdentityStability,
-            PgsqlLocations = [new("Sample.cs", "Given_A_Sample", ["It_rejects"])],
-            PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Gap,
-            Classification = ParityClassification.KnownGap,
-            MssqlGapOwner = "DMS-1285",
-            ProviderSpecificEntryPointRationale =
-                "distinct-boundary variant; the recorded fixture is its entry point",
-        };
-
-        _resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(variant, [family, variant])!;
-    }
-
-    [Test]
-    public void It_does_not_inherit_the_family_shared_contract() =>
-        _resolved.Kind.Should().Be(EntryPointKind.ProviderSpecific);
-
-    [Test]
-    public void It_does_not_carry_the_family_shared_value() => _resolved.SharedValue.Should().BeNull();
-}
-
-/// <summary>
-/// The complement: a variant that pins the same production mechanic as its canonical family still inherits the
-/// family's shared contract, so the boundary guard narrows inheritance without disabling it.
-/// </summary>
-[TestFixture]
-public class Given_A_Variant_At_The_Same_Boundary_As_Its_Canonical_Family
-{
-    private EffectiveEntryPoint _resolved = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var family = new ParityScenario
-        {
-            Id = "NoProfilePostAsUpdate",
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract = "canonical family at the persister boundary",
-            SharedEntryPoint = "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace",
-            Boundary = ProductionBoundary.NoProfilePersister,
-            PgsqlLocations = [new("Family.cs", "Given_A_Family", ["It_updates"])],
-            PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Gap,
-            Classification = ParityClassification.KnownGap,
-            MssqlGapOwner = "DMS-1285",
-        };
-        var variant = new ParityScenario
+        // Same boundary as its family, a recorded location, but no SharedEntryPoint, no CoveredByScenarioId, and
+        // no provider-specific rationale — exactly the shape that previously inherited the family contract.
+        _variant = new ParityScenario
         {
             Id = "NoProfilePostAsUpdate/SameBoundaryVariant",
             Layer = ParityLayer.NoProfile,
-            BehavioralContract = "variant pinning the same mechanic as its family",
+            BehavioralContract = "variant sharing its family's boundary but declaring no entry point",
             Boundary = ProductionBoundary.NoProfilePersister,
             PgsqlLocations = [new("Sample.cs", "Given_A_Sample", ["It_updates"])],
             PgsqlCoverage = EngineCoverage.Covered,
@@ -136,22 +90,241 @@ public class Given_A_Variant_At_The_Same_Boundary_As_Its_Canonical_Family
             Classification = ParityClassification.KnownGap,
             MssqlGapOwner = "DMS-1285",
         };
-
-        _resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(variant, [family, variant])!;
     }
 
     [Test]
-    public void It_inherits_the_family_shared_contract() =>
-        _resolved.Kind.Should().Be(EntryPointKind.Inherited);
+    public void It_does_not_inherit_the_family_shared_contract() =>
+        ParityEntryPointResolution
+            .ResolveEffectiveEntryPoint(_variant, [_family, _variant])
+            .Should()
+            .BeNull();
 
     [Test]
-    public void It_carries_the_family_shared_value_and_source() =>
+    public void It_leaves_the_family_itself_resolving_to_its_own_direct_contract() =>
+        ParityEntryPointResolution
+            .ResolveEffectiveEntryPoint(_family, [_family, _variant])!
+            .Kind.Should()
+            .Be(EntryPointKind.Direct);
+}
+
+/// <summary>
+/// Inheritance survives only through an explicit <c>CoveredByScenarioId</c> deferral (the supporting-smoke path):
+/// a row that defers to a same-boundary canonical scenario with a shared contract resolves Inherited, carrying
+/// that scenario's shared value and id.
+/// </summary>
+[TestFixture]
+public class Given_A_Row_That_Defers_Through_CoveredByScenarioId
+{
+    private EffectiveEntryPoint _resolved = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var covered = new ParityScenario
+        {
+            Id = "NoProfileGuardedNoOp",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "canonical family with a shared no-op contract",
+            SharedEntryPoint = "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome",
+            Boundary = ProductionBoundary.GuardedNoOp,
+            PgsqlLocations = [new("Family.cs", "Given_A_Family", ["It_no_ops"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Gap,
+            Classification = ParityClassification.KnownGap,
+            MssqlGapOwner = "DMS-1285",
+        };
+        var smoke = new ParityScenario
+        {
+            Id = "NoProfile/AuthoritativeSmoke/Sample/RepeatPutNoOp",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "supporting smoke deferring its mechanic to the canonical no-op contract",
+            Boundary = ProductionBoundary.GuardedNoOp,
+            PgsqlLocations = [new("Smoke.cs", "Given_A_Smoke", ["It_repeats"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Mapped,
+            Classification = ParityClassification.SupportingSmoke,
+            CoveredByScenarioId = "NoProfileGuardedNoOp",
+        };
+
+        _resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(smoke, [covered, smoke])!;
+    }
+
+    [Test]
+    public void It_resolves_inherited() => _resolved.Kind.Should().Be(EntryPointKind.Inherited);
+
+    [Test]
+    public void It_carries_the_covered_shared_value_and_source() =>
         (_resolved.SharedValue, _resolved.InheritedFromScenarioId)
             .Should()
-            .Be(
-                (
-                    "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace",
-                    "NoProfilePostAsUpdate"
-                )
-            );
+            .Be(("NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome", "NoProfileGuardedNoOp"));
+}
+
+/// <summary>
+/// Pins the exact effective reusable-contract member set for every no-profile family variant that previously
+/// resolved by canonical-family inheritance. This is the 31-row audit guard: each variant must now resolve
+/// Direct to precisely the helper(s) its adapter runs, so a variant cannot silently drift back to advertising a
+/// family contract it does not execute (nor advertise a superset it does not run).
+/// </summary>
+[TestFixture]
+public class Given_The_Parity_Catalog_Family_Variants_Effective_Entry_Points
+{
+    private static readonly (string Id, string ExpectedSharedValue)[] ExpectedVariantEntryPoints =
+    [
+        ("NoProfileFullSurfaceCreate/InsertSuccess", "NoProfileCreateBaselineScenarios.AssertInsertSuccess"),
+        (
+            "NoProfileFullSurfaceCreate/RootAndNestedCollectionStableIds",
+            "NoProfileCreateBaselineScenarios.AssertRootAndNestedCollectionRows"
+        ),
+        (
+            "NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild",
+            "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows"
+        ),
+        (
+            "NoProfileChangedPutOmissionSemantics/ClearedInlinedColumn",
+            "NoProfileUpdateSemanticsScenarios.AssertClearedOmittedInlinedColumn"
+        ),
+        (
+            "NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope",
+            "NoProfileUpdateSemanticsScenarios.AssertDeletedOmittedAlignedExtensionScope"
+        ),
+        (
+            "NoProfileChangedPutOmissionSemantics/ContentVersionBump",
+            "NoProfileUpdateSemanticsScenarios.AssertUpdateSuccessAndContentVersionBump"
+        ),
+        (
+            "NoProfileChangedPutOmissionSemantics/DeletedBaseCollectionRows",
+            "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow"
+        ),
+        (
+            "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
+            "NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse"
+        ),
+        (
+            "FullSurfaceCollectionReorder/OrdinalReuseStableIds",
+            "NoProfileCollectionReorderScenarios.AssertReusesCollectionItemIdsWhileRecomputingOrdinals"
+        ),
+        (
+            "FullSurfaceCollectionReorder/TwoRowSwapUnderSiblingUniqueness",
+            "NoProfileCollectionReorderScenarios.AssertTwoRowSwapCommitsUnderSiblingUniqueness"
+        ),
+        (
+            "FullSurfaceCollectionReorder/ContentVersionBump",
+            "NoProfileCollectionReorderScenarios.AssertUpdateSuccessAndContentVersionBump"
+        ),
+        (
+            "NoProfileGuardedNoOp/Put",
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
+        ),
+        (
+            "NoProfileGuardedNoOp/PostAsUpdate",
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
+        ),
+        (
+            "NoProfileGuardedNoOp/PutCurrentStateRefresh",
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+        ),
+        (
+            "NoProfileGuardedNoOp/PostAsUpdateCurrentStateRefresh",
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCurrentStateRefreshObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+        ),
+        (
+            "NoProfileGuardedNoOp/PutAfterReorder",
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedAfterReorder"
+        ),
+        (
+            "NoProfileGuardedNoOp/PostAsUpdateAfterReorder",
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedAfterReorder"
+        ),
+        (
+            "NoProfileGuardedNoOp/StalePut",
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+        ),
+        (
+            "NoProfileGuardedNoOp/StalePostAsUpdate",
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+        ),
+        (
+            "NoProfileGuardedNoOp/PutCommitWindowRace",
+            "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+        ),
+        (
+            "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace",
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+        ),
+        (
+            "NoProfileMultiBatchCollection/Create",
+            "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions"
+        ),
+        (
+            "NoProfileMultiBatchCollection/DeleteUpdate",
+            "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow + NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions"
+        ),
+        (
+            "NoProfileMultiBatchCollection/AlignedExtensionCreate",
+            "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionAlignedExtensionCreatePersisted + NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions"
+        ),
+        (
+            "NoProfileMultiBatchCollection/AuthoritativeParameterPressure",
+            "NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionCreatePersisted + NoProfileMultiBatchCollectionScenarios.AssertParameterPressurePayload"
+        ),
+        (
+            "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
+            "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted + NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions"
+        ),
+        (
+            "NoProfilePostAsUpdate/FocusedStableKey",
+            "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace + NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied"
+        ),
+        (
+            "NoProfilePostAsUpdate/CreateRaceConvertedToUpdate",
+            "NoProfilePostAsUpdateScenarios.AssertStaleCreateConvertedToPostAsUpdate + NoProfilePostAsUpdateScenarios.AssertLastWriterStateApplied"
+        ),
+        (
+            "NoProfilePostAsUpdate/AuthoritativeDs52SchoolYearType",
+            "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace + NoProfilePostAsUpdateScenarios.AssertAuthoritativeSchoolYearTypeRowInPlace"
+        ),
+        (
+            "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",
+            "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace + NoProfilePostAsUpdateScenarios.AssertAuthoritativeRootAndExtensionInPlace"
+        ),
+        (
+            "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
+            "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites + NoProfileAtomicRollbackAssertions.AssertNoPartialRelationalStateAfterRollback"
+        ),
+    ];
+
+    [Test]
+    public void It_pins_every_family_variant_to_its_direct_effective_entry_point()
+    {
+        List<string> mismatches = [];
+
+        foreach ((string id, string expectedSharedValue) in ExpectedVariantEntryPoints)
+        {
+            ParityScenario? scenario = ParityScenarioCatalog.All.SingleOrDefault(s => s.Id == id);
+            if (scenario is null)
+            {
+                mismatches.Add($"{id}: no catalog row with this id.");
+                continue;
+            }
+
+            EffectiveEntryPoint? resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(scenario);
+            if (
+                resolved is null
+                || resolved.Kind != EntryPointKind.Direct
+                || !string.Equals(resolved.SharedValue, expectedSharedValue, StringComparison.Ordinal)
+            )
+            {
+                mismatches.Add(
+                    $"{id}: expected Direct '{expectedSharedValue}' but resolved "
+                        + $"{resolved?.Kind.ToString() ?? "null"} '{resolved?.SharedValue}'."
+                );
+            }
+        }
+
+        mismatches.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_audits_exactly_the_thirty_one_former_inheritance_variants() =>
+        ExpectedVariantEntryPoints.Should().HaveCount(31);
 }

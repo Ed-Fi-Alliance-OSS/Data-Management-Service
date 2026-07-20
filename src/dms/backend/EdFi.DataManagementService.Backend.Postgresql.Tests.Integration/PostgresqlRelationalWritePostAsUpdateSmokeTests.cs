@@ -398,8 +398,15 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     private FocusedPostAsUpdateDocumentRow _documentAfterRejectedPostAsUpdate = null!;
     private FocusedPostAsUpdateSchoolRow _schoolBeforeRejectedPostAsUpdate = null!;
     private FocusedPostAsUpdateSchoolRow _schoolAfterRejectedPostAsUpdate = null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesBeforeRejectedPostAsUpdate = null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRejectedPostAsUpdate = null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesBeforeRejectedPostAsUpdate =
+        null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesAfterRejectedPostAsUpdate =
+        null!;
     private UpsertResult _rejectedPostAsUpdateResult = null!;
     private ReferentialId _persistedSchoolReferentialId;
+    private Guid _schoolReferentialIdAfterRejectedPostAsUpdate;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -426,6 +433,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         _schoolBeforeRejectedPostAsUpdate = await ReadSchoolAsync(
             _documentBeforeRejectedPostAsUpdate.DocumentId
         );
+        _addressesBeforeRejectedPostAsUpdate = await ReadSchoolAddressesAsync(
+            _documentBeforeRejectedPostAsUpdate.DocumentId
+        );
+        _extensionAddressesBeforeRejectedPostAsUpdate = await ReadSchoolExtensionAddressesAsync(
+            _documentBeforeRejectedPostAsUpdate.DocumentId
+        );
         _persistedSchoolReferentialId = new ReferentialId(
             (
                 await ReadReferentialIdentityRowAsync(
@@ -447,6 +460,18 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         _schoolAfterRejectedPostAsUpdate = await ReadSchoolAsync(
             _documentAfterRejectedPostAsUpdate.DocumentId
         );
+        _addressesAfterRejectedPostAsUpdate = await ReadSchoolAddressesAsync(
+            _documentAfterRejectedPostAsUpdate.DocumentId
+        );
+        _extensionAddressesAfterRejectedPostAsUpdate = await ReadSchoolExtensionAddressesAsync(
+            _documentAfterRejectedPostAsUpdate.DocumentId
+        );
+        _schoolReferentialIdAfterRejectedPostAsUpdate = (
+            await ReadReferentialIdentityRowAsync(
+                _documentAfterRejectedPostAsUpdate.DocumentId,
+                _mappingSet.ResourceKeyIdByResource[SchoolResource]
+            )
+        ).ReferentialId;
         _documentCount = await ReadDocumentCountAsync();
         _incomingDocumentUuidCount = await ReadDocumentCountAsync(RejectedPostAsUpdateDocumentUuid.Value);
     }
@@ -479,6 +504,28 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterRejectedPostAsUpdate),
             PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolBeforeRejectedPostAsUpdate),
             PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterRejectedPostAsUpdate),
+            [
+                .. _addressesBeforeRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            [
+                .. _addressesAfterRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            [
+                .. _extensionAddressesBeforeRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            [
+                .. _extensionAddressesAfterRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            _persistedSchoolReferentialId.Value,
+            _schoolReferentialIdAfterRejectedPostAsUpdate,
             _documentCount,
             _incomingDocumentUuidCount
         );
@@ -648,6 +695,51 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         return rows.Count == 1
             ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    private async Task<IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow>> ReadSchoolAddressesAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId", "School_DocumentId", "Ordinal", "City"
+            FROM "edfi"."SchoolAddress"
+            WHERE "School_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new FocusedPostAsUpdateSchoolAddressRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "City")
+            ))
+            .ToArray();
+    }
+
+    private async Task<
+        IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow>
+    > ReadSchoolExtensionAddressesAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "BaseCollectionItemId", "School_DocumentId", "Zone"
+            FROM "sample"."SchoolExtensionAddress"
+            WHERE "School_DocumentId" = @documentId
+            ORDER BY "BaseCollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new FocusedPostAsUpdateSchoolExtensionAddressRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "BaseCollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "Zone")
+            ))
+            .ToArray();
     }
 }
 

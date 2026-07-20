@@ -84,11 +84,12 @@ public enum EntryPointKind
     Direct,
 
     /// <summary>
-    /// The row reuses the shared contract of the scenario it defers to
-    /// (<see cref="ParityScenario.CoveredByScenarioId"/>) or of its canonical family
-    /// (via <c>ParityScenarioCatalog.CanonicalIdOf</c>), and only when that scenario pins the same production
-    /// <see cref="ParityScenario.Boundary"/> — inheriting a contract across mechanics would certify assertions
-    /// the row never exercises.
+    /// The row reuses the shared contract of the scenario it explicitly defers to through
+    /// <see cref="ParityScenario.CoveredByScenarioId"/> (a supporting-smoke deferral), and only when that
+    /// scenario pins the same production <see cref="ParityScenario.Boundary"/>. Belonging to a canonical family
+    /// (a shared id prefix, via <c>ParityScenarioCatalog.CanonicalIdOf</c>) never inherits a contract by itself:
+    /// sharing a boundary with the family does not imply running the family's assertion helpers, so an ordinary
+    /// variant names its own <see cref="ParityScenario.SharedEntryPoint"/> instead.
     /// </summary>
     Inherited,
 
@@ -201,8 +202,8 @@ public sealed record ParityScenario
     /// <summary>
     /// The row's <b>direct</b> provider-neutral shared contract entry point: a Backend.Tests.Common class
     /// (or an <c>A + B</c> composite of them), or for an API row a <c>Type.Method</c> resolvable in the API
-    /// test assembly. Empty when the effective entry point is <b>inherited</b> (from the canonical family or the
-    /// covered-by scenario) or <b>provider-specific</b> (the per-engine/unit locations plus
+    /// test assembly. Empty when the effective entry point is <b>inherited</b> (from the covered-by scenario) or
+    /// <b>provider-specific</b> (the per-engine/unit locations plus
     /// <see cref="ProviderSpecificEntryPointRationale"/>). Resolve the effective entry point and its
     /// <see cref="EntryPointKind"/> through <c>ParityEntryPointResolution.ResolveEffectiveEntryPoint</c>.
     /// </summary>
