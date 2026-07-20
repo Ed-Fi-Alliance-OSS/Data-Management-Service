@@ -815,6 +815,453 @@ function Test-MssqlConnectionStringValue {
     return $false
 }
 
+# === Cross-engine connection-string classification (single source) ==================================
+# One classifier replaces the duplicated Test-MssqlConnectionStringValue / Resolve-TargetDialect marker
+# lists. The SQL Server vocabulary is NOT hand-listed: it is read authoritatively from the built-in
+# System.Data.SqlClient.SqlConnectionStringBuilder (ships with PowerShell; already used by
+# setup-openiddict.ps1), so every SqlClient keyword and alias - Server, Data Source, Address, Addr,
+# Network Address, Initial Catalog, User Id, UID, Password, PWD, Integrated Security,
+# TrustServerCertificate, ... - is recognized without drift. There is no built-in Npgsql builder in this
+# PowerShell surface (verified), so PostgreSQL keywords are the documented table below. Keys shared with
+# SqlClient (server, database, user id, password, trustservercertificate, application name, pooling, ...)
+# MUST appear here so a connection using only shared keys classifies as Ambiguous and is evaluated against
+# the already-selected provider, never forced to SQL Server.
+$script:NpgsqlConnectionStringKeyword = [System.Collections.Generic.HashSet[string]]::new(
+    [string[]]@(
+        'host', 'server', 'port', 'database',
+        'username', 'userid', 'user',
+        'password', 'passfile',
+        'sslmode', 'sslcertificate', 'sslkey', 'sslpassword', 'rootcertificate', 'sslrootcertificate',
+        'channelbinding', 'trustservercertificate', 'sslnegotiation',
+        'applicationname', 'enlist', 'searchpath', 'clientencoding', 'encoding', 'timezone', 'options',
+        'integratedsecurity', 'kerberosservicename', 'includerealm', 'persistsecurityinfo',
+        'pooling', 'minpoolsize', 'maxpoolsize', 'minimumpoolsize', 'maximumpoolsize',
+        'connectionidlelifetime', 'connectionpruninginterval', 'connectionlifetime',
+        'timeout', 'commandtimeout', 'cancellationtimeout', 'internalcommandtimeout',
+        'keepalive', 'tcpkeepalive', 'tcpkeepalivetime', 'tcpkeepaliveinterval',
+        'maxautoprepare', 'autoprepareminusages', 'noresetonclose',
+        'readbuffersize', 'writebuffersize', 'socketreceivebuffersize', 'socketsendbuffersize',
+        'servercompatibilitymode', 'convertinfinitydatetime', 'includeerrordetail', 'logparameters',
+        'loadtablecomposites', 'targetsessionattributes', 'multiplexing', 'hostrecheckseconds',
+        'arraynullabilitymode'
+    ),
+    [System.StringComparer]::OrdinalIgnoreCase)
+
+function Get-NormalizedConnectionStringKeyword {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Keyword)
+    return ($Keyword.ToLowerInvariant() -replace '\s', '')
+}
+
+function Test-SqlServerConnectionStringKeyword {
+    <#
+    .SYNOPSIS
+        Returns $true when $Keyword is a recognized SQL Server (SqlClient) connection-string keyword or
+        alias, per the built-in System.Data.SqlClient.SqlConnectionStringBuilder. ContainsKey reports
+        keyword validity independent of any value, and is case-insensitive, so the generic builder's
+        lowercased-with-spaces key form (e.g. 'network address') is accepted.
+    #>
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Keyword)
+    if ([string]::IsNullOrWhiteSpace($Keyword)) { return $false }
+    return ([System.Data.SqlClient.SqlConnectionStringBuilder]::new()).ContainsKey($Keyword)
+}
+
+function Resolve-ConnectionStringDialect {
+    <#
+    .SYNOPSIS
+        Classifies a connection string as 'PostgreSql', 'SqlServer', 'Ambiguous', or 'Invalid' by which
+        keys it carries - never a lossy Boolean. Parsing is done with the generic DbConnectionStringBuilder
+        so connection-string quoting is respected (key-looking text inside a quoted value is not a key).
+
+    .DESCRIPTION
+        A key is SQL-Server-valid per System.Data.SqlClient.SqlConnectionStringBuilder and PostgreSQL-valid
+        per $script:NpgsqlConnectionStringKeyword. A key valid for exactly one engine is a definitive marker
+        for that engine; a key valid for both (server, user id, database, password, ...) is a shared alias
+        and carries no signal; a key valid for neither is unknown and ignored. Definitive markers for both
+        engines in the same string is contradictory -> 'Invalid'. Only shared/unknown keys -> 'Ambiguous',
+        to be resolved against the already-selected provider by Test-ConnectionStringMatchesEngine (an
+        ambiguous string is never forced to one engine).
+    #>
+    param([AllowEmptyString()][AllowNull()][string]$ConnectionString)
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) { return 'Invalid' }
+
+    $normalized = Get-NormalizedEnvValue -Value $ConnectionString
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    try {
+        $builder.set_ConnectionString($normalized)
+    }
+    catch {
+        return 'Invalid'
+    }
+
+    $keys = @($builder.get_Keys())
+    if ($keys.Count -eq 0) {
+        return 'Invalid'
+    }
+
+    $hasPostgresqlOnly = $false
+    $hasSqlServerOnly = $false
+    foreach ($key in $keys) {
+        $isSqlServer = Test-SqlServerConnectionStringKeyword -Keyword $key
+        $isPostgresql = $script:NpgsqlConnectionStringKeyword.Contains((Get-NormalizedConnectionStringKeyword -Keyword $key))
+        if ($isPostgresql -and -not $isSqlServer) {
+            $hasPostgresqlOnly = $true
+        }
+        elseif ($isSqlServer -and -not $isPostgresql) {
+            $hasSqlServerOnly = $true
+        }
+    }
+
+    if ($hasPostgresqlOnly -and $hasSqlServerOnly) {
+        return 'Invalid'
+    }
+    if ($hasPostgresqlOnly) {
+        return 'PostgreSql'
+    }
+    if ($hasSqlServerOnly) {
+        return 'SqlServer'
+    }
+    return 'Ambiguous'
+}
+
+function Test-ConnectionStringMatchesEngine {
+    <#
+    .SYNOPSIS
+        Returns $true when $ConnectionString is compatible with the already-selected engine
+        ('postgresql'|'mssql'). An Ambiguous string (only shared aliases such as Server=/User Id=) matches
+        either engine and is accepted for the selected one; a string that is definitively the other engine,
+        or Invalid, is rejected. Engine detection is by keys only - it does NOT prove the target database.
+    #>
+    param(
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
+        [AllowEmptyString()][AllowNull()][string]$ConnectionString
+    )
+    $dialect = Resolve-ConnectionStringDialect -ConnectionString $ConnectionString
+    if ($dialect -eq 'Invalid') {
+        return $false
+    }
+    if ($dialect -eq 'Ambiguous') {
+        return $true
+    }
+    $selectedDialect = if ($Engine -eq 'mssql') { 'SqlServer' } else { 'PostgreSql' }
+    return ($dialect -eq $selectedDialect)
+}
+
+# === Provenance-tracking value resolution (single source & interpolation model) =====================
+# Every resolved value carries a Source so provenance is set once and never re-inferred after merging:
+#   Shell         - a process-environment (docker-compose shell-over-file) value, FINAL opaque text.
+#   EnvFile       - an env-file value (quote-parsed and interpolated per Compose).
+#   ComposeDefault- a compose-file ${VAR:-default} default.
+#   Materialized  - a value the start script generated (never mistaken for a caller override).
+
+function Get-ResolvedValue {
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Value,
+        [Parameter(Mandatory)][ValidateSet('Shell', 'EnvFile', 'ComposeDefault', 'Materialized')][string]$Source
+    )
+    return [pscustomobject]@{ Value = $Value; Source = $Source }
+}
+
+function Resolve-EnvFileValueWithProvenance {
+    <#
+    .SYNOPSIS
+        Resolves an ORIGINAL env-file value to a { Value; Source } record, modeling Compose exactly:
+        single-quoted values are literal; a whole-value ${NAME} reference is interpolated through OTHER
+        env-file values; but when a reference terminates at a process-environment (shell) value, that
+        terminal is returned VERBATIM with Source='Shell' and is never re-parsed as env-file syntax; a bare
+        ${NAME} to an unset variable is empty. Partial/embedded ${...} is rejected (as before).
+    #>
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Value,
+        [Parameter(Mandatory)][hashtable]$EnvValues,
+        [Parameter(Mandatory)][hashtable]$ProcessEnvironment,
+        [System.Collections.Generic.HashSet[string]]$VisitedKeys
+    )
+
+    if (Test-EnvValueIsSingleQuoted -Value $Value) {
+        return Get-ResolvedValue -Value (Get-NormalizedEnvValue -Value $Value) -Source 'EnvFile'
+    }
+
+    $referencedKey = Get-EnvValueReferenceKey -Value $Value
+    if ($null -eq $referencedKey) {
+        $normalized = Get-NormalizedEnvValue -Value $Value
+        if ($normalized -match '\$\{') {
+            throw "Environment value '$normalized' uses an unsupported environment expression. Use a literal value or a simple `${NAME} reference."
+        }
+        return Get-ResolvedValue -Value $normalized -Source 'EnvFile'
+    }
+
+    # A reference terminating at a shell value is that value VERBATIM (Compose substitutes a shell value as
+    # final text; it is not re-interpolated or re-quote-parsed).
+    if ($ProcessEnvironment.ContainsKey($referencedKey)) {
+        return Get-ResolvedValue -Value ([string]$ProcessEnvironment[$referencedKey]) -Source 'Shell'
+    }
+
+    # Bare ${NAME} to an unset variable -> empty.
+    if (-not $EnvValues.ContainsKey($referencedKey)) {
+        return Get-ResolvedValue -Value '' -Source 'EnvFile'
+    }
+
+    if ($null -eq $VisitedKeys) {
+        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
+    if (-not $VisitedKeys.Add($referencedKey)) {
+        throw "Environment reference '`${$referencedKey}' is cyclic."
+    }
+    try {
+        return Resolve-EnvFileValueWithProvenance `
+            -Value ([string]$EnvValues[$referencedKey]) `
+            -EnvValues $EnvValues `
+            -ProcessEnvironment $ProcessEnvironment `
+            -VisitedKeys $VisitedKeys
+    }
+    finally {
+        $null = $VisitedKeys.Remove($referencedKey)
+    }
+}
+
+function Resolve-ComposeVariable {
+    <#
+    .SYNOPSIS
+        Models a Compose ${Name:-Default} interpolation at shell-over-env-file precedence, returning
+        { Value; Source }. A non-empty shell value (including whitespace-only) is used VERBATIM
+        (Source='Shell'); an exactly-empty or unset value selects -Default when supplied (Source=
+        'ComposeDefault'), matching ':-' (which treats unset OR exactly-empty, NOT whitespace, as default);
+        otherwise the env-file value is resolved with provenance. Omit -Default to model a bare ${Name}
+        (unset/empty -> empty).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][hashtable]$EnvValues,
+        [Parameter(Mandatory)][hashtable]$ProcessEnvironment,
+        [string]$Default
+    )
+
+    $hasDefault = $PSBoundParameters.ContainsKey('Default')
+
+    if ($ProcessEnvironment.ContainsKey($Name)) {
+        $shellValue = [string]$ProcessEnvironment[$Name]
+        if ([string]::IsNullOrEmpty($shellValue)) {
+            if ($hasDefault) { return Get-ResolvedValue -Value $Default -Source 'ComposeDefault' }
+            return Get-ResolvedValue -Value '' -Source 'Shell'
+        }
+        # Non-empty (whitespace-only included) shell value: verbatim, never trimmed/unquoted/re-interpolated.
+        return Get-ResolvedValue -Value $shellValue -Source 'Shell'
+    }
+
+    if ($EnvValues.ContainsKey($Name)) {
+        $resolved = Resolve-EnvFileValueWithProvenance -Value ([string]$EnvValues[$Name]) -EnvValues $EnvValues -ProcessEnvironment $ProcessEnvironment
+        if ([string]::IsNullOrEmpty($resolved.Value) -and $hasDefault) {
+            return Get-ResolvedValue -Value $Default -Source 'ComposeDefault'
+        }
+        return $resolved
+    }
+
+    if ($hasDefault) { return Get-ResolvedValue -Value $Default -Source 'ComposeDefault' }
+    return Get-ResolvedValue -Value '' -Source 'EnvFile'
+}
+
+function Resolve-EffectiveConfigRuntimeContract {
+    <#
+    .SYNOPSIS
+        Computes the effective local Compose runtime contract for the Configuration Service exactly once,
+        and enforces the cross-cutting agreement invariants. Every consumer (standalone/local/published
+        startup, database readiness, OpenIddict init/insert, CMS connection materialization, datastore
+        registration) reads its values from this single object instead of independently re-resolving them.
+
+    .DESCRIPTION
+        Given the engine the start script ACTUALLY selected (-InfrastructureEngine; drives the Compose DB
+        file and OpenIddict), the raw env-file values, a process-environment snapshot, and the already
+        computed effective configuration database name (-ConfigDatabaseName, from the topology resolution),
+        this returns { InfrastructureEngine; CmsProviderEngine; CmsConnectionString{Value;Source};
+        CmsDatabaseName; MssqlSaPassword{Value;Source}; OpenIddict{DbType;DbUser;DbPort;DbName;DbPassword};
+        DatastoreDatabaseName; DatastoreConnectionString }.
+
+        Invariants (fail-fast, before Docker):
+          * CmsProviderEngine (AppSettings__Datastore = ${DMS_CONFIG_DATASTORE:-postgresql}, shell over
+            file) MUST equal -InfrastructureEngine. A shell DMS_CONFIG_DATASTORE that differs - even when a
+            paired shell connection agrees with it - cannot silently redirect only the Compose-facing
+            provider while the start script starts the other engine.
+          * The effective CMS connection string must be compatible with -InfrastructureEngine (per the
+            selected provider, not a lossy heuristic) and target -ConfigDatabaseName.
+          * The datastore-name key (POSTGRES_DB_NAME/MSSQL_DB_NAME) must resolve to the same database with
+            shell precedence (containers) as from the env file (host-side tooling).
+
+        Provenance: a shell value (direct or reference-terminal) is final opaque text; a value the script
+        must generate because Compose would otherwise substitute the wrong-engine PostgreSQL fallback is
+        Source='Materialized'.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'MssqlSaPasswordDefault', Justification = 'The SQL Server SA password default is the local docker-compose plaintext default (mssql.yml MSSQL_SA_PASSWORD:-abcdefgh1!); it is resolved and passed as a string throughout these compose scripts by design.')]
+    param(
+        [Parameter(Mandatory)][hashtable]$EnvValues,
+        [hashtable]$ProcessEnvironment,
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
+        [Parameter(Mandatory)][string]$ConfigDatabaseName,
+        [switch]$ConfigDatabaseNameMaterialized,
+        [string]$MssqlSaPasswordDefault,
+        [string]$DatastoreDatabaseName
+    )
+
+    if ($null -eq $ProcessEnvironment) {
+        $ProcessEnvironment = @{}
+        foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
+            $ProcessEnvironment[[string]$entry.Key] = [string]$entry.Value
+        }
+    }
+    $hasSaDefault = $PSBoundParameters.ContainsKey('MssqlSaPasswordDefault')
+
+    # (1) CMS provider engine - the container's AppSettings__Datastore.
+    $providerRaw = (Resolve-ComposeVariable -Name 'DMS_CONFIG_DATASTORE' -EnvValues $EnvValues -ProcessEnvironment $ProcessEnvironment -Default 'postgresql').Value
+    $cmsProviderEngine = if ([string]::Equals($providerRaw, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' } else { 'postgresql' }
+
+    # (2) Engine-agreement invariant (fail-fast).
+    if ($cmsProviderEngine -ne $InfrastructureEngine) {
+        throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine (which starts that Compose database file and initializes OpenIddict for it), but the Configuration Service provider DMS_CONFIG_DATASTORE resolves - with the shell environment applied at Docker Compose precedence - to '$cmsProviderEngine'. A shell DMS_CONFIG_DATASTORE override cannot silently point the Configuration Service at a different engine than the one that starts; unset it, or select that engine with -DatabaseEngine."
+    }
+
+    # (3) MSSQL SA password, modeling ${MSSQL_SA_PASSWORD:-<default>}.
+    $mssqlSaPassword = $null
+    if ($InfrastructureEngine -eq 'mssql') {
+        $saArgs = @{ Name = 'MSSQL_SA_PASSWORD'; EnvValues = $EnvValues; ProcessEnvironment = $ProcessEnvironment }
+        if ($hasSaDefault) { $saArgs.Default = $MssqlSaPasswordDefault }
+        $mssqlSaPassword = Resolve-ComposeVariable @saArgs
+        if ([string]::IsNullOrWhiteSpace($mssqlSaPassword.Value)) {
+            throw "Configuration runtime-contract error: MSSQL_SA_PASSWORD resolves to a blank value on a SQL Server stack, so the Configuration Service connection and OpenIddict initialization cannot authenticate. Set MSSQL_SA_PASSWORD (or the variable it references), or unset an empty shell export."
+        }
+    }
+
+    # (4) Effective CMS connection string ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-<compose fallback>}.
+    $connName = 'DMS_CONFIG_DATABASE_CONNECTION_STRING'
+    $shellHasConn = $ProcessEnvironment.ContainsKey($connName)
+    $shellConnValue = [string]$ProcessEnvironment[$connName]
+    $connState = $null
+    $forcedFallback = $false
+    $fallbackForcedByShell = $false
+    if ($shellHasConn -and -not [string]::IsNullOrEmpty($shellConnValue)) {
+        # A non-empty shell value wins and is substituted verbatim (never re-interpolated).
+        $connState = Get-ResolvedValue -Value $shellConnValue -Source 'Shell'
+    }
+    elseif ($shellHasConn -and [string]::IsNullOrEmpty($shellConnValue)) {
+        # ':-' treats an exactly-empty shell value as unset -> Compose substitutes the fallback.
+        $forcedFallback = $true
+        $fallbackForcedByShell = $true
+    }
+    else {
+        # An env-file connection string carries embedded ${...} references (Compose interpolates them at
+        # shell-over-file precedence); it is NOT a whole-value reference, so keep it as the env-file value
+        # and let the database-name check below resolve the embedded references against the merged view.
+        $rawEnvConnectionString = [string](Get-EnvValue -EnvValues $EnvValues -Name $connName)
+        if (-not [string]::IsNullOrEmpty($rawEnvConnectionString)) {
+            $connState = Get-ResolvedValue -Value $rawEnvConnectionString -Source 'EnvFile'
+        }
+        else {
+            $forcedFallback = $true
+        }
+    }
+
+    if ($forcedFallback) {
+        # The compose-file fallback (local-config.yml) is a hardcoded PostgreSQL connection whose database
+        # is ${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}} at shell-over-file precedence.
+        $fallbackDbState = Resolve-ComposeVariable -Name 'DMS_CONFIG_DATABASE_NAME' -EnvValues $EnvValues -ProcessEnvironment $ProcessEnvironment `
+            -Default (Resolve-ComposeVariable -Name 'POSTGRES_DB_NAME' -EnvValues $EnvValues -ProcessEnvironment $ProcessEnvironment).Value
+        $fallbackDatabase = $fallbackDbState.Value
+
+        if ($InfrastructureEngine -eq 'mssql') {
+            if ($fallbackForcedByShell) {
+                throw "Configuration runtime-contract error: DMS_CONFIG_DATABASE_CONNECTION_STRING is exported empty on a SQL Server stack. Docker Compose's ':-' would substitute the compose-file fallback - a hardcoded PostgreSQL connection to dms-postgresql - instead of a SQL Server connection to '$ConfigDatabaseName'. Unset it to use the env-file connection string, or set a valid SQL Server connection."
+            }
+            # No connection string anywhere on a SQL Server stack: Compose would use the PostgreSQL fallback,
+            # so materialize the SQL Server connection the running container actually needs.
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder['Server'] = 'dms-mssql,1433'
+            $builder['Database'] = $ConfigDatabaseName
+            $builder['User Id'] = 'sa'
+            $builder['Password'] = $mssqlSaPassword.Value
+            $builder['TrustServerCertificate'] = 'true'
+            $connState = Get-ResolvedValue -Value $builder.ConnectionString -Source 'Materialized'
+        }
+        else {
+            $pgPassword = (Resolve-ComposeVariable -Name 'POSTGRES_PASSWORD' -EnvValues $EnvValues -ProcessEnvironment $ProcessEnvironment).Value
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder['host'] = 'dms-postgresql'
+            $builder['port'] = '5432'
+            $builder['username'] = 'postgres'
+            $builder['password'] = $pgPassword
+            $builder['database'] = $fallbackDatabase
+            $connState = Get-ResolvedValue -Value $builder.ConnectionString -Source 'ComposeDefault'
+        }
+    }
+
+    # (5) Validate the effective connection: engine-compatible and targeting the effective database.
+    if (-not (Test-ConnectionStringMatchesEngine -Engine $InfrastructureEngine -ConnectionString $connState.Value)) {
+        $runtimeDialect = Resolve-ConnectionStringDialect -ConnectionString $connState.Value
+        throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING (source $($connState.Source)) is a $runtimeDialect connection, but the selected infrastructure engine is '$InfrastructureEngine'. The Configuration Service provider cannot use a connection of the wrong engine. Set a connection string for the selected engine, or unset the shell override to use the env-file value."
+    }
+
+    # Compose interpolates ${...} inside an env-file connection but substitutes a shell value verbatim, so a
+    # shell connection's database is compared literally. In the full-stack lane DMS_CONFIG_DATABASE_NAME is
+    # materialized to a literal; in the standalone lane it is not, so the merged view leaves the raw seam to
+    # re-resolve with shell precedence (catching an override the connection routes through).
+    $mergedValues = @{}
+    foreach ($entry in $EnvValues.GetEnumerator()) { $mergedValues[[string]$entry.Key] = [string]$entry.Value }
+    if ($ConfigDatabaseNameMaterialized) { $mergedValues['DMS_CONFIG_DATABASE_NAME'] = $ConfigDatabaseName }
+    foreach ($entry in $ProcessEnvironment.GetEnumerator()) { $mergedValues[[string]$entry.Key] = [string]$entry.Value }
+
+    $targetDatabases = @(Get-CmsConnectionStringDatabaseName -ConnectionString $connState.Value -EnvValues $mergedValues -DoNotResolveReferences:($connState.Source -eq 'Shell'))
+    if ($targetDatabases.Count -eq 0) {
+        throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING (source $($connState.Source)) targets no database (set Database or Initial Catalog), so the Configuration Service would connect to the engine default instead of the effective configuration database '$ConfigDatabaseName'."
+    }
+    foreach ($targetDatabase in $targetDatabases) {
+        if (-not [string]::Equals($targetDatabase, $ConfigDatabaseName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING (source $($connState.Source)) targets database '$targetDatabase', but the effective configuration database is '$ConfigDatabaseName'. Align the connection string (or the shell variable it routes through), or pass -SeparateConfigDatabase to select the dedicated configuration database."
+        }
+    }
+
+    # (6) Datastore-name agreement: the containers (Compose, shell-over-file) and host-side tooling (env
+    # file) must resolve the datastore key to the same database, in both topologies.
+    $datastoreKey = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL_DB_NAME' } else { 'POSTGRES_DB_NAME' }
+    $fileDatastoreRaw = [string]$EnvValues[$datastoreKey]
+    if (-not [string]::IsNullOrWhiteSpace($fileDatastoreRaw)) {
+        $fileDatastore = (Resolve-EnvFileValueWithProvenance -Value $fileDatastoreRaw -EnvValues $EnvValues -ProcessEnvironment @{}).Value
+        $runtimeDatastore = (Resolve-ComposeVariable -Name $datastoreKey -EnvValues $EnvValues -ProcessEnvironment $ProcessEnvironment).Value
+        if (-not [string]::Equals($runtimeDatastore, $fileDatastore, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Configuration runtime-contract error: $datastoreKey resolves to '$runtimeDatastore' with the shell environment at Compose precedence but to '$fileDatastore' from the env file, so the containers would target one datastore database while host-side configuration and provisioning use another. Unset $datastoreKey in your shell, or align it with the env file."
+        }
+    }
+
+    # (7) OpenIddict target (what host-side -InitDb/-InsertData must use).
+    $openIddict = [pscustomobject]@{
+        DbType     = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
+        DbUser     = if ($InfrastructureEngine -eq 'mssql') { 'sa' } else { 'postgres' }
+        DbPort     = if ($InfrastructureEngine -eq 'mssql') { 'ENV:MSSQL_PORT' } else { 'ENV:POSTGRES_PORT' }
+        DbName     = $ConfigDatabaseName
+        DbPassword = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword.Value } else { $null }
+    }
+
+    # (8) DMS datastore connection (SQL Server registration lanes) when a datastore database is supplied.
+    $datastoreConnectionString = $null
+    if (-not [string]::IsNullOrWhiteSpace($DatastoreDatabaseName) -and $InfrastructureEngine -eq 'mssql') {
+        $datastoreBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $datastoreBuilder['Server'] = 'dms-mssql,1433'
+        $datastoreBuilder['Database'] = $DatastoreDatabaseName
+        $datastoreBuilder['User Id'] = 'sa'
+        $datastoreBuilder['Password'] = $mssqlSaPassword.Value
+        $datastoreBuilder['TrustServerCertificate'] = 'true'
+        $datastoreConnectionString = Get-ResolvedValue -Value $datastoreBuilder.ConnectionString -Source 'Materialized'
+    }
+
+    return [pscustomobject]@{
+        InfrastructureEngine      = $InfrastructureEngine
+        CmsProviderEngine         = $cmsProviderEngine
+        CmsConnectionString       = $connState
+        CmsDatabaseName           = $ConfigDatabaseName
+        MssqlSaPassword           = $mssqlSaPassword
+        OpenIddict                = $openIddict
+        DatastoreDatabaseName     = $DatastoreDatabaseName
+        DatastoreConnectionString = $datastoreConnectionString
+    }
+}
+
 function Get-NormalizedEnvValue {
     <#
     .SYNOPSIS
