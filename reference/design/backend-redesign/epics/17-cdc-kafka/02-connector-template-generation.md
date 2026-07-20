@@ -26,16 +26,23 @@ source routing and serialized public contract.
 2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
    instance values.
 3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
-   Ed-Fi document-state shaping SMT convert `datetime2(7)`
+   Ed-Fi `DocumentState` SMT convert `datetime2(7)`
    `io.debezium.time.NanoTimestamp` values to the contract's lossless UTC ISO string.
-4. Configure source classification, value shaping, JSON expansion, opaque `StreamEtag`
-   copying to `document._etag`, key simplification, tombstone handling, and topic routing.
-5. Add the small Ed-Fi routing/shaping SMT required for SQL Server timestamp conversion
-   and for any other contract behavior that verified stock transforms cannot safely
-   implement.
-6. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
+4. Add one Ed-Fi `DocumentState` SMT that consumes raw Debezium records and atomically
+   owns source/operation classification, filtering, envelope extraction, direct
+   `DocumentJson` parsing, opaque `StreamEtag` copying to `document._etag`, key and value
+   shaping, provider timestamp normalization, tombstone synthesis, metadata consistency
+   checks, and topic routing.
+5. Configure the connector to use that transform as the complete boundary from a raw
+   Debezium record to a final public upsert, final public tombstone, or dropped record.
+   Do not add an independent generic expand-JSON SMT or split the contract across stock
+   predicate, unwrap, rename, and routing chains.
+6. Configure only the transform's `provider` and `target.topic` values. Keep the DMS
+   source table/column and v1 public-field mapping fixed in the versioned transform rather
+   than generating a mapping DSL.
+7. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
    of connector transforms.
-7. Validate all version-specific properties and transform classes against the pinned
+8. Validate all version-specific properties and transform classes against the pinned
    `edfialliance/ed-fi-kafka-connect` image.
 
 ## Acceptance Evidence
@@ -46,6 +53,9 @@ source routing and serialized public contract.
 - Serialized-record tests enforce the topic/message ADR, including exact key/value byte
   forms, exact copying of `StreamEtag` to `document._etag`, expanded JSON, timestamp
   formatting, and tombstones.
+- Transform tests begin with realistic raw PostgreSQL and SQL Server Debezium envelopes
+  and assert the final topic, key, and value together; they do not rely on pre-unwrapped
+  fixture values.
 - SQL Server rendering tests require `time.precision.mode=adaptive`; transform fixtures
   carry the `io.debezium.time.NanoTimestamp` logical type and prove lossless conversion
   through seven fractional digits, trailing `Z`, and exact equality with the embedded

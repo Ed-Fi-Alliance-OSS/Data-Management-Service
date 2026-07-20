@@ -122,11 +122,14 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
 Database Pascal-case columns are renamed to lower camel case. `contractVersion` and
 `contentVersion` are JSON numbers.
 
-The physical temporal representation is not part of the public contract. In particular,
-SQL Server stores `dms.DocumentCache.LastModifiedAt` as `datetime2(7)`. The pinned
-Debezium connector's `adaptive` time-precision mode exposes that column as an `INT64`
-`io.debezium.time.NanoTimestamp`, not a JSON string. The required Ed-Fi document-state
-shaping SMT owns its conversion to `lastModifiedAt`: it interprets the Debezium logical
+The physical temporal representation is not part of the public contract. One Ed-Fi-owned
+`DocumentState` SMT consumes each raw Debezium record and produces the complete public
+upsert, public tombstone, or drop result; the connector does not compose that contract
+from an independent generic JSON expander and a predicate-heavy stock-SMT chain. In
+particular, SQL Server stores `dms.DocumentCache.LastModifiedAt` as `datetime2(7)`. The
+pinned Debezium connector's `adaptive` time-precision mode exposes that column as an `INT64`
+`io.debezium.time.NanoTimestamp`, not a JSON string. The required Ed-Fi `DocumentState`
+SMT owns its conversion to `lastModifiedAt`: it interprets the Debezium logical
 type as nanoseconds since the Unix epoch in UTC, preserves SQL Server's 100-nanosecond
 precision without rounding, and emits the RFC 3339/ISO-8601 string required above with
 at most seven fractional digits and a trailing `Z`. A raw numeric `lastModifiedAt` or a
@@ -156,9 +159,9 @@ and readable-profile-specific output.
 Envelope `documentUuid` and `lastModifiedAt` exactly match embedded `id` and
 `_lastModifiedDate`. The source cache row carries the DMS-computed `StreamEtag`, which is
 published only as `document._etag`; the envelope does not duplicate it. If Debezium
-exposes `DocumentJson` as a string, the DMS-1240 Ed-Fi expand-JSON SMT runs with
-`sourceFields=document`; another implementation may replace that SMT only while
-preserving the identical structured contract.
+exposes `DocumentJson` as a string, the `DocumentState` SMT parses it directly, injects
+the ETag, and emits the structured `document` value. Invalid JSON or inconsistent
+embedded metadata fails transformation rather than publishing a partial record.
 
 A non-null value is an upsert. Duplicates, replays, and snapshots are allowed. Consumers
 apply a record only when its `contentVersion` is newer than the state they retain for the
@@ -245,8 +248,10 @@ The public topic never exposes:
   is independent of the value.
 - Consumers can preserve the exact DMS stream-representation ETag without access to
   `EffectiveSchemaHash` or duplicating DMS representation rules.
-- SQL Server publication requires the Ed-Fi document-state shaping SMT; a stock-only
-  transform chain cannot satisfy the v1 timestamp contract with the pinned connector.
+- Publication requires the Ed-Fi `DocumentState` SMT. It atomically owns source/operation
+  classification, filtering, JSON parsing, key and envelope shaping, timestamp
+  normalization, nested ETag injection, tombstone synthesis, and topic routing; a
+  stock-only or generic-expand-plus-stock transform chain is not the v1 design.
 - `StreamEtag` is not a reusable ETag for a differently profiled, link-shaped, formatted,
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
@@ -270,4 +275,4 @@ The public topic never exposes:
 | Add a projection/stream generation to v1 | Rejected for v1: it would add database, public-contract, consumer-ordering, and mixed-generation fencing semantics. V1 instead freezes the representation contract and uses a new versioned topic plus full snapshot for an output-changing upgrade. |
 | Republish a changed ETag at the same `contentVersion` in `documents.v1` | Rejected: conforming consumers may discard it, and replay could not order old and new derivations without another public generation value. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
-| Require SQL Server `time.precision.mode=isostring` in the currently pinned image | Rejected for v1: the pinned Debezium 2.7 connector supports `adaptive` and `connect`, but not `isostring`; the required Ed-Fi shaping SMT performs the lossless conversion. |
+| Require SQL Server `time.precision.mode=isostring` in the currently pinned image | Rejected for v1: the pinned Debezium 2.7 connector supports `adaptive` and `connect`, but not `isostring`; the required Ed-Fi `DocumentState` SMT performs the lossless conversion. |

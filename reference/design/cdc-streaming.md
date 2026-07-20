@@ -459,7 +459,7 @@ database-per-instance isolation model.
 - Set `time.precision.mode=adaptive` explicitly. Under this mode SQL Server
   `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, are captured as
   `INT64` values with the `io.debezium.time.NanoTimestamp` logical type.
-- Require the Ed-Fi document-state shaping SMT to convert `LastModifiedAt` from that
+- Require the Ed-Fi `DocumentState` SMT to convert `LastModifiedAt` from that
   logical type to the public UTC RFC 3339/ISO-8601 string. `connect` mode is forbidden
   because it loses precision above milliseconds, and a plain rename would leak the
   `INT64` representation into the public contract.
@@ -475,56 +475,75 @@ when CDC is not selected.
 
 ## Connector Transform Pipeline
 
-The connector implements the source mapping from the
+The connector uses one Ed-Fi-owned `DocumentState` SMT as the contract boundary between
+raw Debezium records and the public topic. The transform implements the source mapping
+from the
 [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 and the serialized contract from the
 [topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-in this logical order:
+in the following logical order. After capture, steps 2–8 occur within one transform
+invocation:
+
+```text
+transforms=documentState
+transforms.documentState.type=org.edfi.kafka.connect.transforms.DocumentState
+transforms.documentState.provider=<postgresql|sqlserver>
+transforms.documentState.target.topic=<instance document topic>
+```
+
+Those are its only contract configuration values. The `dms.DocumentCache` and
+`dms.Document` source identities, Debezium operation mapping, source columns, and v1
+public fields are fixed transform behavior rather than a configurable mapping language.
 
 1. Capture both tables with `DocumentUuid` in each Debezium key.
-2. Classify original Debezium records by source table and operation before unwrap or
-   routing.
-3. Retain cache create/update/snapshot inputs, convert canonical document deletes to
-   record-level tombstones, and drop every other captured operation.
-4. Suppress Debezium's additional automatic tombstones so one canonical delete produces
-   one public tombstone and cache deletion produces none. One valid implementation sets
-   `tombstones.on.delete=false` and converts only the retained canonical delete envelope.
-5. Unwrap retained cache rows.
-6. Expand `DocumentJson` into structured JSON with the DMS-1240 Ed-Fi SMT when
-   necessary.
-7. For SQL Server, have the Ed-Fi document-state shaping SMT convert `LastModifiedAt`
-   from `io.debezium.time.NanoTimestamp` nanoseconds since the Unix epoch to UTC RFC
-   3339/ISO-8601 text, preserving 100-nanosecond precision and emitting at most seven
-   fractional digits with a trailing `Z`. It rejects an unexpected logical type,
-   precision loss, or a value that does not exactly match the expanded
-   `document._lastModifiedDate`. Then rename public fields from database Pascal case to
-   the lower-camel contract, copy the DMS-computed `StreamEtag` to `document._etag`,
-   remove the internal source field and other internal/operational columns, and add
-   `contractVersion`.
-8. Simplify the Debezium key struct to lowercase `DocumentUuid` text and route both
-   physical topics to the instance document topic.
+2. Inspect the original Debezium source table and operation before discarding the
+   envelope. Accept cache create, update, and snapshot/read records as upserts; accept
+   canonical document deletes as authoritative deletes; drop every other captured
+   operation.
+3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
+   `D`-format text, and use it for both upserts and authoritative tombstones.
+4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
+   structured JSON object. No independent generic expand-JSON SMT participates in the
+   relational connector.
+5. Normalize `LastModifiedAt` to the public UTC RFC 3339/ISO-8601 representation. For SQL
+   Server, convert `io.debezium.time.NanoTimestamp` nanoseconds since the Unix epoch
+   without loss of 100-nanosecond precision, emitting at most seven fractional digits
+   with a trailing `Z`. Reject an unexpected provider representation or precision loss.
+6. Build the complete lower-camel public envelope, copy the opaque DMS-computed
+   `StreamEtag` to `document._etag`, remove all internal and operational fields, add
+   `contractVersion`, and verify that the public key and normalized timestamp exactly
+   match `document.id` and `document._lastModifiedDate`.
+7. For a retained canonical delete, replace the value with a record-level null tombstone.
+   Suppress Debezium's additional automatic tombstone, for example with
+   `tombstones.on.delete=false`, so one canonical delete produces exactly one public
+   tombstone and cache deletion produces none.
+8. Route either retained result to the configured instance document topic. Returning
+   `null` from the transform drops an operation excluded by the source mapping.
 
-All value transforms apply only to retained cache upserts. Key simplification and topic
-routing apply to upserts and authoritative tombstones.
+The transform consumes schema-backed raw Debezium records and emits only one of three
+results: a final public upsert, a final public tombstone, or no record. Expected excluded
+operations are dropped; a malformed retained record, unexpected source shape, invalid
+`DocumentJson`, inconsistent embedded metadata, or unsupported temporal logical type
+fails transformation rather than publishing a partial or ambiguous record.
 
 Kafka Connect does not calculate `schemaEpoch`, interpret
 `DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
-opaque connector input; the connector only copies it to `document._etag`. Stock
-predicates and SMTs may implement the remaining steps when they safely produce the exact
-contract. The required small Ed-Fi document-state routing/shaping SMT owns SQL Server
-timestamp conversion and also implements any table/operation classification, nested ETag
-copy, or single-tombstone behavior that stock transforms cannot provide without
-scripting-engine risk. Tests assert published record bytes and semantics, not only
-generated connector JSON. Version-specific properties and transform classes are verified
-against the pinned
+opaque connector input; the transform only copies it to `document._etag`. The connector
+does not split this contract across stock predicates, unwrap/rename/routing SMTs, or an
+independent generic JSON expander. Keeping source classification, key/value shaping,
+tombstone synthesis, consistency checks, and routing in one transform avoids
+ordering-sensitive intermediate records. Tests assert published record bytes and
+semantics, not only generated connector JSON. Version-specific properties and the
+transform class are verified against the pinned
 `edfialliance/ed-fi-kafka-connect` image.
 
 The current pinned image uses Debezium 2.7, whose SQL Server connector supports
 `adaptive` and `connect` temporal modes but not the newer `isostring` mode. Consequently,
-v1 assigns SQL Server timestamp conversion to the required Ed-Fi shaping SMT. A future
-image may move that responsibility to `time.precision.mode=isostring` only through an
-explicit design and contract-test change; connector templates never rely on a Debezium
-default. See Debezium's
+v1 assigns SQL Server timestamp conversion to the required Ed-Fi `DocumentState` SMT. A
+future image may move that responsibility to `time.precision.mode=isostring` only through
+an explicit design and contract-test change; the same transform continues to own the rest
+of the document-state contract, and connector templates never rely on a Debezium default.
+See Debezium's
 [2.7 SQL Server temporal mapping](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-temporal-values)
 and the
 [current SQL Server temporal mapping](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#sqlserver-data-types).
