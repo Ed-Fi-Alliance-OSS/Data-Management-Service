@@ -1033,11 +1033,17 @@ function Resolve-ComposeVariable {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][hashtable]$EnvValues,
-        [Parameter(Mandatory)][hashtable]$ProcessEnvironment,
+        [hashtable]$ProcessEnvironment,
         [string]$Default
     )
 
     $hasDefault = $PSBoundParameters.ContainsKey('Default')
+    if ($null -eq $ProcessEnvironment) {
+        $ProcessEnvironment = @{}
+        foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
+            $ProcessEnvironment[[string]$entry.Key] = [string]$entry.Value
+        }
+    }
 
     if ($ProcessEnvironment.ContainsKey($Name)) {
         $shellValue = [string]$ProcessEnvironment[$Name]

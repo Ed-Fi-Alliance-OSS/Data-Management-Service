@@ -334,8 +334,10 @@ function Invoke-ConfigureLocalDataStore {
     if ($DatabaseEngine -eq "mssql") {
         # The DMS datastore lives on the same SQL Server container; resolve its SA password the way the
         # container is initialized (docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell export over
-        # the env file) so the datastore connection stored in CMS matches it under a shell override.
-        $mssqlPassword = Resolve-EffectiveMssqlSaPassword -EnvValues $envValues -DefaultValue "abcdefgh1!"
+        # the env file) so the datastore connection stored in CMS matches it under a shell override. This is
+        # the datastore-registration lane (no Configuration Service / OpenIddict), so it needs only the
+        # credential, not the full runtime contract.
+        $mssqlPassword = (Resolve-ComposeVariable -Name "MSSQL_SA_PASSWORD" -EnvValues $envValues -Default "abcdefgh1!").Value
         $mssqlDbName =
             if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                 Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
