@@ -493,10 +493,20 @@ cache-projection materializer through the shared served-ETag composer. It applie
 the fixed CDC representation: JSON, no readable profile, the cached document's link mode,
 and identity content coding. Ordinary resource rows use the link-bearing context even
 when API resource links are disabled; descriptor rows use the descriptor context with
-links off. Kafka Connect copies `StreamEtag` into the public stream envelope and expanded
-document. API cache reads ignore it and compose their request-specific ETag from
-`ContentVersion` and the active request `variantKey`. See the authoritative
-cached-document contract for consistency and freshness rules.
+links off. Kafka Connect copies `StreamEtag` into the expanded document as
+`document._etag`; the public envelope does not duplicate it. API cache reads ignore it
+and compose their request-specific ETag from `ContentVersion` and the active request
+`variantKey`. See the authoritative cached-document contract for consistency and
+freshness rules.
+
+The row has no projection-generation column. The v1 stream representation and ETag
+composition are immutable for unchanged inputs, so a same-`ContentVersion` row is never
+rewritten merely because composer code changed. An output-changing composer or stream
+representation change requires discarding all cache rows, completely reprojecting them
+under a new contract, and snapshotting them to a new versioned topic. Because the table
+stores only one `DocumentJson` and `StreamEtag`, simultaneous live publication of old and
+new representation contracts is outside v1; see the topic/message ADR's
+[compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-stream-representation-immutability).
 
 Denormalized resource naming:
 

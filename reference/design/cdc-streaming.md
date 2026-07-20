@@ -498,9 +498,9 @@ in this logical order:
    fractional digits with a trailing `Z`. It rejects an unexpected logical type,
    precision loss, or a value that does not exactly match the expanded
    `document._lastModifiedDate`. Then rename public fields from database Pascal case to
-   the lower-camel contract, copy the DMS-computed `StreamEtag` to public `etag` and
-   `document._etag`, remove the internal source field and other internal/operational
-   columns, and add `contractVersion`.
+   the lower-camel contract, copy the DMS-computed `StreamEtag` to `document._etag`,
+   remove the internal source field and other internal/operational columns, and add
+   `contractVersion`.
 8. Simplify the Debezium key struct to lowercase `DocumentUuid` text and route both
    physical topics to the instance document topic.
 
@@ -509,7 +509,7 @@ routing apply to upserts and authoritative tombstones.
 
 Kafka Connect does not calculate `schemaEpoch`, interpret
 `DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
-opaque connector input; the connector only copies it to the two public locations. Stock
+opaque connector input; the connector only copies it to `document._etag`. Stock
 predicates and SMTs may implement the remaining steps when they safely produce the exact
 contract. The required small Ed-Fi document-state routing/shaping SMT owns SQL Server
 timestamp conversion and also implements any table/operation classification, nested ETag
@@ -528,6 +528,55 @@ default. See Debezium's
 [2.7 SQL Server temporal mapping](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-temporal-values)
 and the
 [current SQL Server temporal mapping](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#sqlserver-data-types).
+
+## Stream Contract Compatibility and Version Cutover
+
+The [topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-stream-representation-immutability)
+defines the v1 stream representation and served-ETag composition as immutable for
+unchanged inputs. V1 adds no projection-generation column or public ordering field.
+`ContentVersion` therefore remains the sole cache freshness value and the sole consumer
+stale-write value within `documents.v1`.
+
+Every implementation of the shared served-ETag composer must carry fixed conformance
+fixtures for the v1 stream context. Refactoring the composer, materializer, or connector
+is allowed only when the same semantic inputs retain the exact `StreamEtag` and the same
+contractual public fields and values. Updating those fixtures to bless a changed value
+without also defining a new contract version is forbidden.
+
+If an intentional change or bug fix would change the v1 ETag for unchanged inputs, the
+fixed stream selectors, or the projected document representation for unchanged canonical
+document/schema state, operators perform this coordinated cutover:
+
+1. Pause the v1 connector, stop every old-contract projector writer, and report the CDC
+   target not ready before new-contract cache rows can be written.
+2. Provision a new versioned topic and ACLs and prepare the new DMS
+   materializer/composer and connector contract, but keep new-contract projector writers
+   stopped. The topic suffix and value `contractVersion` advance together.
+3. While all projector writers remain stopped, truncate `dms.DocumentCache`, or provision
+   an equivalently empty cache, so the same-`ContentVersion` guarded-upsert rule cannot
+   preserve old-contract rows.
+4. Deploy and start only new-contract projector writers, then run ordinary full
+   reconciliation until an exact finishing audit reports zero missing or
+   version-mismatched rows.
+5. Register the new connector with a fresh initial snapshot of the completely
+   reprojected cache, catch it up through the required post-audit source position, and
+   advertise readiness only after the ordinary readiness checks pass.
+6. Bootstrap consumers from the new topic's independent state namespace. Retain or
+   retire the now-frozen old topic only through explicit operator policy.
+
+The cutover does not advance canonical `ContentVersion`. Republishing changed derived
+values into the existing topic is unsupported because live v1 consumers apply only a
+newer `contentVersion`. Cache deletes/truncation still have no domain meaning, but the
+cutover is intentionally replay-producing and destructive to projected state. Normal API
+correctness does not depend on projection, so a host may resume API traffic on
+new-contract nodes while their cache is rebuilding; old-contract API/projector nodes must
+already be drained. Otherwise the host uses a coordinated maintenance window. CDC remains
+not ready during the cutover.
+
+One cache row cannot supply two ETag algorithms or document representations at once.
+Consequently, v1 and a successor contract are not both kept live by this procedure. A
+zero-gap overlap requirement needs separate versioned projection state and a new design
+decision rather than another field added implicitly to `DocumentCache`.
 
 ## Enablement and Initial Readiness Sequence
 
@@ -627,9 +676,12 @@ does not conceal peer status or stop unrelated DMS API instances.
 
 Runbooks cover connector restart, cache rebuild, guard-lock contention and timeout
 diagnosis, offset reset, resnapshot, topic recreation, target migration/retirement, and
-provider artifact cleanup. Offset reset and resnapshot can replay current document state.
-Topic/offset/ACL/slot/capture deletion is destructive and always explicit; removal from
-configuration is not cleanup authority.
+provider artifact cleanup. They also cover the coordinated immutable-contract cutover:
+freeze v1 publication, completely reproject the cache, snapshot into a new versioned
+topic, and bootstrap consumer state without advancing canonical `ContentVersion`. Offset
+reset and resnapshot can replay current document state. Topic/offset/ACL/slot/capture
+deletion is destructive and always explicit; removal from configuration is not cleanup
+authority.
 
 ## Verification
 
@@ -638,7 +690,11 @@ serialized key/value bytes, duplicate-tombstone suppression, JSON expansion, exa
 copying of the DMS-computed stream ETag, timestamp format, metadata consistency, and
 topic routing. Materializer tests prove `StreamEtag` is produced by the shared DMS
 served-ETag composer for the fixed stream representation and remains coherent with the
-row's `ContentVersion` and effective schema.
+row's `ContentVersion` and effective schema. Golden v1 fixtures prove unchanged composer
+inputs retain the exact ETag and contractual public fields and values across refactors.
+An intentional fixture change requires a new topic suffix, matching `contractVersion`,
+and version-cutover coverage; tests reject blessing an output-changing composer change
+as v1.
 
 SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.
 Transform tests use realistic `io.debezium.time.NanoTimestamp` values with zero, one,

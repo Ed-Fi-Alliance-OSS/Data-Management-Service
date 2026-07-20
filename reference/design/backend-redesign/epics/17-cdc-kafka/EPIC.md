@@ -45,11 +45,14 @@ implementation inputs.
 - Generated and published records pass the topic/message contract suite.
 - Connector transforms copy the DMS-projected opaque stream ETag and contain no schema,
   link-configuration, or ETag-composition rules.
+- Golden contract fixtures prove the v1 stream representation and ETag output remain
+  immutable for unchanged inputs; output-changing upgrades use complete cache
+  reprojection and a new versioned topic rather than same-`contentVersion` replacement.
 - Local and E2E setup registers against selected provisioned data stores without
   hard-coded instance values.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported setup, security, observation, recovery,
-  migration, and explicit destructive cleanup.
+  migration, immutable-contract version cutover, and explicit destructive cleanup.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a
 new decision record changes that design.

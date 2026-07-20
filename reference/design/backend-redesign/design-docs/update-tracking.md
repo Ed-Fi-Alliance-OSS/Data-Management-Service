@@ -189,6 +189,11 @@ composition rules, but `DocumentJson` does not contain a reusable `_etag`. The r
 stores a separate opaque `StreamEtag`, produced through the same served-ETag composer for
 the fixed CDC representation. API reads ignore `StreamEtag` and compose their
 request-specific validator from `ContentVersion` and the active request `variantKey`.
+The v1 stream ETag algorithm is immutable for unchanged inputs and has no projection
+generation. An output-changing algorithm or representation change uses a new versioned
+topic after complete cache reprojection; it does not advance canonical `ContentVersion`
+or replace a same-version record in the v1 topic. See the topic/message ADR's
+[compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-stream-representation-immutability).
 The cache projection and freshness behavior is defined in
 [Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation).
 

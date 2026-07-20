@@ -26,7 +26,11 @@ capability without redefining its architecture or contracts.
 4. Document connector restart, offset reset, resnapshot, topic recreation, cache rebuild,
    target migration/retirement, and explicit destructive cleanup.
 5. Document target/source drift diagnosis and the coordinated-deployment remediation.
-6. Cross-link the canonical design and both ADRs instead of repeating their normative
+6. Document the immutable-contract cutover: freeze old-contract publication, deploy a
+   new topic/`contractVersion`, discard and completely reproject cache state, take a fresh
+   connector snapshot, bootstrap consumers in the new state namespace, and explicitly
+   retain or retire the frozen old topic.
+7. Cross-link the canonical design and both ADRs instead of repeating their normative
    tables or algorithms.
 
 ## Acceptance Evidence
@@ -37,6 +41,9 @@ capability without redefining its architecture or contracts.
   failure, missing target, source-resolution failure, and latched drift.
 - Destructive or replay-producing operations are clearly marked and never inferred from
   configuration removal.
+- The cutover procedure never advances canonical `ContentVersion`, republishes an
+  output-changing ETag into the old topic, or claims simultaneous old/new publication
+  from the single cache row.
 - Documentation distinguishes CDC from Change Queries and from response serialization.
 
 ## Out of Scope
