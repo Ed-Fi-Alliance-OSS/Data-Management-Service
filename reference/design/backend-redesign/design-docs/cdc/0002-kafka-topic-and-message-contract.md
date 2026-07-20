@@ -124,6 +124,18 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
 Database Pascal-case columns are renamed to lower camel case. `contractVersion` and
 `contentVersion` are JSON numbers.
 
+The physical temporal representation is not part of the public contract. In particular,
+SQL Server stores `dms.DocumentCache.LastModifiedAt` as `datetime2(7)`. The pinned
+Debezium connector's `adaptive` time-precision mode exposes that column as an `INT64`
+`io.debezium.time.NanoTimestamp`, not a JSON string. The required Ed-Fi document-state
+shaping SMT owns its conversion to `lastModifiedAt`: it interprets the Debezium logical
+type as nanoseconds since the Unix epoch in UTC, preserves SQL Server's 100-nanosecond
+precision without rounding, and emits the RFC 3339/ISO-8601 string required above with
+at most seven fractional digits and a trailing `Z`. A raw numeric `lastModifiedAt` or a
+plain field rename is non-conforming. The transform also verifies that the emitted value
+exactly matches `document._lastModifiedDate`; a mismatch fails the record rather than
+publishing inconsistent metadata.
+
 The stream `variantKey` uses the API five-component shape
 `{schemaEpoch}.j._.{linkFlag}.i`: JSON, no readable profile, the published document's link
 mode, and identity content coding. Ordinary resource documents are the link-bearing
@@ -198,6 +210,8 @@ The public topic never exposes:
   is independent of the value.
 - Consumers can preserve the exact DMS stream-representation ETag without access to
   `EffectiveSchemaHash` or duplicating DMS representation rules.
+- SQL Server publication requires the Ed-Fi document-state shaping SMT; a stock-only
+  transform chain cannot satisfy the v1 timestamp contract with the pinned connector.
 - `StreamEtag` is not a reusable ETag for a differently profiled, link-shaped, formatted,
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
@@ -215,3 +229,5 @@ The public topic never exposes:
 | Publish delete envelopes | Rejected: compacted state streams use Kafka tombstones and no deleted body is guaranteed. |
 | Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |
 | Compose `_etag` in Kafka Connect | Rejected: schema and representation selection belong to DMS; the connector treats the projected `StreamEtag` as opaque and only copies it into the public shape. |
+| Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
+| Require SQL Server `time.precision.mode=isostring` in the currently pinned image | Rejected for v1: the pinned Debezium 2.7 connector supports `adaptive` and `connect`, but not `isostring`; the required Ed-Fi shaping SMT performs the lossless conversion. |

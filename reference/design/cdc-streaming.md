@@ -359,6 +359,13 @@ database-per-instance isolation model.
   `DocumentUuid`.
 - Use a least-privilege login with CDC read access.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
+- Set `time.precision.mode=adaptive` explicitly. Under this mode SQL Server
+  `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, are captured as
+  `INT64` values with the `io.debezium.time.NanoTimestamp` logical type.
+- Require the Ed-Fi document-state shaping SMT to convert `LastModifiedAt` from that
+  logical type to the public UTC RFC 3339/ISO-8601 string. `connect` mode is forbidden
+  because it loses precision above milliseconds, and a plain rename would leak the
+  `INT64` representation into the public contract.
 
 SQL Server can capture multiple databases in one connector, but the reference deployment
 still registers one logical connector per instance for offset, routing, failure, and
@@ -385,13 +392,18 @@ in this logical order:
 4. Suppress Debezium's additional automatic tombstones so one canonical delete produces
    one public tombstone and cache deletion produces none. One valid implementation sets
    `tombstones.on.delete=false` and converts only the retained canonical delete envelope.
-5. Unwrap retained cache rows and rename public fields from database Pascal case to the
-   lower-camel contract.
+5. Unwrap retained cache rows.
 6. Expand `DocumentJson` into structured JSON with the DMS-1240 Ed-Fi SMT when
    necessary.
-7. Copy the DMS-computed `StreamEtag` to public `etag` and `document._etag`; remove the
-   internal source field and other internal/operational columns, and add
-   `contractVersion`.
+7. For SQL Server, have the Ed-Fi document-state shaping SMT convert `LastModifiedAt`
+   from `io.debezium.time.NanoTimestamp` nanoseconds since the Unix epoch to UTC RFC
+   3339/ISO-8601 text, preserving 100-nanosecond precision and emitting at most seven
+   fractional digits with a trailing `Z`. It rejects an unexpected logical type,
+   precision loss, or a value that does not exactly match the expanded
+   `document._lastModifiedDate`. Then rename public fields from database Pascal case to
+   the lower-camel contract, copy the DMS-computed `StreamEtag` to public `etag` and
+   `document._etag`, remove the internal source field and other internal/operational
+   columns, and add `contractVersion`.
 8. Simplify the Debezium key struct to lowercase `DocumentUuid` text and route both
    physical topics to the instance document topic.
 
@@ -401,13 +413,24 @@ routing apply to upserts and authoritative tombstones.
 Kafka Connect does not calculate `schemaEpoch`, interpret
 `DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
 opaque connector input; the connector only copies it to the two public locations. Stock
-predicates and SMTs may be used when they safely produce the exact contract. If they
-cannot classify both tables and operations, copy the nested ETag, or emit exactly one
-tombstone without scripting-engine risk, add a small Ed-Fi document-state
-routing/shaping SMT. Tests assert published record bytes and semantics, not only
-generated connector JSON. Version-specific properties and transform classes are
-verified against the pinned
+predicates and SMTs may implement the remaining steps when they safely produce the exact
+contract. The required small Ed-Fi document-state routing/shaping SMT owns SQL Server
+timestamp conversion and also implements any table/operation classification, nested ETag
+copy, or single-tombstone behavior that stock transforms cannot provide without
+scripting-engine risk. Tests assert published record bytes and semantics, not only
+generated connector JSON. Version-specific properties and transform classes are verified
+against the pinned
 `edfialliance/ed-fi-kafka-connect` image.
+
+The current pinned image uses Debezium 2.7, whose SQL Server connector supports
+`adaptive` and `connect` temporal modes but not the newer `isostring` mode. Consequently,
+v1 assigns SQL Server timestamp conversion to the required Ed-Fi shaping SMT. A future
+image may move that responsibility to `time.precision.mode=isostring` only through an
+explicit design and contract-test change; connector templates never rely on a Debezium
+default. See Debezium's
+[2.7 SQL Server temporal mapping](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-temporal-values)
+and the
+[current SQL Server temporal mapping](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#sqlserver-data-types).
 
 ## Enablement and Initial Readiness Sequence
 
@@ -509,6 +532,12 @@ copying of the DMS-computed stream ETag, timestamp format, metadata consistency,
 topic routing. Materializer tests prove `StreamEtag` is produced by the shared DMS
 served-ETag composer for the fixed stream representation and remains coherent with the
 row's `ContentVersion` and effective schema.
+
+SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.
+Transform tests use realistic `io.debezium.time.NanoTimestamp` values with zero, one,
+three, six, and seven significant fractional digits and assert lossless UTC strings,
+trailing `Z`, the seven-digit maximum, exact equality with
+`document._lastModifiedDate`, and rejection of unexpected or raw numeric output.
 
 PostgreSQL and SQL Server integration/E2E coverage proves:
 

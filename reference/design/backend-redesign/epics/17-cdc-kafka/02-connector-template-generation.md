@@ -25,14 +25,18 @@ source routing and serialized public contract.
    prefix, replication/capture identity, and snapshot behavior.
 2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
    instance values.
-3. Configure source classification, value shaping, JSON expansion, opaque `StreamEtag`
+3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
+   Ed-Fi document-state shaping SMT convert `datetime2(7)`
+   `io.debezium.time.NanoTimestamp` values to the contract's lossless UTC ISO string.
+4. Configure source classification, value shaping, JSON expansion, opaque `StreamEtag`
    copying to envelope `etag` and `document._etag`, key simplification, tombstone
    handling, and topic routing.
-4. Add a small Ed-Fi routing/shaping SMT only if verified stock transforms cannot safely
-   implement the contract.
-5. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
+5. Add the small Ed-Fi routing/shaping SMT required for SQL Server timestamp conversion
+   and for any other contract behavior that verified stock transforms cannot safely
+   implement.
+6. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
    of connector transforms.
-6. Validate all version-specific properties and transform classes against the pinned
+7. Validate all version-specific properties and transform classes against the pinned
    `edfialliance/ed-fi-kafka-connect` image.
 
 ## Acceptance Evidence
@@ -43,6 +47,10 @@ source routing and serialized public contract.
 - Serialized-record tests enforce the topic/message ADR, including exact key/value byte
   forms, exact copying of `StreamEtag` to both public locations, expanded JSON,
   timestamp formatting, and tombstones.
+- SQL Server rendering tests require `time.precision.mode=adaptive`; transform fixtures
+  carry the `io.debezium.time.NanoTimestamp` logical type and prove lossless conversion
+  through seven fractional digits, trailing `Z`, and exact equality with the embedded
+  `_lastModifiedDate`.
 - Tests fail when either public ETag differs from the projected source value and prove
   the transform does not attempt to derive a variant key.
 - A pinned-image smoke test proves configured transform classes load.
