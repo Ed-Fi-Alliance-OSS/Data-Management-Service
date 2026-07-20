@@ -14,12 +14,16 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <summary>
 /// Runtime proof that a rename of an upstream resource's identity (<c>ClassPeriod</c>)
 /// reaches stored child-collection bindings through the native <c>ON UPDATE CASCADE</c>
-/// foreign keys and that the child stamp triggers then bump the owning root document's
-/// <c>ContentVersion</c>. Exercises two different child-collection referrers cascading
-/// from the same target (<c>BellScheduleClassPeriod</c> with owning root
-/// <c>BellSchedule</c>, and <c>SectionClassPeriod</c> with owning root <c>Section</c>)
-/// to demonstrate that the cascade fan-out is general across multiple child-collection
-/// referrers of the same target, not hardcoded to a single binding.
+/// foreign keys and that the child stamp triggers preserve update tracking for the owning
+/// root. The <c>BellScheduleClassPeriod</c> → <c>BellSchedule</c> scenario proves the full
+/// committed outcome: the binding's own full-composite FK carries the cascade (not a retired
+/// propagation trigger); the owning root advances its content stamps and root-table mirror
+/// while its identity stamps stay frozen and it emits no key-change row; and the upstream
+/// <c>ClassPeriod</c> advances all four stamps and emits exactly one key-change row carrying
+/// the full composite identity with the three-way <c>ChangeVersion</c> linkage. The
+/// <c>SectionClassPeriod</c> → <c>Section</c> scenario additionally demonstrates that the
+/// cascade fan-out is general across multiple child-collection referrers of the same target,
+/// not hardcoded to a single binding.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -103,13 +107,53 @@ public class MssqlChildBindingIdentityPropagationTests
             classPeriodSchoolId: SchoolId
         );
 
-        var initialContentVersion = await QueryDocumentContentVersionAsync(bellScheduleDocumentId);
+        var classPeriodDocumentUuid = await QueryDocumentUuidAsync(classPeriodDocumentId);
+        var bellScheduleDocumentUuid = await QueryDocumentUuidAsync(bellScheduleDocumentId);
+
+        // Native FK contract — the defining requirement. Identity propagation into this
+        // binding is carried by the child FK's OWN native ON UPDATE CASCADE over the full
+        // composite reference key, not by any retired propagation trigger. This asserts THIS
+        // binding's FK only; the global absence of a %PropagateIdentity% trigger is already
+        // proven by
+        // MssqlGeneratedDdlAuthoritativeSmokeTests.It_should_not_install_any_retired_identity_propagation_trigger.
+        var bindingForeignKeys = await _database.GetForeignKeyMetadataAsync(
+            "edfi",
+            "BellScheduleClassPeriod"
+        );
+        var classPeriodReferenceKey = bindingForeignKeys.Single(foreignKey =>
+            foreignKey.ConstraintName == "FK_BellScheduleClassPeriod_ClassPeriod_RefKey"
+        );
+        classPeriodReferenceKey
+            .Columns.Should()
+            .Equal("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId");
+        classPeriodReferenceKey.ReferencedSchema.Should().Be("edfi");
+        classPeriodReferenceKey.ReferencedTable.Should().Be("ClassPeriod");
+        classPeriodReferenceKey
+            .ReferencedColumns.Should()
+            .Equal("ClassPeriodName", "School_SchoolId", "DocumentId");
+        classPeriodReferenceKey.DeleteAction.Should().Be("NO ACTION");
+        classPeriodReferenceKey
+            .UpdateAction.Should()
+            .Be("CASCADE", "identity propagation is carried by the native FK cascade, not a trigger");
+
         var childRowsBefore = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
         var childAnchorBefore = await QueryBellScheduleClassPeriodAnchorAsync(bellScheduleDocumentId);
         childRowsBefore.Should().Be(1);
 
-        // Add a small delay so any stamp comparison that checks
-        // ContentLastModifiedAt would see a distinct timestamp too.
+        var beforeBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
+        var beforeClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var bellScheduleKeyChangesBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "BellSchedule",
+            bellScheduleDocumentUuid
+        );
+        var classPeriodKeyChangesBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+
+        // A small delay so ContentLastModifiedAt (sysutcdatetime) advances to a distinct value.
         await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
 
         // Act — update the upstream ClassPeriod identity column.
@@ -123,14 +167,14 @@ public class MssqlChildBindingIdentityPropagationTests
             new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId)
         );
 
-        // Assert — the cascade updated the projected identity column on the child row
+        // Assert — the cascade updated the projected identity column on the child row.
         var childRow = await QuerySingleBellScheduleClassPeriodAsync(bellScheduleDocumentId);
         Convert
             .ToString(childRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
             .Should()
             .Be(NewClassPeriodName);
 
-        // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE
+        // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE.
         var childRowsAfter = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
         childRowsAfter
             .Should()
@@ -149,15 +193,96 @@ public class MssqlChildBindingIdentityPropagationTests
                 "ClassPeriod_DocumentId is the reference anchor and must not change during an identity cascade"
             );
 
-        // The child stamp trigger (TR_BellScheduleClassPeriod_Stamp) must fire from the
-        // cascade UPDATE and bump the owning BellSchedule root's ContentVersion.
-        var finalContentVersion = await QueryDocumentContentVersionAsync(bellScheduleDocumentId);
-        finalContentVersion
-            .Should()
+        var afterBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
+        var afterClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var afterBellScheduleMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "BellSchedule",
+            bellScheduleDocumentId
+        );
+        var afterClassPeriodMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "ClassPeriod",
+            classPeriodDocumentId
+        );
+
+        // Owning root BellSchedule: its representation changed (a child binding's projected
+        // identity was cascade-updated) but its OWN identity did not. Its content stamps advance
+        // and its root-table mirror tracks the document row, while its identity stamps stay frozen
+        // (a paired contract) and it emits no key-change row because its identity is unchanged.
+        afterBellSchedule
+            .ContentVersion.Should()
             .BeGreaterThan(
-                initialContentVersion,
+                beforeBellSchedule.ContentVersion,
                 "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
+        afterBellSchedule.ContentLastModifiedAt.Should().BeAfter(beforeBellSchedule.ContentLastModifiedAt);
+        afterBellSchedule
+            .IdentityVersion.Should()
+            .Be(
+                beforeBellSchedule.IdentityVersion,
+                "BellSchedule's own identity did not change, so IdentityVersion must be frozen"
+            );
+        afterBellSchedule
+            .IdentityLastModifiedAt.Should()
+            .Be(
+                beforeBellSchedule.IdentityLastModifiedAt,
+                "identity stamps are a paired contract and must both be frozen"
+            );
+        AssertMirrorContentMatchesDocument(afterBellScheduleMirror, afterBellSchedule);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "BellSchedule", bellScheduleDocumentUuid))
+            .Should()
+            .Be(
+                bellScheduleKeyChangesBefore,
+                "the referrer's identity did not change, so it must emit no key-change row"
+            );
+
+        // Upstream ClassPeriod: its own identity changed. All four stamps advance, and it emits
+        // exactly one key-change row.
+        afterClassPeriod.ContentVersion.Should().BeGreaterThan(beforeClassPeriod.ContentVersion);
+        afterClassPeriod.ContentLastModifiedAt.Should().BeAfter(beforeClassPeriod.ContentLastModifiedAt);
+        afterClassPeriod.IdentityVersion.Should().BeGreaterThan(beforeClassPeriod.IdentityVersion);
+        afterClassPeriod.IdentityLastModifiedAt.Should().BeAfter(beforeClassPeriod.IdentityLastModifiedAt);
+        AssertMirrorContentMatchesDocument(afterClassPeriodMirror, afterClassPeriod);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "ClassPeriod", classPeriodDocumentUuid))
+            .Should()
+            .Be(
+                classPeriodKeyChangesBefore + 1,
+                "the resource whose identity changed emits exactly one key-change row"
+            );
+
+        var classPeriodKeyChange = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+        Convert
+            .ToString(classPeriodKeyChange["OldClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(OldClassPeriodName);
+        Convert
+            .ToString(classPeriodKeyChange["NewClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(NewClassPeriodName);
+        // ClassPeriod identity is School + ClassPeriodName. The School half did not change, so
+        // both the old and new sides must carry SchoolId 100 — a row that mangled the unchanged
+        // component would be a malformed key-change and must fail here.
+        Convert
+            .ToInt64(classPeriodKeyChange["OldSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        Convert
+            .ToInt64(classPeriodKeyChange["NewSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        // Three-way linkage: the key-change ChangeVersion equals dms.Document.ContentVersion
+        // equals the edfi.ClassPeriod root-table mirror ContentVersion
+        // (16-tracked-change-trigger-rendering §29/§33).
+        Convert
+            .ToInt64(classPeriodKeyChange["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterClassPeriod.ContentVersion);
+        afterClassPeriodMirror.ContentVersion.Should().Be(afterClassPeriod.ContentVersion);
     }
 
     [Test]
@@ -618,5 +743,133 @@ public class MssqlChildBindingIdentityPropagationTests
             new SqlParameter("@projectName", projectName),
             new SqlParameter("@resourceName", resourceName)
         );
+    }
+
+    private async Task<Guid> QueryDocumentUuidAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<Guid>(
+            """
+            SELECT [DocumentUuid]
+            FROM [dms].[Document]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT
+                    [ContentVersion],
+                    [IdentityVersion],
+                    [ContentLastModifiedAt],
+                    [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            ReadDateTimeOffset(row["IdentityLastModifiedAt"])
+        );
+    }
+
+    // Root tables carry ContentVersion/ContentLastModifiedAt mirror columns that resource
+    // change-version queries filter on; this reads the mirror pair for the owning root row.
+    private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
+        string schemaName,
+        string tableName,
+        long documentId
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT
+                    [ContentVersion],
+                    [ContentLastModifiedAt]
+                FROM [{schemaName}].[{tableName}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            IdentityVersion: 0,
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+        );
+    }
+
+    private static void AssertMirrorContentMatchesDocument(
+        DocumentStampState mirror,
+        DocumentStampState document
+    )
+    {
+        mirror.ContentVersion.Should().Be(document.ContentVersion);
+        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
+    }
+
+    // tracked_changes_* rows are keyed by [Id], which holds the DocumentUuid (not DocumentId).
+    private async Task<long> CountTrackedChangeRowsAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT(*)
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+    }
+
+    private async Task<IReadOnlyDictionary<string, object?>> GetLatestTrackedChangeRowAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            $"""
+            SELECT TOP (1) *
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid
+            ORDER BY [ChangeVersion] DESC;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+
+        return rows.Single();
+    }
+
+    private static DateTimeOffset ReadDateTimeOffset(object? value)
+    {
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
+            ),
+        };
     }
 }
