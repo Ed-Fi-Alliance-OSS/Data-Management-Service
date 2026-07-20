@@ -2019,3 +2019,243 @@ Describe "Resolve-EnvValueReference -TreatUnresolvedReferenceAsEmpty" {
             Should -Be "real-pw"
     }
 }
+
+Describe "Resolve-ConnectionStringDialect" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    # One 4-valued classifier replacing the Server=-regex / duplicated marker lists. SQL Server keywords
+    # come from the built-in SqlConnectionStringBuilder (so Address/Addr/Network Address/UID/PWD are known);
+    # PostgreSQL keywords from the documented table. Shared-only aliases are Ambiguous, not forced to MSSQL.
+    It "classifies <Name> as <Expected>" -ForEach @(
+        @{ Name = 'canonical PostgreSQL'; Cs = 'host=dms-postgresql;port=5432;username=postgres;password=p;database=d;'; Expected = 'PostgreSql' }
+        @{ Name = 'PostgreSQL with NoResetOnClose'; Cs = 'host=dms-postgresql;port=5432;username=postgres;password=p;database=d;NoResetOnClose=true;'; Expected = 'PostgreSql' }
+        @{ Name = 'PostgreSQL using the Server alias for Host with port and username'; Cs = 'Server=dms-postgresql;Port=5432;Username=postgres;Database=d;'; Expected = 'PostgreSql' }
+        @{ Name = 'PostgreSQL using Ssl Mode'; Cs = 'host=pg;Ssl Mode=Require;database=d;'; Expected = 'PostgreSql' }
+        @{ Name = 'shipped SQL Server with only shared keys'; Cs = 'Server=dms-mssql,1433;Database=d;User Id=sa;Password=p;TrustServerCertificate=true;'; Expected = 'Ambiguous' }
+        @{ Name = 'SQL Server via Data Source and Initial Catalog and Integrated Security'; Cs = 'Data Source=dms-mssql;Initial Catalog=d;Integrated Security=true;'; Expected = 'SqlServer' }
+        @{ Name = 'SQL Server via Network Address and UID and PWD (finding 10a)'; Cs = 'Network Address=dms-mssql;Database=d;UID=sa;PWD=p;'; Expected = 'SqlServer' }
+        @{ Name = 'SQL Server via Addr'; Cs = 'Addr=dms-mssql;Initial Catalog=d;'; Expected = 'SqlServer' }
+        @{ Name = 'ambiguous - only shared aliases'; Cs = 'Server=host;User Id=u;Database=d;Password=p;'; Expected = 'Ambiguous' }
+        @{ Name = 'quoted value containing a semicolon-Server is not a key (finding 9)'; Cs = 'Database=d;Password="p;Server=y"'; Expected = 'Ambiguous' }
+        @{ Name = 'contradictory - host and Initial Catalog together'; Cs = 'host=pg;Initial Catalog=d;'; Expected = 'Invalid' }
+        @{ Name = 'unparseable'; Cs = 'this is not a connection string'; Expected = 'Invalid' }
+        @{ Name = 'empty'; Cs = ''; Expected = 'Invalid' }
+        @{ Name = 'whitespace only'; Cs = '   '; Expected = 'Invalid' }
+    ) {
+        Resolve-ConnectionStringDialect -ConnectionString $Cs | Should -BeExactly $Expected
+    }
+}
+
+Describe "Test-ConnectionStringMatchesEngine" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    # An ambiguous connection is evaluated against the already-selected provider (accepted), never
+    # auto-forced to MSSQL; a definitively-other-engine or invalid connection is rejected.
+    It "engine <Engine> vs <Name> yields <Expected>" -ForEach @(
+        @{ Engine = 'mssql'; Name = 'ambiguous MSSQL-shaped'; Cs = 'Server=dms-mssql,1433;Database=d;User Id=sa;Password=p;TrustServerCertificate=true;'; Expected = $true }
+        @{ Engine = 'postgresql'; Name = 'ambiguous accepted for PostgreSQL (finding 10b)'; Cs = 'Server=dms-postgresql;User Id=postgres;Database=d;'; Expected = $true }
+        @{ Engine = 'postgresql'; Name = 'definitive SQL Server rejected'; Cs = 'Network Address=dms-mssql;Database=d;UID=sa;PWD=p;'; Expected = $false }
+        @{ Engine = 'mssql'; Name = 'definitive PostgreSQL rejected'; Cs = 'host=pg;port=5432;username=u;database=d;'; Expected = $false }
+        @{ Engine = 'postgresql'; Name = 'definitive PostgreSQL accepted'; Cs = 'host=pg;port=5432;username=u;database=d;'; Expected = $true }
+        @{ Engine = 'mssql'; Name = 'invalid rejected'; Cs = 'garbage'; Expected = $false }
+    ) {
+        Test-ConnectionStringMatchesEngine -Engine $Engine -ConnectionString $Cs | Should -Be $Expected
+    }
+}
+
+Describe "Resolve-ComposeVariable (provenance, shell-over-file, colon-dash semantics)" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    # Exact string equality so any trim/unquote/re-interpolation of a value fails visibly. A direct or
+    # reference-terminal shell value is FINAL opaque text; the default applies to unset or exactly-empty
+    # values (NOT whitespace).
+    It "<Name>" -ForEach @(
+        @{ Name = 'direct shell value is verbatim'; Ev = @{}; Pe = @{ X = 'ShellPass' }; Def = $null; WantValue = 'ShellPass'; WantSource = 'Shell' }
+        @{ Name = 'shell value keeps literal surrounding quotes'; Ev = @{}; Pe = @{ X = '"quoted"' }; Def = $null; WantValue = '"quoted"'; WantSource = 'Shell' }
+        @{ Name = 'shell value keeps a literal token'; Ev = @{}; Pe = @{ X = '${TOKEN}' }; Def = $null; WantValue = '${TOKEN}'; WantSource = 'Shell' }
+        @{ Name = 'whitespace-only shell value is verbatim, not defaulted'; Ev = @{}; Pe = @{ X = '   ' }; Def = 'D'; WantValue = '   '; WantSource = 'Shell' }
+        @{ Name = 'exactly-empty shell value takes the default'; Ev = @{}; Pe = @{ X = '' }; Def = 'D'; WantValue = 'D'; WantSource = 'ComposeDefault' }
+        @{ Name = 'direct env-file value'; Ev = @{ X = 'envval' }; Pe = @{}; Def = $null; WantValue = 'envval'; WantSource = 'EnvFile' }
+        @{ Name = 'env-file reference through another env-file value'; Ev = @{ X = '${Y}'; Y = 'yval' }; Pe = @{}; Def = $null; WantValue = 'yval'; WantSource = 'EnvFile' }
+        @{ Name = 'env-file reference terminating at a shell value is verbatim (finding 5)'; Ev = @{ X = '${Y}' }; Pe = @{ Y = 'shellY' }; Def = $null; WantValue = 'shellY'; WantSource = 'Shell' }
+        @{ Name = 'reference to a shell value keeps spaces, quotes, semicolons and dollar (finding 5)'; Ev = @{ X = '${Y}' }; Pe = @{ Y = '  "s;p$e"  ' }; Def = $null; WantValue = '  "s;p$e"  '; WantSource = 'Shell' }
+        @{ Name = 'nested env-file reference'; Ev = @{ X = '${Y}'; Y = '${Z}'; Z = 'zval' }; Pe = @{}; Def = $null; WantValue = 'zval'; WantSource = 'EnvFile' }
+        @{ Name = 'nested reference terminating at shell'; Ev = @{ X = '${Y}'; Y = '${Z}' }; Pe = @{ Z = 'shellZ' }; Def = $null; WantValue = 'shellZ'; WantSource = 'Shell' }
+        @{ Name = 'reference to an unset variable is empty'; Ev = @{ X = '${Y}' }; Pe = @{}; Def = $null; WantValue = ''; WantSource = 'EnvFile' }
+        @{ Name = 'reference to an empty env-file value takes the default'; Ev = @{ X = '${Y}'; Y = '' }; Pe = @{}; Def = 'D'; WantValue = 'D'; WantSource = 'ComposeDefault' }
+    ) {
+        $result = if ($null -ne $Def) {
+            Resolve-ComposeVariable -Name 'X' -EnvValues $Ev -ProcessEnvironment $Pe -Default $Def
+        }
+        else {
+            Resolve-ComposeVariable -Name 'X' -EnvValues $Ev -ProcessEnvironment $Pe
+        }
+        $result.Value | Should -BeExactly $WantValue
+        $result.Source | Should -Be $WantSource
+    }
+
+    It "a single-quoted env-file value is literal (no interpolation)" {
+        $result = Resolve-ComposeVariable -Name 'X' -EnvValues @{ X = "'`${Y}'" } -ProcessEnvironment @{ Y = 'shouldNOTexpand' }
+        $result.Value | Should -BeExactly '${Y}'
+        $result.Source | Should -Be 'EnvFile'
+    }
+}
+
+Describe "Resolve-EnvFileValueWithProvenance" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    It "returns a literal env-file value verbatim with Source EnvFile" {
+        $r = Resolve-EnvFileValueWithProvenance -Value 'edfi_configurationservice' -EnvValues @{} -ProcessEnvironment @{}
+        $r.Value | Should -BeExactly 'edfi_configurationservice'
+        $r.Source | Should -Be 'EnvFile'
+    }
+
+    It "returns a shell-terminal reference verbatim with Source Shell" {
+        $r = Resolve-EnvFileValueWithProvenance -Value '${CMS_DB}' -EnvValues @{} -ProcessEnvironment @{ CMS_DB = 'rogue_db' }
+        $r.Value | Should -BeExactly 'rogue_db'
+        $r.Source | Should -Be 'Shell'
+    }
+
+    It "rejects a partial or embedded reference" {
+        { Resolve-EnvFileValueWithProvenance -Value 'prefix_${Y}' -EnvValues @{ Y = 'y' } -ProcessEnvironment @{} } |
+            Should -Throw '*unsupported environment expression*'
+    }
+
+    It "throws on a cyclic env-file reference" {
+        { Resolve-EnvFileValueWithProvenance -Value '${A}' -EnvValues @{ A = '${B}'; B = '${A}' } -ProcessEnvironment @{} } |
+            Should -Throw '*cyclic*'
+    }
+}
+
+Describe "Resolve-EffectiveConfigRuntimeContract" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+
+        # Representative env-file shapes (the seam wiring the tracked env files use).
+        $script:PgEnv = @{
+            DMS_CONFIG_DATASTORE                  = 'postgresql'
+            POSTGRES_DB_NAME                      = 'edfi_datamanagementservice'
+            POSTGRES_PASSWORD                     = 'pgpw'
+            DMS_CONFIG_DATABASE_NAME              = '${POSTGRES_DB_NAME}'
+            DMS_CONFIG_DATABASE_CONNECTION_STRING = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+        }
+        $script:MssqlEnv = @{
+            DMS_CONFIG_DATASTORE                  = 'mssql'
+            MSSQL_DB_NAME                         = 'edfi_datamanagementservice'
+            MSSQL_SA_PASSWORD                     = 'abcdefgh1!'
+            DMS_CONFIG_DATABASE_NAME              = '${MSSQL_DB_NAME}'
+            DMS_CONFIG_DATABASE_CONNECTION_STRING = 'Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+        }
+    }
+
+    Context "clean resolution - every consumer field derives from one contract" {
+        It "PostgreSQL shared: engine, provider, connection provenance, and OpenIddict target" {
+            $c = Resolve-EffectiveConfigRuntimeContract -EnvValues $script:PgEnv -ProcessEnvironment @{} -InfrastructureEngine postgresql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized
+            $c.InfrastructureEngine | Should -Be 'postgresql'
+            $c.CmsProviderEngine | Should -Be 'postgresql'
+            $c.CmsConnectionString.Source | Should -Be 'EnvFile'
+            $c.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
+            $c.OpenIddict.DbType | Should -Be 'Postgresql'
+            $c.OpenIddict.DbUser | Should -Be 'postgres'
+            $c.OpenIddict.DbName | Should -Be 'edfi_datamanagementservice'
+            $c.OpenIddict.DbPassword | Should -BeNullOrEmpty
+        }
+
+        It "SQL Server shared: OpenIddict uses the resolved SA password" {
+            $c = Resolve-EffectiveConfigRuntimeContract -EnvValues $script:MssqlEnv -ProcessEnvironment @{} -InfrastructureEngine mssql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized
+            $c.OpenIddict.DbType | Should -Be 'MSSQL'
+            $c.OpenIddict.DbUser | Should -Be 'sa'
+            $c.OpenIddict.DbPassword | Should -Be 'abcdefgh1!'
+            $c.MssqlSaPassword.Value | Should -Be 'abcdefgh1!'
+        }
+
+        It "SQL Server standalone with no connection string materializes one targeting the config database" {
+            $env = @{ DMS_CONFIG_DATASTORE = 'mssql'; MSSQL_SA_PASSWORD = 'abcdefgh1!'; POSTGRES_DB_NAME = 'edfi_configurationservice' }
+            $c = Resolve-EffectiveConfigRuntimeContract -EnvValues $env -ProcessEnvironment @{} -InfrastructureEngine mssql -ConfigDatabaseName 'edfi_configurationservice'
+            $c.CmsConnectionString.Source | Should -Be 'Materialized'
+            Resolve-ConnectionStringDialect -ConnectionString $c.CmsConnectionString.Value | Should -Be 'Ambiguous'
+            Get-CmsConnectionStringDatabaseName -ConnectionString $c.CmsConnectionString.Value -EnvValues @{} | Should -Be 'edfi_configurationservice'
+        }
+
+        It "PostgreSQL empty shell connection uses the compose fallback (correct engine)" {
+            $c = Resolve-EffectiveConfigRuntimeContract -EnvValues $script:PgEnv -ProcessEnvironment @{ DMS_CONFIG_DATABASE_CONNECTION_STRING = '' } -InfrastructureEngine postgresql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized
+            $c.CmsConnectionString.Source | Should -Be 'ComposeDefault'
+        }
+    }
+
+    Context "engine-agreement invariant (fail-fast, before Docker)" {
+        It "rejects a shell DMS_CONFIG_DATASTORE that differs from the selected infrastructure engine" {
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $script:PgEnv -ProcessEnvironment @{ DMS_CONFIG_DATASTORE = 'mssql' } -InfrastructureEngine postgresql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw '*resolves*mssql*unset it*'
+        }
+
+        It "rejects a paired shell provider + matching connection that both differ from the selected engine" {
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $script:PgEnv -ProcessEnvironment @{ DMS_CONFIG_DATASTORE = 'mssql'; DMS_CONFIG_DATABASE_CONNECTION_STRING = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=p;TrustServerCertificate=true;' } -InfrastructureEngine postgresql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw '*runtime-contract mismatch*'
+        }
+    }
+
+    Context "connection validation" {
+        It "rejects a shell PostgreSQL connection on a SQL Server stack (wrong engine)" {
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $script:MssqlEnv -ProcessEnvironment @{ DMS_CONFIG_DATABASE_CONNECTION_STRING = 'host=dms-postgresql;database=edfi_datamanagementservice;username=postgres;password=p;' } -InfrastructureEngine mssql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw '*PostgreSql connection*mssql*'
+        }
+
+        It "rejects an empty shell connection on a SQL Server stack (compose PostgreSQL fallback)" {
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $script:MssqlEnv -ProcessEnvironment @{ DMS_CONFIG_DATABASE_CONNECTION_STRING = '' } -InfrastructureEngine mssql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw '*exported empty on a SQL Server stack*'
+        }
+
+        It "rejects a shell connection that resolves to a different database" {
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $script:PgEnv -ProcessEnvironment @{ DMS_CONFIG_DATABASE_CONNECTION_STRING = 'host=dms-postgresql;database=rogue_db;username=postgres;password=p;' } -InfrastructureEngine postgresql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw "*targets database 'rogue_db'*edfi_datamanagementservice*"
+        }
+
+        It "rejects a database-less shell connection" {
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $script:PgEnv -ProcessEnvironment @{ DMS_CONFIG_DATABASE_CONNECTION_STRING = 'host=dms-postgresql;username=postgres;password=p;' } -InfrastructureEngine postgresql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw '*targets no database*'
+        }
+    }
+
+    Context "datastore-name agreement" {
+        It "rejects a shell POSTGRES_DB_NAME override that splits containers from host-side tooling" {
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $script:PgEnv -ProcessEnvironment @{ POSTGRES_DB_NAME = 'rogue' } -InfrastructureEngine postgresql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw '*POSTGRES_DB_NAME resolves*rogue*'
+        }
+    }
+
+    Context "SA password provenance (indirect references)" {
+        It "returns an indirect shell-sourced SA password verbatim (spaces, semicolons, dollar preserved)" {
+            $env = $script:MssqlEnv.Clone(); $env.MSSQL_SA_PASSWORD = '${MSSQL_ROOT_PASSWORD}'
+            $c = Resolve-EffectiveConfigRuntimeContract -EnvValues $env -ProcessEnvironment @{ MSSQL_ROOT_PASSWORD = '  Sh;ll$P  ' } -InfrastructureEngine mssql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized
+            $c.MssqlSaPassword.Value | Should -BeExactly '  Sh;ll$P  '
+            $c.MssqlSaPassword.Source | Should -Be 'Shell'
+        }
+
+        It "applies the compose default when an indirect SA reference is unset" {
+            $env = $script:MssqlEnv.Clone(); $env.MSSQL_SA_PASSWORD = '${MSSQL_ROOT_PASSWORD}'
+            $c = Resolve-EffectiveConfigRuntimeContract -EnvValues $env -ProcessEnvironment @{} -InfrastructureEngine mssql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized -MssqlSaPasswordDefault 'abcdefgh1!'
+            $c.MssqlSaPassword.Value | Should -Be 'abcdefgh1!'
+            $c.MssqlSaPassword.Source | Should -Be 'ComposeDefault'
+        }
+
+        It "fails fast (no default) when an indirect SA reference is unset (standalone lane)" {
+            $env = $script:MssqlEnv.Clone(); $env.MSSQL_SA_PASSWORD = '${MSSQL_ROOT_PASSWORD}'
+            { Resolve-EffectiveConfigRuntimeContract -EnvValues $env -ProcessEnvironment @{} -InfrastructureEngine mssql -ConfigDatabaseName 'edfi_datamanagementservice' -ConfigDatabaseNameMaterialized } |
+                Should -Throw '*MSSQL_SA_PASSWORD resolves to a blank value*'
+        }
+    }
+}
