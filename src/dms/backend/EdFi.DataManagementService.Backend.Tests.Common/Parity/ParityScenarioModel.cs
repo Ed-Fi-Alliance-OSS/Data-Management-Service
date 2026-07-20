@@ -100,28 +100,39 @@ public enum EntryPointKind
 }
 
 /// <summary>
-/// The production boundary a parity scenario exercises. A no-profile scenario must never
-/// declare <see cref="ProfilePersistExecutor"/>; a profile scenario declares it. This makes
-/// same-boundary supporting-smoke deferral mechanically checkable.
+/// The behavioral mechanic (production seam) whose externally visible and authoritative-storage behavior a
+/// scenario's assertions pin. This is deliberately <b>not</b> the invocation entry point: every no-profile and
+/// profile integration row is invoked through <c>RelationalDocumentStoreRepository</c>, every API row through the
+/// HTTP pipeline, and every Na row through the merge synthesizer, so the invocation boundary carries no
+/// discriminating signal. Recording the mechanic — not the entry point — is what makes same-mechanic
+/// supporting-smoke deferral meaningful. Each value belongs to exactly one <see cref="ParityLayer"/>: the
+/// layer↔mechanic partition below is enforced by a structural invariant, so a no-profile scenario can never
+/// declare a profile mechanic (or vice versa).
 /// </summary>
 public enum ProductionBoundary
 {
-    /// <summary>The DMS ASP.NET Core HTTP request pipeline (API layer).</summary>
+    /// <summary>End-to-end behavior of the DMS ASP.NET Core HTTP request pipeline (API layer).</summary>
     HttpPipeline,
 
-    /// <summary>RelationalDocumentStoreRepository → RelationalWriteNoProfilePersister.</summary>
+    /// <summary>
+    /// No-profile persister control path (<c>RelationalWriteNoProfilePersister</c>): full-surface create,
+    /// POST-as-update in place, and transactional rollback outcomes.
+    /// </summary>
     NoProfilePersister,
 
-    /// <summary>RelationalWriteNoProfileMerge row synthesis.</summary>
+    /// <summary>
+    /// No-profile merge row synthesis (<c>RelationalWriteNoProfileMerge</c>): omitted-scope clearing/deletion,
+    /// collection reorder, and stable-CollectionItemId reuse.
+    /// </summary>
     NoProfileMerge,
 
-    /// <summary>RelationalWriteGuardedNoOp plus freshness/current-state seams.</summary>
+    /// <summary>Guarded no-op compare (<c>RelationalWriteGuardedNoOp</c>) with the freshness/current-state seams.</summary>
     GuardedNoOp,
 
-    /// <summary>RelationalWriteIdentityStability immutable-identity rejection.</summary>
+    /// <summary>Immutable-identity rejection (<c>RelationalWriteIdentityStability</c>).</summary>
     IdentityStability,
 
-    /// <summary>WritePlanBatchSqlEmitter / PlanWriteBatchingConventions batching.</summary>
+    /// <summary>Collection batch partitioning (<c>WritePlanBatchSqlEmitter</c> / <c>PlanWriteBatchingConventions</c>).</summary>
     BatchSqlEmitter,
 
     /// <summary>Runtime reference-identity column population/repopulation/cascade.</summary>
@@ -133,12 +144,12 @@ public enum ProductionBoundary
     /// <summary>Relational GET-by-id read-back / ETag / If-Match / readable-profile projection.</summary>
     RelationalReadback,
 
-    /// <summary>The profile-aware persist executor (profile layer only).</summary>
+    /// <summary>Profile-aware persist-executor merge (profile layer).</summary>
     ProfilePersistExecutor,
 
     /// <summary>
-    /// The provider-independent profile merge synthesizer/planner, exercised by unit tests with
-    /// no provider persist executor. Used by rows whose only coverage is a synthesizer unit test.
+    /// Provider-independent profile merge synthesizer/planner, exercised by unit tests with no provider persist
+    /// executor. Used by rows whose only coverage is a synthesizer unit test.
     /// </summary>
     ProfileMergeSynthesizer,
 }
@@ -203,10 +214,13 @@ public sealed record ParityScenario
     /// </summary>
     public string? ProviderSpecificEntryPointRationale { get; init; }
 
-    /// <summary>The production boundary exercised.</summary>
+    /// <summary>
+    /// The behavioral mechanic (production seam) whose behavior this scenario's assertions pin — not the
+    /// invocation entry point. Must be a mechanic valid for this row's <see cref="Layer"/>.
+    /// </summary>
     public required ProductionBoundary Boundary { get; init; }
 
-    /// <summary>Optional specific class/method on the boundary (e.g. RelationalWriteIdentityStability.TryBuildFailureResult).</summary>
+    /// <summary>Optional specific class/method on the mechanic (e.g. RelationalWriteIdentityStability.TryBuildFailureResult).</summary>
     public string? BoundaryDetail { get; init; }
 
     /// <summary>PostgreSQL test locations (one per fixture); empty when PostgreSQL has none.</summary>

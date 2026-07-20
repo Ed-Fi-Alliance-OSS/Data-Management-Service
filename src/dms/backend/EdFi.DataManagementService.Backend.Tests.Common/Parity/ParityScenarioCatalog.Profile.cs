@@ -50,7 +50,8 @@ public static partial class ParityScenarioCatalog
             "ProfileNestedCollectionMergeTests",
             "Given_a_ProfileNested_put_request_with_a_hidden_member_path_on_a_visible_child",
             "Given_a_ProfileNested_put_request_with_a_hidden_member_path_on_a_visible_child",
-            ["It_preserves_the_stored_value_at_the_hidden_path"]
+            ["It_preserves_the_stored_value_at_the_hidden_path"],
+            sharedEntryPoint: NestedCollectionSharedEntryPoint
         ),
         Profile(
             "ProfileHiddenInlinedColumnPreservation/KeyUnifiedCanonicalStorage",
@@ -172,7 +173,8 @@ public static partial class ParityScenarioCatalog
                     "Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
                     ["It_assigns_aligned_extension_child_ordinals_in_new_request_order"]
                 ),
-            ]
+            ],
+            providerSpecificRationale: ProfileMixedFixtureProviderSpecificRationale
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection",
@@ -180,7 +182,8 @@ public static partial class ParityScenarioCatalog
             "ProfileNestedCollectionMergeTests",
             "Given_a_ProfileNested_put_request_updating_visible_children_with_a_hidden_sibling_in_storage",
             "Given_a_ProfileNested_put_request_updating_visible_children_with_a_hidden_sibling_in_storage",
-            ["It_updates_the_visible_child_rows", "It_preserves_the_hidden_sibling_row_unchanged"]
+            ["It_updates_the_visible_child_rows", "It_preserves_the_hidden_sibling_row_unchanged"],
+            sharedEntryPoint: NestedCollectionSharedEntryPoint
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
@@ -208,7 +211,8 @@ public static partial class ParityScenarioCatalog
                     "Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_Merge",
                     ["It_updates_in_place_when_request_item_matches_stored_visible_row_by_reference_identity"]
                 ),
-            ]
+            ],
+            providerSpecificRationale: ProfileMixedFixtureProviderSpecificRationale
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/CollectionAlignedExtensionChildCollection",
@@ -216,7 +220,8 @@ public static partial class ParityScenarioCatalog
             "ProfileCollectionAlignedExtensionMergeTests",
             "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_modifying_an_aligned_extension_child_value",
             "Given_a_ProfileCollectionAlignedExtension_update_request_modifying_an_aligned_extension_child_value",
-            ["It_updates_matched_aligned_extension_child_rows_in_place_preserving_collection_item_ids"]
+            ["It_updates_matched_aligned_extension_child_rows_in_place_preserving_collection_item_ids"],
+            sharedEntryPoint: AlignedExtensionSharedEntryPoint
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/HiddenDescriptorBinding",
@@ -258,7 +263,8 @@ public static partial class ParityScenarioCatalog
                     "Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child",
                     ["It_recomputes_the_surviving_aligned_extension_child_ordinal"]
                 ),
-            ]
+            ],
+            sharedEntryPoint: AlignedExtensionSharedEntryPoint
         ),
         // ProfileVisibleRowDeleteWithHiddenRowPreservation + variants
         Profile(
@@ -323,7 +329,8 @@ public static partial class ParityScenarioCatalog
                     "Given_a_ProfileNested_put_request_omitting_all_visible_children_with_hidden_remaining",
                     ["It_deletes_both_visible_child_rows", "It_preserves_only_the_hidden_child_row"]
                 ),
-            ]
+            ],
+            providerSpecificRationale: ProfileMixedFixtureProviderSpecificRationale
         ),
         // ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable + variants
         Profile(
@@ -376,7 +383,8 @@ public static partial class ParityScenarioCatalog
             "ProfileCollectionAlignedExtensionMergeTests",
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_a_non_creatable_aligned_extension_scope_with_no_matching_stored_row",
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_a_non_creatable_aligned_extension_scope_with_no_matching_stored_row",
-            ["It_returns_profile_data_policy_failure"]
+            ["It_returns_profile_data_policy_failure"],
+            sharedEntryPoint: AlignedExtensionSharedEntryPoint
         ),
         Profile(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/TwoLevelCreatableFalseChildrenRejected",
@@ -384,7 +392,8 @@ public static partial class ParityScenarioCatalog
             "ProfileNestedCollectionMergeTests",
             "Given_a_ProfileNested_put_request_with_creatable_false_on_children_rejects_new_children",
             "Given_a_ProfileNested_put_request_with_creatable_false_on_children_rejects_new_children",
-            ["It_returns_a_profile_data_policy_failure"]
+            ["It_returns_a_profile_data_policy_failure"],
+            sharedEntryPoint: NestedCollectionSharedEntryPoint
         ),
         ProfileNa(
             "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NestedCommonTypeScope",
@@ -411,7 +420,8 @@ public static partial class ParityScenarioCatalog
             "ProfileNestedCollectionMergeTests",
             "Given_a_ProfileNested_put_request_with_hidden_root_extension_scope_preserves_children",
             "Given_a_ProfileNested_put_request_with_hidden_root_extension_scope_preserves_children",
-            ["It_preserves_both_root_extension_child_rows"]
+            ["It_preserves_both_root_extension_child_rows"],
+            sharedEntryPoint: NestedCollectionSharedEntryPoint
         ),
         Profile(
             "ProfileHiddenExtensionChildCollectionPreservation/CollectionAlignedExtensionHidden",
@@ -419,7 +429,8 @@ public static partial class ParityScenarioCatalog
             "ProfileCollectionAlignedExtensionMergeTests",
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_hidden_in_storage",
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_hidden_in_storage",
-            ["It_preserves_the_aligned_extension_row"]
+            ["It_preserves_the_aligned_extension_row"],
+            sharedEntryPoint: AlignedExtensionSharedEntryPoint
         ),
         // ProfileUnchangedWriteGuardedNoOp + variants
         Profile(
@@ -497,13 +508,27 @@ public static partial class ParityScenarioCatalog
         ),
     ];
 
-    // Profile parity is validated through the existing per-engine profile fixtures; DMS-1023 delivers the
-    // provider-neutral no-profile contracts, while profiled execution and any shared profile helpers are owned
-    // by DMS-1124. The rows therefore resolve ProviderSpecific from their recorded per-engine (or unit) locations.
+    // Profile rows whose per-engine fixtures have no extracted provider-neutral shared contract resolve
+    // ProviderSpecific from their recorded per-engine locations. Rows whose PostgreSQL and SQL Server fixtures do
+    // consume a shared Backend.Tests.Common contract (e.g. ProfileCollectionAlignedExtensionScenarios /
+    // ProfileNestedCollectionScenarios) are recorded Direct against that contract instead — profiled runtime
+    // execution is owned by DMS-1124, but that ownership does not itself preclude a shared fixture contract.
     private const string ProfileProviderSpecificRationale =
-        "Profile-layer parity is validated through the per-engine profile fixtures recorded on this row; the "
-        + "provider-neutral no-profile contracts are DMS-1023's scope, whereas profiled execution and any shared "
-        + "profile helpers are owned by DMS-1124, so these existing provider fixtures are the effective entry points.";
+        "No provider-neutral shared contract exists in Backend.Tests.Common for this profile scenario's per-engine "
+        + "merge fixtures, so the per-engine fixtures recorded on this row are the effective entry points.";
+
+    // A profile scenario that spans more than one per-engine fixture where the fixtures do not all share a single
+    // provider-neutral contract; it cannot name one Direct contract, so its per-engine fixtures are the entry points.
+    private const string ProfileMixedFixtureProviderSpecificRationale =
+        "This profile scenario spans per-engine fixtures that do not all share a single provider-neutral contract, "
+        + "so the per-engine fixtures recorded on this row are the effective entry points.";
+
+    // The shared Backend.Tests.Common contract entry points both engines delegate to for the aligned-extension and
+    // nested-collection profile-merge suites (the provider-neutral request/scenario builder each suite consumes).
+    private const string AlignedExtensionSharedEntryPoint =
+        "ProfileCollectionAlignedExtensionScenarios.CreateProfileContext";
+    private const string NestedCollectionSharedEntryPoint =
+        "ProfileNestedCollectionScenarios.CreateProfileContext";
 
     private const string ProfileNaProviderSpecificRationale =
         "Provider-independent creatability/rejection behavior validated at the profile merge-synthesizer unit "
@@ -521,22 +546,31 @@ public static partial class ParityScenarioCatalog
         string contract,
         ImmutableArray<ScenarioLocation> pgsql,
         ImmutableArray<ScenarioLocation> mssql,
+        string sharedEntryPoint = "",
+        string? providerSpecificRationale = null,
         string? notes = null
-    ) =>
-        new()
+    )
+    {
+        bool isDirect = !string.IsNullOrWhiteSpace(sharedEntryPoint);
+
+        return new ParityScenario
         {
             Id = id,
             Layer = ParityLayer.Profile,
             BehavioralContract = contract,
+            SharedEntryPoint = sharedEntryPoint,
             Boundary = ProductionBoundary.ProfilePersistExecutor,
             PgsqlLocations = pgsql,
             MssqlLocations = mssql,
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
             Classification = ParityClassification.Both,
-            ProviderSpecificEntryPointRationale = ProfileProviderSpecificRationale,
+            ProviderSpecificEntryPointRationale = isDirect
+                ? null
+                : providerSpecificRationale ?? ProfileProviderSpecificRationale,
             Notes = notes,
         };
+    }
 
     private static ParityScenario Profile(
         string id,
@@ -545,9 +579,19 @@ public static partial class ParityScenarioCatalog
         string pgFixture,
         string mssqlFixture,
         string[] methods,
+        string sharedEntryPoint = "",
+        string? providerSpecificRationale = null,
         string? notes = null
     ) =>
-        Profile(id, contract, [PgLoc(stem, pgFixture, methods)], [MsLoc(stem, mssqlFixture, methods)], notes);
+        Profile(
+            id,
+            contract,
+            [PgLoc(stem, pgFixture, methods)],
+            [MsLoc(stem, mssqlFixture, methods)],
+            sharedEntryPoint,
+            providerSpecificRationale,
+            notes
+        );
 
     private static ParityScenario ProfileNa(
         string id,

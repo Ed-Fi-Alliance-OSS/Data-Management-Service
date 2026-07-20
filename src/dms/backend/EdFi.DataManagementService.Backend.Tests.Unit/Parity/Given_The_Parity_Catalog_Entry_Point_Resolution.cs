@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
 using System.Reflection;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Common.Parity;
 using FluentAssertions;
 using NUnit.Framework;
@@ -14,9 +16,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Parity;
 /// Reflection meta-tests proving the catalog's effective entry points name real members: every unit-test
 /// location resolves to a declared <c>[Test]</c> method in this Backend.Tests.Unit assembly (the provider-
 /// independent Na synthesizer entry points), and every Direct/Inherited Backend.Tests.Common shared entry point
-/// resolves every named type in the common assembly. The API shared entry points are validated separately by
-/// <c>Given_The_Api_Parity_Catalog_Resolution</c> against the API assembly, and the backend provider locations
-/// by the per-engine backend meta-tests. Pure reflection — no database.
+/// resolves every named type and member in the common assembly. The API shared entry points are validated
+/// separately by <c>Given_The_Api_Parity_Catalog_Resolution</c> against the API assembly, and the backend
+/// provider locations by the per-engine backend meta-tests. A filesystem pass additionally proves every recorded
+/// source file exists, giving the diagnostic <c>File</c> field teeth. Pure reflection plus a source-tree scan —
+/// no database.
 /// </summary>
 [TestFixture]
 public class Given_The_Parity_Catalog_Entry_Point_Resolution
@@ -31,4 +35,13 @@ public class Given_The_Parity_Catalog_Entry_Point_Resolution
             .ResolveCommonSharedEntryPoints(typeof(ParityScenarioCatalog).Assembly)
             .Should()
             .BeEmpty();
+
+    [Test]
+    public void It_resolves_every_catalog_location_file_to_a_real_source_file()
+    {
+        string repositoryRoot = FixturePathResolver.FindRepositoryRoot(AppContext.BaseDirectory);
+        string sourceSearchRoot = Path.Combine(repositoryRoot, "src", "dms");
+
+        ParityCatalogResolution.ResolveSourceFileLocations(sourceSearchRoot).Should().BeEmpty();
+    }
 }

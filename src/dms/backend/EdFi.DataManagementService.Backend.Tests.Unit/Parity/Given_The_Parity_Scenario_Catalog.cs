@@ -369,6 +369,31 @@ public class Given_The_Parity_Scenario_Catalog
             .Be(EntryPointKind.ProviderSpecific);
 
     [Test]
+    public void It_resolves_direct_shared_contracts_for_profile_rows_backed_by_a_common_fixture()
+    {
+        foreach (
+            (string id, string expectedContract) in (ValueTuple<string, string>[])
+                [
+                    (
+                        "ProfileVisibleRowUpdateWithHiddenRowPreservation/CollectionAlignedExtensionChildCollection",
+                        "ProfileCollectionAlignedExtensionScenarios.CreateProfileContext"
+                    ),
+                    (
+                        "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection",
+                        "ProfileNestedCollectionScenarios.CreateProfileContext"
+                    ),
+                ]
+        )
+        {
+            EffectiveEntryPoint effective = ParityEntryPointResolution.ResolveEffectiveEntryPoint(
+                _all.Single(s => s.Id == id)
+            )!;
+            effective.Kind.Should().Be(EntryPointKind.Direct, "{0} delegates to a shared common fixture", id);
+            effective.SharedValue.Should().Be(expectedContract);
+        }
+    }
+
+    [Test]
     public void It_resolves_at_least_one_inherited_entry_point() =>
         _all.Any(s =>
                 ParityEntryPointResolution.ResolveEffectiveEntryPoint(s)?.Kind == EntryPointKind.Inherited

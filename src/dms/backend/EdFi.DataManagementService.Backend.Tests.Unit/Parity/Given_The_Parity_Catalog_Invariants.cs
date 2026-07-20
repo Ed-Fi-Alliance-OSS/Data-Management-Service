@@ -39,7 +39,7 @@ internal static class ParityInvariantSamples
             Id = "NoProfileSample",
             Layer = ParityLayer.NoProfile,
             BehavioralContract = "no-profile family owed a SQL Server twin",
-            SharedEntryPoint = "NoProfileSampleScenarios",
+            SharedEntryPoint = "NoProfileSampleScenarios.AssertPersisted",
             Boundary = ProductionBoundary.NoProfilePersister,
             PgsqlLocations = [new("PostgresqlSample.cs", "Given_A_Postgresql_Sample", ["It_persists"])],
             PgsqlCoverage = EngineCoverage.Covered,
@@ -583,6 +583,49 @@ public class Given_A_Direct_Row_That_Also_Declares_A_Provider_Specific_Rationale
             .Contain(v =>
                 v.Contains("only valid when the effective entry point is", StringComparison.Ordinal)
             );
+}
+
+[TestFixture]
+public class Given_A_Direct_Row_Whose_Shared_Entry_Point_Names_Only_A_Type
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // A Direct shared entry point must name a member (Type.Method), not a bare type, so the reusable
+        // assertion/helper is actually verified rather than just the enclosing class existing.
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[1] = scenarios[1] with { SharedEntryPoint = "NoProfileSampleScenarios" };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_a_direct_entry_point_must_name_a_member() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("must name a member (Type.Method)", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_No_Profile_Row_Declaring_A_Profile_Mechanic
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // A no-profile row must never declare a profile-layer mechanic; the layer↔mechanic partition is enforced.
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[1] = scenarios[1] with { Boundary = ProductionBoundary.ProfilePersistExecutor };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_the_out_of_layer_mechanic() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("is not valid for the NoProfile layer", StringComparison.Ordinal));
 }
 
 [TestFixture]

@@ -60,6 +60,7 @@ public static class ParityCatalogInvariants
             }
 
             ValidateLocations(scenario, id, violations);
+            ValidateBoundaryForLayer(scenario, id, violations);
             ValidateEngineOwner(id, "PostgreSQL", scenario.PgsqlCoverage, scenario.PgsqlGapOwner, violations);
             ValidateEngineOwner(id, "SQL Server", scenario.MssqlCoverage, scenario.MssqlGapOwner, violations);
             ValidateClassification(scenario, id, byId, canonical, violations);
@@ -173,6 +174,24 @@ public static class ParityCatalogInvariants
                 );
             }
 
+            // A Direct shared contract must name at least one concrete member (Type.Method), not a bare type.
+            // Naming the reusable assertion/helper members is what lets the reflection resolver prove they still
+            // exist, so an unused shared assertion cannot be deleted (or fall out of use) with the catalog staying
+            // green. Inherited rows reuse a Direct row's value and are validated at that Direct source.
+            if (effective.Kind == EntryPointKind.Direct && !string.IsNullOrWhiteSpace(effective.SharedValue))
+            {
+                foreach (string part in SplitSharedEntryPointParts(effective.SharedValue))
+                {
+                    if (!part.Contains('.', StringComparison.Ordinal))
+                    {
+                        violations.Add(
+                            $"{id}: the Direct shared entry point part '{part}' must name a member (Type.Method), "
+                                + "not a bare type, so the reusable assertion/helper is verified."
+                        );
+                    }
+                }
+            }
+
             return;
         }
 
@@ -196,6 +215,42 @@ public static class ParityCatalogInvariants
             );
         }
     }
+
+    // The mechanic (ProductionBoundary) each layer may declare. Each mechanic belongs to exactly one layer, so
+    // a no-profile row can never claim a profile mechanic (or vice versa) and "same mechanic" deferral stays
+    // meaningful across the whole catalog.
+    private static void ValidateBoundaryForLayer(ParityScenario scenario, string id, List<string> violations)
+    {
+        bool valid = scenario.Layer switch
+        {
+            ParityLayer.Api => scenario.Boundary == ProductionBoundary.HttpPipeline,
+            ParityLayer.Profile => scenario.Boundary
+                is ProductionBoundary.ProfilePersistExecutor
+                    or ProductionBoundary.ProfileMergeSynthesizer,
+            ParityLayer.NoProfile => scenario.Boundary
+                is ProductionBoundary.NoProfilePersister
+                    or ProductionBoundary.NoProfileMerge
+                    or ProductionBoundary.GuardedNoOp
+                    or ProductionBoundary.IdentityStability
+                    or ProductionBoundary.BatchSqlEmitter
+                    or ProductionBoundary.ReferenceIdentityRuntime
+                    or ProductionBoundary.KeyUnificationValidation
+                    or ProductionBoundary.RelationalReadback,
+            _ => false,
+        };
+
+        if (!valid)
+        {
+            violations.Add(
+                $"{id}: mechanic {scenario.Boundary} is not valid for the {scenario.Layer} layer."
+            );
+        }
+    }
+
+    // Splits a shared-entry-point value into its composite parts, matching the reflection resolver's split so a
+    // structural "names a member" rule and the reflection "the member exists" rule agree on part boundaries.
+    private static IEnumerable<string> SplitSharedEntryPointParts(string sharedValue) =>
+        sharedValue.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
     private static void ValidateEngineOwner(
         string id,

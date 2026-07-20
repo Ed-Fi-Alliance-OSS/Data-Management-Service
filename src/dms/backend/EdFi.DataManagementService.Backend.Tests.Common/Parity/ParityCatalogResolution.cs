@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.IO;
 using System.Reflection;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common.Parity;
@@ -192,6 +193,54 @@ public static class ParityCatalogResolution
             foreach (ScenarioLocation location in scenario.UnitLocations)
             {
                 ResolveLocation(scenario.Id, "unit", location, unitAssembly, violations);
+            }
+        }
+
+        return violations;
+    }
+
+    /// <summary>
+    /// Validates that every catalog location's recorded <see cref="ScenarioLocation.File"/> names a source file
+    /// that actually exists under <paramref name="sourceSearchRootDirectory"/> (searched recursively). The
+    /// reflection resolvers match a fixture type and <c>[Test]</c> method anywhere in an assembly and ignore the
+    /// file name; this pass gives the otherwise diagnostic-only <c>File</c> field teeth so a stale or mistyped
+    /// filename fails the build. Returns one actionable violation per location whose file is missing (empty when
+    /// every recorded file exists).
+    /// </summary>
+    public static IReadOnlyList<string> ResolveSourceFileLocations(string sourceSearchRootDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceSearchRootDirectory);
+
+        if (!Directory.Exists(sourceSearchRootDirectory))
+        {
+            return [$"source search root '{sourceSearchRootDirectory}' does not exist."];
+        }
+
+        HashSet<string> presentFileNames =
+        [
+            .. Directory
+                .EnumerateFiles(sourceSearchRootDirectory, "*.cs", SearchOption.AllDirectories)
+                .Select(Path.GetFileName)
+                .OfType<string>(),
+        ];
+
+        List<string> violations = [];
+
+        foreach (ParityScenario scenario in ParityScenarioCatalog.All)
+        {
+            foreach (
+                ScenarioLocation location in scenario
+                    .PgsqlLocations.Concat(scenario.MssqlLocations)
+                    .Concat(scenario.UnitLocations)
+            )
+            {
+                if (!presentFileNames.Contains(location.File))
+                {
+                    violations.Add(
+                        $"{scenario.Id}: recorded source file '{location.File}' (fixture '{location.Fixture}') "
+                            + $"was not found under '{sourceSearchRootDirectory}'."
+                    );
+                }
             }
         }
 

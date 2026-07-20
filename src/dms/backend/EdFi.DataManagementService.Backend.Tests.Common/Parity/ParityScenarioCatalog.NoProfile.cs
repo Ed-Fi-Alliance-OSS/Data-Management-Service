@@ -43,7 +43,9 @@ public static partial class ParityScenarioCatalog
                 "It_persists_root_and_nested_collection_rows_with_stable_collection_ids",
                 "It_persists_root_extensions_collection_extensions_and_extension_child_collections",
             ],
-            sharedEntryPoint: "NoProfileCreateBaselineScenarios"
+            sharedEntryPoint: "NoProfileCreateBaselineScenarios.AssertInsertSuccess"
+                + " + NoProfileCreateBaselineScenarios.AssertRootAndNestedCollectionRows"
+                + " + NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows"
         ),
         CreateVariant(
             "InsertSuccess",
@@ -72,7 +74,9 @@ public static partial class ParityScenarioCatalog
                 "It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value",
                 "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows",
             ],
-            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios",
+            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertUpdateSuccessAndContentVersionBump"
+                + " + NoProfileUpdateSemanticsScenarios.AssertClearedOmittedInlinedColumn"
+                + " + NoProfileUpdateSemanticsScenarios.AssertDeletedOmittedAlignedExtensionScope",
             notes: "Core omission semantics are backed by the shared contract; the variants below decompose them and add the standalone extension-child deletion proof."
         ),
         UpdateVariant(
@@ -117,7 +121,7 @@ public static partial class ParityScenarioCatalog
             "PostgresqlRelationalWriteStandaloneExtensionChildDeleteTests.cs",
             "Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Child_Collection",
             ["It_deletes_the_omitted_standalone_extension_child_collection_without_deleting_base_rows"],
-            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios",
+            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertStandaloneExtensionChildCollectionDeleted",
             notes: "DMS-1023 adds the PostgreSQL proof (G1 ruling) that omitting a standalone extension-child collection on a changed PUT deletes those rows; the SQL Server twin is owed to DMS-1285."
         ),
         // --- NoProfileWriteBehavior (umbrella) ----------------------------------------------
@@ -128,7 +132,7 @@ public static partial class ParityScenarioCatalog
             "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_returns_update_success_and_bumps_content_version_for_the_put_flow"],
-            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios",
+            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertUpdateSuccessAndContentVersionBump",
             notes: "The no-profile _ext create mechanic is recorded on NoProfileWriteBehavior/NoProfileExt; merge-level omission and deletion semantics are owned by NoProfileChangedPutOmissionSemantics at the NoProfileMerge boundary."
         ),
         Gap(
@@ -145,7 +149,8 @@ public static partial class ParityScenarioCatalog
             Layer = ParityLayer.NoProfile,
             BehavioralContract =
                 "The control full-surface write persists the no-profile _ext surface (root extension, collection-aligned extension, and extension-child collection rows) on create.",
-            SharedEntryPoint = "NoProfileCreateBaselineScenarios",
+            SharedEntryPoint =
+                "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows",
             Boundary = ProductionBoundary.NoProfilePersister,
             BoundaryDetail =
                 "No-profile _ext create surface persisted via NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild; the omitted-aligned-extension deletion on a changed PUT is a merge mechanic cataloged under NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope.",
@@ -174,7 +179,9 @@ public static partial class ParityScenarioCatalog
                 "It_reuses_collection_item_ids_while_recomputing_ordinals_for_a_full_surface_reorder",
                 "It_succeeds_for_a_two_row_swap_under_the_db_sibling_ordinal_uniqueness_constraint",
             ],
-            sharedEntryPoint: "NoProfileCollectionReorderScenarios"
+            sharedEntryPoint: "NoProfileCollectionReorderScenarios.AssertUpdateSuccessAndContentVersionBump"
+                + " + NoProfileCollectionReorderScenarios.AssertReusesCollectionItemIdsWhileRecomputingOrdinals"
+                + " + NoProfileCollectionReorderScenarios.AssertTwoRowSwapCommitsUnderSiblingUniqueness"
         ),
         ReorderVariant(
             "OrdinalReuseStableIds",
@@ -202,7 +209,8 @@ public static partial class ParityScenarioCatalog
                 "It_returns_update_success_for_an_unchanged_put",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put",
             ],
-            sharedEntryPoint: "NoProfileGuardedNoOpScenarios",
+            sharedEntryPoint: "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged",
             boundaryDetail: "RelationalWriteGuardedNoOp + IRelationalWriteFreshnessChecker/IRelationalWriteCurrentStateLoader"
         ),
         GuardedNoOp(
@@ -296,7 +304,8 @@ public static partial class ParityScenarioCatalog
                 "It_returns_insert_success_and_persists_the_full_large_collection",
                 "It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit",
             ],
-            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios",
+            sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions",
             boundaryDetail: "WritePlanBatchSqlEmitter / PlanWriteBatchingConventions",
             diff: new DialectDifference(
                 "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent and caps at 2100 parameters / 1000 rows.",
@@ -378,7 +387,8 @@ public static partial class ParityScenarioCatalog
                 "It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update",
                 "It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update",
             ],
-            sharedEntryPoint: "NoProfilePostAsUpdateScenarios"
+            sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
+                + " + NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied"
         ),
         Gap(
             "NoProfilePostAsUpdate/FocusedStableKey",
@@ -447,7 +457,7 @@ public static partial class ParityScenarioCatalog
             Layer = ParityLayer.NoProfile,
             BehavioralContract =
                 "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op.",
-            SharedEntryPoint = "NoProfilePostAsUpdateScenarios",
+            SharedEntryPoint = "NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp",
             Boundary = ProductionBoundary.GuardedNoOp,
             PgsqlLocations =
             [
@@ -475,7 +485,8 @@ public static partial class ParityScenarioCatalog
                 "It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted",
                 "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
             ],
-            sharedEntryPoint: "NoProfileAtomicRollbackAssertions"
+            sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites"
+                + " + NoProfileAtomicRollbackAssertions.AssertNoPartialRelationalStateAfterRollback"
         ),
         Gap(
             "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
@@ -495,7 +506,7 @@ public static partial class ParityScenarioCatalog
             SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
             ["It_returns_a_validation_failure_and_leaves_document_and_authoritative_tables_unchanged"],
-            sharedEntryPoint: "NoProfileAtomicRollbackAssertions"
+            sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertKeyUnificationConflictRejectedAtomically"
         ),
         // --- Authoritative PostgreSQL breadth smokes (one row per mechanic/boundary) --------
         PgSmokeCreate(
