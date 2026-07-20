@@ -14,6 +14,9 @@ Kafka and Kafka UI can be useful infrastructure without CDC. Connector registrat
 by a separate flag and must use the selected data-store context from the bootstrap flow instead of hard-coded
 database names.
 
+Production-like deployment automation repeats this one-shot workflow for every statically configured CDC data
+store. Runtime discovery, addition, removal, and physical-source replacement are not part of v1.
+
 ## Acceptance Criteria
 
 - Local/bootstrap scripts expose an explicit CDC flag, recommended as `-EnableKafkaCdc`.
@@ -22,12 +25,18 @@ database names.
 - Connector registration runs only after:
   - the data store is selected,
   - the target database is provisioned,
-  - `dms.DocumentCache` CDC readiness passes,
+  - `dms.DocumentCache` and its projector/state objects are provisioned,
+  - projector mode is `CdcRequired`,
+  - stale-write fencing and the CDC-mode pre-delete materialization guarantee are available,
+  - provider-specific CDC DDL/setup is applied or validated.
+- Connector registration establishes capture before the bounded initial backfill and before E2E or deployment
+  writes that must be observed by CDC.
+- CDC is advertised as ready only after:
   - the bounded initial `dms.DocumentCache` backfill epoch is complete for existing documents at or below the
     captured target content version,
   - projector lag above the completed backfill target is within threshold,
-  - the CDC-mode pre-delete materialization guarantee is available for the selected data store,
-  - provider-specific CDC DDL/setup is applied or validated.
+  - connector snapshot/catch-up is complete,
+  - connector lag is within threshold.
 - Bootstrap diagnostics include the completed backfill epoch id and target content version used as the CDC
   readiness cutover marker.
 - Connector registration is idempotent for the same selected data store and connector name.
@@ -37,8 +46,9 @@ database names.
 - Teardown removes local connector registrations and Kafka state when the local stack is torn down with volumes.
 - E2E setup can opt into CDC and register the connector before test writes are issued.
 - Failure messages identify whether the problem is Kafka infrastructure, connector REST API, database CDC setup,
-  DocumentCache readiness, incomplete bounded backfill, projector lag above the completed backfill target,
-  missing pre-delete materialization support, or connector validation.
+  DocumentCache registration prerequisites, incomplete bounded backfill, projector lag above the completed
+  backfill target, connector snapshot/catch-up, missing pre-delete materialization support, or connector
+  validation.
 
 ## Tasks
 
@@ -49,10 +59,11 @@ database names.
 5. Add connector status polling with a clear timeout and failure diagnostics.
 6. Update local teardown to remove connector state when appropriate.
 7. Add script tests or integration tests for flag behavior and registration sequencing.
+8. Document how production-like automation repeats the one-shot workflow for each fixed startup target.
 
 ## Out of Scope
 
 - Publishing production deployment automation for managed Kafka providers.
 - Replacing the Kafka Connect image.
 - Defining the projector's CDC health semantics.
-- Continuous production reconciliation of dynamic CMS changes; that belongs to Story 07.
+- Runtime discovery, addition, removal, or automatic replacement of CDC data stores.

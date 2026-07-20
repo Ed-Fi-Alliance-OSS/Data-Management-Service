@@ -50,8 +50,8 @@ captures it as the document-state source.
 - Story 02 is the common materialization path for the projector, read-through fallback, and CDC pre-delete
   materialization. It depends on the relational read path and update-tracking metadata semantics.
 - Stories 03 and 04 can proceed in parallel after Stories 01 and 02. Story 04 owns bounded initial
-  backfill/rebuild epoch readiness; Story 03 owns the non-HTTP multi-instance supervisor, dynamic data-store
-  reconciliation, and ongoing asynchronous catch-up above each database's captured backfill target.
+  backfill/rebuild epoch readiness; Story 03 owns the non-HTTP multi-instance supervisor over the fixed startup
+  inventory and ongoing asynchronous catch-up above each database's captured backfill target.
 - Story 05 depends on Stories 00 and 02. It can ship before the projector is fully CDC-ready because cache-backed
   reads must fall back to relational reconstitution on misses or stale rows.
 - Stories 06 and 07 are tightly coupled. Story 06 wires the delete path; Story 07 makes the write guards strong
@@ -68,14 +68,13 @@ captures it as the document-state source.
 
 | `17-cdc-kafka` story | Depends on `18-document-cache` | Dependency type | Notes |
 | --- | --- | --- | --- |
-| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | This is the CDC readiness gate. It consumes DocumentCache configuration, projector state, bounded backfill status/target, pre-delete materialization, stale-write fencing, failure state, health, and provider verification. |
+| `17-00-documentcache-cdc-prerequisites.md` | 18-00, 18-01, 18-04, 18-06, 18-07, 18-08, 18-09, 18-10 | Hard | This supplies registration prerequisites and completed source readiness from DocumentCache configuration, state, backfill, pre-delete materialization, fencing, failures, health, and provider verification. |
 | `17-01-cdc-ddl-support.md` | 18-01, 18-10 | Hard for final verification | CDC key/replica setup can start from the existing `DocumentCache` shape, but final provider proof depends on the projected table, state DDL, and delete-source verification. |
 | `17-02-connector-template-generation.md` | 18-01, 18-10 | Soft until smoke tests | Connector templates can be built with fixture records, but final delete/tombstone smoke coverage needs provider-verified `DocumentCache` deletes. |
-| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap must not register connectors until DocumentCache CDC readiness passes. |
+| `17-03-bootstrap-enable-kafka-cdc.md` | 18-00, 18-04, 18-09, 18-10, plus 17-00 | Hard | Bootstrap validates registration prerequisites before connector creation and waits for completed source readiness afterward. |
 | `17-04-message-contract-tests.md` | 18-02, 18-06, 18-07, 18-10 | Mixed | Fixture-only tests can start earlier. Source-level delete tests require materialization, fencing, and provider verification. |
 | `17-05-e2e-kafka-scenarios.md` | 18-00, 18-03, 18-04, 18-06, 18-07, 18-09, 18-10, plus 17-00 through 17-04 | Hard | API-driven create/update/delete Kafka scenarios need the projector, readiness, immediate-delete path, and provider proof. |
 | `17-06-ops-docs-runbooks.md` | 18-08, 18-09, 18-11 | Hard for final docs | CDC runbooks must document DocumentCache retry/dead-letter, health/readiness, recovery, and delete blocking behavior. |
-| `17-07-dynamic-instance-connector-reconciliation.md` | 18-03, 18-04, 18-09, 18-10 | Hard | Connector reconciliation consumes dynamic projector lifecycle, per-data-store backfill/readiness, and provider verification. |
 
 ## `18-document-cache` Outputs Consumed by `17-cdc-kafka`
 
@@ -84,13 +83,13 @@ captures it as the document-state source.
 | 18-00 | CDC/read-cache configuration boundaries for 17-00 and 17-03. |
 | 18-01 | Provisioned source table, projector companion state, and DDL inventory for 17-00 and 17-01. |
 | 18-02 | Canonical `DocumentJson`, `ContentVersion`, and `LastModifiedAt` materialization for 17-04 fixtures and 17-05 E2E assertions. |
-| 18-03 | Multi-instance projector lifecycle, ongoing projection, and lag semantics for 17-00, 17-05, 17-06, and 17-07. |
+| 18-03 | Fixed-inventory multi-instance projector lifecycle, ongoing projection, and lag semantics for 17-00, 17-05, and 17-06. |
 | 18-04 | Bounded initial backfill epoch completion signal for 17-00 and 17-03. |
 | 18-05 | Optional cache read behavior; no hard CDC dependency, but documents the non-CDC fallback boundary used by 17-06. |
 | 18-06 | CDC-mode delete source-row guarantee for 17-00, 17-04, and 17-05. |
 | 18-07 | Stale-write and post-delete fencing for 17-00, 17-04, and 17-05. |
 | 18-08 | Projection failure/dead-letter state for 17-00, 17-03 diagnostics, and 17-06 runbooks. |
-| 18-09 | Per-data-store readiness and telemetry surface consumed by 17-00, 17-03, 17-05, 17-06, and 17-07. |
+| 18-09 | Per-data-store readiness and telemetry surface consumed by 17-00, 17-03, 17-05, and 17-06. |
 | 18-10 | PostgreSQL/SQL Server proof that source-row deletes produce observable CDC deletes for 17-01, 17-04, and 17-05. |
 | 18-11 | DocumentCache operator guidance consumed by 17-06. |
 
@@ -109,9 +108,11 @@ captures it as the document-state source.
 - DMS can run with `dms.DocumentCache` disabled when neither read acceleration nor Kafka CDC is enabled.
 - DMS can run with asynchronous projection for cache-backed reads/indexing while falling back to relational
   reconstitution for cache misses, stale rows, or projector failures.
-- A hosted supervisor explicitly runs and reconciles projector execution contexts for all loaded tenant/data-store
-  targets without depending on request-scoped routing; shared work identity includes the data-store boundary.
-- DMS can run with CDC-required projection only when the bounded initial backfill epoch is complete, projector
+- A hosted supervisor explicitly runs projector execution contexts for every target in the fixed startup
+  tenant/data-store inventory without depending on request-scoped routing; shared work identity includes the
+  data-store boundary. Inventory changes require an explicit configuration change and restart.
+- DMS can enter CDC-required projection mode once registration prerequisites are satisfied, while completed
+  DocumentCache source readiness remains false until the bounded initial backfill epoch is complete, projector
   lag above the captured backfill target is visible and within threshold, no unresolved current projection
   failures remain, stale-write fencing is active, and provider-specific delete-source behavior is verified.
 - CDC-mode deletes cannot remove `dms.Document` unless the delete transaction has verified or materialized the

@@ -54,7 +54,7 @@ Mode semantics:
 | `Projector:Mode = Async` | DMS maintains `dms.DocumentCache` asynchronously for read acceleration, indexing, or diagnostics. Rows may be missing or stale. |
 | `Projector:Mode = CdcRequired` | DMS maintains `dms.DocumentCache` with CDC readiness, stale-write fencing, bounded initial backfill, visible health, and pre-delete source-row guarantees. |
 | `ReadAcceleration:Enabled = true` | GET/query response assembly may read fresh cache rows, but must fall back to relational reconstitution for misses or stale rows. |
-| `KafkaCdc:Enabled = true` | Requires `Projector:Mode = CdcRequired`, a provisioned `dms.DocumentCache`, and successful CDC readiness checks before connector registration is advertised as supported. |
+| `KafkaCdc:Enabled = true` | Requires `Projector:Mode = CdcRequired` and a provisioned `dms.DocumentCache`; source prerequisites must pass before connector registration, and completed source/connector readiness must pass before CDC is advertised as supported. |
 
 Indexing or external integration use cases that do not need Kafka CDC should use
 `Projector:Mode = Async`. They may leave `ReadAcceleration:Enabled = false` if the API
@@ -65,17 +65,21 @@ Starting Kafka UI must not imply `KafkaCdc:Enabled`.
 
 ### Scope Across Data Stores
 
-The v1 settings are process-wide defaults, not per-data-store CMS options. Each loaded
-data store with a usable connection string is therefore a projection target when
-`Projector:Mode` is `Async` or `CdcRequired`. With `KafkaCdc:Enabled = true`, every such
-data store must run in `CdcRequired` mode and expose its own readiness result; v1 does not
-silently enable CDC for only the data store selected by the most recent HTTP request.
+The v1 settings are process-wide defaults, not per-data-store CMS options. Each data store
+loaded from the fixed startup configuration with a usable connection string is therefore
+a projection target when `Projector:Mode` is `Async` or `CdcRequired`. With
+`KafkaCdc:Enabled = true`, every such data store must run in `CdcRequired` mode and expose
+its own readiness result; v1 does not silently enable CDC for only the data store selected
+by the most recent HTTP request.
 
 Connector registration remains per data store. A failed or incomplete projector makes
 that data store's CDC readiness false without making normal API correctness for other data
 stores depend on it. Deployment health may also expose an aggregate result that is false
 when any configured CDC data store is not ready. A future CMS-backed per-data-store opt-in
 may override the process default, but it is not part of v1.
+
+V1 does not discover CDC targets dynamically after startup. Adding, removing, or changing
+a target requires an explicit configuration change and deployment/restart.
 
 ## Cached Shape
 

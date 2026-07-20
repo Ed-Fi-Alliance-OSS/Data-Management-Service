@@ -107,7 +107,7 @@ strings or tenant display names. A deployment-level aggregate may be reported in
 to, but never instead of, the per-data-store results. One failed data store must not hide
 healthy peers or stop their projector loops.
 
-CDC readiness requires all of the following:
+DocumentCache source readiness requires all of the following:
 
 - `Projector:Mode = CdcRequired`,
 - `dms.DocumentCache` and required companion objects are provisioned,
@@ -115,8 +115,12 @@ CDC readiness requires all of the following:
 - stale-write fencing is active,
 - pre-delete source-row materialization is supported and provider-verified,
 - no unresolved current projection failures exist, including dead-lettered failures,
-- projector lag above the completed backfill target is within the configured threshold,
-- Kafka connector/database CDC prerequisites from DMS-1245 are satisfied.
+- projector lag above the completed backfill target is within the configured threshold.
+
+Registration prerequisites are the subset that can be established before initial backfill:
+the required objects, `CdcRequired` mode, stale-write fencing, pre-delete materialization,
+and provider verification. DMS-1245 owns database CDC setup, connector registration,
+snapshot/catch-up, and the overall end-to-end CDC readiness result.
 
 Non-CDC cache-backed reads may remain available when CDC readiness is false because they
 fall back to relational reconstitution on misses and stale rows.

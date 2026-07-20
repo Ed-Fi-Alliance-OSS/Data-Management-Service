@@ -13,9 +13,9 @@ related:
 Make CDC enablement depend on the `dms.DocumentCache` implementation contract finalized by DMS-1246.
 
 Relational CDC uses `dms.DocumentCache` as the capture source. That means the cache is optional for normal API
-correctness, but conditionally required when Kafka CDC is enabled. This story adds the readiness checks and
-configuration boundaries needed so connector registration cannot advertise a supported stream before the
-projector can safely supply it.
+correctness, but conditionally required when Kafka CDC is enabled. This story adds separate registration-
+prerequisite and source-readiness checks. Registration may establish capture before initial backfill, but the
+deployment cannot advertise a supported stream before the projector can safely supply it.
 
 For CDC, `dms.DocumentCache` is eventual for upserts but mandatory for deletes. DMS must not delete
 `dms.Document` unless the delete transaction has verified or materialized a corresponding cache source row, so
@@ -28,6 +28,9 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
   selected data store.
 - When CDC is enabled, startup/bootstrap validation verifies that the DocumentCache projector mode required by
   DMS-1246 is enabled for the selected data store.
+- Registration prerequisites verify that required cache/state objects, stale-write fencing, pre-delete
+  materialization, provider delete-source support, and physical-database uniqueness are available. Initial
+  backfill completion and steady-state projector lag are not registration prerequisites.
 - Readiness is keyed by `(tenant key, DataStoreId)` and is evaluated from that data store's explicit execution
   context rather than an HTTP request's route/JWT selection.
 - CDC readiness fails for every conflicting data-store record when two active records resolve to the same
@@ -61,11 +64,13 @@ Debezium can observe the cache row delete and publish the Kafka tombstone.
 
 ## Tasks
 
-1. Add a CDC readiness abstraction that reports data-store-specific readiness for connector registration.
+1. Add a data-store-specific prerequisite/readiness abstraction that distinguishes `CanRegisterConnector` from
+   completed DocumentCache source readiness.
 2. Bind CDC enablement configuration separately from any read-cache or Kafka UI settings.
-3. Integrate readiness validation into local/bootstrap connector registration.
-4. Add checks/tests that CDC enablement fails when `dms.DocumentCache`, bounded initial backfill state, or
-   required projector state is absent.
+3. Integrate registration-prerequisite validation and later source-readiness polling into local/bootstrap
+   connector registration.
+4. Add checks/tests that registration is rejected when required `dms.DocumentCache` or projector state is absent,
+   and that source readiness remains false until the bounded initial backfill is complete.
 5. Add checks/tests that CDC enablement fails when pre-delete materialization or stale-write fencing is not
    available for the selected data store.
 6. Add provider-specific physical-database identity resolution and tests for duplicate/semantically equivalent

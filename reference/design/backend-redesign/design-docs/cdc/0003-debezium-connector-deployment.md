@@ -30,7 +30,7 @@ The connector deployment is instance-oriented:
   preserve the same per-instance topic, key, tombstone, ACL, and operational contracts.
 
 The logical connector identity is `(deployment key, tenant key, DataStoreId)`. The tenant
-key is retained only in the deployment controller's administrative state; it is not
+key is retained only in deployment configuration and administrative state; it is not
 published in the Kafka topic or message. The topic is derived from the deployment-unique
 topic prefix and opaque instance key defined in
 [0002-kafka-topic-and-message-contract.md](0002-kafka-topic-and-message-contract.md).
@@ -47,7 +47,7 @@ CDC can be enabled only after these conditions are true for the target DMS insta
   [../document-cache/](../document-cache/)),
 - Kafka and Kafka Connect are reachable,
 - the connector principal has the least database permissions required for CDC,
-- the target Kafka topic and ACLs are configured or can be created by the deployment.
+- the target Kafka topic and ACLs are configured or can be created by the deployment,
 - no other CDC-enabled data-store record in the deployment resolves to the same physical
   database.
 
@@ -76,32 +76,39 @@ silently changing a topic's security boundary or making topic stability depend o
 alias happens to load first. Ordinary non-CDC DMS operation is unaffected by this CDC
 validation failure.
 
-## Multi-Instance Reconciliation
+## Fixed Deployment Inventory
 
-Connector registration is not a one-time single-instance startup action in a dynamic CMS
-deployment. A deployment-owned CDC reconciler must periodically compare the tenant-scoped
-data-store inventory with its logical connector registrations and per-data-store CDC
-readiness:
+The v1 CDC inventory is fixed for the lifetime of a DMS deployment. Deployment/bootstrap
+automation enumerates the configured tenant-scoped data stores at startup and performs the
+one-shot provisioning and connector-registration workflow explicitly for each CDC target.
+V1 does not continuously discover CMS additions, removals, or connection changes and does
+not run a background Kafka Connect reconciler.
 
-- a newly discovered data store starts with CDC not ready; after schema validation,
-  projector backfill, and per-data-store readiness pass, its connector and ACL/topic
-  resources may be created,
-- a connection/provider/physical-database change stops the old connector before replacing
-  it and requires the new physical source to complete the applicable backfill/snapshot
-  procedure before readiness returns,
-- route-qualifier-only changes do not rename the topic or restart the connector while the
-  `DataStoreId` and physical database remain unchanged,
-- a removed data store stops its connector, but topic deletion, offset deletion, slot/capture
-  cleanup, and ACL retirement remain explicit retention-policy actions and are never
-  inferred from one missing refresh,
-- a physical-database alias conflict makes every conflicting logical connector not ready
-  until the CMS configuration is corrected.
+The fixed-inventory contract is:
 
-The DMS hosted projector owns per-data-store projection lifecycle; it does not call the
-Kafka Connect REST API. Local bootstrap may perform a one-shot reconciliation for its
-selected data store. Production reconciliation may be implemented by deployment
-automation or a dedicated controller, but it must implement the same state transitions
-and idempotency contract.
+- every CDC-enabled data store is selected explicitly during deployment, validated against
+  the physical-database uniqueness rule above, and given one connector and one instance
+  topic,
+- the DMS hosted projector supervisor creates one isolated execution context for every
+  configured startup target, but it does not call the Kafka Connect REST API,
+- adding or removing a CDC-enabled data store requires an explicit configuration change and
+  deployment/restart that runs the provisioning workflow again,
+- removing a target requires an explicit operator decision for connector shutdown, topic
+  retention/deletion, offset deletion, PostgreSQL slot/publication cleanup, SQL Server CDC
+  cleanup, and ACL retirement; absence from a later configuration is not authority for
+  destructive cleanup,
+- credential, host-name, or server-alias changes that resolve to the same physical database
+  may use an explicit connector update/restart while preserving the topic identity,
+- changing a `DataStoreId` to a different provider or physical document set is not an
+  automatic replacement operation. CDC remains unsupported/not ready until an explicit
+  migration chooses a new topic/source generation or deliberately resets the existing
+  topic and connector state before resnapshotting,
+- route-qualifier-only changes do not affect the connector or topic because request routing
+  is outside the CDC source identity.
+
+The one-shot workflow must remain idempotent for repeated deployment of the same logical
+connector and physical source. It must reject an attempt to reuse an existing instance
+topic for a different physical document set without an explicit migration/reset decision.
 
 ## Captured Table
 
@@ -237,22 +244,29 @@ so existing materialized documents are published to the instance topic.
 Recommended CDC enablement sequence for a new instance:
 
 1. Provision relational schema and `dms.DocumentCache`.
-2. Register the connector before allowing normal write traffic.
-3. Start DMS and the projector.
-4. Let normal writes and projector writes flow through Debezium.
+2. Apply provider-specific database CDC/key setup and create the instance topic/ACLs.
+3. Configure DMS with `Projector:Mode = CdcRequired` and verify that stale-write fencing,
+   pre-delete materialization, and the required health/state surfaces are available.
+4. Register the connector before allowing write traffic that must be observed by CDC.
+5. Start DMS and the projector, run the bounded initial backfill, and let projector writes
+   flow through Debezium.
+6. Advertise CDC as ready only after the backfill epoch, connector snapshot/catch-up,
+   projector lag, and connector lag satisfy their readiness thresholds.
 
 Recommended CDC enablement sequence for an existing instance:
 
 1. Enable `dms.DocumentCache` and the projector in CDC mode, including stale-write
    fencing and pre-delete materialization support.
-2. Register the connector with initial snapshot behavior before allowing write/delete
+2. Apply provider-specific database CDC/key setup and create the instance topic/ACLs.
+3. Register the connector with initial snapshot behavior before allowing write/delete
    traffic that the host expects Kafka CDC to observe. If that is not possible, quiesce
    writes/deletes until connector registration completes.
-3. Run or resume the bounded projector backfill epoch until every still-current
+4. Run or resume the bounded projector backfill epoch until every still-current
    `dms.Document` row at or below the epoch's captured `BackfillTargetContentVersion`
    has a fresh `dms.DocumentCache` row.
-4. Monitor until connector lag, projector lag above the completed backfill target, and
-   backfill status reach acceptable thresholds, and only then advertise CDC as ready.
+5. Monitor until connector snapshot/catch-up, connector lag, projector lag above the
+   completed backfill target, and backfill status reach acceptable thresholds, and only
+   then advertise CDC as ready.
    The completed backfill epoch id and target content version are the readiness cutover
    marker for this bootstrap.
 
@@ -279,9 +293,10 @@ CDC implementation should add connector registration only behind an explicit CDC
 Recommended local behavior:
 
 - `-EnableKafkaUI` starts Kafka UI only.
-- `-EnableKafkaCdc` starts Kafka and Kafka Connect if needed, verifies `dms.DocumentCache`
-  is provisioned and CDC-ready, registers the instance connector, and prints the target
-  topic.
+- `-EnableKafkaCdc` starts Kafka and Kafka Connect if needed, verifies that
+  `dms.DocumentCache` and the CDC source guarantees are provisioned, registers the
+  instance connector before backfill/test writes, waits for backfill and connector
+  catch-up readiness, and prints the target topic.
 - E2E setup that opts into CDC registers the connector after database provisioning and
   before the test writes it expects to observe.
 - The quarantined KafkaMessaging scenarios should be replaced or updated to assert:
@@ -292,6 +307,10 @@ Recommended local behavior:
 
 Connector JSON templates should be generated or parameterized from the selected data
 store context rather than checked in with a single hard-coded database name.
+
+Production-like deployment automation repeats this same one-shot workflow for every
+statically configured CDC data store. Runtime discovery, automatic connector retirement,
+and automatic physical-source replacement are outside the v1 contract.
 
 ## Security
 

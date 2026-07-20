@@ -46,19 +46,19 @@ work/fencing key remains `(DocumentId, target ContentVersion)`.
 - The projector updates projection state for scanned/projected versions and last successful projection time.
 - The projector skips work for deleted documents without recreating cache rows.
 - The projector stops gracefully during application shutdown and does not leave partial cache rows.
-- The supervisor reconciles refreshed CMS configuration: it starts/backfills newly discovered data stores,
-  replaces execution contexts after connection/provider changes, ignores route-qualifier-only changes, and stops
-  workers for removed data stores without deleting database or Kafka artifacts.
+- The supervisor enumerates the fixed startup inventory once and does not add, replace, or retire execution
+  contexts while the process is running. Inventory changes require an explicit configuration change and
+  deployment/restart.
 - Work queues, concurrency limits, failures, and cancellation are isolated so one unavailable data store does not
   stop projection for its peers.
-- Tests cover multiple tenants/data stores with colliding `DocumentId`/`ContentVersion` values, create, update,
-  stale queued work, deleted-document work, dynamic add/change/remove, failure isolation, and disabled-mode
-  behavior.
+- Tests cover multiple statically configured tenants/data stores with colliding `DocumentId`/`ContentVersion`
+  values, create, update, stale queued work, deleted-document work, failure isolation, restart with a changed
+  startup inventory, and disabled-mode behavior.
 
 ## Tasks
 
 1. Add hosted supervisor lifecycle wiring and a non-HTTP per-data-store execution-scope factory.
-2. Reconcile the tenant-partitioned `IDataStoreProvider` inventory throughout process lifetime.
+2. Enumerate the tenant-partitioned `IDataStoreProvider` inventory once during startup.
 3. Implement candidate scanning over each target database's `dms.Document` and stale/missing cache detection.
 4. Add an internal enqueue API whose process-level work key includes tenant and data-store identity.
 5. Call the shared materializer and guarded cache upsert in the explicitly selected data-store scope.

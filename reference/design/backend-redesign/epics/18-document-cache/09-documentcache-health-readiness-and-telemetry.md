@@ -13,8 +13,12 @@ related:
 Expose DocumentCache health and CDC readiness signals.
 
 The health surface must distinguish optional cache degradation from unsupported CDC state. CDC readiness is
-stricter than ordinary read-cache health because connector registration must not advertise a supported stream
-until the source table and projector guarantees are in place.
+stricter than ordinary read-cache health because CDC must not be advertised as supported until the source table
+and projector guarantees are in place.
+
+The surface also distinguishes registration prerequisites from completed DocumentCache source readiness so
+DMS-1245 can register the connector before initial backfill and then wait for source and connector catch-up before
+advertising CDC as ready.
 
 ## Dependencies
 
@@ -36,6 +40,8 @@ until the source table and projector guarantees are in place.
 - Health reports unresolved failure count, oldest unresolved failure age, last failure kind, and last successful
   projection timestamp.
 - Health reports whether CDC-mode pre-delete materialization is configured and available.
+- Health exposes whether connector-registration prerequisites are satisfied independently of initial backfill
+  completion and steady-state projector lag.
 - CDC readiness fails when:
   - projector mode is not `CdcRequired`,
   - required cache/state objects are missing,
@@ -60,7 +66,8 @@ until the source table and projector guarantees are in place.
 2. Implement health checks and readiness diagnostics.
 3. Add metrics and structured logs.
 4. Add configuration for CDC lag thresholds.
-5. Integrate readiness into the CDC prerequisite abstraction consumed by Kafka bootstrap.
+5. Integrate registration prerequisites and source readiness into the CDC abstraction consumed by Kafka
+   bootstrap.
 6. Add tests for readiness failure reasons and health output.
 
 ## Out of Scope

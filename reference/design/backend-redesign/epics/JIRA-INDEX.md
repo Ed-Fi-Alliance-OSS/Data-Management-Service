@@ -205,7 +205,6 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `TBD` — Add Kafka message contract tests — `reference/design/backend-redesign/epics/17-cdc-kafka/04-message-contract-tests.md`
   - `TBD` — Replace legacy Kafka E2E expectations with relational CDC scenarios — `reference/design/backend-redesign/epics/17-cdc-kafka/05-e2e-kafka-scenarios.md`
   - `TBD` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/17-cdc-kafka/06-ops-docs-runbooks.md`
-  - `TBD` — Reconcile dynamic multi-instance CDC connectors — `reference/design/backend-redesign/epics/17-cdc-kafka/07-dynamic-instance-connector-reconciliation.md`
 
 - `TBD` — `dms.DocumentCache` Projector and CDC Source Guarantees — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
   - `TBD` — Add DocumentCache configuration and mode boundaries — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-mode-boundaries.md`

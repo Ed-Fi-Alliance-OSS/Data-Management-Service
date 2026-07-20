@@ -106,20 +106,17 @@ uses the shared repository and materialization services. It must not wait for
 `ResolveDataStoreMiddleware` or reuse whichever request-scoped `IDataStoreSelection`
 happened to run most recently.
 
-The supervisor periodically refreshes/reconciles the CMS-backed inventory:
+The supervisor enumerates this fixed inventory once during startup. It starts one projector
+and any required initial backfill for each configured target, and isolates work queues,
+failures, and concurrency limits so one unavailable database cannot stop projection for
+unrelated data stores. It does not refresh CMS inventory or add, replace, or retire
+execution contexts while the process is running.
 
-- start a projector and initial backfill for a newly discovered data store,
-- cancel/drain and replace the execution context when its connection/provider changes,
-- leave the execution context unchanged for route-qualifier-only changes,
-- stop accepting work and retire the projector when a data store or tenant is removed,
-- isolate failures and concurrency limits so one unavailable database cannot stop
-  projection for unrelated data stores.
-
-Removal from one refresh is not authority to delete `dms.DocumentCache`, projector state,
-Kafka topics, offsets, or database CDC artifacts. Destructive retirement remains an
-explicit operator/deployment action. The supervisor publishes inventory and readiness
-changes for the separate connector reconciler defined by DMS-1245; it does not manage
-Kafka Connect itself.
+Adding, removing, or changing a projector target requires an explicit configuration change
+and deployment/restart. Destructive retirement of `dms.DocumentCache`, projector state,
+Kafka topics, offsets, or database CDC artifacts remains an explicit operator/deployment
+action. The supervisor exposes per-data-store source readiness for the DMS-1245 one-shot
+connector-registration workflow; it does not manage Kafka Connect itself.
 
 ## Backfill and Rebuild
 

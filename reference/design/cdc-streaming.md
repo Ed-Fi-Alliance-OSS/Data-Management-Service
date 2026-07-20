@@ -190,18 +190,21 @@ connectors.
 `-EnableKafkaUI` starts Kafka UI only and must not imply connector registration.
 
 Connector registration should occur after the target data store is selected, the target
-database is provisioned, and `dms.DocumentCache` CDC readiness verifies the required
-projector/delete support. CDC should not be advertised as ready, and E2E writes that rely
-on Kafka observation should not begin, until the bounded initial `dms.DocumentCache`
-backfill epoch has completed and connector/projector lag above the completed backfill
-target is acceptable. Connector templates must be generated or parameterized from the
-selected data-store context instead of using hard-coded database names.
+database is provisioned, provider-specific CDC setup is applied, and
+`dms.DocumentCache` verifies that the required projector/delete source guarantees are
+available. Registration establishes capture before the bounded initial backfill and before
+writes that must be observed by CDC. CDC is advertised as ready only after the backfill
+epoch, connector snapshot/catch-up, connector lag, and projector lag above the completed
+backfill target are acceptable. Connector templates must be generated or parameterized
+from the selected data-store context instead of using hard-coded database names.
 
-Dynamic production deployments require a deployment-owned reconciler in addition to this
-one-shot bootstrap path. It starts connectors for newly ready data stores, replaces them
-after physical connection/provider changes, ignores route-qualifier-only changes, and
-stops removed connectors without automatically deleting topics, offsets, ACLs, or database
-CDC artifacts.
+The v1 CDC inventory is fixed for the lifetime of a deployment. Production-like
+automation repeats the one-shot provisioning and registration workflow for every
+statically configured CDC data store. Adding or removing a target requires an explicit
+configuration change and deployment/restart. Moving a `DataStoreId` to a different
+physical document set requires an explicit migration with a new topic/source generation or
+a deliberate topic/connector reset; v1 does not automatically replace physical sources or
+infer destructive cleanup from inventory changes.
 
 ## Multitenancy and Security
 

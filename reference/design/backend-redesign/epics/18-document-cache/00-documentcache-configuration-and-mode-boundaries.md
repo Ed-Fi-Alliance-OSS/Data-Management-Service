@@ -37,7 +37,8 @@ tolerate misses and stale rows while CDC cannot tolerate missing delete source r
   read acceleration are disabled.
 - Kafka UI or Kafka infrastructure flags do not imply Kafka CDC enablement.
 - The v1 options are process-wide: projector mode and Kafka CDC requirements apply to every loaded data store
-  with a usable connection string; per-data-store CMS overrides are not silently inferred.
+  in the fixed startup inventory with a usable connection string; per-data-store CMS overrides are not silently
+  inferred, and runtime inventory changes are not supported.
 - Configuration validation and diagnostics enumerate `(tenant key, DataStoreId)` targets without depending on
   an HTTP request, JWT `DataStoreIds`, or route qualifiers.
 - A configuration or readiness failure for one data store is reported against that data store and does not make
@@ -54,7 +55,8 @@ tolerate misses and stale rows while CDC cannot tolerate missing delete source r
 4. Add startup diagnostics for invalid CDC/read-cache combinations.
 5. Add tests that process-wide modes enumerate all loaded tenant/data-store configurations and isolate
    per-data-store failures.
-6. Update local appsettings examples or design docs with the configuration matrix.
+6. Add tests that changing the configured inventory requires a process restart rather than runtime reconciliation.
+7. Update local appsettings examples or design docs with the configuration matrix.
 
 ## Out of Scope
 

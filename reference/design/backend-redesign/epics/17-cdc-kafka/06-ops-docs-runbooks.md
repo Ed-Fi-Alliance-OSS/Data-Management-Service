@@ -51,10 +51,13 @@ row guarantee; operators should treat failures in that path as write-path blocki
   - delete failure behavior when the source row cannot be materialized.
 - Runbooks cover connector health, lag, last error, snapshot completion, restart, offset reset, resnapshot, and
   topic recreation.
-- Runbooks cover dynamic data-store addition, physical connection/provider change, route-qualifier-only change,
-  removal, connector retirement, and shared-physical-database conflict diagnostics.
-- Runbooks state that a missing CMS record stops reconciliation only after the configured confirmation policy and
-  never automatically deletes topics, offsets, ACLs, replication slots, or SQL Server capture state.
+- Runbooks cover the fixed startup inventory, repeating one-shot provisioning for each target, explicit
+  configuration/deployment changes for additions or removals, same-database credential/alias changes, connector
+  retirement, and shared-physical-database conflict diagnostics.
+- Runbooks state that moving a `DataStoreId` to a different physical document set requires an explicit migration
+  with a new topic/source generation or a deliberate topic/connector reset before resnapshotting.
+- Runbooks state that removing a configured target never automatically deletes topics, offsets, ACLs, replication
+  slots, or SQL Server capture state; each destructive cleanup action is explicit.
 - Runbooks clearly mark offset reset, resnapshot, and topic deletion as destructive or replay-producing
   operations.
 - Documentation explains that `-EnableKafkaUI` does not enable CDC.
