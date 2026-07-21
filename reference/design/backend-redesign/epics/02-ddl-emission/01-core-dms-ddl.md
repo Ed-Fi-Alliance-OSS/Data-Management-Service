@@ -22,7 +22,9 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
   - always-provisioned projection table: `dms.DocumentCache`, including the non-null opaque
     `StreamEtag` produced by DMS for the fixed CDC representation; keep `DocumentId` as
     its compact primary/foreign key, keep `DocumentUuid` non-indexed, and emit the
-    provider-specific trigger that rejects a UUID mismatch with the canonical row
+    stable `TR_DocumentCache_ValidateDocumentUuid` trigger that rejects a UUID mismatch
+    with the canonical row; PostgreSQL also emits the stable
+    `TF_DocumentCache_ValidateDocumentUuid` trigger function
   - singleton `dms.DocumentCacheState` initialized with its cache-ahead recovery latch
     clear; idempotent provisioning never resets an existing latch
   - singleton `dms.DataStoreIdentity` with insert-if-absent random UUID initialization
@@ -38,8 +40,11 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 1. Implement DDL emission for each required `dms.*` table/sequence/index, using the dialect writer.
 2. Implement update-tracking trigger emission per `reference/design/backend-redesign/design-docs/update-tracking.md` (PG and MSSQL variants).
 3. Ensure deterministic ordering of statements (phased ordering per `ddl-generation.md`).
-4. Add snapshot tests that validate core DDL output for a small fixture (both dialects).
-5. Add provider DB-apply tests proving mismatched cache UUIDs are rejected and that no
-   cache UUID or canonical composite identity index is emitted.
+4. Add snapshot tests that validate core DDL output for a small fixture in both dialects,
+   including `TR_DocumentCache_ValidateDocumentUuid` and, for PostgreSQL,
+   `TF_DocumentCache_ValidateDocumentUuid`.
+5. Add provider DB-apply tests proving matching cache UUIDs are accepted, mismatched
+   inserts and updates are rejected, and no cache UUID or canonical composite identity
+   index is emitted.
 6. Add provider DB-apply tests proving the cache-state singleton is initialized once, its
    singleton constraint rejects another key, and DDL rerun preserves a set latch.

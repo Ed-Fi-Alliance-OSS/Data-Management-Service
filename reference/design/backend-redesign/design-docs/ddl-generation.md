@@ -174,7 +174,9 @@ This inventory is the explicit “what exists in the database” contract that t
 - `TR_DocumentCache_ValidateDocumentUuid` on `dms.DocumentCache`; PostgreSQL also emits
   its stable trigger function `TF_DocumentCache_ValidateDocumentUuid`. The trigger rejects
   an insert or update whose denormalized `DocumentUuid` differs from the canonical
-  `dms.Document` row for the same `DocumentId`.
+  `dms.Document` row for the same `DocumentId`. Both dialects' DDL snapshots MUST include
+  the stable trigger name (and the PostgreSQL function name), and provider DB-apply tests
+  MUST prove matching UUIDs are accepted while mismatched inserts and updates are rejected.
 - Stamping and change-tracking triggers are emitted at the per-project / per-resource layer
   (see §3); the shared `dms.Descriptor` table receives a `*_Stamp` trigger as part of that
   pass.
