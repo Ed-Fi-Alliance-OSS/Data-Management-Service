@@ -766,52 +766,35 @@ function Test-MssqlConnectionStringValue {
         [string]$ConnectionString
     )
 
-    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+    # Boolean provider-context adapter over the single Resolve-ConnectionStringDialect vocabulary, so there
+    # is no second hand-listed marker set that can drift from the canonical one (the Npgsql keyword table +
+    # the SqlClient builder). A definitively-SQL-Server string is SQL Server; a definitively-PostgreSQL,
+    # unparseable, empty, or no-recognized-key string is not. Only the Ambiguous case (parseable, but only
+    # shared/unknown keys) keeps this helper's historical residual default: a data-source alias - Server= or
+    # User Id= - reads as SQL Server, but a shared string carrying neither (e.g. only Database=/Password=, or
+    # a ';Server=' buried inside a quoted value) stays not-identifiable.
+    $dialect = Resolve-ConnectionStringDialect -ConnectionString $ConnectionString
+    if ($dialect -eq "SqlServer") {
+        return $true
+    }
+    if ($dialect -ne "Ambiguous") {
         return $false
     }
 
-    # ReadValuesFromEnvFile preserves surrounding quotes, but docker-compose strips one surrounding
-    # single- or double-quote pair before the container uses the value. Normalize the same way so a
-    # quoted-but-valid connection string classifies correctly. Quote KIND does not matter here: engine
-    # detection only inspects which connection-string keys are present, not interpolated content.
-    $normalizedConnectionString = Get-NormalizedEnvValue -Value $ConnectionString
-
-    # Classify by connection-string KEYS using a generic DbConnectionStringBuilder - the same parser
-    # Get-CmsConnectionStringDatabaseName and provision-dms-schema.ps1's Resolve-TargetDialect use - mirroring
-    # that authoritative dialect resolver rather than a raw regex. Parsing understands connection-string
-    # quoting, so a ';Server=' appearing inside a quoted value is treated as part of that value, not as a
-    # spurious key match. Use the explicit set_/ContainsKey accessors: PowerShell's indexer/property sugar
-    # misbehaves on this IDictionary-implementing type and silently fails to parse.
+    # Ambiguous: re-parse the same normalized text (Resolve-ConnectionStringDialect already proved it parses)
+    # and apply the residual default only for the two shared data-source aliases.
     $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
     try {
-        $builder.set_ConnectionString($normalizedConnectionString)
+        $builder.set_ConnectionString((Get-NormalizedEnvValue -Value $ConnectionString))
     }
     catch {
-        # Not a parseable connection string, so not identifiable as a SQL Server connection.
         return $false
     }
-
-    # The PostgreSQL-definitive keys win FIRST: none of host/username/port/sslmode is a valid SqlClient
-    # keyword, so their presence rules out SQL Server even when the string uses Server= (a legal Npgsql alias
-    # for Host) or User Id= (a legal Npgsql alias for Username). This keeps engine detection in lock-step with
-    # Resolve-TargetDialect (provision-dms-schema.ps1); the two marker lists must stay identical.
-    foreach ($postgresqlMarker in @("host", "username", "port", "sslmode")) {
-        if ($builder.ContainsKey($postgresqlMarker)) {
-            return $false
-        }
-    }
-
-    # SQL Server data-source / catalog / credential keys. 'server' and 'user id' are themselves legal Npgsql
-    # aliases, so they only decide here - after the definitive PostgreSQL keys above have been ruled out. A
-    # string carrying only these ambiguous keys is genuinely indistinguishable and classifies as SQL Server
-    # (matching Resolve-TargetDialect's residual default).
-    foreach ($mssqlMarker in @("server", "data source", "initial catalog", "user id", "trusted_connection")) {
-        if ($builder.ContainsKey($mssqlMarker)) {
+    foreach ($dataSourceAlias in @("server", "user id")) {
+        if ($builder.ContainsKey($dataSourceAlias)) {
             return $true
         }
     }
-
-    # Neither vocabulary present: not identifiable as SQL Server.
     return $false
 }
 

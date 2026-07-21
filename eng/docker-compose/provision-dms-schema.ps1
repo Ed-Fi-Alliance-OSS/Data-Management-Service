@@ -299,37 +299,27 @@ function Resolve-TargetDialect {
         $Builder
     )
 
-    # The data store connection string CMS hands back determines the dialect: SQL Server uses
-    # Server / Data Source / Initial Catalog / User Id keys; PostgreSQL uses host / database /
-    # username / port / sslmode. SchemaTools provisions both (api-schema-tools ddl provision
-    # --dialect pgsql|mssql).
-    #
-    # host, username, port, and sslmode are checked first and are each a definitive PostgreSQL
-    # marker: none of the four is a valid SqlClient connection-string keyword. SqlClient
-    # identifies the user via User ID/UID (not Username), encodes the port inside
-    # "Server=host,port" rather than a standalone Port key, and controls encryption via
-    # Encrypt/TrustServerCertificate rather than SSL Mode. This also fixes a PostgreSQL
-    # connection string that uses Server (a legal Npgsql alias for Host) instead of Host: it
-    # still carries one of these four definitive keys and resolves to pgsql before the mssql
-    # marker loop below ever sees the ambiguous Server key.
-    #
-    # Residual assumption: Server and User Id are themselves ambiguous (each is also a legal
-    # Npgsql alias for Host/Username respectively), so a connection string carrying only
-    # ambiguous alias keys and none of the four definitive PostgreSQL keys - e.g. Server= plus
-    # User Id= with no host/username/port/sslmode - is genuinely indistinguishable from SQL
-    # Server and defaults to mssql via the marker loop below.
-    # env-utility.psm1's Test-MssqlConnectionStringValue mirrors this exact key set and precedence for
-    # docker-compose engine detection; keep the two marker lists in sync.
-    $definitivePostgresqlMarkers = @("host", "username", "port", "sslmode")
-    foreach ($marker in $definitivePostgresqlMarkers) {
-        if ($Builder.ContainsKey($marker)) {
-            return "pgsql"
-        }
+    # The data store connection string CMS hands back determines the dialect: SchemaTools provisions both
+    # (api-schema-tools ddl provision --dialect pgsql|mssql). Delegate the connection-string vocabulary to
+    # env-utility.psm1's single Resolve-ConnectionStringDialect - the Npgsql keyword table plus the built-in
+    # SqlClient builder - so this script no longer keeps a second marker list that must stay in sync. A key
+    # valid for exactly one engine is a definitive marker for it; a definitively-PostgreSQL string (host,
+    # username, port, sslmode - none a valid SqlClient keyword, so Server= as an Npgsql Host alias still
+    # resolves to pgsql) provisions pgsql, a definitively-SQL-Server string provisions mssql.
+    $dialect = Resolve-ConnectionStringDialect -ConnectionString $Builder.ConnectionString
+    if ($dialect -eq "PostgreSql") {
+        return "pgsql"
+    }
+    if ($dialect -eq "SqlServer") {
+        return "mssql"
     }
 
-    $mssqlMarkers = @("server", "data source", "initial catalog", "user id", "trusted_connection")
-    foreach ($marker in $mssqlMarkers) {
-        if ($Builder.ContainsKey($marker)) {
+    # Residual assumption: Server and User Id are themselves ambiguous (each is also a legal Npgsql alias for
+    # Host/Username), so a connection string carrying only ambiguous alias keys and none of the definitive
+    # PostgreSQL keys - e.g. Server= plus User Id= with no host/username/port/sslmode - is genuinely
+    # indistinguishable from SQL Server and defaults to mssql, matching the historical behavior.
+    foreach ($ambiguousDataSourceAlias in @("server", "user id")) {
+        if ($Builder.ContainsKey($ambiguousDataSourceAlias)) {
             return "mssql"
         }
     }
