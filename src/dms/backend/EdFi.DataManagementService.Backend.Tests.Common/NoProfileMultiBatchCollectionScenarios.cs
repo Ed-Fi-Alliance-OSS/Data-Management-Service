@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -33,6 +34,99 @@ public static class NoProfileMultiBatchCollectionScenarios
     /// <summary>Deterministic zone value for the collection-aligned extension at <paramref name="index"/>.</summary>
     public static string CreateZone(int index) =>
         $"Zone-{index.ToString("D5", CultureInfo.InvariantCulture)}";
+
+    /// <summary>AddressType descriptor URI seeded and referenced by every created row in the changed-descriptor update-batch scenario.</summary>
+    public const string OriginalAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
+
+    /// <summary>AddressType descriptor URI every existing row's reference is changed to in the changed-descriptor update-batch scenario.</summary>
+    public const string ReplacementAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
+
+    /// <summary>
+    /// Builds the multi-batch base-collection request body: a School (255901, shortName "BATCH") with
+    /// <paramref name="addressCount"/> addresses whose cities follow <see cref="CreateCity"/>. The large
+    /// create and the retained-subset update both replay this single input so every engine adapter
+    /// exercises identical bodies.
+    /// </summary>
+    public static JsonNode CreateCollectionRequestBody(int addressCount)
+    {
+        JsonArray addresses = [];
+
+        for (var index = 0; index < addressCount; index++)
+        {
+            addresses.Add(new JsonObject { ["city"] = CreateCity(index) });
+        }
+
+        return new JsonObject
+        {
+            ["schoolId"] = 255901,
+            ["shortName"] = "BATCH",
+            ["addresses"] = addresses,
+        };
+    }
+
+    /// <summary>
+    /// Builds the multi-batch request body that adds a collection-aligned extension scope: a School
+    /// (255901, shortName "BATCH-EXT") with <paramref name="addressCount"/> base addresses and a matching
+    /// aligned extension address per index (zone from <see cref="CreateZone"/>).
+    /// </summary>
+    public static JsonNode CreateCollectionAlignedExtensionRequestBody(int addressCount)
+    {
+        JsonArray addresses = [];
+        JsonArray extensionAddresses = [];
+
+        for (var index = 0; index < addressCount; index++)
+        {
+            addresses.Add(new JsonObject { ["city"] = CreateCity(index) });
+            extensionAddresses.Add(
+                new JsonObject
+                {
+                    ["_ext"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject { ["zone"] = CreateZone(index) },
+                    },
+                }
+            );
+        }
+
+        return new JsonObject
+        {
+            ["schoolId"] = 255901,
+            ["shortName"] = "BATCH-EXT",
+            ["addresses"] = addresses,
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["addresses"] = extensionAddresses } },
+        };
+    }
+
+    /// <summary>
+    /// Builds the multi-batch request body whose every address carries the supplied AddressType descriptor
+    /// URI, used by the changed-descriptor update-batch scenario to create rows with one descriptor and then
+    /// replace it on every row.
+    /// </summary>
+    public static JsonNode CreateAddressRequestBodyWithDescriptor(
+        int addressCount,
+        string addressTypeDescriptorUri
+    )
+    {
+        JsonArray addresses = [];
+
+        for (var index = 0; index < addressCount; index++)
+        {
+            addresses.Add(
+                new JsonObject
+                {
+                    ["addressTypeDescriptor"] = addressTypeDescriptorUri,
+                    ["city"] = CreateCity(index),
+                }
+            );
+        }
+
+        return new JsonObject
+        {
+            ["schoolId"] = 255901,
+            ["shortName"] = "BATCH",
+            ["addresses"] = addresses,
+        };
+    }
 
     public sealed record DocumentRow(
         long DocumentId,

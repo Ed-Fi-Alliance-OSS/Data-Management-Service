@@ -37,6 +37,88 @@ public static class NoProfileGuardedNoOpScenarios
         TimeSpan.Zero
     );
 
+    /// <summary>
+    /// The provider-neutral guarded-no-op request body: a School with two base addresses (Austin, Dallas)
+    /// and two collection-aligned extension addresses (Zone-1, Zone-2). Both the seeding create and the
+    /// unchanged PUT / POST-as-update replay this identical body so the compare-and-skip is genuine. Each
+    /// engine adapter consumes this input rather than defining its own, keeping the inputs identical across
+    /// engines.
+    /// </summary>
+    public const string RequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Austin"
+            },
+            {
+              "city": "Dallas"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-1"
+                    }
+                  }
+                },
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-2"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// The provider-neutral reordered request body: the same rows as <see cref="RequestBodyJson"/> with the
+    /// base addresses swapped (Dallas, Austin) and the aligned extension addresses moved with them (Zone-2,
+    /// Zone-1). A changed PUT applies this before a guarded no-op is then compared against the reordered state.
+    /// </summary>
+    public const string ReorderedRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Dallas"
+            },
+            {
+              "city": "Austin"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-2"
+                    }
+                  }
+                },
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-1"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """;
+
     public sealed record DocumentRow(
         long DocumentId,
         Guid DocumentUuid,

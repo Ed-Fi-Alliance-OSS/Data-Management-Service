@@ -191,67 +191,16 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         );
     }
 
-    public static JsonNode CreateCreateRequestBody(int addressCount)
-    {
-        JsonArray addresses = [];
+    // The multi-batch request bodies live in the shared contract so every engine adapter exercises
+    // identical inputs; these thin wrappers forward to the provider-neutral builders.
+    public static JsonNode CreateCreateRequestBody(int addressCount) =>
+        NoProfileMultiBatchCollectionScenarios.CreateCollectionRequestBody(addressCount);
 
-        for (var index = 0; index < addressCount; index++)
-        {
-            addresses.Add(new JsonObject { ["city"] = CreateCity(index) });
-        }
+    public static JsonNode CreateUpdateRequestBody(int retainedAddressCount) =>
+        NoProfileMultiBatchCollectionScenarios.CreateCollectionRequestBody(retainedAddressCount);
 
-        return new JsonObject
-        {
-            ["schoolId"] = 255901,
-            ["shortName"] = "BATCH",
-            ["addresses"] = addresses,
-        };
-    }
-
-    public static JsonNode CreateUpdateRequestBody(int retainedAddressCount)
-    {
-        JsonArray addresses = [];
-
-        for (var index = 0; index < retainedAddressCount; index++)
-        {
-            addresses.Add(new JsonObject { ["city"] = CreateCity(index) });
-        }
-
-        return new JsonObject
-        {
-            ["schoolId"] = 255901,
-            ["shortName"] = "BATCH",
-            ["addresses"] = addresses,
-        };
-    }
-
-    public static JsonNode CreateCreateRequestBodyWithCollectionAlignedExtensions(int addressCount)
-    {
-        JsonArray addresses = [];
-        JsonArray extensionAddresses = [];
-
-        for (var index = 0; index < addressCount; index++)
-        {
-            addresses.Add(new JsonObject { ["city"] = CreateCity(index) });
-            extensionAddresses.Add(
-                new JsonObject
-                {
-                    ["_ext"] = new JsonObject
-                    {
-                        ["sample"] = new JsonObject { ["zone"] = CreateZone(index) },
-                    },
-                }
-            );
-        }
-
-        return new JsonObject
-        {
-            ["schoolId"] = 255901,
-            ["shortName"] = "BATCH-EXT",
-            ["addresses"] = addresses,
-            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["addresses"] = extensionAddresses } },
-        };
-    }
+    public static JsonNode CreateCreateRequestBodyWithCollectionAlignedExtensions(int addressCount) =>
+        NoProfileMultiBatchCollectionScenarios.CreateCollectionAlignedExtensionRequestBody(addressCount);
 
     public static UpsertRequest CreateCreateRequest(
         MappingSet mappingSet,
@@ -344,8 +293,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
 
     public static string CreateCity(int index) => NoProfileMultiBatchCollectionScenarios.CreateCity(index);
 
-    public static string CreateZone(int index) => NoProfileMultiBatchCollectionScenarios.CreateZone(index);
-
     // Translate recorded PostgreSQL commands into the provider-neutral batch summaries the shared
     // contract asserts over. Dialect command text stays in this adapter, not in Common.
     public static IReadOnlyList<int> ReservationRowCounts(MultiBatchCommandRecorder recorder) =>
@@ -392,34 +339,19 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         "AddressTypeDescriptor"
     );
 
-    public const string OriginalAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
-    public const string ReplacementAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
+    public const string OriginalAddressTypeDescriptorUri =
+        NoProfileMultiBatchCollectionScenarios.OriginalAddressTypeDescriptorUri;
+    public const string ReplacementAddressTypeDescriptorUri =
+        NoProfileMultiBatchCollectionScenarios.ReplacementAddressTypeDescriptorUri;
 
     public static JsonNode CreateAddressRequestBodyWithDescriptor(
         int addressCount,
         string addressTypeDescriptorUri
-    )
-    {
-        JsonArray addresses = [];
-
-        for (var index = 0; index < addressCount; index++)
-        {
-            addresses.Add(
-                new JsonObject
-                {
-                    ["addressTypeDescriptor"] = addressTypeDescriptorUri,
-                    ["city"] = CreateCity(index),
-                }
-            );
-        }
-
-        return new JsonObject
-        {
-            ["schoolId"] = 255901,
-            ["shortName"] = "BATCH",
-            ["addresses"] = addresses,
-        };
-    }
+    ) =>
+        NoProfileMultiBatchCollectionScenarios.CreateAddressRequestBodyWithDescriptor(
+            addressCount,
+            addressTypeDescriptorUri
+        );
 
     // The focused DDL fixture's ApiSchema is trimmed to what the DDL emitter needs, so the ResourceSchema
     // extraction helpers are unavailable. The School identity is fixed ($.schoolId) and the per-address

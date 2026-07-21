@@ -23,6 +23,81 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// </summary>
 public static class NoProfilePostAsUpdateScenarios
 {
+    /// <summary>
+    /// The provider-neutral focused-scenario create body: a School (255901, shortName "LHS") with two base
+    /// addresses (Austin, Dallas) and two collection-aligned extension addresses (Zone-1, Zone-2). Seeds the
+    /// existing document that the focused full-surface POST-as-update then updates. Each engine adapter
+    /// consumes this input so the focused scenario's inputs stay identical across engines.
+    /// </summary>
+    public const string FocusedCreateRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Austin"
+            },
+            {
+              "city": "Dallas"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-1"
+                    }
+                  }
+                },
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-2"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// The provider-neutral focused-scenario POST-as-update body: the same School with shortName omitted
+    /// (cleared), the two base addresses retained by value (Austin, Dallas), the first aligned extension
+    /// changed (Zone-1-Updated), and the second aligned extension omitted so its row is removed. Drives the
+    /// <see cref="AssertFocusedFullSurfaceStateApplied"/> expectations.
+    /// </summary>
+    public const string FocusedPostAsUpdateRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "addresses": [
+            {
+              "city": "Austin"
+            },
+            {
+              "city": "Dallas"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-1-Updated"
+                    }
+                  }
+                },
+                {}
+              ]
+            }
+          }
+        }
+        """;
+
     public sealed record DocumentRow(
         long DocumentId,
         Guid DocumentUuid,

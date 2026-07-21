@@ -2543,68 +2543,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
 
-    private const string CreateRequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "shortName": "LHS",
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                },
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-2"
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-        """;
-
-    private const string PostAsUpdateRequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1-Updated"
-                    }
-                  }
-                },
-                {}
-              ]
-            }
-          }
-        }
-        """;
+    // The focused-scenario request bodies live in the shared contract so every engine adapter exercises
+    // identical inputs; this PostgreSQL adapter consumes them rather than defining its own.
+    private const string CreateRequestBodyJson = NoProfilePostAsUpdateScenarios.FocusedCreateRequestBodyJson;
+    private const string PostAsUpdateRequestBodyJson =
+        NoProfilePostAsUpdateScenarios.FocusedPostAsUpdateRequestBodyJson;
 
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly ResourceInfo SchoolResourceInfo = new(
