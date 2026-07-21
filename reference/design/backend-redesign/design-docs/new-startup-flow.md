@@ -307,7 +307,8 @@ validation automatically, since these may resolve without operator intervention.
 > correlated via `TraceId`). Deterministic failures are cached
 > permanently; transient failures are evicted so the next request retries. A DMS restart is
 > required to clear deterministic failure cache entries (e.g., after reprovisioning the
-> database). DMS reports the current source fingerprint with per-database projection
+> database). DMS derives the current source fingerprint from the singleton
+> `dms.DataStoreIdentity` row and reports it with per-database projection
 > health; deployment automation owns durable Kafka CDC binding comparison and combined
 > readiness. A binding mismatch does not alter request routing or API mutation
 > availability.

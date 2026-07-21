@@ -30,16 +30,22 @@ per-database projection health with E17-owned provider, topic, and connector che
 
 1. Define the deployment CDC target input and require each selected target to be present
    in DMS `DocumentCache:Targets` without adding Kafka-specific runtime DMS options.
-2. Resolve provider-specific physical database identity through the current-source
-   observation contract from 18-09 and detect aliases that conflict with
-   topic-per-instance isolation.
+2. Obtain the database-owned physical-source fingerprint through the DMS current-source
+   observation contract from 18-09; do not normalize or fingerprint connection metadata
+   independently. Detect target aliases with the same reported fingerprint that conflict
+   with topic-per-instance isolation.
 3. Define the versioned immutable binding-record schema, including the positive fixed
    topic partition count, and a state-store abstraction with atomic
    create/compare-and-set behavior. Provide the single-controller local JSON implementation
    under `.cdc-state/bindings`, its Git ignore rule, and optional
    `-CdcBindingStatePath`; do not write binding state into the bootstrap manifest.
 4. Enforce fail-closed creation, exact-match retry, artifact-without-state rejection,
-   immutable lifetime, cleanup ordering, and new-generation source migration.
+   immutable lifetime, cleanup ordering, and new-generation source migration. Define the
+   explicit guarded rotation operation for a rollback or restore that replaces an
+   existing source; it changes `dms.DataStoreIdentity.SourceIdentity` only as part of
+   reserving a new binding generation/topic and is never an ordinary setup retry. A newly
+   created independent target restored from a template, clone, or copied backup receives a
+   new UUID before binding creation under the provisioning/restore contract.
 5. Validate provider tables, projected `StreamEtag`, keys, replica/capture setup, topic,
    ACL, and installed source-operation shaping against the binding before registration.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
@@ -52,9 +58,10 @@ per-database projection health with E17-owned provider, topic, and connector che
 - State tests cover atomic first creation, exact-match retry, immutable mismatch including
   an attempted partition-count change, artifacts without state, normal-stop retention,
   destructive cleanup ordering, and generation migration.
-- Provider tests cover equivalent physical aliases, conflicting targets, transient
-  identity-resolution failure, missing targets, and confirmed binding mismatch without a
-  DMS-owned drift latch.
+- Provider tests cover equivalent physical aliases, conflicting targets, missing or
+  malformed `dms.DataStoreIdentity`, transient identity-resolution failure, missing
+  targets, guarded identity rotation/new-generation recovery, and confirmed binding
+  mismatch without a DMS-owned drift latch.
 - Readiness tests cover binding, migration, projection, post-audit source position,
   connector snapshot/catch-up, second projection-health observation, cache-ahead
   invariant failure, lag, per-target isolation, and aggregate results.

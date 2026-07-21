@@ -50,10 +50,11 @@ mapping and lifecycle rationale are defined in the
 In summary, projected cache state supplies document upserts and canonical document
 lifecycle supplies deletes.
 
-`dms.DocumentCache` is optional for ordinary DMS operation and required only for
-capabilities that consume projected documents. The canonical relational tables remain
-the authority for writes, authorization, identity resolution, Change Queries, and
-correct GET/query behavior.
+The DDL always provisions `dms.DocumentCache`, but populating or reading it is optional.
+Capabilities that consume projected documents explicitly select projection targets; an
+ordinary DMS deployment leaves the small table empty and performs no projection work.
+The canonical relational tables remain the authority for writes, authorization, identity
+resolution, Change Queries, and correct GET/query behavior.
 
 Change Queries remain a separate polling API compatibility surface, including
 `/deletes`, `/keyChanges`, and live-resource version filters based on `ContentVersion`,
@@ -471,8 +472,8 @@ Projection health is evaluated for each explicit `(tenant key, DataStoreId)` exe
 context. It reports at least:
 
 - target resolution and required-table existence,
-- the current provider and an opaque provider-resolved physical-source fingerprint
-  computed with the same provider-specific algorithm used by deployment automation,
+- the current provider and the opaque physical-source fingerprint derived from the
+  database-owned `dms.DataStoreIdentity.SourceIdentity`,
 - whether the in-process loop is running,
 - whether an incremental scan or full audit is in progress,
 - the effective execution settings, last/next incremental and audit eligibility times, and
@@ -542,10 +543,41 @@ identity. Tenant identity remains deployment/administrative state and is not pub
 in the topic or message. Route-qualifier-only changes do not affect connector or topic
 identity.
 
-Deployment resolves a provider-specific physical database identity for every
-deployment-selected CDC target. Comparison does not rely only on raw connection-string
-text: semantically equivalent strings and server aliases must be normalized or confirmed
-after connection.
+Every provisioned database contains one immutable UUID in the singleton
+`dms.DataStoreIdentity` row. DMS reads that UUID through the active target connection and
+computes the physical-source fingerprint as follows:
+
+```text
+providerToken = "postgresql" | "sqlserver"
+sourceIdentity = lowercase UUID D format, for example
+                 "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
+payload = UTF-8("ed-fi-dms-source-v1" + NUL + providerToken + NUL + sourceIdentity)
+physicalSourceFingerprint = "sha256:" + lowercaseHex(SHA-256(payload))
+```
+
+`NUL` is one zero byte (`0x00`). No connection-string, credential, host, port, database
+name, DNS result, server name, or provider catalog identifier participates. Consequently,
+all aliases and HA endpoints that reach the same database row produce the same value,
+while independently provisioned databases receive different random source identities.
+DMS is the authoritative current-source observer. Deployment automation stores and
+compares the reported opaque fingerprint; tooling that reads the row directly must use
+the exact algorithm above and the same conformance vectors.
+
+Conformance vectors for source identity
+`f81d4fae-7dec-11d0-a765-00a0c91e6bf6` are:
+
+| Provider token | Required fingerprint |
+| --- | --- |
+| `postgresql` | `sha256:193c47b34d9751c73d06dbf5ccf2655a1cce46154a4808f152d3db0e91b676bc` |
+| `sqlserver` | `sha256:1780ea8893149195e89a46c70698dfdf64e8e6f9b31c7b7e9a9872baff498d75` |
+
+The row is inserted only when absent and ordinary provisioning never changes it. Provider
+replication and failover retain it. Creation of an independent writable data store from a
+template, clone, or copied backup assigns a new UUID before the data store becomes
+available. A rollback or restore that replaces an existing source rotates
+`SourceIdentity` through the explicit CDC recovery workflow and, when CDC state exists,
+uses a new binding generation, topic, and consumer state namespace. Rotation is never
+part of ordinary DDL rerun or DMS startup.
 Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
 display names, or unsanitized physical identifiers.
 
@@ -575,9 +607,9 @@ The portable binding-record shape is:
 }
 ```
 
-The record contains no connection string or credential. Credential, timeout, pooling,
-application-name, host-alias, or equivalent connection changes produce the same
-fingerprint when the provider and physical database are unchanged. `partitionCount` is a
+The record contains no connection string, credential, or source UUID. Credential, timeout,
+pooling, application-name, host-alias, or equivalent connection changes produce the same
+fingerprint when they reach the same `dms.DataStoreIdentity` row. `partitionCount` is a
 positive topic-creation value and is immutable within the binding generation because the
 public consumer contract uses per-key partition offsets to order equal-version corrective
 republishes.
@@ -604,7 +636,8 @@ compare-and-set semantics.
 
 Binding creation and cleanup follow a fail-closed order:
 
-1. Resolve the provider-specific physical database identity and intended artifact names.
+1. Obtain DMS's current fingerprint derived from `dms.DataStoreIdentity` and resolve the
+   intended artifact names.
 2. Atomically create the immutable binding record before creating a topic, connector, or
    provider capture artifact. A record that already exists must match exactly; automation
    never rewrites its binding fields.
@@ -888,8 +921,11 @@ measured access paths:
 - `DocumentCache.StreamEtag` stores the DMS-computed opaque ETag for the fixed CDC
   representation; it is not used by API reads.
 - Provider-specific constraints ensure `DocumentJson` is a JSON object.
+- `dms.DataStoreIdentity` is an always-provisioned singleton containing the random
+  `SourceIdentity`, stable during ordinary operation, used by the physical-source
+  fingerprint contract.
 - `dms.Document(ContentVersion, DocumentId)` supports incremental discovery and bounded
-  full-audit paging and is required when `dms.DocumentCache` is provisioned.
+  full-audit paging and is always provisioned with `dms.DocumentCache`.
 - Add no additional projector/diagnostic index beyond the data-model-defined access
   paths until realistic provider query-plan measurements demonstrate a need.
 

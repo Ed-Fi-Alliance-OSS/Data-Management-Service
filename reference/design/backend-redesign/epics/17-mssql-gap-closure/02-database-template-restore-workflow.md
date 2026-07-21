@@ -65,7 +65,11 @@ The wrapper performs the following sequence in restore mode:
    the complete active tree. Never rewrite only a schema or manifest subtree.
 9. Run `start-*-dms.ps1 -DbOnly` again. Immediately before any destructive target operation, repeat the
    reserved-name, separate-CMS, running-service, and live-catalog validation, then replace the explicitly
-   selected physical DMS datastore database from the same hash-verified artifact validated in scratch.
+   selected physical DMS datastore database from the same hash-verified artifact validated in scratch. Before
+   any service can select the restored target, replace the template's copied
+   `dms.DataStoreIdentity.SourceIdentity` with a newly generated UUID and verify that it differs from the
+   package value. If an existing target has CDC binding/artifact state, require the governed new-generation
+   recovery workflow rather than silently preserving or rewriting that binding.
 10. Run `start-*-dms.ps1 -InfraOnly` to initialize identity and CMS.
 11. Run `configure-local-data-store.ps1` for the restored datastore.
 12. Skip `provision-dms-schema.ps1` for that datastore because the template already contains the generated
@@ -185,6 +189,9 @@ state form one handoff and may still be bind-mounted.
   core/extension inventory, `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, relational mapping version, and
   any engine-defined physical-schema version match the authoritative candidate workspace.
 - PostgreSQL SQL replay and MSSQL backup restore both materialize Minimal and Populated packages correctly.
+- Every restored independent target receives a new `dms.DataStoreIdentity.SourceIdentity` before CMS/DMS
+  startup; repeated restores do not reuse the package identity, while an existing CDC-bound target requires
+  explicit new-generation recovery.
 - Target validation rejects every reserved PostgreSQL/SQL Server database and prevents an MSSQL restore from
   replacing a separate CMS database before any workspace or database mutation.
 - Producers reject shared or contaminated sources while accepting the authoritative DMS-owned `auth` and
@@ -208,7 +215,8 @@ state form one handoff and may still be bind-mounted.
   gates, scratch cleanup, generated preflight-database cleanup, fresh-volume PostgreSQL target-absence
   preservation, failed stop proof, the database-only preflight stop/restart boundary, full-workspace replacement,
   bind-mount safety, shared/separate topology behavior, default targeting, repeated single-target operation,
-  and the distinction between restore and API seed delivery.
+  source-identity replacement and CDC-bound-target rejection, and the distinction between restore and API
+  seed delivery.
 - Live validation covers PostgreSQL and MSSQL with Minimal and Populated templates and supported Data Standard
   versions, including different extension selections, package-authentication failure before replay, companion
   `auth`/`tracked_changes_<project>` inventory validation, effective-schema validation, contaminated-package

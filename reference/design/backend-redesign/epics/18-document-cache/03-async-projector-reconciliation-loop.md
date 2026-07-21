@@ -38,14 +38,17 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 4. Implement startup, periodic, and rebuild-triggered full anti-join audits,
    including bounded audit-local paging and an exact finishing aggregate that separates
    missing, cache-behind, and cache-ahead rows.
-5. Update core DDL for both providers: remove the obsolete
+5. Update core DDL for both providers. Always provision `dms.DocumentCache`, rename its
+   obsolete `Etag` column to the required non-null `StreamEtag`, and always provision the
+   `dms.Document(ContentVersion, DocumentId)` discovery/audit index. Remove the obsolete
    `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` and
    `UX_DocumentCache_DocumentUuid` indexes, keep compact `DocumentId` as the cache
    primary/foreign key, emit the provider-specific cache insert/update trigger that rejects
-   a UUID mismatch with the canonical row, and provision the required
-   `dms.Document(ContentVersion, DocumentId)` index whenever `dms.DocumentCache` is
-   provisioned. Update DDL emitter, unit, DB-apply, and snapshot fixtures to match the
-   revised constraint and access-path inventory.
+   a UUID mismatch with the canonical row, and add the always-provisioned singleton
+   `dms.DataStoreIdentity` table with insert-if-absent random UUID initialization. Update
+   DDL emitter, unit, DB-apply, and snapshot fixtures to match the revised column,
+   constraint, identity, and access-path inventory. Keep provider publication/capture
+   artifacts outside this ordinary DDL path.
 6. Invoke the shared materializer and guarded upsert with fair retry and idle polling for
    missing and cache-behind candidates. Report cache-ahead rows as invariant violations
    without materialization or retry.
@@ -68,11 +71,16 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 - Query-plan tests prove ordinary high-version updates use indexed incremental discovery
   without a full relationship scan and that a full audit covers the relationship once
   rather than rescanning each repaired prefix.
-- PostgreSQL and SQL Server DDL tests prove the emitted schema includes
-  `dms.Document(ContentVersion, DocumentId)`, preserves the cache `DocumentId` primary/FK,
-  and excludes `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`,
+- PostgreSQL and SQL Server DDL tests prove every emitted schema includes
+  `dms.DataStoreIdentity`, `dms.DocumentCache.StreamEtag`, and
+  `dms.Document(ContentVersion, DocumentId)`; preserves the cache `DocumentId` primary/FK;
+  emits no obsolete `DocumentCache.Etag`; and excludes
+  `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`,
   `UX_DocumentCache_DocumentUuid`, and any new canonical
   `(DocumentId, DocumentUuid)` index.
+- Provisioning rerun tests prove `dms.DataStoreIdentity.SourceIdentity` is generated once
+  and retained, independently provisioned databases receive different values, and the
+  emitted SQL remains deterministic.
 - Provider DB-apply tests prove cache insert/update statements with the matching canonical
   UUID succeed, mismatches fail atomically through the validation trigger, no mismatched CDC
   row can commit, and ordinary canonical writes perform no cache-trigger work.

@@ -19,6 +19,8 @@ Implement the reusable optional document projection defined by the design refere
 configuration and target selection, materialization, reconciliation, guarded writes,
 optional read acceleration, health/telemetry, provider tests, and runbooks. The CDC epic
 consumes this projection for upserts and independently owns connector lifecycle deletes.
+The small `dms.DocumentCache` table and `dms.DataStoreIdentity` singleton are always
+provisioned; optionality applies to projection execution and cache-backed reads.
 
 ## Stories
 
@@ -48,6 +50,9 @@ implementation inputs.
 - Every projected row carries a `StreamEtag` produced by the shared DMS served-ETag
   composer for the fixed CDC representation; API reads continue to compose their own
   request-specific validators.
+- Core DDL always emits `dms.DocumentCache` with `StreamEtag`, its supporting
+  `dms.Document(ContentVersion, DocumentId)` index, and the singleton
+  `dms.DataStoreIdentity`; no obsolete `DocumentCache.Etag` remains.
 - `DocumentCache` retains one compact `DocumentId` primary/foreign-key index. Its
   non-indexed `DocumentUuid` is copied from the canonical row and provider validation
   triggers reject mismatches without adding a cache UUID index or a composite index to

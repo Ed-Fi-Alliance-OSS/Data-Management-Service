@@ -116,9 +116,9 @@ the stream's monotonic consumer contract.
 
 ## Consequences
 
-- Every deployment-selected Kafka CDC target must also be an explicit DMS
-  `DocumentCache:Targets` entry, but non-target data stores may run without
-  `dms.DocumentCache`.
+- `dms.DocumentCache` is always provisioned. Every deployment-selected Kafka CDC target
+  must also be an explicit DMS `DocumentCache:Targets` entry; non-target data stores leave
+  the table empty and run no projector.
 - Authorization, identity, writes, Change Queries, and correct GET/query results continue
   to use relational sources.
 - Reads may use only fresh cache rows and always retain relational fallback.
@@ -155,7 +155,7 @@ the stream's monotonic consumer contract.
 | Capture normalized resource tables directly | Rejected: it exposes physical storage and requires consumers to reproduce joins, extensions, descriptors, and reconstitution. |
 | Use Change Queries tables | Rejected: they are a polling compatibility surface, not a complete document-state payload source. |
 | Add a relational outbox | Deferred until DMS needs explicit domain-event semantics rather than current document state. |
-| Make the cache mandatory or only a read cache | Rejected: both descriptions lose its optional multi-consumer projection role. |
+| Make cache population/use mandatory or describe it only as a read cache | Rejected: the table is always provisioned, while its optional multi-consumer projection role remains configuration-selected. |
 | Configure a projector mode or separate Kafka boolean | Rejected: consuming capabilities already determine the exact target set and avoid invalid flag combinations. |
 | Persist queues, epochs, progress, retry, or failure rows | Rejected for v1: the current source/cache difference preserves repairable work and invariant evidence; add a small pending-work table or flag only if indexed incremental-discovery and full-audit benchmarks require it. |
 | Use the full mismatch anti-join for every steady-state poll | Rejected: it makes ordinary high-version update discovery scale with the complete document set. |

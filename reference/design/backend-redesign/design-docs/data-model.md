@@ -99,6 +99,9 @@ CREATE INDEX IX_Document_ResourceKeyId_DocumentId
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
+
+CREATE INDEX IX_Document_ContentVersion_DocumentId
+    ON dms.Document (ContentVersion, DocumentId);
 ```
 
 **SQL Server**
@@ -134,6 +137,9 @@ CREATE INDEX IX_Document_ResourceKeyId_DocumentId
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
+
+CREATE INDEX IX_Document_ContentVersion_DocumentId
+    ON dms.Document (ContentVersion, DocumentId);
 ```
 
 Notes:
@@ -302,7 +308,63 @@ Descriptor update semantics:
 - Descriptor references remain stable because other resources reference the descriptor document by resolved descriptor identity/URI, not by copied descriptor metadata.
 - Therefore descriptor metadata updates do not participate in identity-propagation cascades for referring resources.
 
-##### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
+##### 4) `dms.DataStoreIdentity`
+
+Always-provisioned singleton identity for the logical database source. It gives runtime
+DMS and deployment automation one provider-neutral CDC binding value without interpreting
+connection strings, DNS aliases, server names, or provider catalogs.
+
+Provisioning inserts one random UUID only when the singleton row is absent. Ordinary
+provisioning reruns and DMS startup never update it. Provider replication and failover
+retain the value. Creation of an independent writable data store from a template, clone,
+or copied backup generates a new value before the data store becomes available. A
+rollback or restore that replaces an existing source must rotate `SourceIdentity` through
+the explicit CDC recovery workflow and, when CDC state exists, use a new binding
+generation, topic, and consumer state namespace.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DataStoreIdentity (
+    DataStoreIdentitySingletonId smallint NOT NULL PRIMARY KEY,
+    SourceIdentity uuid NOT NULL,
+    CONSTRAINT CK_DataStoreIdentity_Singleton
+        CHECK (DataStoreIdentitySingletonId = 1)
+);
+
+INSERT INTO dms.DataStoreIdentity (DataStoreIdentitySingletonId, SourceIdentity)
+VALUES (1, gen_random_uuid())
+ON CONFLICT (DataStoreIdentitySingletonId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DataStoreIdentity (
+    DataStoreIdentitySingletonId smallint NOT NULL
+        CONSTRAINT PK_DataStoreIdentity PRIMARY KEY CLUSTERED,
+    SourceIdentity uniqueidentifier NOT NULL,
+    CONSTRAINT CK_DataStoreIdentity_Singleton
+        CHECK (DataStoreIdentitySingletonId = 1)
+);
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM dms.DataStoreIdentity
+    WHERE DataStoreIdentitySingletonId = 1
+)
+BEGIN
+    INSERT INTO dms.DataStoreIdentity (DataStoreIdentitySingletonId, SourceIdentity)
+    VALUES (1, NEWID());
+END;
+```
+
+The emitted SQL text remains deterministic even though the UUID is generated when the
+script is applied. The public health surface exposes only the versioned SHA-256 fingerprint
+defined in [Relational CDC and Document Projection](../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding),
+not the source UUID itself.
+
+##### 5) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
 Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database schema is provisioned for, and records the **exact project versions** present in that effective schema. On first use of a given database connection string, DMS uses this to validate that it has a matching mapping set for the database’s recorded fingerprint (cached per connection string; see **EffectiveSchemaHash Calculation** below).
 
@@ -469,10 +531,12 @@ Conformance tests (required):
   - and deterministic inclusion of `RelationalMappingVersion`.
 - Any intentional change to canonicalization or the hashed schema surface must update fixtures in a controlled “bless” workflow (see `ddl-generator-testing.md`).
 
-##### 5) `dms.DocumentCache` (optional materialized projection)
+##### 6) `dms.DocumentCache` (always-provisioned optional projection)
 
-Optional materialized JSON representation used for read acceleration, downstream
-integrations, and relational CDC upserts. This section owns its relational row shape;
+Always-provisioned table for an optional materialized JSON representation used for read
+acceleration, downstream integrations, and relational CDC upserts. With no explicit
+projection targets the table remains empty, and with read acceleration disabled the API
+does not read it. This section owns its relational row shape;
 the authoritative enablement, projection, lifecycle, and CDC behavior is defined in
 [Relational CDC and Document Projection](../../cdc-streaming.md), with rationale in the
 [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md).

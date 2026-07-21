@@ -19,10 +19,11 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 
 - Generated DDL includes (at minimum) the v1 inventory from `ddl-generation.md`:
   - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
-  - optional projection table: `dms.DocumentCache`, including the non-null opaque
+  - always-provisioned projection table: `dms.DocumentCache`, including the non-null opaque
     `StreamEtag` produced by DMS for the fixed CDC representation; keep `DocumentId` as
     its compact primary/foreign key, keep `DocumentUuid` non-indexed, and emit the
     provider-specific trigger that rejects a UUID mismatch with the canonical row
+  - singleton `dms.DataStoreIdentity` with insert-if-absent random UUID initialization
   - `dms.EffectiveSchema`, `dms.SchemaComponent`
   - `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`
   - required journaling triggers/functions on `dms.Document`

@@ -123,7 +123,7 @@ Soft dependency:
 - Runtime configuration binds `DataManagement:ResourceLinks` to a dedicated `ResourceLinksOptions`
   type; the story must not assume a nested `AppSettings.DataManagement` object already exists in
   Core.
-- When `dms.DocumentCache` is provisioned, this story follows the authoritative
+- When optional cache-backed reads are enabled, this story follows the authoritative
   [cached-document and freshness design](../../../cdc-streaming.md#freshness-and-reconciliation)
   rather than defining another cache-validity rule.
 - `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document with
@@ -139,8 +139,8 @@ Soft dependency:
   `_etag` values because `variantKey.linkFlag` changes. No advisory
   lock, no `dms.DocumentCachePlanFingerprint` table, and no `ResourceLinksFlag` column are
   introduced.
-- When `dms.DocumentCache` is not provisioned, responses are materialized fresh per request and no
-  freshness check runs.
+- When cache-backed reads are disabled, responses are materialized fresh per request and no
+  cache freshness check runs even though the table is present.
 - The cache remains caller-agnostic: callers who can both read the same source document share the
   same cached intermediate JSON even if one caller would fail a direct GET against the target
   resource, because target-side authorization is not consulted for link emission.
@@ -253,7 +253,7 @@ Soft dependency:
    (`_lastModifiedDate`) are untouched. Compose `_etag` at the serving boundary from `ContentVersion`
    plus the active `variantKey`; readable profile, link mode, format, and content coding participate
    through their `variantKey` segments per `design-docs/update-tracking.md` §Serving API metadata.
-7. When `dms.DocumentCache` is provisioned: follow the authoritative projection contract. For this
+7. When cache-backed reads are enabled: follow the authoritative projection contract. For this
    story's link-specific behavior, cache entries store the caller-agnostic intermediate document
    with `link` subtrees already present. No plan-shape fingerprint, no
    advisory lock, no `dms.DocumentCachePlanFingerprint` table, no cache truncate, and no

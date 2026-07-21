@@ -27,10 +27,11 @@ process state.
 ## Deliverables
 
 1. Define only the per-data-store projection health/completeness model, including target
-   resolution and provider. Define the provider-specific algorithm that observes an
-   opaque current physical-source fingerprint for the active execution context without
-   retaining or comparing an expected value; deployment automation consumes the same
-   observation contract.
+   resolution and provider. Read the active database's singleton
+   `dms.DataStoreIdentity.SourceIdentity` and expose only the opaque current fingerprint
+   defined by the authoritative design's exact provider-token/UUID/SHA-256 algorithm.
+   Retain neither the source UUID nor an expected value; deployment automation consumes
+   the reported fingerprint as an opaque current-source observation.
 2. Record exact unresolved/age snapshots from completed provider-equivalent full audits,
    with separate missing-row, cache-behind-row, and cache-ahead-invariant counts. Expose
    their observation time and age, and add configurable health thresholds without running
@@ -57,9 +58,11 @@ process state.
   source change or full audit establishes that the row is no longer ahead, and that the
   required restart audit re-establishes any persistent invariant.
 - Tests distinguish diagnostic process timestamps from database completeness evidence.
-- Provider tests prove equivalent connection aliases for one physical database produce
-  the same opaque fingerprint, different databases produce different fingerprints, and
-  no credential or unsanitized identifier is exposed.
+- Shared conformance vectors pin the exact fingerprint bytes for both provider tokens.
+  Provider tests prove equivalent connection aliases for one database read the same
+  singleton and produce the same opaque fingerprint, independently provisioned databases
+  produce different fingerprints, missing/malformed singleton state is unhealthy, and no
+  source UUID, credential, or unsanitized identifier is exposed.
 - A metadata-invariant failure remains visible as projection failure but does not add a
   timestamp-based freshness condition.
 - API integration proves per-database projection health remains observational.

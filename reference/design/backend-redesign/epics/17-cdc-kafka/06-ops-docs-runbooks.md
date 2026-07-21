@@ -31,7 +31,12 @@ capability without redefining its architecture or contracts.
    correction.
 5. Document binding-state location, backup, normal-stop retention, fail-closed missing
    state, explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
-   new-generation migration. Never instruct operators to rewrite a binding in place.
+   new-generation migration. Explain that a new independent target created from a
+   template, clone, or copied backup receives a new `dms.DataStoreIdentity.SourceIdentity`
+   before binding, while a rollback or restore that replaces an existing source uses the
+   guarded identity-rotation and new-binding/topic recovery workflow. Never instruct
+   operators to rewrite a binding in place or rotate identity during an ordinary setup
+   retry.
 6. Document both compatibility paths: for a conforming projection or opaque-ETag
    correction, stop old cache writers including direct fill, clear and rebuild cache
    state, retain the binding/topic/offsets, and verify later equal-version records; for an
@@ -47,8 +52,9 @@ capability without redefining its architecture or contracts.
 - Instructions are verified against the implemented scripts, templates, and status
   output for both providers.
 - Troubleshooting covers persistent projection failure, provider key/filter/order
-  failure, cache-ahead invariant diagnosis, missing target, source-resolution failure,
-  binding mismatch, and governed artifacts without binding state.
+  failure, cache-ahead invariant diagnosis, missing target, missing/malformed source
+  identity, source-resolution failure, binding mismatch, and governed artifacts without
+  binding state.
 - Destructive or replay-producing operations are clearly marked and never inferred from
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal

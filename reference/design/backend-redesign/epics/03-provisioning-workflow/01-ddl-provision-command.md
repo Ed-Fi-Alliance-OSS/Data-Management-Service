@@ -21,6 +21,8 @@ Key behaviors (per `reference/design/backend-redesign/design-docs/ddl-generation
 ## Acceptance Criteria
 
 - CLI can provision an empty PostgreSQL database and an empty SQL Server database.
+- Provisioning initializes one `dms.DataStoreIdentity` UUID when absent and preserves it
+  on an ordinary rerun.
 - Provisioning records `dms.EffectiveSchema` and `dms.SchemaComponent` rows for the current effective schema.
 - Provisioning is safe to rerun for the same effective schema and completes successfully.
 - Provisioning does not emit or create authorization objects.

@@ -28,7 +28,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - [Write Path (POST Upsert / PUT by id)](#write-path-post-upsert--put-by-id)
 - [Read Path (GET by id / GET query)](#read-path-get-by-id--get-query)
 - [Caching (Low-Complexity Options)](#caching-low-complexity-options)
-- [Optional Database Projection: `dms.DocumentCache`](#optional-database-projection-dmsdocumentcache)
+- [Optional Database Projection Behavior: `dms.DocumentCache`](#optional-database-projection-behavior-dmsdocumentcache)
 - [Delete Path (DELETE by id)](#delete-path-delete-by-id)
 - [Schema Validation (EffectiveSchema)](#schema-validation-effectiveschema)
 - [Operational Considerations](#operational-considerations)
@@ -516,9 +516,10 @@ Invalidation approaches:
 
 ---
 
-## Optional Database Projection: `dms.DocumentCache`
+## Optional Database Projection Behavior: `dms.DocumentCache`
 
-`dms.DocumentCache` is an optional **materialized JSON projection** of GET/query results, intended for:
+The `dms.DocumentCache` table is always provisioned. Populating and reading its
+**materialized JSON projection** remain optional behaviors intended for:
 - accelerating GET/query response assembly (skip reconstitution),
 - CDC streaming (e.g., Debezium → Kafka), and
 - downstream indexing and external integrations.
