@@ -33,14 +33,16 @@ process state.
    Retain neither the source UUID nor an expected value; deployment automation consumes
    the reported fingerprint as an opaque current-source observation.
 2. Record exact unresolved/age snapshots from completed provider-equivalent full audits,
-   with separate missing-row, cache-behind-row, and cache-ahead-invariant counts. Expose
-   their observation time and age, and add configurable health thresholds without running
-   a full anti-join synchronously on health reads.
+   with separate missing-row, cache-behind-row, and cache-ahead-invariant counts. Read and
+   expose the durable `DocumentCacheState.CacheAheadRecoveryRequired` latch alongside their
+   observation time and age, and add configurable health thresholds without running a full
+   anti-join synchronously on health reads. Missing/malformed latch state is unhealthy.
 3. Expose effective projector settings, next/due/overdue scheduling state, active work, and
    process-wide concurrency-gate waits. Keep health and readiness reads observational:
    they neither enqueue nor wait for audits.
 4. Add the canonical structured logs and metrics without retaining an expected source
-   binding, drift latch, connector state, or deployment aggregate.
+   binding, source-drift latch, connector state, or deployment aggregate. The database
+   cache-ahead safety latch is the only durable incident state in this story.
 
 ## Acceptance Evidence
 
@@ -50,13 +52,13 @@ process state.
   unresolved incremental work, nonzero-audit invalidation, persistent bounded failure,
   and mixed targets.
 - Tests prove health reads reuse the latest audit snapshot and readiness requires a
-  sufficiently recent exact-zero finishing audit with no known unresolved work or
-  cache-ahead invariant.
+  sufficiently recent exact-zero finishing audit, a clear durable cache-ahead latch, and no
+  known unresolved work.
 - Tests prove repeated health/readiness polling starts no audit work and accurately reports
   startup, due, overdue, running, coalesced, and concurrency-gated states.
-- Tests prove a process-local cache-ahead observation remains unhealthy until a later
-  source change or full audit establishes that the row is no longer ahead, and that the
-  required restart audit re-establishes any persistent invariant.
+- Tests prove a cache-ahead observation atomically sets the durable latch and remains
+  unhealthy across later source equality, a zero audit, canonical deletion, health polling,
+  and process restart. Only the explicit full-cache recovery transaction clears it.
 - Tests distinguish diagnostic process timestamps from database completeness evidence.
 - Shared conformance vectors pin the exact fingerprint bytes for both provider tokens.
   Provider tests prove equivalent connection aliases for one database read the same
@@ -69,7 +71,7 @@ process state.
 
 ## Out of Scope
 
-- Durable progress/failure records.
+- Durable progress/failure records beyond the singleton cache-ahead safety latch.
 - Connector status, durable or expected source binding, source comparison/drift latching,
   combined CDC readiness, deployment aggregation, delete capture, or ordering checks.
 - External dashboard implementation.

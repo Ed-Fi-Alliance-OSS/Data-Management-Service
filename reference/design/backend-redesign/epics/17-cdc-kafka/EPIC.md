@@ -68,7 +68,9 @@ implementation inputs.
 - Binding state survives DMS and connector restarts, fails closed around missing or
   mismatched state, and prevents a topic generation from changing physical source.
 - DMS exposes only per-database projection health; deployment automation combines it
-  with binding, migration, connector catch-up, and lag status.
+  with binding, migration, connector catch-up, and lag status. A durable cache-ahead latch
+  keeps combined readiness false across later source equality and process restart until
+  explicit recovery.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported setup, security, observation, same-topic
   compatible repair, incompatible-contract migration, and explicit destructive cleanup.

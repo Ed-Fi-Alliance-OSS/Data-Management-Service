@@ -255,9 +255,10 @@ Operators repair a compatible projection defect in the existing topic:
    readiness, and then restore combined CDC readiness.
 
 The repair does not advance canonical `ContentVersion`, reset connector offsets, create a
-new topic, or require a new binding generation. Ordinary reconciliation still treats an
-equal-version cache row as fresh and does not rewrite it; the explicit clear-and-rebuild
-operation is what produces the corrective inserts. Consumers apply those later
+new topic, or require a new binding generation. While the cache-ahead recovery latch is
+clear, ordinary reconciliation still treats an equal-version cache row as fresh and does not
+rewrite it; the explicit clear-and-rebuild operation is what produces the corrective
+inserts. Consumers apply those later
 equal-version records according to the ordering rule above. Old cache writers must remain
 stopped throughout the rebuild so obsolete and corrected materializers cannot
 alternate outputs for one version.
@@ -331,8 +332,9 @@ The public topic never exposes:
   converges again when the replayed tombstone arrives and the connector catches up.
 - Consumers may temporarily retain an older monotonic projection that committed after a
   newer canonical source version but before that newer version was projected.
-- A published cache-ahead invariant cannot be repaired by sending the lower canonical
-  version to the same topic; source rollback/reset recovery uses a new topic generation.
+- A published cache-ahead invariant durably latches cache use/readiness and cannot be
+  repaired by later source equality or by sending the lower canonical version to the same
+  topic; source rollback/reset recovery uses a new topic generation.
 - One ACL protects one instance while resource metadata supports downstream routing.
 - Public identity and per-document ordering survive canonical deletion because the key
   is independent of the value.

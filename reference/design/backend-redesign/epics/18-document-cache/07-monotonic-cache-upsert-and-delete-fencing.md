@@ -31,7 +31,9 @@ was canonical-current at commit.
    transaction needed for the shared upsert. Materialization and source-currentness checks
    remain outside this component. Do not acquire PostgreSQL `FOR NO KEY UPDATE`, SQL Server
    `UPDLOCK`, or another write-conflicting lock on `dms.Document` as a content-version
-   fence.
+   fence. Read the singleton cache-ahead latch under a provider-equivalent shared state-row
+   lock that permits concurrent cache writers but conflicts with setting or clearing the
+   latch; perform no cache write when it is set or missing/malformed.
 2. Serialize concurrent cache writers on the `DocumentCache(DocumentId)` row/key and
    evaluate the version predicate atomically in the cache DML against the current cache row
    after any conflicting cache writer. Do not decide from an application pre-read followed
@@ -69,6 +71,10 @@ was canonical-current at commit.
   predicate against the current locked cache row: a delayed lower candidate never replaces
   a higher cache row and a same-version duplicate does not rewrite it. Duplicate-key retry
   re-evaluates rather than applying an unconditional write.
+- Provider concurrency tests prove ordinary cache writers may share the latch-read lock,
+  setting the latch waits for already-started writes and prevents later writes, and the
+  explicit clear transaction cannot race a cache upsert. Missing/malformed latch state is
+  fail-closed.
 - Provider tests cover deletion racing insert/update and prove no cache row can survive or
   be recreated after canonical deletion commits.
 - Provider tests prove every cache writer uses the captured canonical UUID and that the

@@ -25,12 +25,15 @@ authorization, candidate selection, fallback, and response shaping.
 
 ## Deliverables
 
-1. Integrate optional cache lookup and the canonical freshness test into the read path.
-   Treat both cache-behind and cache-ahead rows as unusable; an ahead row also remains an
-   independently reported projection invariant violation.
+1. Integrate optional cache lookup, the canonical freshness test, and the singleton
+   `DocumentCacheState.CacheAheadRecoveryRequired` check into one database read path.
+   Treat missing/malformed state, a set latch, cache-behind, and cache-ahead rows as
+   unusable; an ahead row also remains an independently reported projection invariant
+   violation.
 2. Ignore the cache row's CDC-only `StreamEtag` and reuse existing profile, link, and
    request-specific `_etag` shaping after cache or relational assembly.
-3. Add relational fallback and an optional monotonic direct fill. Direct fill uses 18-02's
+3. Add relational fallback and an optional monotonic direct fill only while the durable
+   latch is clear. Direct fill uses 18-02's
    final optimistic source-version check and 18-07's conditional upsert without requesting
    or retaining an update/write source-row lock as a content-version fence. Apply one short
    end-to-end `ReadAcceleration:DirectFillTimeout` deadline across all source-read,
@@ -45,9 +48,10 @@ authorization, candidate selection, fallback, and response shaping.
 
 ## Acceptance Evidence
 
-- GET/query tests cover enabled/disabled, hit, miss, cache-behind, cache-ahead, unhealthy
-  projection, profile projection, link stripping, and identical cache/fallback
-  validators. Cache-ahead fallback does not overwrite or delete the row.
+- GET/query tests cover enabled/disabled, hit, miss, cache-behind, cache-ahead, missing
+  state, a durable latched state after source/cache versions become equal, unhealthy
+  projection, profile projection, link stripping, and identical cache/fallback validators.
+  Cache-ahead fallback does not overwrite, delete, or independently clear the row/latch.
 - Authorization tests prove cached JSON never replaces relational authorization or
   candidate selection.
 - Tests prove reads do not enqueue projector work and remain correct if direct fill

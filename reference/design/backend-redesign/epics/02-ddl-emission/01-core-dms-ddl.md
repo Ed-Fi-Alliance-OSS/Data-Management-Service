@@ -23,6 +23,8 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
     `StreamEtag` produced by DMS for the fixed CDC representation; keep `DocumentId` as
     its compact primary/foreign key, keep `DocumentUuid` non-indexed, and emit the
     provider-specific trigger that rejects a UUID mismatch with the canonical row
+  - singleton `dms.DocumentCacheState` initialized with its cache-ahead recovery latch
+    clear; idempotent provisioning never resets an existing latch
   - singleton `dms.DataStoreIdentity` with insert-if-absent random UUID initialization
   - `dms.EffectiveSchema`, `dms.SchemaComponent`
   - `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`
@@ -39,3 +41,5 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 4. Add snapshot tests that validate core DDL output for a small fixture (both dialects).
 5. Add provider DB-apply tests proving mismatched cache UUIDs are rejected and that no
    cache UUID or canonical composite identity index is emitted.
+6. Add provider DB-apply tests proving the cache-state singleton is initialized once, its
+   singleton constraint rejects another key, and DDL rerun preserves a set latch.

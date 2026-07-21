@@ -36,8 +36,9 @@ The DDL generation utility is responsible for database objects derived from the 
 
 - Core `dms.*` objects required for correctness, projection support, and update tracking:
   - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
-  - always-provisioned `dms.DataStoreIdentity` and `dms.DocumentCache`; projection and
-    cache-backed reads remain disabled unless explicitly configured
+  - always-provisioned `dms.DataStoreIdentity`, `dms.DocumentCache`, and singleton
+    `dms.DocumentCacheState`; projection and cache-backed reads remain disabled unless
+    explicitly configured
   - update tracking / Change Queries: `dms.ChangeVersionSequence`, `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server)
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
@@ -76,6 +77,8 @@ Explicitly out of scope for this redesign phase:
   - All schemas, tables, views, sequences, triggers
   - Insert-if-absent initialization for the singleton `dms.DataStoreIdentity`; the SQL
     text is deterministic and the database generates the random UUID at first apply
+  - Insert-if-absent initialization for singleton `dms.DocumentCacheState` with its
+    cache-ahead recovery latch clear; ordinary reruns never reset an existing latch
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
   - Deterministic `ResourceKeySeedHash`/smallint-bounded `ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation; `ResourceKeySeedHash` stored as raw SHA-256 bytes, 32 bytes)
   - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`). These make the emitted SQL script idempotent for standalone execution (`psql -f` / `sqlcmd -i`). Note: when provisioning via `ddl provision`, a preflight check runs first — if the `dms.EffectiveSchema` table exists but the singleton row is missing, this is treated as a partial/corrupt state and provisioning fails fast with a diagnostic directing the operator to drop and recreate the database.
@@ -155,6 +158,7 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.Descriptor`
 - `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
 - `dms.DocumentCache` (always present; optionally populated/read)
+- `dms.DocumentCacheState` (singleton durable cache-ahead recovery latch)
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
@@ -326,9 +330,10 @@ This policy applies to:
 3. Derive the relational model set (`DerivedRelationalModelSet`) and naming (as defined in [flattening-reconstitution.md](flattening-reconstitution.md), [compiled-mapping-set.md](compiled-mapping-set.md), and [data-model.md](data-model.md)).
 4. Generate “desired state” DDL for all required objects (schemas, tables, sequences, FKs, unique constraints, indexes, views, triggers).
    - Derive the `dms.ResourceKey` seed set from the effective schema and emit deterministic `INSERT` statements with explicit `ResourceKeyId` values.
-5. Generate the insert-if-absent `dms.DataStoreIdentity` initialization. The emitted SQL
-   is deterministic; the database generates the random `SourceIdentity` when it first
-   applies the script, and reruns preserve it.
+5. Generate insert-if-absent singleton initialization for `dms.DataStoreIdentity` and
+   `dms.DocumentCacheState`. The emitted SQL is deterministic; the database generates the
+   random `SourceIdentity` when it first applies the script, reruns preserve it, and reruns
+   never clear `CacheAheadRecoveryRequired`.
 6. Generate the schema-fingerprint recording statements (`dms.EffectiveSchema` singleton row and `dms.SchemaComponent` keyed by `EffectiveSchemaHash`).
 7. Emit SQL and (optionally) provision it.
 
@@ -391,7 +396,7 @@ This is not a migration story; it is a guardrail to avoid brittle provisioning s
 
 - Provisioning runs in a **single transaction**:
   - all schemas/tables/views/sequences/triggers,
-  - insert-if-absent `dms.DataStoreIdentity` initialization,
+  - insert-if-absent `dms.DataStoreIdentity` and `dms.DocumentCacheState` initialization,
   - all deterministic seeds (`dms.ResourceKey`, schema fingerprint rows),
   - all required supporting indexes.
 - Any failure rolls back the transaction and the database is left unprovisioned.
@@ -446,9 +451,9 @@ Rules:
   5. Create indexes
   6. Create/alter views
   7. Create triggers (required for update tracking, when enabled)
-  8. Initialize provisioning data: insert `dms.DataStoreIdentity` only when absent, then
-     seed deterministic data (`dms.ResourceKey`, `dms.EffectiveSchema`,
-     `dms.SchemaComponent`, etc.)
+  8. Initialize provisioning data: insert `dms.DataStoreIdentity` and
+     `dms.DocumentCacheState` only when absent, then seed deterministic data
+     (`dms.ResourceKey`, `dms.EffectiveSchema`, `dms.SchemaComponent`, etc.)
 
 Within each phase:
 

@@ -40,9 +40,11 @@ immutable, the parent already enforces its uniqueness, and the cache permits one
 cache UUID index or a new composite index on the canonical table.
 
 The projector uses the current source/cache difference as both durable work inventory
-and completeness evidence. A cache row is fresh exactly when its `ContentVersion` equals
+and completeness evidence. Row-level freshness is exactly `ContentVersion` equality with
 the current `dms.Document.ContentVersion`. `LastModifiedAt` remains payload/diagnostic
 metadata; `ComputedAt` remains operational metadata. Neither is another freshness test.
+A version-equal row is nevertheless ineligible for use while the database singleton
+`dms.DocumentCacheState.CacheAheadRecoveryRequired` latch is set.
 Frequent candidate discovery uses a disposable process-local content-version cursor;
 periodic full source/cache anti-join audits remain the only completeness proof.
 The in-process projector uses one serialized loop per target, bounded pages, and a
@@ -52,15 +54,18 @@ defaults; the authoritative design owns their scheduling and coalescing semantic
 
 Missing cache rows and rows whose version is behind the canonical source are ordinary
 repair work. A cache row whose version is ahead of the canonical source is instead an
-invariant violation: the projector reports it, makes readiness false, and neither retries
-nor overwrites it automatically. Supported same-source writes and monotonic projection
-cannot produce that state, so it indicates cache corruption, an in-place source
-restore/reset, or unsupported reuse of projected state against another canonical source.
-Internal-only recovery deletes the incompatible projected row and rebuilds it. If a
-connector or another ordered downstream consumer may have observed the higher version,
-recovery uses a new downstream state namespace; Kafka CDC uses a new binding generation,
-topic, consumer state namespace, and snapshot. The lower canonical version is never
-published as an in-place correction to the old namespace.
+invariant violation: the projector atomically sets the durable per-database recovery
+latch, makes all cache rows ineligible for reads and further projection writes, makes
+readiness false, and neither retries nor overwrites the row automatically. Supported
+same-source writes and monotonic projection cannot produce that state, so it indicates
+cache corruption, an in-place source restore/reset, or unsupported reuse of projected
+state against another canonical source. A later equal source/cache version never clears
+the latch. Internal-only recovery clears the full cache and latch in one transaction and
+rebuilds it. If a connector or another ordered downstream consumer may have observed the
+higher version, recovery first stops the old publication path and uses a new downstream
+state namespace; Kafka CDC uses a new binding generation, topic, consumer state namespace,
+and snapshot. The lower canonical version is never published as an in-place correction to
+the old namespace.
 
 Cache writes deliberately do not use a source-row commit-order fence. After materialization,
 an optimistic current-visibility statement rejects the result if the current source row is
@@ -87,10 +92,11 @@ that could skip a post-audit commit. Steady-state catch-up uses the incremental 
 the required `dms.Document(ContentVersion, DocumentId)` index. The cursor is never durable
 work inventory or readiness evidence because sequence allocation is not transaction
 commit order and cache work can appear below it. V1 adds no durable projection queue,
-progress/high-watermark, backfill epoch, failure table, or database-backed repair
-workflow. An exact zero finishing audit count is projection completeness at its
-observation; connector/source-position catch-up is a separate deployment-owned CDC
-readiness concern.
+progress/high-watermark, backfill epoch, retry record, or database-backed repair workflow.
+The one-bit cache-ahead latch is durable invariant safety state, not work inventory or
+completeness evidence. An exact zero finishing audit count is projection completeness at
+its observation only when that latch is clear; connector/source-position catch-up is a
+separate deployment-owned CDC readiness concern.
 
 API deletion remains independent of projection. It deletes the canonical relational
 document and lets the connector derive the tombstone from that delete. It does not wait
@@ -114,13 +120,15 @@ for domain deletes because operators must be free to evict or rebuild it.
 deletes alongside cache upserts keeps API mutation correctness independent of projection,
 makes cache maintenance safe, and avoids application/Kafka dual-write transactions.
 
-The database difference is sufficient durable projector state and invariant evidence.
-Every representation change allocates a monotonic `ContentVersion`, making it an
-efficient incremental discovery key, while full audits recover lower versions that
-commit late or cache rows lost below the cursor. Timestamp comparison adds provider
-precision risks without adding correctness. A monotonic idempotent upsert makes duplicate
-projectors and restart rediscovery safe; refusing to lower an ahead cache row preserves
-the stream's non-null upsert ordering contract.
+The database difference is sufficient durable repair-work inventory. Every representation
+change allocates a monotonic `ContentVersion`, making it an efficient incremental discovery
+key, while full audits recover lower versions that commit late or cache rows lost below
+the cursor. Timestamp comparison adds provider precision risks without adding correctness.
+A monotonic idempotent upsert makes duplicate projectors and restart rediscovery safe;
+refusing to lower an ahead cache row preserves the stream's non-null upsert ordering
+contract. Because version equality cannot prove that a formerly ahead row now contains the
+same canonical state, the singleton latch durably preserves that invariant observation
+until explicit recovery.
 
 This choice is conscious: cache-row transitions and consumer-applied non-null upserts are
 monotonic, and the stream is eventually convergent, but raw at-least-once Kafka delivery
@@ -142,7 +150,8 @@ decision.
   the table empty and run no projector.
 - Authorization, identity, writes, Change Queries, and correct GET/query results continue
   to use relational sources.
-- Reads may use only fresh cache rows and always retain relational fallback.
+- Reads may use only fresh cache rows while the durable cache-ahead latch is clear and
+  always retain relational fallback.
 - Projection lag and failure are observable but never gate normal API traffic.
 - Projector and direct-fill cache writes take no explicit write-conflicting source-row lock
   as a content-version fence. They do not deliberately serialize ordinary canonical
@@ -151,8 +160,9 @@ decision.
   semantics, especially during deletion.
 - Ordinary updates use indexed incremental discovery; full relationship scans are
   reserved for startup, rebuild, periodic audit, and readiness verification.
-- Full audits repair missing and cache-behind rows. Cache-ahead rows are invariant
-  violations that keep readiness false until explicit CDC-aware recovery completes.
+- Full audits repair missing and cache-behind rows. Cache-ahead rows durably latch the
+  database, disable cache reads and writes, and keep readiness false across version
+  equality and restart until explicit CDC-aware recovery completes.
 - Cache clear/rebuild emits no domain tombstones. A compatible projection correction
   rebuilds into the existing topic and publishes equal-version rows at later offsets; an
   intentional topic rebuild for an incompatible contract uses connector snapshot/topic
@@ -180,7 +190,7 @@ decision.
 | Add a relational outbox | Deferred until DMS needs explicit domain-event semantics rather than current document state. |
 | Make cache population/use mandatory or describe it only as a read cache | Rejected: the table is always provisioned, while its optional multi-consumer projection role remains configuration-selected. |
 | Configure a projector mode or separate Kafka boolean | Rejected: consuming capabilities already determine the exact target set and avoid invalid flag combinations. |
-| Persist queues, epochs, progress, retry, or failure rows | Rejected for v1: the current source/cache difference preserves repairable work and invariant evidence; add a small pending-work table or flag only if indexed incremental-discovery and full-audit benchmarks require it. |
+| Persist queues, epochs, progress, retry, or per-document failure rows | Rejected for v1: the current source/cache difference preserves repairable work. The singleton cache-ahead safety latch is the only durable incident state; add pending-work state only if indexed incremental-discovery and full-audit benchmarks require it. |
 | Use the full mismatch anti-join for every steady-state poll | Rejected: it makes ordinary high-version update discovery scale with the complete document set. |
 | Build JSON in database triggers | Rejected: it duplicates application reconstitution and increases provider-specific logic. |
 | Add `(DocumentId, DocumentUuid)` as a canonical unique key and composite cache foreign key | Rejected: it adds a redundant wide index to the canonical `dms.Document` table for an optional projection. |
@@ -192,6 +202,7 @@ decision.
 | Use the incremental cursor, a high-watermark, `ComputedAt`, or `LastModifiedAt` as completeness evidence | Rejected: none proves that every current document is projected at its current representation version. |
 | Store retry state on the cache row | Rejected: missing rows have nowhere to store it and operational fields would enter the captured row contract. |
 | Automatically overwrite a cache-ahead row with the lower canonical version | Rejected: the state cannot result from supported same-source concurrency and the lower record may be ignored by consumers that retained the higher published version. Explicit recovery distinguishes internal-only cache repair from downstream state reset. |
+| Clear a cache-ahead observation when source/cache versions later become equal | Rejected: equality does not prove payload identity and could make corrupt possibly published state appear fresh. The durable latch clears only with the full-cache recovery transaction. |
 | Fail normal reads when projection is unhealthy | Rejected: relational fallback preserves API correctness. |
 | Treat connector status alone as CDC readiness | Rejected: a running connector cannot supply current documents that remain unprojected. |
 | Derive tombstones from cache deletes | Rejected: cache and domain lifecycles are intentionally independent. |

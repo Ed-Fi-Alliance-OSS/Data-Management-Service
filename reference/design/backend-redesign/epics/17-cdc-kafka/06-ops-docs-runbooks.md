@@ -28,7 +28,8 @@ capability without redefining its architecture or contracts.
    target migration/retirement, cache-ahead invariant recovery, and explicit destructive
    cleanup. A possibly published higher cache version requires a new binding generation,
    topic, consumer state namespace, and snapshot rather than an in-place lower-version
-   correction.
+   correction. The old connector and cache writers are stopped before the full cache and
+   durable latch are cleared together.
 5. Document binding-state location, backup, normal-stop retention, fail-closed missing
    state, explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
    new-generation migration. Explain that a new independent target created from a
@@ -52,9 +53,9 @@ capability without redefining its architecture or contracts.
 - Instructions are verified against the implemented scripts, templates, and status
   output for both providers.
 - Troubleshooting covers persistent projection failure, provider key/filter/order
-  failure, cache-ahead invariant diagnosis, missing target, missing/malformed source
-  identity, source-resolution failure, binding mismatch, and governed artifacts without
-  binding state.
+  failure, cache-ahead invariant diagnosis including later source equality, missing target,
+  missing/malformed source identity, source-resolution failure, binding mismatch, and
+  governed artifacts without binding state.
 - Destructive or replay-producing operations are clearly marked and never inferred from
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal

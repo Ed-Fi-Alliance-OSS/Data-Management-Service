@@ -50,7 +50,8 @@ mapping and lifecycle rationale are defined in the
 In summary, projected cache state supplies document upserts and canonical document
 lifecycle supplies deletes.
 
-The DDL always provisions `dms.DocumentCache`, but populating or reading it is optional.
+The DDL always provisions `dms.DocumentCache` and its singleton invariant state, but
+populating or reading the cache is optional.
 Capabilities that consume projected documents explicitly select projection targets; an
 ordinary DMS deployment leaves the small table empty and performs no projection work.
 The canonical relational tables remain the authority for writes, authorization, identity
@@ -203,6 +204,8 @@ DocumentCache.ContentVersion == Document.ContentVersion
 metadata. Neither participates in cache freshness, completeness, API semantics,
 Change Queries, or `_etag` state. `StreamEtag` is derived output validated during
 materialization; comparing or recomputing it is not another reconciliation predicate.
+Row-level freshness remains version equality, but no cache row is eligible for reads or
+projection readiness while the database's durable cache-ahead recovery latch is set.
 
 The current database difference remains both the durable work inventory and the
 projection-completeness source:
@@ -221,7 +224,7 @@ ordinary repair work:
 | --- | --- | --- |
 | Row missing | Repairable projection lag | Materialize and insert |
 | `DocumentCache.ContentVersion < Document.ContentVersion` | Repairable projection lag | Materialize and replace |
-| Versions equal | Fresh | No action |
+| Versions equal | Fresh only when the database cache-ahead latch is clear | No action |
 | `DocumentCache.ContentVersion > Document.ContentVersion` | Invariant violation | Do not materialize, retry, or overwrite automatically |
 
 A cache-ahead row cannot arise from supported same-source projection and canonical-write
@@ -229,10 +232,19 @@ concurrency: canonical `ContentVersion` values advance monotonically and monoton
 writes never replace a higher cache version. It therefore indicates cache corruption, an
 in-place/partial canonical database restore or reset, or unsupported reuse of projected
 state against another canonical source. It remains part of the exact completeness
-difference and makes projection readiness false, but it is not placed in the normal retry
-set. A process-local cache-ahead observation is cleared only when a later incremental
-source change or full audit proves that the row is no longer ahead; the required restart
-audit re-establishes the observation after process loss.
+difference and is not placed in the normal retry set. When either discovery lane observes
+one, it atomically sets the singleton `dms.DocumentCacheState.CacheAheadRecoveryRequired`
+bit. After classifying the row, the setter does not reclassify or cancel the incident if the
+source advances before the state update; the observation is reported only after the latch
+commit. That durable per-database latch makes every cache row ineligible for cache-backed
+reads and makes projection readiness false. It is never cleared by a later source version,
+an equal source/cache version, a zero audit, canonical deletion, or process restart. Failure
+to read or persist the latch is fail-closed for cache use and projection readiness.
+
+Once the latch is set, reconciliation and direct fill perform no cache writes for that
+database. A later canonical state reaching exactly the previously ahead `ContentVersion`
+therefore cannot make the possibly corrupt cached row fresh. Only the explicit recovery
+operation below clears the cache and latch together.
 
 Candidate discovery is separate from completeness verification. For each selected data
 store, the projector has two cooperating lanes:
@@ -273,9 +285,9 @@ relationship. Bounded paging must carry an audit-local scan position forward so 
 repairing an early page does not cause every later page to rescan the already-fresh
 prefix. An audit may race with writes; monotonic upserts make its repairs safe. A nonzero
 finishing aggregate causes repair to continue for missing and cache-behind rows. A
-cache-ahead count instead preserves unhealthy readiness and waits for the explicit
-recovery described below. The full-audit interval is bounded so it also bounds discovery
-latency for repairable work that the incremental lane cannot see.
+cache-ahead count sets the durable recovery latch, preserves unhealthy readiness, and
+waits for the explicit recovery described below. The full-audit interval is bounded so it
+also bounds discovery latency for repairable work that the incremental lane cannot see.
 
 For each candidate from either lane, the projector:
 
@@ -290,7 +302,8 @@ For each candidate from either lane, the projector:
    carried into the cache transaction. A missing row or version mismatch is a stale skip
    and produces no cache write.
 4. Validates the embedded/relational metadata invariant and composes the cache result.
-5. Performs the shared monotonic cache upsert.
+5. Performs the shared monotonic cache upsert only if the durable cache-ahead latch remains
+   clear in that cache transaction.
 
 The final source-version read is an optimistic materialization-coherence check, not a
 source/cache commit-order fence. Reconstitution hydrates multiple relational result sets;
@@ -349,22 +362,25 @@ case that requires every upsert to have been canonical-current at its database c
 needs a stronger publication design rather than an implicit projector lock.
 
 Materialization and invariant validation finish before the cache transaction begins. V1
-then performs one candidate per short transaction:
+then performs one candidate per short transaction. The transaction reads the singleton
+cache-ahead latch under a provider-equivalent shared row lock, compatible across ordinary
+cache writers but conflicting with setting or clearing the latch:
 
-1. Serialize concurrent cache writers on the `DocumentCache(DocumentId)` row/key and
+1. If the latch is set or its singleton row is missing/malformed, perform no cache write.
+2. Serialize concurrent cache writers on the `DocumentCache(DocumentId)` row/key and
    evaluate the version predicate atomically in the cache DML against the current cache
    row after any conflicting cache writer. An application pre-read must not decide whether
    a later unconditional insert or update is safe.
-2. Insert the cache row when absent or update it only when its existing `ContentVersion`
+3. Insert the cache row when absent or update it only when its existing `ContentVersion`
    is lower than the captured version.
-3. Treat a same-version row as already fresh and a higher cache version as superseding the
+4. Treat a same-version row as already fresh and a higher cache version as superseding the
    candidate. Neither receives a write. A higher-than-candidate result does not by itself
    establish that the cache is ahead of the current canonical source; that classification
    comes only from the source/cache comparison used by reconciliation and health.
-4. Persist the complete cache row atomically. The UUID validation trigger rejects an
+5. Persist the complete cache row atomically. The UUID validation trigger rejects an
    inconsistent denormalized identity, and the `DocumentCache(DocumentId)` foreign key is
    the post-delete fence.
-5. Commit without locking `dms.Document` against concurrent version updates. If the
+6. Commit without locking `dms.Document` against concurrent version updates. If the
    canonical version advanced, the resulting cache-behind row remains durable repair work.
 
 PostgreSQL and SQL Server implement equivalent conditional insert/update behavior without
@@ -388,14 +404,14 @@ statement or retry; each database operation uses only the remaining budget, and 
 does not enter the projector retry loop. Timeout, contention, failure, or a concurrent
 canonical change abandons the fill without failing the relational response.
 
-There are no projection queues, enqueue APIs, persisted cursors, backfill epochs,
-projector-state rows, failure rows, retry classifications, dead-letter transitions, or
-requeue APIs in v1. The process-local incremental and audit cursors are disposable scan
-positions only. Empty-cache population, ordinary truncation/rebuild, repairable recovery,
-and completeness all derive from the current database difference. A maximum scanned or
-projected version cannot prove completeness because a lower current version may still be
-missing. Cache-ahead recovery is the exceptional operator procedure below, not another
-projector workflow.
+Except for the singleton cache-ahead safety latch, there are no projection queues, enqueue
+APIs, persisted cursors, backfill epochs, per-document projector/failure rows, retry
+classifications, dead-letter transitions, or requeue APIs in v1. The process-local
+incremental and audit cursors are disposable scan positions only. Empty-cache population,
+ordinary truncation/rebuild, repairable recovery, and completeness all derive from the
+current database difference. A maximum scanned or projected version cannot prove
+completeness because a lower current version may still be missing. Cache-ahead recovery is
+the exceptional operator procedure below, not another projector workflow.
 
 Failures use bounded in-memory exponential backoff with jitter keyed by opaque data-store
 identity, `DocumentId`, and current `ContentVersion`. A deferred candidate does not
@@ -427,8 +443,8 @@ The loop applies this schedule:
    periodic requests coalesce into that one audit; they never create overlapping scans.
 4. A finishing aggregate with repairable differences schedules another bounded repair
    pass through the same loop rather than tight-looping. Retry backoff and the concurrency
-   gate remain in force. A cache-ahead-only result remains unhealthy and waits for explicit
-   recovery rather than scheduling futile repair.
+   gate remain in force. A latched target remains unhealthy, performs no cache writes, and
+   waits for explicit recovery rather than scheduling futile repair.
 5. Health and readiness reads are observational. They do not start or wait for an audit.
    Until the immediate startup/rebuild audit completes, or when the latest exact audit is
    older than `MaximumAuditAge`, the target is simply not ready.
@@ -451,26 +467,37 @@ up.
 The projector never automatically lowers a cache row from a higher `ContentVersion` to
 the current canonical version. Doing so would make the relational cache appear fresh
 while an active or previously active CDC topic could retain the higher version; conforming
-consumers may reject the lower replacement as stale.
+consumers may reject the lower replacement as stale. The durable cache-ahead latch also
+prevents a later equal canonical version from silently reclassifying the existing row as
+fresh.
 
 Recovery depends on whether the projection can have entered downstream ordered state:
 
 - If the projection is internal-only, such as read acceleration, and no downstream system
-  could have observed the row, delete the affected cache row, or truncate the cache when
-  the scope is not safely enumerable, and let ordinary reconciliation rebuild missing
-  rows from canonical state.
+  could have observed the row, stop cache writers, clear all `dms.DocumentCache` rows and
+  the latch in one provider transaction, then let ordinary reconciliation rebuild from
+  canonical state. The global rebuild avoids retaining document identifiers or trusting
+  that the observed row was the only corrupt row.
 - If an active or historical connector or another ordered downstream consumer may have
   observed the higher cache version, stop the affected publication path and create a new
   downstream state namespace. For Kafka CDC, this means a new immutable binding
-  generation, topic, and consumer state namespace. Clear the incompatible cache state,
+  generation, topic, and consumer state namespace. With old cache writers and the old
+  connector stopped, clear all cache rows and the latch in one provider transaction,
   complete ordinary reconciliation, and snapshot the rebuilt cache into that new
   namespace. Do not publish the lower version as an in-place correction to the old one.
 - Treat any in-place canonical database restore/reset as the CDC case above even when the
   physical database name or connection metadata did not change.
 
 The runbook requires operators to establish which case applies before deleting projected
-state. No recovery rewrites canonical `ContentVersion`, an immutable binding record, or an
-existing topic generation.
+state. Clearing the latch without clearing the entire cache in the same transaction is not
+a supported operation. No recovery rewrites canonical `ContentVersion`, an immutable
+binding record, or an existing topic generation.
+
+E18 owns one target-scoped administrative recovery operation. It takes the exclusive
+singleton-state lock, verifies the latch is set, clears the entire cache, clears the latch,
+and commits as one provider transaction; after commit it requests an immediate full audit.
+It exposes no latch-only reset. Deployment/runbook automation remains responsible for
+stopping an old publication path and allocating a new downstream namespace when required.
 
 The hosted supervisor creates an isolated, non-HTTP service scope for each startup
 target and explicitly selects its data store. It does not depend on
@@ -486,10 +513,13 @@ configured for the same target, each independently applies the bounded execution
 
 When read acceleration is enabled, authorization and query candidate selection still
 use relational sources. A cache row may supply response-body assembly only when it is
-fresh. Missing or stale rows fall back to relational reconstitution; readable-profile
-projection, link stripping, and served `_etag` composition then run identically for both
-paths. The read path does not enqueue projection work, though it may perform the shared
-monotonic direct fill after fallback as an optional optimization.
+fresh and `dms.DocumentCacheState.CacheAheadRecoveryRequired` is false. Cache lookup reads
+that singleton state with the row/freshness query rather than relying on process memory.
+Missing, stale, or recovery-latched rows fall back to relational reconstitution;
+readable-profile projection, link stripping, and served `_etag` composition then run
+identically for both paths. The read path does not enqueue projection work, though it may
+perform the shared monotonic direct fill after fallback as an optional optimization when
+the latch is clear.
 
 Deleting a cache row is projection maintenance and never means domain deletion. A
 supported API delete continues to:
@@ -526,31 +556,30 @@ context. It reports at least:
 - the latest completed full audit's observation time, duration, and age,
 - that audit's exact total unresolved, missing-row, cache-behind-row, and
   cache-ahead-invariant counts,
+- the durable `CacheAheadRecoveryRequired` latch,
 - its oldest unresolved source timestamp and age, derived from
   `dms.Document.ContentLastModifiedAt`,
-- currently known unresolved incremental candidates, retry deferrals, and cache-ahead
-  invariant observations, identified as process-local observations rather than exact
-  database counts.
+- currently known unresolved incremental candidates and retry deferrals, identified as
+  process-local observations rather than exact database counts.
 
 Optional counts by project/resource may be exposed when operationally safe. Process-local
 incremental cursor, last scan, successful upsert, and last error are diagnostic only.
 `LastScannedContentVersion`, `LastProjectedContentVersion`, and last-success timestamps
 are never completeness evidence.
 
-Health reads return the latest audit snapshot; they do not synchronously execute, enqueue,
-or wait for a full anti-join. Configurable audit-age, unresolved-count, and
-oldest-unresolved-age thresholds distinguish a fresh zero observation or brief
-asynchronous lag from a stale audit or sustained degradation. A nonzero finishing audit
-invalidates completeness until a later exact finishing aggregate returns zero.
-Incremental discovery makes readiness false
-while that known candidate, retry, or cache-ahead invariant remains unresolved, but
-successful repair does not force another full scan; the last exact-zero audit retains its
-original observation time and must still satisfy the audit-age threshold. A same-version
-timestamp comparison is not another freshness or completeness test; embedded metadata
-consistency is enforced when a row is materialized and written. DMS projection readiness
-for one target requires a resolved execution context, a sufficiently recent exact-zero
-finishing audit, and no currently known unresolved incremental candidate, retry deferral,
-or cache-ahead invariant.
+Health reads return the durable latch plus the latest audit snapshot; they do not
+synchronously execute, enqueue, or wait for a full anti-join. Configurable audit-age,
+unresolved-count, and oldest-unresolved-age thresholds distinguish a fresh zero observation
+or brief asynchronous lag from a stale audit or sustained degradation. A nonzero finishing
+audit invalidates completeness until a later exact finishing aggregate returns zero.
+Incremental discovery makes readiness false while that known candidate or retry remains
+unresolved, but successful repair does not force another full scan; the last exact-zero
+audit retains its original observation time and must still satisfy the audit-age threshold.
+A same-version timestamp comparison is not another freshness or completeness test;
+embedded metadata consistency is enforced when a row is materialized and written. DMS
+projection readiness for one target requires a resolved execution context, a sufficiently
+recent exact-zero finishing audit, a clear durable cache-ahead latch, and no currently
+known unresolved incremental candidate or retry deferral.
 
 DMS exposes only this per-database projection result. It does not expose
 `CanRegisterConnector`, compare the current source fingerprint with an expected source,
@@ -561,8 +590,8 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
 
 - a durable binding record that matches the target's currently resolved physical source,
 - a DMS projection-health result whose current source fingerprint matches that binding,
-- provisioned `dms.Document` and `dms.DocumentCache` tables and provider CDC/key
-  prerequisites,
+- provisioned `dms.Document`, `dms.DocumentCache`, and `dms.DocumentCacheState` tables and
+  provider CDC/key prerequisites,
 - topic name, fixed partition count, ACL, transform, and connector configuration that
   match the binding record,
 - a running connector with completed snapshot/catch-up through a database source
@@ -957,10 +986,11 @@ CDC target using its durable state backend.
 
 ## DDL and Query Support
 
-No DMS relational `DocumentCacheProjectionState`, `DocumentCacheProjectionFailure`, or
-other durable projection-workflow table is provisioned. This does not replace the
-deployment-owned CDC binding record. Supporting DDL is limited to the projection and
-measured access paths:
+V1 provisions no durable projection queue, cursor, retry record, or backfill workflow.
+It provisions one `dms.DocumentCacheState` singleton solely to durably latch the
+cache-ahead invariant; this safety bit is neither work inventory nor completeness evidence
+and does not replace the deployment-owned CDC binding record. Supporting DDL is limited to
+that latch, the projection, and measured access paths:
 
 - `DocumentCache(DocumentId)` remains the primary/foreign key with cascade deletion.
 - `DocumentCache.DocumentUuid` is a non-indexed denormalized connector-key column.
@@ -970,6 +1000,10 @@ measured access paths:
 - `DocumentCache.StreamEtag` stores the DMS-computed opaque ETag for the fixed CDC
   representation; it is not used by API reads.
 - Provider-specific constraints ensure `DocumentJson` is a JSON object.
+- `dms.DocumentCacheState` contains the singleton
+  `CacheAheadRecoveryRequired` bit, initialized false. Detection only sets it true; the
+  provider-supported explicit recovery transaction is the only operation that clears it.
+  It is not a connector capture source.
 - `dms.DataStoreIdentity` is an always-provisioned singleton containing the random
   `SourceIdentity`, stable during ordinary operation, used by the physical-source
   fingerprint contract.
@@ -1004,7 +1038,8 @@ Structured logs and metrics cover:
 - monotonic already-fresh and superseded-candidate no-op counts,
 - unresolved, missing, cache-behind, and cache-ahead-invariant counts plus oldest
   unresolved age,
-- cache hits, misses, stale misses, and relational fallback,
+- durable cache-ahead latch set/clear state, cache hits, misses, stale or latched misses,
+  and relational fallback,
 - unresolved explicit targets, retryable source-resolution failures, and the current
   opaque projection-source fingerprint.
 
@@ -1110,12 +1145,15 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - cache-row loss below the incremental cursor is repaired by the next full audit,
 - advancing the cursor past a failed candidate retains that candidate for bounded
   in-memory retry,
-- a cache-ahead row is reported as an invariant violation, receives no materialization or
-  retry loop, keeps projection readiness false, and cannot be overwritten with the lower
-  canonical version,
-- internal-only cache-ahead recovery by cache-row deletion rebuilds from canonical state,
-  while a possibly published higher version requires a new downstream state namespace;
-  Kafka CDC uses a new binding generation/topic and fresh snapshot,
+- a cache-ahead row atomically sets the durable database latch, receives no materialization
+  or retry loop, disables cache reads and writes, keeps projection readiness false across
+  restart, and cannot be overwritten with the lower canonical version,
+- after a latched ahead row's source advances to exactly the cached `ContentVersion`, the
+  row remains ineligible and readiness remains false until explicit recovery,
+- internal-only cache-ahead recovery clears the entire cache and latch in one transaction
+  before rebuilding from canonical state, while a possibly published higher version
+  requires a new downstream state namespace; Kafka CDC uses a new binding generation/topic
+  and fresh snapshot,
 - projection or connector failure never blocks normal API deletion.
 
 Projector scheduling tests prove one serialized loop per target, process-wide target

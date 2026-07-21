@@ -46,11 +46,12 @@ per-database projection health with E17-owned provider, topic, and connector che
    reserving a new binding generation/topic and is never an ordinary setup retry. A newly
    created independent target restored from a template, clone, or copied backup receives a
    new UUID before binding creation under the provisioning/restore contract.
-5. Validate provider tables, projected `StreamEtag`, keys, replica/capture setup, topic,
-   ACL, and installed source-operation shaping against the binding before registration.
+5. Validate provider tables including the clear `dms.DocumentCacheState` latch, projected
+   `StreamEtag`, keys, replica/capture setup, topic, ACL, and installed source-operation
+   shaping against the binding before registration.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
-   current-source projection health, including cache-ahead invariant failure, connector
-   snapshot/catch-up, and lag checks.
+   current-source projection health, including the durable cache-ahead recovery latch,
+   connector snapshot/catch-up, and lag checks.
 7. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
 
 ## Acceptance Evidence
@@ -63,8 +64,9 @@ per-database projection health with E17-owned provider, topic, and connector che
   targets, guarded identity rotation/new-generation recovery, and confirmed binding
   mismatch without a DMS-owned drift latch.
 - Readiness tests cover binding, migration, projection, post-audit source position,
-  connector snapshot/catch-up, second projection-health observation, cache-ahead
-  invariant failure, lag, per-target isolation, and aggregate results.
+  connector snapshot/catch-up, second projection-health observation, cache-ahead latching
+  that remains false-ready after source equality, lag, per-target isolation, and aggregate
+  results.
 - API integration tests prove every reported CDC/projector failure remains observational,
   including deletion with unavailable cache state.
 

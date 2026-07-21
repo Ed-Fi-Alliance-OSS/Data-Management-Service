@@ -567,9 +567,10 @@ and compose their request-specific ETag from `ContentVersion` and the active req
 `variantKey`. See the authoritative cached-document contract for consistency and
 freshness rules.
 
-The row has no projection-generation column. Ordinary reconciliation treats a
-same-`ContentVersion` row as fresh and does not rewrite it. A compatible materialization
-or opaque-ETag correction is applied operationally by stopping old cache writers,
+The row has no projection-generation column. While the cache-ahead latch is clear,
+ordinary reconciliation treats a same-`ContentVersion` row as fresh and does not rewrite
+it. A compatible materialization or opaque-ETag correction is applied operationally by
+stopping old cache writers,
 including optional direct fill, clearing the cache, and completely rebuilding it. Debezium
 publishes the rebuilt rows to
 the existing topic at later Kafka offsets, and consumers replace equal-version state at
@@ -586,11 +587,14 @@ For a current canonical document, a missing cache row or a lower cached
 `ContentVersion` is repairable projection lag. A higher cached `ContentVersion` is not
 ordinary lag and is never overwritten automatically: it is an invariant violation that
 indicates corruption, an in-place/partial canonical restore or reset, or unsupported reuse
-of projected state against another canonical source. The authoritative design's
+of projected state against another canonical source. Observing one durably sets the
+database singleton `dms.DocumentCacheState.CacheAheadRecoveryRequired` bit. Later version
+equality does not clear that latch or make the existing row eligible for reads. The
+authoritative design's
 [cache-ahead recovery](../../cdc-streaming.md#cache-ahead-invariant-recovery) distinguishes
-safe internal-only cache deletion/rebuild from the new downstream state namespace
-required when the higher version may already have been observed; Kafka CDC uses a new
-binding generation and topic.
+safe internal-only full-cache rebuild from the new downstream state namespace required
+when the higher version may already have been observed; Kafka CDC uses a new binding
+generation and topic.
 
 Denormalized resource naming:
 
@@ -682,6 +686,46 @@ Uses:
 - Faster GET/query responses (skip reconstitution)
 - Relational CDC streaming (Debezium/Kafka) when CDC is enabled
 - Downstream indexing / external integrations
+
+##### 7) `dms.DocumentCacheState` (singleton invariant latch)
+
+Always-provisioned singleton state used only to persist a cache-ahead invariant across
+source advancement and process restart. It is not a work queue, retry record, cursor,
+backfill epoch, or completeness watermark.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DocumentCacheState (
+    StateId smallint PRIMARY KEY,
+    CacheAheadRecoveryRequired boolean NOT NULL,
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1)
+);
+
+INSERT INTO dms.DocumentCacheState (StateId, CacheAheadRecoveryRequired)
+VALUES (1, false)
+ON CONFLICT (StateId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DocumentCacheState (
+    StateId smallint NOT NULL,
+    CacheAheadRecoveryRequired bit NOT NULL,
+    CONSTRAINT PK_DocumentCacheState PRIMARY KEY CLUSTERED (StateId),
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1)
+);
+
+IF NOT EXISTS (SELECT 1 FROM dms.DocumentCacheState WHERE StateId = 1)
+    INSERT INTO dms.DocumentCacheState (StateId, CacheAheadRecoveryRequired) VALUES (1, 0);
+```
+
+Provisioning creates exactly the `StateId = 1` row with the latch clear. A missing or
+malformed singleton is fail-closed for cache reads and projection readiness. Incremental
+discovery or a full audit may only set the bit. The provider-supported recovery operation
+stops cache writers and clears all `dms.DocumentCache` rows before clearing the bit in the
+same database transaction. Ordinary provisioning reruns never reset it.
 
 ### Authorization companion objects (schema: `auth`)
 

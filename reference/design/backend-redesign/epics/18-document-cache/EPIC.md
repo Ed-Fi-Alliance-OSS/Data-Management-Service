@@ -19,8 +19,9 @@ Implement the reusable optional document projection defined by the design refere
 configuration and target selection, materialization, reconciliation, monotonic writes,
 optional read acceleration, health/telemetry, provider tests, and runbooks. The CDC epic
 consumes this projection for upserts and independently owns connector lifecycle deletes.
-The small `dms.DocumentCache` table and `dms.DataStoreIdentity` singleton are always
-provisioned; optionality applies to projection execution and cache-backed reads.
+The small `dms.DocumentCache` table plus `dms.DataStoreIdentity` and
+`dms.DocumentCacheState` singletons are always provisioned; optionality applies to
+projection execution and cache-backed reads.
 
 ## Stories
 
@@ -52,15 +53,16 @@ implementation inputs.
   composer for the fixed CDC representation; API reads continue to compose their own
   request-specific validators.
 - Core DDL always emits `dms.DocumentCache` with `StreamEtag`, its supporting
-  `dms.Document(ContentVersion, DocumentId)` index, and the singleton
-  `dms.DataStoreIdentity`; no obsolete `DocumentCache.Etag` remains.
+  `dms.Document(ContentVersion, DocumentId)` index, and the `dms.DataStoreIdentity` and
+  `dms.DocumentCacheState` singletons; no obsolete `DocumentCache.Etag` remains.
 - `DocumentCache` retains one compact `DocumentId` primary/foreign-key index. Its
   non-indexed `DocumentUuid` is copied from the canonical row and provider validation
   triggers reject mismatches without adding a cache UUID index or a composite index to
   `dms.Document`.
-- Exact source/cache differences establish repairable projection work and cache-ahead
-  invariant evidence without durable workflow state. Missing and behind rows repair
-  automatically; ahead rows require explicit CDC-aware recovery.
+- Exact source/cache differences establish repairable projection work without a durable
+  workflow. Missing and behind rows repair automatically; observing an ahead row durably
+  latches the database, disables cache reads and writes, and requires explicit CDC-aware
+  full-cache recovery even if the source later reaches the same version.
 - Projection absence or failure never compromises canonical API behavior or deletion.
 - Runbooks describe implemented operation and link to the authoritative design.
 
