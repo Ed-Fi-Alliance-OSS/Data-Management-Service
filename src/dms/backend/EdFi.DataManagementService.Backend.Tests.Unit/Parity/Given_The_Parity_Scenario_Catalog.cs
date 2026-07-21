@@ -659,17 +659,86 @@ public class Given_The_Parity_Scenario_Catalog
         row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
         row.MssqlCoverage.Should().Be(EngineCoverage.Mapped);
         row.Boundary.Should().Be(ProductionBoundary.NoProfileMerge);
-        row.CoveredByScenarioId.Should().Be("NoProfileChangedPutOmissionSemantics");
+        row.CoveredByScenarioId.Should()
+            .Be("NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows");
         Flatten(row.PgsqlLocations)
             .Should()
             .BeEquivalentTo(ExpectedSectionAssociationOmissionReplacementPgTriples);
 
+        // The smoke's changed PUT deletes an omitted reference-backed extension child and reinserts the
+        // replacement with a new id, so its effective contract is the exact DeletedAndReplacedChildCollectionRows
+        // omission variant (the same NoProfileMerge delete-and-replace mechanic), not the canonical family whose
+        // composite contract also asserts inlined-column clearing and aligned-extension-scope deletion this test
+        // never runs.
         EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
         resolved.Kind.Should().Be(EntryPointKind.Inherited);
-        resolved.InheritedFromScenarioId.Should().Be("NoProfileChangedPutOmissionSemantics");
+        resolved
+            .InheritedFromScenarioId.Should()
+            .Be("NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows");
         resolved
             .SharedValue.Should()
-            .Be(_all.Single(s => s.Id == "NoProfileChangedPutOmissionSemantics").SharedEntryPoint);
+            .Be("NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse");
+        resolved
+            .SharedValue.Should()
+            .Be(
+                _all.Single(s =>
+                    s.Id == "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows"
+                ).SharedEntryPoint
+            );
+    }
+
+    // Reviewed supporting-smoke audit table: every SupportingSmoke row's CoveredByScenarioId, checked against
+    // the mechanic its enrolled fixture methods actually prove. Create smokes defer to the create family,
+    // changed-PUT smokes to the stable-identity reorder family, repeat-PUT no-ops to the guarded-no-op family,
+    // the repeat POST-as-update no-op to the POST-as-update guarded-no-op variant, and the section-association
+    // omission/replacement smoke to the exact delete-and-replace omission variant. Plain test data, not a
+    // catalog abstraction or resolver.
+    private static readonly Dictionary<string, string> ExpectedSupportingSmokeDeferrals = new(
+        StringComparer.Ordinal
+    )
+    {
+        ["NoProfile/AuthoritativeSmoke/Ds52Contact/Create"] = "NoProfileFullSurfaceCreate",
+        ["NoProfile/AuthoritativeSmoke/Ds52Contact/ChangedPut"] = "FullSurfaceCollectionReorder",
+        ["NoProfile/AuthoritativeSmoke/Ds52Contact/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
+        ["NoProfile/AuthoritativeSmoke/Ds52School/Create"] = "NoProfileFullSurfaceCreate",
+        ["NoProfile/AuthoritativeSmoke/Ds52School/ChangedPut"] = "FullSurfaceCollectionReorder",
+        ["NoProfile/AuthoritativeSmoke/Ds52School/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/Create"] =
+            "NoProfileFullSurfaceCreate",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/ChangedPut"] =
+            "FullSurfaceCollectionReorder",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/RepeatPutNoOp"] =
+            "NoProfileGuardedNoOp",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/Create"] = "NoProfileFullSurfaceCreate",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/ChangedPut"] =
+            "FullSurfaceCollectionReorder",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/RepeatPutNoOp"] =
+            "NoProfileGuardedNoOp",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/Create"] =
+            "NoProfileFullSurfaceCreate",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPut"] =
+            "FullSurfaceCollectionReorder",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement"] =
+            "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/RepeatPutNoOp"] =
+            "NoProfileGuardedNoOp",
+        ["NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/Create"] = "NoProfileFullSurfaceCreate",
+        ["NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/ChangedPut"] = "FullSurfaceCollectionReorder",
+        ["NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
+        ["NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp"] =
+            "NoProfileGuardedNoOp/PostAsUpdate",
+    };
+
+    [Test]
+    public void It_pins_every_supporting_smoke_scenario_to_its_reviewed_covered_by_scenario()
+    {
+        Dictionary<string, string?> actual = _all.Where(s =>
+                s.Classification == ParityClassification.SupportingSmoke
+            )
+            .ToDictionary(s => s.Id, s => s.CoveredByScenarioId, StringComparer.Ordinal);
+
+        actual.Should().BeEquivalentTo(ExpectedSupportingSmokeDeferrals);
     }
 
     [Test]

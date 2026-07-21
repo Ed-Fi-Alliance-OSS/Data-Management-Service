@@ -709,18 +709,24 @@ public static partial class ParityScenarioCatalog
             ]
         ),
         // The same PG test also proves the omission/replacement mechanic, which is a distinct changed-PUT
-        // obligation from the reorder mechanic above, so it is recorded as its own supporting-smoke row
-        // deferring to the canonical omission-semantics family at the same merge boundary.
+        // obligation from the reorder mechanic on the adjacent ChangedPut row, so it is recorded as its own
+        // supporting-smoke row. It defers to the exact DeletedAndReplacedChildCollectionRows omission variant —
+        // the same NoProfileMerge mechanic that deletes an omitted child-collection row, reuses the retained
+        // row's stable id, and reinserts the replacement with a new id — not the canonical family, whose
+        // contract also covers inlined-column clearing and aligned-extension-scope deletion this test never runs.
         PgSmoke(
             "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement",
             "Sample StudentSectionAssociation changed-PUT deletes the omitted reference-backed extension child and persists the replacement item as a new row with a new CollectionItemId.",
             ProductionBoundary.NoProfileMerge,
-            "NoProfileChangedPutOmissionSemantics",
+            "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
             SsecaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
             [
                 "It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
-            ]
+            ],
+            notes: "Defers to the exact DeletedAndReplacedChildCollectionRows omission variant (the same "
+                + "NoProfileMerge retained-id-reuse / omitted-row-replacement mechanic), so the smoke inherits only "
+                + "the delete-and-replace contract its test proves rather than the broader canonical family contract."
         ),
         PgSmokeNoOp(
             "SampleStudentSectionAssociation",
