@@ -53,12 +53,17 @@ public static class NoProfilePostAsUpdateScenarios
     );
 
     // Field-for-field neutral projection of the full authoritative persisted state, so the repeat
-    // no-op assertion compares the entire rowset (every value/FK) and ContentVersion, not a subset.
+    // no-op assertion compares the entire rowset (every value/FK) plus ContentVersion and every
+    // stored update-tracking stamp, not a subset.
     public sealed record AuthoritativeDocumentSnapshot(
         long DocumentId,
         Guid DocumentUuid,
         short ResourceKeyId,
-        long ContentVersion
+        long ContentVersion,
+        long IdentityVersion,
+        DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset IdentityLastModifiedAt,
+        DateTimeOffset CreatedAt
     );
 
     public sealed record AuthoritativeAcademicRecordSnapshot(
@@ -350,9 +355,10 @@ public static class NoProfilePostAsUpdateScenarios
 
     /// <summary>
     /// Asserts a repeat authoritative POST-as-update was a no-op: UpdateSuccess for the existing UUID, no
-    /// row created for the incoming request UUID, and the full persisted rowset and ContentVersion are
-    /// unchanged from the first POST-as-update. The snapshot must be non-vacuous (its child collections
-    /// carry rows), so an empty-to-empty comparison cannot pass silently.
+    /// row created for the incoming request UUID, and the full persisted rowset, ContentVersion, and every
+    /// stored update-tracking stamp (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt,
+    /// CreatedAt) are unchanged from the first POST-as-update. The snapshot must be non-vacuous (its child
+    /// collections carry rows), so an empty-to-empty comparison cannot pass silently.
     /// </summary>
     public static void AssertRepeatPostAsUpdateNoOp(
         UpsertResult result,

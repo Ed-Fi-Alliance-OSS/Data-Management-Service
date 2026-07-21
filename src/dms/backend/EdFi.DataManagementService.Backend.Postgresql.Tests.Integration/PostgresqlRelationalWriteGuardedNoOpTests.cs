@@ -61,10 +61,17 @@ file sealed class GuardedNoOpConcurrentContentVersionBumpFreshnessChecker(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = "ContentVersion" + 1
+            SET "ContentVersion" = "ContentVersion" + 1,
+                "ContentLastModifiedAt" = @contentLastModifiedAt
             WHERE "DocumentId" = @documentId;
             """;
         command.Parameters.Add(new NpgsqlParameter("documentId", documentId));
+        command.Parameters.Add(
+            new NpgsqlParameter(
+                "contentLastModifiedAt",
+                NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
+            )
+        );
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -129,10 +136,17 @@ internal sealed class GuardedNoOpCommitWindowCoordinator(NpgsqlDataSourceProvide
         command.Transaction = _transaction;
         command.CommandText = """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = "ContentVersion" + 1
+            SET "ContentVersion" = "ContentVersion" + 1,
+                "ContentLastModifiedAt" = @contentLastModifiedAt
             WHERE "DocumentId" = @documentId;
             """;
         command.Parameters.Add(new NpgsqlParameter("documentId", documentId));
+        command.Parameters.Add(
+            new NpgsqlParameter(
+                "contentLastModifiedAt",
+                NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
+            )
+        );
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -300,10 +314,17 @@ file sealed class GuardedNoOpPreLoadContentVersionBumpCurrentStateLoader(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = "ContentVersion" + 1
+            SET "ContentVersion" = "ContentVersion" + 1,
+                "ContentLastModifiedAt" = @contentLastModifiedAt
             WHERE "DocumentId" = @documentId;
             """;
         command.Parameters.Add(new NpgsqlParameter("documentId", documentId));
+        command.Parameters.Add(
+            new NpgsqlParameter(
+                "contentLastModifiedAt",
+                NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
+            )
+        );
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -320,7 +341,11 @@ internal sealed record GuardedNoOpDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion
+    long ContentVersion,
+    long IdentityVersion,
+    DateTimeOffset ContentLastModifiedAt,
+    DateTimeOffset IdentityLastModifiedAt,
+    DateTimeOffset CreatedAt
 );
 
 internal sealed record GuardedNoOpSchoolRow(long DocumentId, long SchoolId, string? ShortName);
@@ -575,7 +600,11 @@ file static class GuardedNoOpIntegrationTestSupport
                 state.Document.DocumentId,
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
-                state.Document.ContentVersion
+                state.Document.ContentVersion,
+                state.Document.IdentityVersion,
+                state.Document.ContentLastModifiedAt,
+                state.Document.IdentityLastModifiedAt,
+                state.Document.CreatedAt
             ),
             new NoProfileGuardedNoOpScenarios.SchoolRow(
                 state.School.DocumentId,
@@ -663,6 +692,22 @@ file static class GuardedNoOpIntegrationTestSupport
             ? value
             : throw new InvalidOperationException($"Expected column '{columnName}' to contain a Guid value.");
 
+    public static DateTimeOffset GetDateTimeOffset(
+        IReadOnlyDictionary<string, object?> row,
+        string columnName
+    ) =>
+        GetRequiredValue(row, columnName) switch
+        {
+            DateTimeOffset value => value,
+            DateTime value => new DateTimeOffset(
+                DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                TimeSpan.Zero
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected column '{columnName}' to contain a DateTimeOffset value."
+            ),
+        };
+
     public static string GetString(IReadOnlyDictionary<string, object?> row, string columnName) =>
         GetRequiredValue(row, columnName) as string
         ?? throw new InvalidOperationException($"Expected column '{columnName}' to contain a string value.");
@@ -698,7 +743,8 @@ file static class GuardedNoOpIntegrationTestSupport
     {
         var rows = await database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -710,7 +756,11 @@ file static class GuardedNoOpIntegrationTestSupport
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
                 GetInt16(rows[0], "ResourceKeyId"),
-                GetInt64(rows[0], "ContentVersion")
+                GetInt64(rows[0], "ContentVersion"),
+                GetInt64(rows[0], "IdentityVersion"),
+                GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -1143,7 +1193,8 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_Stat
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateBeforeUpdate),
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateAfterUpdate),
             _mappingSet,
-            GuardedNoOpIntegrationTestSupport.SchoolResource
+            GuardedNoOpIntegrationTestSupport.SchoolResource,
+            NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
         );
 
     private async Task ExecuteCreateAsync()
@@ -1277,7 +1328,8 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_C
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateBeforePostAsUpdate),
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateAfterPostAsUpdate),
             _mappingSet,
-            GuardedNoOpIntegrationTestSupport.SchoolResource
+            GuardedNoOpIntegrationTestSupport.SchoolResource,
+            NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
         );
 
     private async Task ExecuteCreateAsync()
@@ -1666,7 +1718,8 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focu
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateBeforeUpdate),
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateAfterUpdate),
             _mappingSet,
-            GuardedNoOpIntegrationTestSupport.SchoolResource
+            GuardedNoOpIntegrationTestSupport.SchoolResource,
+            NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
         );
 
     private async Task ExecuteCreateAsync()
@@ -1789,7 +1842,8 @@ internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateBeforePostAsUpdate),
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateAfterPostAsUpdate),
             _mappingSet,
-            GuardedNoOpIntegrationTestSupport.SchoolResource
+            GuardedNoOpIntegrationTestSupport.SchoolResource,
+            NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
         );
 
     private async Task ExecuteCreateAsync()
@@ -1900,7 +1954,8 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Win
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateBeforeUpdate),
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateAfterUpdate),
             _mappingSet,
-            GuardedNoOpIntegrationTestSupport.SchoolResource
+            GuardedNoOpIntegrationTestSupport.SchoolResource,
+            NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
         );
 
     private async Task ExecuteCreateAsync()
@@ -2045,7 +2100,8 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateBeforePostAsUpdate),
             GuardedNoOpIntegrationTestSupport.ToNeutral(_stateAfterPostAsUpdate),
             _mappingSet,
-            GuardedNoOpIntegrationTestSupport.SchoolResource
+            GuardedNoOpIntegrationTestSupport.SchoolResource,
+            NoProfileGuardedNoOpScenarios.ConcurrentBumpContentLastModifiedAt
         );
 
     private async Task ExecuteCreateAsync()

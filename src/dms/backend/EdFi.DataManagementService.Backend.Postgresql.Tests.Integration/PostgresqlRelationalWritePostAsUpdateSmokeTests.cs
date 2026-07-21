@@ -159,7 +159,11 @@ file static class PostAsUpdateIntegrationTestSupport
                 state.Document.DocumentId,
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
-                state.Document.ContentVersion
+                state.Document.ContentVersion,
+                state.Document.IdentityVersion,
+                state.Document.ContentLastModifiedAt,
+                state.Document.IdentityLastModifiedAt,
+                state.Document.CreatedAt
             ),
             new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
                 state.AcademicRecord.DocumentId,
@@ -243,6 +247,22 @@ file static class PostAsUpdateIntegrationTestSupport
         GetRequiredValue(row, columnName) is Guid value
             ? value
             : throw new InvalidOperationException($"Expected column '{columnName}' to contain a Guid value.");
+
+    public static DateTimeOffset GetDateTimeOffset(
+        IReadOnlyDictionary<string, object?> row,
+        string columnName
+    ) =>
+        GetRequiredValue(row, columnName) switch
+        {
+            DateTimeOffset value => value,
+            DateTime value => new DateTimeOffset(
+                DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                TimeSpan.Zero
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected column '{columnName}' to contain a DateTimeOffset value."
+            ),
+        };
 
     public static bool GetBoolean(IReadOnlyDictionary<string, object?> row, string columnName) =>
         GetRequiredValue(row, columnName) is bool value
@@ -1974,7 +1994,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -1986,7 +2007,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -3245,7 +3270,11 @@ internal sealed record AuthoritativePostAsUpdateDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion
+    long ContentVersion,
+    long IdentityVersion,
+    DateTimeOffset ContentLastModifiedAt,
+    DateTimeOffset IdentityLastModifiedAt,
+    DateTimeOffset CreatedAt
 );
 
 internal sealed record AuthoritativeSchoolYearTypeRow(
@@ -3450,7 +3479,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -3462,7 +3492,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -4749,7 +4783,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -4761,7 +4796,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."

@@ -293,7 +293,7 @@ public class Given_The_Parity_Catalog_Family_Variants_Effective_Entry_Points
         ),
         (
             "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
-            "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites + NoProfileAtomicRollbackAssertions.AssertNoPartialRelationalStateAfterRollback"
+            "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites + NoProfileAtomicRollbackAssertions.AssertFullSurfaceRollbackToPreState"
         ),
     ];
 

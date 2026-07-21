@@ -21,11 +21,31 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// </summary>
 public static class NoProfileGuardedNoOpScenarios
 {
+    /// <summary>
+    /// The deterministic ContentLastModifiedAt stamp every injected concurrent content-version bump
+    /// writes alongside its version increment, mirroring production stamping. It is deliberately far
+    /// from any live clock so retention of the exact concurrent stamp (rather than a fresh DMS
+    /// rewrite) is provable and non-vacuous.
+    /// </summary>
+    public static readonly DateTimeOffset ConcurrentBumpContentLastModifiedAt = new(
+        2030,
+        1,
+        1,
+        0,
+        0,
+        0,
+        TimeSpan.Zero
+    );
+
     public sealed record DocumentRow(
         long DocumentId,
         Guid DocumentUuid,
         short ResourceKeyId,
-        long ContentVersion
+        long ContentVersion,
+        long IdentityVersion,
+        DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset IdentityLastModifiedAt,
+        DateTimeOffset CreatedAt
     );
 
     public sealed record SchoolRow(long DocumentId, long SchoolId, string? ShortName);
@@ -71,9 +91,10 @@ public static class NoProfileGuardedNoOpScenarios
     }
 
     /// <summary>
-    /// Asserts a guarded no-op left the full persisted rowset and ContentVersion unchanged, with the
-    /// expected resource key. Guards the focused snapshot against vacuity (one document, two base and
-    /// two aligned rows) before the full equality check.
+    /// Asserts a guarded no-op left the full persisted rowset, ContentVersion, and every stored
+    /// update-tracking stamp (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt,
+    /// CreatedAt) unchanged, with the expected resource key. Guards the focused snapshot against
+    /// vacuity (one document, two base and two aligned rows) before the full equality check.
     /// </summary>
     public static void AssertRowsetUnchanged(
         PersistedState before,
@@ -108,25 +129,41 @@ public static class NoProfileGuardedNoOpScenarios
 
     /// <summary>
     /// Asserts a guarded no-op left the full rowset unchanged except for exactly one concurrent
-    /// ContentVersion increment (after == before + 1 with no other change and no extra bump), with the
-    /// expected resource key. Guards the focused snapshot against vacuity before the equality check.
+    /// content-stamp write: ContentVersion is before + 1 and ContentLastModifiedAt is exactly the
+    /// injected concurrent sentinel (proving the concurrent outcome was retained without an extra DMS
+    /// stamp/write), while IdentityVersion, IdentityLastModifiedAt, CreatedAt, and every rowset stay
+    /// unchanged, with the expected resource key. Guards the focused snapshot against vacuity and the
+    /// sentinel against matching the pre-state (which would make retention unprovable) before the
+    /// equality check.
     /// </summary>
     public static void AssertRowsetUnchangedExceptOneContentVersionBump(
         PersistedState before,
         PersistedState after,
         MappingSet mappingSet,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        DateTimeOffset concurrentContentLastModifiedAt
     )
     {
         GuardFocusedSnapshotIsNonVacuous(before);
+        concurrentContentLastModifiedAt
+            .Should()
+            .NotBe(
+                before.Document.ContentLastModifiedAt,
+                "the concurrent sentinel must differ from the pre-state stamp for retention to be provable"
+            );
 
-        PersistedState afterWithBeforeContentVersion = after with
+        PersistedState afterWithBeforeContentStamps = after with
         {
-            Document = after.Document with { ContentVersion = before.Document.ContentVersion },
+            Document = after.Document with
+            {
+                ContentVersion = before.Document.ContentVersion,
+                ContentLastModifiedAt = before.Document.ContentLastModifiedAt,
+            },
         };
 
-        afterWithBeforeContentVersion.Should().BeEquivalentTo(before);
+        afterWithBeforeContentStamps.Should().BeEquivalentTo(before);
         after.Document.ContentVersion.Should().Be(before.Document.ContentVersion + 1);
+        after.Document.ContentLastModifiedAt.Should().Be(concurrentContentLastModifiedAt);
         after.Document.ResourceKeyId.Should().Be(mappingSet.ResourceKeyIdByResource[resource]);
     }
 

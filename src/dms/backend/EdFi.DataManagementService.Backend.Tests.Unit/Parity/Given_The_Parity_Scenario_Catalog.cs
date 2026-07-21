@@ -108,6 +108,7 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfileFullSurfaceCreate/InsertSuccess",
         "NoProfileFullSurfaceCreate/RootAndNestedCollectionStableIds",
         "NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild",
+        "NoProfileFullSurfaceCreate/ReconstitutedDocument",
         "NoProfileChangedPutOmissionSemantics",
         "NoProfileChangedPutOmissionSemantics/ClearedInlinedColumn",
         "NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope",
@@ -547,6 +548,31 @@ public class Given_The_Parity_Scenario_Catalog
                 "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted"
                     + " + NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions"
             );
+    }
+
+    private static readonly string[] ExpectedReconstitutedDocumentPgTriples =
+    [
+        "PostgresqlRelationalWriteCreateBaselineTests.cs::Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_reconstitutes_the_full_surface_document_via_relational_get_by_id",
+    ];
+
+    [Test]
+    public void It_records_the_reconstituted_document_readback_entry_point()
+    {
+        ParityScenario row = _all.Single(s => s.Id == "NoProfileFullSurfaceCreate/ReconstitutedDocument");
+        row.Boundary.Should().Be(ProductionBoundary.RelationalReadback);
+        row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
+        row.MssqlCoverage.Should().Be(EngineCoverage.Gap);
+        row.MssqlGapOwner.Should().Be("DMS-1285");
+        row.Classification.Should().Be(ParityClassification.KnownGap);
+        Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedReconstitutedDocumentPgTriples);
+
+        // The reconstitution proof pins the relational read path, so the variant records its own
+        // RelationalReadback boundary and Direct read-path helper instead of the family's persister contract.
+        EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
+        resolved.Kind.Should().Be(EntryPointKind.Direct);
+        resolved
+            .SharedValue.Should()
+            .Be("NoProfileCreateBaselineScenarios.AssertFullSurfaceDocumentReconstitutes");
     }
 
     [Test]

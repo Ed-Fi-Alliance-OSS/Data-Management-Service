@@ -65,6 +65,16 @@ public static partial class ParityScenarioCatalog
             "It_persists_root_extensions_collection_extensions_and_extension_child_collections",
             "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows"
         ),
+        Gap(
+            "NoProfileFullSurfaceCreate/ReconstitutedDocument",
+            "The created full-surface document reconstitutes correctly through the production relational GET-by-id read path: served id and _lastModifiedDate metadata from the stored stamp, composed ETag shape with write/read ETag parity, and canonical semantic-JSON equality for the root scalar, nested address/period collections, root extension, collection-aligned extension addresses, and extension-child intervention/visit collections.",
+            ProductionBoundary.RelationalReadback,
+            "PostgresqlRelationalWriteCreateBaselineTests.cs",
+            "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+            ["It_reconstitutes_the_full_surface_document_via_relational_get_by_id"],
+            sharedEntryPoint: "NoProfileCreateBaselineScenarios.AssertFullSurfaceDocumentReconstitutes",
+            notes: "Read-path reconstitution proof for the create family's full surface; recorded on its own RelationalReadback boundary so the canonical NoProfilePersister row's effective entry point does not mix mechanics."
+        ),
         // --- NoProfileChangedPutOmissionSemantics + variants --------------------------------
         Gap(
             "NoProfileChangedPutOmissionSemantics",
@@ -216,7 +226,7 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileGuardedNoOp (10 variants) ---------------------------------------------
         Gap(
             "NoProfileGuardedNoOp",
-            "Unchanged PUT / POST-as-update compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op.",
+            "Unchanged PUT / POST-as-update compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op; rowsets, ContentVersion, and every stored update-tracking stamp (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt, CreatedAt) stay unchanged, and race variants retain the exact concurrent content stamps without an extra DMS write.",
             ProductionBoundary.GuardedNoOp,
             "PostgresqlRelationalWriteGuardedNoOpTests.cs",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
@@ -517,7 +527,7 @@ public static partial class ParityScenarioCatalog
             Id = "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp",
             Layer = ParityLayer.NoProfile,
             BehavioralContract =
-                "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op.",
+                "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op: the full persisted rowset, ContentVersion, and every stored update-tracking stamp stay unchanged.",
             SharedEntryPoint = "NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp",
             Boundary = ProductionBoundary.GuardedNoOp,
             PgsqlLocations =
@@ -538,7 +548,7 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
         Gap(
             "NoProfileRollbackSafety",
-            "A failure after early relational writes rolls the whole request back, leaving no partial state.",
+            "A failure injected at the last write of a full-surface create rolls the whole request back to its exact pre-state: document and tracking stamps, referential identity, root, nested child/grandchild, root extension, aligned extension, extension-child and visit rows, and tracked-change rowsets all return to empty.",
             ProductionBoundary.NoProfilePersister,
             "PostgresqlRelationalWriteRollbackSafetyTests.cs",
             "Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
@@ -547,11 +557,11 @@ public static partial class ParityScenarioCatalog
                 "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
             ],
             sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites"
-                + " + NoProfileAtomicRollbackAssertions.AssertNoPartialRelationalStateAfterRollback"
+                + " + NoProfileAtomicRollbackAssertions.AssertFullSurfaceRollbackToPreState"
         ),
         Gap(
             "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
-            "An injected failure after early writes rolls back fully, leaving Document/School/SchoolAddress counts at zero.",
+            "An injected failure at the write plan's final aligned-extension address write rolls back fully after every earlier full-surface write category was attempted in plan order; the post-rollback snapshot equals the empty pre-state across document, referential-identity, root, child/grandchild, extension, aligned-extension, extension-child, visit, and tracked-change surfaces.",
             ProductionBoundary.NoProfilePersister,
             "PostgresqlRelationalWriteRollbackSafetyTests.cs",
             "Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
@@ -560,7 +570,7 @@ public static partial class ParityScenarioCatalog
                 "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
             ],
             sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites"
-                + " + NoProfileAtomicRollbackAssertions.AssertNoPartialRelationalStateAfterRollback"
+                + " + NoProfileAtomicRollbackAssertions.AssertFullSurfaceRollbackToPreState"
         ),
         Gap(
             "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically",
