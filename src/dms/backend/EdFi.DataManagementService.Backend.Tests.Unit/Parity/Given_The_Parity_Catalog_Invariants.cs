@@ -339,7 +339,7 @@ public class Given_A_Supporting_Smoke_Declaring_A_Provider_Specific_Rationale
 }
 
 [TestFixture]
-public class Given_A_Supporting_Smoke_Deferring_To_A_Non_Canonical_Same_Boundary_Variant
+public class Given_A_Supporting_Smoke_Deferring_To_A_Same_Boundary_Variant_Of_Its_Canonical_Family
 {
     private IReadOnlyList<string> _violations = null!;
 
@@ -347,7 +347,9 @@ public class Given_A_Supporting_Smoke_Deferring_To_A_Non_Canonical_Same_Boundary
     public void Setup()
     {
         var scenarios = ParityInvariantSamples.Valid();
-        // A same-layer, same-boundary variant of the canonical family — but not itself a canonical id.
+        // A same-layer, same-boundary variant of the canonical family carrying its own direct
+        // shared entry point: a valid precise deferral target (the smoke inherits the exact variant
+        // contract its test runs instead of the family's base contract).
         var variant = ParityInvariantSamples.KnownGapNoProfile() with
         {
             Id = "NoProfileSample/SomeVariant",
@@ -358,10 +360,65 @@ public class Given_A_Supporting_Smoke_Deferring_To_A_Non_Canonical_Same_Boundary
     }
 
     [Test]
-    public void It_reports_that_the_deferral_target_must_be_an_exact_canonical_id() =>
+    public void It_accepts_the_exact_variant_deferral() => _violations.Should().BeEmpty();
+}
+
+[TestFixture]
+public class Given_A_Supporting_Smoke_Deferring_Outside_Any_Canonical_Family
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        // Same layer, same boundary, direct entry point — but the id belongs to no canonical family.
+        var strayTarget = ParityInvariantSamples.KnownGapNoProfile() with
+        {
+            Id = "SomethingElse/Variant",
+        };
+        scenarios.Add(strayTarget);
+        scenarios[2] = scenarios[2] with { CoveredByScenarioId = strayTarget.Id };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_the_deferral_target_must_belong_to_a_canonical_family() =>
         _violations
             .Should()
-            .Contain(v => v.Contains("exact canonical no-profile id", StringComparison.Ordinal));
+            .Contain(v =>
+                v.Contains(
+                    "must equal an exact canonical no-profile id or an exact variant of one",
+                    StringComparison.Ordinal
+                )
+            );
+}
+
+[TestFixture]
+public class Given_A_Supporting_Smoke_Deferring_To_A_Variant_Without_A_Direct_Entry_Point
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        // A family variant with no direct shared entry point cannot be inherited from.
+        var entryPointlessVariant = ParityInvariantSamples.KnownGapNoProfile() with
+        {
+            Id = "NoProfileSample/SomeVariant",
+            SharedEntryPoint = "",
+        };
+        scenarios.Add(entryPointlessVariant);
+        scenarios[2] = scenarios[2] with { CoveredByScenarioId = entryPointlessVariant.Id };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_the_deferral_target_must_carry_a_direct_entry_point() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("must carry a direct SharedEntryPoint", StringComparison.Ordinal));
 }
 
 [TestFixture]
@@ -743,6 +800,28 @@ public class Given_A_Direct_Row_Whose_Shared_Entry_Point_Names_Only_A_Type
         _violations
             .Should()
             .Contain(v => v.Contains("must name a member (Type.Method)", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Direct_Row_Whose_Shared_Entry_Point_Is_Only_A_Separator
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // "+" is non-whitespace, so it resolves as a Direct entry point, yet a RemoveEmptyEntries split
+        // parses it to zero parts — without the zero-part guard it would sail through the per-part checks.
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[1] = scenarios[1] with { SharedEntryPoint = "+" };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_the_entry_point_parses_to_no_component() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("parses to no Type.Method component", StringComparison.Ordinal));
 }
 
 [TestFixture]

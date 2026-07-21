@@ -374,7 +374,11 @@ public static partial class ParityScenarioCatalog
                 "It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit",
             ],
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted"
-                + " + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions",
+            diff: new DialectDifference(
+                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent for id reservation and caps at 2100 parameters / 1000 rows.",
+                "Dialect id-reservation strategy and parameter limits shape the compiled create batches; behavioral parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts, not the SQL text."
+            )
         ),
         Gap(
             "NoProfileMultiBatchCollection/DeleteUpdate",
@@ -400,7 +404,11 @@ public static partial class ParityScenarioCatalog
                 "It_partitions_collection_aligned_extension_insert_commands_using_the_compiled_batch_limit",
             ],
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionAlignedExtensionCreatePersisted"
-                + " + NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions",
+            diff: new DialectDifference(
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 parameters / 1000 rows (aligned extension rows are keyed to base collection ids, so no id reservation applies on either dialect).",
+                "Dialect parameter limits shape the compiled aligned-extension insert batches; behavioral parity is the persisted rowset and batch partition counts, not the SQL text."
+            )
         ),
         Gap(
             "NoProfileMultiBatchCollection/AuthoritativeParameterPressure",
@@ -435,6 +443,10 @@ public static partial class ParityScenarioCatalog
                 "It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
                 "It_partitions_collection_update_commands_using_the_compiled_batch_limit",
             ],
+            diff: new DialectDifference(
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 parameters / 1000 rows (updates target existing stable row identities, so no id reservation applies on either dialect).",
+                "Dialect parameter limits shape the compiled update-by-stable-row-identity batches; behavioral parity is the persisted rowset and batch partition counts, not the SQL text."
+            ),
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions",
             boundaryDetail: "RelationalWriteNoProfilePersister batching through WritePlanBatchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch"
@@ -531,7 +543,7 @@ public static partial class ParityScenarioCatalog
             BehavioralContract =
                 "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op: the full persisted rowset, ContentVersion, and every stored update-tracking stamp stay unchanged.",
             Notes =
-                "The PG location executes the resource-specific NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp helper; the cross-engine mechanic contract this row advertises is inherited from NoProfileGuardedNoOp via CoveredByScenarioId, like every SupportingSmoke row.",
+                "The PG location executes the resource-specific NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp helper; the cross-engine mechanic contract this row advertises is inherited from the NoProfileGuardedNoOp/PostAsUpdate variant via CoveredByScenarioId, whose POST-as-update outcome + rowset-unchanged contract matches the semantics this smoke proves.",
             Boundary = ProductionBoundary.GuardedNoOp,
             PgsqlLocations =
             [
@@ -546,7 +558,7 @@ public static partial class ParityScenarioCatalog
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Mapped,
             Classification = ParityClassification.SupportingSmoke,
-            CoveredByScenarioId = "NoProfileGuardedNoOp",
+            CoveredByScenarioId = "NoProfileGuardedNoOp/PostAsUpdate",
         },
         PgSmokeNoOp(
             "SampleStudentAcademicRecord",
@@ -644,11 +656,11 @@ public static partial class ParityScenarioCatalog
         ),
         PgSmokeChangedPut(
             "SampleStudentEducationOrganizationAssociation",
-            "Sample SEOA changed-PUT reuses stable ids and updates root extension data (omission/update semantics).",
+            "Sample SEOA changed-PUT reuses stable CollectionItemIds for every retained row while matched root and extension values change.",
             SeoaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
             ["It_reuses_stable_collection_item_ids_and_updates_root_extension_data_for_a_changed_put"],
-            coveredBy: "NoProfileChangedPutOmissionSemantics"
+            notes: "The payload retains every scope and collection, so the inherited cross-engine mechanic is the stable-identity contract of FullSurfaceCollectionReorder; the matched root/extension value assertions are additional PostgreSQL breadth, not part of the inherited contract."
         ),
         PgSmokeNoOp(
             "SampleStudentEducationOrganizationAssociation",
@@ -1012,7 +1024,8 @@ public static partial class ParityScenarioCatalog
         string file,
         string fixture,
         string[] methods,
-        string coveredBy = "FullSurfaceCollectionReorder"
+        string coveredBy = "FullSurfaceCollectionReorder",
+        string? notes = null
     ) =>
         PgSmoke(
             $"NoProfile/AuthoritativeSmoke/{suite}/ChangedPut",
@@ -1021,7 +1034,8 @@ public static partial class ParityScenarioCatalog
             coveredBy,
             file,
             fixture,
-            methods
+            methods,
+            notes
         );
 
     private static ParityScenario PgSmokeNoOp(

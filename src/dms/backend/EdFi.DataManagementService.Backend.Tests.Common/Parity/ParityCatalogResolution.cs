@@ -279,7 +279,9 @@ public static class ParityCatalogResolution
                 continue;
             }
 
-            ResolveSharedEntryPointValue(scenario.Id, effective.SharedValue, commonAssembly, violations);
+            violations.AddRange(
+                ResolveSharedEntryPointValue(scenario.Id, effective.SharedValue, commonAssembly)
+            );
         }
 
         return violations;
@@ -308,25 +310,43 @@ public static class ParityCatalogResolution
                 continue;
             }
 
-            ResolveSharedEntryPointValue(scenario.Id, effective.SharedValue, apiAssembly, violations);
+            violations.AddRange(
+                ResolveSharedEntryPointValue(scenario.Id, effective.SharedValue, apiAssembly)
+            );
         }
 
         return violations;
     }
 
-    private static void ResolveSharedEntryPointValue(
+    /// <summary>
+    /// Resolves one shared-entry-point value against <paramref name="assembly"/>, returning an actionable
+    /// violation per unresolved part. Internal so a focused regression can exercise the resolver's own
+    /// parsing (for example rejecting a separator-only composite) without reflecting on private members.
+    /// </summary>
+    internal static IReadOnlyList<string> ResolveSharedEntryPointValue(
         string scenarioId,
         string sharedValue,
-        Assembly assembly,
-        List<string> violations
+        Assembly assembly
     )
     {
-        foreach (
-            string part in sharedValue.Split(
-                '+',
-                StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries
-            )
-        )
+        List<string> violations = [];
+
+        string[] parts = sharedValue.Split(
+            '+',
+            StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries
+        );
+
+        // A separator-only composite (for example "+") is non-blank yet parses to nothing, so without
+        // this guard it would resolve zero members and pass. Require at least one parsed component.
+        if (parts.Length == 0)
+        {
+            violations.Add(
+                $"{scenarioId} shared entry point '{sharedValue}': parses to no Type.Method component, "
+                    + "so no reusable assertion/helper can be verified."
+            );
+        }
+
+        foreach (string part in parts)
         {
             int lastDot = part.LastIndexOf('.');
 
@@ -364,6 +384,8 @@ public static class ParityCatalogResolution
                 );
             }
         }
+
+        return violations;
     }
 
     private static Type? ResolveSharedType(

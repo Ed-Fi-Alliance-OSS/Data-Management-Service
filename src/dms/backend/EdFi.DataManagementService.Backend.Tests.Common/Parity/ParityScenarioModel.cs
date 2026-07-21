@@ -65,8 +65,9 @@ public enum ParityClassification
     KnownGap,
 
     /// <summary>
-    /// Real-world breadth smoke whose mechanic is contractually covered by a canonical scenario at
-    /// the same production boundary (see <c>CoveredByScenarioId</c>); the other engine is Mapped.
+    /// Real-world breadth smoke whose mechanic is contractually covered by a canonical scenario —
+    /// or an exact variant of one carrying a direct shared entry point — at the same production
+    /// boundary (see <c>CoveredByScenarioId</c>); the other engine is Mapped.
     /// </summary>
     SupportingSmoke,
 
@@ -290,8 +291,10 @@ public sealed record ParityScenario
     public string? MssqlGapOwner { get; init; }
 
     /// <summary>
-    /// For a SupportingSmoke row, the canonical (base) same-boundary scenario id whose mechanic
-    /// contractually covers this breadth smoke. Must equal an exact canonical no-profile id.
+    /// For a SupportingSmoke row, the same-boundary scenario id whose mechanic contractually covers
+    /// this breadth smoke. Must equal an exact canonical no-profile id, or an exact variant of one
+    /// that carries a direct <see cref="SharedEntryPoint"/> (so the smoke inherits the precise
+    /// variant contract its test actually runs). Arbitrary non-family targets are rejected.
     /// </summary>
     public string? CoveredByScenarioId { get; init; }
 

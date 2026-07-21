@@ -197,7 +197,19 @@ public static class ParityCatalogInvariants
             // green. Inherited rows reuse a Direct row's value and are validated at that Direct source.
             if (effective.Kind == EntryPointKind.Direct && !string.IsNullOrWhiteSpace(effective.SharedValue))
             {
-                foreach (string part in SplitSharedEntryPointParts(effective.SharedValue))
+                List<string> parts = [.. SplitSharedEntryPointParts(effective.SharedValue)];
+
+                // A composite made only of separators/whitespace (for example "+") is non-blank, so it
+                // resolves Direct — but it names nothing. Require at least one parsed part so such a
+                // value cannot pass both the structural and reflection validators with zero members.
+                if (parts.Count == 0)
+                {
+                    violations.Add(
+                        $"{id}: the Direct shared entry point '{effective.SharedValue}' parses to no Type.Method component."
+                    );
+                }
+
+                foreach (string part in parts)
                 {
                     if (!part.Contains('.', StringComparison.Ordinal))
                     {
@@ -434,23 +446,37 @@ public static class ParityCatalogInvariants
             return;
         }
 
-        if (!canonicalNoProfileIds.Contains(scenario.CoveredByScenarioId))
+        // The deferral target must be an exact canonical no-profile id, or an exact variant of one
+        // (so a smoke can inherit the precise variant contract its test actually runs, e.g. the
+        // POST-as-update variant instead of the family's PUT contract). Arbitrary non-family targets
+        // remain rejected.
+        string coveredId = scenario.CoveredByScenarioId;
+        bool coveredIsCanonical = canonicalNoProfileIds.Contains(coveredId);
+        bool coveredIsCanonicalVariant = canonicalNoProfileIds.Any(canonical =>
+            coveredId.StartsWith(canonical + "/", StringComparison.Ordinal)
+        );
+
+        if (!coveredIsCanonical && !coveredIsCanonicalVariant)
         {
             violations.Add(
-                $"{id}: CoveredByScenarioId '{scenario.CoveredByScenarioId}' must equal an exact canonical no-profile id."
+                $"{id}: CoveredByScenarioId '{coveredId}' must equal an exact canonical no-profile id or an exact variant of one."
             );
         }
 
-        if (!byId.TryGetValue(scenario.CoveredByScenarioId, out ParityScenario? target))
+        if (!byId.TryGetValue(coveredId, out ParityScenario? target))
         {
-            violations.Add(
-                $"{id}: CoveredByScenarioId '{scenario.CoveredByScenarioId}' does not match any scenario."
-            );
+            violations.Add($"{id}: CoveredByScenarioId '{coveredId}' does not match any scenario.");
         }
         else if (target.Layer != ParityLayer.NoProfile || target.Boundary != scenario.Boundary)
         {
             violations.Add(
-                $"{id}: CoveredByScenarioId '{scenario.CoveredByScenarioId}' must be a NoProfile scenario at the same production boundary ({scenario.Boundary})."
+                $"{id}: CoveredByScenarioId '{coveredId}' must be a NoProfile scenario at the same production boundary ({scenario.Boundary})."
+            );
+        }
+        else if (string.IsNullOrWhiteSpace(target.SharedEntryPoint))
+        {
+            violations.Add(
+                $"{id}: CoveredByScenarioId '{coveredId}' must carry a direct SharedEntryPoint for the smoke to inherit."
             );
         }
     }

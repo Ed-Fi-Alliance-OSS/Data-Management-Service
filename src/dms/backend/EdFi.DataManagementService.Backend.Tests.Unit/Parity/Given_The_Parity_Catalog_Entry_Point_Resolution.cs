@@ -51,6 +51,47 @@ public class Given_The_Parity_Catalog_Entry_Point_Resolution
 }
 
 /// <summary>
+/// A separator-only composite such as <c>"+"</c> is non-whitespace, so it resolves as a Direct entry
+/// point, yet a <c>RemoveEmptyEntries</c> split parses it to zero parts — the reflection resolver would
+/// verify zero members and report nothing. The resolver must reject a value that parses to no
+/// <c>Type.Method</c> component while a valid multi-part composite still resolves clean.
+/// </summary>
+[TestFixture]
+public class Given_A_Separator_Only_Shared_Entry_Point_Value
+{
+    private IReadOnlyList<string> _separatorOnlyViolations = null!;
+    private IReadOnlyList<string> _validCompositeViolations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        Assembly commonAssembly = typeof(ParityScenarioCatalog).Assembly;
+
+        _separatorOnlyViolations = ParityCatalogResolution.ResolveSharedEntryPointValue(
+            "SyntheticRow",
+            "+",
+            commonAssembly
+        );
+
+        _validCompositeViolations = ParityCatalogResolution.ResolveSharedEntryPointValue(
+            "SyntheticRow",
+            "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged",
+            commonAssembly
+        );
+    }
+
+    [Test]
+    public void It_rejects_the_value_that_parses_to_no_component() =>
+        _separatorOnlyViolations
+            .Should()
+            .ContainSingle(v => v.Contains("parses to no Type.Method component", StringComparison.Ordinal));
+
+    [Test]
+    public void It_still_resolves_a_valid_multi_part_composite() =>
+        _validCompositeViolations.Should().BeEmpty();
+}
+
+/// <summary>
 /// Belonging to a canonical family (a shared id prefix) never inherits a contract. A shared assertion pins one
 /// mechanic, and sharing a production boundary with the family does not imply running the family's assertion
 /// helpers, so a same-boundary variant that records neither its own <c>SharedEntryPoint</c> nor a
@@ -161,6 +202,58 @@ public class Given_A_Row_That_Defers_Through_CoveredByScenarioId
         (_resolved.SharedValue, _resolved.InheritedFromScenarioId)
             .Should()
             .Be(("NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome", "NoProfileGuardedNoOp"));
+}
+
+[TestFixture]
+public class Given_A_Row_That_Defers_To_An_Exact_Variant_Of_Its_Canonical_Family
+{
+    private EffectiveEntryPoint _resolved = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coveredVariant = new ParityScenario
+        {
+            Id = "NoProfileFamily/PostVariant",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "the exact variant contract the smoke's test actually runs",
+            SharedEntryPoint = "FamilyScenarios.AssertPostOutcome + FamilyScenarios.AssertRowsetUnchanged",
+            Boundary = ProductionBoundary.GuardedNoOp,
+            PgsqlLocations = [new("Variant.cs", "Given_A_Variant", ["It_no_ops"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Gap,
+            Classification = ParityClassification.KnownGap,
+            MssqlGapOwner = "DMS-1285",
+        };
+        var smoke = new ParityScenario
+        {
+            Id = "NoProfile/AuthoritativeSmoke/Sample/RepeatPostNoOp",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract = "supporting smoke deferring its mechanic to the precise variant contract",
+            Boundary = ProductionBoundary.GuardedNoOp,
+            PgsqlLocations = [new("Smoke.cs", "Given_A_Smoke", ["It_repeats"])],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Mapped,
+            Classification = ParityClassification.SupportingSmoke,
+            CoveredByScenarioId = "NoProfileFamily/PostVariant",
+        };
+
+        _resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(smoke, [coveredVariant, smoke])!;
+    }
+
+    [Test]
+    public void It_resolves_inherited() => _resolved.Kind.Should().Be(EntryPointKind.Inherited);
+
+    [Test]
+    public void It_carries_the_variant_shared_value_and_source() =>
+        (_resolved.SharedValue, _resolved.InheritedFromScenarioId)
+            .Should()
+            .Be(
+                (
+                    "FamilyScenarios.AssertPostOutcome + FamilyScenarios.AssertRowsetUnchanged",
+                    "NoProfileFamily/PostVariant"
+                )
+            );
 }
 
 /// <summary>

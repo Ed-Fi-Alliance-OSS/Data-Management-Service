@@ -243,14 +243,15 @@ internal static class CrudRoundTripScenario
 
     public static async Task It_pages_students_via_query(ApiIntegrationHarness harness)
     {
-        // Seed three students serially so their surrogate DocumentIds ascend in seed order, then
-        // update the FIRST student with a changed non-identity field. On PostgreSQL the MVCC update
-        // relocates that tuple to the heap tail while its DocumentId is unchanged, so physical order
-        // no longer matches the required DocumentId order and the windows below fail if the
-        // production relational query paging drops its dialect-neutral deterministic ORDER BY
-        // DocumentId. Each limit/offset window is asserted twice to prove repeat stability, and the
-        // exact ordered windows together prove complete, non-overlapping coverage on both engines.
-        string[] ids = ["smoke-page-001", "smoke-page-002", "smoke-page-003"];
+        // Seed three students serially so their surrogate DocumentIds ascend in seed order — but in
+        // deliberately non-lexical natural-key order (003, 001, 002), so a wrong deterministic sort
+        // (for example ORDER BY the studentUniqueId natural key) produces different windows than the
+        // required DocumentId order on BOTH engines. Then update the FIRST-seeded student with a
+        // changed non-identity field: on PostgreSQL the MVCC update relocates that tuple to the heap
+        // tail while its DocumentId is unchanged, so a bare unordered scan also fails. Each
+        // limit/offset window is asserted twice to prove repeat stability, and the exact ordered
+        // windows together prove complete, non-overlapping coverage on both engines.
+        string[] ids = ["smoke-page-003", "smoke-page-001", "smoke-page-002"];
         string? firstStudentLocationPath = null;
         foreach (string id in ids)
         {
@@ -302,8 +303,8 @@ internal static class CrudRoundTripScenario
             firstPageIds
                 .Should()
                 .Equal(
-                    ["smoke-page-001", "smoke-page-002"],
-                    "limit=2 returns the first two seeded students in DocumentId order even after the first tuple is physically relocated (repeat {0})",
+                    ["smoke-page-003", "smoke-page-001"],
+                    "limit=2 returns the first two seeded students in DocumentId order — not natural-key order — even after the first tuple is physically relocated (repeat {0})",
                     repeat
                 );
 
@@ -316,7 +317,7 @@ internal static class CrudRoundTripScenario
             secondPageIds
                 .Should()
                 .Equal(
-                    ["smoke-page-003"],
+                    ["smoke-page-002"],
                     "offset=2 returns the remaining seeded student, deterministically ordered after the first page (repeat {0})",
                     repeat
                 );

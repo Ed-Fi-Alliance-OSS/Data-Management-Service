@@ -425,14 +425,16 @@ public class Given_The_Parity_Scenario_Catalog
     }
 
     [Test]
-    public void It_defers_the_seoa_changed_put_smoke_to_the_omission_semantics_family()
+    public void It_defers_the_seoa_changed_put_smoke_to_the_stable_identity_reorder_family()
     {
+        // The SEOA changed-PUT payload retains every scope and collection, so the smoke's inherited
+        // cross-engine mechanic is the stable-identity contract, not omission/deletion semantics.
         _all.Single(s =>
                 s.Id
                 == "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/ChangedPut"
             )
             .CoveredByScenarioId.Should()
-            .Be("NoProfileChangedPutOmissionSemantics");
+            .Be("FullSurfaceCollectionReorder");
     }
 
     [Test]
@@ -573,6 +575,28 @@ public class Given_The_Parity_Scenario_Catalog
     ];
 
     [Test]
+    public void It_records_accurate_dialect_metadata_on_the_multi_batch_rows()
+    {
+        // DialectDifference is row-local (variants do not inherit it), so every multi-batch row
+        // whose compiled batch shape depends on dialect facts must record them itself.
+        foreach (
+            (string id, string expectedFragment) in (ValueTuple<string, string>[])
+                [
+                    ("NoProfileMultiBatchCollection", "generate_series"),
+                    ("NoProfileMultiBatchCollection/Create", "generate_series"),
+                    ("NoProfileMultiBatchCollection/AlignedExtensionCreate", "no id reservation"),
+                    ("NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions", "no id reservation"),
+                ]
+        )
+        {
+            ParityScenario row = _all.Single(s => s.Id == id);
+            row.DialectDifference.Should().NotBeNull("{0} pins its dialect batch-shape facts", id);
+            row.DialectDifference!.Description.Should().Contain("65535").And.Contain("2100");
+            row.DialectDifference.Description.Should().Contain(expectedFragment);
+        }
+    }
+
+    [Test]
     public void It_records_the_reconstituted_document_readback_entry_point()
     {
         ParityScenario row = _all.Single(s => s.Id == "NoProfileFullSurfaceCreate/ReconstitutedDocument");
@@ -601,17 +625,19 @@ public class Given_The_Parity_Scenario_Catalog
 
         row.Classification.Should().Be(ParityClassification.SupportingSmoke);
         row.SharedEntryPoint.Should().BeNullOrEmpty();
-        row.CoveredByScenarioId.Should().Be("NoProfileGuardedNoOp");
+        row.CoveredByScenarioId.Should().Be("NoProfileGuardedNoOp/PostAsUpdate");
 
-        // A SupportingSmoke row's effective contract is the canonical mechanic contract it defers to,
-        // not the resource-specific helper its own location executes (recorded in the row's Notes).
+        // A SupportingSmoke row's effective contract is the precise same-boundary contract it defers
+        // to — here the POST-as-update variant, whose outcome + rowset-unchanged semantics match what
+        // the smoke's test proves — not the resource-specific helper its own location executes
+        // (recorded in the row's Notes) and not the family's PUT-only contract.
         EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
         resolved.Kind.Should().Be(EntryPointKind.Inherited);
-        resolved.InheritedFromScenarioId.Should().Be("NoProfileGuardedNoOp");
+        resolved.InheritedFromScenarioId.Should().Be("NoProfileGuardedNoOp/PostAsUpdate");
         resolved
             .SharedValue.Should()
             .Be(
-                "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
                     + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
             );
     }
