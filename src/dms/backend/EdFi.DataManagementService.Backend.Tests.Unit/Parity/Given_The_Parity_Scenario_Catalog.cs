@@ -384,6 +384,7 @@ public class Given_The_Parity_Scenario_Catalog
                     (
                         "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection",
                         "ProfileNestedCollectionScenarios.CreateProfileContext"
+                            + " + ProfileNestedCollectionScenarios.AssertVisibleChildUpdatePreservesHiddenSiblingAndIdentities"
                     ),
                 ]
         )

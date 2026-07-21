@@ -575,7 +575,7 @@ public static partial class ParityScenarioCatalog
         ),
         Gap(
             "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically",
-            "A key-unification conflict is rejected as a validation failure and leaves the document and authoritative tables unchanged (atomic rollback).",
+            "A key-unification conflict is rejected as a validation failure and leaves every value-bearing surface exactly unchanged: stamp-complete document rows, referential identities, the conflicting Calendar seed row, and the association root/extension/collection and tracked-change rowsets (atomic rejection).",
             ProductionBoundary.KeyUnificationValidation,
             SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",

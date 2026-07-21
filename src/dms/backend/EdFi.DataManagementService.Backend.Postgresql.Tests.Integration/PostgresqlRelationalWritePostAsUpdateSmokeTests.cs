@@ -213,6 +213,7 @@ file static class PostAsUpdateIntegrationTestSupport
                         row.StudentAcademicRecordDocumentId,
                         row.GradePointAverageTypeDescriptorId,
                         row.GradePointAverageValue,
+                        row.MaxGradePointAverageValue,
                         row.IsCumulative
                     )
                 ),
@@ -2171,6 +2172,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "StudentAcademicRecord_DocumentId",
                 "GradePointAverageTypeDescriptor_DescriptorId",
                 "GradePointAverageValue",
+                "MaxGradePointAverageValue",
                 "IsCumulative"
             FROM "edfi"."StudentAcademicRecordGradePointAverage"
             WHERE "StudentAcademicRecord_DocumentId" = @documentId
@@ -2188,6 +2190,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     "GradePointAverageTypeDescriptor_DescriptorId"
                 ),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
+                PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
             ))
             .ToArray();
@@ -2281,6 +2284,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                         documentId,
                         ResolveGradePointAverageDescriptorId(spec.DescriptorUri),
                         spec.GradePointAverageValue,
+                        spec.MaxGradePointAverageValue,
                         spec.IsCumulative
                     )
             )
@@ -3653,6 +3657,7 @@ internal sealed record AuthoritativeStudentAcademicRecordGradePointAverageRow(
     long StudentAcademicRecordDocumentId,
     long GradePointAverageTypeDescriptorId,
     decimal GradePointAverageValue,
+    decimal MaxGradePointAverageValue,
     bool IsCumulative
 );
 
@@ -4080,6 +4085,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Document.DocumentId,
                     _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId,
                     3.6100m,
+                    4.0000m,
                     true
                 ),
                 new AuthoritativeStudentAcademicRecordGradePointAverageRow(
@@ -4088,6 +4094,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Document.DocumentId,
                     _seedData.WeightedGradePointAverageTypeDescriptorDocumentId,
                     4.1200m,
+                    5.0000m,
                     false
                 )
             );
@@ -4960,6 +4967,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "StudentAcademicRecord_DocumentId",
                 "GradePointAverageTypeDescriptor_DescriptorId",
                 "GradePointAverageValue",
+                "MaxGradePointAverageValue",
                 "IsCumulative"
             FROM "edfi"."StudentAcademicRecordGradePointAverage"
             WHERE "StudentAcademicRecord_DocumentId" = @documentId
@@ -4977,6 +4985,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "GradePointAverageTypeDescriptor_DescriptorId"
                 ),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
+                PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
             ))
             .ToArray();

@@ -200,12 +200,13 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection",
-            "A profiled PUT updates visible nested-collection children and preserves the hidden sibling row.",
+            "A profiled PUT updates visible nested-collection children and preserves the hidden sibling row byte-for-byte, with retained CollectionItemIds, parent linkage, and the exact deterministic contiguous sibling order.",
             "ProfileNestedCollectionMergeTests",
             "Given_a_ProfileNested_put_request_updating_visible_children_with_a_hidden_sibling_in_storage",
             "Given_a_ProfileNested_put_request_updating_visible_children_with_a_hidden_sibling_in_storage",
             ["It_updates_the_visible_child_rows", "It_preserves_the_hidden_sibling_row_unchanged"],
             sharedEntryPoint: NestedCollectionSharedEntryPoint
+                + " + ProfileNestedCollectionScenarios.AssertVisibleChildUpdatePreservesHiddenSiblingAndIdentities"
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
@@ -438,12 +439,13 @@ public static partial class ParityScenarioCatalog
         // ProfileHiddenExtensionChildCollectionPreservation + variant
         Profile(
             "ProfileHiddenExtensionChildCollectionPreservation",
-            "A profiled PUT with a hidden root-extension scope preserves both root-extension child rows.",
+            "A profiled PUT with a hidden root-extension scope preserves the root-extension row and both child rows byte-for-byte: identities, linkage, values, ordinals, and order all unchanged.",
             "ProfileNestedCollectionMergeTests",
             "Given_a_ProfileNested_put_request_with_hidden_root_extension_scope_preserves_children",
             "Given_a_ProfileNested_put_request_with_hidden_root_extension_scope_preserves_children",
             ["It_preserves_both_root_extension_child_rows"],
             sharedEntryPoint: NestedCollectionSharedEntryPoint
+                + " + ProfileNestedCollectionScenarios.AssertHiddenRootExtensionScopePreservedExactly"
         ),
         Profile(
             "ProfileHiddenExtensionChildCollectionPreservation/CollectionAlignedExtensionHidden",

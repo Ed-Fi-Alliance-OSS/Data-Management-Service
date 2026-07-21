@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
+using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
 
@@ -426,4 +427,90 @@ public static class ProfileNestedCollectionScenarios
             [.. storedRootExtChildRows ?? []],
             storedRootExtScope
         );
+
+    /// <summary>
+    /// Asserts a profiled visible-child update preserved stored nested-child identity and the
+    /// deterministic sibling order: the pre-write rowset must be the seeded visible rows (in
+    /// request order) followed by the hidden sibling with contiguous ordinals; the post-write
+    /// rowset must be exactly the visible rows in request order carrying their pre-write
+    /// CollectionItemId, parent CollectionItemId, and parent resource DocumentId with the intended
+    /// updated values, then the hidden sibling row byte-for-byte unchanged in its relative
+    /// position, all with contiguous 0-based ordinals. A delete-and-reinsert (new ids), wrong
+    /// parent linkage, or sibling reordering fails this exact-sequence comparison.
+    /// </summary>
+    public static void AssertVisibleChildUpdatePreservesHiddenSiblingAndIdentities(
+        IReadOnlyList<ChildRow> beforeRows,
+        IReadOnlyList<ChildRow> afterRows,
+        IReadOnlyList<(string ChildCode, string UpdatedValue)> visibleUpdatesInRequestOrder,
+        string hiddenChildCode,
+        string hiddenChildValue
+    )
+    {
+        // Non-vacuous pre-state: the seeded visible rows in request order, then the hidden sibling,
+        // with contiguous ordinals.
+        List<string> expectedBeforeCodes =
+        [
+            .. visibleUpdatesInRequestOrder.Select(update => update.ChildCode),
+            hiddenChildCode,
+        ];
+        beforeRows.Select(row => row.ChildCode).Should().Equal(expectedBeforeCodes);
+        beforeRows.Select(row => row.Ordinal).Should().Equal(Enumerable.Range(0, beforeRows.Count));
+
+        var beforeByCode = beforeRows.ToDictionary(row => row.ChildCode!);
+        ChildRow hiddenBefore = beforeByCode[hiddenChildCode];
+        hiddenBefore.ChildValue.Should().Be(hiddenChildValue);
+
+        List<ChildRow> expectedAfter = [];
+        int ordinal = 0;
+
+        foreach ((string childCode, string updatedValue) in visibleUpdatesInRequestOrder)
+        {
+            expectedAfter.Add(
+                beforeByCode[childCode] with
+                {
+                    Ordinal = ordinal++,
+                    ChildValue = updatedValue,
+                }
+            );
+        }
+
+        expectedAfter.Add(hiddenBefore with { Ordinal = ordinal });
+
+        afterRows.Should().Equal(expectedAfter);
+    }
+
+    /// <summary>
+    /// Asserts a hidden root-extension scope survived a profiled write exactly unchanged: the
+    /// pre-write root-extension row must carry the seeded scalars and its child rowset must be the
+    /// seeded codes/values with contiguous ordinals (non-vacuous), and the post-write row and child
+    /// rowset must equal the pre-write state byte-for-byte — identities, linkage, values, ordinals,
+    /// and order included.
+    /// </summary>
+    public static void AssertHiddenRootExtensionScopePreservedExactly(
+        RootExtRow? beforeRootExtRow,
+        RootExtRow? afterRootExtRow,
+        IReadOnlyList<RootExtChildRow> beforeChildRows,
+        IReadOnlyList<RootExtChildRow> afterChildRows,
+        IReadOnlyList<(string ChildCode, string ChildValue)> expectedSeededChildrenInOrder,
+        string expectedSeededVisibleScalar,
+        string expectedSeededHiddenScalar
+    )
+    {
+        // Non-vacuous pre-state: the seeded root-extension row and its ordered child rows exist.
+        beforeRootExtRow.Should().NotBeNull();
+        beforeRootExtRow!.RootExtVisibleScalar.Should().Be(expectedSeededVisibleScalar);
+        beforeRootExtRow.RootExtHiddenScalar.Should().Be(expectedSeededHiddenScalar);
+        beforeChildRows
+            .Select(row => row.RootExtChildCode)
+            .Should()
+            .Equal(expectedSeededChildrenInOrder.Select(child => child.ChildCode));
+        beforeChildRows
+            .Select(row => row.RootExtChildValue)
+            .Should()
+            .Equal(expectedSeededChildrenInOrder.Select(child => child.ChildValue));
+        beforeChildRows.Select(row => row.Ordinal).Should().Equal(Enumerable.Range(0, beforeChildRows.Count));
+
+        afterRootExtRow.Should().Be(beforeRootExtRow);
+        afterChildRows.Should().Equal(beforeChildRows);
+    }
 }

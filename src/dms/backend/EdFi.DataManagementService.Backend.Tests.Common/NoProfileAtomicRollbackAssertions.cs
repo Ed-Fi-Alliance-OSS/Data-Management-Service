@@ -123,25 +123,103 @@ public static class NoProfileAtomicRollbackAssertions
         after.Should().BeEquivalentTo(before);
     }
 
+    /// <summary>Stamp-complete document row for the rejected-write snapshot.</summary>
+    public sealed record RejectedWriteDocumentRow(
+        long DocumentId,
+        Guid DocumentUuid,
+        short ResourceKeyId,
+        long ContentVersion,
+        long IdentityVersion,
+        DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset IdentityLastModifiedAt,
+        DateTimeOffset CreatedAt
+    );
+
+    public sealed record RejectedWriteReferentialIdentityRow(
+        Guid ReferentialId,
+        long DocumentId,
+        short ResourceKeyId
+    );
+
+    /// <summary>The key-unification target: the conflicting Calendar seed's full value-bearing row.</summary>
+    public sealed record RejectedWriteCalendarRow(
+        long DocumentId,
+        long SchoolYearDocumentId,
+        int SchoolYear,
+        long SchoolDocumentId,
+        long SchoolId,
+        long CalendarTypeDescriptorId,
+        string CalendarCode
+    );
+
+    public sealed record RejectedWriteAssociationRow(
+        long DocumentId,
+        long SchoolIdUnified,
+        int SchoolYearUnified,
+        long CalendarDocumentId,
+        string CalendarCode,
+        long SchoolYearDocumentId,
+        long SchoolDocumentId,
+        long StudentDocumentId,
+        string StudentUniqueId,
+        long EntryGradeLevelDescriptorId,
+        DateOnly EntryDate,
+        bool PrimarySchool
+    );
+
+    public sealed record RejectedWriteAssociationExtensionRow(
+        long DocumentId,
+        long MembershipTypeDescriptorId
+    );
+
+    public sealed record RejectedWriteAlternativeGraduationPlanRow(
+        long CollectionItemId,
+        int Ordinal,
+        long AssociationDocumentId,
+        long GraduationPlanDocumentId,
+        long EducationOrganizationId,
+        long GraduationPlanTypeDescriptorId,
+        int GraduationSchoolYear
+    );
+
+    public sealed record RejectedWriteEducationPlanRow(
+        long CollectionItemId,
+        int Ordinal,
+        long AssociationDocumentId,
+        long EducationPlanDescriptorId
+    );
+
     /// <summary>
-    /// Provider-neutral snapshot of the tables a rejected StudentSchoolAssociation key-unification write
-    /// would have touched. Each provider suite reads its own SQL into this shape before and after the
-    /// rejected write.
+    /// Provider-neutral, deterministically ordered, value-bearing snapshot of every authoritative,
+    /// referential-identity, and tracking surface a rejected StudentSchoolAssociation
+    /// key-unification write could have touched: stamp-complete document rows, full
+    /// referential-identity rows, the conflicting Calendar seed's value-bearing row, the full
+    /// value-bearing rowsets of the association root/extension/collection tables (expected empty),
+    /// and the association/calendar tracked-change rowset counts (their tables are expected empty,
+    /// so a count captures their entire state). Each provider suite reads its own SQL into this
+    /// shape before and after the rejected write.
     /// </summary>
     public sealed record RejectedWriteSnapshot(
-        IReadOnlyList<Guid> DocumentUuids,
-        IReadOnlyList<long> AssociationDocumentIds,
-        IReadOnlyList<long> AssociationExtensionDocumentIds,
-        IReadOnlyList<long> AlternativeGraduationPlanCollectionItemIds,
-        IReadOnlyList<long> EducationPlanCollectionItemIds
+        IReadOnlyList<RejectedWriteDocumentRow> Documents,
+        IReadOnlyList<RejectedWriteReferentialIdentityRow> ReferentialIdentities,
+        RejectedWriteCalendarRow ConflictCalendar,
+        IReadOnlyList<RejectedWriteAssociationRow> AssociationRows,
+        IReadOnlyList<RejectedWriteAssociationExtensionRow> AssociationExtensionRows,
+        IReadOnlyList<RejectedWriteAlternativeGraduationPlanRow> AlternativeGraduationPlanRows,
+        IReadOnlyList<RejectedWriteEducationPlanRow> EducationPlanRows,
+        long AssociationTrackedChangeCount,
+        long CalendarTrackedChangeCount
     );
 
     /// <summary>
     /// Asserts a key-unification conflict was rejected atomically: a single validation failure at
-    /// <c>$.schoolReference.schoolId</c> carrying the canonical SchoolId_Unified conflict message, with
-    /// the full before/after snapshot unchanged, the rejected document absent, the association,
-    /// extension, and collection target lists empty, the baseline document count unchanged, and the
-    /// positive resource-key and seed-document preconditions preserved.
+    /// <c>$.schoolReference.schoolId</c> carrying the canonical SchoolId_Unified conflict message,
+    /// with the full before/after value-bearing snapshot exactly unchanged in order — document
+    /// stamps, referential identities, the conflicting Calendar seed's values, association-side
+    /// rowsets, and tracked-change counts — the rejected document absent, the association-side
+    /// tables and tracked-change rowsets empty, the baseline document count unchanged, and the
+    /// positive resource-key and conflict-seed preconditions preserved (the before snapshot must
+    /// contain the seed documents and the exact conflicting Calendar row).
     /// </summary>
     public static void AssertKeyUnificationConflictRejectedAtomically(
         UpsertResult result,
@@ -165,20 +243,28 @@ public static class NoProfileAtomicRollbackAssertions
             .Message.Should()
             .Contain("Key-unification conflict for canonical column 'SchoolId_Unified'");
 
-        // The rejected write left every target table exactly as it was.
-        snapshotAfter.Should().BeEquivalentTo(snapshotBefore);
-        snapshotAfter.DocumentUuids.Should().NotContain(rejectedDocumentUuid);
-        snapshotAfter.AssociationDocumentIds.Should().BeEmpty();
-        snapshotAfter.AssociationExtensionDocumentIds.Should().BeEmpty();
-        snapshotAfter.AlternativeGraduationPlanCollectionItemIds.Should().BeEmpty();
-        snapshotAfter.EducationPlanCollectionItemIds.Should().BeEmpty();
-        snapshotAfter.DocumentUuids.Count.Should().Be(snapshotBefore.DocumentUuids.Count);
-
-        // Positive preconditions: the resource is mapped and the conflicting seed document exists.
+        // Non-vacuous pre-state: the seed documents exist and the conflicting Calendar seed row is
+        // present with a positive resource key mapping; the tracked-change rowsets start empty.
+        snapshotBefore.Documents.Should().NotBeEmpty();
+        snapshotBefore.ConflictCalendar.DocumentId.Should().Be(conflictCalendarSeedDocumentId);
+        snapshotBefore.AssociationTrackedChangeCount.Should().Be(0);
+        snapshotBefore.CalendarTrackedChangeCount.Should().Be(0);
         mappingSet
             .ResourceKeyIdByResource[new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation")]
             .Should()
             .BeGreaterThan((short)0);
         conflictCalendarSeedDocumentId.Should().BeGreaterThan(0L);
+
+        // The rejected write left every value-bearing surface exactly as it was, in order.
+        snapshotAfter.Should().BeEquivalentTo(snapshotBefore, options => options.WithStrictOrdering());
+        snapshotAfter
+            .Documents.Select(document => document.DocumentUuid)
+            .Should()
+            .NotContain(rejectedDocumentUuid);
+        snapshotAfter.AssociationRows.Should().BeEmpty();
+        snapshotAfter.AssociationExtensionRows.Should().BeEmpty();
+        snapshotAfter.AlternativeGraduationPlanRows.Should().BeEmpty();
+        snapshotAfter.EducationPlanRows.Should().BeEmpty();
+        snapshotAfter.Documents.Count.Should().Be(snapshotBefore.Documents.Count);
     }
 }

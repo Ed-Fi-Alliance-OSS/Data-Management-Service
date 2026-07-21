@@ -105,6 +105,7 @@ public static class NoProfilePostAsUpdateScenarios
         long StudentAcademicRecordDocumentId,
         long GradePointAverageTypeDescriptorId,
         decimal GradePointAverageValue,
+        decimal MaxGradePointAverageValue,
         bool IsCumulative
     );
 

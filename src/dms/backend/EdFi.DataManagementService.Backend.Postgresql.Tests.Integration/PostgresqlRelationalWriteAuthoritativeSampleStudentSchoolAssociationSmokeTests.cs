@@ -4412,66 +4412,315 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     private async Task<NoProfileAtomicRollbackAssertions.RejectedWriteSnapshot> ReadRejectedWriteSnapshotAsync()
     {
         return new(
-            DocumentUuids: await ReadGuidListAsync(
-                """
-                SELECT "DocumentUuid"
-                FROM "dms"."Document"
-                ORDER BY "DocumentUuid";
-                """,
-                "DocumentUuid"
+            Documents: await ReadDocumentRowsAsync(),
+            ReferentialIdentities: await ReadReferentialIdentityRowsAsync(),
+            ConflictCalendar: await ReadConflictCalendarRowAsync(),
+            AssociationRows: await ReadAssociationRowsAsync(),
+            AssociationExtensionRows: await ReadAssociationExtensionRowsAsync(),
+            AlternativeGraduationPlanRows: await ReadAlternativeGraduationPlanRowsAsync(),
+            EducationPlanRows: await ReadEducationPlanRowsAsync(),
+            AssociationTrackedChangeCount: await ReadCountAsync(
+                "\"tracked_changes_edfi\".\"StudentSchoolAssociation\""
             ),
-            AssociationDocumentIds: await ReadInt64ListAsync(
-                """
-                SELECT "DocumentId"
-                FROM "edfi"."StudentSchoolAssociation"
-                ORDER BY "DocumentId";
-                """,
-                "DocumentId"
-            ),
-            AssociationExtensionDocumentIds: await ReadInt64ListAsync(
-                """
-                SELECT "DocumentId"
-                FROM "sample"."StudentSchoolAssociationExtension"
-                ORDER BY "DocumentId";
-                """,
-                "DocumentId"
-            ),
-            AlternativeGraduationPlanCollectionItemIds: await ReadInt64ListAsync(
-                """
-                SELECT "CollectionItemId"
-                FROM "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
-                ORDER BY "CollectionItemId";
-                """,
-                "CollectionItemId"
-            ),
-            EducationPlanCollectionItemIds: await ReadInt64ListAsync(
-                """
-                SELECT "CollectionItemId"
-                FROM "edfi"."StudentSchoolAssociationEducationPlan"
-                ORDER BY "CollectionItemId";
-                """,
-                "CollectionItemId"
-            )
+            CalendarTrackedChangeCount: await ReadCountAsync("\"tracked_changes_edfi\".\"Calendar\"")
         );
     }
 
-    private async Task<IReadOnlyList<Guid>> ReadGuidListAsync(string sql, string columnName)
+    private async Task<
+        IReadOnlyList<NoProfileAtomicRollbackAssertions.RejectedWriteDocumentRow>
+    > ReadDocumentRowsAsync()
     {
-        var rows = await _database.QueryRowsAsync(sql);
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
+            FROM "dms"."Document"
+            ORDER BY "DocumentId";
+            """
+        );
 
-        return rows.Select(row =>
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetGuid(row, columnName)
+        return rows.Select(row => new NoProfileAtomicRollbackAssertions.RejectedWriteDocumentRow(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(row, "DocumentId"),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetGuid(
+                    row,
+                    "DocumentUuid"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt16(
+                    row,
+                    "ResourceKeyId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "ContentVersion"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "IdentityVersion"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
+                    row,
+                    "ContentLastModifiedAt"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
+                    row,
+                    "IdentityLastModifiedAt"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
+                    row,
+                    "CreatedAt"
+                )
+            ))
+            .ToArray();
+    }
+
+    private async Task<
+        IReadOnlyList<NoProfileAtomicRollbackAssertions.RejectedWriteReferentialIdentityRow>
+    > ReadReferentialIdentityRowsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
+            FROM "dms"."ReferentialIdentity"
+            ORDER BY "ReferentialId";
+            """
+        );
+
+        return rows.Select(row => new NoProfileAtomicRollbackAssertions.RejectedWriteReferentialIdentityRow(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetGuid(
+                    row,
+                    "ReferentialId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(row, "DocumentId"),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt16(
+                    row,
+                    "ResourceKeyId"
+                )
+            ))
+            .ToArray();
+    }
+
+    private async Task<NoProfileAtomicRollbackAssertions.RejectedWriteCalendarRow> ReadConflictCalendarRowAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "SchoolYear_DocumentId", "SchoolYear_SchoolYear", "School_DocumentId",
+                "School_SchoolId", "CalendarTypeDescriptor_DescriptorId", "CalendarCode"
+            FROM "edfi"."Calendar"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", _seedData.ConflictCalendarDocumentId)
+        );
+
+        return rows.Count == 1
+            ? new NoProfileAtomicRollbackAssertions.RejectedWriteCalendarRow(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "SchoolYear_DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
+                    rows[0],
+                    "SchoolYear_SchoolYear"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "School_DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "School_SchoolId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "CalendarTypeDescriptor_DescriptorId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetString(
+                    rows[0],
+                    "CalendarCode"
+                )
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one conflict calendar row for document id '{_seedData.ConflictCalendarDocumentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<
+        IReadOnlyList<NoProfileAtomicRollbackAssertions.RejectedWriteAssociationRow>
+    > ReadAssociationRowsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "SchoolId_Unified", "SchoolYear_Unified", "Calendar_DocumentId",
+                "Calendar_CalendarCode", "SchoolYear_DocumentId", "School_DocumentId",
+                "Student_DocumentId", "Student_StudentUniqueId", "EntryGradeLevelDescriptor_DescriptorId",
+                "EntryDate", "PrimarySchool"
+            FROM "edfi"."StudentSchoolAssociation"
+            ORDER BY "DocumentId";
+            """
+        );
+
+        return rows.Select(row => new NoProfileAtomicRollbackAssertions.RejectedWriteAssociationRow(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(row, "DocumentId"),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "SchoolId_Unified"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
+                    row,
+                    "SchoolYear_Unified"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "Calendar_DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetString(
+                    row,
+                    "Calendar_CalendarCode"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "SchoolYear_DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "School_DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "Student_DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetString(
+                    row,
+                    "Student_StudentUniqueId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "EntryGradeLevelDescriptor_DescriptorId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateOnly(
+                    row,
+                    "EntryDate"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetBoolean(
+                    row,
+                    "PrimarySchool"
+                )
+            ))
+            .ToArray();
+    }
+
+    private async Task<
+        IReadOnlyList<NoProfileAtomicRollbackAssertions.RejectedWriteAssociationExtensionRow>
+    > ReadAssociationExtensionRowsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "MembershipTypeDescriptor_DescriptorId"
+            FROM "sample"."StudentSchoolAssociationExtension"
+            ORDER BY "DocumentId";
+            """
+        );
+
+        return rows.Select(row => new NoProfileAtomicRollbackAssertions.RejectedWriteAssociationExtensionRow(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(row, "DocumentId"),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "MembershipTypeDescriptor_DescriptorId"
+                )
+            ))
+            .ToArray();
+    }
+
+    private async Task<
+        IReadOnlyList<NoProfileAtomicRollbackAssertions.RejectedWriteAlternativeGraduationPlanRow>
+    > ReadAlternativeGraduationPlanRowsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId", "Ordinal", "StudentSchoolAssociation_DocumentId",
+                "AlternativeGraduationPlan_DocumentId", "AlternativeGraduationPlan_EducationOrganizationId",
+                "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
+                "AlternativeGraduationPlan_GraduationSchoolYear"
+            FROM "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
+            ORDER BY "CollectionItemId";
+            """
+        );
+
+        return rows.Select(
+                row => new NoProfileAtomicRollbackAssertions.RejectedWriteAlternativeGraduationPlanRow(
+                    AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                        row,
+                        "CollectionItemId"
+                    ),
+                    AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
+                        row,
+                        "Ordinal"
+                    ),
+                    AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                        row,
+                        "StudentSchoolAssociation_DocumentId"
+                    ),
+                    AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                        row,
+                        "AlternativeGraduationPlan_DocumentId"
+                    ),
+                    AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                        row,
+                        "AlternativeGraduationPlan_EducationOrganizationId"
+                    ),
+                    AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                        row,
+                        "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181"
+                    ),
+                    AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
+                        row,
+                        "AlternativeGraduationPlan_GraduationSchoolYear"
+                    )
+                )
             )
             .ToArray();
     }
 
-    private async Task<IReadOnlyList<long>> ReadInt64ListAsync(string sql, string columnName)
+    private async Task<
+        IReadOnlyList<NoProfileAtomicRollbackAssertions.RejectedWriteEducationPlanRow>
+    > ReadEducationPlanRowsAsync()
     {
-        var rows = await _database.QueryRowsAsync(sql);
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId", "Ordinal", "StudentSchoolAssociation_DocumentId",
+                "EducationPlanDescriptor_DescriptorId"
+            FROM "edfi"."StudentSchoolAssociationEducationPlan"
+            ORDER BY "CollectionItemId";
+            """
+        );
 
-        return rows.Select(row =>
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(row, columnName)
-            )
+        return rows.Select(row => new NoProfileAtomicRollbackAssertions.RejectedWriteEducationPlanRow(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "CollectionItemId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "StudentSchoolAssociation_DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    row,
+                    "EducationPlanDescriptor_DescriptorId"
+                )
+            ))
             .ToArray();
+    }
+
+    private async Task<long> ReadCountAsync(string qualifiedTableName)
+    {
+        var rows = await _database.QueryRowsAsync($"SELECT COUNT(*) AS \"Count\" FROM {qualifiedTableName};");
+
+        return rows.Count == 1
+            ? AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
     }
 }
