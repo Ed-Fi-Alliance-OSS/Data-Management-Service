@@ -550,10 +550,11 @@ public static partial class ParityScenarioCatalog
         },
         PgSmokeNoOp(
             "SampleStudentAcademicRecord",
-            "Authoritative StudentAcademicRecord repeat PUT is a guarded no-op: the full persisted rowset and ContentVersion stay unchanged.",
+            "Authoritative StudentAcademicRecord repeat PUT is a guarded no-op over the captured state: the stamp-complete dms.Document row (ContentVersion and every document stamp), the StudentAcademicRecord business row, its extension row, and all four collection rowsets stay unchanged.",
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
+            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"],
+            notes: "The enrolled snapshot does not cover the root-table stamps or dms.ReferentialIdentity; those surfaces of the same GuardedNoOp mechanic are inherited from canonical NoProfileGuardedNoOp via CoveredByScenarioId."
         ),
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
         Gap(
@@ -997,7 +998,8 @@ public static partial class ParityScenarioCatalog
         string contract,
         string file,
         string fixture,
-        string[] methods
+        string[] methods,
+        string? notes = null
     ) =>
         PgSmoke(
             $"NoProfile/AuthoritativeSmoke/{suite}/RepeatPutNoOp",
@@ -1006,7 +1008,8 @@ public static partial class ParityScenarioCatalog
             "NoProfileGuardedNoOp",
             file,
             fixture,
-            methods
+            methods,
+            notes
         );
 
     private static ParityScenario PgSmoke(
@@ -1016,7 +1019,8 @@ public static partial class ParityScenarioCatalog
         string coveredBy,
         string file,
         string fixture,
-        string[] methods
+        string[] methods,
+        string? notes = null
     ) =>
         new()
         {
@@ -1029,6 +1033,7 @@ public static partial class ParityScenarioCatalog
             MssqlCoverage = EngineCoverage.Mapped,
             Classification = ParityClassification.SupportingSmoke,
             CoveredByScenarioId = coveredBy,
+            Notes = notes,
         };
 
     // A first-class cross-engine mechanic already covered on both engines by provider-specific fixtures, with no
