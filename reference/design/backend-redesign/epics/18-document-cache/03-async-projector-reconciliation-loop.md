@@ -66,8 +66,9 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 - Provider and multi-data-store tests cover no targets, unresolved targets, late
   resolution, colliding local ids, population, create/update, restart, rebuild,
   transient/persistent failure, fairness, peer isolation, and multiple replicas.
-- Concurrency tests cover source update and deletion during materialization through the
-  shared monotonic upsert and foreign-key delete fence.
+- Concurrency tests cover source update during multi-result-set materialization through the
+  final optimistic version check, source update after that check through the shared
+  monotonic upsert, and deletion through the foreign-key delete fence.
 - Query-plan tests prove ordinary high-version updates use indexed incremental discovery
   without a full relationship scan and that a full audit covers the relationship once
   rather than rescanning each repaired prefix.

@@ -79,23 +79,27 @@ DataManagement:DocumentCache:Projector:FullAuditInterval = <positive duration>
 DataManagement:DocumentCache:Projector:PageSize = <positive integer>
 DataManagement:DocumentCache:Projector:MaxConcurrentTargets = <positive integer>
 DataManagement:DocumentCache:Readiness:MaximumAuditAge = <positive duration>
+DataManagement:DocumentCache:ReadAcceleration:DirectFillTimeout = <positive duration>
 ```
 
 The target and read-acceleration defaults are an empty list and `false`. The implementation
-provides conservative, tested defaults for the five execution/readiness settings. Those
-numeric defaults are operational tuning, not part of the projection or stream contract:
-they are configurable, published in supported appsettings and operator documentation,
-reported at startup, and may be adjusted between releases from PostgreSQL and SQL Server
-qualification evidence. Configuration rejects nonpositive durations, page sizes, or
-concurrency and requires `MaximumAuditAge` to be greater than `FullAuditInterval` so a
-normally scheduled audit does not become stale before its successor is due.
+provides conservative, tested defaults for the six execution, readiness, and direct-fill
+settings. Those numeric defaults are operational tuning, not part of the projection or
+stream contract: they are configurable, published in supported appsettings and operator
+documentation, reported at startup, and may be adjusted between releases from PostgreSQL
+and SQL Server qualification evidence. Configuration rejects nonpositive durations, page
+sizes, or concurrency and requires `MaximumAuditAge` to be greater than
+`FullAuditInterval` so a normally scheduled audit does not become stale before its
+successor is due. `DirectFillTimeout` is a small request-path budget below the ordinary
+database command timeout; exceeding it abandons only the optional fill.
 
 A target entry enables projection for that logical `(tenant key, DataStoreId)` whether the
 consumer is CDC, diagnostics, indexing, or another deployment-selected capability.
 `ReadAcceleration:Enabled` is only a use-path gate: when enabled, DMS may use fresh cache
 rows for explicitly listed targets, but it does not select every loaded or subsequently
 discovered data store. Projector timing and capacity settings tune work already selected by
-`Targets`; they never discover another target or change API routing.
+`Targets`; `DirectFillTimeout` bounds only optional request-path fill after relational
+fallback. These settings never discover another target or change API routing.
 
 Entries must be unique after applying the same case-insensitive tenant-key normalization
 as `IDataStoreProvider`. DMS runs one logical reconciliation execution context for each
@@ -273,10 +277,24 @@ For each candidate from either lane, the projector:
 
 1. Captures `(DocumentId, ContentVersion)` and the source metadata needed by the
    materializer.
-2. Reconstitutes the caller-agnostic cached document without taking a write-conflicting
-   source-row lock.
-3. Validates the embedded/relational metadata invariant.
-4. Performs the shared monotonic cache upsert.
+2. Reconstitutes the caller-agnostic cached document without requesting an update/write
+   source-row lock or retaining a source lock into the later cache transaction.
+3. After all materialization reads finish, re-reads the current source
+   `(DocumentId, ContentVersion)` in a new current-visibility statement. The statement
+   requests no update/write lock and retains no source lock into the cache transaction. A
+   missing row or version mismatch is a stale skip and produces no cache write.
+4. Validates the embedded/relational metadata invariant and composes the cache result.
+5. Performs the shared monotonic cache upsert.
+
+The final source-version read is an optimistic materialization-coherence check, not a
+source/cache commit-order fence. Reconstitution hydrates multiple relational result sets;
+the check prevents a source change committed during those reads from producing a mixed
+document labeled with the captured version. It must observe current committed state rather
+than reuse a repeatable/snapshot view fixed before hydration, and it does not request or
+retain an update/write lock. Ordinary provider read locking may still block briefly when
+row-versioned reads are unavailable. A source change may commit after the check and before
+the cache upsert, which is the intentional monotonic-lag race defined below. Reconciliation
+and optional direct fill use the same check.
 
 The incremental cursor is an optimization, never durable work inventory or completeness
 evidence. `ContentVersion` values come from a monotonic sequence, but sequence allocation
@@ -299,12 +317,15 @@ cursor over post-boundary work.
 V1 deliberately does not establish a source/cache commit-order fence. Optional projection
 must not acquire a PostgreSQL `FOR NO KEY UPDATE`, SQL Server `UPDLOCK`, or another
 write-conflicting lock on `dms.Document` that can make a canonical writer wait for a cache
-upsert. The stream contract is monotonic and eventually convergent, not linearizable to
-the canonical source at each cache commit.
+upsert. Cache-row transitions and conforming consumer-applied state are monotonic and
+eventually convergent, not linearizable to the canonical source at each cache commit. Raw
+Kafka delivery remains at-least-once and may contain duplicates or lower-version replays;
+the consumer ordering rule handles those records.
 
 Consequently, this ordinary race is allowed:
 
-1. The projector captures and materializes source version 10.
+1. The projector captures and coherently materializes source version 10, and its final
+   optimistic source-version check still observes version 10.
 2. A canonical writer commits source version 11.
 3. The projector commits cache version 10 because the cache row is absent or lower.
 4. Incremental discovery, retry, or full audit subsequently projects version 11.
@@ -320,23 +341,36 @@ needs a stronger publication design rather than an implicit projector lock.
 Materialization and invariant validation finish before the cache transaction begins. V1
 then performs one candidate per short transaction:
 
-1. Insert the cache row when absent or update it only when its existing `ContentVersion`
+1. Serialize concurrent cache writers on the `DocumentCache(DocumentId)` row/key and
+   evaluate the version predicate atomically in the cache DML against the current cache
+   row after any conflicting cache writer. An application pre-read must not decide whether
+   a later unconditional insert or update is safe.
+2. Insert the cache row when absent or update it only when its existing `ContentVersion`
    is lower than the captured version.
-2. Treat a same-version row as already fresh and a higher cache version as an invariant
+3. Treat a same-version row as already fresh and a higher cache version as an invariant
    violation that receives no write.
-3. Persist the complete cache row atomically. The UUID validation trigger rejects an
+4. Persist the complete cache row atomically. The UUID validation trigger rejects an
    inconsistent denormalized identity, and the `DocumentCache(DocumentId)` foreign key is
    the post-delete fence.
-4. Commit without locking `dms.Document` against concurrent version updates. If the
+5. Commit without locking `dms.Document` against concurrent version updates. If the
    canonical version advanced, the resulting cache-behind row remains durable repair work.
 
 PostgreSQL and SQL Server implement equivalent conditional insert/update behavior without
-`FOR NO KEY UPDATE`, `UPDLOCK`, or a stronger source-row lock. A cache upsert may still
-encounter ordinary database failures and uses the projector's bounded retry path, but v1
-adds no source-lock timeout, lock-wait telemetry, or deadlock policy specific to projection.
-Optional direct fill uses the same monotonic upsert and never waits for a source-row
-content-version fence; failure or a concurrent canonical change does not affect the
-relational response.
+`FOR NO KEY UPDATE`, `UPDLOCK`, or a stronger lock on the source `dms.Document` row.
+PostgreSQL may use an atomic `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE` against the
+cache key. SQL Server uses an equivalent transactionally safe conditional update/insert
+that serializes an absent or existing cache key; a duplicate-key race is retried by
+re-evaluating the current cache version. A provider implementation must not use a
+read-then-unconditional-write pattern. A cache upsert may still encounter ordinary database
+failures and uses the projector's bounded retry path, but v1 adds no source-lock timeout,
+lock-wait telemetry, or deadlock policy specific to projection.
+Optional direct fill uses the same optimistic source-version check and monotonic upsert. It
+never waits for a source-row content-version fence, but ordinary cache-row, foreign-key,
+trigger, or database contention can still occur. A short direct-fill-specific database
+deadline bounds that optional request-path work end to end. The deadline is not renewed per
+statement or retry; each database operation uses only the remaining budget, and direct fill
+does not enter the projector retry loop. Timeout, contention, failure, or a concurrent
+canonical change abandons the fill without failing the relational response.
 
 There are no projection queues, enqueue APIs, persisted cursors, backfill epochs,
 projector-state rows, failure rows, retry classifications, dead-letter transitions, or
@@ -1026,11 +1060,17 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   that key in the routed public topic,
 - a projector that captured an older version may commit it after a newer canonical version,
   the row remains cache-behind work, and reconciliation converges it to the newer version,
+- a source update committed before the final optimistic source-version check produces a
+  stale skip, while an update committed after that check may produce the allowed coherent
+  lower-version cache row,
 - a delayed lower-version candidate never replaces a higher cache row, while a consumer
   that has not yet seen the higher version may temporarily retain the lower monotonic
   projection,
-- projector and direct-fill cache writes take no write-conflicting source-row lock and do
-  not make canonical writers wait for a projection-held `dms.Document` lock,
+- raw Kafka delivery may replay a lower version after a higher version, while the
+  conforming consumer ordering rule keeps applied state monotonic,
+- projector and direct-fill cache writes request no update/write lock on `dms.Document`
+  and retain no source lock into the cache transaction; ordinary provider read locking is
+  distinguished from an explicit content-version fence,
 - the cache foreign key prevents a delayed candidate from recreating cache state after
   canonical deletion,
 - projection selection, empty-cache population, update, restart, retry, rebuild,
@@ -1064,8 +1104,10 @@ constants.
 Performance qualification compares projector-disabled and projector-enabled source-write
 throughput and p95/p99 latency for uniformly distributed writes, a deliberately hot
 single document, duplicate projector replicas, and optional direct fill. Rebuild tests
-also verify that projection adds no PostgreSQL or SQL Server source-row lock waits to
-canonical writers. V1 performs one short monotonic cache transaction per candidate;
+also verify that projection adds no PostgreSQL or SQL Server wait attributable to an
+explicit content-version source-row lock; ordinary cache-row, trigger, and foreign-key
+contention remains visible. Direct-fill tests bound request-path latency under that
+ordinary contention. V1 performs one short monotonic cache transaction per candidate;
 future batching remains a separate measured design.
 
 The quarantined KafkaMessaging scenarios are replaced only after the relational scenarios

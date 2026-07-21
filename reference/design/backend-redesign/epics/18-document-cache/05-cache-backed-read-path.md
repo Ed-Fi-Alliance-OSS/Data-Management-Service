@@ -30,10 +30,18 @@ authorization, candidate selection, fallback, and response shaping.
    independently reported projection invariant violation.
 2. Ignore the cache row's CDC-only `StreamEtag` and reuse existing profile, link, and
    request-specific `_etag` shaping after cache or relational assembly.
-3. Add relational fallback and an optional monotonic direct fill. Direct fill uses 18-07's
-   conditional upsert without taking a write-conflicting source-row lock; failure or a
-   concurrent canonical change does not affect the response.
-4. Emit cache hit, miss, stale miss, and fallback telemetry.
+3. Add relational fallback and an optional monotonic direct fill. Direct fill uses 18-02's
+   final optimistic source-version check and 18-07's conditional upsert without requesting
+   or retaining an update/write source-row lock as a content-version fence. Apply one short
+   end-to-end `ReadAcceleration:DirectFillTimeout` deadline across all source-read,
+   cache-row, foreign-key, trigger, and ordinary database contention. Do not renew the
+   deadline per statement or enter the projector retry loop; cap each database operation by
+   the remaining budget. Timeout, failure, or a concurrent canonical change abandons the
+   fill without failing the response or delaying it beyond that small budget. Validate the
+   positive duration and supply a conservative implementation-tuned default in supported
+   appsettings and operator documentation.
+4. Emit cache hit, miss, stale miss, fallback, direct-fill success, abandonment, and timeout
+   telemetry.
 
 ## Acceptance Evidence
 
@@ -44,8 +52,14 @@ authorization, candidate selection, fallback, and response shaping.
   candidate selection.
 - Tests prove reads do not enqueue projector work and remain correct if direct fill
   fails.
-- Tests prove direct fill takes no write-conflicting source-row lock and cannot delay or
-  fail the relational response through projection-held canonical-row contention.
+- Tests prove direct fill requests no update/write source-row lock and retains no source
+  lock into the cache transaction. Synchronized source-read, cache-row conflict, concurrent
+  delete/foreign-key, trigger, timeout, and ordinary failure cases prove it is abandoned
+  within the direct-fill budget and never fails the relational response.
+- Deadline tests span multiple statements and prove each operation receives only the
+  remaining direct-fill budget, with no per-statement reset or projector retry.
+- Configuration tests reject a nonpositive `DirectFillTimeout`, pin its shipped default,
+  and prove it remains below the ordinary database command timeout.
 
 ## Out of Scope
 

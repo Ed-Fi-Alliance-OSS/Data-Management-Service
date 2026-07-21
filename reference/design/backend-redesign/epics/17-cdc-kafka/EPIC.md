@@ -47,10 +47,12 @@ implementation inputs.
 - Generated and published records pass the topic/message contract suite.
 - Each binding fixes its topic partition count and key-based partitioner so a document's
   later Kafka offset remains a valid equal-version tie-breaker.
-- Publication is monotonic and eventually convergent rather than linearizable to each
-  canonical commit. A consumer may temporarily retain an older projection until the newer
-  canonical version is projected; optional projection takes no write-conflicting source-row
-  lock to prevent that ordinary lag.
+- Cache-row transitions and conforming consumer-applied state are monotonic and eventually
+  convergent rather than linearizable to each canonical commit. Raw at-least-once delivery
+  may contain duplicates or lower-version replays. A consumer may temporarily retain an
+  older projection until the newer canonical version is projected; optional projection
+  requests no update/write source-row lock and retains no source lock into the cache
+  transaction to prevent that ordinary lag.
 - Connector transforms copy the DMS-projected opaque stream ETag and contain no schema,
   link-configuration, or ETag-composition rules.
 - Contract fixtures pin the v1 key, fields/types, tombstones, document semantics, and

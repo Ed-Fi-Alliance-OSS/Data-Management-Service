@@ -32,8 +32,8 @@ that links to, rather than restates, the authoritative design.
    operations separately. Include cache-ahead diagnosis and require operators to
    establish whether CDC could have published the higher version before recovery.
 4. Document the shipped implementation defaults and tuning guidance for scan/audit
-   intervals, page size, concurrent targets, and maximum audit age, including how to
-   diagnose audit overruns and API-resource contention.
+   intervals, page size, concurrent targets, maximum audit age, and the direct-fill timeout,
+   including how to diagnose audit overruns and API-resource contention.
 5. Document the cache side of a compatible projection correction: stop old cache writers,
    including optional direct fill, use the provider-supported clear operation, start only
    corrected writers, and reconcile to an exact zero audit. Hand connector catch-up and
@@ -48,8 +48,11 @@ that links to, rather than restates, the authoritative design.
 - Provider integration tests prove trigger-enforced UUID denormalization for insert and
   update, cascade deletion through the compact `DocumentId` FK, absence of a cache UUID
   index, and equivalent connector-key values from cache upserts and canonical deletes.
-- Concurrency tests prove a delayed lower projection is ordinary cache-behind work, never
-  replaces a higher cache row, and takes no write-conflicting canonical source-row lock.
+- Concurrency tests prove an update committed during materialization is rejected by the
+  final optimistic check, a coherent delayed lower projection after that check is ordinary
+  cache-behind work, no lower candidate replaces a higher cache row, and projection takes
+  no update/write canonical source-row lock and retains no source lock into the cache
+  transaction.
 - Rebuild tests use ordinary reconciliation and never introduce a separate backfill
   workflow.
 - Compatible-correction tests prove ordinary reconciliation does not rewrite an existing

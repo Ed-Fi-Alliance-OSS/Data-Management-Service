@@ -35,9 +35,18 @@ reconciliation, optional direct fill, and CDC payload fixtures.
    Ordinary resources use the link-bearing context regardless of the API resource-link
    option; descriptors use their links-off context.
 4. Load `DocumentUuid` and resource identity/version metadata from the canonical
-   `dms.Document` row. Validate embedded/column/stream-ETag consistency before returning a
-   writable result; callers do not supply an independent cache UUID.
-5. Report disappearance, reconstitution, and invariant failures without emitting a
+   `dms.Document` row; callers do not supply an independent cache UUID.
+5. After every hydration/result-set read completes, re-read the
+   current source `(DocumentId, ContentVersion)` in a new current-visibility statement that
+   does not reuse a repeatable/snapshot view fixed before hydration. Request no update/write
+   lock and retain no source lock into the cache transaction. Return a stale result with no
+   writable cache row when the source disappeared or no longer matches the captured
+   version. This optimistic check prevents mixed-version reconstitution but deliberately
+   retains no commit-order fence after it succeeds; ordinary provider read locking may
+   still block briefly when row-versioned reads are unavailable.
+6. After the optimistic check succeeds, validate embedded/column/stream-ETag consistency
+   and compose the writable result.
+7. Report disappearance, stale, reconstitution, and invariant failures without emitting a
    partial cache result.
 
 ## Acceptance Evidence
@@ -51,6 +60,13 @@ reconciliation, optional direct fill, and CDC payload fixtures.
   them independently of the composer.
 - Shape tests cover nested arrays, reference links, and excluded authorization/profile
   data.
+- Deterministically synchronized provider tests commit a source update during
+  multi-result-set hydration and prove the final optimistic check returns a stale result,
+  never a mixed document labeled with the captured version or an invariant failure. A
+  companion test commits the update after the check and proves the coherent older result
+  remains eligible for the monotonic upsert.
+- Provider tests prove the final check observes current committed state rather than a
+  hydration snapshot and requests no update/write source-row lock.
 - Tests prove API reads ignore `StreamEtag` and continue composing the served `_etag` for
   their request-specific representation context.
 

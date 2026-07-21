@@ -63,13 +63,20 @@ topic, consumer state namespace, and snapshot. The lower canonical version is ne
 published as an in-place correction to the old namespace.
 
 Cache writes deliberately do not use a source-row commit-order fence. After materialization,
-a short single-document transaction inserts a missing cache row or updates only a lower
-cache `ContentVersion`; it never takes a PostgreSQL `FOR NO KEY UPDATE`, SQL Server
-`UPDLOCK`, or another write-conflicting `dms.Document` lock. The cache foreign key remains
-the post-delete fence. An older materialization may therefore commit after a newer
-canonical version, but it cannot replace a higher cache row and remains ordinary
-cache-behind work for reconciliation. The same monotonic upsert supports ordinary
-reconciliation and optional direct fill after relational read fallback.
+an optimistic current-visibility statement rejects the result if the current source row is
+missing or its `ContentVersion` no longer matches the captured version. It must not reuse a
+repeatable/snapshot view fixed before hydration. This prevents a source change committed
+during multi-result-set reconstitution from producing mixed-version cache content. The
+statement requests no update/write lock and retains no source lock into the cache
+transaction, although ordinary provider read locking may still block briefly. A short
+single-document transaction then inserts a missing cache row or updates only a lower cache
+`ContentVersion`; it never takes a PostgreSQL `FOR NO KEY UPDATE`, SQL Server `UPDLOCK`, or
+another write-conflicting `dms.Document` lock as a commit-order fence. An older coherent
+materialization may therefore still commit after a newer canonical version. It cannot
+replace a higher cache row and remains ordinary cache-behind work for reconciliation. The
+cache foreign key remains the post-delete fence. The same optimistic check and monotonic
+upsert support ordinary reconciliation and optional direct fill after relational read
+fallback.
 
 Initial population, restart, rebuild, and readiness require a full audit. At startup or
 restart, the projector captures the initial incremental boundary before that audit and
@@ -113,12 +120,14 @@ precision risks without adding correctness. A monotonic idempotent upsert makes 
 projectors and restart rediscovery safe; refusing to lower an ahead cache row preserves
 the stream's monotonic consumer contract.
 
-This choice is conscious: v1 guarantees monotonic, eventually convergent publication, not
-that every cache upsert was canonical-current at its database commit. A consumer that has
-not yet seen the newer version may temporarily retain the older projection. Avoiding the
-stronger guarantee keeps optional projection and direct fill from taking source-row locks
-that can conflict with canonical writers. A future downstream requirement for linearizable
-publication requires a separate design and performance decision.
+This choice is conscious: cache-row transitions and conforming consumer-applied state are
+monotonic and eventually convergent, but raw at-least-once Kafka delivery may contain
+duplicates or lower-version replays. V1 does not guarantee that every cache upsert was
+canonical-current at its database commit. A consumer that has not yet seen the newer
+version may temporarily retain the older projection. Avoiding the stronger guarantee keeps
+optional projection and direct fill from taking source-row locks that can conflict with
+canonical writers. A future downstream requirement for linearizable publication requires
+a separate design and performance decision.
 
 ## Consequences
 
@@ -129,9 +138,11 @@ publication requires a separate design and performance decision.
   to use relational sources.
 - Reads may use only fresh cache rows and always retain relational fallback.
 - Projection lag and failure are observable but never gate normal API traffic.
-- Projector and direct-fill cache writes take no write-conflicting source-row lock. They do
-  not make canonical writers wait for optional projection to commit; ordinary cache-row
-  and foreign-key concurrency still follows provider transaction semantics.
+- Projector and direct-fill cache writes take no explicit write-conflicting source-row lock
+  as a content-version fence. They do not deliberately serialize ordinary canonical
+  version updates behind cache commits; ordinary cache-row, trigger, and foreign-key
+  concurrency can still block or abort one participant under provider transaction
+  semantics, especially during deletion.
 - Ordinary updates use indexed incremental discovery; full relationship scans are
   reserved for startup, rebuild, periodic audit, and readiness verification.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows are invariant
