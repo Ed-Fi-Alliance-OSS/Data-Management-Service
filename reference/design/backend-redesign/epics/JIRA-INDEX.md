@@ -198,13 +198,14 @@ This index links design documents under `reference/design/backend-redesign/epics
 ## Proposed Epics Pending Jira Creation
 
 - `TBD` — `dms.DocumentCache` Projection — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
-  - `TBD` — Add DocumentCache configuration and target selection — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-target-selection.md`
-  - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/01-document-materializer-service.md`
-  - `TBD` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/02-async-projector-reconciliation-loop.md`
-  - `TBD` — Add fresh-cache reads with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/03-cache-backed-read-path.md`
-  - `TBD` — Implement monotonic cache upsert and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/04-monotonic-cache-upsert-and-delete-fencing.md`
-  - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/05-documentcache-health-readiness-and-telemetry.md`
-  - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/06-documentcache-integration-tests-and-runbooks.md`
+  - `TBD` — Finalize DocumentCache schema and provider DDL — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md`
+  - `TBD` — Add DocumentCache configuration and target selection — `reference/design/backend-redesign/epics/18-document-cache/01-documentcache-configuration-and-target-selection.md`
+  - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md`
+  - `TBD` — Implement monotonic cache upsert and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/03-monotonic-cache-upsert-and-delete-fencing.md`
+  - `TBD` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md`
+  - `TBD` — Add fresh-cache reads with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`
+  - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md`
+  - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md`
 
 - `TBD` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/19-cdc-kafka/EPIC.md`
   - `TBD` — Add deployment-owned CDC binding and readiness — `reference/design/backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md`

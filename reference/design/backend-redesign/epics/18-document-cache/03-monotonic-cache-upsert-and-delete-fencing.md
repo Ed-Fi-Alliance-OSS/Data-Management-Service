@@ -23,7 +23,8 @@ was canonical-current at commit.
 
 ## Dependencies
 
-- Depends on canonical `dms.Document` representation stamps and is required by 18-02.
+- Depends on 18-00, 18-02, and canonical `dms.Document` representation stamps.
+- Unblocks the 18-04 projector and 18-05 cache-backed read path.
 
 ## Deliverables
 

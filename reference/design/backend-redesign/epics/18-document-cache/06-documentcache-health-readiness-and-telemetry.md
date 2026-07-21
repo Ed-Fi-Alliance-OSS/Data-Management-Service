@@ -21,7 +21,8 @@ process state.
 
 ## Dependencies
 
-- Depends on 18-00, 18-02, and 18-04.
+- Depends on the 18-00 schema, 18-01 target configuration, 18-04 projector, and 18-05
+  cache-backed read integration.
 - Consumed by CDC stories 19-00, 19-04, and 19-07.
 
 ## Deliverables

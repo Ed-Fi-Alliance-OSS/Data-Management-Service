@@ -17,6 +17,11 @@ epic: TBD
 Implement opt-in PostgreSQL and SQL Server database provisioning required by the
 relational CDC source/key design.
 
+## Dependencies
+
+- Depends on the ordinary source/cache schema, UUID validation trigger, and singleton
+  identity/state foundation from 18-00.
+
 ## Deliverables
 
 1. Add provider-specific publication/capture and delete-key setup.

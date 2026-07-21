@@ -22,8 +22,10 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 
 ## Dependencies
 
-- Depends on 18-00, 18-01, 18-04, and core source/cache DDL.
-- Supplies projection signals to 18-05 and CDC stories 19-00, 19-06, and 19-07.
+- Depends on the 18-00 schema, 18-01 target configuration, 18-02 materializer, and 18-03
+  monotonic upsert.
+- Unblocks 18-05 and supplies projection signals to 18-06 and CDC stories 19-00, 19-06,
+  and 19-07.
 
 ## Deliverables
 
@@ -38,36 +40,23 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 4. Implement startup, periodic, and rebuild-triggered full anti-join audits,
    including bounded audit-local paging and an exact finishing aggregate that separates
    missing, cache-behind, and cache-ahead rows.
-5. Update core DDL for both providers. Always provision `dms.DocumentCache`, rename its
-   obsolete `Etag` column to the required non-null `StreamEtag`, and always provision the
-   `dms.Document(ContentVersion, DocumentId)` discovery/audit index. Remove the obsolete
-   `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` and
-   `UX_DocumentCache_DocumentUuid` indexes, keep compact `DocumentId` as the cache
-   primary/foreign key, emit the provider-specific cache insert/update trigger that rejects
-   a UUID mismatch with the canonical row, and add the always-provisioned singleton
-   `dms.DataStoreIdentity` table with insert-if-absent random UUID initialization. Add the
-   always-provisioned singleton `dms.DocumentCacheState` row with its durable cache-ahead
-   recovery latch initially clear; provisioning reruns never reset the latch. Update DDL
-   emitter, unit, DB-apply, and snapshot fixtures to match the revised column, constraint,
-   identity, state, and access-path inventory. Keep provider publication/capture artifacts
-   outside this ordinary DDL path.
-6. Invoke the shared materializer and monotonic upsert with fair retry and idle polling for
+5. Invoke the shared materializer and monotonic upsert with fair retry and idle polling for
    missing and cache-behind candidates. When either lane observes a cache-ahead row,
    atomically set `DocumentCacheState.CacheAheadRecoveryRequired`; do not materialize or
    retry the row. Once classified, do not reclassify it if the source advances before the
    latch commit, and do not report the observation before that commit. Pause all projector
    writes for the latched target. Treat a missing, malformed, or unwritable state singleton
    as fail-closed.
-7. Implement one target-scoped administrative recovery operation that takes the exclusive
+6. Implement one target-scoped administrative recovery operation that takes the exclusive
    singleton-state lock, requires a set latch, clears the entire cache and latch in one
    provider transaction, and requests an immediate full audit after commit. Expose no
    latch-only reset; downstream publication-path recovery remains E19-owned.
-8. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
+7. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
    telemetry, and measure realistic plans for both providers.
-9. Bind the configurable incremental interval, full-audit interval, page size,
+8. Bind the configurable incremental interval, full-audit interval, page size,
    process-wide concurrent-target limit, and maximum audit age. Supply conservative,
    implementation-tuned defaults in supported appsettings and documentation.
-10. Run one serialized loop per target, coalesce duplicate audit requests, bound every page,
+9. Run one serialized loop per target, coalesce duplicate audit requests, bound every page,
    enforce fair process-wide target concurrency, and ensure health/readiness observation
    never starts or waits for an audit.
 
@@ -82,20 +71,6 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 - Query-plan tests prove ordinary high-version updates use indexed incremental discovery
   without a full relationship scan and that a full audit covers the relationship once
   rather than rescanning each repaired prefix.
-- PostgreSQL and SQL Server DDL tests prove every emitted schema includes
-  `dms.DataStoreIdentity`, singleton `dms.DocumentCacheState` initialized clear,
-  `dms.DocumentCache.StreamEtag`, and
-  `dms.Document(ContentVersion, DocumentId)`; preserves the cache `DocumentId` primary/FK;
-  emits no obsolete `DocumentCache.Etag`; and excludes
-  `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`,
-  `UX_DocumentCache_DocumentUuid`, and any new canonical
-  `(DocumentId, DocumentUuid)` index.
-- Provisioning rerun tests prove `dms.DataStoreIdentity.SourceIdentity` is generated once
-  and retained, independently provisioned databases receive different values, and the
-  emitted SQL remains deterministic.
-- Provider DB-apply tests prove cache insert/update statements with the matching canonical
-  UUID succeed, mismatches fail atomically through the validation trigger, no mismatched CDC
-  row can commit, and ordinary canonical writes perform no cache-trigger work.
 - Completeness tests prove late lower-version commits and cache-row loss below the cursor
   are repaired by full audit, advancing past failures retains bounded retry, and no
   timestamp, epoch, `StreamEtag` comparison, or cursor/high-watermark becomes a second

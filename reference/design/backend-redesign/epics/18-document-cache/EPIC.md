@@ -16,22 +16,24 @@ related:
 ## Outcome
 
 Implement the reusable optional document projection defined by the design references:
-configuration and target selection, materialization, reconciliation, monotonic writes,
-optional read acceleration, health/telemetry, provider tests, and runbooks. The CDC epic
-consumes this projection for upserts and independently owns connector lifecycle deletes.
+schema and provider DDL, configuration and target selection, materialization, monotonic
+writes, reconciliation, optional read acceleration, health/telemetry, provider tests, and
+runbooks. The CDC epic consumes this projection for upserts and independently owns
+connector lifecycle deletes.
 The small `dms.DocumentCache` table plus `dms.DataStoreIdentity` and
 `dms.DocumentCacheState` singletons are always provisioned; optionality applies to
 projection execution and cache-backed reads.
 
 ## Stories
 
-- `TBD` — `00-documentcache-configuration-and-target-selection.md` — Add configuration and target selection
-- `TBD` — `01-document-materializer-service.md` — Add reusable caller-agnostic document materialization
-- `TBD` — `02-async-projector-reconciliation-loop.md` — Add the asynchronous reconciliation loop
-- `TBD` — `03-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
-- `TBD` — `04-monotonic-cache-upsert-and-delete-fencing.md` — Implement monotonic cache upsert and post-delete fencing
-- `TBD` — `05-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
-- `TBD` — `06-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
+- `TBD` — `00-documentcache-schema-and-provider-ddl.md` — Finalize schema and provider DDL
+- `TBD` — `01-documentcache-configuration-and-target-selection.md` — Add configuration and target selection
+- `TBD` — `02-document-materializer-service.md` — Add reusable caller-agnostic document materialization
+- `TBD` — `03-monotonic-cache-upsert-and-delete-fencing.md` — Implement monotonic cache upsert and post-delete fencing
+- `TBD` — `04-async-projector-reconciliation-loop.md` — Add the asynchronous reconciliation loop
+- `TBD` — `05-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
+- `TBD` — `06-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
+- `TBD` — `07-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
 
 ## Delivery Dependencies
 

@@ -20,7 +20,7 @@ that links to, rather than restates, the authoritative design.
 
 ## Dependencies
 
-- Depends on the remaining E18 stories and informs CDC story 19-07.
+- Depends on 18-00 through 18-06 and informs CDC story 19-07.
 
 ## Deliverables
 

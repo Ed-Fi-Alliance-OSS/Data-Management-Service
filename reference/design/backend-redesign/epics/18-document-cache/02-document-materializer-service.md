@@ -21,8 +21,8 @@ reconciliation, optional direct fill, and CDC payload fixtures.
 
 ## Dependencies
 
-- Depends on relational read/reconstitution and update-tracking metadata.
-- Unblocks 18-02 and 18-03 and supplies realistic data to CDC contract/E2E tests.
+- Depends on 18-00 plus relational read/reconstitution and update-tracking metadata.
+- Unblocks 18-03 through 18-05 and supplies realistic data to CDC contract/E2E tests.
 
 ## Deliverables
 

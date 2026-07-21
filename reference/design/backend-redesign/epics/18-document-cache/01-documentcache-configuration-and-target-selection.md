@@ -19,8 +19,9 @@ target-resolution lifecycle.
 
 ## Dependencies
 
-- Informs CDC stories 19-00 and 19-04; does not depend on connector implementation or
-  deployment-owned CDC binding state.
+- May be implemented alongside 18-00 and informs 18-04 through 18-06 and CDC stories
+  19-00 and 19-04; it does not depend on connector implementation or deployment-owned CDC
+  binding state.
 
 ## Deliverables
 
@@ -33,7 +34,7 @@ target-resolution lifecycle.
 3. Keep unresolved configured targets visible and retry their CMS resolution on the
    bounded supervisor interval or after CMS refresh; never discover unlisted targets.
 4. Replace a resolved target's execution context and reset its health evidence when CMS
-   supplies replacement connection metadata. Make the new context observable to 18-05
+   supplies replacement connection metadata. Make the new context observable to 18-06
    without classifying old/new source identity, comparing a CDC binding, or changing
    Kafka artifacts.
 5. Create data-store-specific execution inputs without request/JWT inference.

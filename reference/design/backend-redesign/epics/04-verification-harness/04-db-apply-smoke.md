@@ -30,11 +30,7 @@ Testcontainers is explicitly not allowed.
   - sequences 
   - functions
   - SQL Server User-Defined Table Types
-  - `dms.EffectiveSchema` / `dms.SchemaComponent` / `dms.ResourceKey` rows,
-  - singleton `dms.DataStoreIdentity` presence and UUID validity, normalizing the random
-    value in committed manifests.
-  - singleton `dms.DocumentCacheState` presence with the cache-ahead recovery latch clear
-    on first apply; the smoke sets the latch before reapply and proves reapply preserves it.
+  - `dms.EffectiveSchema` / `dms.SchemaComponent` / `dms.ResourceKey` rows.
 - Journaling trigger smoke check passes:
   - inserting into `dms.Document` emits rows in `dms.DocumentChangeEvent`.
   - updating multiple `dms.Document` rows in one statement emits one `dms.DocumentChangeEvent` row per updated document and uses distinct `ChangeVersion` values (watermark-only compatibility).

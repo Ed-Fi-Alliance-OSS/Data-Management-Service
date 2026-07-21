@@ -4,7 +4,7 @@ Status: Draft (planning aid derived from `reference/design/backend-redesign/epic
 
 Scope:
 - Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 20 epic files and
-  199 story/support files).
+  200 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -132,16 +132,27 @@ Notes:
 This is the single cross-epic story dependency index. Design behavior is linked from the
 epics and is not repeated here.
 
+| `18-document-cache` story | Immediate implementation dependency |
+| --- | --- |
+| 18-00 | E02 DDL/provisioning infrastructure and E10 representation stamps |
+| 18-01 | — within E18; may proceed alongside 18-00 |
+| 18-02 | 18-00, E08, and E10 |
+| 18-03 | 18-00, 18-02, E10, and E11 |
+| 18-04 | 18-00, 18-01, 18-02, and 18-03 |
+| 18-05 | 18-00 through 18-04 |
+| 18-06 | 18-00, 18-01, 18-04, and 18-05 |
+| 18-07 | 18-00 through 18-06 |
+
 | `19-cdc-kafka` story | Implementation dependency |
 | --- | --- |
-| 19-00 | 19-01, 19-02, 18-00, 18-02, 18-04, 18-05 |
-| 19-01 | — |
+| 19-00 | 19-01, 19-02, 18-01, 18-03, 18-04, 18-06 |
+| 19-01 | 18-00 |
 | 19-02 | — until upsert smoke tests |
 | 19-03 | —; external transform implementation consumed by 19-02 and 19-05 |
-| 19-04 | 18-00, 18-02, 18-05, plus 19-00 |
-| 19-05 | 18-01 (soft) |
-| 19-06 | 18-00, 18-02, 18-05, plus 19-00 through 19-05 |
-| 19-07 | 18-02, 18-05, 18-06 |
+| 19-04 | 18-01, 18-04, 18-06, plus 19-00 |
+| 19-05 | 18-02 (soft) |
+| 19-06 | 18-01, 18-04, 18-06, plus 19-00 through 19-05 |
+| 19-07 | 18-04, 18-06, 18-07 |
 
 ---
 
