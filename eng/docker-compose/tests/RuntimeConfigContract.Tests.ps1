@@ -433,18 +433,26 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         ([regex]::Matches($source, 'bootstrap-manifest\.psm1"\)\s*-Force')).Count | Should -Be 0
     }
 
-    It "<Script> resolves the runtime contract exactly once and passes explicit config AND DMS participation" -ForEach @(
-        @{ Script = 'start-local-dms.ps1' }
-        @{ Script = 'start-published-dms.ps1' }
-        @{ Script = 'start-local-config.ps1' }
+    It "<Script> pins the exact caller participation matrix and resolves the contract exactly once (config=<Config>, dms=<Dms>)" -ForEach @(
+        # The finite caller matrix. Each start script declares BOTH participation authorities explicitly from
+        # its OWN compose-file selection - never inferred from null Compose fields - and the values are pinned
+        # per caller so $true, $false, and $configServiceIncluded can never be swapped. In particular the
+        # standalone CMS lane must stay -DmsServiceIncluded $false: its compose set legitimately has no dms
+        # service, and flipping it to $true would break standalone startup - this guard fails that change
+        # loudly. The always-include-config lanes declare -ConfigServiceIncluded $true as a constant; the
+        # published lane routes it through the single $configServiceIncluded authority (bound to
+        # published-config.yml inclusion by a separate test below).
+        @{ Script = 'start-local-dms.ps1';     Config = '$true';                  Dms = '$true' }
+        @{ Script = 'start-published-dms.ps1'; Config = '$configServiceIncluded'; Dms = '$true' }
+        @{ Script = 'start-local-config.ps1';  Config = '$true';                  Dms = '$false' }
     ) {
-        # Both participation authorities must be stated explicitly, never inferred from null Compose fields,
-        # and the contract is a single policy resolved once per startup.
         $source = Get-Content -LiteralPath (Join-Path $script:composeRoot $Script) -Raw
         ([regex]::Matches($source, '\$contract = Resolve-EffectiveConfigRuntimeContract')).Count |
             Should -Be 1 -Because "$Script validates the runtime contract exactly once"
-        $source | Should -Match '-ConfigServiceIncluded ' -Because "$Script must pass config participation explicitly to the contract"
-        $source | Should -Match '-DmsServiceIncluded ' -Because "$Script must pass DMS participation explicitly to the contract"
+        # Exact-value match with a trailing word boundary: resistant to spacing, but $true / $false /
+        # $configServiceIncluded are distinct tokens and cannot satisfy one another.
+        $source | Should -Match ('-ConfigServiceIncluded\s+' + [regex]::Escape($Config) + '\b') -Because "$Script must pass -ConfigServiceIncluded $Config"
+        $source | Should -Match ('-DmsServiceIncluded\s+' + [regex]::Escape($Dms) + '\b') -Because "$Script must pass -DmsServiceIncluded $Dms"
     }
 
     It "Get-ComposeResolvedConfiguration exposes distinct ConfigProvider and DmsProvider outputs (no ambiguous Provider)" {
@@ -473,16 +481,6 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         $source | Should -Match '\$configServiceIncluded\s*=\s*\$EnableConfig -or \$InfraOnly -or \(\$IdentityProvider -eq "self-contained"\) -or \$bootstrapMode'
         $source | Should -Match 'if \(\$configServiceIncluded\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
         $source | Should -Match '-ConfigServiceIncluded \$configServiceIncluded'
-    }
-
-    It "the always-config lanes state participation as literally true" -ForEach @(
-        @{ Script = 'start-local-dms.ps1' }
-        @{ Script = 'start-local-config.ps1' }
-    ) {
-        # Both lanes always include the config service, so they declare participation as a constant rather
-        # than inferring it.
-        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot $Script) -Raw
-        $source | Should -Match '-ConfigServiceIncluded \$true'
     }
 
     It "<Script> imports bootstrap-schema-tool WITH -Force (refreshes a stale resolver in a long-lived session)" -ForEach @(
