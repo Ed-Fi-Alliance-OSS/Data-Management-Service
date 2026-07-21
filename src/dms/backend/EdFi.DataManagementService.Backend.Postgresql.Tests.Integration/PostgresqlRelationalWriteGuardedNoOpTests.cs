@@ -375,7 +375,8 @@ internal sealed record GuardedNoOpPersistedState(
     IReadOnlyList<GuardedNoOpSchoolAddressRow> Addresses,
     IReadOnlyList<GuardedNoOpSchoolExtensionAddressRow> ExtensionAddresses,
     IReadOnlyList<GuardedNoOpReferentialIdentityRow> ReferentialIdentities,
-    long DocumentCount
+    long DocumentCount,
+    long MaxChangeVersion
 );
 
 internal sealed record GuardedNoOpReferentialIdentityRow(
@@ -596,6 +597,7 @@ file static class GuardedNoOpIntegrationTestSupport
         var extensionAddresses = await ReadSchoolExtensionAddressesAsync(database, document.DocumentId);
         var referentialIdentities = await ReadAllReferentialIdentityRowsAsync(database);
         var documentCount = await ReadDocumentCountAsync(database);
+        var maxChangeVersion = await ReadMaxChangeVersionAsync(database);
 
         return new GuardedNoOpPersistedState(
             document,
@@ -603,7 +605,8 @@ file static class GuardedNoOpIntegrationTestSupport
             addresses,
             extensionAddresses,
             referentialIdentities,
-            documentCount
+            documentCount,
+            maxChangeVersion
         );
     }
 
@@ -654,7 +657,8 @@ file static class GuardedNoOpIntegrationTestSupport
                     )
                 ),
             ],
-            state.DocumentCount
+            state.DocumentCount,
+            state.MaxChangeVersion
         );
 
     public static async Task<GuardedNoOpReferentialIdentityRow> ReadReferentialIdentityRowAsync(
@@ -683,6 +687,17 @@ file static class GuardedNoOpIntegrationTestSupport
             : throw new InvalidOperationException(
                 $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
             );
+    }
+
+    private static async Task<long> ReadMaxChangeVersionAsync(PostgresqlGeneratedDdlTestDatabase database)
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT "dms"."GetMaxChangeVersion"() AS "MaxChangeVersion";
+            """
+        );
+
+        return GetInt64(rows[0], "MaxChangeVersion");
     }
 
     private static async Task<

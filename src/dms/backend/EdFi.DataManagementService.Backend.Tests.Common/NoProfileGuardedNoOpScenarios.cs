@@ -77,7 +77,8 @@ public static class NoProfileGuardedNoOpScenarios
         IReadOnlyList<SchoolAddressRow> Addresses,
         IReadOnlyList<SchoolExtensionAddressRow> ExtensionAddresses,
         IReadOnlyList<ReferentialIdentityRow> ReferentialIdentities,
-        long DocumentCount
+        long DocumentCount,
+        long MaxChangeVersion
     );
 
     /// <summary>Asserts an unchanged PUT returned UpdateSuccess for the existing document.</summary>
@@ -213,5 +214,8 @@ public static class NoProfileGuardedNoOpScenarios
         state
             .ReferentialIdentities.Should()
             .HaveCount(1, "the focused snapshot contains the school referential identity row");
+        state
+            .MaxChangeVersion.Should()
+            .BeGreaterThan(0, "the seeded write must have allocated change versions (non-vacuous)");
     }
 }

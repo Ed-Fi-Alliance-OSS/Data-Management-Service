@@ -226,7 +226,7 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileGuardedNoOp (10 variants) ---------------------------------------------
         Gap(
             "NoProfileGuardedNoOp",
-            "An unchanged PUT compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op: the full persisted rowset (including referential identity), ContentVersion, and every stored update-tracking stamp — document and root-table — stay unchanged.",
+            "An unchanged PUT compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op: the full persisted rowset (including referential identity), ContentVersion, every stored update-tracking stamp — document and root-table — and the engine's max ChangeVersion allocation all stay unchanged.",
             ProductionBoundary.GuardedNoOp,
             "PostgresqlRelationalWriteGuardedNoOpTests.cs",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
@@ -828,7 +828,7 @@ public static partial class ParityScenarioCatalog
         ),
         Gap(
             "NoProfile/RelationalReadback/ChangedPutEtag",
-            "The served ETag from a follow-up GET-by-id after a changed PUT matches the current relational state (PostgreSQL-only today; no audited SQL Server equivalent).",
+            "The served ETag from a follow-up GET-by-id after a changed PUT matches the current relational state and its leading component equals the stored ContentVersion stamp (PostgreSQL-only today; no audited SQL Server equivalent).",
             ProductionBoundary.RelationalReadback,
             SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
@@ -837,7 +837,7 @@ public static partial class ParityScenarioCatalog
         ),
         Gap(
             "NoProfile/RelationalReadback/RepeatPutEtag",
-            "The served ETag from a follow-up GET-by-id after a repeat (no-op) PUT matches the current relational state (PostgreSQL-only today; no audited SQL Server equivalent).",
+            "The served ETag from a follow-up GET-by-id after a repeat (no-op) PUT matches the current relational state and its leading component equals the stored ContentVersion stamp (PostgreSQL-only today; no audited SQL Server equivalent).",
             ProductionBoundary.RelationalReadback,
             SsaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",

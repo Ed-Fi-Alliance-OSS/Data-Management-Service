@@ -507,9 +507,12 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: NestedCollectionSharedEntryPoint
                 + " + ProfileNestedCollectionScenarios.AssertHiddenRootExtensionScopePreservedExactly"
         ),
+        // Reclassified under ProfileHiddenExtensionRowPreservation: the fixture's aligned extension
+        // carries only scalar columns, so this proves hidden extension ROW preservation; the hidden
+        // extension child-collection mechanic is proven by the nested hidden-root-extension fixture.
         Profile(
-            "ProfileHiddenExtensionChildCollectionPreservation/CollectionAlignedExtensionHidden",
-            "A profiled update preserves an aligned extension row that is hidden in storage.",
+            "ProfileHiddenExtensionRowPreservation/CollectionAlignedExtensionHidden",
+            "A profiled update preserves an aligned extension row (scalar columns) that is hidden in storage.",
             "ProfileCollectionAlignedExtensionMergeTests",
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_hidden_in_storage",
             "Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_hidden_in_storage",
