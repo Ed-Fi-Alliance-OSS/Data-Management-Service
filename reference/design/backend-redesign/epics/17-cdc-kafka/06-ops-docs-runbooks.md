@@ -43,10 +43,13 @@ capability without redefining its architecture or contracts.
 6. Document both compatibility paths: for a conforming projection or opaque-ETag
    correction, stop old cache writers including direct fill, clear and rebuild cache
    state, retain the binding/topic/offsets, and verify later equal-version records; for an
-   incompatible key/field/type/delete/document-contract change, deploy a new
-   topic/`contractVersion`,
-   completely reproject, snapshot, bootstrap the new consumer namespace, and explicitly
-   retain or retire the old topic.
+   incompatible key/field/type/delete/document-contract change, mark readiness false,
+   reserve the new binding/topic/`contractVersion`, stop or fence the old connector and
+   verify its tasks cannot capture from the source, stop old-contract cache writers,
+   clear and completely reproject the cache with only new-contract writers, snapshot it
+   with the new connector, bootstrap the new consumer namespace, and explicitly retain
+   or retire the old topic. The old connector must stop before the cache clear and must
+   never restart against the rebuilt cache.
 7. Cross-link the canonical design and both ADRs instead of repeating their normative
    tables or algorithms.
 
@@ -66,6 +69,9 @@ capability without redefining its architecture or contracts.
   incompatible-contract publication from the single cache row. The compatible repair
   proves that old cache writers are stopped and later equal-version offsets replace
   prior values in the existing topic.
+- The incompatible-contract procedure has a verified old-connector stop or source fence
+  before cache clearing/reprojection, so no rebuilt row can reach the old topic; only the
+  new connector snapshots the rebuilt cache.
 - Documentation distinguishes CDC from Change Queries and from response serialization.
 
 ## Out of Scope

@@ -274,9 +274,15 @@ Changing the partition count or pinned partitioner is not necessarily a message-
 change, but it still creates a new binding generation, topic, and consumer state namespace
 because offsets from different partitions cannot order equal-version records.
 
-An incompatible public-contract change requires a new topic contract such as `documents.v2`, a
-matching `contractVersion`, a new binding generation/topic, complete reprojection, and
-consumer bootstrap in the new state namespace. Incompatible changes include changing key
+An incompatible public-contract change requires a new topic contract such as
+`documents.v2`, a matching `contractVersion`, a new binding generation/topic, complete
+reprojection, and consumer bootstrap in the new state namespace. Before clearing or
+rebuilding the shared cache, operators stop the old connector and verify that all of its
+tasks are stopped or otherwise fenced from the source database; they also stop every
+old-contract cache writer. Only new-contract writers may populate the rebuilt cache, and
+the new connector uses a fresh snapshot against the new topic. The old connector is never
+restarted against that cache. This barrier prevents new-contract cache rows from being
+captured and published into the old topic. Incompatible changes include changing key
 encoding, removing or changing the JSON type of a required field, changing delete
 semantics, or intentionally replacing the documented v1 document semantics rather than
 correcting their implementation. Schema reprovisioning likewise uses a new topic when

@@ -950,18 +950,36 @@ old and new partitions. It may retain `documents.v1` and `contractVersion: 1` wh
 public key/value/delete contract is otherwise unchanged.
 
 A change to key encoding, required field names or JSON types, delete semantics, or the
-document contract itself requires a new topic contract such as `documents.v2`. Operators
-reserve a new binding generation and topic, completely reproject the cache under the new
-contract, register the new connector with a fresh snapshot, wait for combined readiness,
-and bootstrap consumers in the new state namespace. Schema reprovisioning follows this
-path when retained consumer state could otherwise observe reused keys and versions under
-an incompatible schema.
+document contract itself requires a new topic contract such as `documents.v2`. Operators:
+
+1. Mark the CDC target not ready and reserve the new binding generation, topic, ACLs, and
+   consumer state namespace without changing the old binding in place.
+2. Stop the old connector and verify that all of its tasks are stopped or otherwise fenced
+   from the source database. Stop every old-contract cache writer, including projector
+   loops and optional direct fill. Neither old publication path may be restarted against
+   the shared cache after this point.
+3. Deploy the new-contract materializer/composer and connector transform while all cache
+   writers remain stopped, then clear `dms.DocumentCache` with the provider-supported
+   rebuild operation.
+4. Start only new-contract projector writers and completely reproject the cache until an
+   exact finishing audit reports zero missing, cache-behind, and cache-ahead rows.
+5. Register the new connector against the new binding and topic with a fresh snapshot,
+   wait for connector catch-up through a post-audit source position, recheck projection
+   readiness, and bootstrap consumers in the new state namespace before restoring
+   combined CDC readiness.
+6. Explicitly retain or retire the old topic and consumer state; never restart the old
+   connector against the rebuilt cache.
+
+Stopping or fencing the old connector before the cache clear is a required cutover
+barrier. Otherwise it could capture rows rebuilt under the new contract and publish them
+into the old topic. Schema reprovisioning follows this path when retained consumer state
+could otherwise observe reused keys and versions under an incompatible schema.
 
 The cutover does not advance canonical `ContentVersion`. Normal API correctness does not
-depend on projection, but old-contract projector writers must be drained before the cache
-is rebuilt. One cache row cannot supply two incompatible contracts concurrently; a
-zero-gap overlap requirement needs separate versioned projection state and another design
-decision.
+depend on projection, but the old connector and old-contract projector writers must be
+stopped or fenced before the cache is cleared or rebuilt. One cache row cannot supply two
+incompatible contracts concurrently; a zero-gap overlap requirement needs separate
+versioned projection state and another design decision.
 
 ## Enablement and Initial Readiness Sequence
 
@@ -1117,10 +1135,12 @@ cleanup ordering, and new-generation source migration; they never repair a misma
 rewriting an immutable binding record. They distinguish a conforming same-topic repair
 from an incompatible-contract cutover. The former stops old cache writers, clears and
 rebuilds the cache, and lets later equal-version offsets replace prior values. The latter
-completely reprojects into a new versioned topic and bootstraps new consumer state. Neither
-path advances canonical `ContentVersion`. Offset reset and resnapshot can replay current
-document state. Topic/offset/ACL/slot/capture deletion is destructive and always explicit;
-removal from configuration is not cleanup authority.
+stops or source-fences the old connector and stops old-contract cache writers before the
+cache clear, completely reprojects into a new versioned topic, and bootstraps new consumer
+state without restarting the old connector. Neither path advances canonical
+`ContentVersion`. Offset reset and resnapshot can replay current document state.
+Topic/offset/ACL/slot/capture deletion is destructive and always explicit; removal from
+configuration is not cleanup authority.
 
 ## Verification
 
