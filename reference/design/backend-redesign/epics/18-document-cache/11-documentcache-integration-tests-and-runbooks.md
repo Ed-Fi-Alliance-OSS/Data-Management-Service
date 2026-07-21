@@ -51,8 +51,10 @@ that links to, rather than restates, the authoritative design.
 - Concurrency tests prove an update committed during materialization is rejected by the
   final optimistic check, a coherent delayed lower projection after that check is ordinary
   cache-behind work, no lower candidate replaces a higher cache row, and projection takes
-  no update/write canonical source-row lock and retains no source lock into the cache
-  transaction.
+  no explicit update/write canonical source-row lock as a content-version fence or carries
+  a lock from the optimistic source check into the cache transaction. Tests preserve
+  ordinary integrity locks acquired by foreign-key enforcement and the UUID-validation
+  trigger.
 - Rebuild tests use ordinary reconciliation and never introduce a separate backfill
   workflow.
 - Compatible-correction tests prove ordinary reconciliation does not rewrite an existing

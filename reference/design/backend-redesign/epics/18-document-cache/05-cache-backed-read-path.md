@@ -52,10 +52,12 @@ authorization, candidate selection, fallback, and response shaping.
   candidate selection.
 - Tests prove reads do not enqueue projector work and remain correct if direct fill
   fails.
-- Tests prove direct fill requests no update/write source-row lock and retains no source
-  lock into the cache transaction. Synchronized source-read, cache-row conflict, concurrent
-  delete/foreign-key, trigger, timeout, and ordinary failure cases prove it is abandoned
-  within the direct-fill budget and never fails the relational response.
+- Tests prove direct fill requests no explicit update/write source-row lock as a
+  content-version fence and carries no lock from the optimistic source check into the cache
+  transaction. Synchronized source-read, cache-row conflict, concurrent delete/foreign-key,
+  trigger, timeout, and ordinary failure cases prove it is abandoned within the direct-fill
+  budget and never fails the relational response. Tests preserve ordinary integrity locks
+  acquired by foreign-key enforcement and the UUID-validation trigger.
 - Deadline tests span multiple statements and prove each operation receives only the
   remaining direct-fill budget, with no per-statement reset or projector retry.
 - Configuration tests reject a nonpositive `DirectFillTimeout`, pin its shipped default,

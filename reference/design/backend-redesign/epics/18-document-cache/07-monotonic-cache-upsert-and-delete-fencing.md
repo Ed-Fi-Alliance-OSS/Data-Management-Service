@@ -80,10 +80,12 @@ was canonical-current at commit.
 - Tests prove `StreamEtag`, `ContentVersion`, and `DocumentJson` remain one coherent atomic
   cache result even when the source advances concurrently.
 - PostgreSQL and SQL Server concurrency tests prove projector and direct-fill writes request
-  no update/write `dms.Document` lock and retain no source lock into the cache transaction.
-  They do not make canonical writers wait for an explicit projection-held content-version
-  fence. Tests separately expose ordinary source-read, cache-row, trigger, and foreign-key
-  contention rather than classifying it as source-fence behavior.
+  no explicit update/write `dms.Document` lock as a content-version fence and carry no lock
+  from the optimistic source check into the cache transaction. They do not make canonical
+  writers wait for an explicit projection-held content-version fence. Tests preserve and
+  separately expose ordinary provider locks and contention from source reads, cache rows,
+  foreign-key enforcement, and the UUID-validation trigger rather than classifying them as
+  source-fence behavior.
 - Performance evidence compares projector-disabled and projector-enabled source-write
   throughput and p95/p99 latency for uniform updates, a hot single document, duplicate
   replicas, rebuild, and optional direct fill.

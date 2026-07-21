@@ -39,11 +39,11 @@ reconciliation, optional direct fill, and CDC payload fixtures.
 5. After every hydration/result-set read completes, re-read the
    current source `(DocumentId, ContentVersion)` in a new current-visibility statement that
    does not reuse a repeatable/snapshot view fixed before hydration. Request no update/write
-   lock and retain no source lock into the cache transaction. Return a stale result with no
-   writable cache row when the source disappeared or no longer matches the captured
-   version. This optimistic check prevents mixed-version reconstitution but deliberately
-   retains no commit-order fence after it succeeds; ordinary provider read locking may
-   still block briefly when row-versioned reads are unavailable.
+   lock and carry no lock acquired by the check into the cache transaction. Return a stale
+   result with no writable cache row when the source disappeared or no longer matches the
+   captured version. This optimistic check prevents mixed-version reconstitution but
+   deliberately retains no commit-order fence after it succeeds; ordinary provider read
+   locking may still block briefly when row-versioned reads are unavailable.
 6. After the optimistic check succeeds, validate embedded/column/stream-ETag consistency
    and compose the writable result.
 7. Report disappearance, stale, reconstitution, and invariant failures without emitting a

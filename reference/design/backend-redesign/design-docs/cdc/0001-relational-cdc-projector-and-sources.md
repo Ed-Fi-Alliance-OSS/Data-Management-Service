@@ -67,16 +67,18 @@ an optimistic current-visibility statement rejects the result if the current sou
 missing or its `ContentVersion` no longer matches the captured version. It must not reuse a
 repeatable/snapshot view fixed before hydration. This prevents a source change committed
 during multi-result-set reconstitution from producing mixed-version cache content. The
-statement requests no update/write lock and retains no source lock into the cache
-transaction, although ordinary provider read locking may still block briefly. A short
+statement requests no update/write lock and carries no lock acquired by that check into the
+cache transaction, although ordinary provider read locking may still block briefly. A short
 single-document transaction then inserts a missing cache row or updates only a lower cache
 `ContentVersion`; it never takes a PostgreSQL `FOR NO KEY UPDATE`, SQL Server `UPDLOCK`, or
-another write-conflicting `dms.Document` lock as a commit-order fence. An older coherent
-materialization may therefore still commit after a newer canonical version. It cannot
-replace a higher cache row and remains ordinary cache-behind work for reconciliation. The
-cache foreign key remains the post-delete fence. The same optimistic check and monotonic
-upsert support ordinary reconciliation and optional direct fill after relational read
-fallback.
+another write-conflicting `dms.Document` lock as a commit-order fence. The cache transaction
+may still acquire ordinary provider-specific parent-row or key locks through foreign-key
+enforcement and the UUID-validation trigger; those integrity locks remain required and are
+not the rejected content-version fence. An older coherent materialization may therefore
+still commit after a newer canonical version. It cannot replace a higher cache row and
+remains ordinary cache-behind work for reconciliation. The cache foreign key remains the
+post-delete fence. The same optimistic check and monotonic upsert support ordinary
+reconciliation and optional direct fill after relational read fallback.
 
 Initial population, restart, rebuild, and readiness require a full audit. At startup or
 restart, the projector captures the initial incremental boundary before that audit and

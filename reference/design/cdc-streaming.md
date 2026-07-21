@@ -278,11 +278,13 @@ For each candidate from either lane, the projector:
 1. Captures `(DocumentId, ContentVersion)` and the source metadata needed by the
    materializer.
 2. Reconstitutes the caller-agnostic cached document without requesting an update/write
-   source-row lock or retaining a source lock into the later cache transaction.
+   source-row lock or carrying a lock acquired by materialization into the later cache
+   transaction.
 3. After all materialization reads finish, re-reads the current source
    `(DocumentId, ContentVersion)` in a new current-visibility statement. The statement
-   requests no update/write lock and retains no source lock into the cache transaction. A
-   missing row or version mismatch is a stale skip and produces no cache write.
+   requests no update/write lock, and any read lock acquired by that statement is not
+   carried into the cache transaction. A missing row or version mismatch is a stale skip
+   and produces no cache write.
 4. Validates the embedded/relational metadata invariant and composes the cache result.
 5. Performs the shared monotonic cache upsert.
 
@@ -370,6 +372,10 @@ re-evaluating the current cache version. A provider implementation must not use 
 read-then-unconditional-write pattern. A cache upsert may still encounter ordinary database
 failures and uses the projector's bounded retry path, but v1 adds no source-lock timeout,
 lock-wait telemetry, or deadlock policy specific to projection.
+The cache transaction is not lock-free with respect to `dms.Document`: foreign-key
+enforcement and the UUID-validation trigger may acquire their ordinary provider-specific
+parent-row or key locks. Those integrity locks are not an explicit write-conflicting
+content-version fence and must remain intact.
 Optional direct fill uses the same optimistic source-version check and monotonic upsert. It
 never waits for a source-row content-version fence, but ordinary cache-row, foreign-key,
 trigger, or database contention can still occur. A short direct-fill-specific database
@@ -1077,9 +1083,10 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - raw at-least-once replay may temporarily place an older upsert after a tombstone, while a
   subsequent replayed tombstone restores deleted state and connector catch-up re-establishes
   convergence,
-- projector and direct-fill cache writes request no update/write lock on `dms.Document`
-  and retain no source lock into the cache transaction; ordinary provider read locking is
-  distinguished from an explicit content-version fence,
+- projector and direct-fill cache writes request no explicit update/write lock on
+  `dms.Document` as a content-version fence and carry no lock from the optimistic source
+  check into the cache transaction; ordinary locks acquired by foreign-key enforcement and
+  the UUID-validation trigger remain intact and are distinguished from that fence,
 - the cache foreign key prevents a delayed candidate from recreating cache state after
   canonical deletion,
 - projection selection, empty-cache population, update, restart, retry, rebuild,

@@ -52,8 +52,10 @@ implementation inputs.
   Raw at-least-once delivery may contain duplicates or lower-version replays. A consumer may
   temporarily retain an older projection until the newer canonical version is projected;
   across a tombstone, replay may temporarily restore an older upsert until the replayed
-  tombstone arrives. Optional projection requests no update/write source-row lock and
-  retains no source lock into the cache transaction to prevent ordinary projection lag.
+  tombstone arrives. Optional projection requests no explicit update/write source-row lock
+  as a content-version fence and carries no lock from the optimistic source check into the
+  cache transaction. Ordinary integrity locks acquired there by foreign-key enforcement and
+  the UUID-validation trigger remain required.
 - Connector transforms copy the DMS-projected opaque stream ETag and contain no schema,
   link-configuration, or ETag-composition rules.
 - Contract fixtures pin the v1 key, fields/types, tombstones, document semantics, and
