@@ -21,6 +21,8 @@ without requiring an API E2E path for every source operation.
 
 - Depends on the transform artifact and unit-fixture contract from 17-02a and the provider
   source setup from 17-01.
+- The broker-backed poison-record readiness scenario also depends on the status and
+  registration behavior from 17-00 and 17-03.
 
 ## Deliverables
 
@@ -48,6 +50,10 @@ without requiring an API E2E path for every source operation.
    pinned idempotence, acknowledgement, retry, and maximum-in-flight settings. Inject a
    retriable send failure after a cache upsert is submitted and before the later canonical
    delete is sent.
+10. Add one broker-backed poison-record scenario using a registered connector with the
+    required `errors.tolerance=none`. Supply a malformed retained record that reaches the
+    `DocumentState` transform, rather than an operation the transform intentionally
+    drops.
 
 ## Acceptance Evidence
 
@@ -81,6 +87,10 @@ without requiring an API E2E path for every source operation.
 - The producer retry test proves the routed partition contains the committed cache upsert
   before its canonical tombstone despite the retriable send failure, and that connector
   catch-up leaves the document deleted rather than resurrected.
+- The poison-record test proves no public record is emitted, the connector task enters a
+  failed state instead of skipping the malformed retained record, and deployment-owned
+  combined readiness remains false even if offset or lag observations would otherwise
+  appear caught up.
 
 ## Out of Scope
 

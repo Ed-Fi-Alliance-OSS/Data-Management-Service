@@ -594,8 +594,9 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
   provider CDC/key prerequisites,
 - topic name, compact-only cleanup policy, fixed partition count, ACL, transform, and
   connector configuration that match the binding record,
-- a running connector with completed snapshot/catch-up through a database source
-  position observed after DMS reported a sufficiently recent exact-zero audit,
+- a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
+  through a database source position observed after DMS reported a sufficiently recent
+  exact-zero audit,
 - a second DMS projection-health observation that remains ready for the same source, and
 - connector lag within its configured threshold.
 
@@ -762,6 +763,13 @@ startup when the Kafka Connect worker's client-configuration override policy doe
 permit these values, and live connector validation rejects drift from them. V1 does not
 rely on producer defaults supplied by the Kafka client or pinned Connect image.
 
+Every v1 connector also emits the top-level connector setting
+`errors.tolerance=none`. This is a fixed v1 value rather than a binding or operator
+input, even though `none` is the Kafka Connect default. Template generation rejects a
+duplicate or conflicting value, registration reads the live configuration back, and
+combined readiness fails if the setting is absent or differs. The relational connector
+does not use error tolerance or a dead-letter queue to skip a retained source record.
+
 ### PostgreSQL
 
 - Use the Debezium PostgreSQL connector with `pgoutput` and logical replication.
@@ -862,7 +870,13 @@ The transform consumes schema-backed raw Debezium records and emits only one of 
 results: a final public upsert, a final public tombstone, or no record. Expected excluded
 operations are dropped; a malformed retained record, unexpected source shape, invalid
 `DocumentJson`, inconsistent embedded metadata, or unsupported temporal logical type
-fails transformation rather than publishing a partial or ambiguous record.
+fails transformation rather than publishing a partial or ambiguous record. Because the
+connector pins `errors.tolerance=none`, that failure stops the connector task instead of
+skipping the record. A failed task makes combined readiness false; offset or lag
+observations cannot reclassify it as caught up. Recovery requires correcting the cause
+and restarting or replacing the connector so the retained record is processed under the
+contract. Returning `null` for an explicitly excluded operation remains normal transform
+behavior and does not use the error-tolerance path.
 
 Kafka Connect does not calculate `schemaEpoch`, interpret
 `DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
@@ -1125,10 +1139,15 @@ use a new topic suffix and matching `contractVersion`.
 Connector template and registration tests require the exact idempotence, acknowledgement,
 retry, and maximum-in-flight producer overrides, reject every conflicting value and an
 override-disallowing worker policy, and verify the registered connector retains the
-required configuration. A broker-backed retry-ordering test injects a retriable producer
-failure after an upsert is submitted and before its canonical tombstone, then proves the
-public partition contains the upsert before the tombstone and remains deleted after
-connector catch-up.
+required configuration. They also require an explicit `errors.tolerance=none`, reject a
+duplicate, missing, or conflicting value, and reject live configuration drift. A
+broker-backed retry-ordering test injects a retriable producer failure after an upsert is
+submitted and before its canonical tombstone, then proves the public partition contains
+the upsert before the tombstone and remains deleted after connector catch-up. One
+broker-backed poison-record test supplies a malformed retained record and proves that no
+public record is emitted, the connector task fails instead of skipping it, and combined
+readiness remains false rather than accepting offset or lag catch-up beyond the poison
+record.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including an attempted partition-count change, rejection of a topic configured

@@ -41,8 +41,10 @@ backend.
    timeout, and condition-specific diagnostics. Fail before registration if the worker
    does not permit the required source-producer overrides. After registration, read back
    the connector configuration and reject drift from the required idempotence,
-   acknowledgement, retry, or maximum-in-flight values. ACL verification must complete
-   before connector registration and before combined readiness can pass.
+   acknowledgement, retry, maximum-in-flight, or `errors.tolerance=none` values. Treat a
+   failed connector task as not ready regardless of offset or lag observations. ACL
+   verification must complete before connector registration and before combined
+   readiness can pass.
 6. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
    destructive volume teardown.
@@ -60,7 +62,8 @@ backend.
   in-place topic partition-count changes, time/delete retention on the v1 topic, and
   source/topic-generation reuse.
 - Registration tests reject a worker policy that disallows the required producer
-  overrides and any live connector configuration with conflicting ordering settings.
+  overrides and any live connector configuration with conflicting ordering settings or
+  missing/conflicting `errors.tolerance=none`.
 - Broker-backed integration tests enable Kafka authorization and prove ACL provisioning
   is repeatable, a configured instance consumer can read its own literal topic, and that
   principal is denied when it attempts to read a peer instance topic.

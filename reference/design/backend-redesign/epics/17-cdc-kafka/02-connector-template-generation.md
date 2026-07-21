@@ -59,6 +59,10 @@ source routing and serialized public contract using the separately published
    Connect `producer.override.*` connector properties. Do not expose them as template
    inputs. Reject duplicate properties or any attempted override that conflicts with
    these values.
+10. Emit the fixed top-level connector setting `errors.tolerance=none`; do not rely on
+    its Kafka Connect default or expose it as a template input. Reject a duplicate,
+    missing, or conflicting value. Do not configure tolerant skipping or a dead-letter
+    queue for malformed retained records.
 
 ## Acceptance Evidence
 
@@ -80,6 +84,8 @@ source routing and serialized public contract using the separately published
 - Rendering tests require the exact ordering-safe source-producer overrides and reject
   idempotence disabled, acknowledgements other than `all`, fewer retries, more than five
   in-flight requests, and duplicate/conflicting producer properties.
+- Rendering tests require exactly one explicit `errors.tolerance=none` and reject an
+  omitted, duplicate, or conflicting value such as `all`.
 - A pinned-image smoke test proves the configured transform class loads; detailed
   transform behavior remains owned by 17-02a and the shared contract suite in 17-04.
 

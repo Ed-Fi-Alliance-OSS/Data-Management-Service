@@ -53,7 +53,9 @@ per-database projection health with E17-owned provider, topic, and connector che
    authorization coverage.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,
-   connector snapshot/catch-up, and lag checks.
+   connector configuration and task state, snapshot/catch-up, and lag checks. A failed
+   task or missing/conflicting `errors.tolerance=none` keeps combined readiness false
+   regardless of offset or lag observations.
 7. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
 
 ## Acceptance Evidence
@@ -67,8 +69,9 @@ per-database projection health with E17-owned provider, topic, and connector che
   mismatch without a DMS-owned drift latch.
 - Readiness tests cover binding, migration, projection, post-audit source position,
   connector snapshot/catch-up, second projection-health observation, cache-ahead latching
-  that remains false-ready after source equality, lag, per-target isolation, and aggregate
-  results.
+  that remains false-ready after source equality, explicit `errors.tolerance=none`, failed
+  connector task state despite otherwise acceptable offset/lag observations, lag,
+  per-target isolation, and aggregate results.
 - API integration tests prove every reported CDC/projector failure remains observational,
   including deletion with unavailable cache state.
 

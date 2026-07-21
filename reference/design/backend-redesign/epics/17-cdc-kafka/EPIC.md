@@ -71,6 +71,9 @@ implementation inputs.
   with binding, migration, connector catch-up, and lag status. A durable cache-ahead latch
   keeps combined readiness false across later source equality and process restart until
   explicit recovery.
+- Connector templates and live registration pin `errors.tolerance=none`; a malformed
+  retained record fails the task and combined readiness instead of being skipped as
+  caught-up progress.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported setup, security, observation, same-topic
   compatible repair, incompatible-contract migration, and explicit destructive cleanup.
