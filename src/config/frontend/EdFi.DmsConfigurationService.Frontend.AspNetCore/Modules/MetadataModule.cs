@@ -12,6 +12,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndpointModule
 {
+    // Matches the header the TenantResolutionMiddleware reads. Forwarded onto the internal OpenAPI request
+    // so multi-tenant tenant resolution on that nested request matches the incoming request.
+    private const string TenantHeaderName = "Tenant";
+
     /// <summary>
     /// Registers the OpenAPI specification endpoint with custom metadata and security scheme configuration.
     /// </summary>
@@ -22,10 +26,28 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
             "/metadata/specifications",
             async context =>
             {
-                var openApiJson = await context
+                var httpClient = context
                     .RequestServices.GetRequiredService<IHttpClientFactory>()
-                    .CreateClient()
-                    .GetStringAsync($"{context.Request.Scheme}://{context.Request.Host}/openapi/v1.json");
+                    .CreateClient();
+
+                using var openApiRequest = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"{context.Request.Scheme}://{context.Request.Host}/openapi/v1.json"
+                );
+
+                // Forward only the Tenant header so the internal OpenAPI request resolves against the same
+                // tenant as the incoming request; in multi-tenant mode a missing Tenant header would cause
+                // tenant resolution to reject the nested request (making /metadata/specifications fail).
+                // Authorization, cookies, and other request headers are intentionally not forwarded, and
+                // the shared HttpClient default headers are not mutated.
+                if (context.Request.Headers.TryGetValue(TenantHeaderName, out var tenant))
+                {
+                    openApiRequest.Headers.TryAddWithoutValidation(TenantHeaderName, tenant.ToString());
+                }
+
+                using var openApiResponse = await httpClient.SendAsync(openApiRequest);
+                openApiResponse.EnsureSuccessStatusCode();
+                var openApiJson = await openApiResponse.Content.ReadAsStringAsync();
 
                 var document = JsonNode.Parse(openApiJson)!.AsObject();
 

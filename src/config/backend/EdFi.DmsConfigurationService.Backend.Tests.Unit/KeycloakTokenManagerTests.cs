@@ -92,6 +92,34 @@ public class KeycloakTokenManagerTests
     }
 
     [TestFixture]
+    public class Given_The_Provider_Returns_A_400_Invalid_Client : KeycloakTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Keycloak reports a client-authentication failure as HTTP 400 with error=invalid_client. It
+            // must be preserved as an InvalidClient failure so the token endpoint can answer 401 with the
+            // Basic challenge, rather than collapsing to a generic 400 client error (which the endpoint's
+            // normalization would turn into invalid_request).
+            var tokenManager = CreateTokenManager(
+                HttpStatusCode.BadRequest,
+                """{"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}"""
+            );
+            _result = await tokenManager.GetAccessTokenAsync(Credentials);
+        }
+
+        [Test]
+        public void It_preserves_invalid_client_as_a_client_authentication_failure()
+        {
+            _result.Should().BeOfType<TokenResult.FailureIdentityProvider>();
+            var error = ((TokenResult.FailureIdentityProvider)_result).IdentityProviderError;
+            error.Should().BeOfType<IdentityProviderError.InvalidClient>();
+        }
+    }
+
+    [TestFixture]
     public class Given_The_Provider_Returns_A_Successful_Token : KeycloakTokenManagerTests
     {
         private TokenResult _result = null!;

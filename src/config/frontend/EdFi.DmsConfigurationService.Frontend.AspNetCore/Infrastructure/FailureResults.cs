@@ -18,6 +18,11 @@ internal static class FailureResults
     private static readonly string _authenticationFailedDetail = "The caller could not be authenticated.";
     private static readonly string _authorizationDeniedDetail =
         "Access to the resource could not be authorized.";
+
+    // Canonical Ed-Fi authorization-denied detail (Ed-Fi Error Response Knowledge Base) reported when an
+    // endpoint denies an operation, such as registration while it is disabled.
+    private static readonly string _operationDeniedDetail =
+        "Access to the requested data could not be authorized.";
     private static readonly string _errorContentType = "application/problem+json";
     private static readonly JsonSerializerOptions _relaxedSerializer = new()
     {
@@ -156,9 +161,9 @@ internal static class FailureResults
 
     // Authorization failure raised by the framework authorization middleware (an authenticated caller
     // whose access to a secured endpoint was denied), with caller-supplied error messages used verbatim
-    // (no "Forbidden. " prefix or JSON parsing). Reports the "Authorization Denied" contract. Endpoints
-    // that deny an operation should use AuthorizationFailed instead, which follows the canonical Ed-Fi
-    // "Authorization Failed" contract.
+    // (no "Forbidden. " prefix or JSON parsing). Reports the "Authorization Denied" contract with the
+    // resource-scoped detail. Endpoints that deny an operation should use AuthorizationFailed instead,
+    // which reports the same title with the Knowledge Base "requested data" detail.
     public static IResult Forbidden(string[] errors, string correlationId)
     {
         return Results.Json(
@@ -175,13 +180,19 @@ internal static class FailureResults
 
     // Authorization failure raised by an endpoint that denies an operation (e.g. registration when it is
     // disabled), with caller-supplied error messages used verbatim. Reports the canonical Ed-Fi
-    // "Authorization Failed" contract (title and detail), distinct from the framework authorization
-    // middleware's Forbidden overload above, which reports an authenticated caller's denied access as
-    // "Authorization Denied".
+    // "Authorization Denied" authorization contract (urn:ed-fi:api:security:authorization, HTTP 403) with
+    // the Knowledge Base detail "Access to the requested data could not be authorized." The framework
+    // authorization middleware's Forbidden overload above reports the same title with a resource-scoped
+    // detail for an authenticated caller's denied access.
     public static IResult AuthorizationFailed(string[] errors, string correlationId)
     {
         return Results.Json(
-            FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
+            FailureResponse.ForForbidden(
+                "Authorization Denied",
+                _operationDeniedDetail,
+                correlationId,
+                errors
+            ),
             contentType: _errorContentType,
             statusCode: 403
         );

@@ -45,9 +45,7 @@ public class KeycloakTokenManager(
                 // OAuth 2.0 client errors (RFC 6749 section 5.2) arrive as HTTP 400 with a machine-readable
                 // "error" code (invalid_scope, invalid_grant, ...). Preserve the code so the caller learns
                 // its request was rejected rather than seeing it collapsed into a retryable server outage.
-                HttpStatusCode.BadRequest => new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.BadRequest(ParseOAuthErrorCode(responseString), responseString)
-                ),
+                HttpStatusCode.BadRequest => MapBadRequest(responseString),
                 _ => new TokenResult.FailureIdentityProvider(new IdentityProviderError(responseString)),
             };
         }
@@ -63,6 +61,21 @@ public class KeycloakTokenManager(
             logger.LogError(ex, "Get access token error");
             return new TokenResult.FailureUnknown(ex.Message);
         }
+    }
+
+    // Maps an HTTP 400 token response to the appropriate failure. Keycloak reports a client-authentication
+    // failure as HTTP 400 with error=invalid_client (rather than 401), so that case is preserved as an
+    // InvalidClient failure — letting the token endpoint answer 401 with the Basic WWW-Authenticate
+    // challenge and a generic description, following the established client-authentication policy. Every
+    // other 400 stays a BadRequest client error carrying its parsed OAuth error code.
+    private static TokenResult MapBadRequest(string responseString)
+    {
+        string errorCode = ParseOAuthErrorCode(responseString);
+        return string.Equals(errorCode, "invalid_client", StringComparison.Ordinal)
+            ? new TokenResult.FailureIdentityProvider(new IdentityProviderError.InvalidClient(responseString))
+            : new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.BadRequest(errorCode, responseString)
+            );
     }
 
     // RFC 6749 section 5.2 error responses carry a machine-readable "error" code in the JSON body.

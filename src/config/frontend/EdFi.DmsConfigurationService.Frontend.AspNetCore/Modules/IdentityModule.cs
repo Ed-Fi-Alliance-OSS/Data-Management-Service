@@ -223,6 +223,17 @@ public class IdentityModule : IEndpointModule
         }
     }
 
+    // The token-request parameters read from the posted form. RFC 6749 §3.1 forbids repeating any of
+    // them; a repeated value is rejected before extraction (see GetClientAccessToken) because
+    // StringValues.ToString() would otherwise comma-join the values.
+    private static readonly string[] OAuthTokenFormParameters =
+    [
+        "grant_type",
+        "scope",
+        "client_id",
+        "client_secret",
+    ];
+
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromServices] ITokenManager tokenManager,
@@ -246,6 +257,18 @@ public class IdentityModule : IEndpointModule
         }
         if (form is not null)
         {
+            // RFC 6749 §3.1: a token-request parameter must not be included more than once. A repeated
+            // parameter is rejected as invalid_request before any value is extracted or the token manager
+            // is called, so a comma-joined StringValues never corrupts the request. A duplicated
+            // credential is therefore a malformed request (invalid_request), not a client-authentication
+            // failure (invalid_client).
+            if (Array.Exists(OAuthTokenFormParameters, name => form[name].Count > 1))
+            {
+                return OAuthErrorResults.InvalidRequest(
+                    "The request is missing a required parameter or is otherwise malformed."
+                );
+            }
+
             grantType = form["grant_type"].ToString();
             scope = form["scope"].ToString();
             formClientId = form["client_id"].ToString();
@@ -434,7 +457,21 @@ public class IdentityModule : IEndpointModule
             );
         }
 
-        return Results.Ok(tokenResponse);
+        return new TokenSuccessResult(tokenResponse);
+    }
+
+    // A successful token response (HTTP 200). RFC 6749 §5.1 requires the authorization server to include
+    // Cache-Control: no-store and Pragma: no-cache so the issued token is not retained by clients or
+    // intermediaries. The headers are applied only on this success path, never on the OAuth error
+    // responses. The body, status, and content type are those of the standard Results.Ok JSON response.
+    private sealed class TokenSuccessResult(TokenResponse tokenResponse) : IResult
+    {
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.Headers.CacheControl = "no-store";
+            httpContext.Response.Headers.Pragma = "no-cache";
+            return Results.Ok(tokenResponse).ExecuteAsync(httpContext);
+        }
     }
 
     // Maps an identity-provider token failure to the OAuth error contract. Bad-credential failures become

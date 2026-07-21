@@ -383,9 +383,9 @@ public class RegisterEndpointTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "The request could not be processed. See 'errors' for details.",
+              "detail": "Access to the requested data could not be authorized.",
               "type": "urn:ed-fi:api:security:authorization",
-              "title": "Authorization Failed",
+              "title": "Authorization Denied",
               "status": 403,
               "correlationId": "{correlationId}",
               "validationErrors": {},
@@ -600,9 +600,9 @@ public class Given_Registration_Is_Disabled_And_The_Form_Cannot_Be_Read
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "The request could not be processed. See 'errors' for details.",
+              "detail": "Access to the requested data could not be authorized.",
               "type": "urn:ed-fi:api:security:authorization",
-              "title": "Authorization Failed",
+              "title": "Authorization Denied",
               "status": 403,
               "correlationId": "{correlationId}",
               "validationErrors": {},
@@ -732,6 +732,14 @@ public abstract class TokenEndpointTestBase
     protected void AssertBasicAuthChallenge() =>
         Response.Headers.WwwAuthenticate.Should().Contain(header => header.Scheme == "Basic");
 
+    // RFC 6749 §5.1: a successful token response must carry Cache-Control: no-store and Pragma: no-cache
+    // so the issued token is not retained by clients or intermediaries.
+    protected void AssertNoStoreCacheHeaders()
+    {
+        Response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        Response.Headers.Pragma.Should().Contain(directive => directive.Name == "no-cache");
+    }
+
     private const string SuccessTokenJson = """
         {
             "access_token":"input123token",
@@ -769,6 +777,13 @@ public class Given_A_Valid_Client_Credentials_Token_Request : TokenEndpointTestB
         RawBody.Should().Contain("input123token");
         RawBody.Should().Contain("bearer");
     }
+
+    [Test]
+    public void It_returns_the_json_content_type() =>
+        Response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+    [Test]
+    public void It_sets_the_no_store_cache_headers() => AssertNoStoreCacheHeaders();
 }
 
 [TestFixture]
@@ -2138,6 +2153,292 @@ public class Given_A_Revoke_Request_Whose_Form_Read_Exceeds_The_Size_Limit
     public void It_does_not_revoke_the_token() =>
         A.CallTo(() => ((ITokenRevocationManager)_tokenManager).RevokeTokenAsync(A<string>._))
             .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_A_Successful_Basic_Authenticated_Token_Request : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient("self-contained");
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    [Test]
+    public void It_returns_the_json_content_type_and_access_token()
+    {
+        Response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        RawBody.Should().Contain("input123token");
+        RawBody.Should().Contain("bearer");
+    }
+
+    [Test]
+    public void It_sets_the_no_store_cache_headers() => AssertNoStoreCacheHeaders();
+}
+
+[TestFixture]
+public class Given_A_Successful_Basic_Authenticated_Token_Request_In_Keycloak_Mode : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // The cache-protection headers are provider-independent: the same success path serves Keycloak.
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient("keycloak");
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    [Test]
+    public void It_sets_the_no_store_cache_headers() => AssertNoStoreCacheHeaders();
+}
+
+// RFC 6749 §3.1 forbids repeating a request parameter. A success is arranged so that, absent the
+// duplicate-parameter guard, the request would otherwise succeed — proving the guard is what rejects it.
+// Each duplicated parameter must be reported as invalid_request (HTTP 400) without calling the token
+// manager. A duplicated credential is a malformed request, not a client-authentication failure, so it is
+// invalid_request (400) and never invalid_client (401).
+[TestFixture]
+public class Given_A_Token_Request_With_A_Duplicate_Grant_Type : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_A_Token_Request_With_A_Duplicate_Scope : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access"),
+            new("scope", "edfi_admin_api/readonly_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_A_Token_Request_With_A_Duplicate_Client_Id : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_id", "CSClient2"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_A_Token_Request_With_A_Duplicate_Client_Secret : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        ArrangeTokenResult(SuccessResult());
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("client_secret", "other-secret"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_request_error_not_invalid_client() =>
+        AssertOAuthError(
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request is missing a required parameter or is otherwise malformed."
+        );
+
+    [Test]
+    public void It_does_not_call_the_token_manager() =>
+        A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
+            .MustNotHaveHappened();
+}
+
+[TestFixture]
+public class Given_The_Provider_Reports_The_Client_As_Invalid_Client : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // Keycloak reports a client-authentication failure as an InvalidClient provider error (mapped from
+        // its HTTP 400 error=invalid_client). The endpoint must answer 401 invalid_client with the Basic
+        // challenge, following the client-authentication policy, and must not echo the provider message.
+        ArrangeTokenResult(
+            new TokenResult.FailureIdentityProvider(
+                new IdentityProviderError.InvalidClient(
+                    """{"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}"""
+                )
+            )
+        );
+        var client = CreateClient("keycloak");
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("CSClient1:wrong"));
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encoded
+        );
+        await PostTokenRequestAsync(
+            client,
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_the_oauth_invalid_client_error() =>
+        AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "Client authentication failed.");
+
+    [Test]
+    public void It_includes_the_www_authenticate_challenge() => AssertBasicAuthChallenge();
+
+    [Test]
+    public void It_does_not_leak_the_provider_message() =>
+        RawBody.Should().NotContain("Invalid client or Invalid client credentials");
+}
+
+[TestFixture]
+public class Given_The_Provider_Returns_A_Success_With_An_Issued_Scope : TokenEndpointTestBase
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        // RFC 6749 §5.1: the issued scope is returned when it differs from the requested scope, so the
+        // provider's scope must be preserved in the public token response.
+        ArrangeTokenResult(
+            new TokenResult.Success(
+                """
+                {
+                    "access_token":"input123token",
+                    "expires_in":900,
+                    "token_type":"bearer",
+                    "scope":"edfi_admin_api/authMetadata_readonly_access"
+                }
+                """
+            )
+        );
+        var client = CreateClient();
+        await PostTokenRequestAsync(
+            client,
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access")
+        );
+    }
+
+    [Test]
+    public void It_returns_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    [Test]
+    public void It_preserves_the_issued_scope()
+    {
+        var body = JsonNode.Parse(RawBody)!;
+        body["scope"]!.GetValue<string>().Should().Be("edfi_admin_api/authMetadata_readonly_access");
+    }
+
+    [Test]
+    public void It_still_returns_the_access_token_and_token_type()
+    {
+        var body = JsonNode.Parse(RawBody)!;
+        body["access_token"]!.GetValue<string>().Should().Be("input123token");
+        body["token_type"]!.GetValue<string>().Should().Be("bearer");
+    }
 }
 
 // Replaces the request's form feature with one that throws a BadHttpRequestException carrying a chosen HTTP

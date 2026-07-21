@@ -6,6 +6,9 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -705,6 +708,86 @@ public class Given_The_Metadata_Specifications_Document
             .Should()
             .Be("#/components/responses/OAuthError");
     }
+}
+
+/// <summary>
+/// In multi-tenant mode the /metadata/specifications handler self-fetches /openapi/v1.json over HTTP.
+/// That nested request must carry the same Tenant header as the incoming request, or tenant resolution
+/// rejects it and the outer request fails with a 500. Proves the Tenant header is forwarded so the nested
+/// request resolves against the same tenant and the post-processed document is returned with a 200.
+/// </summary>
+[TestFixture]
+public class Given_The_Metadata_Specifications_Document_In_Multi_Tenant_Mode
+{
+    private const string TenantName = "test-tenant";
+
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private ITenantRepository _tenantRepository = null!;
+    private HttpResponseMessage _response = null!;
+    private JsonNode _document = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _tenantRepository = A.Fake<ITenantRepository>();
+        A.CallTo(() => _tenantRepository.GetTenantByName(TenantName))
+            .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = TenantName }));
+
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(cfg =>
+                cfg.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                )
+            );
+            // Route the internal /openapi/v1.json fetch back through the in-memory test server, and resolve
+            // the tenant through the fake repository so both the outer and nested requests pass tenant
+            // resolution.
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<IHttpClientFactory>(
+                    new TestServerHttpClientFactory(() => _factory.Server.CreateHandler())
+                );
+                services.AddSingleton(_tenantRepository);
+            });
+        });
+        _client = _factory.CreateClient();
+        _client.DefaultRequestHeaders.Add("Tenant", TenantName);
+
+        _response = await _client.GetAsync("/metadata/specifications");
+        _document = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_returns_200_with_the_json_content_type()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+    }
+
+    [Test]
+    public void It_returns_the_post_processed_configuration_service_document()
+    {
+        _document["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi API Configuration Service API");
+        _document["components"]!["schemas"]!.AsObject().Should().ContainKey("ProblemDetails");
+    }
+
+    [Test]
+    public void It_resolves_the_same_tenant_for_the_outer_and_nested_requests() =>
+        // The outer /metadata/specifications request and the nested /openapi/v1.json request each resolve
+        // the tenant once. A dropped Tenant header would fail the nested request's resolution before the
+        // repository is consulted, and surface as a 500 on the outer request.
+        A.CallTo(() => _tenantRepository.GetTenantByName(TenantName)).MustHaveHappenedTwiceExactly();
 }
 
 // Routes the module's internal /openapi/v1.json fetch through the in-memory test server.
