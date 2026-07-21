@@ -154,6 +154,14 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                         "Forbidden. The request is authenticated but not authorized to access this resource."
                     ),
                     ["NotFound"] = ProblemDetailsResponse("Not Found. The specified resource was not found."),
+                    // A wrong-method request produces a runtime 405 with the Ed-Fi Problem Details
+                    // urn:ed-fi:api:method-not-allowed body, so the reusable response exists in the
+                    // catalog. It is intentionally not referenced from any operation: a method mismatch
+                    // has no defined OpenAPI operation to attach it to, and the exact per-operation error
+                    // documentation is owned by DMS-1293.
+                    ["MethodNotAllowed"] = ProblemDetailsResponse(
+                        "Method Not Allowed. The request method is not supported for this resource."
+                    ),
                     ["Conflict"] = ProblemDetailsResponse(
                         "Conflict. The request conflicts with the current state of the resource."
                     ),

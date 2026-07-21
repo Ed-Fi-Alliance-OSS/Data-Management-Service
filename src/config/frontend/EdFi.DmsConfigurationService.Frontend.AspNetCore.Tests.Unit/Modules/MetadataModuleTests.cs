@@ -675,6 +675,20 @@ public class Given_The_Metadata_Specifications_Document
     }
 
     [Test]
+    public void It_defines_the_reusable_method_not_allowed_response()
+    {
+        // The runtime returns urn:ed-fi:api:method-not-allowed Problem Details for a wrong-method
+        // request, so the reusable component is published even though no operation references it (a
+        // method mismatch has no operation to attach it to; per-operation documentation is DMS-1293).
+        var responses = Components["responses"]!.AsObject();
+        responses.Should().ContainKey("MethodNotAllowed");
+        responses["MethodNotAllowed"]!["content"]!["application/problem+json"]!["schema"]!["$ref"]!
+            .GetValue<string>()
+            .Should()
+            .Be("#/components/schemas/ProblemDetails");
+    }
+
+    [Test]
     public void It_references_bad_gateway_from_registration()
     {
         var operation = FindAnyOperation("/connect/register", "post");
