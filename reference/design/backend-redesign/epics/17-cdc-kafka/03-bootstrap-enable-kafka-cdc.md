@@ -20,7 +20,8 @@ repeats the same one-shot workflow with its durable state backend.
 
 ## Dependencies
 
-- Depends on 17-00 through 17-02 and the projection/readiness inputs named by 17-00.
+- Depends on 17-00 through 17-02, the published transform from 17-02a, and the
+  projection/readiness inputs named by 17-00.
 
 ## Deliverables
 

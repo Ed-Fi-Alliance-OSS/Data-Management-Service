@@ -5,7 +5,6 @@ jira: DMS-1245
 related:
   - DMS-1246
   - DMS-1232
-  - DMS-1240
   - DMS-1089
 ---
 

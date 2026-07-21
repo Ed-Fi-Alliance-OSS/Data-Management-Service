@@ -30,12 +30,16 @@ including the bounded in-memory retry behavior defined by the authoritative desi
    including bounded re-resolution of configured targets that are not yet available.
 2. Implement provider-equivalent bounded incremental keyset scans using a disposable
    process-local `(ContentVersion, DocumentId)` cursor.
-3. Implement startup, periodic, rebuild, and readiness-triggered full anti-join audits,
+3. Before a startup or restart audit, capture the maximum current source key as the
+   initial incremental boundary. After the audit, start the cursor at exactly that
+   pre-audit boundary rather than a later maximum, so commits after the audit remain
+   visible to incremental scanning.
+4. Implement startup, periodic, rebuild, and readiness-triggered full anti-join audits,
    including bounded audit-local paging and an exact finishing aggregate.
-4. Provision the required `dms.Document(ContentVersion, DocumentId)` index whenever
+5. Provision the required `dms.Document(ContentVersion, DocumentId)` index whenever
    `dms.DocumentCache` is provisioned.
-5. Invoke the shared materializer and guarded upsert with fair retry and idle polling.
-6. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
+6. Invoke the shared materializer and guarded upsert with fair retry and idle polling.
+7. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
    telemetry, and measure realistic plans for both providers.
 
 ## Acceptance Evidence
@@ -52,6 +56,9 @@ including the bounded in-memory retry behavior defined by the authoritative desi
   are repaired by full audit, advancing past failures retains bounded retry, and no
   timestamp, epoch, `StreamEtag` comparison, or cursor/high-watermark becomes a second
   completeness predicate.
+- A synchronized startup test commits a higher-key source update after the finishing
+  audit observation but before incremental scanning begins and proves the update remains
+  above the pre-audit boundary and is projected without waiting for the next full audit.
 
 ## Out of Scope
 

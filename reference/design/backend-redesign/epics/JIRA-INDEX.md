@@ -201,6 +201,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `TBD` — Add deployment-owned CDC binding and readiness — `reference/design/backend-redesign/epics/17-cdc-kafka/00-documentcache-cdc-prerequisites.md`
   - `TBD` — Emit/provision provider CDC key and database support — `reference/design/backend-redesign/epics/17-cdc-kafka/01-cdc-ddl-support.md`
   - `TBD` — Generate PostgreSQL and SQL Server connector templates — `reference/design/backend-redesign/epics/17-cdc-kafka/02-connector-template-generation.md`
+  - `TBD` — Add the relational DocumentState Kafka Connect transform — `reference/design/backend-redesign/epics/17-cdc-kafka/02a-document-state-transform.md`
   - `TBD` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/17-cdc-kafka/03-bootstrap-enable-kafka-cdc.md`
   - `TBD` — Add Kafka message and source-routing contract tests — `reference/design/backend-redesign/epics/17-cdc-kafka/04-message-contract-tests.md`
   - `TBD` — Replace legacy Kafka E2E expectations — `reference/design/backend-redesign/epics/17-cdc-kafka/05-e2e-kafka-scenarios.md`

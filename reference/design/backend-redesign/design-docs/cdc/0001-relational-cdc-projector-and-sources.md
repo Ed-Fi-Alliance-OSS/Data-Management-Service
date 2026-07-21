@@ -6,7 +6,6 @@ jira:
   - DMS-1246
 related:
   - DMS-1232
-  - DMS-1240
   - DMS-1089
 ---
 
@@ -49,11 +48,13 @@ deletion. The same guard supports ordinary reconciliation and optional direct fi
 relational read fallback. The authoritative design specifies the PostgreSQL and SQL
 Server locking semantics.
 
-Initial population, restart, rebuild, and readiness require a full audit. Steady-state
-catch-up normally uses the incremental cursor and the required
-`dms.Document(ContentVersion, DocumentId)` index. The cursor is never durable work
-inventory or readiness evidence because sequence allocation is not transaction commit
-order and cache work can appear below it. V1 adds no durable projection queue,
+Initial population, restart, rebuild, and readiness require a full audit. At startup or
+restart, the projector captures the initial incremental boundary before that audit and
+resumes incremental scanning from exactly that pre-audit key, never from a later maximum
+that could skip a post-audit commit. Steady-state catch-up uses the incremental cursor and
+the required `dms.Document(ContentVersion, DocumentId)` index. The cursor is never durable
+work inventory or readiness evidence because sequence allocation is not transaction
+commit order and cache work can appear below it. V1 adds no durable projection queue,
 progress/high-watermark, backfill epoch, failure table, or repair workflow. An exact zero
 finishing audit count is projection completeness at its observation;
 connector/source-position catch-up is a separate deployment-owned CDC readiness concern.

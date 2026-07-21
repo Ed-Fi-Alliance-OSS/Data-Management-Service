@@ -21,17 +21,21 @@ coverage against the actual provisioned data store and routed public topic.
 
 ## Dependencies
 
-- Depends on 17-00 through 17-04 and the completed projection path needed for upserts.
+- Depends on 17-00 through 17-04, including the published 17-02a transform, and the
+  completed projection path needed for upserts.
 
 ## Deliverables
 
-1. Opt E2E setup into CDC, persist its local JSON binding record, and wait for
+1. Refine DMS-1232's legacy message expectations before implementation: v1 upserts use
+   the DMS-1245 envelope and deletes use Kafka-null tombstones, not
+   `deleted=false`/`deleted=true` records carrying `EdFiDoc`.
+2. Opt E2E setup into CDC, persist its local JSON binding record, and wait for
    deployment-owned combined target readiness before observed writes.
-2. Add a consumer helper that selects the instance topic and filters by document key.
-3. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
+3. Add a consumer helper that selects the instance topic and filters by document key.
+4. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
    and same-key ordering scenarios.
-4. Capture connector status/logs, topics, and consumed records on timeout.
-5. Remove legacy ignore markers only after consistent relational scenario results.
+5. Capture connector status/logs, topics, and consumed records on timeout.
+6. Remove legacy ignore markers only after consistent relational scenario results.
 
 ## Acceptance Evidence
 

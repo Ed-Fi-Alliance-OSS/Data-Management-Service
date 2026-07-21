@@ -4,7 +4,7 @@ Status: Draft (planning aid derived from `reference/design/backend-redesign/epic
 
 Scope:
 - Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 19 epic files and
-  210 story/support files).
+  206 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -134,6 +134,7 @@ epics and is not repeated here.
 | 17-00 | 18-00, 18-03, 18-07, 18-09 |
 | 17-01 | — |
 | 17-02 | — until upsert smoke tests |
+| 17-02a | —; external transform implementation consumed by 17-02 and 17-04 |
 | 17-03 | 18-00, 18-03, 18-09, plus 17-00 |
 | 17-04 | 18-02 (soft) |
 | 17-05 | 18-00, 18-03, 18-09, plus 17-00 through 17-04 |

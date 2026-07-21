@@ -6,7 +6,6 @@ jira:
   - DMS-1246
 related:
   - DMS-1232
-  - DMS-1240
   - DMS-1089
 ---
 
@@ -231,9 +230,18 @@ evidence. `ContentVersion` values come from a monotonic sequence, but sequence a
 is not transaction commit order: a transaction can commit a lower allocated version
 after the cursor has advanced past it. Cache-row loss or truncation can likewise create
 work below the cursor. Full audits are therefore required even when incremental scans
-are continuously successful. On startup the projector establishes its process-local
-cursor from the maximum current source key observed at or after the required finishing
-audit; restart may repeat work but cannot lose it.
+are continuously successful.
+
+Before the required startup or restart audit begins, the projector observes the maximum
+current `(ContentVersion, DocumentId)` source key as that execution context's initial
+incremental boundary; an empty source uses the logical minimum key. After the audit
+finishes, the incremental cursor starts at exactly that pre-audit boundary. It must not
+be initialized from a later maximum: a source change committed after the audit's
+finishing observation but before incremental scanning begins must remain above the
+boundary and be discovered by the incremental lane. A transaction that allocated a key
+at or below the boundary but commits after the audit remains the acknowledged late-commit
+case repaired by the next full audit. Restart may repeat work but cannot advance the
+cursor over post-boundary work.
 
 The database guard is a strong commit-order fence, not only a conditional read from an
 MVCC snapshot. It writes only when the source `dms.Document` still exists at the captured
@@ -830,6 +838,9 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   fencing, health, cache fallback, and mixed-target isolation,
 - ordinary high-version updates are discovered through the incremental lane without a
   full relationship scan,
+- a source update committed after the startup audit's finishing observation but before
+  incremental scanning begins remains above the pre-audit boundary and is discovered by
+  the incremental lane,
 - a lower version committed after the incremental cursor advances is repaired by the
   next full audit,
 - cache-row loss below the incremental cursor is repaired by the next full audit,

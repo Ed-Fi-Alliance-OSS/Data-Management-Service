@@ -4,7 +4,6 @@ source_spike: DMS-1245
 related:
   - DMS-1246
   - DMS-1232
-  - DMS-1240
   - DMS-1089
 ---
 
@@ -30,6 +29,7 @@ source.
 - `TBD` — `00-documentcache-cdc-prerequisites.md` — Add deployment-owned CDC binding and readiness
 - `TBD` — `01-cdc-ddl-support.md` — Emit/provision provider CDC key and database support
 - `TBD` — `02-connector-template-generation.md` — Generate PostgreSQL and SQL Server connector templates
+- `TBD` — `02a-document-state-transform.md` — Add the DMS-specific relational record transform
 - `TBD` — `03-bootstrap-enable-kafka-cdc.md` — Add explicit local/bootstrap connector registration
 - `TBD` — `04-message-contract-tests.md` — Add message and source-routing contract tests
 - `TBD` — `05-e2e-kafka-scenarios.md` — Replace legacy Kafka E2E expectations

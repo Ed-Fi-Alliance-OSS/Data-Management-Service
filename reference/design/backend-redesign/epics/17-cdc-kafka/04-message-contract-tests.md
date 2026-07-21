@@ -17,6 +17,11 @@ epic: TBD
 Add fast serialized-record and provider integration tests that pin the v1 public contract
 without requiring an API E2E path for every source operation.
 
+## Dependencies
+
+- Depends on the transform artifact and unit-fixture contract from 17-02a and the provider
+  source setup from 17-01.
+
 ## Deliverables
 
 1. Add canonical PostgreSQL and SQL Server Debezium fixtures for every source operation.
