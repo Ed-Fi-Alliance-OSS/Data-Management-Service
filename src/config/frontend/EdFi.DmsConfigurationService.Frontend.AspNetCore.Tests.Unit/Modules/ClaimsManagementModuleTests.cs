@@ -253,12 +253,16 @@ public abstract class ClaimsManagementModuleTests
         Client = _factory.CreateClient();
     }
 
-    protected void ArrangeClientWithInvalidBearerToken(bool dangerousFlagEnabled)
+    protected void ArrangeClientWithInvalidBearerToken(
+        bool dangerousFlagEnabled,
+        string? identityProvider = null
+    )
     {
         _factory = CreateFactory(
             addTestAuthentication: false,
             dangerousFlagEnabled,
-            requiredServiceRole: null
+            requiredServiceRole: null,
+            identityProvider
         );
         Client = _factory.CreateClient();
         Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
@@ -281,12 +285,29 @@ public abstract class ClaimsManagementModuleTests
     private WebApplicationFactory<Program> CreateFactory(
         bool addTestAuthentication,
         bool dangerousFlagEnabled,
-        string? requiredServiceRole
+        string? requiredServiceRole,
+        string? identityProvider = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+
+            // Override the identity provider so the production JWT bearer handler exercised is the one
+            // configured for that provider. Self-contained and Keycloak independently set
+            // IncludeErrorDetails = false, so both must be covered. Null keeps the environment default.
+            if (identityProvider is not null)
+            {
+                builder.ConfigureAppConfiguration(config =>
+                    config.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:IdentityProvider"] = identityProvider,
+                        }
+                    )
+                );
+            }
+
             builder.ConfigureServices(
                 (ctx, collection) =>
                 {
@@ -1003,13 +1024,19 @@ public abstract class ClaimsManagementModuleTests
     /// <summary>
     /// A malformed (non-JWT) bearer token is rejected by the production JWT handler; the resulting
     /// 401 carries the Ed-Fi authentication contract and reports the credential as invalid rather than
-    /// missing.
+    /// missing. Run against both identity providers because each configures its own JWT bearer handler
+    /// and independently sets IncludeErrorDetails = false, so the suppressed-challenge behavior must hold
+    /// for both. The malformed token is rejected locally by the token handler, so neither provider
+    /// requires a live Keycloak or OpenIddict service.
     /// </summary>
-    [TestFixture]
-    public class Given_an_invalid_bearer_token_the_framework_401_is_compliant : ClaimsManagementModuleTests
+    [TestFixture("self-contained")]
+    [TestFixture("keycloak")]
+    public class Given_an_invalid_bearer_token_the_framework_401_is_compliant(string identityProvider)
+        : ClaimsManagementModuleTests
     {
         [SetUp]
-        public void Setup() => ArrangeClientWithInvalidBearerToken(dangerousFlagEnabled: true);
+        public void Setup() =>
+            ArrangeClientWithInvalidBearerToken(dangerousFlagEnabled: true, identityProvider);
 
         [Test]
         public async Task It_returns_a_compliant_401_for_current_claims()
