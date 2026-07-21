@@ -1645,6 +1645,38 @@ public class ClaimSetModuleTests
     }
 
     [TestFixture]
+    public class Given_A_ClaimSet_Export_That_Is_Not_Found : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+                .Returns(new ClaimSetExportResult.FailureNotFound());
+            _response = await _client.GetAsync("/v3/claimSets/1/export");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ClaimSet 1 not found. It may have been recently deleted."
+            );
+    }
+
+    [TestFixture]
     public class Given_A_ClaimSet_Update_That_Is_Not_Found : ClaimSetModuleTests
     {
         private HttpClient _client = null!;
