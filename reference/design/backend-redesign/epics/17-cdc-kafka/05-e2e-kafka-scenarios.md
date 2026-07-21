@@ -56,4 +56,6 @@ coverage against the actual provisioned data store and routed public topic.
 ## Out of Scope
 
 - Exhaustive resource coverage.
-- Kafka ACL or connector scaling tests.
+- A broader Kafka ACL matrix; focused broker-backed own-topic access and cross-instance
+  denial coverage is owned by 17-03.
+- Connector scaling tests.

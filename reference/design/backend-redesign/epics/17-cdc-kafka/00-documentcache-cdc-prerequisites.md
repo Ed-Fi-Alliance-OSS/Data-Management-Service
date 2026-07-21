@@ -48,7 +48,9 @@ per-database projection health with E17-owned provider, topic, and connector che
    new UUID before binding creation under the provisioning/restore contract.
 5. Validate provider tables including the clear `dms.DocumentCacheState` latch, projected
    `StreamEtag`, keys, replica/capture setup, topic, ACL, and installed source-operation
-   shaping against the binding before registration.
+   shaping against the binding before registration. This story defines the ACL readiness
+   check; 17-03 owns ACL provisioning, idempotent live validation, and broker-backed
+   authorization coverage.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,
    connector snapshot/catch-up, and lag checks.

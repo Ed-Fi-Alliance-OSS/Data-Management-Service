@@ -14,9 +14,10 @@ epic: TBD
 
 ## Outcome
 
-Add explicit, idempotent local connector registration for a selected configured target,
-using deployment-owned binding state, and document how production-like deployment
-repeats the same one-shot workflow with its durable state backend.
+Add explicit, idempotent local topic/ACL provisioning and connector registration for a
+selected configured target, using deployment-owned binding state, and document how
+production-like deployment repeats the same one-shot workflow with its durable state
+backend.
 
 ## Dependencies
 
@@ -31,13 +32,17 @@ repeats the same one-shot workflow with its durable state backend.
 3. Require the selected deployment target to be present in DMS
    `DocumentCache:Targets`, and reserve or exact-match its immutable binding before
    creating governed artifacts.
-4. Create or validate the topic with the binding's fixed partition count, then implement
-   idempotent Kafka Connect create/update, external combined-status polling, timeout, and
-   condition-specific diagnostics.
-5. Print sanitized binding-generation/connector/source/topic identity. Retain binding
+4. Create or validate the topic with the binding's fixed partition count. Provision and
+   idempotently validate literal, binding-scoped topic ACLs for the deployment-supplied
+   connector and instance consumer principals, plus their required consumer-group ACLs;
+   do not emit shared-topic, wildcard-topic, or cross-instance consumer grants.
+5. Implement idempotent Kafka Connect create/update, external combined-status polling,
+   timeout, and condition-specific diagnostics. ACL verification must complete before
+   connector registration and before combined readiness can pass.
+6. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
    destructive volume teardown.
-6. Expose the same workflow to E2E setup before observed test traffic begins.
+7. Expose the same workflow to E2E setup before observed test traffic begins.
 
 ## Acceptance Evidence
 
@@ -49,8 +54,12 @@ repeats the same one-shot workflow with its durable state backend.
   high-watermark.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
   in-place topic partition-count changes, and source/topic-generation reuse.
+- Broker-backed integration tests enable Kafka authorization and prove ACL provisioning
+  is repeatable, a configured instance consumer can read its own literal topic, and that
+  principal is denied when it attempts to read a peer instance topic.
 - Diagnostics identify infrastructure, REST, provider setup, projector completeness,
-  connector catch-up, target/source binding, and mismatch failures without secrets.
+  connector catch-up, target/source binding, ACL authorization, and mismatch failures
+  without secrets.
 
 ## Out of Scope
 

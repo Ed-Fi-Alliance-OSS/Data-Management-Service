@@ -973,6 +973,10 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   never placed in `.bootstrap/bootstrap-manifest.json`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
+- The same workflow provisions and idempotently validates the binding-scoped topic ACLs
+  before connector registration. It emits literal instance-topic grants for the
+  deployment-supplied connector and consumer principals and never emits a shared-topic,
+  wildcard-topic, or cross-instance consumer grant.
 - Bootstrap prints connector name, provider, database, opaque instance key, and topic;
   secrets are excluded.
 - It calculates the combined readiness sequence above and reports whether binding,
@@ -1027,6 +1031,16 @@ Topic-per-instance ACLs are the Kafka authorization boundary. Shared topics requ
 consumer-side instance filtering are not supported. The stream contains sensitive data;
 Kafka Connect internal topics, its REST API, and database credentials are not exposed to
 third-party consumers. Local insecure defaults must be replaced in production.
+
+Deployment bootstrap owns ACL provisioning as part of the one-shot binding workflow. For
+each binding it idempotently creates and verifies the literal topic grants required by the
+connector producer and the deployment-supplied instance consumer principals, plus only
+the consumer-group grants required by those consumers. Repeated execution must accept an
+exact ACL match, repair missing required grants, and fail closed when the effective
+deployment-managed ACL set would grant a configured instance consumer access to another
+instance topic. ACL verification completes before connector registration and before
+combined readiness can pass. It does not rely on consumer-side filtering as an isolation
+control.
 
 Structured logs and metrics cover:
 
@@ -1096,6 +1110,12 @@ retention, destructive-teardown removal, and new-generation source migration.
 Multi-controller state backends additionally prove compare-and-set behavior. No test
 repairs a mismatch by rewriting a binding, changes a topic's partition count in place, or
 reuses a topic generation for a different source.
+
+Bootstrap integration coverage uses an authorization-enabled broker to prove ACL
+provisioning is repeatable and binding-scoped: a consumer principal configured for one
+instance can read that instance topic and is denied when it attempts to read a peer
+instance topic. This focused broker-backed check belongs to bootstrap story 17-03; the
+broad API-driven CDC E2E suite does not duplicate an ACL matrix.
 
 SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.
 Transform tests use realistic `io.debezium.time.NanoTimestamp` values with zero, one,
