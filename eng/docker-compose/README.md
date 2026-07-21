@@ -251,16 +251,25 @@ both engines; the choice is never inferred from the engine:
 `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, the shared bootstrap wrapper, and
 `build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase.
 
-Before any container or Keycloak starts, the start scripts resolve the effective Configuration
-Service settings by asking Docker Compose itself (`docker compose config`, which applies your shell
-environment over the env file exactly as `up` will) and validate them once: the provider
-(`DMS_CONFIG_DATASTORE`) must be exactly `postgresql` or `mssql` and match the selected engine; the
-connection string must be a valid connection for that engine and target the effective
-`DMS_CONFIG_DATABASE_NAME`; the SQL Server SA password must be non-blank; and a shell
-`POSTGRES_DB_NAME` / `MSSQL_DB_NAME` override must agree with the env file. Anything else - an
-unsupported provider, a wrong-engine or database-less connection, an empty connection on a SQL
-Server stack, or a shell override that would split the container from host-side setup - fails fast
-with a clear diagnostic before Docker or Keycloak is touched.
+Before any external action - network creation, image build, container start, or Keycloak/OpenIddict -
+the start scripts resolve the effective Configuration Service settings by asking Docker Compose itself
+(`docker compose config`, which applies your shell environment over the env file exactly as `up`
+will) and validate them once: the provider (`DMS_CONFIG_DATASTORE`) must be exactly `postgresql` or
+`mssql` and match the selected engine; the connection string must be a valid connection for that
+engine (parsed with the exact runtime providers - Npgsql / Microsoft.Data.SqlClient - via the
+`api-schema-tools connection validate` verb, so any keyword the driver rejects is caught here) and
+target the effective `DMS_CONFIG_DATABASE_NAME`; the SQL Server SA password must be non-blank; and the
+datastore database the containers actually receive (again from Compose, so a shell override of
+`POSTGRES_DB_NAME` / `MSSQL_DB_NAME` - direct or through a referenced variable - is reflected) must
+agree with the env file host-side tooling reads. Anything else fails fast with a clear diagnostic
+before Docker or Keycloak is touched.
+
+> Because connection strings are parsed with the exact runtime providers, the start scripts locate the
+> built `api-schema-tools` executable (the same tool the provisioning phase uses, resolved via
+> `DMS_SCHEMA_TOOL_PATH`, `eng/docker-compose/.bootstrap/tools/api-schema-tools`, or the SchemaTools
+> build output). Build or publish it once after cloning (or after pulling a change to it):
+> `dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools`.
+> `build-dms.ps1 BuildAndPublish` and the bootstrap flow produce it as part of their normal build.
 
 ```pwsh
 # Shared (default): CMS shares the DMS datastore database

@@ -28,6 +28,9 @@ param (
 )
 
 Import-Module ./env-utility.psm1 -Force
+# bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool, the api-schema-tools connection-string
+# validator the runtime contract uses (the same tool the provisioning phase uses).
+Import-Module ./bootstrap-schema-tool.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $datastore = if ($envValues["DMS_CONFIG_DATASTORE"]) { $envValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
 $databaseComposeFile = if ($datastore -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
@@ -52,6 +55,23 @@ if ($d) {
     }
 }
 else {
+
+    # Resolve and validate the effective Configuration Service runtime contract ONCE, BEFORE any external
+    # action (network creation, image build, container start, Keycloak/OpenIddict). `docker compose config`
+    # is read-only and resolves the same files, env file, and shell the `up` calls below use, so what is
+    # validated here is exactly what the container receives; connection strings are parsed by the exact
+    # runtime providers via the api-schema-tools validator. The standalone lane passes no -ConfigDatabaseName
+    # (the resolved connection's own single target IS the effective configuration database OpenIddict
+    # initializes) and no datastore connection (there is no separate DMS datastore service in this lane).
+    $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
+    $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "cs-local"
+    $contract = Resolve-EffectiveConfigRuntimeContract `
+        -InfrastructureEngine $datastore `
+        -ResolvedProvider $resolvedCompose.Provider `
+        -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
+        -SchemaToolPath $schemaToolPath `
+        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
+        -EnvValues $envValues
 
     $existingNetwork = docker network ls --filter name="dms" -q
     if (! $existingNetwork) {
@@ -86,20 +106,6 @@ else {
         $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
     }
 
-    # Resolve and validate the effective Configuration Service runtime contract once, before any Docker
-    # action, from the values Docker Compose itself resolves (shell over --env-file, ${VAR:-default},
-    # nested references, quoting - Compose is the authority, not a re-implementation). It enforces the
-    # provider == engine invariant, the connection engine/database invariant, and datastore-name
-    # agreement, so neither self-contained OpenIddict nor Keycloak's EnsureDatabase can be pointed at a
-    # wrong engine or database. The standalone lane passes no -ConfigDatabaseName, so the resolved
-    # connection's own single target IS the effective configuration database OpenIddict initializes.
-    $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "cs-local"
-    $contract = Resolve-EffectiveConfigRuntimeContract `
-        -InfrastructureEngine $datastore `
-        -ResolvedProvider $resolvedCompose.Provider `
-        -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
-        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
-        -EnvValues $envValues
 
     # Self-contained OpenIddict initialization must run before the Configuration Service starts, so
     # start the database first and guarded-create the CMS database and OpenIddict key store before

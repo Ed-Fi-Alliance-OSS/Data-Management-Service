@@ -40,6 +40,9 @@ try
     // hash subcommand
     rootCommand.Subcommands.Add(HashCommand.Create(logger, fileLoader, hashProvider));
 
+    // connection subcommand group (validate a connection string with the exact runtime provider)
+    rootCommand.Subcommands.Add(ConnectionCommand.Create(logger));
+
     // ddl command group
     var ddlCommand = new Command("ddl", "DDL generation commands");
     ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
