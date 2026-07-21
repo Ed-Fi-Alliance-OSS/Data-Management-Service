@@ -13,6 +13,42 @@ Ensure the relational redesign behaves consistently across PostgreSQL and SQL Se
 - Differences are intentional and documented (e.g., error messages where dialect limits differ).
 - This story owns the compact shared profile scenario matrix that keeps `DMS-1106`, `DMS-1105`, `DMS-984`, `DMS-1124`, `DMS-1104`, `DMS-1022`, and `DMS-1023` aligned on fixture names and coverage expectations.
 
+## Backend parity scope boundary
+
+This story provides confidence that PostgreSQL and SQL Server behave equivalently for the representative scenarios explicitly listed in this document. Existing DMS product behavior and product-level test coverage are accepted as the baseline; this story does not reopen the completeness of that coverage.
+
+For each scenario explicitly listed in the acceptance criteria or parity catalog:
+
+1. Both backends execute the same provider-neutral input and behavioral contract.
+2. Both backends satisfy the same assertions for the observable outcomes explicitly named by that scenario.
+3. Any intentional dialect difference is internal and does not change those observable outcomes.
+
+The listed scenarios and observable outcomes form a closed parity matrix. Existing PostgreSQL tests, resource shapes, edge cases, and provider branches outside that matrix do not automatically become SQL Server parity requirements. Incidental behavior exercised by a representative fixture is not an additional parity obligation unless the acceptance criteria explicitly identify it. One representative scenario per listed behavior category is sufficient unless the acceptance criteria expressly require additional variants.
+
+The following are within this story's parity scope:
+
+- a listed scenario that is not executed against both required backends;
+- materially different inputs or expectations between the backends for a listed scenario;
+- different PostgreSQL and SQL Server results for an observable outcome covered by a listed scenario;
+- a shared assertion that cannot detect a plausible backend-specific difference in an observable outcome explicitly required by a listed scenario; and
+- a parity inventory that falsely reports a required scenario as executed or covered.
+
+A missing assertion or test that would fail identically on both backends concerns product-correctness coverage, not backend-parity coverage, and is outside this story.
+
+This story does not require:
+
+- exhaustive coverage of every resource shape, code branch, persistence column, or hypothetical failure;
+- re-proving existing DMS product behavior;
+- exhaustive database snapshots when the listed parity observable is narrower;
+- mutation-proofing every assertion against every alternative implementation;
+- converting incidental PostgreSQL smoke-test breadth into SQL Server obligations;
+- catalog or metadata hardening that does not create a false coverage claim for a required scenario;
+- new generalized test frameworks, contract languages, inventories, or validation systems beyond what is necessary to execute and identify the closed parity matrix;
+- provider-internal implementation equivalence when the explicitly listed observable behavior is equivalent; or
+- scenarios added solely because they are possible, adjacent to an existing scenario, or already covered by product-level tests for one backend.
+
+Completion means every scenario in the closed parity matrix executes successfully against both required backends with equivalent results for its explicitly listed observable outcomes.
+
 ## Authoritative catalog and coverage layers
 
 The machine-readable source of truth for cross-engine parity is the C# catalog under `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/Parity/` (`ParityScenarioCatalog*.cs`, with the typed model in `ParityScenarioModel.cs` and the structural rules in `ParityCatalogInvariants.cs`). This document is the architectural narrative and index for that catalog; it is not a second row-by-row copy. Each catalog row records a stable scenario id, the behavioral mechanic (production seam) it exercises — recorded as `ProductionBoundary`, which is the mechanic the assertions pin rather than the invocation entry point, and which belongs to exactly one layer — per-engine coverage and test locations, the reusable assertion/helper entry point named as concrete `Type.Method` member(s) (recorded separately from the test locations), any intentional dialect difference, a classification, and per-engine gap ownership. `Backend.Tests.Unit/Parity` asserts the catalog is complete and internally consistent.
