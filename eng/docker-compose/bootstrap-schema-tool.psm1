@@ -5,7 +5,12 @@
 
 Set-StrictMode -Version Latest
 
-Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+# Import WITHOUT -Force. A -Force reload here removes and re-imports bootstrap-manifest, which re-homes it
+# out of a caller's session scope (e.g. a start script that imported bootstrap-manifest for its own env
+# snapshot / startup config) and breaks that caller's bootstrap-manifest functions. Without -Force the
+# module is loaded if absent and reused if already present, so importing bootstrap-schema-tool never
+# disturbs a caller's bootstrap-manifest.
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1")
 
 function Get-DotNetFrameworkVersion {
     param(
@@ -84,10 +89,18 @@ function Resolve-DmsSchemaTool {
     when nothing resolves, throws with build/configuration guidance.
     .PARAMETER RequestedPath
     Optional explicit path to the api-schema-tools executable. When set, it must exist or resolution throws.
+    .PARAMETER BuildIfMissing
+    When no prebuilt tool is found and the .NET SDK is available, publish the CLI from source once to the
+    documented drop directory (.bootstrap/tools/api-schema-tools) and re-probe, instead of throwing. Lets
+    lanes/operators that run the start scripts without a prior host build (template builds, config-PR E2E,
+    direct diagnostic use) self-heal. When the SDK is absent, resolution still throws with guidance.
     #>
     param(
         [string]
-        $RequestedPath
+        $RequestedPath,
+
+        [switch]
+        $BuildIfMissing
     )
 
     if (-not [string]::IsNullOrWhiteSpace($RequestedPath)) {
@@ -110,6 +123,31 @@ function Resolve-DmsSchemaTool {
             $candidate = Join-Path $candidateDirectory $candidateName
             if (Test-Path -LiteralPath $candidate -PathType Leaf) {
                 return $candidate
+            }
+        }
+    }
+
+    if ($BuildIfMissing) {
+        # Nothing prebuilt. When the .NET SDK is available, publish the CLI from source once to the
+        # documented drop directory and re-probe, so a lane/operator running the start scripts without a
+        # prior host build self-heals rather than failing. dotnet output is captured (not returned) so it
+        # cannot pollute the caller's assignment; the SDK-absent case falls through to the guidance throw.
+        $dotnetCommand = Get-Command "dotnet" -ErrorAction SilentlyContinue
+        $schemaToolsProject = Join-Path (Get-BootstrapRepoRoot) "src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+        if ($null -ne $dotnetCommand -and (Test-Path -LiteralPath $schemaToolsProject -PathType Leaf)) {
+            $publishDirectory = Join-Path (Get-BootstrapRoot) "tools/api-schema-tools"
+            Write-Information "api-schema-tools was not found; publishing it from source to '$(Format-LogSafeText $publishDirectory)' (one-time build)..." -InformationAction Continue
+            $publishOutput = & dotnet publish $schemaToolsProject -c Release -p:UseAppHost=true -o $publishDirectory --nologo 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                foreach ($candidateName in $candidateNames) {
+                    $candidate = Join-Path $publishDirectory $candidateName
+                    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                        return $candidate
+                    }
+                }
+            }
+            else {
+                Write-Warning "Failed to publish api-schema-tools; falling back to resolution guidance. $(Format-LogSafeText (($publishOutput | Out-String).Trim()))"
             }
         }
     }
