@@ -31,6 +31,15 @@ relational CDC source/key design.
    Debezium key column and that the provider cache trigger enforces equality with the
    canonical UUID for the same `DocumentId`; do not add a cache UUID or canonical
    composite identity index as a CDC prerequisite.
+7. Create and seed the opt-in singleton `dms.CdcHeartbeat` table with constrained
+   `HeartbeatId`, nonnegative `HeartbeatSequence`, and `HeartbeatAt` columns. Include it
+   in the narrow PostgreSQL publication and enable a dedicated SQL Server CDC capture
+   instance. Emit provider-qualified identifiers and the fixed atomic sequence-increment
+   statement consumed by connector template generation; ordinary non-CDC provisioning
+   does not create it.
+8. Grant the connector principal only the provider replication/CDC reads and heartbeat
+   singleton read/update access needed by the generated query; grant no document-table
+   write through this setup.
 
 ## Acceptance Evidence
 
@@ -42,6 +51,12 @@ relational CDC source/key design.
 - Cache-source smoke tests use the non-indexed `DocumentUuid` custom key and prove its
   serialized value matches the canonical delete key for the same document.
 - Both providers distinguish cache maintenance records for later filtering.
+- PostgreSQL DB-apply tests prove the generated heartbeat update is visible through the
+  logical publication. SQL Server DB-apply tests prove its update after-image exposes
+  `__$start_lsn`, `__$seqval`, and the incremented sequence through the dedicated capture
+  instance. Repeated setup preserves the singleton and its sequence.
+- Least-privilege tests prove the connector principal can advance the heartbeat but cannot
+  insert, update, or delete canonical or cache document rows.
 - Ordinary relational provisioning tests prove CDC artifacts remain opt-in.
 
 ## Out of Scope

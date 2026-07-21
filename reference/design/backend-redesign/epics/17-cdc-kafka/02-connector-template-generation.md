@@ -12,6 +12,7 @@ related:
 
 - [Connector transform pipeline](../../../cdc-streaming.md#connector-transform-pipeline)
 - [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
+- [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
 ## Outcome
@@ -68,6 +69,13 @@ source routing and serialized public contract using the separately published
     `producer.override.compression.type=none`. Do not infer the value from DMS's request
     body limit or accept a separate producer-size input. Reject a missing, duplicate, or
     conflicting property.
+12. Include `dms.CdcHeartbeat` beside the two document tables and emit a positive
+    `heartbeat.interval.ms` with a generated, provider-qualified
+    `heartbeat.action.query` that atomically increments the singleton. Default the
+    interval to 5,000 ms, permit an explicit positive operational override within the
+    readiness timeout, and require SQL Server `poll.interval.ms` to be no greater than
+    it. These timing values are not binding fields. Reject missing, duplicate, free-form,
+    or conflicting heartbeat properties.
 
 ## Acceptance Evidence
 
@@ -95,6 +103,11 @@ source routing and serialized public contract using the separately published
   no-compression override, reject nonpositive/out-of-range size values and every
   duplicate/conflicting producer-size property, and prove a changed `maxRecordBytes`
   requires a new binding generation.
+- Rendering tests require the emitted heartbeat table include, positive interval, exact
+  provider action query, and valid SQL Server poll relationship. Pinned-image smoke tests
+  prove heartbeat table and Debezium heartbeat records are intentionally dropped from the
+  public topic while their source offsets remain available through the connector-offset
+  REST endpoint with the provider fields required by readiness.
 - A pinned-image smoke test proves the configured transform class loads; detailed
   transform behavior remains owned by 17-02a and the shared contract suite in 17-04.
 

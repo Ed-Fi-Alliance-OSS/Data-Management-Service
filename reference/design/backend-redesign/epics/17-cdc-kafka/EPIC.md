@@ -68,9 +68,11 @@ implementation inputs.
 - Binding state survives DMS and connector restarts, fails closed around missing or
   mismatched state, and prevents a topic generation from changing physical source.
 - DMS exposes only per-database projection health; deployment automation combines it
-  with binding, migration, connector catch-up, and lag status. A durable cache-ahead latch
-  keeps combined readiness false across later source equality and process restart until
-  explicit recovery.
+  with binding, migration, provider source-position catch-up, and lag status. PostgreSQL
+  and SQL Server adapters compare a barrier captured after the zero audit with the
+  connector's committed Debezium offset, and an internal captured heartbeat advances idle
+  sources. A durable cache-ahead latch keeps combined readiness false across later source
+  equality and process restart until explicit recovery.
 - Connector templates and live registration pin `errors.tolerance=none`; a malformed
   retained record fails the task and combined readiness instead of being skipped as
   caught-up progress.

@@ -27,7 +27,9 @@ capability without redefining its architecture or contracts.
    how immutable `maxRecordBytes` is established from the maximum fully materialized
    link-bearing envelope, required producer/topic/broker/replica/consumer size settings,
    DMS per-database projection-health observation, and deployment-owned combined
-   readiness. Warn that the HTTP request-body limit alone is not the record-size bound.
+   readiness. Explain provider barrier capture/comparison, the internal heartbeat's idle-
+   source role, and why connector status or lag alone is insufficient. Warn that the HTTP
+   request-body limit alone is not the record-size bound.
 4. Document connector restart, offset reset, resnapshot, topic recreation, cache rebuild,
    target migration/retirement, cache-ahead invariant recovery, and explicit destructive
    cleanup. A possibly published higher cache version requires a new binding generation,
@@ -62,7 +64,9 @@ capability without redefining its architecture or contracts.
 - Troubleshooting covers persistent projection failure, provider key/filter/order
   failure, cache-ahead invariant diagnosis including later source equality, missing target,
   missing/malformed source identity, source-resolution failure, binding mismatch, and
-  governed artifacts without binding state.
+  governed artifacts without binding state. It also covers a missing/stalled heartbeat,
+  SQL Server capture-agent delay, malformed or ambiguous Connect source offsets, and a
+  connector that is running but remains below its post-audit provider barrier.
 - Destructive or replay-producing operations are clearly marked and never inferred from
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal

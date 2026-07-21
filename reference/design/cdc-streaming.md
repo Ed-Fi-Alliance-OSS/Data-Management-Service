@@ -590,14 +590,14 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
 
 - a durable binding record that matches the target's currently resolved physical source,
 - a DMS projection-health result whose current source fingerprint matches that binding,
-- provisioned `dms.Document`, `dms.DocumentCache`, and `dms.DocumentCacheState` tables and
-  provider CDC/key prerequisites,
+- provisioned `dms.Document`, `dms.DocumentCache`, `dms.DocumentCacheState`, and opt-in
+  `dms.CdcHeartbeat` tables and provider CDC/key prerequisites,
 - topic name, compact-only cleanup policy, fixed partition count, ACL, transform, and
   `maxRecordBytes`, broker-size compatibility, and connector configuration that match the
   binding record,
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
-  through a database source position observed after DMS reported a sufficiently recent
-  exact-zero audit,
+  through the provider source-position barrier defined below, captured after DMS reported
+  a sufficiently recent exact-zero audit,
 - a second DMS projection-health observation that remains ready for the same source, and
 - connector lag within its configured threshold.
 
@@ -605,6 +605,90 @@ There is no backfill epoch, completed backfill target, or maximum projected vers
 this readiness calculation. The external status operation retains each target's result
 when calculating a deployment aggregate. A combined-readiness failure does not gate
 normal DMS traffic.
+
+### Provider Source-Position Barrier
+
+Connector/task `RUNNING` state, elapsed time, Kafka topic offsets, and a lag metric do not
+prove that every database change committed before a projection audit has passed through
+the connector. Deployment automation implements one source-position adapter per provider
+and compares a post-audit database position with the connector's committed Debezium source
+offset.
+
+Both adapters use the opt-in singleton `dms.CdcHeartbeat` table. It contains only
+`HeartbeatId = 1`, a nonnegative `HeartbeatSequence` value, and `HeartbeatAt`; it
+contains no document or tenant data. Connector setup includes this table in the
+PostgreSQL publication or SQL Server CDC capture and configures a positive
+`heartbeat.interval.ms`. Its fixed provider `heartbeat.action.query` atomically
+increments `HeartbeatSequence` and updates `HeartbeatAt`. The default interval is 5,000
+ms. Deployments may lower it or raise it within their readiness timeout, but template and
+live-configuration validation reject zero, a negative value, a missing/conflicting action
+query, or, for SQL Server, `poll.interval.ms > heartbeat.interval.ms`.
+
+`dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, delete,
+and Debezium heartbeat records are intentionally dropped by the `DocumentState` transform
+before public-record validation and are never routed to the instance document topic. A
+dropped heartbeat still advances the source task's source offset only after earlier source
+records have completed Kafka Connect processing. The table is not projection work,
+completeness evidence, a public event source, or part of the immutable binding record.
+
+For every transition to combined ready, deployment automation performs this sequence:
+
+1. Read a ready DMS projection-health result and retain its source fingerprint and exact-
+   zero audit observation.
+2. Capture a provider barrier from that same bound physical database after receiving the
+   health result, using the provider procedure below.
+3. Read the connector's committed source offsets through
+   `GET /connectors/{connectorName}/offsets`. Select exactly one source partition matching
+   the connector and bound database: PostgreSQL requires exactly
+   `{ "server": <configured topic.prefix> }`, while SQL Server requires exactly
+   `{ "server": <configured topic.prefix>, "database": <configured database name> }`.
+   A missing endpoint, missing or multiple matching partitions, snapshot offset, null
+   field, malformed field, or source-partition mismatch is not ready.
+4. Parse and compare the provider position. Poll until the committed connector position
+   is greater than or equal to the captured barrier, while continuing to require the sole
+   task to be `RUNNING`. Connector status, topic end offsets, elapsed time, and lag never
+   substitute for this comparison.
+5. Read projection health again and require it to remain ready for the same source
+   fingerprint. Then apply the independent connector-lag threshold.
+
+The barrier is transient status evidence and is not persisted in or used to mutate the
+immutable binding.
+
+**PostgreSQL adapter**
+
+After the first health response, execute `SELECT pg_current_wal_lsn()` through the bound
+database connection. Normalize PostgreSQL's `X/Y` value to its unsigned 64-bit WAL byte
+position. From the Connect source offset, require the Debezium 2.7 `lsn_proc` field, which
+is the last completely processed LSN, interpret its signed JSON integer as the same
+unsigned 64-bit bit pattern, and require `lsn_proc >= barrierLsn`. Do not compare the less
+strict `lsn`, `lsn_commit`, a replication-slot flush position, or formatted strings. The
+heartbeat table is part of the publication, so the next action-query update from an idle
+database drives logical decoding beyond the captured WAL position.
+
+**SQL Server adapter**
+
+After the first health response, read `HeartbeatSequence` through the bound database
+connection. Wait until the heartbeat CDC capture instance exposes an update after-image
+whose `HeartbeatSequence` is greater than that value. Use that row's `__$start_lsn` as the
+barrier commit LSN and `__$seqval` as the barrier change LSN; this also proves that the SQL
+Server capture job has processed a transaction committed after the audit observation.
+Normalize each 10-byte LSN to Debezium's fixed-width `xxxxxxxx:xxxxxxxx:xxxx` form. From
+the Connect source offset, require `commit_lsn`, `change_lsn`, and `event_serial_no`;
+compare commit LSN, then change LSN, then event serial number as unsigned values. The
+heartbeat update after-image has event serial number `2`, so the connector is caught up
+only at or after `(barrierCommitLsn, barrierChangeLsn, 2)`. Null/snapshot positions do not
+pass. Comparison uses the decoded unsigned bytes, not locale or string collation.
+
+The pinned Connect/Debezium image must support the connector-offset REST endpoint and
+these exact provider offset fields. Image qualification and provider integration tests
+pin their shapes. See the Kafka Connect
+[connector-offset REST API](https://kafka.apache.org/35/kafka-connect/user-guide/#connect_rest),
+Debezium's
+[PostgreSQL heartbeat guidance](https://debezium.io/documentation/reference/2.7/connectors/postgresql.html#postgresql-property-heartbeat-action-query),
+and its SQL Server
+[offset processing](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-overview)
+and
+[heartbeat guidance](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-property-heartbeat-action-query).
 
 ## Deployment-Owned CDC Target and Physical Source Binding
 
@@ -750,8 +834,9 @@ for multiple CMS aliases of the same physical document set.
 
 V1 requires one logical connector per DMS instance with `tasks.max = 1`. A connector is
 bound to exactly one instance database, binding generation, and public topic, so both
-source tables share one connector task and one target topic. A connector must not span
-multiple instance databases, even when the provider supports doing so.
+document source tables and the internal heartbeat source share one connector task and one
+target topic. A connector must not span multiple instance databases, even when the
+provider supports doing so.
 
 Every v1 connector pins these source-producer overrides:
 
@@ -793,12 +878,20 @@ duplicate or conflicting value, registration reads the live configuration back, 
 combined readiness fails if the setting is absent or differs. The relational connector
 does not use error tolerance or a dead-letter queue to skip a retained source record.
 
+Every connector also emits and live-validates the provider source-position heartbeat
+settings defined above. `heartbeat.action.query` is generated from the emitted
+`dms.CdcHeartbeat` identifiers and is not free-form operator input. Heartbeat timing is an
+operational readiness setting rather than an immutable stream-contract or binding field.
+
 ### PostgreSQL
 
 - Use the Debezium PostgreSQL connector with `pgoutput` and logical replication.
-- Use a least-privilege replication/login principal rather than a superuser.
+- Use a least-privilege replication/login principal rather than a superuser. In addition
+  to replication reads, grant only the access needed to read and update the internal
+  heartbeat singleton; do not grant document-table writes.
 - Create one narrowly scoped publication and one replication slot per instance
-  connector; include only `dms.DocumentCache` and `dms.Document`.
+  connector; include only `dms.DocumentCache`, `dms.Document`, and the internal
+  `dms.CdcHeartbeat` progress table.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` is a custom logical message key, not the cache primary key;
   it does not require a cache UUID index. Its uniqueness follows from the cache identity
@@ -818,8 +911,9 @@ database-per-instance isolation model.
 
 - Use the Debezium SQL Server connector and enable CDC for the instance database.
 - Enable capture only on `dms.DocumentCache` and `dms.Document`, including
-  `DocumentUuid`.
-- Use a least-privilege login with CDC read access.
+  `DocumentUuid`, plus the internal `dms.CdcHeartbeat` progress table.
+- Use a least-privilege login with CDC read access plus only the access needed to read and
+  update the internal heartbeat singleton; do not grant document-table writes.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.
@@ -859,15 +953,17 @@ transforms.documentState.provider=<postgresql|sqlserver>
 transforms.documentState.target.topic=<instance document topic>
 ```
 
-Those are its only contract configuration values. The `dms.DocumentCache` and
-`dms.Document` source identities, Debezium operation mapping, source columns, and v1
-public fields are fixed transform behavior rather than a configurable mapping language.
+Those are its only contract configuration values. The `dms.DocumentCache`,
+`dms.Document`, and `dms.CdcHeartbeat` source identities, Debezium operation mapping,
+source columns, and v1 public fields are fixed transform behavior rather than a
+configurable mapping language.
 
-1. Capture both tables with `DocumentUuid` in each Debezium key.
+1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
+   internal heartbeat singleton for source-position progress.
 2. Inspect the original Debezium source table and operation before discarding the
    envelope. Accept cache create, update, and snapshot/read records as upserts; accept
-   canonical document deletes as authoritative deletes; drop every other captured
-   operation.
+   canonical document deletes as authoritative deletes; intentionally drop heartbeat
+   table operations, Debezium heartbeat records, and every other captured operation.
 3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
    `D`-format text, and use it for both upserts and authoritative tombstones.
 4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
@@ -955,8 +1051,8 @@ For a conforming output correction, operators:
 4. Start only corrected projector writers and run full reconciliation until an exact
    finishing audit reports zero missing, cache-behind, and cache-ahead rows. Rebuilt cache
    inserts publish at later offsets with unchanged `contentVersion` values.
-5. Wait for connector catch-up through a post-audit source position, recheck projection
-   readiness, and restore combined CDC readiness.
+5. Complete the provider source-position barrier captured after the zero audit, recheck
+   projection readiness, and restore combined CDC readiness.
 
 The correction does not advance canonical `ContentVersion`, reset offsets, create a new
 topic, or reserve a new binding generation. Consumers replace an equal-`contentVersion`
@@ -989,9 +1085,9 @@ document contract itself requires a new topic contract such as `documents.v2`. O
 4. Start only new-contract projector writers and completely reproject the cache until an
    exact finishing audit reports zero missing, cache-behind, and cache-ahead rows.
 5. Register the new connector against the new binding and topic with a fresh snapshot,
-   wait for connector catch-up through a post-audit source position, recheck projection
-   readiness, and bootstrap consumers in the new state namespace before restoring
-   combined CDC readiness.
+   complete the provider source-position barrier captured after the zero audit, recheck
+   projection readiness, and bootstrap consumers in the new state namespace before
+   restoring combined CDC readiness.
 6. Explicitly retain or retire the old topic and consumer state; never restart the old
    connector against the rebuilt cache.
 
@@ -1008,8 +1104,9 @@ versioned projection state and another design decision.
 
 ## Enablement and Initial Readiness Sequence
 
-The connector supports an initial snapshot of `dms.DocumentCache`. It may snapshot both
-included tables, but the operation filter drops every `dms.Document` snapshot record.
+The connector supports an initial snapshot of `dms.DocumentCache`. It may snapshot all
+included tables, but the operation filter drops every `dms.Document` and
+`dms.CdcHeartbeat` snapshot record.
 
 For a new instance:
 
@@ -1022,8 +1119,9 @@ For a new instance:
 4. Register the connector from that exact binding before DMS reconciliation or
    application writes that must be observed.
 5. Start or roll out DMS so monotonic cache upserts flow through established capture.
-6. Wait for DMS projection readiness, observe a database source position afterward, and
-   wait for connector snapshot/catch-up through that position.
+6. Wait for DMS projection readiness, capture the provider source-position barrier
+   afterward, and wait for connector snapshot/catch-up through that barrier using the
+   committed Connect source offset.
 7. Recheck DMS projection readiness for the same source fingerprint and advertise
    combined CDC readiness only when connector lag is also acceptable.
 
@@ -1060,7 +1158,8 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 - Bootstrap prints connector name, provider, database, opaque instance key, and topic;
   secrets are excluded.
 - It calculates the combined readiness sequence above and reports whether binding,
-  migration, DMS projection, connector catch-up, or lag failed.
+  migration, DMS projection, heartbeat/capture progress, provider-barrier catch-up, or lag
+  failed.
 - E2E setup registers capture against the same provisioned database used by the DMS test
   process before issuing writes it expects to consume.
 - A normal local stop retains binding, connector, and Kafka state. Destructive local
@@ -1072,10 +1171,10 @@ CDC target using its durable state backend.
 ## DDL and Query Support
 
 V1 provisions no durable projection queue, cursor, retry record, or backfill workflow.
-It provisions one `dms.DocumentCacheState` singleton solely to durably latch the
+Core DMS DDL provisions one `dms.DocumentCacheState` singleton solely to durably latch the
 cache-ahead invariant; this safety bit is neither work inventory nor completeness evidence
 and does not replace the deployment-owned CDC binding record. Supporting DDL is limited to
-that latch, the projection, and measured access paths:
+that latch, the projection, measured access paths, and the opt-in internal CDC heartbeat:
 
 - `DocumentCache(DocumentId)` remains the primary/foreign key with cascade deletion.
 - `DocumentCache.DocumentUuid` is a non-indexed denormalized connector-key column.
@@ -1092,6 +1191,13 @@ that latch, the projection, and measured access paths:
 - `dms.DataStoreIdentity` is an always-provisioned singleton containing the random
   `SourceIdentity`, stable during ordinary operation, used by the physical-source
   fingerprint contract.
+- Provider CDC setup creates and seeds the singleton `dms.CdcHeartbeat` table only when
+  CDC is selected. PostgreSQL uses `smallint`, `bigint`, and `timestamp with time zone` for
+  `HeartbeatId`, `HeartbeatSequence`, and `HeartbeatAt`; SQL Server uses `smallint`,
+  `bigint`, and `datetime2(7)`. Both enforce `HeartbeatId = 1` and
+  `HeartbeatSequence >= 0`. The generated
+  heartbeat action query increments that row atomically, and provider capture includes
+  it only to implement the deployment-owned source-position barrier.
 - `dms.Document(ContentVersion, DocumentId)` supports incremental discovery and bounded
   full-audit paging and is always provisioned with `dms.DocumentCache`.
 - Add no additional projector/diagnostic index beyond the data-model-defined access
@@ -1139,8 +1245,9 @@ Structured logs and metrics cover:
   opaque projection-source fingerprint.
 
 Deployment-owned CDC status additionally covers binding presence and match, connector
-running state, lag, last error, snapshot completion, existing artifacts without binding
-state, source mismatch, and generation migration state.
+running state, lag, last error, snapshot completion, heartbeat/capture progress, the
+provider barrier and committed Connect source offset in sanitized form, existing
+artifacts without binding state, source mismatch, and generation migration state.
 
 Use provider, safe project/resource identity, failure category, target-resolution state,
 and opaque data-store identity only where cardinality policy permits. Never log
@@ -1204,6 +1311,16 @@ broker-backed poison-record test supplies a malformed retained record and proves
 public record is emitted, the connector task fails instead of skipping it, and combined
 readiness remains false rather than accepting offset or lag catch-up beyond the poison
 record.
+
+Source-position adapter tests pin PostgreSQL `X/Y` and signed Debezium `lsn_proc`
+normalization to the same unsigned 64-bit order. SQL Server tests pin binary and
+`xxxxxxxx:xxxxxxxx:xxxx` LSN normalization and lexicographic commit/change/event-serial
+ordering. Both reject snapshot, null, malformed, wrong-partition, and ambiguous offset
+responses. Real-provider tests start from an idle source, take a barrier after a zero
+audit, let the configured heartbeat action query advance capture, and prove combined
+readiness stays false until `GET /connectors/{connectorName}/offsets` reaches that barrier.
+They also prove a dropped heartbeat advances the committed source offset only after every
+earlier retained record completes processing and emits no public document record.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including attempted partition-count or `maxRecordBytes` changes, rejection of a

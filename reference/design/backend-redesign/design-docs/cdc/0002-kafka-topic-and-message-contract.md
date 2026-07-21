@@ -306,8 +306,8 @@ Operators repair a compatible projection defect in the existing topic:
    finishing audit. The existing connector captures the rebuilt cache inserts and
    publishes corrective upserts with their unchanged `contentVersion` values at later
    offsets.
-5. Wait for connector catch-up through a post-audit source position, recheck projection
-   readiness, and then restore combined CDC readiness.
+5. Complete the authoritative provider source-position barrier captured after the zero
+   audit, recheck projection readiness, and then restore combined CDC readiness.
 
 The repair does not advance canonical `ContentVersion`, reset connector offsets, create a
 new topic, or require a new binding generation. While the cache-ahead recovery latch is

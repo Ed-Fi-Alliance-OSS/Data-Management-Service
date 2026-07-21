@@ -30,8 +30,9 @@ separate from DMS-1240's completed generic `sourceFields` expander.
 
 1. Add the public `org.edfi.kafka.connect.transforms.DocumentState` transform to the
    Ed-Fi Kafka Connect plugin with a bytecode target compatible with the pinned runtime.
-2. Consume schema-backed raw Debezium records from `dms.DocumentCache` and
-   `dms.Document`, classifying source table and operation before discarding the envelope.
+2. Consume schema-backed raw Debezium records from `dms.DocumentCache`, `dms.Document`,
+   and the internal `dms.CdcHeartbeat`, plus Debezium heartbeat records, classifying source
+   table and operation before discarding the envelope.
 3. Emit exactly one final public upsert, final public tombstone, or no record according to
    the projector/source decision.
 4. Normalize the `DocumentUuid` key, parse `DocumentJson` directly, convert provider
@@ -41,15 +42,17 @@ separate from DMS-1240's completed generic `sourceFields` expander.
 5. Expose only `provider` and `target.topic` as contract configuration. Keep source
    tables, operations, source columns, and v1 public fields fixed behavior rather than a
    mapping language.
-6. Suppress duplicate automatic Debezium tombstones and fail malformed retained records
-   rather than publishing partial state.
+6. Suppress duplicate automatic Debezium tombstones, intentionally drop every heartbeat
+   record without routing it to the public topic, and fail malformed retained document
+   records rather than publishing partial state.
 7. Publish the transform in the Ed-Fi Kafka Connect image consumed by 17-02; do not remove
    or redefine `ExpandJson$Value`.
 
 ## Acceptance Evidence
 
 - JUnit fixtures begin with realistic PostgreSQL and SQL Server Debezium records and cover
-  every retained and dropped source operation.
+  every retained and dropped source operation, including heartbeat-table snapshots and
+  updates and connector-generated heartbeat records.
 - Serialized-record tests assert final topic, lowercase string key, exact public value,
   structured `document`, opaque ETag copying, internal-field removal, and one Kafka-null
   tombstone per authoritative delete.

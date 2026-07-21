@@ -12,6 +12,7 @@ related:
 
 - [Configuration and projection targets](../../../cdc-streaming.md#configuration-and-projection-target-selection)
 - [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
+- [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
 - [Deployment-owned physical source binding](../../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
@@ -23,6 +24,8 @@ per-database projection health with E17-owned provider, topic, and connector che
 ## Dependencies
 
 - Consumes the explicit target contract from 18-00 and projection health from 18-09.
+- Provider-adapter implementation consumes the heartbeat/capture artifacts from 17-01
+  and the pinned connector configuration and source-offset shapes from 17-02.
 - Supplies binding and readiness behavior to 17-03; does not implement the projector or
   connector REST registration.
 
@@ -48,18 +51,32 @@ per-database projection health with E17-owned provider, topic, and connector che
    reserving a new binding generation/topic and is never an ordinary setup retry. A newly
    created independent target restored from a template, clone, or copied backup receives a
    new UUID before binding creation under the provisioning/restore contract.
-5. Validate provider tables including the clear `dms.DocumentCacheState` latch, projected
-   `StreamEtag`, keys, replica/capture setup, topic, ACL, `maxRecordBytes`, effective
-   broker request/record-batch/replica-fetch compatibility, and installed source-operation
-   shaping against the binding before registration. This story defines the ACL and size
-   readiness checks; 17-03 owns provisioning, idempotent live validation, and
-   broker-backed authorization/maximum-record coverage.
+5. Validate provider tables including the clear `dms.DocumentCacheState` latch, opt-in
+   `dms.CdcHeartbeat` singleton, projected `StreamEtag`, keys, replica/capture setup,
+   topic, ACL, `maxRecordBytes`, effective broker request/record-batch/replica-fetch
+   compatibility, and installed source-operation shaping against the binding before
+   registration. This story defines the ACL and size readiness checks; 17-03 owns
+   provisioning, idempotent live validation, and broker-backed
+   authorization/maximum-record coverage.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,
-   connector configuration and task state, snapshot/catch-up, and lag checks. A failed
-   task or missing/conflicting `errors.tolerance=none` keeps combined readiness false
-   regardless of offset or lag observations.
-7. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
+   connector configuration and task state, snapshot/catch-up, the provider source-position
+   barrier, and lag checks. Implement the PostgreSQL adapter by capturing
+   `pg_current_wal_lsn()` after the zero-audit health response and comparing its unsigned
+   64-bit value with committed Debezium `lsn_proc`. Implement the SQL Server adapter by
+   reading `HeartbeatSequence` after that response, locating a later update after-image
+   in its CDC capture instance, and comparing its commit/change LSN and event serial with
+   committed Debezium `commit_lsn`, `change_lsn`, and `event_serial_no`.
+7. Obtain committed source offsets from
+   `GET /connectors/{connectorName}/offsets`, select exactly the source partition matching
+   the bound database, and fail closed for an unsupported endpoint, snapshot/null or
+   malformed position, missing/ambiguous partition, source mismatch, or provider parse
+   failure. Connector/task status, Kafka topic offsets, elapsed time, and lag are not
+   substitutes. After catch-up, require a second ready DMS health observation for the
+   same source fingerprint. A failed task or missing/conflicting
+   `errors.tolerance=none` keeps combined readiness false regardless of offset or lag
+   observations.
+8. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
 
 ## Acceptance Evidence
 
@@ -70,12 +87,15 @@ per-database projection health with E17-owned provider, topic, and connector che
   malformed `dms.DataStoreIdentity`, transient identity-resolution failure, missing
   targets, guarded identity rotation/new-generation recovery, and confirmed binding
   mismatch without a DMS-owned drift latch.
-- Readiness tests cover binding, migration, projection, post-audit source position,
-  connector snapshot/catch-up, second projection-health observation, cache-ahead latching
-  that remains false-ready after source equality, explicit `errors.tolerance=none`,
-  producer/topic/broker size alignment with `maxRecordBytes`, failed connector task state
-  despite otherwise acceptable offset/lag observations, lag, per-target isolation, and
-  aggregate results.
+- Readiness tests cover binding, migration, projection, exact provider position parsing
+  and ordering, a barrier captured after the zero audit, committed connector
+  snapshot/catch-up, idle-source heartbeat advancement, second projection-health
+  observation, cache-ahead latching that remains false-ready after source equality,
+  explicit `errors.tolerance=none`, producer/topic/broker size alignment with
+  `maxRecordBytes`, failed connector task state despite otherwise acceptable offset/lag
+  observations, lag, per-target isolation, and aggregate results. They reject missing,
+  malformed, snapshot, wrong-source, and multiple source-offset responses and prove that
+  running/lag status cannot pass a connector that is below the barrier.
 - API integration tests prove every reported CDC/projector failure remains observational,
   including deletion with unavailable cache state.
 

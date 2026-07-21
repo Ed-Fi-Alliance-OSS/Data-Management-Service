@@ -17,7 +17,8 @@ DMS owns one asynchronous `dms.DocumentCache` projector. The cache is rebuildabl
 projected state, not canonical persistence. Capabilities that need projected documents
 select the projector; ordinary DMS correctness does not depend on it.
 
-One Debezium connector uses two complementary sources:
+One Debezium connector uses two complementary document sources plus one internal
+source-position heartbeat source:
 
 | Source event | Public document-state result |
 | --- | --- |
@@ -25,6 +26,7 @@ One Debezium connector uses two complementary sources:
 | `dms.Document` delete | Kafka tombstone |
 | `dms.DocumentCache` delete or truncate | Ignore |
 | Any other `dms.Document` operation or snapshot/read | Ignore |
+| Any `dms.CdcHeartbeat` operation or Debezium heartbeat | Ignore; advance only the internal source offset |
 
 `dms.DocumentCache.DocumentJson` supplies the caller-agnostic API-shaped upsert payload,
 and `dms.DocumentCache.StreamEtag` supplies the DMS-computed ETag for that fixed stream
@@ -103,6 +105,13 @@ document and lets the connector derive the tombstone from that delete. It does n
 for or materialize cache state. A tombstone without a preceding projected upsert is valid
 state-stream behavior.
 
+Deployment-owned readiness uses the captured heartbeat only to establish a provider
+source-position barrier after an exact-zero projection audit. PostgreSQL compares the
+database WAL position with Debezium's committed completely-processed LSN; SQL Server
+compares a post-audit heartbeat change's commit/change LSN position with the committed
+connector offset. Running/task state or lag alone is not barrier evidence. The
+authoritative design defines the provider capture and comparison algorithms.
+
 The authoritative configuration, reconciliation algorithm, health model, provider
 deployment, and readiness sequence are specified in
 [Relational CDC and Document Projection](../../../cdc-streaming.md). The public record
@@ -167,11 +176,11 @@ decision.
   rebuilds into the existing topic and publishes equal-version rows at later offsets; an
   intentional topic rebuild for an incompatible contract uses connector snapshot/topic
   recovery.
-- Both source tables use `DocumentUuid` as the connector key and share one connector task
-  so a committed upsert preceding canonical deletion retains per-key order. The cache key
-  column is non-indexed; its equality and logical uniqueness are consequences of the
-  cache-validation trigger, compact `DocumentId` primary/foreign key, and canonical UUID
-  uniqueness.
+- Both document source tables use `DocumentUuid` as the connector key and share one
+  connector task so a committed upsert preceding canonical deletion retains per-key
+  order. The cache key column is non-indexed; its equality and logical uniqueness are
+  consequences of the cache-validation trigger, compact `DocumentId` primary/foreign
+  key, and canonical UUID uniqueness.
 - DMS, not Kafka Connect or a downstream consumer, owns stream ETag derivation; the
   connector copies the projected opaque value into the public message shape.
 - Consumers tolerate duplicate/replayed upserts and tombstones without a prior upsert.

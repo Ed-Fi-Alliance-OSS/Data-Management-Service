@@ -129,9 +129,9 @@ Notes:
 This is the single cross-epic story dependency index. Design behavior is linked from the
 epics and is not repeated here.
 
-| `17-cdc-kafka` story | `18-document-cache` dependency |
+| `17-cdc-kafka` story | Implementation dependency |
 | --- | --- |
-| 17-00 | 18-00, 18-03, 18-07, 18-09 |
+| 17-00 | 17-01, 17-02, 18-00, 18-03, 18-07, 18-09 |
 | 17-01 | — |
 | 17-02 | — until upsert smoke tests |
 | 17-02a | —; external transform implementation consumed by 17-02 and 17-04 |

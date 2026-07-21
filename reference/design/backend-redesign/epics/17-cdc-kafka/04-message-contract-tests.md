@@ -59,6 +59,10 @@ without requiring an API E2E path for every source operation.
     through the real transform, converters, partitioner, and pinned producer. Publish,
     replicate, and consume it with producer, topic, broker, replica-fetch, and consumer
     limits set to the binding's exact `maxRecordBytes`; add an over-budget variant.
+12. Add provider heartbeat fixtures and a broker-backed idle-source scenario. Prove the
+    heartbeat table and Debezium heartbeat records emit no public document record, while
+    their committed source offsets advance only after earlier retained records complete
+    and expose the fields required by the provider barrier adapter.
 
 ## Acceptance Evidence
 
@@ -100,6 +104,11 @@ without requiring an API E2E path for every source operation.
   fits within the one-record byte budget and reaches a consumer without relying on
   compression. The over-budget variant emits no partial record, fails the connector task,
   and keeps combined readiness false.
+- The idle-source test captures a barrier after a zero audit and proves `RUNNING` plus
+  acceptable lag remains not ready below it, then observes the action-query heartbeat and
+  passes only when the committed PostgreSQL `lsn_proc` or SQL Server
+  commit/change/event-serial position reaches it. No heartbeat appears in the public
+  topic.
 
 ## Out of Scope
 

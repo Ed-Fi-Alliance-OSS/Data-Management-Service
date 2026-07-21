@@ -38,6 +38,9 @@ coverage against the actual provisioned data store and routed public topic.
    same-key ordering, and compatible same-topic corrective rebuild scenarios.
 5. Capture connector status/logs, topics, and consumed records on timeout.
 6. Remove legacy ignore markers only after consistent relational scenario results.
+7. Exercise combined readiness from an otherwise idle database and retain diagnostics for
+   the captured provider barrier, heartbeat/capture progress, and committed connector
+   source offset without exposing raw physical identifiers.
 
 ## Acceptance Evidence
 
@@ -52,6 +55,9 @@ coverage against the actual provisioned data store and routed public topic.
   by the authoritative verification section.
 - A corrective-rebuild scenario proves the later equal-`contentVersion` record replaces
   prior consumer state in the same topic without a new binding generation or offset reset.
+- Both providers prove setup does not pass on connector status or lag alone: a barrier is
+  captured after the zero audit, an internal heartbeat advances the idle source, and
+  readiness passes only after the committed connector source offset reaches the barrier.
 - Setup/teardown evidence proves normal restart retains binding state and destructive
   teardown removes governed artifacts before the binding record.
 
