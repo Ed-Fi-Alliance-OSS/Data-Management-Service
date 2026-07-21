@@ -39,7 +39,8 @@ without requiring an API E2E path for every source operation.
    semantics, and served-ETag source/copy relationship without independently freezing the
    opaque ETag bytes.
 7. Exercise consumer ordering for higher, lower, and equal `contentVersion` records and
-   verify that the topic partition count cannot change within a binding generation.
+   verify that neither the topic partition count nor the binding's
+   `partitionerAlgorithm` token can change within a binding generation.
 8. Pin the delivery and monotonic-lag contract: raw at-least-once delivery may contain
    duplicates or a lower-version replay after a higher version, while conforming
    consumer-applied non-null upsert state remains monotonic. A consumer that has not yet

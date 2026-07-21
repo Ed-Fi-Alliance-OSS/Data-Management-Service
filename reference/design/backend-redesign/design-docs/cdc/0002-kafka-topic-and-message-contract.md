@@ -71,11 +71,20 @@ separate authoritative bootstrap source for current state and weaken the topic-o
 reconstruction guarantee in a new contract version. An operational replay window alone
 is not such a bootstrap source.
 
-The topic's partition count is fixed when the topic is created, and the connector uses the
-same pinned key-based partitioner for the binding's lifetime. Neither may change in place:
-otherwise the same key could move to another partition and lose the per-key offset
-ordering used for corrective republishes. A deployment that needs a different partition
-count or partitioner creates a new binding generation and topic.
+The topic's partition count is fixed when the topic is created. The immutable binding also
+stores `partitionerAlgorithm: "kafka-murmur2-v1"`. For non-null serialized key bytes `K`
+and partition count `N`, this named behavior token selects partition
+`(KafkaMurmur2(K) & 0x7fffffff) % N`, byte-for-byte matching Kafka's Java-client Murmur2
+key partitioning. The token deliberately does not persist a Java class, client version, or
+implementation detail. Connector generation maps it to a compatible implementation in
+the pinned image, and fixed key/partition fixtures validate the mapping.
+
+V1 accepts only `kafka-murmur2-v1`. The token and partition count are immutable for the
+binding's lifetime; otherwise the same key could move to another partition and lose the
+per-key offset ordering used for corrective republishes. A deployment that needs a
+different partition count or algorithm creates a new token, binding generation, and
+topic. Replacing an implementation while preserving every result defined by the token
+does not change the binding.
 
 Topic-per-instance supplies the Kafka authorization boundary, bounds topic count, and
 keeps resource routing in message metadata. Shared cross-instance topics and
@@ -318,9 +327,10 @@ equal-version records according to the ordering rule above. Old cache writers mu
 stopped throughout the rebuild so obsolete and corrected materializers cannot
 alternate outputs for one version.
 
-Changing the partition count or pinned partitioner is not necessarily a message-shape
-change, but it still creates a new binding generation, topic, and consumer state namespace
-because offsets from different partitions cannot order equal-version records.
+Changing the partition count or `partitionerAlgorithm` token is not necessarily a
+message-shape change, but it still creates a new binding generation, topic, and consumer
+state namespace because offsets from different partitions cannot order equal-version
+records.
 
 An incompatible public-contract change requires a new topic contract such as
 `documents.v2`, a matching `contractVersion`, a new binding generation/topic, complete
@@ -403,6 +413,9 @@ The public topic never exposes:
   repaired by later source equality or by sending the lower canonical version to the same
   topic; source rollback/reset recovery uses a new topic generation.
 - One ACL protects one instance while resource metadata supports downstream routing.
+- Each binding records the stable `kafka-murmur2-v1` behavior token rather than a Java
+  class/version; its fixed key-to-partition mapping and partition count preserve the
+  per-key offset ordering contract.
 - Each binding fixes one maximum-record budget; producers, the topic, brokers/replicas,
   and consumers must all accept it, and a larger supported DMS envelope requires a new
   binding generation rather than an in-place size change.

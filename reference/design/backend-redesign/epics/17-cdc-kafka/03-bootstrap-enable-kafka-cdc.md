@@ -50,11 +50,13 @@ backend.
    does not permit the required source-producer overrides. After registration, read back
    the connector configuration and reject drift from the required idempotence,
    acknowledgement, retry, maximum-in-flight, binding-derived maximum-request,
-   no-compression, `errors.tolerance=none`, or provider heartbeat values. Use the 17-00
-   provider adapter and connector-offset REST response for the post-audit barrier; do not
-   infer catch-up from task status or lag. Treat a failed connector task as not ready
-   regardless of offset or lag observations. ACL and record-size verification must
-   complete before connector registration and before combined readiness can pass.
+   no-compression, binding `partitionerAlgorithm`, `errors.tolerance=none`, or provider
+   heartbeat values. Reject a missing/unknown algorithm token or live partitioner
+   configuration that does not implement `kafka-murmur2-v1`. Use the 17-00 provider
+   adapter and connector-offset REST response for the post-audit barrier; do not infer
+   catch-up from task status or lag. Treat a failed connector task as not ready regardless
+   of offset or lag observations. ACL and record-size verification must complete before
+   connector registration and before combined readiness can pass.
 7. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
    destructive volume teardown.
@@ -70,15 +72,16 @@ backend.
   idle-provider case proves the generated heartbeat advances the committed source offset
   through a barrier captured after the zero audit before readiness passes.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
-  in-place topic partition-count changes, time/delete retention on the v1 topic, and
-  source/topic-generation reuse. It also rejects an in-place `maxRecordBytes` change or
-  producer, topic, broker, and replica-fetch limits below the binding value.
+  in-place topic partition-count or `partitionerAlgorithm` changes, time/delete retention
+  on the v1 topic, and source/topic-generation reuse. It also rejects an in-place
+  `maxRecordBytes` change or producer, topic, broker, and replica-fetch limits below the
+  binding value.
 - Registration tests reject a worker policy that disallows the required producer
   overrides and any live connector configuration with conflicting ordering settings or
-  missing/conflicting `errors.tolerance=none`, `max.request.size`, compression, heartbeat
-  interval/action query, or SQL Server poll relationship. Status tests reject an
-  unsupported connector-offset endpoint and malformed, snapshot, wrong-source, or
-  ambiguous provider offsets.
+  partitioner behavior, or with missing/conflicting `errors.tolerance=none`,
+  `max.request.size`, compression, heartbeat interval/action query, or SQL Server poll
+  relationship. Status tests reject an unsupported connector-offset endpoint and
+  malformed, snapshot, wrong-source, or ambiguous provider offsets.
 - Broker-backed integration tests enable Kafka authorization and prove ACL provisioning
   is repeatable, a configured instance consumer can read its own literal topic, and that
   principal is denied when it attempts to read a peer instance topic.

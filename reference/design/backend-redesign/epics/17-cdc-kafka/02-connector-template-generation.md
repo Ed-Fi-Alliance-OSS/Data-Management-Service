@@ -31,8 +31,8 @@ source routing and serialized public contract using the separately published
 
 1. Define inputs from the immutable deployment binding for provider/source fingerprint,
    target and generation identity, connector/topic names, fixed topic partition count,
-   positive signed 32-bit `maxRecordBytes`, `contractVersion`, credentials,
-   replication/capture identity, and snapshot behavior.
+   `partitionerAlgorithm`, positive signed 32-bit `maxRecordBytes`, `contractVersion`,
+   credentials, replication/capture identity, and snapshot behavior.
 2. Generate one PostgreSQL or SQL Server connector configuration per DMS instance and
    immutable binding, without hard-coded instance values. Scope each connector to exactly
    one instance database and reject SQL Server configurations that select multiple
@@ -54,8 +54,11 @@ source routing and serialized public contract using the separately published
    of connector transforms.
 7. Validate all version-specific properties and transform classes against the pinned
    `edfialliance/ed-fi-kafka-connect` image.
-8. Pin and validate one key-based partitioner for the binding lifetime; do not rely on an
-   image upgrade silently retaining equivalent key-to-partition behavior.
+8. Accept only the binding token `partitionerAlgorithm: "kafka-murmur2-v1"` for v1 and
+   map it to a compatible producer implementation in the pinned connector image. The
+   token means `(KafkaMurmur2(serializedKeyBytes) & 0x7fffffff) % partitionCount`; it is
+   not a Java class or library version. Reject a missing/unknown token and any independent
+   partitioner class or configuration that conflicts with the token-defined behavior.
 9. Emit the fixed source-producer overrides `enable.idempotence=true`, `acks=all`,
    `retries=2147483647`, and `max.in.flight.requests.per.connection=5` using the Kafka
    Connect `producer.override.*` connector properties. Do not expose them as template
@@ -80,11 +83,13 @@ source routing and serialized public contract using the separately published
 ## Acceptance Evidence
 
 - Rendering tests cover representative providers and reject invalid production topic
-  prefixes, incomplete binding inputs, nonpositive or changed partition counts, or
-  generated identities that differ from the binding record.
-- Pinned-image tests prove identical serialized `DocumentUuid` keys route consistently
-  under the selected partitioner; changing the partitioner or partition count requires a
-  new binding generation/topic.
+  prefixes, incomplete binding inputs, nonpositive or changed partition counts, a missing,
+  unknown, or changed `partitionerAlgorithm`, or generated identities that differ from
+  the binding record.
+- Pinned-image tests use fixed serialized `DocumentUuid` key/partition fixtures across
+  representative partition counts to prove the generated producer maps
+  `kafka-murmur2-v1` exactly. An image may change its implementation but not those results;
+  changing the algorithm token or partition count requires a new binding generation/topic.
 - Template tests prove the configured class, source includes, key columns, converters,
   tombstone suppression, transform properties, and target topic match the binding and
   17-02a contract.

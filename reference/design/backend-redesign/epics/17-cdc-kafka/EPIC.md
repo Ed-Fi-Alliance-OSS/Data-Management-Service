@@ -45,8 +45,9 @@ implementation inputs.
 
 - Both providers pass database CDC/key smoke tests and real routed-topic ordering tests.
 - Generated and published records pass the topic/message contract suite.
-- Each binding fixes its topic partition count and key-based partitioner so a document's
-  later Kafka offset remains a valid equal-version tie-breaker.
+- Each binding fixes its topic partition count and the named `kafka-murmur2-v1`
+  partitioner behavior token so a document's later Kafka offset remains a valid
+  equal-version tie-breaker without binding state depending on a Java class/version.
 - Cache-row transitions and conforming consumer-applied non-null upserts are monotonic, and
   the stream is eventually convergent rather than linearizable to each canonical commit.
   Raw at-least-once delivery may contain duplicates or lower-version replays. A consumer may
