@@ -46,7 +46,9 @@ coverage against the actual provisioned data store and routed public topic.
 
 - PostgreSQL scenarios exercise supported self-contained and Keycloak modes where their
   shards permit.
-- PostgreSQL and SQL Server use real connectors and public routed topics.
+- PostgreSQL and SQL Server use real connectors and public routed topics; the SQL Server
+  provider matrix includes SQL Server 2025 with the pinned Debezium 3.6 image and current
+  `nvarchar(max)` `DocumentJson` schema.
 - Consumed records conform to the topic/message ADR and never assert legacy fields.
 - Consumed upserts carry the exact DMS-projected stream ETag in `document._etag` and have
   no top-level envelope `etag`; ordinary resource scenarios prove API link disabling does

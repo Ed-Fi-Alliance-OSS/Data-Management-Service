@@ -39,10 +39,12 @@ source routing and serialized public contract using the separately published
    databases.
    Configure `message.key.columns` to use `DocumentUuid` for both captured tables without
    requiring it to be the `DocumentCache` primary key or a cache index.
-3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
-   Ed-Fi `DocumentState` SMT convert `datetime2(7)`
-   `io.debezium.time.NanoTimestamp` values to the existing DMS whole-second UTC string,
-   deliberately truncating fractional seconds without rounding.
+3. Configure SQL Server with `time.precision.mode=isostring` and
+   `unavailable.value.placeholder=__debezium_unavailable_value` explicitly. Make the
+   Ed-Fi `DocumentState` SMT validate `datetime2(7)`
+   `io.debezium.time.IsoTimestamp` strings, deliberately truncate fractional seconds
+   without rounding to the existing DMS whole-second UTC string, and fail a retained
+   upsert whose required `DocumentJson` carries the unavailable marker.
 4. Configure the `DocumentState` SMT delivered by 19-03 as the complete boundary from a raw
    Debezium record to a final public upsert, final public tombstone, or dropped record.
    Do not add an independent generic expand-JSON SMT or split the contract across stock
@@ -52,8 +54,10 @@ source routing and serialized public contract using the separately published
    than generating a mapping DSL.
 6. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
    of connector transforms.
-7. Validate all version-specific properties and transform classes against the pinned
-   `edfialliance/ed-fi-kafka-connect` image.
+7. Validate all version-specific properties and transform classes against the
+   `edfialliance/ed-fi-kafka-connect` image built from
+   `quay.io/debezium/connect:3.6.0.Final@sha256:6f3fe6407bae8f2a7714b9fc174d545d52d81044b4f4add1565854f020943d47`.
+   Require deployment to select the published Ed-Fi image by immutable digest.
 8. Accept only the binding token `partitionerAlgorithm: "kafka-murmur2-v1"` for v1 and
    map it to a compatible producer implementation in the pinned connector image. The
    token means `(KafkaMurmur2(serializedKeyBytes) & 0x7fffffff) % partitionCount`; it is
@@ -79,6 +83,8 @@ source routing and serialized public contract using the separately published
     readiness timeout, and require SQL Server `poll.interval.ms` to be no greater than
     it. These timing values are not binding fields. Reject missing, duplicate, free-form,
     or conflicting heartbeat properties.
+13. Emit and live-validate `statistics.metrics.enabled=true` for both providers so the
+    Debezium 3.6 P50/P95/P99 `MilliSecondsBehindSource` telemetry remains available.
 
 ## Acceptance Evidence
 
@@ -95,8 +101,10 @@ source routing and serialized public contract using the separately published
   19-03 contract.
 - Provider template/smoke tests prove the non-indexed cache UUID column produces the same
   public key bytes as the canonical document-delete source.
-- SQL Server rendering tests require `time.precision.mode=adaptive`; pinned-image smoke
-  coverage proves the published transform converts a realistic retained record.
+- SQL Server rendering tests require `time.precision.mode=isostring` and the exact
+  unavailable-value marker; pinned-image smoke coverage proves the published transform
+  converts a realistic retained record and fails a required marker value.
+- Pinned-image SQL Server integration coverage includes SQL Server 2025.
 - SQL Server rendering tests prove that each connector selects exactly one instance
   database and one binding topic, and reject attempted multi-database consolidation.
 - Rendering tests require the exact ordering-safe source-producer overrides and reject
@@ -113,6 +121,9 @@ source routing and serialized public contract using the separately published
   prove heartbeat table and Debezium heartbeat records are intentionally dropped from the
   public topic while their source offsets remain available through the connector-offset
   REST endpoint with the provider fields required by readiness.
+- Rendering and live-configuration tests require
+  `statistics.metrics.enabled=true`; image smoke tests expose P50/P95/P99 source-lag
+  attributes on the Kafka Connect 4.3.0 runtime.
 - A pinned-image smoke test proves the configured transform class loads; detailed
   transform behavior remains owned by 19-03 and the shared contract suite in 19-05.
 

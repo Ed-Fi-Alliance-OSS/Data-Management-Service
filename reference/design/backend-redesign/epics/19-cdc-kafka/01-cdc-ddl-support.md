@@ -24,7 +24,7 @@ relational CDC source/key design.
 3. Derive publication/slot or capture-instance identity from the immutable deployment
    binding generation and validate existing artifacts against that binding.
 4. Verify exact provider identifiers and syntax against generated DDL and the pinned
-   connector version.
+   Debezium 3.6 connector version.
 5. Add negative validation for missing key, replica-identity, capture prerequisites, or
    artifacts that exist without matching binding state.
 6. Validate that `DocumentCache.DocumentUuid` is available as the non-indexed custom
@@ -46,6 +46,8 @@ relational CDC source/key design.
 - PostgreSQL DB-apply tests validate publication, replica identity, and a
   `DocumentUuid`-keyed canonical delete source record.
 - SQL Server DB-apply tests validate capture instances and the equivalent delete key.
+- SQL Server DB-apply and connector smoke tests include SQL Server 2025 as the required
+  Ed-Fi known-working qualification target.
 - Cache-source records for both providers expose the DMS-projected `StreamEtag` required
   by connector shaping.
 - Cache-source smoke tests use the non-indexed `DocumentUuid` custom key and prove its

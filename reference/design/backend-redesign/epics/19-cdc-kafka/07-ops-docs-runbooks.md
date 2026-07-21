@@ -21,7 +21,10 @@ capability without redefining its architecture or contracts.
 1. Document local opt-in, connector registration, topic discovery, Kafka UI use, and
    troubleshooting commands.
 2. Document PostgreSQL and SQL Server prerequisites, least-privilege access, provider
-   artifacts, retention, restart, and cleanup.
+   artifacts, retention, restart, and cleanup. Identify the pinned Debezium 3.6 base and
+   published Ed-Fi image digest, explain why floating tags are not supported, and list
+   SQL Server 2025 as the Ed-Fi known-working qualification target without presenting it
+   as an upstream-tested Debezium version.
 3. Document Kafka compact-only topic/ACL/consumer operation, including why time/delete
    retention is prohibited without a separately defined authoritative bootstrap source,
    how immutable `maxRecordBytes` is established from the maximum fully materialized
@@ -56,11 +59,15 @@ capability without redefining its architecture or contracts.
    never restart against the rebuilt cache.
 7. Cross-link the canonical design and both ADRs instead of repeating their normative
    tables or algorithms.
+8. Document Debezium 3.6 P50/P95/P99 `MilliSecondsBehindSource` telemetry, the explicit
+   `statistics.metrics.enabled=true` setting, and why those metrics diagnose lag but do
+   not replace the source-position readiness barrier. Include diagnosis of the SQL Server
+   unavailable-value marker as a fail-closed required-record error.
 
 ## Acceptance Evidence
 
 - Instructions are verified against the implemented scripts, templates, and status
-  output for both providers.
+  output for both providers, including the pinned image identity and SQL Server 2025.
 - Troubleshooting covers persistent projection failure, provider key/filter/order
   failure, cache-ahead invariant diagnosis including later source equality, missing target,
   missing/malformed source identity, source-resolution failure, binding mismatch, and

@@ -47,12 +47,14 @@ backend.
    binding value and provision memory for one record.
 6. Implement idempotent Kafka Connect create/update, external combined-status polling,
    timeout, and condition-specific diagnostics. Fail before registration if the worker
-   does not permit the required source-producer overrides. After registration, read back
-   the connector configuration and reject drift from the required idempotence,
+   does not run the deployment-pinned Ed-Fi image digest built from the required Debezium
+   3.6 base or permit the required source-producer overrides. After registration, read
+   back the connector configuration and reject drift from the required idempotence,
    acknowledgement, retry, maximum-in-flight, binding-derived maximum-request,
    no-compression, binding `partitionerAlgorithm`, `errors.tolerance=none`, or provider
-   heartbeat values. Reject a missing/unknown algorithm token or live partitioner
-   configuration that does not implement `kafka-murmur2-v1`. Use the 19-00 provider
+   heartbeat and `statistics.metrics.enabled=true` values. Reject a missing/unknown
+   algorithm token or live partitioner configuration that does not implement
+   `kafka-murmur2-v1`. Use the 19-00 provider
    adapter and connector-offset REST response for the post-audit barrier; do not infer
    catch-up from task status or lag. Treat a failed connector task as not ready regardless
    of offset or lag observations. ACL and record-size verification must complete before
@@ -81,7 +83,9 @@ backend.
   partitioner behavior, or with missing/conflicting `errors.tolerance=none`,
   `max.request.size`, compression, heartbeat interval/action query, or SQL Server poll
   relationship. Status tests reject an unsupported connector-offset endpoint and
-  malformed, snapshot, wrong-source, or ambiguous provider offsets.
+  malformed, snapshot, wrong-source, or ambiguous provider offsets. They also reject a
+  floating or unexpected connector image and missing/conflicting
+  `statistics.metrics.enabled=true`.
 - Broker-backed integration tests enable Kafka authorization and prove ACL provisioning
   is repeatable, a configured instance consumer can read its own literal topic, and that
   principal is denied when it attempts to read a peer instance topic.

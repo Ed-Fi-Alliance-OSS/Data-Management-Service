@@ -1,12 +1,13 @@
 ---
 status: proposed
-date: 2026-07-20
+date: 2026-07-21
 jira:
   - DMS-1245
   - DMS-1246
 related:
   - DMS-1232
   - DMS-1089
+  - DMS-1279
 ---
 
 # Relational CDC and Document Projection
@@ -63,6 +64,25 @@ Change Queries remain a separate polling API compatibility surface, including
 
 Kafka Connect is the v1 deployment model. Debezium Server is deferred, embedded
 Debezium is not a reference path, and DMS does not publish directly to Kafka.
+
+### Pinned Connector Runtime
+
+The v1 Ed-Fi Kafka Connect image must be rebuilt from the immutable Debezium 3.6 base
+`quay.io/debezium/connect:3.6.0.Final@sha256:6f3fe6407bae8f2a7714b9fc174d545d52d81044b4f4add1565854f020943d47`.
+The tag documents the qualified version and the digest prevents a registry update from
+silently changing it. The resulting `edfialliance/ed-fi-kafka-connect` image adds the
+Ed-Fi transforms and is itself selected by immutable digest in deployment; an unqualified
+name or a floating `3.6`/`latest` tag is not a conforming v1 pin. Image qualification runs
+the connector and transform suites on the included Kafka Connect 4.3.0 runtime.
+
+This exact Debezium 3.6 connector combination is known to work with SQL Server 2025 and
+the current `nvarchar(max)` `DocumentJson` schema, so SQL Server 2025 is an Ed-Fi
+qualification target. If DMS-1279 later adopts SQL Server's native `json` type, that type's
+connector mapping requires separate qualification before CDC uses it. Debezium's upstream
+3.6 tested-version matrix lists SQL Server through 2022, so this is an Ed-Fi-tested
+compatibility statement, not a claim that SQL Server 2025 appears in Debezium's upstream
+support matrix. See the
+[Debezium 3.6 release series](https://debezium.io/releases/3.6/).
 
 ## Configuration and Projection Target Selection
 
@@ -658,7 +678,7 @@ immutable binding.
 
 After the first health response, execute `SELECT pg_current_wal_lsn()` through the bound
 database connection. Normalize PostgreSQL's `X/Y` value to its unsigned 64-bit WAL byte
-position. From the Connect source offset, require the Debezium 2.7 `lsn_proc` field, which
+position. From the Connect source offset, require the Debezium 3.6 `lsn_proc` field, which
 is the last completely processed LSN, interpret its signed JSON integer as the same
 unsigned 64-bit bit pattern, and require `lsn_proc >= barrierLsn`. Do not compare the less
 strict `lsn`, `lsn_commit`, a replication-slot flush position, or formatted strings. The
@@ -682,13 +702,13 @@ pass. Comparison uses the decoded unsigned bytes, not locale or string collation
 The pinned Connect/Debezium image must support the connector-offset REST endpoint and
 these exact provider offset fields. Image qualification and provider integration tests
 pin their shapes. See the Kafka Connect
-[connector-offset REST API](https://kafka.apache.org/35/kafka-connect/user-guide/#connect_rest),
+[connector-offset REST API](https://kafka.apache.org/43/kafka-connect/user-guide/#connect_rest),
 Debezium's
-[PostgreSQL heartbeat guidance](https://debezium.io/documentation/reference/2.7/connectors/postgresql.html#postgresql-property-heartbeat-action-query),
+[PostgreSQL heartbeat guidance](https://debezium.io/documentation/reference/3.6/connectors/postgresql.html#postgresql-property-heartbeat-action-query),
 and its SQL Server
-[offset processing](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-overview)
+[offset processing](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-overview)
 and
-[heartbeat guidance](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-property-heartbeat-action-query).
+[heartbeat guidance](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-property-heartbeat-action-query).
 
 ## Deployment-Owned CDC Target and Physical Source Binding
 
@@ -895,6 +915,12 @@ settings defined above. `heartbeat.action.query` is generated from the emitted
 `dms.CdcHeartbeat` identifiers and is not free-form operator input. Heartbeat timing is an
 operational readiness setting rather than an immutable stream-contract or binding field.
 
+Every connector explicitly sets `statistics.metrics.enabled=true`. Debezium 3.6 then
+exposes minimum, maximum, average, P50, P95, and P99 statistics for
+`MilliSecondsBehindSource`. These quantiles are operational telemetry; current lag still
+participates in combined readiness and neither current nor historical lag substitutes for
+the provider source-position barrier.
+
 ### PostgreSQL
 
 - Use the Debezium PostgreSQL connector with `pgoutput` and logical replication.
@@ -929,14 +955,18 @@ database-per-instance isolation model.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.
-- Set `time.precision.mode=adaptive` explicitly. Under this mode SQL Server
-  `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, are captured as
-  `INT64` values with the `io.debezium.time.NanoTimestamp` logical type.
-- Require the Ed-Fi `DocumentState` SMT to convert `LastModifiedAt` from that
-  logical type to the existing DMS whole-second UTC string. The conversion deliberately
-  truncates fractional seconds rather than rounding, so it exactly matches the embedded
-  `document._lastModifiedDate`; a plain rename would leak the `INT64` representation into
-  the public contract.
+- Set `time.precision.mode=isostring` explicitly. Debezium 3.6 then captures SQL Server
+  `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, as ISO-8601 `STRING`
+  values with the `io.debezium.time.IsoTimestamp` logical type instead of signed
+  nanoseconds.
+- Require the Ed-Fi `DocumentState` SMT to parse and validate the `IsoTimestamp`, truncate
+  fractional seconds rather than round, and emit the existing DMS whole-second UTC
+  string that exactly matches `document._lastModifiedDate`.
+- Set `unavailable.value.placeholder=__debezium_unavailable_value` explicitly. Debezium
+  3.6 uses this marker when an unchanged SQL Server `varchar(max)`, `nvarchar(max)`, or
+  `varbinary(max)` value is unavailable in an update event. A retained cache upsert whose
+  required `DocumentJson` column value equals the marker fails transformation; it is never
+  treated as JSON `null` or published as document state.
 
 Although the Debezium SQL Server connector can capture multiple databases, v1 does not
 support that topology. Each instance database has its own connector, binding generation,
@@ -983,9 +1013,9 @@ configurable mapping language.
    relational connector.
 5. Normalize `LastModifiedAt` to the existing DMS whole-second UTC
    `yyyy-MM-ddTHH:mm:ssZ` representation. For SQL Server, interpret
-   `io.debezium.time.NanoTimestamp` nanoseconds since the Unix epoch, deliberately truncate
+   `io.debezium.time.IsoTimestamp` as an ISO-8601 UTC string, deliberately truncate
    fractional seconds without rounding into the next second, and reject an unexpected
-   provider representation or a fractional/raw numeric public value.
+   provider representation, non-UTC value, or fractional/raw public value.
 6. Build the complete lower-camel public envelope, copy the opaque DMS-computed
    `StreamEtag` to `document._etag`, remove all internal and operational fields, add
    `contractVersion`, and verify that the public key and normalized timestamp exactly
@@ -1017,21 +1047,16 @@ independent generic JSON expander. Keeping source classification, key/value shap
 tombstone synthesis, consistency checks, and routing in one transform avoids
 ordering-sensitive intermediate records. Tests assert published record bytes and
 semantics, not only generated connector JSON. Version-specific properties and the
-transform class are verified against the pinned
-`edfialliance/ed-fi-kafka-connect` image.
+transform class are verified against the pinned Ed-Fi image built from the exact Debezium
+3.6 base above.
 
-The current pinned image uses Debezium 2.7, whose SQL Server connector supports
-`adaptive` and `connect` temporal modes but not the newer `isostring` mode. Consequently,
-v1 pins `adaptive` and assigns whole-second normalization to the required Ed-Fi
-`DocumentState` SMT. A future temporal-mode change requires an explicit design and
-contract-test change; no Debezium mode replaces the transform's responsibility to emit
-the existing DMS whole-second representation and verify embedded timestamp equality. The
-same transform continues to own the rest of the document-state contract, and connector
-templates never rely on a Debezium default.
-See Debezium's
-[2.7 SQL Server temporal mapping](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-temporal-values)
-and the
-[current SQL Server temporal mapping](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#sqlserver-data-types).
+Debezium 3.6's `isostring` mode removes the 2.7-era signed-`NanoTimestamp` parsing
+workaround and preserves all seven SQL Server fractional digits in an unambiguous UTC
+string. It does not replace the transform's responsibility to emit the existing DMS
+whole-second representation and verify embedded timestamp equality. The same transform
+continues to own the rest of the document-state contract, and connector templates never
+rely on a Debezium default. See Debezium's
+[3.6 SQL Server temporal mapping](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-temporal-values).
 
 ## Stream Contract Compatibility, Repair, and Version Cutover
 
@@ -1257,9 +1282,10 @@ Structured logs and metrics cover:
   opaque projection-source fingerprint.
 
 Deployment-owned CDC status additionally covers binding presence and match, connector
-running state, lag, last error, snapshot completion, heartbeat/capture progress, the
-provider barrier and committed Connect source offset in sanitized form, existing
-artifacts without binding state, source mismatch, and generation migration state.
+running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, last error,
+snapshot completion, heartbeat/capture progress, the provider barrier and committed
+Connect source offset in sanitized form, existing artifacts without binding state, source
+mismatch, and generation migration state.
 
 Use provider, safe project/resource identity, failure category, target-resolution state,
 and opaque data-store identity only where cardinality policy permits. Never log
@@ -1355,12 +1381,14 @@ instance can read that instance topic and is denied when it attempts to read a p
 instance topic. This focused broker-backed check belongs to bootstrap story 19-04; the
 broad API-driven CDC E2E suite does not duplicate an ACL matrix.
 
-SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.
-Transform tests use realistic `io.debezium.time.NanoTimestamp` values with zero, one,
-three, six, and seven significant fractional digits and assert the same whole-second UTC
-string for every value within that second, truncation rather than rounding at the upper
-fractional boundary, exact equality with `document._lastModifiedDate`, and rejection of
-unexpected, fractional, or raw numeric public output.
+SQL Server template tests require the explicit `time.precision.mode=isostring` and
+`unavailable.value.placeholder=__debezium_unavailable_value` settings. Transform tests use
+realistic `io.debezium.time.IsoTimestamp` strings with zero through seven significant
+fractional digits and assert the same whole-second UTC string for every value within that
+second, truncation rather than rounding at the upper fractional boundary, exact equality
+with `document._lastModifiedDate`, and rejection of unexpected, non-UTC, fractional, raw
+numeric, or unavailable-marker public output. Pinned-image provider tests include SQL
+Server 2025.
 
 PostgreSQL and SQL Server integration/E2E coverage proves:
 

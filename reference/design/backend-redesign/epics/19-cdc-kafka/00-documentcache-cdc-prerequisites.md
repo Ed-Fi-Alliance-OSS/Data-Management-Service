@@ -62,7 +62,9 @@ per-database projection health with E19-owned provider, topic, and connector che
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,
    connector configuration and task state, snapshot/catch-up, the provider source-position
-   barrier, and lag checks. Implement the PostgreSQL adapter by capturing
+   barrier, current lag checks, and Debezium 3.6 P50/P95/P99 source-lag telemetry.
+   Quantiles are diagnostic and do not replace the barrier. Implement the PostgreSQL
+   adapter by capturing
    `pg_current_wal_lsn()` after the zero-audit health response and comparing its unsigned
    64-bit value with committed Debezium `lsn_proc`. Implement the SQL Server adapter by
    reading `HeartbeatSequence` after that response, locating a later update after-image
@@ -95,7 +97,8 @@ per-database projection health with E19-owned provider, topic, and connector che
   observation, cache-ahead latching that remains false-ready after source equality,
   explicit `errors.tolerance=none`, producer/topic/broker size alignment with
   `maxRecordBytes`, failed connector task state despite otherwise acceptable offset/lag
-  observations, lag, per-target isolation, and aggregate results. They reject missing,
+  observations, current and quantile lag reporting, per-target isolation, and aggregate
+  results. They reject missing,
   malformed, snapshot, wrong-source, and multiple source-offset responses and prove that
   running/lag status cannot pass a connector that is below the barrier.
 - API integration tests prove every reported CDC/projector failure remains observational,

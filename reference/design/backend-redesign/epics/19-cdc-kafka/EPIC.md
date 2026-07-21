@@ -5,6 +5,7 @@ related:
   - DMS-1246
   - DMS-1232
   - DMS-1089
+  - DMS-1279
 ---
 
 # Epic: Relational CDC/Kafka Streaming
@@ -43,7 +44,13 @@ implementation inputs.
 
 ## Completion Evidence
 
+- The published Ed-Fi connector image is built from the exact
+  `quay.io/debezium/connect:3.6.0.Final@sha256:6f3fe6407bae8f2a7714b9fc174d545d52d81044b4f4add1565854f020943d47`
+  base, includes the required transforms, and is selected by immutable digest rather than
+  a floating tag. Image tests run on its Kafka Connect 4.3.0 runtime.
 - Both providers pass database CDC/key smoke tests and real routed-topic ordering tests.
+  SQL Server provider qualification includes SQL Server 2025 as a known-working Ed-Fi
+  combination.
 - Generated and published records pass the topic/message contract suite.
 - Each binding fixes its topic partition count and the named `kafka-murmur2-v1`
   partitioner behavior token so a document's later Kafka offset remains a valid
@@ -77,6 +84,13 @@ implementation inputs.
 - Connector templates and live registration pin `errors.tolerance=none`; a malformed
   retained record fails the task and combined readiness instead of being skipped as
   caught-up progress.
+- SQL Server templates pin `time.precision.mode=isostring` and the Debezium 3.6
+  unavailable-value marker. The transform validates `IsoTimestamp` input, rejects an
+  unavailable required `DocumentJson`, and emits only the existing whole-second public
+  timestamp.
+- Connector templates pin `statistics.metrics.enabled=true`, and deployment telemetry
+  exposes Debezium 3.6 P50/P95/P99 source lag without treating it as a substitute for the
+  provider position barrier.
 - Every binding pins one `maxRecordBytes` derived from the maximum supported fully
   materialized link-bearing envelope. Producer, topic, broker/replication, and consumer
   limits align to it, and a broker-backed boundary test publishes and consumes that

@@ -204,17 +204,22 @@ The physical temporal representation is not part of the public contract. One Ed-
 upsert, public tombstone, or drop result; the connector does not compose that contract
 from an independent generic JSON expander and a predicate-heavy stock-SMT chain. In
 particular, SQL Server stores `dms.DocumentCache.LastModifiedAt` as `datetime2(7)`. The
-pinned Debezium connector's `adaptive` time-precision mode exposes that column as an `INT64`
-`io.debezium.time.NanoTimestamp`, not a JSON string. The required Ed-Fi `DocumentState`
-SMT owns its conversion to `lastModifiedAt`: it interprets the Debezium logical
-type as nanoseconds since the Unix epoch in UTC and deliberately truncates any fractional
-second to the same whole-second UTC representation already emitted by DMS materializers.
-`LastModifiedAt` retains its provider precision in the cache row, but subsecond precision is
-not part of the public stream contract and is not used for freshness or ordering. A raw
-numeric `lastModifiedAt`, fractional public timestamp, rounding into the next second, or
-plain field rename is non-conforming. The transform also verifies that the emitted value
-exactly matches `document._lastModifiedDate`; a mismatch fails the record rather than
-publishing inconsistent metadata.
+pinned Debezium 3.6 connector's explicit `isostring` time-precision mode exposes that
+column as an ISO-8601 `STRING` with the `io.debezium.time.IsoTimestamp` logical type. The
+required Ed-Fi `DocumentState` SMT owns its conversion to `lastModifiedAt`: it parses and
+validates the UTC value and deliberately truncates any fractional second to the same
+whole-second UTC representation already emitted by DMS materializers. `LastModifiedAt`
+retains its provider precision in the cache row and raw connector record, but subsecond
+precision is not part of the public stream contract and is not used for freshness or
+ordering. A non-UTC or fractional public timestamp, raw numeric value, rounding into the
+next second, or plain field rename is non-conforming. The transform also verifies that the
+emitted value exactly matches `document._lastModifiedDate`; a mismatch fails the record
+rather than publishing inconsistent metadata.
+
+For SQL Server `nvarchar(max)` source data, including `DocumentJson`, the connector pins
+Debezium 3.6's unavailable-value marker. A required retained value carrying that marker is
+a transformation failure; it is never interpreted as JSON `null` or emitted in the public
+record.
 
 The stream `variantKey` uses the API five-component shape
 `{schemaEpoch}.j._.{linkFlag}.i`: JSON, no readable profile, the published document's link
@@ -453,4 +458,4 @@ The public topic never exposes:
 | Require strictly newer `contentVersion` for every replacement | Rejected: it makes a conforming projection or opaque-ETag correction require a new topic even though Kafka already orders the later record for the same key. |
 | Republish a corrected ETag at the same `contentVersion` in `documents.v1` | Accepted for a compatible repair: clear and rebuild the cache after stopping old cache writers, and let the later Kafka offset win. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
-| Require SQL Server `time.precision.mode=isostring` in the currently pinned image | Rejected for v1: the pinned Debezium 2.7 connector supports `adaptive` and `connect`, but not `isostring`; the required Ed-Fi `DocumentState` SMT normalizes the adaptive temporal value to the existing DMS whole-second representation. |
+| Require SQL Server `time.precision.mode=isostring` in the pinned Debezium 3.6 image | Accepted for v1: it preserves the source precision in an unambiguous UTC `IsoTimestamp` and removes signed-nanosecond parsing; the required Ed-Fi `DocumentState` SMT still validates and truncates it to the existing DMS whole-second representation. |
