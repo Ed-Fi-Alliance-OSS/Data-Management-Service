@@ -1361,7 +1361,7 @@ function Resolve-EnvValueReference {
     .PARAMETER TreatUnresolvedReferenceAsEmpty
         Models docker-compose's bare ${NAME} semantics: a reference to an unset or blank variable resolves
         to empty (rather than throwing), so a caller modeling a ${VAR:-default} expression - e.g.
-        Resolve-EffectiveMssqlSaPassword for ${MSSQL_SA_PASSWORD:-abcdefgh1!} - can then apply its default.
+        Resolve-ComposeVariable for ${MSSQL_SA_PASSWORD:-abcdefgh1!} - can then apply its default.
         Cyclic and unsupported-expression references still throw. Off by default: an unresolved reference is
         a hard error for callers that require a concrete value.
     #>
@@ -1599,279 +1599,6 @@ function Resolve-StandaloneCmsConfigurationDatabaseTarget {
     throw "The standalone Configuration Service database cannot be determined. Set DMS_CONFIG_DATABASE_CONNECTION_STRING, DMS_CONFIG_DATABASE_NAME, or POSTGRES_DB_NAME in the environment file."
 }
 
-function Assert-StandaloneCmsExistingConnectionStringMatchesSqlServerStack {
-    <#
-    .SYNOPSIS
-        Validates that an existing (shell- or env-file-provided) CMS connection string on a SQL Server
-        stack is itself a SQL Server connection targeting the expected configuration database, before
-        Resolve-StandaloneCmsConnectionStringMaterialization honors it (returns $null) rather than
-        materializing one.
-
-    .DESCRIPTION
-        A nonempty DMS_CONFIG_DATABASE_CONNECTION_STRING suppresses materialization regardless of engine.
-        Without this check a PostgreSQL connection - even one targeting the expected database - would point
-        the Configuration Service at PostgreSQL while the selected stack (mssql.yml) and self-contained
-        OpenIddict initialization use SQL Server, splitting CMS from its key store. The later
-        process-environment agreement guard (Assert-ConfigDatabaseProcessEnvironmentAgreement) now also
-        rejects an engine mismatch, but the standalone lane runs it only in self-contained mode and Keycloak
-        mode has no such guard, so validating engine AND database here covers both identity providers, running
-        before the provider branch in start-local-config.ps1.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [string]$ConnectionString,
-
-        [Parameter(Mandatory)]
-        [string]$ConfigDatabaseName,
-
-        [Parameter(Mandatory)]
-        [hashtable]$EnvValues,
-
-        [Parameter(Mandatory)]
-        [ValidateSet("shell", "environment file")]
-        [string]$Source
-    )
-
-    if (-not (Test-MssqlConnectionStringValue -ConnectionString $ConnectionString)) {
-        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING is set in the $Source to a non-SQL Server connection on a SQL Server stack (DMS_CONFIG_DATASTORE=mssql). Docker Compose would point the Configuration Service at it while self-contained OpenIddict initialization targets SQL Server database '$ConfigDatabaseName' - and Keycloak mode has no later agreement guard - so the Configuration Service and its key store would use different engines. Set a SQL Server connection string (for example Server=dms-mssql,1433;Database=$ConfigDatabaseName;...), or unset DMS_CONFIG_DATABASE_CONNECTION_STRING to materialize one automatically."
-    }
-
-    # A SQL Server connection can still target the wrong database; reuse the engine-neutral database guard
-    # so a mismatch fails here (covering Keycloak, which has no later agreement guard) rather than starting
-    # CMS against a different database than self-contained OpenIddict initializes. docker-compose
-    # interpolates ${...} inside an env-file connection string but hands a SHELL-exported value to the
-    # container verbatim, so a shell value's database is compared literally - an unexpanded ${...} the
-    # container would receive as-is fails fast instead of resolving into a false match.
-    Assert-CmsConnectionStringTargetsConfigDatabase `
-        -ConnectionString $ConnectionString `
-        -ExpectedDatabaseName $ConfigDatabaseName `
-        -EnvValues $EnvValues `
-        -DoNotResolveReferences:($Source -eq "shell")
-}
-
-function Resolve-EffectiveMssqlSaPassword {
-    <#
-    .SYNOPSIS
-        Resolves the SQL Server SA password the mssql.yml container is initialized with, modeling
-        docker-compose's ${MSSQL_SA_PASSWORD:-...}: a shell export takes precedence over the env file.
-
-    .DESCRIPTION
-        The container's SA password (mssql.yml) is ${MSSQL_SA_PASSWORD:-abcdefgh1!}, and docker-compose
-        gives a shell-exported value precedence over --env-file. Every lane that authenticates to that
-        container as 'sa' from the host must resolve the SAME effective password, or a shell override reaches
-        the container while the host uses the env-file value and fails authentication. The standalone lane
-        (start-local-config.ps1) embeds it in the materialized CMS connection and passes it to
-        setup-openiddict.ps1 (-InitDb before CMS, -InsertData after); the full-stack lanes
-        (start-local-dms.ps1 / start-published-dms.ps1) use it for the SQL Server readiness poll and the same
-        setup-openiddict.ps1 calls.
-
-        A shell-provided value is used verbatim (compose does not re-interpolate it) and wins over the env
-        file; otherwise the env-file value is resolved at the same shell-over-file precedence docker-compose
-        uses, so a ${...} reference to another variable (for example MSSQL_SA_PASSWORD=${MSSQL_ROOT_PASSWORD})
-        honors a shell override of that referenced variable rather than the env-file value compose ignores.
-        When neither is set (or
-        the shell value is explicitly empty, which ':-' treats as unset) the behavior depends on
-        -DefaultValue: supply it to fall back to the compose default (full-stack lanes), or omit it to fail
-        fast rather than authenticate with a guessed credential (standalone lane).
-
-    .PARAMETER EnvValues
-        The lane's env-file values.
-
-    .PARAMETER ProcessEnvironment
-        The process-level environment as a name/value map. Defaults to the live process environment;
-        injectable so tests exercise the decision without depending on real shell state.
-
-    .PARAMETER DefaultValue
-        When supplied, models docker-compose's ${MSSQL_SA_PASSWORD:-<DefaultValue>}: an unset or explicitly
-        empty value resolves to this default instead of throwing. The full-stack lanes
-        (start-local-dms.ps1 / start-published-dms.ps1) pass the mssql.yml compose default so the readiness
-        poll and setup-openiddict.ps1 match the container even when the env file omits the password; the
-        standalone lane omits it and fails fast rather than embedding a guessed credential.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [hashtable]$EnvValues,
-
-        [hashtable]$ProcessEnvironment,
-
-        [string]$DefaultValue
-    )
-
-    $hasDefault = $PSBoundParameters.ContainsKey('DefaultValue')
-
-    if ($null -eq $ProcessEnvironment) {
-        $ProcessEnvironment = @{}
-        foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
-            $ProcessEnvironment[[string]$entry.Key] = [string]$entry.Value
-        }
-    }
-
-    if ($ProcessEnvironment.ContainsKey("MSSQL_SA_PASSWORD")) {
-        # A shell-provided value wins and is used verbatim by compose (it is not re-interpolated). ':-'
-        # treats an explicitly empty shell export as unset, so the container would use the compose-file
-        # default: fall back to it when the caller supplied one, otherwise fail fast rather than
-        # authenticating with a different credential than the container's.
-        $saPassword = [string]$ProcessEnvironment["MSSQL_SA_PASSWORD"]
-        if ([string]::IsNullOrEmpty($saPassword)) {
-            if ($hasDefault) { return $DefaultValue }
-            throw "The process environment exports an empty MSSQL_SA_PASSWORD on a SQL Server stack. Docker Compose's ':-' treats it as unset and would initialize the SQL Server container with the compose-file default password, which the materialized configuration connection and setup-openiddict.ps1 initialization cannot authenticate against. Unset MSSQL_SA_PASSWORD in your shell to use the environment file's value, or export the intended password."
-        }
-        return $saPassword
-    }
-
-    # The env-file MSSQL_SA_PASSWORD may itself be a ${...} reference (e.g. ${MSSQL_ROOT_PASSWORD}).
-    # docker-compose interpolates that reference against the merged environment and gives the shell
-    # precedence for EVERY variable, so a shell override of the REFERENCED variable reaches the container
-    # even though MSSQL_SA_PASSWORD itself is not shell-exported (verified with `docker compose config`).
-    # Resolve the reference against the same shell-over-file view so the host authenticates with the
-    # credential the container is actually initialized with, not the env-file value compose overrode.
-    # When the reference is unset or blank, docker-compose resolves it to empty and mssql.yml's
-    # ${MSSQL_SA_PASSWORD:-abcdefgh1!} then selects the compose default, so the container still starts.
-    # -TreatUnresolvedReferenceAsEmpty makes the resolution yield "" in that case (rather than aborting on an
-    # unresolved-reference error) and the -DefaultValue / fail-fast logic below applies the ':-' default.
-    $mergedValues = @{}
-    foreach ($entry in $EnvValues.GetEnumerator()) {
-        $mergedValues[[string]$entry.Key] = [string]$entry.Value
-    }
-    foreach ($entry in $ProcessEnvironment.GetEnumerator()) {
-        $mergedValues[[string]$entry.Key] = [string]$entry.Value
-    }
-
-    $saPassword = Resolve-EnvValueReference `
-        -Value ([string](Get-EnvValue -EnvValues $EnvValues -Name "MSSQL_SA_PASSWORD")) `
-        -EnvValues $mergedValues `
-        -TreatUnresolvedReferenceAsEmpty
-    if ([string]::IsNullOrWhiteSpace($saPassword)) {
-        if ($hasDefault) { return $DefaultValue }
-        throw "MSSQL_SA_PASSWORD is not set in the environment file, so a SQL Server configuration connection cannot be authenticated. Set MSSQL_SA_PASSWORD, or set DMS_CONFIG_DATABASE_CONNECTION_STRING to a valid SQL Server connection."
-    }
-    return $saPassword
-}
-
-function Resolve-StandaloneCmsConnectionStringMaterialization {
-    <#
-    .SYNOPSIS
-        Returns a SQL Server CMS connection string to materialize for the standalone Configuration
-        Service lane (start-local-config.ps1) when docker-compose would otherwise fall back to the
-        PostgreSQL-only compose default on a SQL Server stack; $null when no materialization is needed.
-
-    .DESCRIPTION
-        docker-compose resolves the Configuration Service connection as
-        ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-<compose fallback>}, and the fallback in local-config.yml
-        is a hardcoded PostgreSQL connection to dms-postgresql. On a SQL Server stack that fallback is the
-        wrong engine: setup-openiddict.ps1 -InitDb initializes SQL Server (self-contained) while CMS - or,
-        in Keycloak mode, its EnsureDatabase deployment - receives a PostgreSQL connection. The full-stack
-        lanes never hit this because Resolve-DatabaseEngineEnvironmentFile composes the .env.mssql overlay
-        (which carries an MSSQL connection string) into a derived env file; the standalone lane reads the
-        RAW env file and composes no overlay, so it must materialize the connection itself.
-
-        The engine is read from the env file's DMS_CONFIG_DATASTORE - the same value that selects the
-        SQL Server compose file (mssql.yml) and setup-openiddict.ps1's -DbType - so the materialized
-        connection targets the SQL Server container that is actually running. On a PostgreSQL stack the
-        compose fallback is correct, so this returns $null.
-
-        docker-compose's ':-' plus shell-over-env-file precedence decides whether the fallback is used:
-          * a shell-exported non-empty connection string wins and is used verbatim, so nothing is
-            materialized (the caller-authored value is honored, then validated by
-            Assert-ConfigDatabaseProcessEnvironmentAgreement in self-contained mode);
-          * a shell-exported EXACTLY-empty connection string forces the PostgreSQL fallback (':-' treats
-            empty as unset). That is an explicit operator action materialization must not silently mask,
-            so on a SQL Server stack it throws;
-          * otherwise the env-file connection string is used when non-empty; when it is absent, compose
-            uses the fallback and this materializes a SQL Server connection targeting ConfigDatabaseName,
-            mirroring .env.mssql's DMS_CONFIG_DATABASE_CONNECTION_STRING (Server=dms-mssql,1433).
-
-        The materialized value resolves the database name and MSSQL_SA_PASSWORD to literals so it does not
-        depend on docker-compose re-interpolating ${...} inside a shell-provided value. MSSQL_SA_PASSWORD is
-        read from the same shell-over-env-file view docker-compose uses for the container's
-        ${MSSQL_SA_PASSWORD:-...} (a shell export wins over the env file), so the connection embeds the
-        credential the container is actually initialized with rather than diverging from a shell override; a
-        blank MSSQL_SA_PASSWORD throws rather than producing a connection that cannot authenticate.
-
-    .PARAMETER EnvValues
-        The standalone lane's env-file values (engine, MSSQL credentials, connection string).
-
-    .PARAMETER ConfigDatabaseName
-        The effective configuration database name (from Resolve-StandaloneCmsConfigurationDatabaseTarget)
-        that both the materialized CMS connection and setup-openiddict.ps1 -InitDb target.
-
-    .PARAMETER ProcessEnvironment
-        The process-level environment as a name/value map. Defaults to a snapshot of the current process
-        environment; injectable so tests exercise the decision without mutating the real environment.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [hashtable]$EnvValues,
-
-        [Parameter(Mandatory)]
-        [string]$ConfigDatabaseName,
-
-        [hashtable]$ProcessEnvironment
-    )
-
-    if ($null -eq $ProcessEnvironment) {
-        $ProcessEnvironment = @{}
-        foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
-            $ProcessEnvironment[[string]$entry.Key] = [string]$entry.Value
-        }
-    }
-
-    # The env file governs the running engine: DMS_CONFIG_DATASTORE selects mssql.yml (the SQL Server
-    # container) and setup-openiddict.ps1's -DbType. The compose fallback is PostgreSQL-only, so it is
-    # only the wrong engine - and only needs materializing - on a SQL Server stack.
-    if ((Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_DATASTORE") -ne "mssql") {
-        return $null
-    }
-
-    # Model docker-compose ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-<fallback>} with shell-over-env-file
-    # precedence to decide whether compose uses the PostgreSQL fallback.
-    if ($ProcessEnvironment.ContainsKey("DMS_CONFIG_DATABASE_CONNECTION_STRING")) {
-        $shellConnectionString = [string]$ProcessEnvironment["DMS_CONFIG_DATABASE_CONNECTION_STRING"]
-        if ([string]::IsNullOrEmpty($shellConnectionString)) {
-            # ':-' treats an empty value as unset, so compose would substitute the PostgreSQL fallback.
-            # This is an explicit shell export; do not mask it by materializing over it.
-            throw "The process environment exports an empty DMS_CONFIG_DATABASE_CONNECTION_STRING on a SQL Server stack. Docker Compose's ':-' treats an empty value as unset and would substitute the compose-file fallback - a hardcoded PostgreSQL connection to dms-postgresql - instead of a SQL Server connection targeting the configuration database '$ConfigDatabaseName'. Unset DMS_CONFIG_DATABASE_CONNECTION_STRING in your shell, or set it to a valid SQL Server connection."
-        }
-        # A non-empty shell value wins and is used verbatim by compose. Validate it is a SQL Server
-        # connection targeting the expected configuration database before honoring it (no materialization);
-        # otherwise compose would point CMS at a wrong-engine or wrong-database connection that
-        # materialization would have avoided, and which the later name-only guard cannot catch.
-        Assert-StandaloneCmsExistingConnectionStringMatchesSqlServerStack -ConnectionString $shellConnectionString -ConfigDatabaseName $ConfigDatabaseName -EnvValues $EnvValues -Source "shell"
-        return $null
-    }
-
-    $envFileConnectionString = [string](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING")
-    if (-not [string]::IsNullOrEmpty($envFileConnectionString)) {
-        # The env file provides a connection string; compose uses it (no fallback). Validate engine and
-        # database before honoring it, for the same reason as the shell value above.
-        Assert-StandaloneCmsExistingConnectionStringMatchesSqlServerStack -ConnectionString $envFileConnectionString -ConfigDatabaseName $ConfigDatabaseName -EnvValues $EnvValues -Source "environment file"
-        return $null
-    }
-
-    # No connection string is set anywhere, so compose would use the PostgreSQL fallback. Materialize a
-    # SQL Server connection matching the running container (mssql.yml: dms-mssql, internal port 1433) and
-    # targeting the effective configuration database, mirroring .env.mssql.
-    #
-    # Resolve the SA password the SAME way the container is initialized - docker-compose's
-    # ${MSSQL_SA_PASSWORD:-...} gives a shell export precedence over the env file - so the materialized
-    # connection embeds the credential the container actually uses (see Resolve-EffectiveMssqlSaPassword);
-    # start-local-config.ps1 resolves the same value for setup-openiddict.ps1's own 'sa' login.
-    $saPassword = Resolve-EffectiveMssqlSaPassword -EnvValues $EnvValues -ProcessEnvironment $ProcessEnvironment
-
-    # Build with DbConnectionStringBuilder (the same type Get-CmsConnectionStringDatabaseName parses with)
-    # so a database name or SA password containing connection-string metacharacters - ';', '=', quotes, or
-    # surrounding whitespace, all legal in a SQL Server password - is quoted correctly and round-trips.
-    # Raw string interpolation would break the segment structure and make the guard's reparse throw for a
-    # perfectly valid password.
-    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-    $builder["Server"] = "dms-mssql,1433"
-    $builder["Database"] = $ConfigDatabaseName
-    $builder["User Id"] = "sa"
-    $builder["Password"] = $saPassword
-    $builder["TrustServerCertificate"] = "true"
-    return $builder.ConnectionString
-}
-
 function Get-ProcessEnvironmentVariableSnapshot {
     <#
     .SYNOPSIS
@@ -1883,7 +1610,7 @@ function Get-ProcessEnvironmentVariableSnapshot {
         the process environment so docker-compose - which gives shell state precedence over --env-file -
         resolves the Configuration Service against the running SQL Server container. That process-level
         export outlives the script and would leak into a later invocation in the same shell, where
-        Resolve-StandaloneCmsConnectionStringMaterialization honors an already-set connection string as a
+        Resolve-EffectiveConfigRuntimeContract honors an already-set connection string as a
         caller-authored override: reusing the prior database, carrying a SQL Server connection into a
         PostgreSQL run, or slipping past the database-name-only agreement guard when the names match.
         Snapshotting the prior state before the export lets the caller restore it in a finally block on
@@ -2115,7 +1842,7 @@ function Assert-ConfigDatabaseProcessEnvironmentAgreement {
     # The Configuration Service provider is AppSettings__Datastore: ${DMS_CONFIG_DATASTORE:-postgresql}
     # (local-config.yml / published-config.yml), resolved at the same shell-over-file precedence. It - not
     # the connection string - selects whether the container runs the SQL Server or PostgreSQL provider, so
-    # it is the authoritative engine signal (matching Resolve-StandaloneCmsConnectionStringMaterialization,
+    # it is the authoritative engine signal (matching Resolve-EffectiveConfigRuntimeContract,
     # which reads DMS_CONFIG_DATASTORE) for both the empty-connection fallback check and the runtime
     # connection-engine check below. An unset or empty value resolves to the compose default, PostgreSQL.
     $configDatastore = Resolve-EnvValueReference -Value ([string]$mergedValues["DMS_CONFIG_DATASTORE"]) -EnvValues $mergedValues
