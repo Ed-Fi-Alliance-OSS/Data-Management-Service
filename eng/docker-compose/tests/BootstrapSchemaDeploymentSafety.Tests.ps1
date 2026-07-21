@@ -904,7 +904,7 @@ exit $ExitCode
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(9) } |
-                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*database=stale_pg*resolved to dialect 'pgsql'*DMS_DATASTORE is 'mssql'*expected dialect 'mssql'*-NoDataStore*"
+                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*database=stale_pg*is a 'postgresql' connection*DMS_DATASTORE is 'mssql'*-NoDataStore*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
 
@@ -1705,67 +1705,23 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
         }
     }
 
-    Context "Resolve-TargetDialect" {
-        It "resolves a SQL Server connection string (Server key) to mssql" {
+    Context "Resolve-ExpectedProvisioningDialect (dialect from the explicit engine, never inferred from the connection string)" {
+        # Provisioning no longer guesses the SchemaTools dialect from connection-string keywords. The
+        # effective datastore provider (DMS_DATASTORE) IS the dialect; New-ProvisionTarget separately
+        # guards against a stale wrong-engine data store by the stored connection's shape.
+        It "maps DMS_DATASTORE=mssql to the mssql dialect" {
             . $script:repo.ProvisionScript
-
-            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
-                'Server=dms-mssql,1433;Database=db1;User Id=sa;Password=foo;TrustServerCertificate=true;'
-
-            Resolve-TargetDialect -Builder $builder | Should -Be "mssql"
+            (Resolve-ExpectedProvisioningDialect -EnvValues @{ DMS_DATASTORE = "mssql" }).ExpectedDialect | Should -Be "mssql"
         }
 
-        It "resolves a SQL Server connection string (Data Source key) to mssql" {
+        It "maps DMS_DATASTORE=postgresql to the pgsql dialect" {
             . $script:repo.ProvisionScript
-
-            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
-                'Data Source=dms-mssql,1433;Database=db1;User Id=sa;Password=foo;'
-
-            Resolve-TargetDialect -Builder $builder | Should -Be "mssql"
+            (Resolve-ExpectedProvisioningDialect -EnvValues @{ DMS_DATASTORE = "postgresql" }).ExpectedDialect | Should -Be "pgsql"
         }
 
-        It "resolves a PostgreSQL connection string that uses the User Id alias for Username to pgsql" {
+        It "defaults a missing DMS_DATASTORE to the pgsql dialect (the compose-level default)" {
             . $script:repo.ProvisionScript
-
-            # "User Id" is a legal Npgsql alias for Username, so it also matches the mssql "user
-            # id" marker. Host is never a valid SqlClient key, so its presence must take
-            # precedence and resolve to pgsql rather than being misrouted to mssql.
-            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
-                'Host=localhost;Port=5432;User Id=postgres;Password=x;Database=edfi;'
-
-            Resolve-TargetDialect -Builder $builder | Should -Be "pgsql"
-        }
-
-        It "resolves a PostgreSQL connection string that uses the Server alias for Host to pgsql" {
-            . $script:repo.ProvisionScript
-
-            # "Server" is a legal Npgsql alias for Host, so a PostgreSQL connection string built
-            # from that alias (with no "host" key at all) would otherwise be misrouted to mssql
-            # by the Server marker below. Port and Username are never valid SqlClient keys, so
-            # their presence here is definitive and must take precedence.
-            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
-                'Server=my-pg;Port=5432;Username=u;Password=p;Database=d;'
-
-            Resolve-TargetDialect -Builder $builder | Should -Be "pgsql"
-        }
-
-        It "resolves a SQL Server connection string (Initial Catalog/User Id/TrustServerCertificate) to mssql" {
-            . $script:repo.ProvisionScript
-
-            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
-                'Server=dms-mssql,1433;Initial Catalog=db1;User Id=sa;TrustServerCertificate=true;Password=foo;'
-
-            Resolve-TargetDialect -Builder $builder | Should -Be "mssql"
-        }
-
-        It "throws when neither a PostgreSQL host key nor any SQL Server key is present" {
-            . $script:repo.ProvisionScript
-
-            $builder = ConvertTo-ConnectionStringBuilder -ConnectionString `
-                'password=secret-pass;database=no_host_db;'
-
-            { Resolve-TargetDialect -Builder $builder } |
-                Should -Throw -ExpectedMessage "*carries none of the PostgreSQL keys (host, username, port, sslmode) and no SQL Server key*"
+            (Resolve-ExpectedProvisioningDialect -EnvValues @{}).ExpectedDialect | Should -Be "pgsql"
         }
     }
 

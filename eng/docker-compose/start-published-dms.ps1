@@ -174,13 +174,13 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
-$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d -or $SeparateConfigDatabase)
+$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
 # Resolve the local database topology: DMS_CONFIG_DATABASE_NAME is materialized to a concrete name
 # (the DMS datastore database by default, or the dedicated edfi_configurationservice database with
 # -SeparateConfigDatabase) so docker-compose interpolation and every host-side consumer - including
 # setup-openiddict.ps1 - target the same Configuration Service database. The connection-string
 # agreement check is skipped only for the database-only diagnostic startup and teardown.
-$EnvironmentFile = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -SkipCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+$EnvironmentFile = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
@@ -471,11 +471,11 @@ else {
         }
 
         if ($DatabaseEngine -eq "mssql") {
-            # Resolve the SA password the way the container is initialized (docker-compose's
-            # ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell export over the env file) so the readiness poll
-            # authenticates with the credential the container actually uses. This diagnostic slice starts
-            # only the database, so it needs the credential rather than the full runtime contract.
-            $mssqlSaPassword = (Resolve-ComposeVariable -Name "MSSQL_SA_PASSWORD" -EnvValues $envValues -Default "abcdefgh1!").Value
+            # Resolve the SA password the container is initialized with by asking Docker Compose itself
+            # (the resolved db-service MSSQL_SA_PASSWORD, a shell export over the env file), so the readiness
+            # poll authenticates with the credential the container actually uses. This diagnostic slice
+            # starts only the database, so it reads just the credential, not the full runtime contract.
+            $mssqlSaPassword = (Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published").MssqlSaPassword
             Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
         }
         else {
@@ -485,6 +485,22 @@ else {
         Write-Output "Database phase complete. Only the database container was started."
         return
     }
+
+    # Resolve and validate the effective Configuration Service runtime contract ONCE, before the first
+    # Docker or Keycloak mutation, from the values Docker Compose itself resolves (shell over --env-file,
+    # ${VAR:-default}, nested references, quoting). `docker compose config` and the `up` calls below are
+    # given the same files, env file, and shell, so what is validated here is exactly what the containers
+    # receive. It enforces provider == engine, the connection engine/database invariant, the SA-password
+    # presence, and datastore-name agreement, so a shell override cannot split the container from host-side
+    # initialization - and it fails fast BEFORE any container starts.
+    $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
+    $contract = Resolve-EffectiveConfigRuntimeContract `
+        -InfrastructureEngine $DatabaseEngine `
+        -ResolvedProvider $resolvedCompose.Provider `
+        -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
+        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
+        -ConfigDatabaseName $envValues["DMS_CONFIG_DATABASE_NAME"] `
+        -EnvValues $envValues
 
     if($IdentityProvider -eq "keycloak")
     {
@@ -513,18 +529,10 @@ else {
         throw "Failed to start $databaseDisplayName. Exit code $LASTEXITCODE"
     }
 
-    # Resolve the effective runtime contract once. It models docker-compose ${MSSQL_SA_PASSWORD:-abcdefgh1!}
-    # (a shell export wins over the env file) for the readiness poll, the setup-openiddict.ps1 credential, and
-    # the DMS datastore connection stored in CMS below; supplies the engine-aware OpenIddict parameters (the
-    # key store lives in the Configuration Service database DMS_CONFIG_DATABASE_NAME, which the topology
-    # resolver materialized to a concrete name); and validates engine agreement + the connection so a shell
-    # override cannot split the container from host-side initialization.
-    $contract = Resolve-EffectiveConfigRuntimeContract -EnvValues $envValues -InfrastructureEngine $DatabaseEngine -ConfigDatabaseName $envValues["DMS_CONFIG_DATABASE_NAME"] -ConfigDatabaseNameMaterialized -MssqlSaPasswordDefault "abcdefgh1!"
-
     if ($DatabaseEngine -eq "mssql") {
         # SQL Server accepts connections noticeably later than its container reports running; poll before
-        # the phase commands need it, using the contract's effective SA credential.
-        Wait-MssqlReady -ContainerName "dms-mssql" -Password $contract.MssqlSaPassword.Value
+        # the phase commands need it, using the contract's effective SA credential (resolved above).
+        Wait-MssqlReady -ContainerName "dms-mssql" -Password $contract.MssqlSaPassword
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below, all from the one contract.
@@ -707,7 +715,7 @@ else {
                 # effective SA password (docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell export
                 # over the env file) so the datastore connection stored in CMS matches the credential the
                 # container was initialized with, even under a shell override.
-                $mssqlPassword = $contract.MssqlSaPassword.Value
+                $mssqlPassword = $contract.MssqlSaPassword
                 $mssqlDbName =
                     if (-not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                         $DataStoreDatabaseName

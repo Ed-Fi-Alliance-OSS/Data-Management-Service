@@ -89,14 +89,14 @@ Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
             Should -BeGreaterOrEqual 2
     }
 
-    It "resolves the datastore SA password shell-over-file with the documented dev-password default" {
+    It "resolves the datastore SA password by asking Docker Compose (shell-over-file), not a PowerShell re-implementation" {
         # The DMS datastore is on the same SQL Server container as CMS, whose password is compose's
-        # ${MSSQL_SA_PASSWORD:-abcdefgh1!} (a shell export wins over the env file). Resolve it through the
-        # shared compose-variable resolver so the datastore connection stored in CMS matches the container
-        # under a shell override, still falling back to the abcdefgh1! default when neither the shell nor the
-        # env file sets it.
-        $script:configureSource | Should -Match 'Resolve-ComposeVariable -Name "MSSQL_SA_PASSWORD" -EnvValues \$envValues -Default "abcdefgh1!"'
-        ([regex]::Matches($script:configureSource, 'Resolve-EffectiveMssqlSaPassword')).Count | Should -Be 0
+        # ${MSSQL_SA_PASSWORD:-abcdefgh1!} (a shell export wins over the env file). Resolve it by asking
+        # Docker Compose itself (the resolved db-service MSSQL_SA_PASSWORD) so the datastore connection
+        # stored in CMS matches the container under a shell override, without re-implementing compose
+        # precedence in PowerShell.
+        $script:configureSource | Should -Match 'Get-ComposeResolvedConfiguration[^\r\n]*\.MssqlSaPassword'
+        ([regex]::Matches($script:configureSource, 'Resolve-ComposeVariable')).Count | Should -Be 0
     }
 
     It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {
@@ -132,8 +132,8 @@ Describe "start-published-dms.ps1 MSSQL data-store wiring (DMS-1255)" {
         # resolves one Resolve-EffectiveConfigRuntimeContract (modeling ${MSSQL_SA_PASSWORD:-abcdefgh1!}
         # shell-over-file); the datastore connection stored in CMS must reuse that same effective value so a
         # shell override cannot split the datastore credential from the container's.
-        $script:startPublishedSource | Should -Match '\$mssqlPassword = \$contract\.MssqlSaPassword\.Value'
-        ([regex]::Matches($script:startPublishedSource, 'Resolve-EffectiveMssqlSaPassword')).Count | Should -Be 0
+        $script:startPublishedSource | Should -Match '\$mssqlPassword = \$contract\.MssqlSaPassword\b'
+        ([regex]::Matches($script:startPublishedSource, '\.MssqlSaPassword\.Value')).Count | Should -Be 0
     }
 
     It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {

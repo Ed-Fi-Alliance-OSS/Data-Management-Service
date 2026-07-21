@@ -202,6 +202,7 @@ jobs:
             "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
             "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
             "eng/docker-compose/tests/SetupOpenIddictDatabaseCreation.Tests.ps1",
+            "eng/docker-compose/tests/RuntimeConfigContract.Tests.ps1",
             "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1"

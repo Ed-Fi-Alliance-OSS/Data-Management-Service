@@ -267,10 +267,10 @@ function Invoke-ConfigureLocalDataStore {
     # this script with a custom -EnvironmentFile (still gets the overlay layered on top) and the
     # bootstrap wrapper path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already
     # composed via DMS_DATASTORE=mssql and returns the file unchanged, avoiding a
-    # derived-of-derived file). This phase composes the overlay only for the DMS datastore and never
-    # reads the CMS connection string, so it skips the shared-only CMS-database invariant (owned by
-    # the start script) - which is topology-blind and would reject a separate configuration database.
-    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation
+    # derived-of-derived file). This phase composes the overlay only for the DMS datastore; the
+    # Configuration Service engine/connection/database agreement is owned and validated by the start
+    # scripts (Resolve-EffectiveConfigRuntimeContract), so it is not re-checked here.
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $resolvedEnvironmentFile -DockerComposeRoot $PSScriptRoot
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
@@ -332,12 +332,12 @@ function Invoke-ConfigureLocalDataStore {
     # host-side mapped port before invoking SchemaTools.
     $dataStoreConnectionString = ""
     if ($DatabaseEngine -eq "mssql") {
-        # The DMS datastore lives on the same SQL Server container; resolve its SA password the way the
-        # container is initialized (docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell export over
-        # the env file) so the datastore connection stored in CMS matches it under a shell override. This is
-        # the datastore-registration lane (no Configuration Service / OpenIddict), so it needs only the
-        # credential, not the full runtime contract.
-        $mssqlPassword = (Resolve-ComposeVariable -Name "MSSQL_SA_PASSWORD" -EnvValues $envValues -Default "abcdefgh1!").Value
+        # The DMS datastore lives on the same SQL Server container; resolve its SA password by asking
+        # Docker Compose itself (the resolved db-service MSSQL_SA_PASSWORD, a shell export over the env
+        # file) so the datastore connection stored in CMS matches the credential the container was
+        # initialized with, even under a shell override. This is the datastore-registration lane (no
+        # Configuration Service / OpenIddict), so it reads only the credential, not the full runtime contract.
+        $mssqlPassword = (Get-ComposeResolvedConfiguration -ComposeFiles @("-f", (Join-Path $PSScriptRoot "mssql.yml")) -EnvironmentFile $resolvedEnvironmentFile -ProjectName "dms-local").MssqlSaPassword
         $mssqlDbName =
             if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                 Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
