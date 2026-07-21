@@ -39,9 +39,10 @@ without requiring an API E2E path for every source operation.
    verify that the topic partition count cannot change within a binding generation.
 8. Pin the delivery and monotonic-lag contract: raw at-least-once delivery may contain
    duplicates or a lower-version replay after a higher version, while conforming
-   consumer-applied state remains monotonic. A consumer that has not yet seen a newer
-   canonical version may temporarily retain an older projection, then converges when the
-   newer projection arrives.
+   consumer-applied non-null upsert state remains monotonic. A consumer that has not yet
+   seen a newer canonical version may temporarily retain an older projection, then
+   converges when the newer projection arrives. Across a tombstone, an older replayed
+   upsert may temporarily restore state until the replayed tombstone arrives.
 
 ## Acceptance Evidence
 
@@ -64,6 +65,9 @@ without requiring an API E2E path for every source operation.
   generation field. They prove both that a lower replay received after a higher version
   does not regress applied state and that an older projection received before the newer
   projection is accepted temporarily and then replaced, as ordinary monotonic lag.
+- Delete-boundary replay tests prove a previously emitted upsert received after a tombstone
+  may temporarily restore state and that the subsequent replayed tombstone deletes it
+  again; they do not assert monotonic applied state across the tombstone.
 - Repair tests prove a cache clear/rebuild republishes corrected equal-version values into
   the same topic, while incompatible key/field/type/delete-contract changes use a new
   topic suffix and matching `contractVersion`.

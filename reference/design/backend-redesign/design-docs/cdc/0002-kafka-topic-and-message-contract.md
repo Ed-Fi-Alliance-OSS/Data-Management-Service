@@ -177,7 +177,8 @@ the ETag, and emits the structured `document` value. Invalid JSON or inconsisten
 embedded metadata fails transformation rather than publishing a partial record.
 
 A non-null value is an upsert. Duplicates, replays, snapshots, and explicit corrective
-republishes are allowed. For one key, consumers apply records as follows:
+republishes are allowed. For one key, consumers apply non-null records against retained
+non-null upsert state as follows:
 
 - a higher `contentVersion` replaces retained state,
 - a lower `contentVersion` is stale and is ignored, and
@@ -194,15 +195,15 @@ Kafka ordering is per partition and therefore per keyed document, not global
 `contentVersion` order. `contentVersion` remains the canonical-state ordering value;
 partition offset orders multiple projections of that same canonical state.
 
-Database cache transitions and conforming consumer-applied state are monotonic and
-eventually convergent, not linearizable to the canonical source at each cache commit. Raw
-Kafka delivery is at-least-once: duplicates and replays are allowed, including a
-lower-version replay after a higher version, and consumers apply the ordering rule above
-rather than treating delivery order alone as canonical-state order. Independently, a
-projector may coherently materialize version 10, complete its final optimistic source check,
-a canonical writer may commit version 11, and the version-10 cache upsert may then commit
-and publish before reconciliation publishes version 11. The database upsert never lets
-version 10 replace an already cached version 11. A consumer that has not yet observed
+Database cache transitions and consumer-applied non-null upserts are monotonic, and the
+stream is eventually convergent rather than linearizable to the canonical source at each
+cache commit. Raw Kafka delivery is at-least-once: duplicates and replays are allowed,
+including a lower-version replay after a higher version, and consumers apply the ordering
+rule above rather than treating delivery order alone as canonical-state order. Independently,
+a projector may coherently materialize version 10, complete its final optimistic source
+check, a canonical writer may commit version 11, and the version-10 cache upsert may then
+commit and publish before reconciliation publishes version 11. The database upsert never
+lets version 10 replace an already cached version 11. A consumer that has not yet observed
 version 11 may temporarily retain version 10; this is ordinary projection lag, not a
 contract violation. V1 consciously accepts that lag so optional projection does not take a
 write-conflicting source-row lock that can delay canonical writers.
@@ -295,6 +296,14 @@ may therefore produce a tombstone without a preceding upsert. When a cache upser
 before canonical deletion, both records use the same key and connector task so the
 upsert precedes the tombstone in that key's routed partition.
 
+At-least-once connector replay can place a previously emitted upsert after an already
+observed tombstone and temporarily restore that document. The null tombstone carries no
+`contentVersion`, so the non-null ordering rule cannot prevent this delete-boundary replay.
+When the connector continues through the same source sequence, the replayed tombstone
+deletes the document again. V1 promises eventual convergence after connector catch-up, not
+monotonic consumer-applied state across a tombstone. It does not add a versioned delete
+envelope, permanent per-key consumer watermark, or exactly-once delivery requirement.
+
 ## Security and Exclusions
 
 Consumer ACLs grant access at the instance-topic level. The stream contains sensitive
@@ -315,7 +324,9 @@ The public topic never exposes:
 
 - Consumers can reconstruct current instance document state but not complete history.
 - Raw delivery may contain duplicates or lower-version replays; the consumer ordering rule,
-  not record arrival alone, keeps applied state monotonic.
+  not record arrival alone, keeps applied non-null upsert state monotonic.
+- At-least-once replay may temporarily place an older upsert after a tombstone; the stream
+  converges again when the replayed tombstone arrives and the connector catches up.
 - Consumers may temporarily retain an older monotonic projection that committed after a
   newer canonical source version but before that newer version was projected.
 - A published cache-ahead invariant cannot be repaired by sending the lower canonical

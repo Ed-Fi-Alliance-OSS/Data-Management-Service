@@ -27,8 +27,9 @@ was canonical-current at commit.
 
 ## Deliverables
 
-1. Materialize, validate, and complete 18-02's final optimistic source-version check before
-   opening the cache transaction. Do not acquire PostgreSQL `FOR NO KEY UPDATE`, SQL Server
+1. Accept one complete, validated cache candidate and open only the short cache
+   transaction needed for the shared upsert. Materialization and source-currentness checks
+   remain outside this component. Do not acquire PostgreSQL `FOR NO KEY UPDATE`, SQL Server
    `UPDLOCK`, or another write-conflicting lock on `dms.Document` as a content-version
    fence.
 2. Serialize concurrent cache writers on the `DocumentCache(DocumentId)` row/key and
@@ -39,7 +40,8 @@ was canonical-current at commit.
 3. Insert only when the cache row is absent and update only when its existing
    `ContentVersion` is lower. Persist `StreamEtag`, `ContentVersion`, `DocumentJson`, and
    the remaining cache columns atomically; treat a same-version duplicate as already fresh
-   and a higher existing cache version as an invariant violation that receives no write.
+   and a higher existing cache version as a superseded-candidate no-op. The latter does not
+   by itself establish that the cache is ahead of the current canonical source.
 4. Copy the immutable canonical `DocumentUuid` captured by the materializer and rely on
    the cache identity-validation trigger as the database backstop. Never accept an
    independent UUID from a projector or direct-fill caller.
@@ -48,22 +50,20 @@ was canonical-current at commit.
    a delayed insert cannot recreate the row.
 6. Route every projector and direct-fill write through the shared upsert. Execute one
    candidate per short cache transaction in v1.
-7. Treat a captured lower version whose final optimistic check succeeded before a newer
-   canonical commit as ordinary monotonic projection lag when its cache upsert later wins.
-   Leave the resulting cache-behind difference for incremental discovery, retry, or full
-   audit. Do not deliberately serialize ordinary canonical version updates behind an
-   explicit projection-held source-row lock; ordinary cache-row, trigger, and foreign-key
+7. Treat a coherent lower candidate that reaches the upsert before a newer canonical
+   commit as ordinary monotonic projection lag when its cache write later wins. Leave the
+   resulting cache-behind difference for incremental discovery, retry, or full audit. Do
+   not deliberately serialize ordinary canonical version updates behind an explicit
+   projection-held source-row lock; ordinary cache-row, trigger, and foreign-key
    concurrency remains provider-defined.
-8. Report already-fresh, higher-version no-op, successful-write, and ordinary database
-   failure counts without document identifiers or payloads. Add no source-lock wait,
-   source-lock timeout, or projection-specific deadlock telemetry.
+8. Report already-fresh, superseded-candidate no-op, successful-write, and ordinary
+   database failure counts without document identifiers or payloads. Add no source-lock
+   wait, source-lock timeout, or projection-specific deadlock telemetry.
 
 ## Acceptance Evidence
 
-- Deterministically synchronized provider integration tests cover a source update committed
-  before the final optimistic check, which produces a stale skip, and after that check but
-  before the cache upsert, which may commit a coherent lower projection when the cache is
-  absent or lower and then converges to the newer version.
+- Provider tests prove a coherent lower candidate can populate an absent or lower cache row
+  and that a later higher candidate converges it to the newer version.
 - Provider tests serialize competing lower and higher candidates in both cache-lock orders,
   with the cache row initially missing and present, and prove the DML evaluates its
   predicate against the current locked cache row: a delayed lower candidate never replaces
@@ -74,8 +74,9 @@ was canonical-current at commit.
 - Provider tests prove every cache writer uses the captured canonical UUID and that the
   cache-only validation trigger rolls back an intentionally mismatched write without
   changing canonical write behavior.
-- Tests prove a cache-ahead row is never overwritten with the lower captured version and is
-  returned as a distinct invariant result rather than a transient database failure.
+- Tests prove a higher cache version supersedes a lower candidate without being reported as
+  a cache-ahead invariant. Cache-ahead classification requires an independent comparison
+  with the current canonical source and remains part of reconciliation and health.
 - Tests prove `StreamEtag`, `ContentVersion`, and `DocumentJson` remain one coherent atomic
   cache result even when the source advances concurrently.
 - PostgreSQL and SQL Server concurrency tests prove projector and direct-fill writes request

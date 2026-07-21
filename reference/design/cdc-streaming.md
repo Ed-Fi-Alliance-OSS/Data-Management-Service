@@ -317,10 +317,14 @@ cursor over post-boundary work.
 V1 deliberately does not establish a source/cache commit-order fence. Optional projection
 must not acquire a PostgreSQL `FOR NO KEY UPDATE`, SQL Server `UPDLOCK`, or another
 write-conflicting lock on `dms.Document` that can make a canonical writer wait for a cache
-upsert. Cache-row transitions and conforming consumer-applied state are monotonic and
-eventually convergent, not linearizable to the canonical source at each cache commit. Raw
-Kafka delivery remains at-least-once and may contain duplicates or lower-version replays;
-the consumer ordering rule handles those records.
+upsert. Cache-row transitions and consumer-applied non-null upserts are monotonic, and the
+stream is eventually convergent rather than linearizable to the canonical source at each
+cache commit. Raw Kafka delivery remains at-least-once and may contain duplicates or
+lower-version replays; the consumer ordering rule handles ordering among non-null upserts.
+A replay may also temporarily place an older upsert after a tombstone because the null
+tombstone carries no `contentVersion`; the subsequent replayed tombstone restores deleted
+state. V1 promises convergence after connector catch-up, not monotonic applied state across
+that delete boundary.
 
 Consequently, this ordinary race is allowed:
 
@@ -347,8 +351,10 @@ then performs one candidate per short transaction:
    a later unconditional insert or update is safe.
 2. Insert the cache row when absent or update it only when its existing `ContentVersion`
    is lower than the captured version.
-3. Treat a same-version row as already fresh and a higher cache version as an invariant
-   violation that receives no write.
+3. Treat a same-version row as already fresh and a higher cache version as superseding the
+   candidate. Neither receives a write. A higher-than-candidate result does not by itself
+   establish that the cache is ahead of the current canonical source; that classification
+   comes only from the source/cache comparison used by reconciliation and health.
 4. Persist the complete cache row atomically. The UUID validation trigger rejects an
    inconsistent denormalized identity, and the `DocumentCache(DocumentId)` foreign key is
    the post-delete fence.
@@ -981,7 +987,7 @@ Structured logs and metrics cover:
   concurrency-gated targets, and bounded page sizes,
 - projection attempts, successes, and failures,
 - retry deferrals and backoff duration,
-- monotonic already-fresh and higher-version no-op counts,
+- monotonic already-fresh and superseded-candidate no-op counts,
 - unresolved, missing, cache-behind, and cache-ahead-invariant counts plus oldest
   unresolved age,
 - cache hits, misses, stale misses, and relational fallback,
@@ -1066,8 +1072,11 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - a delayed lower-version candidate never replaces a higher cache row, while a consumer
   that has not yet seen the higher version may temporarily retain the lower monotonic
   projection,
-- raw Kafka delivery may replay a lower version after a higher version, while the
-  conforming consumer ordering rule keeps applied state monotonic,
+- raw Kafka delivery may replay a lower non-null version after a higher non-null version,
+  while the conforming consumer ordering rule keeps applied upsert state monotonic,
+- raw at-least-once replay may temporarily place an older upsert after a tombstone, while a
+  subsequent replayed tombstone restores deleted state and connector catch-up re-establishes
+  convergence,
 - projector and direct-fill cache writes request no update/write lock on `dms.Document`
   and retain no source lock into the cache transaction; ordinary provider read locking is
   distinguished from an explicit content-version fence,

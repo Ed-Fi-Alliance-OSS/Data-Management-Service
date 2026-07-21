@@ -118,16 +118,20 @@ efficient incremental discovery key, while full audits recover lower versions th
 commit late or cache rows lost below the cursor. Timestamp comparison adds provider
 precision risks without adding correctness. A monotonic idempotent upsert makes duplicate
 projectors and restart rediscovery safe; refusing to lower an ahead cache row preserves
-the stream's monotonic consumer contract.
+the stream's non-null upsert ordering contract.
 
-This choice is conscious: cache-row transitions and conforming consumer-applied state are
-monotonic and eventually convergent, but raw at-least-once Kafka delivery may contain
-duplicates or lower-version replays. V1 does not guarantee that every cache upsert was
-canonical-current at its database commit. A consumer that has not yet seen the newer
-version may temporarily retain the older projection. Avoiding the stronger guarantee keeps
-optional projection and direct fill from taking source-row locks that can conflict with
-canonical writers. A future downstream requirement for linearizable publication requires
-a separate design and performance decision.
+This choice is conscious: cache-row transitions and consumer-applied non-null upserts are
+monotonic, and the stream is eventually convergent, but raw at-least-once Kafka delivery
+may contain duplicates or lower-version replays. Because a tombstone has no
+`contentVersion`, replay may temporarily place an older upsert after a tombstone; the
+subsequent replayed tombstone restores deleted state. V1 guarantees convergence after
+connector catch-up, not monotonic applied state across that delete boundary. V1 also does
+not guarantee that every cache upsert was canonical-current at its database commit. A
+consumer that has not yet seen the newer version may temporarily retain the older
+projection. Avoiding the stronger guarantee keeps optional projection and direct fill from
+taking source-row locks that can conflict with canonical writers. A future downstream
+requirement for linearizable publication requires a separate design and performance
+decision.
 
 ## Consequences
 
@@ -159,8 +163,9 @@ a separate design and performance decision.
 - DMS, not Kafka Connect or a downstream consumer, owns stream ETag derivation; the
   connector copies the projected opaque value into the public message shape.
 - Consumers tolerate duplicate/replayed upserts and tombstones without a prior upsert.
-  `contentVersion` rejects lower canonical state, while the later per-key partition offset
-  replaces an equal-version projection.
+  `contentVersion` rejects lower non-null state, while the later per-key partition offset
+  replaces an equal-version projection. Across a tombstone, at-least-once replay may
+  temporarily restore an older upsert until the replayed tombstone arrives.
 
 ## Alternatives Considered
 
