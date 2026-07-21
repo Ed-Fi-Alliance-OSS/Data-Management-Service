@@ -135,6 +135,12 @@ $databaseOnlyStartup = $DbOnly -and -not $d
 if (-not $databaseOnlyStartup) {
     # Database-only startup must not depend on bootstrap module loading or workspace state.
     # Teardown keeps the normal full-stack behavior, including bootstrap cleanup support.
+    # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool the
+    # runtime contract uses). Import it FIRST so its own -Force reload of bootstrap-manifest is superseded by
+    # the script's bootstrap-manifest import below; that keeps bootstrap-manifest's functions (env snapshot,
+    # startup config) in script scope. Importing it AFTER bootstrap-manifest would re-home the manifest and
+    # break the snapshot restore.
+    Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
     Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
     Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
 }
@@ -328,6 +334,26 @@ if ($d) {
     }
 }
 else {
+    # Resolve and validate the effective Configuration Service runtime contract ONCE, BEFORE any external
+    # action (network creation, container start, Keycloak/OpenIddict). `docker compose config` is read-only
+    # and needs no network, images, or containers, and it resolves the same files, env file, and shell the
+    # `up` calls below use - so what is validated here is exactly what the containers receive. Connection
+    # strings are parsed by the exact runtime providers via the api-schema-tools validator. The DbOnly
+    # diagnostic slice initializes no CMS, so it resolves only the SA-password credential it needs (below).
+    if (-not $DbOnly) {
+        $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
+        $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
+        $contract = Resolve-EffectiveConfigRuntimeContract `
+            -InfrastructureEngine $DatabaseEngine `
+            -ResolvedProvider $resolvedCompose.Provider `
+            -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
+            -SchemaToolPath $schemaToolPath `
+            -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
+            -ResolvedDatastoreConnectionString $resolvedCompose.DatastoreConnectionString `
+            -ConfigDatabaseName $envValues["DMS_CONFIG_DATABASE_NAME"] `
+            -EnvValues $envValues
+    }
+
     $existingNetwork = docker network ls --filter name="dms" -q
     if (! $existingNetwork) {
         docker network create dms
@@ -485,22 +511,6 @@ else {
         Write-Output "Database phase complete. Only the database container was started."
         return
     }
-
-    # Resolve and validate the effective Configuration Service runtime contract ONCE, before the first
-    # Docker or Keycloak mutation, from the values Docker Compose itself resolves (shell over --env-file,
-    # ${VAR:-default}, nested references, quoting). `docker compose config` and the `up` calls below are
-    # given the same files, env file, and shell, so what is validated here is exactly what the containers
-    # receive. It enforces provider == engine, the connection engine/database invariant, the SA-password
-    # presence, and datastore-name agreement, so a shell override cannot split the container from host-side
-    # initialization - and it fails fast BEFORE any container starts.
-    $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
-    $contract = Resolve-EffectiveConfigRuntimeContract `
-        -InfrastructureEngine $DatabaseEngine `
-        -ResolvedProvider $resolvedCompose.Provider `
-        -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
-        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
-        -ConfigDatabaseName $envValues["DMS_CONFIG_DATABASE_NAME"] `
-        -EnvValues $envValues
 
     if($IdentityProvider -eq "keycloak")
     {
