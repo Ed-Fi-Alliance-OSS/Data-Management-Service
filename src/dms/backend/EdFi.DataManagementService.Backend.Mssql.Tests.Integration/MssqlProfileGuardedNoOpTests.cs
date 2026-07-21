@@ -111,7 +111,13 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
         > readRootRowByDocumentId
     ) =>
         await ProfileGuardedNoOpPersistedStateSupport
-            .ReadPersistedStateAsync(database, documentUuid, ReadDocumentRowsAsync, readRootRowByDocumentId)
+            .ReadPersistedStateAsync(
+                database,
+                documentUuid,
+                ReadDocumentRowsAsync,
+                readRootRowByDocumentId,
+                ReadMaxChangeVersionAsync
+            )
             .ConfigureAwait(false);
 
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadDocumentRowsAsync(
@@ -123,13 +129,26 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
                 """
                 SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
                        [ContentVersion], [ContentLastModifiedAt],
-                       [IdentityVersion], [IdentityLastModifiedAt]
+                       [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt]
                 FROM [dms].[Document]
                 WHERE [DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )
             .ConfigureAwait(false);
+
+    private static async Task<long> ReadMaxChangeVersionAsync(MssqlGeneratedDdlTestDatabase database)
+    {
+        var rows = await database
+            .QueryRowsAsync(
+                """
+                SELECT [dms].[GetMaxChangeVersion]() AS [MaxChangeVersion];
+                """
+            )
+            .ConfigureAwait(false);
+
+        return Convert.ToInt64(rows[0]["MaxChangeVersion"], CultureInfo.InvariantCulture);
+    }
 }
 
 /// <summary>
@@ -448,6 +467,8 @@ internal abstract class MssqlRootOnlyShapeProfileGuardedNoOpFixtureBase
             """
             SELECT
                 [DocumentId],
+                [ContentVersion],
+                [ContentLastModifiedAt],
                 [ProfileRootOnlyMergeItemId],
                 [DisplayName],
                 [ProfileScopeClearableText],
@@ -551,6 +572,21 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
         _stateAfterUpdate
             .Document.IdentityLastModifiedAt.Should()
             .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_change_created_at()
+    {
+        _stateAfterUpdate.Document.CreatedAt.Should().Be(_stateBeforeUpdate.Document.CreatedAt);
+    }
+
+    [Test]
+    public void It_does_not_advance_the_change_version()
+    {
+        _stateBeforeUpdate
+            .MaxChangeVersion.Should()
+            .BeGreaterThan(0, "the seeded write must have allocated change versions (non-vacuous)");
+        _stateAfterUpdate.MaxChangeVersion.Should().Be(_stateBeforeUpdate.MaxChangeVersion);
     }
 }
 
@@ -657,6 +693,21 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
         _stateAfterPostAsUpdate
             .Document.IdentityLastModifiedAt.Should()
             .Be(_stateBeforePostAsUpdate.Document.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public void It_does_not_change_created_at()
+    {
+        _stateAfterPostAsUpdate.Document.CreatedAt.Should().Be(_stateBeforePostAsUpdate.Document.CreatedAt);
+    }
+
+    [Test]
+    public void It_does_not_advance_the_change_version()
+    {
+        _stateBeforePostAsUpdate
+            .MaxChangeVersion.Should()
+            .BeGreaterThan(0, "the seeded write must have allocated change versions (non-vacuous)");
+        _stateAfterPostAsUpdate.MaxChangeVersion.Should().Be(_stateBeforePostAsUpdate.MaxChangeVersion);
     }
 }
 

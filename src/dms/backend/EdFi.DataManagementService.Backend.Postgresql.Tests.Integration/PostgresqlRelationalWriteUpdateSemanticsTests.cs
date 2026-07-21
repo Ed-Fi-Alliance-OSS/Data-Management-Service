@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -14,133 +13,40 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Tests.Common.NoProfileUpdateSemanticsScenarios;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-internal sealed record UpdateSemanticsDocumentRow(
-    long DocumentId,
-    Guid DocumentUuid,
-    short ResourceKeyId,
-    long ContentVersion
-);
-
-internal sealed record UpdateSemanticsSchoolRow(long DocumentId, long SchoolId, string? ShortName);
-
-internal sealed record UpdateSemanticsSchoolAddressRow(
-    long CollectionItemId,
-    long SchoolDocumentId,
-    int Ordinal,
-    string City
-);
-
-internal sealed record UpdateSemanticsSchoolExtensionAddressRow(
-    long BaseCollectionItemId,
-    long SchoolDocumentId,
-    string Zone
-);
-
+/// <summary>
+/// PostgreSQL adapter for the shared <c>NoProfileChangedPutOmissionSemantics</c> changed-PUT
+/// omission behaviors. This suite owns only the PostgreSQL provisioning, resolver registration,
+/// no-profile production-boundary invocation, and SQL readback; the request bodies, persisted-state
+/// snapshot shapes, and behavioral assertions come from <see cref="NoProfileUpdateSemanticsScenarios"/>
+/// in Backend.Tests.Common.
+/// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture
 {
-    private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
-
-    private const string CreateRequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "shortName": "LHS",
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                },
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-2"
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-        """;
-
-    private const string UpdateRequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1-Updated"
-                    }
-                  }
-                },
-                {}
-              ]
-            }
-          }
-        }
-        """;
-
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
-    private static readonly ResourceInfo SchoolResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("School"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false
-    );
-    private static readonly DocumentUuid SchoolDocumentUuid = new(
-        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002")
-    );
-
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpdateResult _updateResult = null!;
-    private UpdateSemanticsDocumentRow _documentBeforeUpdate = null!;
-    private UpdateSemanticsDocumentRow _documentAfterUpdate = null!;
-    private UpdateSemanticsSchoolRow _schoolAfterUpdate = null!;
-    private IReadOnlyList<UpdateSemanticsSchoolAddressRow> _addressesBeforeUpdate = null!;
-    private IReadOnlyList<UpdateSemanticsSchoolAddressRow> _addressesAfterUpdate = null!;
-    private IReadOnlyList<UpdateSemanticsSchoolExtensionAddressRow> _extensionAddressesBeforeUpdate = null!;
-    private IReadOnlyList<UpdateSemanticsSchoolExtensionAddressRow> _extensionAddressesAfterUpdate = null!;
+    private DocumentRow _documentBeforeUpdate = null!;
+    private DocumentRow _documentAfterUpdate = null!;
+    private SchoolRow _schoolAfterUpdate = null!;
+    private IReadOnlyList<SchoolAddressRow> _addressesBeforeUpdate = null!;
+    private IReadOnlyList<SchoolAddressRow> _addressesAfterUpdate = null!;
+    private IReadOnlyList<SchoolExtensionAddressRow> _extensionAddressesBeforeUpdate = null!;
+    private IReadOnlyList<SchoolExtensionAddressRow> _extensionAddressesAfterUpdate = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -195,56 +101,27 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     }
 
     [Test]
-    public void It_returns_update_success_and_bumps_content_version_for_the_put_flow()
-    {
-        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
-        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
-        _documentAfterUpdate.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
-        _documentAfterUpdate.ResourceKeyId.Should().Be(_mappingSet.ResourceKeyIdByResource[SchoolResource]);
-        _documentAfterUpdate.ContentVersion.Should().BeGreaterThan(_documentBeforeUpdate.ContentVersion);
-    }
+    public void It_returns_update_success_and_bumps_content_version_for_the_put_flow() =>
+        AssertUpdateSuccessAndContentVersionBump(
+            _updateResult,
+            _mappingSet,
+            _documentBeforeUpdate,
+            _documentAfterUpdate
+        );
 
     [Test]
-    public void It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value()
-    {
-        _schoolAfterUpdate
-            .Should()
-            .Be(new UpdateSemanticsSchoolRow(_documentAfterUpdate.DocumentId, 255901, null));
-    }
+    public void It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value() =>
+        AssertClearedOmittedInlinedColumn(_documentAfterUpdate, _schoolAfterUpdate);
 
     [Test]
-    public void It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows()
-    {
-        _addressesBeforeUpdate.Should().HaveCount(2);
-        _extensionAddressesBeforeUpdate.Should().HaveCount(2);
-
-        _addressesAfterUpdate
-            .Should()
-            .Equal(
-                new UpdateSemanticsSchoolAddressRow(
-                    _addressesBeforeUpdate[0].CollectionItemId,
-                    _documentAfterUpdate.DocumentId,
-                    0,
-                    "Austin"
-                ),
-                new UpdateSemanticsSchoolAddressRow(
-                    _addressesBeforeUpdate[1].CollectionItemId,
-                    _documentAfterUpdate.DocumentId,
-                    1,
-                    "Dallas"
-                )
-            );
-
-        _extensionAddressesAfterUpdate
-            .Should()
-            .Equal(
-                new UpdateSemanticsSchoolExtensionAddressRow(
-                    _addressesBeforeUpdate[0].CollectionItemId,
-                    _documentAfterUpdate.DocumentId,
-                    "Zone-1-Updated"
-                )
-            );
-    }
+    public void It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows() =>
+        AssertDeletedOmittedAlignedExtensionScope(
+            _documentAfterUpdate,
+            _addressesBeforeUpdate,
+            _extensionAddressesBeforeUpdate,
+            _addressesAfterUpdate,
+            _extensionAddressesAfterUpdate
+        );
 
     private async Task ExecuteCreateAsync()
     {
@@ -290,44 +167,28 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     private UpsertRequest CreateUpsertRequest() =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateDocumentInfo(),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
-            EdfiDoc: JsonNode.Parse(CreateRequestBodyJson)!,
+            EdfiDoc: CreateRequestBody(),
             Headers: [],
-            TraceId: new TraceId("pg-update-semantics-create"),
+            TraceId: new TraceId("no-profile-update-semantics-create"),
             DocumentUuid: SchoolDocumentUuid
         );
 
     private UpdateRequest CreateUpdateRequest() =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateDocumentInfo(),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
-            EdfiDoc: JsonNode.Parse(UpdateRequestBodyJson)!,
+            EdfiDoc: UpdateRequestBody(),
             Headers: [],
-            TraceId: new TraceId("pg-update-semantics-update"),
+            TraceId: new TraceId("no-profile-update-semantics-update"),
             DocumentUuid: SchoolDocumentUuid
         );
 
-    private static DocumentInfo CreateDocumentInfo()
-    {
-        var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
-        ]);
-
-        return new DocumentInfo(
-            DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
-            DocumentReferences: [],
-            DocumentReferenceArrays: [],
-            DescriptorReferences: [],
-            SuperclassIdentity: null
-        );
-    }
-
     private static ServiceProvider CreateServiceProvider()
     {
-        ServiceCollection services = [];
+        ServiceCollection services = new();
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
@@ -343,7 +204,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         );
     }
 
-    private async Task<UpdateSemanticsDocumentRow> ReadDocumentAsync()
+    private async Task<DocumentRow> ReadDocumentAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
@@ -355,7 +216,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         );
 
         return rows.Count == 1
-            ? new UpdateSemanticsDocumentRow(
+            ? new DocumentRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
                 GetInt16(rows[0], "ResourceKeyId"),
@@ -366,7 +227,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             );
     }
 
-    private async Task<UpdateSemanticsSchoolRow> ReadSchoolAsync(long documentId)
+    private async Task<SchoolRow> ReadSchoolAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
             """
@@ -378,7 +239,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         );
 
         return rows.Count == 1
-            ? new UpdateSemanticsSchoolRow(
+            ? new SchoolRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetInt64(rows[0], "SchoolId"),
                 GetNullableString(rows[0], "ShortName")
@@ -388,9 +249,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             );
     }
 
-    private async Task<IReadOnlyList<UpdateSemanticsSchoolAddressRow>> ReadSchoolAddressesAsync(
-        long documentId
-    )
+    private async Task<IReadOnlyList<SchoolAddressRow>> ReadSchoolAddressesAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
             """
@@ -402,7 +261,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             new NpgsqlParameter("documentId", documentId)
         );
 
-        return rows.Select(row => new UpdateSemanticsSchoolAddressRow(
+        return rows.Select(row => new SchoolAddressRow(
                 GetInt64(row, "CollectionItemId"),
                 GetInt64(row, "School_DocumentId"),
                 GetInt32(row, "Ordinal"),
@@ -411,9 +270,9 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             .ToArray();
     }
 
-    private async Task<
-        IReadOnlyList<UpdateSemanticsSchoolExtensionAddressRow>
-    > ReadSchoolExtensionAddressesAsync(long documentId)
+    private async Task<IReadOnlyList<SchoolExtensionAddressRow>> ReadSchoolExtensionAddressesAsync(
+        long documentId
+    )
     {
         var rows = await _database.QueryRowsAsync(
             """
@@ -425,7 +284,7 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             new NpgsqlParameter("documentId", documentId)
         );
 
-        return rows.Select(row => new UpdateSemanticsSchoolExtensionAddressRow(
+        return rows.Select(row => new SchoolExtensionAddressRow(
                 GetInt64(row, "BaseCollectionItemId"),
                 GetInt64(row, "School_DocumentId"),
                 GetString(row, "Zone")

@@ -104,6 +104,23 @@ public static class RelationalGetIntegrationTestHelper
         etag.Should().MatchRegex(ComposedEtagPattern);
     }
 
+    /// <summary>
+    /// Asserts the composed ETag is well-formed AND that its leading ContentVersion component equals
+    /// the supplied persisted document ContentVersion — proving the served <c>_etag</c> is composed
+    /// from the stored stamp rather than merely being internally consistent between write and read.
+    /// </summary>
+    public static void AssertComposedEtagServesContentVersion(string? etag, long expectedContentVersion)
+    {
+        AssertComposedEtag(etag);
+        etag!
+            .Split('-')[0]
+            .Should()
+            .Be(
+                expectedContentVersion.ToString(CultureInfo.InvariantCulture),
+                "the composed ETag's leading component is the stored ContentVersion stamp"
+            );
+    }
+
     public static void AssertWriteResultEtagParity(UpsertResult writeResult, GetResult getResult) =>
         GetWriteResultEtag(writeResult).Should().Be(GetReadResultEtag(getResult));
 

@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -14,13 +13,10 @@ using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -38,7 +34,7 @@ internal sealed class RollbackSafetyCommandRecorder
     }
 }
 
-file sealed class FailOnSchoolAddressInsertPostgresqlRelationalWriteSessionFactory(
+file sealed class FailOnAlignedExtensionAddressInsertPostgresqlRelationalWriteSessionFactory(
     NpgsqlDataSourceProvider dataSourceProvider,
     IOptions<DatabaseOptions> databaseOptions,
     RollbackSafetyCommandRecorder commandRecorder
@@ -63,7 +59,7 @@ file sealed class FailOnSchoolAddressInsertPostgresqlRelationalWriteSessionFacto
                 .BeginTransactionAsync(_isolationLevel, cancellationToken)
                 .ConfigureAwait(false);
 
-            return new FailOnSchoolAddressInsertRelationalWriteSession(
+            return new FailOnAlignedExtensionAddressInsertRelationalWriteSession(
                 new RelationalWriteSession(connection, transaction),
                 _commandRecorder
             );
@@ -76,13 +72,18 @@ file sealed class FailOnSchoolAddressInsertPostgresqlRelationalWriteSessionFacto
     }
 }
 
-file sealed class FailOnSchoolAddressInsertRelationalWriteSession(
+file sealed class FailOnAlignedExtensionAddressInsertRelationalWriteSession(
     IRelationalWriteSession innerSession,
     RollbackSafetyCommandRecorder commandRecorder
 ) : IRelationalWriteSession
 {
-    private const string SchoolAddressInsertSql = "INSERT INTO \"edfi\".\"SchoolAddress\"";
-    private const string InjectedFailureMessage = "Injected write failure after early executor writes.";
+    // The aligned extension address rows (keyed to the base collection ids) are the write plan's
+    // final command, so failing here proves the document, root, root extension, extension-child,
+    // base collection, grandchild, identity, and tracking work already performed inside the
+    // transaction all roll back. The closing quote keeps SchoolExtensionAddressSponsorReference
+    // commands from matching.
+    private const string AlignedExtensionAddressInsertSql =
+        "INSERT INTO \"sample\".\"SchoolExtensionAddress\"";
 
     private readonly IRelationalWriteSession _innerSession =
         innerSession ?? throw new ArgumentNullException(nameof(innerSession));
@@ -97,9 +98,9 @@ file sealed class FailOnSchoolAddressInsertRelationalWriteSession(
     {
         _commandRecorder.Record(command);
 
-        if (command.CommandText.Contains(SchoolAddressInsertSql, StringComparison.Ordinal))
+        if (command.CommandText.Contains(AlignedExtensionAddressInsertSql, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(InjectedFailureMessage);
+            throw new InvalidOperationException(NoProfileAtomicRollbackAssertions.InjectedFailureMessage);
         }
 
         return _innerSession.CreateCommand(command);
@@ -116,19 +117,6 @@ file sealed class FailOnSchoolAddressInsertRelationalWriteSession(
 
 file static class RollbackSafetyIntegrationTestSupport
 {
-    public const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
-
-    public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
-
-    private static readonly ResourceInfo SchoolResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("School"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false
-    );
-
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
@@ -143,7 +131,7 @@ file static class RollbackSafetyIntegrationTestSupport
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddScoped<
             IRelationalWriteSessionFactory,
-            FailOnSchoolAddressInsertPostgresqlRelationalWriteSessionFactory
+            FailOnAlignedExtensionAddressInsertPostgresqlRelationalWriteSessionFactory
         >();
         services.AddPostgresqlReferenceResolver();
 
@@ -152,70 +140,56 @@ file static class RollbackSafetyIntegrationTestSupport
         );
     }
 
-    public static JsonNode CreateCreateRequestBody() =>
-        new JsonObject
-        {
-            ["schoolId"] = 255901,
-            ["shortName"] = "ROLLBACK",
-            ["addresses"] = new JsonArray
-            {
-                new JsonObject { ["city"] = "Austin" },
-                new JsonObject { ["city"] = "Dallas" },
-            },
-        };
-
-    public static UpsertRequest CreateCreateRequest(
+    /// <summary>
+    /// The failing request is the shared full-surface create (root scalar, nested address/period
+    /// collections, root extension, collection-aligned extension addresses, and extension-child
+    /// intervention/visit collections) so the injected failure at the plan's final aligned-extension
+    /// write lands after every earlier surface has been written inside the transaction.
+    /// </summary>
+    public static UpsertRequest CreateFullSurfaceCreateRequest(
         MappingSet mappingSet,
-        JsonNode edfiDoc,
         DocumentUuid documentUuid,
         string traceId
-    )
-    {
-        var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
-        ]);
-
-        return new UpsertRequest(
-            ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: new DocumentInfo(
-                DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
-                DocumentReferences: [],
-                DocumentReferenceArrays: [],
-                DescriptorReferences: [],
-                SuperclassIdentity: null
-            ),
+    ) =>
+        new(
+            ResourceInfo: NoProfileCreateBaselineScenarios.SchoolResourceInfo,
+            DocumentInfo: NoProfileCreateBaselineScenarios.CreateSchoolDocumentInfo(),
             MappingSet: mappingSet,
-            EdfiDoc: edfiDoc,
+            EdfiDoc: NoProfileCreateBaselineScenarios.CreateRequestBody(),
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
         );
-    }
 
-    public static Task<long> ReadDocumentCountAsync(PostgresqlGeneratedDdlTestDatabase database) =>
-        database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)
-            FROM "dms"."Document";
-            """
+    public static async Task<NoProfileAtomicRollbackAssertions.FullSurfaceRollbackSnapshot> ReadFullSurfaceSnapshotAsync(
+        PostgresqlGeneratedDdlTestDatabase database
+    ) =>
+        new(
+            DocumentCount: await CountRowsAsync(database, "\"dms\".\"Document\""),
+            ReferentialIdentityCount: await CountRowsAsync(database, "\"dms\".\"ReferentialIdentity\""),
+            SchoolCount: await CountRowsAsync(database, "\"edfi\".\"School\""),
+            SchoolAddressCount: await CountRowsAsync(database, "\"edfi\".\"SchoolAddress\""),
+            SchoolAddressPeriodCount: await CountRowsAsync(database, "\"edfi\".\"SchoolAddressPeriod\""),
+            SchoolExtensionCount: await CountRowsAsync(database, "\"sample\".\"SchoolExtension\""),
+            SchoolExtensionAddressCount: await CountRowsAsync(
+                database,
+                "\"sample\".\"SchoolExtensionAddress\""
+            ),
+            SchoolExtensionInterventionCount: await CountRowsAsync(
+                database,
+                "\"sample\".\"SchoolExtensionIntervention\""
+            ),
+            SchoolExtensionInterventionVisitCount: await CountRowsAsync(
+                database,
+                "\"sample\".\"SchoolExtensionInterventionVisit\""
+            ),
+            SchoolTrackedChangeCount: await CountRowsAsync(database, "\"tracked_changes_edfi\".\"School\"")
         );
 
-    public static Task<long> ReadSchoolCountAsync(PostgresqlGeneratedDdlTestDatabase database) =>
-        database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)
-            FROM "edfi"."School";
-            """
-        );
-
-    public static Task<long> ReadSchoolAddressCountAsync(PostgresqlGeneratedDdlTestDatabase database) =>
-        database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT(*)
-            FROM "edfi"."SchoolAddress";
-            """
-        );
+    private static Task<long> CountRowsAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        string qualifiedTableName
+    ) => database.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {qualifiedTableName};");
 }
 
 [TestFixture]
@@ -233,15 +207,15 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
     private ServiceProvider _serviceProvider = null!;
     private RollbackSafetyCommandRecorder _commandRecorder = null!;
     private Exception _exception = null!;
-    private long _documentCount;
-    private long _schoolCount;
-    private long _schoolAddressCount;
+    private NoProfileAtomicRollbackAssertions.FullSurfaceRollbackSnapshot _snapshotBeforeCreateAttempt =
+        null!;
+    private NoProfileAtomicRollbackAssertions.FullSurfaceRollbackSnapshot _snapshotAfterRollback = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            RollbackSafetyIntegrationTestSupport.FixtureRelativePath
+            NoProfileCreateBaselineScenarios.FixtureRelativePath
         );
         _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
@@ -253,6 +227,9 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         await _database.ResetAsync();
         _serviceProvider = RollbackSafetyIntegrationTestSupport.CreateServiceProvider();
         _commandRecorder = _serviceProvider.GetRequiredService<RollbackSafetyCommandRecorder>();
+
+        _snapshotBeforeCreateAttempt =
+            await RollbackSafetyIntegrationTestSupport.ReadFullSurfaceSnapshotAsync(_database);
 
         Exception? capturedException = null;
 
@@ -267,11 +244,11 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
 
         _exception =
             capturedException
-            ?? throw new AssertionException("Expected the injected SchoolAddress failure to be thrown.");
+            ?? throw new AssertionException(
+                "Expected the injected SchoolExtensionAddress failure to be thrown."
+            );
 
-        _documentCount = await RollbackSafetyIntegrationTestSupport.ReadDocumentCountAsync(_database);
-        _schoolCount = await RollbackSafetyIntegrationTestSupport.ReadSchoolCountAsync(_database);
-        _schoolAddressCount = await RollbackSafetyIntegrationTestSupport.ReadSchoolAddressCountAsync(
+        _snapshotAfterRollback = await RollbackSafetyIntegrationTestSupport.ReadFullSurfaceSnapshotAsync(
             _database
         );
     }
@@ -297,27 +274,18 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
     }
 
     [Test]
-    public void It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted()
-    {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception.Message.Should().Be("Injected write failure after early executor writes.");
-
-        var documentInsertIndex = FindCommandIndex("INSERT INTO dms.\"Document\"");
-        var schoolInsertIndex = FindCommandIndex("INSERT INTO \"edfi\".\"School\"");
-        var schoolAddressInsertIndex = FindCommandIndex("INSERT INTO \"edfi\".\"SchoolAddress\"");
-
-        documentInsertIndex.Should().BeGreaterThanOrEqualTo(0);
-        schoolInsertIndex.Should().BeGreaterThan(documentInsertIndex);
-        schoolAddressInsertIndex.Should().BeGreaterThan(schoolInsertIndex);
-    }
+    public void It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted() =>
+        NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites(
+            _exception,
+            RecordedWriteSteps()
+        );
 
     [Test]
-    public void It_leaves_no_partial_relational_state_after_the_transaction_rolls_back()
-    {
-        _documentCount.Should().Be(0);
-        _schoolCount.Should().Be(0);
-        _schoolAddressCount.Should().Be(0);
-    }
+    public void It_leaves_no_partial_relational_state_after_the_transaction_rolls_back() =>
+        NoProfileAtomicRollbackAssertions.AssertFullSurfaceRollbackToPreState(
+            _snapshotBeforeCreateAttempt,
+            _snapshotAfterRollback
+        );
 
     private async Task ExecuteCreateAsync()
     {
@@ -338,20 +306,57 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
 
         await repository.UpsertDocument(
-            RollbackSafetyIntegrationTestSupport.CreateCreateRequest(
+            RollbackSafetyIntegrationTestSupport.CreateFullSurfaceCreateRequest(
                 _mappingSet,
-                RollbackSafetyIntegrationTestSupport.CreateCreateRequestBody(),
                 SchoolDocumentUuid,
                 "pg-rollback-safety"
             )
         );
     }
 
-    private int FindCommandIndex(string commandTextSnippet) =>
+    // Translates the recorded PostgreSQL command text into the provider-neutral ordered write steps
+    // consumed by the shared rollback assertion. Provider dialect SQL stays here, not in the contract.
+    // Snippets keep the closing quote after the table name so a table name that prefixes another
+    // (School/SchoolAddress, SchoolExtension/SchoolExtensionAddress) cannot match its extensions.
+    private static readonly (
+        string Snippet,
+        NoProfileAtomicRollbackAssertions.RelationalWriteStep Step
+    )[] WriteStepSnippets =
+    [
+        ("INSERT INTO dms.\"Document\"", NoProfileAtomicRollbackAssertions.RelationalWriteStep.Document),
+        ("INSERT INTO \"edfi\".\"School\"", NoProfileAtomicRollbackAssertions.RelationalWriteStep.School),
+        (
+            "INSERT INTO \"edfi\".\"SchoolAddress\"",
+            NoProfileAtomicRollbackAssertions.RelationalWriteStep.SchoolAddress
+        ),
+        (
+            "INSERT INTO \"edfi\".\"SchoolAddressPeriod\"",
+            NoProfileAtomicRollbackAssertions.RelationalWriteStep.SchoolAddressPeriod
+        ),
+        (
+            "INSERT INTO \"sample\".\"SchoolExtension\"",
+            NoProfileAtomicRollbackAssertions.RelationalWriteStep.SchoolExtension
+        ),
+        (
+            "INSERT INTO \"sample\".\"SchoolExtensionAddress\"",
+            NoProfileAtomicRollbackAssertions.RelationalWriteStep.SchoolExtensionAddress
+        ),
+        (
+            "INSERT INTO \"sample\".\"SchoolExtensionIntervention\"",
+            NoProfileAtomicRollbackAssertions.RelationalWriteStep.SchoolExtensionIntervention
+        ),
+        (
+            "INSERT INTO \"sample\".\"SchoolExtensionInterventionVisit\"",
+            NoProfileAtomicRollbackAssertions.RelationalWriteStep.SchoolExtensionInterventionVisit
+        ),
+    ];
+
+    private IReadOnlyList<NoProfileAtomicRollbackAssertions.RelationalWriteStep> RecordedWriteSteps() =>
         _commandRecorder
-            .CommandTexts.Select(static (commandText, index) => (commandText, index))
-            .Where(entry => entry.commandText.Contains(commandTextSnippet, StringComparison.Ordinal))
-            .Select(entry => entry.index)
-            .DefaultIfEmpty(-1)
-            .First();
+            .CommandTexts.SelectMany(commandText =>
+                WriteStepSnippets
+                    .Where(entry => commandText.Contains(entry.Snippet, StringComparison.Ordinal))
+                    .Select(entry => entry.Step)
+            )
+            .ToArray();
 }

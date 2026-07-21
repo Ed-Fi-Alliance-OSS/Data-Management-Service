@@ -120,6 +120,124 @@ file static class PostAsUpdateIntegrationTestSupport
         );
     }
 
+    // Project actual PostgreSQL readback rows into the provider-neutral records/snapshots the shared
+    // NoProfilePostAsUpdateScenarios contract asserts over.
+    public static NoProfilePostAsUpdateScenarios.DocumentRow ToNeutral(
+        FocusedPostAsUpdateDocumentRow document
+    ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
+
+    public static NoProfilePostAsUpdateScenarios.DocumentRow ToNeutral(
+        AuthoritativePostAsUpdateDocumentRow document
+    ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolRow ToNeutral(FocusedPostAsUpdateSchoolRow school) =>
+        new(school.DocumentId, school.SchoolId, school.ShortName);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolAddressRow ToNeutral(
+        FocusedPostAsUpdateSchoolAddressRow address
+    ) => new(address.CollectionItemId, address.SchoolDocumentId, address.Ordinal, address.City);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolExtensionAddressRow ToNeutral(
+        FocusedPostAsUpdateSchoolExtensionAddressRow extensionAddress
+    ) => new(extensionAddress.BaseCollectionItemId, extensionAddress.SchoolDocumentId, extensionAddress.Zone);
+
+    public static NoProfilePostAsUpdateScenarios.SchoolYearTypeRow ToNeutral(
+        AuthoritativeSchoolYearTypeRow schoolYearType
+    ) =>
+        new(
+            schoolYearType.DocumentId,
+            schoolYearType.SchoolYear,
+            schoolYearType.CurrentSchoolYear,
+            schoolYearType.SchoolYearDescription
+        );
+
+    public static NoProfilePostAsUpdateScenarios.AuthoritativePostAsUpdateSnapshot ToSnapshot(
+        AuthoritativeStudentAcademicRecordPersistedState state,
+        long academicRecordContentVersion,
+        DateTimeOffset academicRecordContentLastModifiedAt,
+        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> referentialIdentities
+    ) =>
+        new(
+            new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
+                state.Document.DocumentId,
+                state.Document.DocumentUuid,
+                state.Document.ResourceKeyId,
+                state.Document.ContentVersion,
+                state.Document.IdentityVersion,
+                state.Document.ContentLastModifiedAt,
+                state.Document.IdentityLastModifiedAt,
+                state.Document.CreatedAt
+            ),
+            new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
+                state.AcademicRecord.DocumentId,
+                academicRecordContentVersion,
+                academicRecordContentLastModifiedAt,
+                state.AcademicRecord.EducationOrganizationDocumentId,
+                state.AcademicRecord.EducationOrganizationId,
+                state.AcademicRecord.SchoolYearDocumentId,
+                state.AcademicRecord.SchoolYear,
+                state.AcademicRecord.StudentDocumentId,
+                state.AcademicRecord.StudentUniqueId,
+                state.AcademicRecord.TermDescriptorId,
+                state.AcademicRecord.CumulativeEarnedCredits,
+                state.AcademicRecord.ProjectedGraduationDate
+            ),
+            new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordExtensionSnapshot(
+                state.AcademicRecordExtension.DocumentId,
+                state.AcademicRecordExtension.Notes
+            ),
+            [
+                .. state.AcademicHonors.Select(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicHonorSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.StudentAcademicRecordDocumentId,
+                        row.AcademicHonorCategoryDescriptorId,
+                        row.HonorDescription,
+                        row.IssuerName
+                    )
+                ),
+            ],
+            [
+                .. state.Diplomas.Select(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeDiplomaSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.StudentAcademicRecordDocumentId,
+                        row.DiplomaTypeDescriptorId,
+                        row.DiplomaAwardDate,
+                        row.DiplomaDescription
+                    )
+                ),
+            ],
+            [
+                .. state.GradePointAverages.Select(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeGradePointAverageSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.StudentAcademicRecordDocumentId,
+                        row.GradePointAverageTypeDescriptorId,
+                        row.GradePointAverageValue,
+                        row.MaxGradePointAverageValue,
+                        row.IsCumulative
+                    )
+                ),
+            ],
+            [
+                .. state.Recognitions.Select(
+                    row => new NoProfilePostAsUpdateScenarios.AuthoritativeRecognitionSnapshot(
+                        row.CollectionItemId,
+                        row.Ordinal,
+                        row.StudentAcademicRecordDocumentId,
+                        row.RecognitionTypeDescriptorId,
+                        row.RecognitionDescription,
+                        row.IssuerName
+                    )
+                ),
+            ],
+            referentialIdentities
+        );
+
     public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
@@ -136,6 +254,22 @@ file static class PostAsUpdateIntegrationTestSupport
         GetRequiredValue(row, columnName) is Guid value
             ? value
             : throw new InvalidOperationException($"Expected column '{columnName}' to contain a Guid value.");
+
+    public static DateTimeOffset GetDateTimeOffset(
+        IReadOnlyDictionary<string, object?> row,
+        string columnName
+    ) =>
+        GetRequiredValue(row, columnName) switch
+        {
+            DateTimeOffset value => value,
+            DateTime value => new DateTimeOffset(
+                DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                TimeSpan.Zero
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected column '{columnName}' to contain a DateTimeOffset value."
+            ),
+        };
 
     public static bool GetBoolean(IReadOnlyDictionary<string, object?> row, string columnName) =>
         GetRequiredValue(row, columnName) is bool value
@@ -287,12 +421,21 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private FocusedPostAsUpdateDocumentRow _documentBeforeRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateDocumentRow _documentAfterRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateSchoolRow _schoolBeforeRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateSchoolRow _schoolAfterRejectedPostAsUpdate = null!;
+    private NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot _documentBeforeRejectedPostAsUpdate =
+        null!;
+    private NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot _documentAfterRejectedPostAsUpdate =
+        null!;
+    private NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot _schoolBeforeRejectedPostAsUpdate = null!;
+    private NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot _schoolAfterRejectedPostAsUpdate = null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesBeforeRejectedPostAsUpdate = null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRejectedPostAsUpdate = null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesBeforeRejectedPostAsUpdate =
+        null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesAfterRejectedPostAsUpdate =
+        null!;
     private UpsertResult _rejectedPostAsUpdateResult = null!;
     private ReferentialId _persistedSchoolReferentialId;
+    private Guid _schoolReferentialIdAfterRejectedPostAsUpdate;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -319,6 +462,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         _schoolBeforeRejectedPostAsUpdate = await ReadSchoolAsync(
             _documentBeforeRejectedPostAsUpdate.DocumentId
         );
+        _addressesBeforeRejectedPostAsUpdate = await ReadSchoolAddressesAsync(
+            _documentBeforeRejectedPostAsUpdate.DocumentId
+        );
+        _extensionAddressesBeforeRejectedPostAsUpdate = await ReadSchoolExtensionAddressesAsync(
+            _documentBeforeRejectedPostAsUpdate.DocumentId
+        );
         _persistedSchoolReferentialId = new ReferentialId(
             (
                 await ReadReferentialIdentityRowAsync(
@@ -340,6 +489,18 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         _schoolAfterRejectedPostAsUpdate = await ReadSchoolAsync(
             _documentAfterRejectedPostAsUpdate.DocumentId
         );
+        _addressesAfterRejectedPostAsUpdate = await ReadSchoolAddressesAsync(
+            _documentAfterRejectedPostAsUpdate.DocumentId
+        );
+        _extensionAddressesAfterRejectedPostAsUpdate = await ReadSchoolExtensionAddressesAsync(
+            _documentAfterRejectedPostAsUpdate.DocumentId
+        );
+        _schoolReferentialIdAfterRejectedPostAsUpdate = (
+            await ReadReferentialIdentityRowAsync(
+                _documentAfterRejectedPostAsUpdate.DocumentId,
+                _mappingSet.ResourceKeyIdByResource[SchoolResource]
+            )
+        ).ReferentialId;
         _documentCount = await ReadDocumentCountAsync();
         _incomingDocumentUuidCount = await ReadDocumentCountAsync(RejectedPostAsUpdateDocumentUuid.Value);
     }
@@ -359,26 +520,44 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     }
 
     [Test]
-    public void It_returns_explicit_immutable_identity_failure_for_post_as_update()
-    {
-        _rejectedPostAsUpdateResult.Should().BeOfType<UpsertResult.UpsertFailureImmutableIdentity>();
-        _rejectedPostAsUpdateResult.Should().NotBeOfType<UpsertResult.UnknownFailure>();
-        _rejectedPostAsUpdateResult
-            .As<UpsertResult.UpsertFailureImmutableIdentity>()
-            .FailureMessage.Should()
-            .Be(
-                "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
-            );
-    }
+    public void It_returns_explicit_immutable_identity_failure_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertImmutableIdentityRejected(
+            _rejectedPostAsUpdateResult,
+            "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
+        );
 
     [Test]
-    public void It_does_not_commit_row_changes_for_rejected_post_as_update()
-    {
-        _documentAfterRejectedPostAsUpdate.Should().Be(_documentBeforeRejectedPostAsUpdate);
-        _schoolAfterRejectedPostAsUpdate.Should().Be(_schoolBeforeRejectedPostAsUpdate);
-        _documentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_does_not_commit_row_changes_for_rejected_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges(
+            _documentBeforeRejectedPostAsUpdate,
+            _documentAfterRejectedPostAsUpdate,
+            _schoolBeforeRejectedPostAsUpdate,
+            _schoolAfterRejectedPostAsUpdate,
+            [
+                .. _addressesBeforeRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            [
+                .. _addressesAfterRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            [
+                .. _extensionAddressesBeforeRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            [
+                .. _extensionAddressesAfterRejectedPostAsUpdate.Select(row =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
+                ),
+            ],
+            _persistedSchoolReferentialId.Value,
+            _schoolReferentialIdAfterRejectedPostAsUpdate,
+            _documentCount,
+            _incomingDocumentUuidCount
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -445,11 +624,16 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         );
     }
 
-    private async Task<FocusedPostAsUpdateDocumentRow> ReadDocumentAsync(Guid documentUuid)
+    // The rejected-write proof compares the complete stored stamp set, so this fixture reads the
+    // stamp-complete document row rather than the narrow focused projection.
+    private async Task<NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot> ReadDocumentAsync(
+        Guid documentUuid
+    )
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -457,22 +641,28 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         );
 
         return rows.Count == 1
-            ? new FocusedPostAsUpdateDocumentRow(
+            ? new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
             );
     }
 
-    private async Task<FocusedPostAsUpdateSchoolRow> ReadSchoolAsync(long documentId)
+    // The rejected-write proof compares the School root row including its replicated
+    // ContentVersion/ContentLastModifiedAt stamps, so this fixture reads the stamp-complete shape.
+    private async Task<NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot> ReadSchoolAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "SchoolId", "ShortName"
+            SELECT "DocumentId", "SchoolId", "ShortName", "ContentVersion", "ContentLastModifiedAt"
             FROM "edfi"."School"
             WHERE "DocumentId" = @documentId;
             """,
@@ -480,10 +670,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         );
 
         return rows.Count == 1
-            ? new FocusedPostAsUpdateSchoolRow(
+            ? new NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "SchoolId"),
-                PostAsUpdateIntegrationTestSupport.GetNullableString(rows[0], "ShortName")
+                PostAsUpdateIntegrationTestSupport.GetNullableString(rows[0], "ShortName"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
@@ -545,6 +737,51 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         return rows.Count == 1
             ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    private async Task<IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow>> ReadSchoolAddressesAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId", "School_DocumentId", "Ordinal", "City"
+            FROM "edfi"."SchoolAddress"
+            WHERE "School_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new FocusedPostAsUpdateSchoolAddressRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "City")
+            ))
+            .ToArray();
+    }
+
+    private async Task<
+        IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow>
+    > ReadSchoolExtensionAddressesAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "BaseCollectionItemId", "School_DocumentId", "Zone"
+            FROM "sample"."SchoolExtensionAddress"
+            WHERE "School_DocumentId" = @documentId
+            ORDER BY "BaseCollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new FocusedPostAsUpdateSchoolExtensionAddressRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "BaseCollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "Zone")
+            ))
+            .ToArray();
     }
 }
 
@@ -723,14 +960,30 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         }
     }
 
+    private static NoProfileMultiBatchCollectionScenarios.DocumentRow ToNeutralDocument(
+        AuthoritativePostAsUpdateDocumentRow document
+    ) => new(document.DocumentId, document.DocumentUuid, document.ResourceKeyId, document.ContentVersion);
+
     [Test]
     public void It_persists_authoritative_student_academic_record_root_extension_and_large_collection_rows_on_create()
     {
-        _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-        _stateAfterCreate.Document.DocumentUuid.Should().Be(StudentAcademicRecordDocumentUuid.Value);
-        _stateAfterCreate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]);
+        NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionCreatePersisted(
+            _createResult,
+            StudentAcademicRecordDocumentUuid,
+            _mappingSet,
+            StudentAcademicRecordResource,
+            ToNeutralDocument(_stateAfterCreate.Document),
+            _stateAfterCreate.AcademicRecord.DocumentId,
+            _stateAfterCreate.AcademicRecordExtension.DocumentId,
+            [.. _stateAfterCreate.AcademicHonors.Select(honor => honor.CollectionItemId)],
+            [.. _stateAfterCreate.Diplomas.Select(diploma => diploma.CollectionItemId)],
+            [
+                .. _stateAfterCreate.GradePointAverages.Select(gradePointAverage =>
+                    gradePointAverage.CollectionItemId
+                ),
+            ],
+            [.. _stateAfterCreate.Recognitions.Select(recognition => recognition.CollectionItemId)]
+        );
         _stateAfterCreate
             .AcademicRecord.Should()
             .Be(
@@ -804,25 +1057,21 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     }
 
     [Test]
-    public void It_uses_a_payload_large_enough_to_exercise_real_parameter_pressure()
-    {
-        _createCollectionRowCount.Should().Be(28);
-        _createCollectionInsertParameterCount.Should().BeGreaterThan(300);
-    }
+    public void It_uses_a_payload_large_enough_to_exercise_real_parameter_pressure() =>
+        NoProfileMultiBatchCollectionScenarios.AssertParameterPressurePayload(
+            _createCollectionRowCount,
+            _createCollectionInsertParameterCount
+        );
 
     [Test]
     public void It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put()
     {
-        _changedUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
-        _changedUpdateResult
-            .As<UpdateResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(StudentAcademicRecordDocumentUuid);
-        _stateAfterChangedUpdate
-            .Document.ContentVersion.Should()
-            .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
-        _stateAfterChangedUpdate.Document.DocumentUuid.Should().Be(StudentAcademicRecordDocumentUuid.Value);
-        _stateAfterChangedUpdate.Document.DocumentId.Should().Be(_stateAfterCreate.Document.DocumentId);
+        NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionChangedPutIdentity(
+            _changedUpdateResult,
+            StudentAcademicRecordDocumentUuid,
+            ToNeutralDocument(_stateAfterCreate.Document),
+            ToNeutralDocument(_stateAfterChangedUpdate.Document)
+        );
         _stateAfterChangedUpdate
             .AcademicRecord.Should()
             .Be(
@@ -870,34 +1119,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        foreach (
-            var deletedHonorDescription in CreateAcademicHonorSpecs
-                .Select(spec => spec.HonorDescription)
-                .Except(
-                    ChangedAcademicHonorSpecs.Select(spec => spec.HonorDescription),
-                    StringComparer.Ordinal
-                )
-        )
-        {
-            changedAcademicHonorIdsByDescription.Keys.Should().NotContain(deletedHonorDescription);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "AcademicHonors",
+            createAcademicHonorIdsByDescription,
             changedAcademicHonorIdsByDescription
-                .Values.Should()
-                .NotContain(createAcademicHonorIdsByDescription[deletedHonorDescription]);
-        }
-
-        foreach (
-            var insertedHonorDescription in ChangedAcademicHonorSpecs
-                .Select(spec => spec.HonorDescription)
-                .Except(
-                    CreateAcademicHonorSpecs.Select(spec => spec.HonorDescription),
-                    StringComparer.Ordinal
-                )
-        )
-        {
-            createAcademicHonorIdsByDescription
-                .Values.Should()
-                .NotContain(changedAcademicHonorIdsByDescription[insertedHonorDescription]);
-        }
+        );
 
         var createDiplomaIdsByAwardDate = CreateDiplomaIdsByAwardDate(_stateAfterCreate.Diplomas);
         var changedDiplomaIdsByAwardDate = CreateDiplomaIdsByAwardDate(_stateAfterChangedUpdate.Diplomas);
@@ -917,28 +1143,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        foreach (
-            var deletedDiplomaAwardDate in CreateDiplomaSpecs
-                .Select(spec => spec.DiplomaAwardDate)
-                .Except(ChangedDiplomaSpecs.Select(spec => spec.DiplomaAwardDate), StringComparer.Ordinal)
-        )
-        {
-            changedDiplomaIdsByAwardDate.Keys.Should().NotContain(deletedDiplomaAwardDate);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "Diplomas",
+            createDiplomaIdsByAwardDate,
             changedDiplomaIdsByAwardDate
-                .Values.Should()
-                .NotContain(createDiplomaIdsByAwardDate[deletedDiplomaAwardDate]);
-        }
-
-        foreach (
-            var insertedDiplomaAwardDate in ChangedDiplomaSpecs
-                .Select(spec => spec.DiplomaAwardDate)
-                .Except(CreateDiplomaSpecs.Select(spec => spec.DiplomaAwardDate), StringComparer.Ordinal)
-        )
-        {
-            createDiplomaIdsByAwardDate
-                .Values.Should()
-                .NotContain(changedDiplomaIdsByAwardDate[insertedDiplomaAwardDate]);
-        }
+        );
 
         var createGradePointAverageIdsByKey = CreateGradePointAverageIdsByKey(
             _stateAfterCreate.GradePointAverages
@@ -962,13 +1171,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        changedGradePointAverageIdsByKey.Keys.Should().NotContain("Session");
-        changedGradePointAverageIdsByKey
-            .Values.Should()
-            .NotContain(createGradePointAverageIdsByKey["Session"]);
-        createGradePointAverageIdsByKey
-            .Values.Should()
-            .NotContain(changedGradePointAverageIdsByKey["Weighted"]);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "GradePointAverages",
+            createGradePointAverageIdsByKey,
+            changedGradePointAverageIdsByKey
+        );
 
         var createRecognitionIdsByKey = CreateRecognitionIdsByKey(_stateAfterCreate.Recognitions);
         var changedRecognitionIdsByKey = CreateRecognitionIdsByKey(_stateAfterChangedUpdate.Recognitions);
@@ -988,9 +1195,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 )
             );
 
-        changedRecognitionIdsByKey.Keys.Should().NotContain("Leadership");
-        changedRecognitionIdsByKey.Values.Should().NotContain(createRecognitionIdsByKey["Leadership"]);
-        createRecognitionIdsByKey.Values.Should().NotContain(changedRecognitionIdsByKey["Attendance"]);
+        NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers(
+            "Recognitions",
+            createRecognitionIdsByKey,
+            changedRecognitionIdsByKey
+        );
     }
 
     [Test]
@@ -1807,7 +2016,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -1819,7 +2029,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -1968,6 +2182,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "StudentAcademicRecord_DocumentId",
                 "GradePointAverageTypeDescriptor_DescriptorId",
                 "GradePointAverageValue",
+                "MaxGradePointAverageValue",
                 "IsCumulative"
             FROM "edfi"."StudentAcademicRecordGradePointAverage"
             WHERE "StudentAcademicRecord_DocumentId" = @documentId
@@ -1985,6 +2200,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     "GradePointAverageTypeDescriptor_DescriptorId"
                 ),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
+                PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
             ))
             .ToArray();
@@ -2078,6 +2294,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                         documentId,
                         ResolveGradePointAverageDescriptorId(spec.DescriptorUri),
                         spec.GradePointAverageValue,
+                        spec.MaxGradePointAverageValue,
                         spec.IsCumulative
                     )
             )
@@ -2326,68 +2543,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
 
-    private const string CreateRequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "shortName": "LHS",
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                },
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-2"
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-        """;
-
-    private const string PostAsUpdateRequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1-Updated"
-                    }
-                  }
-                },
-                {}
-              ]
-            }
-          }
-        }
-        """;
+    // The focused-scenario request bodies live in the shared contract so every engine adapter exercises
+    // identical inputs; this PostgreSQL adapter consumes them rather than defining its own.
+    private const string CreateRequestBodyJson = NoProfilePostAsUpdateScenarios.FocusedCreateRequestBodyJson;
+    private const string PostAsUpdateRequestBodyJson =
+        NoProfilePostAsUpdateScenarios.FocusedPostAsUpdateRequestBodyJson;
 
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly ResourceInfo SchoolResourceInfo = new(
@@ -2487,61 +2647,44 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     }
 
     [Test]
-    public void It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update()
-    {
-        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _postAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingSchoolDocumentUuid);
-        _documentAfterPostAsUpdate.DocumentUuid.Should().Be(ExistingSchoolDocumentUuid.Value);
-        _documentAfterPostAsUpdate
-            .ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[SchoolResource]);
-        _documentAfterPostAsUpdate
-            .ContentVersion.Should()
-            .BeGreaterThan(_documentBeforePostAsUpdate.ContentVersion);
-        _documentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace(
+            _postAsUpdateResult,
+            ExistingSchoolDocumentUuid,
+            _mappingSet,
+            SchoolResource,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentBeforePostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            _documentCount,
+            _incomingDocumentUuidCount
+        );
 
     [Test]
-    public void It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update()
-    {
-        _addressesBeforePostAsUpdate.Should().HaveCount(2);
-        _extensionAddressesBeforePostAsUpdate.Should().HaveCount(2);
-
-        _schoolAfterPostAsUpdate
-            .Should()
-            .Be(new FocusedPostAsUpdateSchoolRow(_documentAfterPostAsUpdate.DocumentId, 255901, null));
-
-        _addressesAfterPostAsUpdate
-            .Should()
-            .Equal(
-                new FocusedPostAsUpdateSchoolAddressRow(
-                    _addressesBeforePostAsUpdate[0].CollectionItemId,
-                    _documentAfterPostAsUpdate.DocumentId,
-                    0,
-                    "Austin"
+    public void It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied(
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterPostAsUpdate),
+            [
+                .. _addressesBeforePostAsUpdate.Select(address =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(address)
                 ),
-                new FocusedPostAsUpdateSchoolAddressRow(
-                    _addressesBeforePostAsUpdate[1].CollectionItemId,
-                    _documentAfterPostAsUpdate.DocumentId,
-                    1,
-                    "Dallas"
-                )
-            );
-
-        _extensionAddressesAfterPostAsUpdate
-            .Should()
-            .Equal(
-                new FocusedPostAsUpdateSchoolExtensionAddressRow(
-                    _addressesBeforePostAsUpdate[0].CollectionItemId,
-                    _documentAfterPostAsUpdate.DocumentId,
-                    "Zone-1-Updated"
-                )
-            );
-    }
+            ],
+            [
+                .. _extensionAddressesBeforePostAsUpdate.Select(extensionAddress =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(extensionAddress)
+                ),
+            ],
+            [
+                .. _addressesAfterPostAsUpdate.Select(address =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(address)
+                ),
+            ],
+            [
+                .. _extensionAddressesAfterPostAsUpdate.Select(extensionAddress =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(extensionAddress)
+                ),
+            ]
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -2872,32 +3015,29 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     }
 
     [Test]
-    public void It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits()
-    {
-        var createWinnerSuccess = _createWinnerResult.Should().BeOfType<UpsertResult.InsertSuccess>().Subject;
-        createWinnerSuccess.NewDocumentUuid.Should().Be(CreateWinnerDocumentUuid);
-        RelationalGetIntegrationTestHelper.AssertComposedEtag(createWinnerSuccess.ETag);
-        _staleCreateCandidateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _staleCreateCandidateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(CreateWinnerDocumentUuid);
-        _documentAfterRequests.DocumentUuid.Should().Be(CreateWinnerDocumentUuid.Value);
-        _documentCount.Should().Be(1);
-        _staleCreateCandidateDocumentUuidCount.Should().Be(0);
-    }
+    public void It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits() =>
+        NoProfilePostAsUpdateScenarios.AssertStaleCreateConvertedToPostAsUpdate(
+            _createWinnerResult,
+            CreateWinnerDocumentUuid,
+            _staleCreateCandidateResult,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterRequests),
+            _documentCount,
+            _staleCreateCandidateDocumentUuidCount
+        );
 
     [Test]
-    public void It_applies_last_writer_state_to_the_existing_document_instead_of_creating_duplicate_rows()
-    {
-        _schoolAfterRequests
-            .Should()
-            .Be(new FocusedPostAsUpdateSchoolRow(_documentAfterRequests.DocumentId, 255901, "LAST-WRITER"));
-        _addressesAfterRequests.Should().ContainSingle();
-        _addressesAfterRequests[0].SchoolDocumentId.Should().Be(_documentAfterRequests.DocumentId);
-        _addressesAfterRequests[0].Ordinal.Should().Be(0);
-        _addressesAfterRequests[0].City.Should().Be("Dallas");
-    }
+    public void It_applies_last_writer_state_to_the_existing_document_instead_of_creating_duplicate_rows() =>
+        NoProfilePostAsUpdateScenarios.AssertLastWriterStateApplied(
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterRequests),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterRequests),
+            [
+                .. _addressesAfterRequests.Select(address =>
+                    PostAsUpdateIntegrationTestSupport.ToNeutral(address)
+                ),
+            ],
+            "LAST-WRITER",
+            "Dallas"
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -3098,7 +3238,11 @@ internal sealed record AuthoritativePostAsUpdateDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion
+    long ContentVersion,
+    long IdentityVersion,
+    DateTimeOffset ContentLastModifiedAt,
+    DateTimeOffset IdentityLastModifiedAt,
+    DateTimeOffset CreatedAt
 );
 
 internal sealed record AuthoritativeSchoolYearTypeRow(
@@ -3217,38 +3361,27 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     }
 
     [Test]
-    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid()
-    {
-        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _postAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingSchoolYearTypeDocumentUuid);
-        _documentAfterPostAsUpdate.DocumentUuid.Should().Be(ExistingSchoolYearTypeDocumentUuid.Value);
-        _documentAfterPostAsUpdate
-            .ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[SchoolYearTypeResource]);
-        _documentAfterPostAsUpdate
-            .ContentVersion.Should()
-            .BeGreaterThan(_documentBeforePostAsUpdate.ContentVersion);
-        _documentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid() =>
+        NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace(
+            _postAsUpdateResult,
+            ExistingSchoolYearTypeDocumentUuid,
+            _mappingSet,
+            SchoolYearTypeResource,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentBeforePostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            _documentCount,
+            _incomingDocumentUuidCount
+        );
 
     [Test]
-    public void It_updates_the_authoritative_ds52_row_in_place_for_post_as_update()
-    {
-        _schoolYearTypeAfterPostAsUpdate
-            .Should()
-            .Be(
-                new AuthoritativeSchoolYearTypeRow(
-                    _documentAfterPostAsUpdate.DocumentId,
-                    2026,
-                    false,
-                    "2025-2026 Revised"
-                )
-            );
-    }
+    public void It_updates_the_authoritative_ds52_row_in_place_for_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertAuthoritativeSchoolYearTypeRowInPlace(
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolYearTypeAfterPostAsUpdate),
+            2026,
+            false,
+            "2025-2026 Revised"
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -3314,7 +3447,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -3326,7 +3460,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -3472,6 +3610,7 @@ internal sealed record AuthoritativeStudentAcademicRecordGradePointAverageRow(
     long StudentAcademicRecordDocumentId,
     long GradePointAverageTypeDescriptorId,
     decimal GradePointAverageValue,
+    decimal MaxGradePointAverageValue,
     bool IsCumulative
 );
 
@@ -3671,6 +3810,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterCreate = null!;
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterPostAsUpdate = null!;
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterRepeatPostAsUpdate = null!;
+    private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterPostAsUpdate;
+    private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterRepeatPostAsUpdate;
+    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterPostAsUpdate =
+        null!;
+    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterRepeatPostAsUpdate =
+        null!;
     private UpsertResult _postAsUpdateResult = null!;
     private UpsertResult _repeatPostAsUpdateResult = null!;
     private ReferentialId _persistedStudentAcademicRecordReferentialId;
@@ -3745,6 +3890,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _stateAfterPostAsUpdate = await ReadPersistedStateAsync(
             ExistingStudentAcademicRecordDocumentUuid.Value
         );
+        _rootStampsAfterPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
+            _stateAfterPostAsUpdate.AcademicRecord.DocumentId
+        );
+        _referentialIdentitiesAfterPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _repeatPostAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             RepeatStudentAcademicRecordDocumentUuid,
@@ -3762,6 +3911,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _stateAfterRepeatPostAsUpdate = await ReadPersistedStateAsync(
             ExistingStudentAcademicRecordDocumentUuid.Value
         );
+        _rootStampsAfterRepeatPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
+            _stateAfterRepeatPostAsUpdate.AcademicRecord.DocumentId
+        );
+        _referentialIdentitiesAfterRepeatPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _resourceDocumentCount = await ReadDocumentCountAsync(
             _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
         );
@@ -3771,6 +3924,52 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _repeatIncomingDocumentUuidCount = await ReadDocumentCountAsync(
             RepeatStudentAcademicRecordDocumentUuid.Value
         );
+    }
+
+    // The repeat no-op snapshot compares the StudentAcademicRecord root table's own replicated
+    // stamps; the business-value persisted-state rows stay unchanged for the changed-write asserts.
+    private async Task<(
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt
+    )> ReadAcademicRecordRootStampsAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ContentVersion", "ContentLastModifiedAt"
+            FROM "edfi"."StudentAcademicRecord"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? (
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one StudentAcademicRecord row for document id '{documentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<
+        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow>
+    > ReadAllReferentialIdentityRowsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
+            FROM "dms"."ReferentialIdentity"
+            ORDER BY "ReferentialId";
+            """
+        );
+
+        return rows.Select(row => new NoProfilePostAsUpdateScenarios.ReferentialIdentityRow(
+                PostAsUpdateIntegrationTestSupport.GetGuid(row, "ReferentialId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt16(row, "ResourceKeyId")
+            ))
+            .ToArray();
     }
 
     [OneTimeTearDown]
@@ -3788,30 +3987,27 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     }
 
     [Test]
-    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid()
-    {
-        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _postAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingStudentAcademicRecordDocumentUuid);
-        _stateAfterPostAsUpdate
-            .Document.DocumentUuid.Should()
-            .Be(ExistingStudentAcademicRecordDocumentUuid.Value);
-        _stateAfterPostAsUpdate.Document.DocumentId.Should().Be(_stateAfterCreate.Document.DocumentId);
-        _stateAfterPostAsUpdate
-            .Document.ResourceKeyId.Should()
-            .Be(_mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]);
-        _stateAfterPostAsUpdate
-            .Document.ContentVersion.Should()
-            .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
-        _resourceDocumentCount.Should().Be(1);
-        _incomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid() =>
+        NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace(
+            _postAsUpdateResult,
+            ExistingStudentAcademicRecordDocumentUuid,
+            _mappingSet,
+            StudentAcademicRecordResource,
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_stateAfterCreate.Document),
+            PostAsUpdateIntegrationTestSupport.ToNeutral(_stateAfterPostAsUpdate.Document),
+            _resourceDocumentCount,
+            _incomingDocumentUuidCount
+        );
 
     [Test]
     public void It_updates_root_and_extension_rows_in_place_for_authoritative_student_academic_record_post_as_update()
     {
+        NoProfilePostAsUpdateScenarios.AssertAuthoritativeRootAndExtensionInPlace(
+            _stateAfterPostAsUpdate.AcademicRecord.DocumentId,
+            _stateAfterPostAsUpdate.AcademicRecordExtension.DocumentId,
+            _stateAfterCreate.Document.DocumentId
+        );
+
         _stateAfterPostAsUpdate
             .AcademicRecord.Should()
             .Be(
@@ -3861,14 +4057,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "Community Foundation"
                 )
             );
-        _stateAfterPostAsUpdate
-            .AcademicHonors[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.AcademicHonors[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .AcademicHonors.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.AcademicHonors[1].CollectionItemId);
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
+            "AcademicHonors",
+            [.. _stateAfterCreate.AcademicHonors.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.AcademicHonors.Select(row => row.CollectionItemId)]
+        );
 
         _stateAfterPostAsUpdate
             .Diplomas.Should()
@@ -3890,14 +4083,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "Honors Path"
                 )
             );
-        _stateAfterPostAsUpdate
-            .Diplomas[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.Diplomas[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .Diplomas.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.Diplomas[1].CollectionItemId);
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
+            "Diplomas",
+            [.. _stateAfterCreate.Diplomas.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.Diplomas.Select(row => row.CollectionItemId)]
+        );
 
         _stateAfterPostAsUpdate
             .GradePointAverages.Should()
@@ -3908,6 +4098,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Document.DocumentId,
                     _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId,
                     3.6100m,
+                    4.0000m,
                     true
                 ),
                 new AuthoritativeStudentAcademicRecordGradePointAverageRow(
@@ -3916,17 +4107,15 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Document.DocumentId,
                     _seedData.WeightedGradePointAverageTypeDescriptorDocumentId,
                     4.1200m,
+                    5.0000m,
                     false
                 )
             );
-        _stateAfterPostAsUpdate
-            .GradePointAverages[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.GradePointAverages[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .GradePointAverages.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.GradePointAverages[1].CollectionItemId);
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
+            "GradePointAverages",
+            [.. _stateAfterCreate.GradePointAverages.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.GradePointAverages.Select(row => row.CollectionItemId)]
+        );
 
         _stateAfterPostAsUpdate
             .Recognitions.Should()
@@ -3948,27 +4137,32 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "District Office"
                 )
             );
-        _stateAfterPostAsUpdate
-            .Recognitions[1]
-            .CollectionItemId.Should()
-            .NotBe(_stateAfterCreate.Recognitions[1].CollectionItemId);
-        _stateAfterPostAsUpdate
-            .Recognitions.Select(row => row.CollectionItemId)
-            .Should()
-            .NotContain(_stateAfterCreate.Recognitions[1].CollectionItemId);
+        NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse(
+            "Recognitions",
+            [.. _stateAfterCreate.Recognitions.Select(row => row.CollectionItemId)],
+            [.. _stateAfterPostAsUpdate.Recognitions.Select(row => row.CollectionItemId)]
+        );
     }
 
     [Test]
-    public void It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update()
-    {
-        _repeatPostAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
-        _repeatPostAsUpdateResult
-            .As<UpsertResult.UpdateSuccess>()
-            .ExistingDocumentUuid.Should()
-            .Be(ExistingStudentAcademicRecordDocumentUuid);
-        _stateAfterRepeatPostAsUpdate.Should().BeEquivalentTo(_stateAfterPostAsUpdate);
-        _repeatIncomingDocumentUuidCount.Should().Be(0);
-    }
+    public void It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update() =>
+        NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp(
+            _repeatPostAsUpdateResult,
+            ExistingStudentAcademicRecordDocumentUuid,
+            PostAsUpdateIntegrationTestSupport.ToSnapshot(
+                _stateAfterPostAsUpdate,
+                _rootStampsAfterPostAsUpdate.ContentVersion,
+                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt,
+                _referentialIdentitiesAfterPostAsUpdate
+            ),
+            PostAsUpdateIntegrationTestSupport.ToSnapshot(
+                _stateAfterRepeatPostAsUpdate,
+                _rootStampsAfterRepeatPostAsUpdate.ContentVersion,
+                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt,
+                _referentialIdentitiesAfterRepeatPostAsUpdate
+            ),
+            _repeatIncomingDocumentUuidCount
+        );
 
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
@@ -4630,7 +4824,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -4642,7 +4837,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -4791,6 +4990,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "StudentAcademicRecord_DocumentId",
                 "GradePointAverageTypeDescriptor_DescriptorId",
                 "GradePointAverageValue",
+                "MaxGradePointAverageValue",
                 "IsCumulative"
             FROM "edfi"."StudentAcademicRecordGradePointAverage"
             WHERE "StudentAcademicRecord_DocumentId" = @documentId
@@ -4808,6 +5008,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     "GradePointAverageTypeDescriptor_DescriptorId"
                 ),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
+                PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
             ))
             .ToArray();

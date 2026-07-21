@@ -554,8 +554,14 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     }
 
     [Test]
-    public void It_returns_the_create_etag_from_follow_up_get_by_id() =>
+    public void It_returns_the_create_etag_from_follow_up_get_by_id()
+    {
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(_createResult, _getResultAfterCreate);
+        RelationalGetIntegrationTestHelper.AssertComposedEtagServesContentVersion(
+            RelationalGetIntegrationTestHelper.ReadResultEtag(_getResultAfterCreate),
+            _documentMetadata.ContentVersion
+        );
+    }
 
     [Test]
     public async Task It_matches_ResourceLinks_IfMatch_against_the_current_relational_state()

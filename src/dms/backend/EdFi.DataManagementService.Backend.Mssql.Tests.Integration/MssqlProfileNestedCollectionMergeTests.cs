@@ -383,6 +383,7 @@ internal class Given_a_ProfileNested_put_request_updating_visible_children_with_
     private const string HiddenChildCode = "CHILD-H1";
 
     private UpdateResult _putResult = null!;
+    private IReadOnlyList<ChildRow> _childRowsBeforePut = null!;
     private IReadOnlyList<ChildRow> _childRows = null!;
 
     [OneTimeSetUp]
@@ -405,6 +406,7 @@ internal class Given_a_ProfileNested_put_request_updating_visible_children_with_
             ]
         );
         await SeedAsync(seedBody, "mssql-profile-nested-vru-seed");
+        _childRowsBeforePut = await MssqlProfileNestedSupport.ReadChildRowsAsync(Database, DocumentUuid);
 
         var writeBody = CreateParentResourceBody(
             ParentResourceId,
@@ -451,19 +453,24 @@ internal class Given_a_ProfileNested_put_request_updating_visible_children_with_
     public void It_keeps_three_child_rows_in_storage() => _childRows.Should().HaveCount(3);
 
     [Test]
-    public void It_updates_the_visible_child_rows()
-    {
-        var byCode = _childRows.ToDictionary(r => r.ChildCode!);
-        byCode[VisibleChildCodeA].ChildValue.Should().Be("UpdatedV1");
-        byCode[VisibleChildCodeB].ChildValue.Should().Be("UpdatedV2");
-    }
+    public void It_updates_the_visible_child_rows() =>
+        ProfileNestedCollectionScenarios.AssertVisibleChildUpdatePreservesHiddenSiblingAndIdentities(
+            _childRowsBeforePut,
+            _childRows,
+            [(VisibleChildCodeA, "UpdatedV1"), (VisibleChildCodeB, "UpdatedV2")],
+            HiddenChildCode,
+            "SeedHidden"
+        );
 
     [Test]
-    public void It_preserves_the_hidden_sibling_row_unchanged()
-    {
-        var hiddenRow = _childRows.Single(r => r.ChildCode == HiddenChildCode);
-        hiddenRow.ChildValue.Should().Be("SeedHidden");
-    }
+    public void It_preserves_the_hidden_sibling_row_unchanged() =>
+        ProfileNestedCollectionScenarios.AssertVisibleChildUpdatePreservesHiddenSiblingAndIdentities(
+            _childRowsBeforePut,
+            _childRows,
+            [(VisibleChildCodeA, "UpdatedV1"), (VisibleChildCodeB, "UpdatedV2")],
+            HiddenChildCode,
+            "SeedHidden"
+        );
 }
 
 /// <summary>
@@ -670,6 +677,8 @@ internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scop
     private const string RootExtChildCodeB = "REC-H2";
 
     private UpdateResult _putResult = null!;
+    private IReadOnlyList<RootExtChildRow> _rootExtChildRowsBeforePut = null!;
+    private RootExtRow? _rootExtRowBeforePut;
     private IReadOnlyList<RootExtChildRow> _rootExtChildRows = null!;
     private RootExtRow? _rootExtRow;
 
@@ -689,6 +698,11 @@ internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scop
             )
         );
         await SeedAsync(seedBody, "mssql-profile-nested-hidden-rec-seed");
+        _rootExtChildRowsBeforePut = await MssqlProfileNestedSupport.ReadRootExtChildRowsAsync(
+            Database,
+            DocumentUuid
+        );
+        _rootExtRowBeforePut = await MssqlProfileNestedSupport.TryReadRootExtRowAsync(Database, DocumentUuid);
 
         // Request body keeps only the root document. Hidden extension scope means the
         // synthesizer never sees a payload for the extension and must not touch storage.
@@ -721,21 +735,28 @@ internal class Given_a_ProfileNested_put_request_with_hidden_root_extension_scop
         _putResult.Should().BeOfType<UpdateResult.UpdateSuccess>(FormatResult(_putResult));
 
     [Test]
-    public void It_preserves_both_root_extension_child_rows()
-    {
-        _rootExtChildRows.Should().HaveCount(2);
-        var byCode = _rootExtChildRows.ToDictionary(r => r.RootExtChildCode!);
-        byCode[RootExtChildCodeA].RootExtChildValue.Should().Be("SeedRECH1");
-        byCode[RootExtChildCodeB].RootExtChildValue.Should().Be("SeedRECH2");
-    }
+    public void It_preserves_both_root_extension_child_rows() =>
+        ProfileNestedCollectionScenarios.AssertHiddenRootExtensionScopePreservedExactly(
+            _rootExtRowBeforePut,
+            _rootExtRow,
+            _rootExtChildRowsBeforePut,
+            _rootExtChildRows,
+            [(RootExtChildCodeA, "SeedRECH1"), (RootExtChildCodeB, "SeedRECH2")],
+            "SeedVisible",
+            "SeedHidden"
+        );
 
     [Test]
-    public void It_preserves_the_root_extension_row_scalars()
-    {
-        _rootExtRow.Should().NotBeNull();
-        _rootExtRow!.RootExtVisibleScalar.Should().Be("SeedVisible");
-        _rootExtRow.RootExtHiddenScalar.Should().Be("SeedHidden");
-    }
+    public void It_preserves_the_root_extension_row_scalars() =>
+        ProfileNestedCollectionScenarios.AssertHiddenRootExtensionScopePreservedExactly(
+            _rootExtRowBeforePut,
+            _rootExtRow,
+            _rootExtChildRowsBeforePut,
+            _rootExtChildRows,
+            [(RootExtChildCodeA, "SeedRECH1"), (RootExtChildCodeB, "SeedRECH2")],
+            "SeedVisible",
+            "SeedHidden"
+        );
 }
 
 /// <summary>

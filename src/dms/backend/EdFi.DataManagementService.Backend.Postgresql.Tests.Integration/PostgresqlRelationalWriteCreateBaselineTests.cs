@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Globalization;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -14,152 +13,26 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Tests.Common.NoProfileCreateBaselineScenarios;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-internal sealed record PersistedDocumentRow(
-    long DocumentId,
-    Guid DocumentUuid,
-    short ResourceKeyId,
-    long ContentVersion
-);
-
-internal sealed record PersistedSchoolRow(long DocumentId, long SchoolId);
-
-internal sealed record PersistedSchoolAddressRow(
-    long CollectionItemId,
-    long SchoolDocumentId,
-    int Ordinal,
-    string City
-);
-
-internal sealed record PersistedSchoolAddressPeriodRow(
-    long CollectionItemId,
-    long SchoolDocumentId,
-    long ParentCollectionItemId,
-    int Ordinal,
-    string PeriodName
-);
-
-internal sealed record PersistedSchoolExtensionRow(long DocumentId, string CampusCode);
-
-internal sealed record PersistedSchoolExtensionAddressRow(
-    long BaseCollectionItemId,
-    long SchoolDocumentId,
-    string Zone
-);
-
-internal sealed record PersistedSchoolExtensionInterventionRow(
-    long CollectionItemId,
-    long SchoolDocumentId,
-    int Ordinal,
-    string InterventionCode
-);
-
-internal sealed record PersistedSchoolExtensionInterventionVisitRow(
-    long CollectionItemId,
-    long SchoolDocumentId,
-    long ParentCollectionItemId,
-    int Ordinal,
-    string VisitCode
-);
-
+/// <summary>
+/// PostgreSQL adapter for the shared <c>NoProfileFullSurfaceCreate</c> scenario. This suite owns only
+/// the PostgreSQL provisioning, resolver registration, no-profile production-boundary invocation, and
+/// SQL readback; the request body, persisted-state snapshot shapes, and behavioral assertions come
+/// from <see cref="NoProfileCreateBaselineScenarios"/> in Backend.Tests.Common.
+/// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture
 {
-    private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
-
-    private const string RequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "addresses": [
-            {
-              "city": "Austin",
-              "periods": [
-                {
-                  "periodName": "Morning"
-                },
-                {
-                  "periodName": "Afternoon"
-                }
-              ]
-            },
-            {
-              "city": "Dallas",
-              "periods": [
-                {
-                  "periodName": "Evening"
-                }
-              ]
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "campusCode": "North",
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                },
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-2"
-                    }
-                  }
-                }
-              ],
-              "interventions": [
-                {
-                  "interventionCode": "Attendance",
-                  "visits": [
-                    {
-                      "visitCode": "Visit-A"
-                    },
-                    {
-                      "visitCode": "Visit-B"
-                    }
-                  ]
-                },
-                {
-                  "interventionCode": "Behavior",
-                  "visits": [
-                    {
-                      "visitCode": "Visit-C"
-                    }
-                  ]
-                }
-              ]
-            }
-          }
-        }
-        """;
-
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
-    private static readonly ResourceInfo SchoolResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("School"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false
-    );
-    private static readonly DocumentUuid SchoolDocumentUuid = new(
-        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001")
-    );
-
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
@@ -223,140 +96,28 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
     }
 
     [Test]
-    public void It_returns_insert_success_for_the_repository_create_flow()
-    {
-        _result.Should().BeOfType<UpsertResult.InsertSuccess>();
-        _result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(SchoolDocumentUuid);
-        _persistedDocument.DocumentUuid.Should().Be(SchoolDocumentUuid.Value);
-        _persistedDocument.ResourceKeyId.Should().Be(_mappingSet.ResourceKeyIdByResource[SchoolResource]);
-        _persistedDocument.ContentVersion.Should().BeGreaterThan(0);
-    }
+    public void It_returns_insert_success_for_the_repository_create_flow() =>
+        AssertInsertSuccess(_result, _mappingSet, _persistedDocument);
 
     [Test]
-    public void It_persists_root_and_nested_collection_rows_with_stable_collection_ids()
-    {
-        _persistedSchool.DocumentId.Should().Be(_persistedDocument.DocumentId);
-        _persistedSchool.SchoolId.Should().Be(255901);
-
-        _persistedAddresses
-            .Should()
-            .Equal(
-                new PersistedSchoolAddressRow(
-                    _persistedAddresses[0].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    0,
-                    "Austin"
-                ),
-                new PersistedSchoolAddressRow(
-                    _persistedAddresses[1].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    1,
-                    "Dallas"
-                )
-            );
-        _persistedAddresses.Select(static row => row.CollectionItemId).Should().OnlyHaveUniqueItems();
-        _persistedAddresses.Select(static row => row.CollectionItemId).Should().OnlyContain(id => id > 0);
-
-        _persistedAddressPeriods
-            .Should()
-            .Equal(
-                new PersistedSchoolAddressPeriodRow(
-                    _persistedAddressPeriods[0].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    _persistedAddresses[0].CollectionItemId,
-                    0,
-                    "Morning"
-                ),
-                new PersistedSchoolAddressPeriodRow(
-                    _persistedAddressPeriods[1].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    _persistedAddresses[0].CollectionItemId,
-                    1,
-                    "Afternoon"
-                ),
-                new PersistedSchoolAddressPeriodRow(
-                    _persistedAddressPeriods[2].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    _persistedAddresses[1].CollectionItemId,
-                    0,
-                    "Evening"
-                )
-            );
-        _persistedAddressPeriods.Select(static row => row.CollectionItemId).Should().OnlyHaveUniqueItems();
-        _persistedAddressPeriods
-            .Select(static row => row.CollectionItemId)
-            .Should()
-            .OnlyContain(id => id > 0);
-    }
+    public void It_persists_root_and_nested_collection_rows_with_stable_collection_ids() =>
+        AssertRootAndNestedCollectionRows(
+            _persistedDocument,
+            _persistedSchool,
+            _persistedAddresses,
+            _persistedAddressPeriods
+        );
 
     [Test]
-    public void It_persists_root_extensions_collection_extensions_and_extension_child_collections()
-    {
-        _persistedSchoolExtension
-            .Should()
-            .Be(new PersistedSchoolExtensionRow(_persistedDocument.DocumentId, "North"));
-
-        _persistedExtensionAddresses
-            .Should()
-            .Equal(
-                new PersistedSchoolExtensionAddressRow(
-                    _persistedAddresses[0].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    "Zone-1"
-                ),
-                new PersistedSchoolExtensionAddressRow(
-                    _persistedAddresses[1].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    "Zone-2"
-                )
-            );
-
-        _persistedInterventions
-            .Should()
-            .Equal(
-                new PersistedSchoolExtensionInterventionRow(
-                    _persistedInterventions[0].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    0,
-                    "Attendance"
-                ),
-                new PersistedSchoolExtensionInterventionRow(
-                    _persistedInterventions[1].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    1,
-                    "Behavior"
-                )
-            );
-        _persistedInterventions.Select(static row => row.CollectionItemId).Should().OnlyHaveUniqueItems();
-        _persistedInterventions.Select(static row => row.CollectionItemId).Should().OnlyContain(id => id > 0);
-
-        _persistedInterventionVisits.Should().HaveCount(3);
-        _persistedInterventionVisits
-            .Should()
-            .Equal(
-                new PersistedSchoolExtensionInterventionVisitRow(
-                    _persistedInterventionVisits[0].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    _persistedInterventions[0].CollectionItemId,
-                    0,
-                    "Visit-A"
-                ),
-                new PersistedSchoolExtensionInterventionVisitRow(
-                    _persistedInterventionVisits[1].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    _persistedInterventions[0].CollectionItemId,
-                    1,
-                    "Visit-B"
-                ),
-                new PersistedSchoolExtensionInterventionVisitRow(
-                    _persistedInterventionVisits[2].CollectionItemId,
-                    _persistedDocument.DocumentId,
-                    _persistedInterventions[1].CollectionItemId,
-                    0,
-                    "Visit-C"
-                )
-            );
-    }
+    public void It_persists_root_extensions_collection_extensions_and_extension_child_collections() =>
+        AssertRootAndCollectionExtensionAndExtensionChildRows(
+            _persistedDocument,
+            _persistedAddresses,
+            _persistedSchoolExtension,
+            _persistedExtensionAddresses,
+            _persistedInterventions,
+            _persistedInterventionVisits
+        );
 
     private async Task<UpsertResult> ExecuteCreateAsync()
     {
@@ -378,29 +139,16 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
         return await repository.UpsertDocument(CreateUpsertRequest());
     }
 
-    private UpsertRequest CreateUpsertRequest()
-    {
-        var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
-        ]);
-
-        return new UpsertRequest(
+    private UpsertRequest CreateUpsertRequest() =>
+        new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: new DocumentInfo(
-                DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
-                DocumentReferences: [],
-                DocumentReferenceArrays: [],
-                DescriptorReferences: [],
-                SuperclassIdentity: null
-            ),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
-            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
+            EdfiDoc: CreateRequestBody(),
             Headers: [],
-            TraceId: new TraceId("pg-create-baseline"),
+            TraceId: new TraceId("no-profile-create-baseline"),
             DocumentUuid: SchoolDocumentUuid
         );
-    }
 
     private static ServiceProvider CreateServiceProvider()
     {
