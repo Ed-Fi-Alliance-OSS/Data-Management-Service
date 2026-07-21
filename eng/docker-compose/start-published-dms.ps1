@@ -354,10 +354,15 @@ else {
         Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
         $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
         $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
+        # published-dms.yml is always in the compose set on the startup path, so the DMS service always
+        # participates (its runtime provider is validated even on a Keycloak start without a local config
+        # service); config participation follows the single $configServiceIncluded authority.
         $contract = Resolve-EffectiveConfigRuntimeContract `
             -InfrastructureEngine $DatabaseEngine `
             -ConfigServiceIncluded $configServiceIncluded `
-            -ResolvedProvider $resolvedCompose.Provider `
+            -DmsServiceIncluded $true `
+            -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
+            -ResolvedDmsProvider $resolvedCompose.DmsProvider `
             -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
             -SchemaToolPath $schemaToolPath `
             -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `

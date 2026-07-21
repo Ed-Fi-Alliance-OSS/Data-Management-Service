@@ -870,7 +870,9 @@ $failureStatement
             # credential, and the SA password from it - so a shell override cannot split the container
             # (and CMS) from pre-CMS OpenIddict initialization.
             $startScript | Should -Match 'Get-ComposeResolvedConfiguration -ComposeFiles \$files -EnvironmentFile \$EnvironmentFile -ProjectName "dms-local"'
-            $startScript | Should -Match '-ResolvedProvider \$resolvedCompose\.Provider'
+            $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
+            $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
+            $startScript | Should -Match '-DmsServiceIncluded \$true'
             $startScript | Should -Match 'DbType = \$contract\.OpenIddict\.DbType'
             $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
             $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
@@ -891,7 +893,9 @@ $failureStatement
             # Same runtime-contract wiring as start-local-dms.ps1 (both full-stack lanes), extended to the DMS
             # datastore connection stored in CMS, so every SQL Server credential is the one effective value.
             $startScript | Should -Match 'Get-ComposeResolvedConfiguration -ComposeFiles \$files -EnvironmentFile \$EnvironmentFile -ProjectName "dms-published"'
-            $startScript | Should -Match '-ResolvedProvider \$resolvedCompose\.Provider'
+            $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
+            $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
+            $startScript | Should -Match '-DmsServiceIncluded \$true'
             $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
             $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
             $startScript | Should -Match '\$mssqlPassword = \$contract\.MssqlSaPassword\b'

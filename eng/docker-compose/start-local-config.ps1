@@ -70,11 +70,13 @@ else {
     $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
     $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "cs-local"
     # The standalone lane exists to run the Configuration Service, so it always participates and the CMS
-    # invariants are always validated.
+    # invariants are always validated. It composes NO dms service, so DMS participation is explicitly false
+    # (no DMS provider or datastore-name agreement to validate) - never inferred from the null DmsProvider.
     $contract = Resolve-EffectiveConfigRuntimeContract `
         -InfrastructureEngine $datastore `
         -ConfigServiceIncluded $true `
-        -ResolvedProvider $resolvedCompose.Provider `
+        -DmsServiceIncluded $false `
+        -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
         -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
         -SchemaToolPath $schemaToolPath `
         -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `

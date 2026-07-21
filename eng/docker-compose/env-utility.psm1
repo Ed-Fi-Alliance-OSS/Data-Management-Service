@@ -861,14 +861,19 @@ function Get-ComposeResolvedConfiguration {
         ${...} - a shell-substituted terminal Compose does not re-expand - is returned as the literal
         text the container receives and is compared literally by the runtime contract.
 
-        Returns a record { Provider; CmsConnectionString; MssqlSaPassword; DatastoreConnectionString } read
-        from the resolved Configuration Service (config), database (db), and DMS (dms) services. A field is
-        $null when its service or key is absent from the composed set (e.g. the standalone-CMS lane composes
-        no dms service, so DatastoreConnectionString is $null). DatastoreConnectionString is the DMS
-        datastore admin connection the DMS container actually receives - Compose resolves the datastore
-        database name in it at shell-over-env-file precedence, including through indirectly referenced
-        variables - so the runtime contract compares the container's datastore database to the host-side
-        env-file value without examining direct process-environment keys.
+        Returns a record { ConfigProvider; DmsProvider; CmsConnectionString; MssqlSaPassword;
+        DatastoreConnectionString }. ConfigProvider is the Configuration Service (config) service's
+        AppSettings__Datastore (interpolated from DMS_CONFIG_DATASTORE); DmsProvider is the DMS (dms)
+        service's AppSettings__Datastore (interpolated INDEPENDENTLY from DMS_DATASTORE). The two are
+        deliberately separate fields so a consumer can never confuse the CMS runtime provider with the DMS
+        runtime provider - a shell DMS_DATASTORE could otherwise point the DMS container at a different engine
+        than the one that starts, unnoticed. A field is $null when its service or key is absent from the
+        composed set (e.g. the standalone-CMS lane composes no dms service, so DmsProvider and
+        DatastoreConnectionString are $null). DatastoreConnectionString is the DMS datastore admin connection
+        the DMS container actually receives - Compose resolves the datastore database name in it at
+        shell-over-env-file precedence, including through indirectly referenced variables - so the runtime
+        contract compares the container's datastore database to the host-side env-file value without examining
+        direct process-environment keys.
 
     .PARAMETER ComposeFiles
         The docker compose "-f <file>" arguments, exactly as the ensuing `up` uses them.
@@ -943,7 +948,8 @@ function Get-ComposeResolvedConfiguration {
     }
 
     return [pscustomobject]@{
-        Provider                  = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "AppSettings__Datastore"
+        ConfigProvider            = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "AppSettings__Datastore"
+        DmsProvider               = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "AppSettings__Datastore"
         CmsConnectionString       = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "DatabaseSettings__DatabaseConnection"
         MssqlSaPassword           = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key "MSSQL_SA_PASSWORD"
         DatastoreConnectionString = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "DATABASE_CONNECTION_STRING_ADMIN"
@@ -960,29 +966,39 @@ function Resolve-EffectiveConfigRuntimeContract {
 
     .DESCRIPTION
         The engine the start script selected (-InfrastructureEngine) is authoritative and is NEVER
-        inferred from a connection string. The CMS invariants below are validated only when the caller says
-        the Configuration Service participates in this compose set (-ConfigServiceIncluded); the stack
-        invariants (SA password, datastore-name agreement) are validated either way. The contract enforces,
-        all fail-fast and before any Docker or Keycloak mutation:
-          * the effective provider (Compose-resolved AppSettings__Datastore) is EXACTLY 'postgresql' or
-            'mssql' and equals -InfrastructureEngine (a shell DMS_CONFIG_DATASTORE cannot point CMS at a
-            different engine than the one that starts);
-          * the effective CMS connection string parses under the selected provider's own builder (a
-            wrong-engine string is rejected by the builder, not by keyword classification) and targets a
-            concrete database - the effective configuration database when -ConfigDatabaseName is supplied
-            (full-stack lanes), or the connection's own single target when it is not (standalone lane);
-          * on SQL Server, the SA password resolves to a non-blank value;
-          * (full-stack lanes) the datastore database the DMS container receives - read from Compose's own
-            resolution of the datastore admin connection, so any shell override of POSTGRES_DB_NAME /
-            MSSQL_DB_NAME (direct or through an indirectly referenced variable) is reflected - equals the
-            datastore database host-side tooling reads from the env file.
+        inferred from a connection string. There are three finite components, each with an explicit
+        participation authority (decided by the caller from its own compose-file selection, never inferred
+        from null Compose fields) and a Compose-resolved runtime value:
+          * database infrastructure - always present; the SQL Server SA password is validated when the
+            selected engine is MSSQL;
+          * the DMS service - validated only when -DmsServiceIncluded (its dms compose file is in the set);
+          * the Configuration Service - validated only when -ConfigServiceIncluded (its config compose file
+            is in the set).
+        The DMS and Configuration Service runtime providers are INDEPENDENTLY interpolated by Compose
+        (AppSettings__Datastore from DMS_DATASTORE and DMS_CONFIG_DATASTORE respectively), so each is checked
+        against -InfrastructureEngine separately - a shell override of either cannot point its container at a
+        different engine than the one that starts, unnoticed. The contract enforces, all fail-fast and before
+        any Docker or Keycloak mutation:
+          * on SQL Server, the SA password resolves to a non-blank value (stack invariant, always);
+          * (when the DMS service participates) the DMS provider (Compose-resolved dms AppSettings__Datastore)
+            is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and the datastore database
+            the DMS container receives - read from Compose's own resolution of the datastore admin connection,
+            so any shell override of POSTGRES_DB_NAME / MSSQL_DB_NAME (direct or through an indirectly
+            referenced variable) is reflected - equals the datastore database host-side tooling reads from the
+            env file;
+          * (when the Configuration Service participates) the CMS provider (Compose-resolved config
+            AppSettings__Datastore) is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and
+            the CMS connection string parses under the selected provider's own builder (a wrong-engine string
+            is rejected by the builder, not by keyword classification) and targets a concrete database - the
+            effective configuration database when -ConfigDatabaseName is supplied (full-stack lanes), or the
+            connection's own single target when it is not (standalone lane).
 
-        The Compose-resolved values are passed in (-ResolvedProvider / -ResolvedCmsConnectionString /
-        -ResolvedMssqlSaPassword / -ResolvedDatastoreConnectionString); the start scripts obtain them from
-        Get-ComposeResolvedConfiguration. Connection strings are parsed by the exact runtime providers via
-        the SchemaTools `connection validate` verb (Get-CmsConnectionStringDatabaseName), located by
-        -SchemaToolPath. Unit tests mock Get-CmsConnectionStringDatabaseName to exercise the contract logic
-        without the tool; the provider-oracle tests exercise the verb directly.
+        The Compose-resolved values are passed in (-ResolvedConfigProvider / -ResolvedDmsProvider /
+        -ResolvedCmsConnectionString / -ResolvedMssqlSaPassword / -ResolvedDatastoreConnectionString); the
+        start scripts obtain them from Get-ComposeResolvedConfiguration. Connection strings are parsed by the
+        exact runtime providers via the SchemaTools `connection validate` verb (Get-CmsConnectionStringDatabaseName),
+        located by -SchemaToolPath. Unit tests mock Get-CmsConnectionStringDatabaseName to exercise the
+        contract logic without the tool; the provider-oracle tests exercise the verb directly.
 
     .PARAMETER InfrastructureEngine
         The engine the start script actually selected ('postgresql' | 'mssql'); drives the Compose
@@ -993,12 +1009,21 @@ function Resolve-EffectiveConfigRuntimeContract {
         own compose-file selection (never inferred from null Compose fields). When $true the CMS invariants
         (provider enum and engine agreement, connection string and configuration database, OpenIddict target)
         are validated; when $false they are skipped - a Keycloak run that omits the local config service, or
-        one pointed at an external CONFIG_SERVICE_URL, has no local CMS to validate. The stack invariants
-        (SQL Server SA password and the datastore-name agreement) are validated either way, because the DMS
-        datastore container still starts.
+        one pointed at an external CONFIG_SERVICE_URL, has no local CMS to validate.
 
-    .PARAMETER ResolvedProvider
-        The Compose-resolved AppSettings__Datastore value.
+    .PARAMETER DmsServiceIncluded
+        Whether the DMS service participates in this compose set, decided by the caller from its own
+        compose-file selection (never inferred from null Compose fields). When $true the DMS provider
+        (enum + engine agreement) and the datastore-name agreement are validated; when $false they are
+        skipped - the standalone Configuration Service lane composes no dms service. The stack SA-password
+        invariant is validated regardless of both participation flags.
+
+    .PARAMETER ResolvedConfigProvider
+        The Compose-resolved Configuration Service AppSettings__Datastore value (from DMS_CONFIG_DATASTORE).
+
+    .PARAMETER ResolvedDmsProvider
+        The Compose-resolved DMS service AppSettings__Datastore value (from DMS_DATASTORE), interpolated
+        independently of the CMS provider.
 
     .PARAMETER ResolvedCmsConnectionString
         The Compose-resolved DatabaseSettings__DatabaseConnection value (final text the container receives).
@@ -1030,7 +1055,9 @@ function Resolve-EffectiveConfigRuntimeContract {
     param(
         [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
         [Parameter(Mandatory)][bool]$ConfigServiceIncluded,
-        [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedProvider,
+        [Parameter(Mandatory)][bool]$DmsServiceIncluded,
+        [AllowEmptyString()][AllowNull()][string]$ResolvedConfigProvider,
+        [AllowEmptyString()][AllowNull()][string]$ResolvedDmsProvider,
         [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedCmsConnectionString,
         [Parameter(Mandatory)][string]$SchemaToolPath,
         [AllowEmptyString()][AllowNull()][string]$ResolvedMssqlSaPassword,
@@ -1053,32 +1080,78 @@ function Resolve-EffectiveConfigRuntimeContract {
         }
     }
 
+    # DMS INVARIANTS - validated only when the DMS service participates in this compose set (its dms compose
+    # file is included). The DMS runtime provider (dms AppSettings__Datastore) is interpolated by Compose from
+    # DMS_DATASTORE, INDEPENDENTLY of the CMS provider, so it must be checked against the selected engine on
+    # its own - otherwise a shell DMS_DATASTORE could point the DMS container at a different engine than the
+    # one that starts even though the CMS provider matches, or no local CMS participates at all. The datastore
+    # database the DMS container receives is validated here too (same participation authority). Skipped for the
+    # standalone Configuration Service lane, which composes no dms service. Participation is decided by the
+    # caller from its own compose-file selection and is NEVER inferred from null Compose fields.
+    $dmsProviderCanonical = $null
+    if ($DmsServiceIncluded) {
+        # (1) DMS provider is an EXACT enum (case-insensitively, no surrounding whitespace); anything else -
+        # 'mysql', blank, ' mssql ' - fails fast rather than being coerced.
+        $dmsProviderCanonical =
+            if ([string]::Equals($ResolvedDmsProvider, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' }
+            elseif ([string]::Equals($ResolvedDmsProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
+            else { $null }
+        if ($null -eq $dmsProviderCanonical) {
+            throw "Configuration runtime-contract error: the effective DMS runtime provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedDmsProvider', which is not a supported engine. Set DMS_DATASTORE to exactly 'postgresql' or 'mssql'."
+        }
+
+        # (2) DMS provider MUST equal the infrastructure engine the start script selected (which starts that
+        # Compose database file). A shell DMS_DATASTORE that differs cannot silently point the DMS container
+        # at a different engine than the one that starts.
+        if ($dmsProviderCanonical -ne $InfrastructureEngine) {
+            throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective DMS runtime provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$dmsProviderCanonical'. Unset the conflicting DMS_DATASTORE shell override, or select that engine with -DatabaseEngine."
+        }
+
+        # (3) Datastore-name agreement. The database the DMS container actually receives is read from Docker
+        # Compose's own resolution of the datastore admin connection - which honors a shell override of
+        # POSTGRES_DB_NAME / MSSQL_DB_NAME whether direct OR routed through an indirectly referenced variable -
+        # and must equal the datastore database host-side tooling reads from the env file. Otherwise
+        # configure/provision create and register one database while the DMS container connects to another.
+        if ($null -ne $EnvValues -and -not [string]::IsNullOrWhiteSpace($ResolvedDatastoreConnectionString)) {
+            $datastoreKey = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL_DB_NAME' } else { 'POSTGRES_DB_NAME' }
+            $fileRaw = [string]$EnvValues[$datastoreKey]
+            if (-not [string]::IsNullOrWhiteSpace($fileRaw)) {
+                $fileDatastore = Resolve-EnvValueReference -Value $fileRaw -EnvValues $EnvValues
+                $containerTargets = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedDatastoreConnectionString -SchemaToolPath $SchemaToolPath)
+                $containerDatastore = if ($containerTargets.Count -gt 0) { $containerTargets[0] } else { '' }
+                if (-not [string]::Equals($containerDatastore, $fileDatastore, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Configuration runtime-contract error: the DMS datastore database the containers receive resolves (via Docker Compose) to '$containerDatastore', but host-side configuration and provisioning read '$fileDatastore' from the env file for $datastoreKey. Docker Compose gives the shell environment precedence over --env-file - directly or through an indirectly referenced variable - so this split would create/provision one database while the DMS container targets another. Unset or align the conflicting shell variable."
+                }
+            }
+        }
+    }
+
     # CMS INVARIANTS - validated only when the Configuration Service participates in this compose set. When
     # it does not (a Keycloak run that omits the local config service, or one pointed at an external
     # CONFIG_SERVICE_URL), Compose exposes no config-service provider/connection to resolve, so validating
     # them would fail on values that are legitimately absent. Participation is decided by the caller from its
     # own compose-file selection and is NEVER inferred from null Compose fields.
-    $providerCanonical = $null
+    $configProviderCanonical = $null
     $effectiveDatabaseName = $null
     $openIddict = $null
     if ($ConfigServiceIncluded) {
-        # (1) Provider is an EXACT enum, read from the Compose-resolved AppSettings__Datastore. Only the two
-        # supported engines are accepted (case-insensitively, no surrounding whitespace); anything else -
-        # 'mysql', blank, ' mssql ' - fails fast rather than being coerced, because Compose passes the raw
-        # value straight to the Configuration Service.
-        $providerCanonical =
-            if ([string]::Equals($ResolvedProvider, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' }
-            elseif ([string]::Equals($ResolvedProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
+        # (1) CMS provider is an EXACT enum, read from the Compose-resolved config AppSettings__Datastore. Only
+        # the two supported engines are accepted (case-insensitively, no surrounding whitespace); anything
+        # else - 'mysql', blank, ' mssql ' - fails fast rather than being coerced, because Compose passes the
+        # raw value straight to the Configuration Service.
+        $configProviderCanonical =
+            if ([string]::Equals($ResolvedConfigProvider, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' }
+            elseif ([string]::Equals($ResolvedConfigProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
             else { $null }
-        if ($null -eq $providerCanonical) {
-            throw "Configuration runtime-contract error: the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedProvider', which is not a supported engine. Set DMS_CONFIG_DATASTORE to exactly 'postgresql' or 'mssql'."
+        if ($null -eq $configProviderCanonical) {
+            throw "Configuration runtime-contract error: the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedConfigProvider', which is not a supported engine. Set DMS_CONFIG_DATASTORE to exactly 'postgresql' or 'mssql'."
         }
 
-        # (2) Provider MUST equal the infrastructure engine the start script selected (which starts that
+        # (2) CMS provider MUST equal the infrastructure engine the start script selected (which starts that
         # Compose database file and initializes OpenIddict for it). A shell DMS_CONFIG_DATASTORE that differs
         # cannot silently point the Configuration Service at a different engine than the one that starts.
-        if ($providerCanonical -ne $InfrastructureEngine) {
-            throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$providerCanonical'. Unset the conflicting DMS_CONFIG_DATASTORE shell override, or select that engine with -DatabaseEngine."
+        if ($configProviderCanonical -ne $InfrastructureEngine) {
+            throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$configProviderCanonical'. Unset the conflicting DMS_CONFIG_DATASTORE shell override, or select that engine with -DatabaseEngine."
         }
 
         # (3) The effective CMS connection must be present, parse under the selected provider (wrong-engine
@@ -1130,26 +1203,6 @@ function Resolve-EffectiveConfigRuntimeContract {
         }
     }
 
-    # (STACK INVARIANT, always) Datastore-name agreement (-ResolvedDatastoreConnectionString is present only
-    # when the compose set includes the DMS service, regardless of whether the config service does). The
-    # database the DMS container actually receives is read from Docker Compose's own resolution of the
-    # datastore admin connection - which honors a shell override of POSTGRES_DB_NAME / MSSQL_DB_NAME whether
-    # direct OR routed through an indirectly referenced variable - and must equal the datastore database
-    # host-side tooling reads from the env file. Otherwise configure/provision create and register one
-    # database while the DMS container connects to another.
-    if ($null -ne $EnvValues -and -not [string]::IsNullOrWhiteSpace($ResolvedDatastoreConnectionString)) {
-        $datastoreKey = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL_DB_NAME' } else { 'POSTGRES_DB_NAME' }
-        $fileRaw = [string]$EnvValues[$datastoreKey]
-        if (-not [string]::IsNullOrWhiteSpace($fileRaw)) {
-            $fileDatastore = Resolve-EnvValueReference -Value $fileRaw -EnvValues $EnvValues
-            $containerTargets = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedDatastoreConnectionString -SchemaToolPath $SchemaToolPath)
-            $containerDatastore = if ($containerTargets.Count -gt 0) { $containerTargets[0] } else { '' }
-            if (-not [string]::Equals($containerDatastore, $fileDatastore, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw "Configuration runtime-contract error: the DMS datastore database the containers receive resolves (via Docker Compose) to '$containerDatastore', but host-side configuration and provisioning read '$fileDatastore' from the env file for $datastoreKey. Docker Compose gives the shell environment precedence over --env-file - directly or through an indirectly referenced variable - so this split would create/provision one database while the DMS container targets another. Unset or align the conflicting shell variable."
-            }
-        }
-    }
-
     # SQL Server datastore registration connection, built from the EXPLICIT engine and the resolved SA
     # password - never inferred from a string, and independent of Configuration Service participation.
     $datastoreConnectionString = $null
@@ -1165,7 +1218,8 @@ function Resolve-EffectiveConfigRuntimeContract {
 
     return [pscustomobject]@{
         InfrastructureEngine      = $InfrastructureEngine
-        Provider                  = $providerCanonical
+        ConfigProvider            = $configProviderCanonical
+        DmsProvider               = $dmsProviderCanonical
         CmsConnectionString       = $ResolvedCmsConnectionString
         CmsDatabaseName           = $effectiveDatabaseName
         MssqlSaPassword           = $mssqlSaPassword

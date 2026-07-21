@@ -252,24 +252,48 @@ both engines; the choice is never inferred from the engine:
 `build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase.
 
 Before any external action - network creation, image build, container start, or Keycloak/OpenIddict -
-the start scripts resolve the effective Configuration Service settings by asking Docker Compose itself
+the start scripts resolve the effective runtime settings by asking Docker Compose itself
 (`docker compose config`, which applies your shell environment over the env file exactly as `up`
-will) and validate them once: the provider (`DMS_CONFIG_DATASTORE`) must be exactly `postgresql` or
-`mssql` and match the selected engine; the connection string must be a valid connection for that
-engine (parsed with the exact runtime providers - Npgsql / Microsoft.Data.SqlClient - via the
-`api-schema-tools connection validate` verb, so any keyword the driver rejects is caught here) and
-target the effective `DMS_CONFIG_DATABASE_NAME`; the SQL Server SA password must be non-blank; and the
-datastore database the containers actually receive (again from Compose, so a shell override of
-`POSTGRES_DB_NAME` / `MSSQL_DB_NAME` - direct or through a referenced variable - is reflected) must
-agree with the env file host-side tooling reads. Anything else fails fast with a clear diagnostic
-before Docker or Keycloak is touched.
+will) and validate them once. Each service has its own independently interpolated runtime provider,
+so each is checked against the selected engine separately:
 
-> Because connection strings are parsed with the exact runtime providers, the start scripts locate the
-> built `api-schema-tools` executable (the same tool the provisioning phase uses, resolved via
-> `DMS_SCHEMA_TOOL_PATH`, `eng/docker-compose/.bootstrap/tools/api-schema-tools`, or the SchemaTools
-> build output). Build or publish it once after cloning (or after pulling a change to it):
-> `dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools`.
-> `build-dms.ps1 BuildAndPublish` and the bootstrap flow produce it as part of their normal build.
+* **DMS service** (when its compose file is in the set): its runtime provider (`DMS_DATASTORE`, the
+  `dms` service's `AppSettings__Datastore`) must be exactly `postgresql` or `mssql` and match the
+  selected engine; and the datastore database the containers actually receive (again from Compose, so
+  a shell override of `POSTGRES_DB_NAME` / `MSSQL_DB_NAME` - direct or through a referenced variable -
+  is reflected) must agree with the env file host-side tooling reads.
+* **Configuration Service** (when its compose file is in the set): its runtime provider
+  (`DMS_CONFIG_DATASTORE`, the `config` service's `AppSettings__Datastore`) must be exactly `postgresql`
+  or `mssql` and match the selected engine; and the connection string must be a valid connection for
+  that engine (parsed with the exact runtime providers - Npgsql / Microsoft.Data.SqlClient - via the
+  `api-schema-tools connection validate` verb, so any keyword the driver rejects is caught here) and
+  target the effective `DMS_CONFIG_DATABASE_NAME`.
+* **Database infrastructure** (always): on SQL Server the SA password must be non-blank.
+
+Because `DMS_DATASTORE` and `DMS_CONFIG_DATASTORE` are separate variables, a shell override of either
+cannot silently point its container at a different engine than the one that starts. Each service is
+validated only when its compose file is actually selected (a published Keycloak start without
+`-EnableConfig` composes no local Configuration Service and skips only the CMS checks - the DMS and
+stack checks still run). Anything else fails fast with a clear diagnostic before Docker or Keycloak is
+touched.
+
+> Because connection strings are parsed with the exact runtime providers, the start scripts need the
+> `api-schema-tools` executable (the same tool the provisioning phase uses). They call
+> `Resolve-DmsSchemaTool -BuildIfMissing`, which resolves it as follows:
+>
+> * an explicit `DMS_SCHEMA_TOOL_PATH` is authoritative (it must exist);
+> * otherwise a prebuilt copy is discovered under `eng/docker-compose/.bootstrap/tools/api-schema-tools`
+>   or the SchemaTools build output;
+> * otherwise, when no candidate exists and the .NET SDK and SchemaTools project are available, the
+>   start lane publishes the tool from source once to `.bootstrap/tools/api-schema-tools` and re-probes,
+>   so a clean checkout self-heals without a manual build.
+>
+> An already-existing executable is reused as-is; after pulling changes to SchemaTools, rebuild or
+> re-publish it (`dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools`,
+> or `build-dms.ps1 BuildAndPublish` / the bootstrap flow) so the resolver picks up the current tool.
+> A published Keycloak start with no local Configuration Service still resolves the tool, because the
+> DMS datastore validation above remains active even when the CMS checks are skipped. In contrast,
+> `prepare-dms-schema.ps1` does not auto-publish: it still requires an already-resolvable prebuilt tool.
 
 ```pwsh
 # Shared (default): CMS shares the DMS datastore database
