@@ -420,12 +420,15 @@ else {
         Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
         $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
         $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local"
-        # The local stack always includes local-config.yml (outside the DbOnly diagnostic phase), so the
-        # Configuration Service always participates and the CMS invariants are always validated.
+        # The local stack always includes local-dms.yml and local-config.yml (outside the DbOnly diagnostic
+        # phase), so both the DMS service and the Configuration Service participate and their runtime
+        # providers are both validated against the selected engine.
         $contract = Resolve-EffectiveConfigRuntimeContract `
             -InfrastructureEngine $DatabaseEngine `
             -ConfigServiceIncluded $true `
-            -ResolvedProvider $resolvedCompose.Provider `
+            -DmsServiceIncluded $true `
+            -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
+            -ResolvedDmsProvider $resolvedCompose.DmsProvider `
             -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
             -SchemaToolPath $schemaToolPath `
             -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
