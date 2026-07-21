@@ -54,15 +54,22 @@ The short `edfi.dms` prefix is allowed only on an isolated local/test broker or 
 explicitly dedicated to a single DMS/CMS deployment. Production validation rejects that
 default otherwise. Tenant names are not a uniqueness mechanism.
 
-The topic uses:
+The v1 topic uses exactly:
 
 ```text
 cleanup.policy=compact
 ```
 
-Hosts may add delete or time retention for operational replay windows, but consumers do
-not depend on complete history. Tombstones remain observable only according to Kafka's
-configured delete retention.
+V1 does not permit adding `delete` to `cleanup.policy`. The compact-only policy must retain
+the latest live upsert for every key so a consumer can reconstruct current instance state
+from the topic. Kafka may remove a tombstone and its superseded records according to the
+compacted topic's tombstone-retention behavior; this leaves that deleted key absent from
+a fresh reconstruction.
+
+A deployment that requires time/delete retention must first define and implement a
+separate authoritative bootstrap source for current state and weaken the topic-only
+reconstruction guarantee in a new contract version. An operational replay window alone
+is not such a bootstrap source.
 
 The topic's partition count is fixed when the topic is created, and the connector uses the
 same pinned key-based partitioner for the binding's lifetime. Neither may change in place:
@@ -326,6 +333,8 @@ The public topic never exposes:
 ## Consequences
 
 - Consumers can reconstruct current instance document state but not complete history.
+- That reconstruction guarantee depends on v1's compact-only topic; time/delete retention
+  requires a separately defined authoritative bootstrap source and a new contract.
 - Raw delivery may contain duplicates or lower-version replays; the consumer ordering rule,
   not record arrival alone, keeps applied non-null upsert state monotonic.
 - At-least-once replay may temporarily place an older upsert after a tombstone; the stream
@@ -361,6 +370,7 @@ The public topic never exposes:
 | Shared `edfi.dms.document` topic | Rejected: it does not express instance isolation. |
 | Topic per resource per instance | Rejected: it multiplies topics, ACLs, provisioning, and routing transforms while the envelope already identifies the resource. |
 | Shared topic with `instanceId` in the value | Rejected: consumer filtering is not a security boundary and tombstones have no value. |
+| `cleanup.policy=compact,delete` | Rejected for v1: time/size deletion can remove the sole latest upsert for an unchanged live document, so the topic can no longer bootstrap current state. |
 | Include `DocumentId` | Rejected: it is an internal surrogate with no public contract role. |
 | Publish delete envelopes | Rejected: compacted state streams use Kafka tombstones and no deleted body is guaranteed. |
 | Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |

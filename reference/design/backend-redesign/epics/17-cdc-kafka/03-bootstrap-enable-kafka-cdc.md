@@ -32,7 +32,8 @@ backend.
 3. Require the selected deployment target to be present in DMS
    `DocumentCache:Targets`, and reserve or exact-match its immutable binding before
    creating governed artifacts.
-4. Create or validate the topic with the binding's fixed partition count. Provision and
+4. Create or validate the topic with exactly `cleanup.policy=compact` and the binding's
+   fixed partition count. Reject any cleanup policy that includes `delete`. Provision and
    idempotently validate literal, binding-scoped topic ACLs for the deployment-supplied
    connector and instance consumer principals, plus their required consumer-group ACLs;
    do not emit shared-topic, wildcard-topic, or cross-instance consumer grants.
@@ -53,7 +54,8 @@ backend.
   combined readiness follows the authoritative algorithm without a backfill epoch or
   high-watermark.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
-  in-place topic partition-count changes, and source/topic-generation reuse.
+  in-place topic partition-count changes, time/delete retention on the v1 topic, and
+  source/topic-generation reuse.
 - Broker-backed integration tests enable Kafka authorization and prove ACL provisioning
   is repeatable, a configured instance consumer can read its own literal topic, and that
   principal is denied when it attempts to read a peer instance topic.

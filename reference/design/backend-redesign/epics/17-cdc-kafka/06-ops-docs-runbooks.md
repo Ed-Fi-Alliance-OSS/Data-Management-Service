@@ -22,8 +22,10 @@ capability without redefining its architecture or contracts.
    troubleshooting commands.
 2. Document PostgreSQL and SQL Server prerequisites, least-privilege access, provider
    artifacts, retention, restart, and cleanup.
-3. Document Kafka topic/ACL/consumer operation, DMS per-database projection-health
-   observation, and deployment-owned combined readiness.
+3. Document Kafka compact-only topic/ACL/consumer operation, including why time/delete
+   retention is prohibited without a separately defined authoritative bootstrap source,
+   DMS per-database projection-health observation, and deployment-owned combined
+   readiness.
 4. Document connector restart, offset reset, resnapshot, topic recreation, cache rebuild,
    target migration/retirement, cache-ahead invariant recovery, and explicit destructive
    cleanup. A possibly published higher cache version requires a new binding generation,

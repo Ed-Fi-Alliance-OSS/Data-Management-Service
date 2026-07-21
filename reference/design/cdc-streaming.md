@@ -592,8 +592,8 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
 - a DMS projection-health result whose current source fingerprint matches that binding,
 - provisioned `dms.Document`, `dms.DocumentCache`, and `dms.DocumentCacheState` tables and
   provider CDC/key prerequisites,
-- topic name, fixed partition count, ACL, transform, and connector configuration that
-  match the binding record,
+- topic name, compact-only cleanup policy, fixed partition count, ACL, transform, and
+  connector configuration that match the binding record,
 - a running connector with completed snapshot/catch-up through a database source
   position observed after DMS reported a sufficiently recent exact-zero audit,
 - a second DMS projection-health observation that remains ready for the same source, and
@@ -944,7 +944,7 @@ For a new instance:
 2. Resolve the physical source and atomically create its deployment-owned immutable
    binding record.
 3. Provision and validate the relational schema and cache table, apply provider CDC/key
-   setup, and create the binding's instance topic and ACLs.
+   setup, and create the binding's compact-only instance topic and ACLs.
 4. Register the connector from that exact binding before DMS reconciliation or
    application writes that must be observed.
 5. Start or roll out DMS so monotonic cache upserts flow through established capture.
@@ -973,6 +973,8 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   never placed in `.bootstrap/bootstrap-manifest.json`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
+- Topic provisioning requires and idempotently validates `cleanup.policy=compact`; it
+  rejects any cleanup policy that includes `delete`.
 - The same workflow provisions and idempotently validates the binding-scoped topic ACLs
   before connector registration. It emits literal instance-topic grants for the
   deployment-supplied connector and consumer principals and never emits a shared-topic,
@@ -1104,9 +1106,10 @@ state into the same topic without advancing `ContentVersion`; incompatible-contr
 use a new topic suffix and matching `contractVersion`.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
-mismatch including an attempted partition-count change, provider aliases that resolve to
-the same fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop
-retention, destructive-teardown removal, and new-generation source migration.
+mismatch including an attempted partition-count change, rejection of a topic configured
+with a cleanup policy that includes `delete`, provider aliases that resolve to the same
+fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop retention,
+destructive-teardown removal, and new-generation source migration.
 Multi-controller state backends additionally prove compare-and-set behavior. No test
 repairs a mismatch by rewriting a binding, changes a topic's partition count in place, or
 reuses a topic generation for a different source.
