@@ -342,6 +342,10 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         var childRowsBefore = await QuerySectionClassPeriodRowCountAsync(sectionDocumentId);
         var childAnchorBefore = await QuerySectionClassPeriodAnchorAsync(sectionDocumentId);
         childRowsBefore.Should().Be(1);
+        var childCollectionItemIdBefore = Convert.ToInt64(
+            (await QuerySingleSectionClassPeriodAsync(sectionDocumentId))["CollectionItemId"],
+            CultureInfo.InvariantCulture
+        );
 
         // Small delay so any stamp comparison that checks ContentLastModifiedAt
         // would see a distinct timestamp too.
@@ -382,6 +386,16 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             .Be(
                 childAnchorBefore,
                 "ClassPeriod_DocumentId is the reference anchor and must not change during an identity cascade"
+            );
+
+        // CollectionItemId must survive the cascade — row-count and anchor stability alone would
+        // also pass a DELETE + re-INSERT with identical values; the sequence-assigned value cannot.
+        Convert
+            .ToInt64(childRow["CollectionItemId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(
+                childCollectionItemIdBefore,
+                "the cascade must update the child row in place, not delete and re-insert it"
             );
 
         // The child stamp trigger (TR_SectionClassPeriod_Stamp) must fire from the
