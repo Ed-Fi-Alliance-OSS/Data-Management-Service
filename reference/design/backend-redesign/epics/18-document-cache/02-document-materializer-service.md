@@ -43,9 +43,10 @@ reconciliation, optional direct fill, and CDC payload fixtures.
 
 - Unit/integration tests cover every cache result field and metadata invariant, including
   exact `StreamEtag` equality with the existing DMS composer.
-- Golden v1 fixtures pin exact `StreamEtag` output for fixed `ContentVersion`,
-  `EffectiveSchemaHash`, document kind/link context, format, profile, and content-coding
-  inputs so a refactor cannot silently change the immutable contract.
+- Contract fixtures prove `StreamEtag` is produced by the current shared composer for the
+  fixed stream context and remains coherent with `ContentVersion`, effective schema, and
+  document link context. They treat the resulting bytes as opaque rather than freezing
+  them independently of the composer.
 - Shape tests cover nested arrays, reference links, and excluded authorization/profile
   data.
 - Tests prove API reads ignore `StreamEtag` and continue composing the served `_etag` for

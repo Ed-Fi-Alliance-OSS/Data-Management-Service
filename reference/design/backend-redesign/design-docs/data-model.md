@@ -499,14 +499,20 @@ and compose their request-specific ETag from `ContentVersion` and the active req
 `variantKey`. See the authoritative cached-document contract for consistency and
 freshness rules.
 
-The row has no projection-generation column. The v1 stream representation and ETag
-composition are immutable for unchanged inputs, so a same-`ContentVersion` row is never
-rewritten merely because composer code changed. An output-changing composer or stream
-representation change requires discarding all cache rows, completely reprojecting them
-under a new contract, and snapshotting them to a new versioned topic. Because the table
-stores only one `DocumentJson` and `StreamEtag`, simultaneous live publication of old and
-new representation contracts is outside v1; see the topic/message ADR's
-[compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-stream-representation-immutability).
+The row has no projection-generation column. Ordinary reconciliation treats a
+same-`ContentVersion` row as fresh and does not rewrite it. A compatible materialization
+or opaque-ETag correction is applied operationally by stopping old cache writers,
+including optional direct fill, clearing the cache, and completely rebuilding it. Debezium
+publishes the rebuilt rows to
+the existing topic at later Kafka offsets, and consumers replace equal-version state at
+the later offset. The exact opaque `StreamEtag` bytes are therefore not independently
+frozen; they must remain DMS-computed and coherent with the projected document.
+
+An incompatible key, field/type, delete-semantics, or document-contract change still uses
+a new versioned topic and `contractVersion`. Because the table stores only one
+`DocumentJson` and `StreamEtag`, simultaneous live publication of two incompatible
+contracts is outside v1; see the topic/message ADR's
+[compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
 
 For a current canonical document, a missing cache row or a lower cached
 `ContentVersion` is repairable projection lag. A higher cached `ContentVersion` is not

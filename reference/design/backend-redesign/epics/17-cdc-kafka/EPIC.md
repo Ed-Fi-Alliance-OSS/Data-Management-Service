@@ -45,11 +45,15 @@ implementation inputs.
 
 - Both providers pass database CDC/key smoke tests and real routed-topic ordering tests.
 - Generated and published records pass the topic/message contract suite.
+- Each binding fixes its topic partition count and key-based partitioner so a document's
+  later Kafka offset remains a valid equal-version tie-breaker.
 - Connector transforms copy the DMS-projected opaque stream ETag and contain no schema,
   link-configuration, or ETag-composition rules.
-- Golden contract fixtures prove the v1 stream representation and ETag output remain
-  immutable for unchanged inputs; output-changing upgrades use complete cache
-  reprojection and a new versioned topic rather than same-`contentVersion` replacement.
+- Contract fixtures pin the v1 key, fields/types, tombstones, document semantics, and
+  metadata relationships while treating `StreamEtag` bytes as opaque DMS output.
+  Compatible projection corrections rebuild into the existing topic and replace an equal
+  `contentVersion` at the later Kafka offset; incompatible contract changes use a new
+  versioned topic.
 - Local and E2E setup registers against selected provisioned data stores without
   hard-coded instance values.
 - Binding state survives DMS and connector restarts, fails closed around missing or
@@ -57,8 +61,8 @@ implementation inputs.
 - DMS exposes only per-database projection health; deployment automation combines it
   with binding, migration, connector catch-up, and lag status.
 - API deletion remains correct when projection is absent or failing.
-- Operator documentation covers supported setup, security, observation, recovery,
-  migration, immutable-contract version cutover, and explicit destructive cleanup.
+- Operator documentation covers supported setup, security, observation, same-topic
+  compatible repair, incompatible-contract migration, and explicit destructive cleanup.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a
 new decision record changes that design.

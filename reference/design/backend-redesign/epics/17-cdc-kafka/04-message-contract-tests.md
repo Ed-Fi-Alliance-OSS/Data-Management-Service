@@ -32,8 +32,11 @@ without requiring an API E2E path for every source operation.
    conversion at zero through seven significant fractional digits.
 4. Add realistic nested/reference-link payload fixtures from the shared materializer.
 5. Add real-provider delete-key and routed-topic ordering coverage.
-6. Pin the v1 stream selectors and served-ETag input/output mapping with golden fixtures
-   that remain unchanged across implementation refactors.
+6. Pin the v1 key, public fields/types, stream selectors, tombstone behavior, document
+   semantics, and served-ETag source/copy relationship without independently freezing the
+   opaque ETag bytes.
+7. Exercise consumer ordering for higher, lower, and equal `contentVersion` records and
+   verify that the topic partition count cannot change within a binding generation.
 
 ## Acceptance Evidence
 
@@ -47,11 +50,16 @@ without requiring an API E2E path for every source operation.
   and any difference between `lastModifiedAt` and `document._lastModifiedDate`.
 - Materializer fixtures use ETags produced by the shared DMS composer; connector tests
   prove `document._etag` is an exact copy rather than a Java-derived value.
-- Tests fail when unchanged v1 composer inputs produce a different `StreamEtag`. An
-  intentional expected-value change must introduce a new topic suffix and matching
-  `contractVersion` fixture; it cannot be blessed as another v1 result.
-- Tests prove a same-`contentVersion` v1 replay is not treated as a representation-upgrade
-  mechanism and that no projection-generation field enters the v1 public contract.
+- Fixtures obtain `StreamEtag` from the current DMS composer and fail if the transform
+  alters it, publishes it outside `document._etag`, or publishes metadata inconsistent
+  with it; they do not fail merely because a conforming composer correction changes the
+  opaque value.
+- Ordering tests prove a higher `contentVersion` replaces, a lower version is ignored,
+  and the later partition offset replaces an equal version without a public projection
+  generation field.
+- Repair tests prove a cache clear/rebuild republishes corrected equal-version values into
+  the same topic, while incompatible key/field/type/delete-contract changes use a new
+  topic suffix and matching `contractVersion`.
 - Provider tests cover canonical deletion without a cache row, cache rebuild cleanup,
   and same-key routed ordering.
 

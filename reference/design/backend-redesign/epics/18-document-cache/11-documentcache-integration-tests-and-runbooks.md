@@ -30,6 +30,13 @@ that links to, rather than restates, the authoritative design.
 3. Publish DocumentCache operation/troubleshooting guidance and cross-link CDC connector
    operations separately. Include cache-ahead diagnosis and require operators to
    establish whether CDC could have published the higher version before recovery.
+4. Document the shipped implementation defaults and tuning guidance for scan/audit
+   intervals, page size, concurrent targets, and maximum audit age, including how to
+   diagnose audit overruns and API-resource contention.
+5. Document the cache side of a compatible projection correction: stop old cache writers,
+   including optional direct fill, use the provider-supported clear operation, start only
+   corrected writers, and reconcile to an exact zero audit. Hand connector catch-up and
+   equal-version consumer verification to 17-06.
 
 ## Acceptance Evidence
 
@@ -39,12 +46,17 @@ that links to, rather than restates, the authoritative design.
   audits, and API independence.
 - Rebuild tests use ordinary reconciliation and never introduce a separate backfill
   workflow.
+- Compatible-correction tests prove ordinary reconciliation does not rewrite an existing
+  equal-version row, while an explicit clear/rebuild produces corrected rows with the same
+  canonical `ContentVersion` after old cache writers are stopped.
 - Runbook tests cover internal-only cache-row deletion/rebuild and hand off possibly
   observed cache-ahead state to a new downstream state namespace, including E17's
   new-generation topic/snapshot recovery; they never instruct the projector to lower a
   cache version automatically.
 - Runbook procedures are checked against implemented configuration, health output, and
   recovery behavior.
+- Scheduling coverage proves bounded in-process work remains isolated across targets and
+  that an overdue audit degrades readiness instead of creating overlapping catch-up work.
 
 ## Out of Scope
 

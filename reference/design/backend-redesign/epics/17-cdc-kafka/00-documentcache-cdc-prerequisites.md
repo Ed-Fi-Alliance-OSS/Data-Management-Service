@@ -33,9 +33,10 @@ per-database projection health with E17-owned provider, topic, and connector che
 2. Resolve provider-specific physical database identity through the current-source
    observation contract from 18-09 and detect aliases that conflict with
    topic-per-instance isolation.
-3. Define the versioned immutable binding-record schema and a state-store abstraction
-   with atomic create/compare-and-set behavior. Provide the single-controller local JSON
-   implementation under `.cdc-state/bindings`, its Git ignore rule, and optional
+3. Define the versioned immutable binding-record schema, including the positive fixed
+   topic partition count, and a state-store abstraction with atomic
+   create/compare-and-set behavior. Provide the single-controller local JSON implementation
+   under `.cdc-state/bindings`, its Git ignore rule, and optional
    `-CdcBindingStatePath`; do not write binding state into the bootstrap manifest.
 4. Enforce fail-closed creation, exact-match retry, artifact-without-state rejection,
    immutable lifetime, cleanup ordering, and new-generation source migration.
@@ -48,9 +49,9 @@ per-database projection health with E17-owned provider, topic, and connector che
 
 ## Acceptance Evidence
 
-- State tests cover atomic first creation, exact-match retry, immutable mismatch,
-  artifacts without state, normal-stop retention, destructive cleanup ordering, and
-  generation migration.
+- State tests cover atomic first creation, exact-match retry, immutable mismatch including
+  an attempted partition-count change, artifacts without state, normal-stop retention,
+  destructive cleanup ordering, and generation migration.
 - Provider tests cover equivalent physical aliases, conflicting targets, transient
   identity-resolution failure, missing targets, and confirmed binding mismatch without a
   DMS-owned drift latch.

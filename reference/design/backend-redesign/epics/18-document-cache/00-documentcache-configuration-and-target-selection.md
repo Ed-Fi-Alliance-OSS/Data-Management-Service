@@ -26,6 +26,8 @@ target-resolution lifecycle.
 
 1. Define and bind strongly typed `DataManagement:DocumentCache:Targets` entries and the
    independent `ReadAcceleration:Enabled` use-path gate.
+   Treat the list as process-local configuration so deployments designate projector hosts
+   through target placement rather than another enablement flag.
 2. Validate normalized uniqueness and create one logical execution context for every
    explicit startup target without selecting every loaded data store.
 3. Keep unresolved configured targets visible and retry their CMS resolution on the
@@ -44,6 +46,8 @@ target-resolution lifecycle.
   replacement with health reset, unlisted late-created stores, and per-store isolation.
 - Tests prove read acceleration selects no additional data stores and that adding or
   removing membership requires configuration rollout.
+- Tests prove an empty per-process target list starts no projector work and duplicate
+  target placement across processes remains a supported deployment choice.
 - Health/routing integration proves configuration errors remain data-store-specific and
   observational.
 

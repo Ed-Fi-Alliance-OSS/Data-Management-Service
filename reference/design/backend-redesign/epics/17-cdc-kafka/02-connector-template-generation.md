@@ -29,8 +29,8 @@ source routing and serialized public contract using the separately published
 ## Deliverables
 
 1. Define inputs from the immutable deployment binding for provider/source fingerprint,
-   target and generation identity, connector/topic names, `contractVersion`,
-   credentials, replication/capture identity, and snapshot behavior.
+   target and generation identity, connector/topic names, fixed topic partition count,
+   `contractVersion`, credentials, replication/capture identity, and snapshot behavior.
 2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
    instance values.
 3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
@@ -47,12 +47,17 @@ source routing and serialized public contract using the separately published
    of connector transforms.
 7. Validate all version-specific properties and transform classes against the pinned
    `edfialliance/ed-fi-kafka-connect` image.
+8. Pin and validate one key-based partitioner for the binding lifetime; do not rely on an
+   image upgrade silently retaining equivalent key-to-partition behavior.
 
 ## Acceptance Evidence
 
 - Rendering tests cover representative providers and reject invalid production topic
-  prefixes, incomplete binding inputs, or generated identities that differ from the
-  binding record.
+  prefixes, incomplete binding inputs, nonpositive or changed partition counts, or
+  generated identities that differ from the binding record.
+- Pinned-image tests prove identical serialized `DocumentUuid` keys route consistently
+  under the selected partitioner; changing the partitioner or partition count requires a
+  new binding generation/topic.
 - Template tests prove the configured class, source includes, key columns, converters,
   tombstone suppression, transform properties, and target topic match the binding and
   17-02a contract.

@@ -65,18 +65,36 @@ Debezium is not a reference path, and DMS does not publish directly to Kafka.
 ## Configuration and Projection Target Selection
 
 Runtime DMS has one explicit projection-target contract and no Kafka-specific target or
-process-wide projection selector.
+separate process-wide projection selector. The target list is process-local configuration:
+a deployment designates projector hosts by giving those DMS processes the relevant target
+entries. A process with an empty list performs no projection work. Multiple processes may
+carry the same target entries when duplicate, idempotent projection is desired.
 
 ```text
 DataManagement:DocumentCache:Targets = [{ TenantKey, DataStoreId }, ...]
 DataManagement:DocumentCache:ReadAcceleration:Enabled = false | true
+DataManagement:DocumentCache:Projector:IncrementalScanInterval = <positive duration>
+DataManagement:DocumentCache:Projector:FullAuditInterval = <positive duration>
+DataManagement:DocumentCache:Projector:PageSize = <positive integer>
+DataManagement:DocumentCache:Projector:MaxConcurrentTargets = <positive integer>
+DataManagement:DocumentCache:Readiness:MaximumAuditAge = <positive duration>
 ```
 
-The defaults are an empty target list and `false`. A target entry enables projection for
-that logical `(tenant key, DataStoreId)` whether the consumer is CDC, diagnostics,
-indexing, or another deployment-selected capability. `ReadAcceleration:Enabled` is only
-a use-path gate: when enabled, DMS may use fresh cache rows for explicitly listed
-targets, but it does not select every loaded or subsequently discovered data store.
+The target and read-acceleration defaults are an empty list and `false`. The implementation
+provides conservative, tested defaults for the five execution/readiness settings. Those
+numeric defaults are operational tuning, not part of the projection or stream contract:
+they are configurable, published in supported appsettings and operator documentation,
+reported at startup, and may be adjusted between releases from PostgreSQL and SQL Server
+qualification evidence. Configuration rejects nonpositive durations, page sizes, or
+concurrency and requires `MaximumAuditAge` to be greater than `FullAuditInterval` so a
+normally scheduled audit does not become stale before its successor is due.
+
+A target entry enables projection for that logical `(tenant key, DataStoreId)` whether the
+consumer is CDC, diagnostics, indexing, or another deployment-selected capability.
+`ReadAcceleration:Enabled` is only a use-path gate: when enabled, DMS may use fresh cache
+rows for explicitly listed targets, but it does not select every loaded or subsequently
+discovered data store. Projector timing and capacity settings tune work already selected by
+`Targets`; they never discover another target or change API routing.
 
 Entries must be unique after applying the same case-insensitive tenant-key normalization
 as `IDataStoreProvider`. DMS runs one logical reconciliation execution context for each
@@ -97,10 +115,10 @@ observations as the same or different physical database, compare either observat
 a connector binding, or change Kafka artifacts.
 
 Deployment automation selects CDC targets separately and must configure every CDC target
-as a DMS `DocumentCache:Targets` entry. Kafka infrastructure, `-EnableKafkaUI`, and
-`-EnableKafkaCdc` do not implicitly select DMS projection targets. All projection and CDC
-health remains observational and never changes `IDataStoreSelection`, normal request
-routing, or API read/mutation availability.
+on at least one designated DMS projector host as a `DocumentCache:Targets` entry. Kafka
+infrastructure, `-EnableKafkaUI`, and `-EnableKafkaCdc` do not implicitly select DMS
+projection targets. All projection and CDC health remains observational and never changes
+`IDataStoreSelection`, normal request routing, or API read/mutation availability.
 
 ## Cached Document Contract
 
@@ -332,6 +350,48 @@ deleted, or the cache becomes fresh. Restart loses only the delay and rediscover
 from database state. V1 has no retry budget or persisted attempt count; a persistent
 failure remains visible until its underlying data, mapping, or service cause is fixed.
 
+### Bounded In-Process Execution Policy
+
+Projection is background work in the DMS application process. V1 uses one serialized
+execution loop per resolved target and a process-wide `MaxConcurrentTargets` gate. At most
+one incremental page, audit page, or candidate materialization is active for a target at a
+time, and no more than the configured number of targets perform projection database/CPU
+work concurrently. A page contains at most `PageSize` source rows and is fully drained
+before the loop fetches another page; the process does not build an unbounded candidate
+queue. Waiting targets receive permits fairly so one large rebuild cannot permanently
+exclude another target.
+
+The loop applies this schedule:
+
+1. Resolution of a configured target starts an immediate full audit. Restart and an
+   explicit cache-rebuild signal do the same.
+2. While no audit is due, incremental discovery runs no more frequently than
+   `IncrementalScanInterval`. The same interval bounds re-resolution attempts for an
+   unavailable configured target, subject to failure backoff.
+3. A steady-state full audit becomes due `FullAuditInterval` after the previous full audit
+   finishes. Only one audit may be queued or running for a target. Startup, rebuild, and
+   periodic requests coalesce into that one audit; they never create overlapping scans.
+4. A finishing aggregate with repairable differences schedules another bounded repair
+   pass through the same loop rather than tight-looping. Retry backoff and the concurrency
+   gate remain in force. A cache-ahead-only result remains unhealthy and waits for explicit
+   recovery rather than scheduling futile repair.
+5. Health and readiness reads are observational. They do not start or wait for an audit.
+   Until the immediate startup/rebuild audit completes, or when the latest exact audit is
+   older than `MaximumAuditAge`, the target is simply not ready.
+
+Cancellation is observed between pages and candidates and while waiting for the global
+gate. Shutdown does not begin new work and allows only the current short guarded cache
+transaction to finish or roll back within its existing command/lock timeout. One target's
+failure or cancellation does not stop peer loops.
+
+These settings make the operational bound explicit without pretending an audit is
+instantaneous: repairable work invisible to the incremental cursor begins discovery no
+later than one configured `FullAuditInterval` after the prior audit completed, then takes
+the duration of its bounded audit/repair pass. If sustained load makes audits slower than
+their interval or older than `MaximumAuditAge`, readiness becomes false and telemetry
+shows the overdue/in-progress audit; the supervisor does not add parallel audits to catch
+up.
+
 ### Cache-Ahead Invariant Recovery
 
 The projector never automatically lowers a cache row from a higher `ContentVersion` to
@@ -363,8 +423,9 @@ target and explicitly selects its data store. It does not depend on
 `ResolveDataStoreMiddleware` or reuse request-scoped `IDataStoreSelection`. One
 unavailable data store does not stop peers. Multiple DMS replicas may perform duplicate
 scans safely because candidate discovery is read-only and writes are idempotently fenced.
-Deployments may designate projector hosts to avoid redundant work; correctness does not
-require a distributed lease.
+Deployments avoid redundant work by placing target entries only on designated projector
+hosts. Correctness does not require a distributed lease; when more than one host is
+configured for the same target, each independently applies the bounded execution policy.
 
 ## Cache-Backed Reads and Domain Lifecycle
 
@@ -405,6 +466,8 @@ context. It reports at least:
   computed with the same provider-specific algorithm used by deployment automation,
 - whether the in-process loop is running,
 - whether an incremental scan or full audit is in progress,
+- the effective execution settings, last/next incremental and audit eligibility times, and
+  whether work is waiting for the process-wide target-concurrency gate,
 - the latest completed full audit's observation time, duration, and age,
 - that audit's exact total unresolved, missing-row, cache-behind-row, and
   cache-ahead-invariant counts,
@@ -419,11 +482,12 @@ incremental cursor, last scan, successful upsert, and last error are diagnostic 
 `LastScannedContentVersion`, `LastProjectedContentVersion`, and last-success timestamps
 are never completeness evidence.
 
-Health reads return the latest audit snapshot; they do not synchronously execute a full
-anti-join. Configurable audit-age, unresolved-count, and oldest-unresolved-age thresholds
-distinguish a fresh zero observation or brief asynchronous lag from a stale audit or
-sustained degradation. A nonzero finishing audit invalidates completeness until a later
-exact finishing aggregate returns zero. Incremental discovery makes readiness false
+Health reads return the latest audit snapshot; they do not synchronously execute, enqueue,
+or wait for a full anti-join. Configurable audit-age, unresolved-count, and
+oldest-unresolved-age thresholds distinguish a fresh zero observation or brief
+asynchronous lag from a stale audit or sustained degradation. A nonzero finishing audit
+invalidates completeness until a later exact finishing aggregate returns zero.
+Incremental discovery makes readiness false
 while that known candidate, retry, or cache-ahead invariant remains unresolved, but
 successful repair does not force another full scan; the last exact-zero audit retains its
 original observation time and must still satisfy the audit-age threshold. A same-version
@@ -444,7 +508,8 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
 - a DMS projection-health result whose current source fingerprint matches that binding,
 - provisioned `dms.Document` and `dms.DocumentCache` tables and provider CDC/key
   prerequisites,
-- topic, ACL, transform, and connector configuration that match the binding record,
+- topic name, fixed partition count, ACL, transform, and connector configuration that
+  match the binding record,
 - a running connector with completed snapshot/catch-up through a database source
   position observed after DMS reported a sufficiently recent exact-zero audit,
 - a second DMS projection-health observation that remains ready for the same source, and
@@ -496,13 +561,17 @@ The portable binding-record shape is:
   "physicalSourceFingerprint": "sha256:...",
   "connectorName": "dms-local-data-store-1-g1",
   "topicName": "edfi.dms.instance.data-store-1-g1.documents.v1",
+  "partitionCount": 1,
   "contractVersion": "1"
 }
 ```
 
 The record contains no connection string or credential. Credential, timeout, pooling,
 application-name, host-alias, or equivalent connection changes produce the same
-fingerprint when the provider and physical database are unchanged.
+fingerprint when the provider and physical database are unchanged. `partitionCount` is a
+positive topic-creation value and is immutable within the binding generation because the
+public consumer contract uses per-key partition offsets to order equal-version corrective
+republishes.
 
 For local development and CI, the deployment automation stores one JSON record per
 generation under a deployment-owned persistent state root, with the default layout:
@@ -676,56 +745,66 @@ See Debezium's
 and the
 [current SQL Server temporal mapping](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#sqlserver-data-types).
 
-## Stream Contract Compatibility and Version Cutover
+## Stream Contract Compatibility, Repair, and Version Cutover
 
-The [topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-stream-representation-immutability)
-defines the v1 stream representation and served-ETag composition as immutable for
-unchanged inputs. V1 adds no projection-generation column or public ordering field.
-`ContentVersion` therefore remains the sole cache freshness value and the sole consumer
-stale-write value within `documents.v1`.
+The [topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
+defines both the v1 compatibility boundary and the equal-version consumer rule. V1 adds
+no projection-generation column or public ordering field. `ContentVersion` remains the
+sole cache freshness value and orders different canonical states; the Kafka partition
+offset orders multiple projections of the same canonical state. The topic partition count
+and pinned key-based partitioner are immutable so one key retains that per-partition
+ordering for the topic's lifetime.
 
-Every implementation of the shared served-ETag composer must carry fixed conformance
-fixtures for the v1 stream context. Refactoring the composer, materializer, or connector
-is allowed only when the same semantic inputs retain the exact `StreamEtag` and the same
-contractual public fields and values. Updating those fixtures to bless a changed value
-without also defining a new contract version is forbidden.
+Contract tests pin public field names, JSON types, key/tombstone behavior, document
+semantics, and metadata relationships. They prove that Kafka Connect copies the opaque
+DMS-computed `StreamEtag` exactly, but do not freeze its byte value independently of the
+current DMS composer. A refactor or bug fix may change `DocumentJson` or `StreamEtag` for
+an unchanged `ContentVersion` when the result remains compatible with the documented v1
+contract.
 
-If an intentional change or bug fix would change the v1 ETag for unchanged inputs, the
-fixed stream selectors, or the projected document representation for unchanged canonical
-document/schema state, operators perform this coordinated cutover:
+### Compatible projection correction in `documents.v1`
 
-1. Pause the v1 connector, stop every old-contract projector writer, and report the CDC
-   target not ready before new-contract cache rows can be written.
-2. Atomically reserve a new immutable binding generation, provision its new versioned
-   topic and ACLs, and prepare the new DMS materializer/composer and connector contract,
-   but keep new-contract projector writers stopped. The binding generation, topic suffix,
-   and value `contractVersion` advance together.
-3. While all projector writers remain stopped, truncate `dms.DocumentCache`, or provision
-   an equivalently empty cache, so the same-`ContentVersion` guarded-upsert rule cannot
-   preserve old-contract rows.
-4. Deploy and start only new-contract projector writers, then run ordinary full
-   reconciliation until an exact finishing audit reports zero missing, cache-behind, and
-   cache-ahead rows.
-5. Register the new connector from the new binding with a fresh initial snapshot of the
-   completely reprojected cache, catch it up through the required post-audit source
-   position, and advertise readiness only after the deployment-owned combined checks
-   pass.
-6. Bootstrap consumers from the new topic's independent state namespace. Retain or
-   retire the now-frozen old topic only through explicit operator policy.
+For a conforming output correction, operators:
 
-The cutover does not advance canonical `ContentVersion`. Republishing changed derived
-values into the existing topic is unsupported because live v1 consumers apply only a
-newer `contentVersion`. Cache deletes/truncation still have no domain meaning, but the
-cutover is intentionally replay-producing and destructive to projected state. Normal API
-correctness does not depend on projection, so a host may resume API traffic on
-new-contract nodes while their cache is rebuilding; old-contract API/projector nodes must
-already be drained. Otherwise the host uses a coordinated maintenance window. CDC remains
-not ready during the cutover.
+1. Mark the CDC target not ready and stop every old cache writer, including projector
+   loops and optional direct fill.
+2. Deploy the corrected materializer/composer while old cache writers remain stopped.
+3. Clear `dms.DocumentCache` with the provider-supported rebuild operation. The existing
+   connector remains registered against the same binding and ignores cache maintenance
+   deletes/truncation.
+4. Start only corrected projector writers and run full reconciliation until an exact
+   finishing audit reports zero missing, cache-behind, and cache-ahead rows. Rebuilt cache
+   inserts publish at later offsets with unchanged `contentVersion` values.
+5. Wait for connector catch-up through a post-audit source position, recheck projection
+   readiness, and restore combined CDC readiness.
 
-One cache row cannot supply two ETag algorithms or document representations at once.
-Consequently, v1 and a successor contract are not both kept live by this procedure. A
-zero-gap overlap requirement needs separate versioned projection state and a new design
-decision rather than another field added implicitly to `DocumentCache`.
+The correction does not advance canonical `ContentVersion`, reset offsets, create a new
+topic, or reserve a new binding generation. Consumers replace an equal-`contentVersion`
+record at a later partition offset. Ordinary reconciliation continues to treat an existing
+equal-version row as fresh; the explicit clear-and-rebuild operation produces the
+corrective inserts. Old cache writers remain stopped throughout the rebuild so two
+materializer implementations cannot alternate output for one version.
+
+### New-topic cutover
+
+Changing the topic partition count or pinned key partitioner creates a new binding
+generation, topic, and consumer state namespace because offsets cannot order across the
+old and new partitions. It may retain `documents.v1` and `contractVersion: 1` when the
+public key/value/delete contract is otherwise unchanged.
+
+A change to key encoding, required field names or JSON types, delete semantics, or the
+document contract itself requires a new topic contract such as `documents.v2`. Operators
+reserve a new binding generation and topic, completely reproject the cache under the new
+contract, register the new connector with a fresh snapshot, wait for combined readiness,
+and bootstrap consumers in the new state namespace. Schema reprovisioning follows this
+path when retained consumer state could otherwise observe reused keys and versions under
+an incompatible schema.
+
+The cutover does not advance canonical `ContentVersion`. Normal API correctness does not
+depend on projection, but old-contract projector writers must be drained before the cache
+is rebuilt. One cache row cannot supply two incompatible contracts concurrently; a
+zero-gap overlap requirement needs separate versioned projection state and another design
+decision.
 
 ## Enablement and Initial Readiness Sequence
 
@@ -816,6 +895,8 @@ Structured logs and metrics cover:
 
 - incremental source rows examined, candidates, cursor advances, and scan durations,
 - full-audit rows examined, finishing counts, observation age, and durations,
+- effective projector settings, due/overdue audits, coalesced audit requests, active and
+  concurrency-gated targets, and bounded page sizes,
 - projection attempts, successes, and failures,
 - retry deferrals and backoff duration,
 - guarded stale-write skips,
@@ -840,19 +921,22 @@ provider/source, topic, PostgreSQL slot or SQL Server capture instance, DMS proj
 health, snapshot state, lag, and last error. A failure for one target does not conceal
 peer status or stop unrelated DMS API instances.
 
-Runbooks cover connector restart, cache rebuild, cache-ahead invariant diagnosis and the
-internal-only/downstream-state recovery split, guard-lock contention and timeout
-diagnosis, offset reset, resnapshot, topic recreation, target migration/retirement, and
-provider artifact cleanup.
+Runbooks cover connector restart, cache rebuild, same-topic compatible projection repair,
+cache-ahead invariant diagnosis and the internal-only/downstream-state recovery split,
+guard-lock contention and timeout diagnosis, offset reset, resnapshot, topic recreation,
+target migration/retirement, and provider artifact cleanup.
+They document the shipped projector defaults, how to tune intervals, page size, target
+concurrency, and maximum audit age, and how to identify API-resource contention or an
+audit that cannot complete within its readiness window.
 They cover binding-state backup, fail-closed missing-state recovery, explicit adoption,
 cleanup ordering, and new-generation source migration; they never repair a mismatch by
-rewriting an immutable binding record. They also cover the
-coordinated immutable-contract cutover:
-freeze v1 publication, completely reproject the cache, snapshot into a new versioned
-topic, and bootstrap consumer state without advancing canonical `ContentVersion`. Offset
-reset and resnapshot can replay current document state. Topic/offset/ACL/slot/capture
-deletion is destructive and always explicit; removal from configuration is not cleanup
-authority.
+rewriting an immutable binding record. They distinguish a conforming same-topic repair
+from an incompatible-contract cutover. The former stops old cache writers, clears and
+rebuilds the cache, and lets later equal-version offsets replace prior values. The latter
+completely reprojects into a new versioned topic and bootstraps new consumer state. Neither
+path advances canonical `ContentVersion`. Offset reset and resnapshot can replay current
+document state. Topic/offset/ACL/slot/capture deletion is destructive and always explicit;
+removal from configuration is not cleanup authority.
 
 ## Verification
 
@@ -861,18 +945,20 @@ serialized key/value bytes, duplicate-tombstone suppression, JSON expansion, exa
 copying of the DMS-computed stream ETag, timestamp format, metadata consistency, and
 topic routing. Materializer tests prove `StreamEtag` is produced by the shared DMS
 served-ETag composer for the fixed stream representation and remains coherent with the
-row's `ContentVersion` and effective schema. Golden v1 fixtures prove unchanged composer
-inputs retain the exact ETag and contractual public fields and values across refactors.
-An intentional fixture change requires a new topic suffix, matching `contractVersion`,
-and version-cutover coverage; tests reject blessing an output-changing composer change
-as v1.
+row's `ContentVersion` and effective schema. V1 fixtures pin contractual public fields,
+types, selectors, and metadata relationships without independently freezing opaque ETag
+bytes. Ordering tests prove higher versions replace, lower versions are ignored, and a
+later partition offset replaces an equal version. Repair tests clear and rebuild cache
+state into the same topic without advancing `ContentVersion`; incompatible-contract tests
+use a new topic suffix and matching `contractVersion`.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
-mismatch, provider aliases that resolve to the same fingerprint, existing artifacts with
-missing state, cleanup ordering, normal-stop retention, destructive-teardown removal,
-and new-generation source migration. Multi-controller state backends additionally prove
-compare-and-set behavior. No test repairs a mismatch by rewriting a binding or reuses a
-topic generation for a different source.
+mismatch including an attempted partition-count change, provider aliases that resolve to
+the same fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop
+retention, destructive-teardown removal, and new-generation source migration.
+Multi-controller state backends additionally prove compare-and-set behavior. No test
+repairs a mismatch by rewriting a binding, changes a topic's partition count in place, or
+reuses a topic generation for a different source.
 
 SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.
 Transform tests use realistic `io.debezium.time.NanoTimestamp` values with zero, one,
@@ -886,6 +972,9 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - create/update/snapshot upserts conform to the topic/message ADR,
 - canonical deletion emits a tombstone when no cache row exists,
 - cache delete/truncate/rebuild emits no domain tombstone,
+- a compatible correction stops old cache writers, rebuilds corrected equal-version
+  cache rows into the same topic, and makes the later per-key offset authoritative without
+  resetting connector offsets or allocating a new binding generation,
 - a cache upsert committed before canonical deletion appears before its tombstone for
   that key in the routed public topic,
 - when a canonical update wins the source-row lock, a projector that captured the prior
@@ -913,6 +1002,14 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   while a possibly published higher version requires a new downstream state namespace;
   Kafka CDC uses a new binding generation/topic and fresh snapshot,
 - projection or connector failure never blocks normal API deletion.
+
+Projector scheduling tests prove one serialized loop per target, process-wide target
+concurrency, bounded pages with no unbounded candidate queue, fair progress across a large
+and small target, audit-request coalescing, startup/rebuild immediate audits, observational
+health reads, interval-based incremental and full-audit eligibility, stale-audit readiness,
+and graceful cancellation. Configuration tests validate all execution settings and pin the
+implementation-tuned defaults as documented release behavior rather than stream-contract
+constants.
 
 Performance qualification compares projector-disabled and projector-enabled source-write
 throughput and p95/p99 latency for uniformly distributed writes, a deliberately hot

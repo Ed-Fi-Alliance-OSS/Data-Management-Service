@@ -33,7 +33,7 @@ coverage against the actual provisioned data store and routed public topic.
    deployment-owned combined target readiness before observed writes.
 3. Add a consumer helper that selects the instance topic and filters by document key.
 4. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
-   and same-key ordering scenarios.
+   same-key ordering, and compatible same-topic corrective rebuild scenarios.
 5. Capture connector status/logs, topics, and consumed records on timeout.
 6. Remove legacy ignore markers only after consistent relational scenario results.
 
@@ -48,6 +48,8 @@ coverage against the actual provisioned data store and routed public topic.
   not change the link-bearing stream variant.
 - Provider scenarios prove the deletion, cache-maintenance, and ordering cases required
   by the authoritative verification section.
+- A corrective-rebuild scenario proves the later equal-`contentVersion` record replaces
+  prior consumer state in the same topic without a new binding generation or offset reset.
 - Setup/teardown evidence proves normal restart retains binding state and destructive
   teardown removes governed artifacts before the binding record.
 

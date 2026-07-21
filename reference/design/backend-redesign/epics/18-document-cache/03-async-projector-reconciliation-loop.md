@@ -11,6 +11,7 @@ related:
 ## Design References
 
 - [Freshness and reconciliation](../../../cdc-streaming.md#freshness-and-reconciliation)
+- [Bounded in-process execution policy](../../../cdc-streaming.md#bounded-in-process-execution-policy)
 - [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
@@ -34,7 +35,7 @@ including the bounded in-memory retry behavior defined by the authoritative desi
    initial incremental boundary. After the audit, start the cursor at exactly that
    pre-audit boundary rather than a later maximum, so commits after the audit remain
    visible to incremental scanning.
-4. Implement startup, periodic, rebuild, and readiness-triggered full anti-join audits,
+4. Implement startup, periodic, and rebuild-triggered full anti-join audits,
    including bounded audit-local paging and an exact finishing aggregate that separates
    missing, cache-behind, and cache-ahead rows.
 5. Provision the required `dms.Document(ContentVersion, DocumentId)` index whenever
@@ -44,6 +45,12 @@ including the bounded in-memory retry behavior defined by the authoritative desi
    without materialization or retry.
 7. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
    telemetry, and measure realistic plans for both providers.
+8. Bind the configurable incremental interval, full-audit interval, page size,
+   process-wide concurrent-target limit, and maximum audit age. Supply conservative,
+   implementation-tuned defaults in supported appsettings and documentation.
+9. Run one serialized loop per target, coalesce duplicate audit requests, bound every page,
+   enforce fair process-wide target concurrency, and ensure health/readiness observation
+   never starts or waits for an audit.
 
 ## Acceptance Evidence
 
@@ -65,6 +72,11 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 - A synchronized startup test commits a higher-key source update after the finishing
   audit observation but before incremental scanning begins and proves the update remains
   above the pre-audit boundary and is projected without waiting for the next full audit.
+- Scheduling tests cover immediate startup/rebuild audits, interval eligibility,
+  serialized per-target work, coalescing, bounded pages, fair process-wide concurrency,
+  no unbounded candidate queue, stale-audit readiness, and graceful cancellation.
+- Configuration tests reject invalid values, require maximum audit age to exceed the full
+  audit interval, and pin the documented implementation defaults.
 
 ## Out of Scope
 

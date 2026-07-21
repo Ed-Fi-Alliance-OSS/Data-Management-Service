@@ -31,8 +31,9 @@ repeats the same one-shot workflow with its durable state backend.
 3. Require the selected deployment target to be present in DMS
    `DocumentCache:Targets`, and reserve or exact-match its immutable binding before
    creating governed artifacts.
-4. Implement idempotent Kafka Connect create/update, external combined-status polling,
-   timeout, and condition-specific diagnostics.
+4. Create or validate the topic with the binding's fixed partition count, then implement
+   idempotent Kafka Connect create/update, external combined-status polling, timeout, and
+   condition-specific diagnostics.
 5. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
    destructive volume teardown.
@@ -47,7 +48,7 @@ repeats the same one-shot workflow with its durable state backend.
   combined readiness follows the authoritative algorithm without a backfill epoch or
   high-watermark.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
-  and source/topic-generation reuse.
+  in-place topic partition-count changes, and source/topic-generation reuse.
 - Diagnostics identify infrastructure, REST, provider setup, projector completeness,
   connector catch-up, target/source binding, and mismatch failures without secrets.
 

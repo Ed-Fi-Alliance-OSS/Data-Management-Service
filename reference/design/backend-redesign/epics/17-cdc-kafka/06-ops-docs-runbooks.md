@@ -32,10 +32,13 @@ capability without redefining its architecture or contracts.
 5. Document binding-state location, backup, normal-stop retention, fail-closed missing
    state, explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
    new-generation migration. Never instruct operators to rewrite a binding in place.
-6. Document the immutable-contract cutover: freeze old-contract publication, deploy a
-   new topic/`contractVersion`, discard and completely reproject cache state, take a fresh
-   connector snapshot, bootstrap consumers in the new state namespace, and explicitly
-   retain or retire the frozen old topic.
+6. Document both compatibility paths: for a conforming projection or opaque-ETag
+   correction, stop old cache writers including direct fill, clear and rebuild cache
+   state, retain the binding/topic/offsets, and verify later equal-version records; for an
+   incompatible key/field/type/delete/document-contract change, deploy a new
+   topic/`contractVersion`,
+   completely reproject, snapshot, bootstrap the new consumer namespace, and explicitly
+   retain or retire the old topic.
 7. Cross-link the canonical design and both ADRs instead of repeating their normative
    tables or algorithms.
 
@@ -50,9 +53,10 @@ capability without redefining its architecture or contracts.
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal
   and remove governed artifacts before their JSON binding records.
-- The cutover procedure never advances canonical `ContentVersion`, republishes an
-  output-changing ETag into the old topic, or claims simultaneous old/new publication
-  from the single cache row.
+- Neither procedure advances canonical `ContentVersion` or claims simultaneous
+  incompatible-contract publication from the single cache row. The compatible repair
+  proves that old cache writers are stopped and later equal-version offsets replace
+  prior values in the existing topic.
 - Documentation distinguishes CDC from Change Queries and from response serialization.
 
 ## Out of Scope

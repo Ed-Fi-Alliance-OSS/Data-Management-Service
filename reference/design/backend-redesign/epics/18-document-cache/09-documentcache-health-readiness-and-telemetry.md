@@ -35,7 +35,10 @@ process state.
    with separate missing-row, cache-behind-row, and cache-ahead-invariant counts. Expose
    their observation time and age, and add configurable health thresholds without running
    a full anti-join synchronously on health reads.
-3. Add the canonical structured logs and metrics without retaining an expected source
+3. Expose effective projector settings, next/due/overdue scheduling state, active work, and
+   process-wide concurrency-gate waits. Keep health and readiness reads observational:
+   they neither enqueue nor wait for audits.
+4. Add the canonical structured logs and metrics without retaining an expected source
    binding, drift latch, connector state, or deployment aggregate.
 
 ## Acceptance Evidence
@@ -48,6 +51,8 @@ process state.
 - Tests prove health reads reuse the latest audit snapshot and readiness requires a
   sufficiently recent exact-zero finishing audit with no known unresolved work or
   cache-ahead invariant.
+- Tests prove repeated health/readiness polling starts no audit work and accurately reports
+  startup, due, overdue, running, coalesced, and concurrency-gated states.
 - Tests prove a process-local cache-ahead observation remains unhealthy until a later
   source change or full audit establishes that the row is no longer ahead, and that the
   required restart audit re-establishes any persistent invariant.

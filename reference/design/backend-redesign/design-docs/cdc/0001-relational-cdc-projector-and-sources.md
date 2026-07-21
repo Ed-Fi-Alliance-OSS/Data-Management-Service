@@ -37,6 +37,10 @@ the current `dms.Document.ContentVersion`. `LastModifiedAt` remains payload/diag
 metadata; `ComputedAt` remains operational metadata. Neither is another freshness test.
 Frequent candidate discovery uses a disposable process-local content-version cursor;
 periodic full source/cache anti-join audits remain the only completeness proof.
+The in-process projector uses one serialized loop per target, bounded pages, and a
+process-wide target-concurrency gate. Incremental and audit intervals, page size,
+concurrency, and maximum ready audit age are configurable with implementation-tuned
+defaults; the authoritative design owns their scheduling and coalescing semantics.
 
 Missing cache rows and rows whose version is behind the canonical source are ordinary
 repair work. A cache row whose version is ahead of the canonical source is instead an
@@ -119,14 +123,17 @@ the stream's monotonic consumer contract.
   reserved for startup, rebuild, periodic audit, and readiness verification.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows are invariant
   violations that keep readiness false until explicit CDC-aware recovery completes.
-- Cache truncate/rebuild emits no domain tombstones; an intentional topic rebuild uses
-  connector snapshot/topic recovery.
+- Cache clear/rebuild emits no domain tombstones. A compatible projection correction
+  rebuilds into the existing topic and publishes equal-version rows at later offsets; an
+  intentional topic rebuild for an incompatible contract uses connector snapshot/topic
+  recovery.
 - Both source tables use `DocumentUuid` as the connector key and share one connector task
   so a committed upsert preceding canonical deletion retains per-key order.
 - DMS, not Kafka Connect or a downstream consumer, owns stream ETag derivation; the
   connector copies the projected opaque value into the public message shape.
-- Consumers tolerate duplicate/replayed upserts and tombstones without a prior upsert,
-  using `contentVersion` as their stale-write guard.
+- Consumers tolerate duplicate/replayed upserts and tombstones without a prior upsert.
+  `contentVersion` rejects lower canonical state, while the later per-key partition offset
+  replaces an equal-version projection.
 
 ## Alternatives Considered
 

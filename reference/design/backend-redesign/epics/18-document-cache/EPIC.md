@@ -42,6 +42,9 @@ implementation inputs.
   become available after startup, and read acceleration selects no additional stores.
 - Both providers pass materialization, reconciliation, fencing, restart, retry, rebuild,
   health, and read-fallback integration coverage.
+- In-process work uses documented implementation-tuned defaults, serialized per-target
+  loops, bounded pages, fair process-wide target concurrency, coalesced audits, and
+  observational health/readiness checks.
 - Every projected row carries a `StreamEtag` produced by the shared DMS served-ETag
   composer for the fixed CDC representation; API reads continue to compose their own
   request-specific validators.
