@@ -1269,4 +1269,155 @@ exit $ExitCode
             }
         }
     }
+
+    Context "Given_NoPrebuiltTool_BuildIfMissing" {
+        # Direct coverage of the -BuildIfMissing recovery branch. The publish step is isolated behind the
+        # Invoke-DmsSchemaToolPublish seam so success and failure can be exercised deterministically without a
+        # live .NET SDK; a stub .csproj stands in for the SchemaTools project when the branch requires it.
+        BeforeEach {
+            # Each test imports the module from its own isolated-repo path; clear any prior copy so a single
+            # instance is loaded (Mock/Should-Invoke -ModuleName require exactly one module of that name).
+            Get-Module bootstrap-schema-tool | Remove-Module -Force -ErrorAction SilentlyContinue
+
+            $script:toolName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
+            $script:schemaModule = Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1"
+            $script:schemaToolsProject = Join-Path $script:repo.RepoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+
+            function script:New-StubSchemaToolsProject {
+                $projectDir = Split-Path -Parent $script:schemaToolsProject
+                New-Item -ItemType Directory -Path $projectDir -Force | Out-Null
+                "<Project Sdk=`"Microsoft.NET.Sdk`"></Project>" | Set-Content -LiteralPath $script:schemaToolsProject -Encoding utf8
+            }
+        }
+
+        AfterEach {
+            Get-Module bootstrap-schema-tool | Remove-Module -Force -ErrorAction SilentlyContinue
+        }
+
+        It "publishes from source and re-probes when no prebuilt tool exists, returning only the resolved path" {
+            Import-Module $script:schemaModule -Force
+            script:New-StubSchemaToolsProject
+
+            # The seam succeeds and drops the executable into the documented publish directory.
+            Mock -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish {
+                $name = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
+                New-Item -ItemType Directory -Path $PublishDirectory -Force | Out-Null
+                "stub" | Set-Content -LiteralPath (Join-Path $PublishDirectory $name) -Encoding utf8
+                return [pscustomobject]@{ Succeeded = $true; Output = "published" }
+            }
+
+            $expected = Join-Path (Join-Path $script:repo.BootstrapRoot "tools/api-schema-tools") $script:toolName
+            $resolved = Resolve-DmsSchemaTool -BuildIfMissing
+
+            # Clean return: exactly the resolved path, never the publish output.
+            @($resolved).Count | Should -Be 1
+            [System.IO.Path]::GetFullPath($resolved) | Should -Be ([System.IO.Path]::GetFullPath($expected))
+            Should -Invoke -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish -Times 1 -Exactly
+        }
+
+        It "does not build when a prebuilt tool is already present, even with -BuildIfMissing" {
+            Import-Module $script:schemaModule -Force
+            Mock -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish { throw "publish must not be attempted" }
+
+            $toolDirectory = Join-Path $script:repo.BootstrapRoot "tools/api-schema-tools"
+            New-Item -ItemType Directory -Path $toolDirectory -Force | Out-Null
+            $toolPath = Join-Path $toolDirectory $script:toolName
+            "stub" | Set-Content -LiteralPath $toolPath -Encoding utf8
+
+            $resolved = Resolve-DmsSchemaTool -BuildIfMissing
+
+            [System.IO.Path]::GetFullPath($resolved) | Should -Be ([System.IO.Path]::GetFullPath($toolPath))
+            Should -Invoke -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish -Times 0 -Exactly
+        }
+
+        It "does not build when an explicit -RequestedPath already exists, even with -BuildIfMissing" {
+            Import-Module $script:schemaModule -Force
+            Mock -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish { throw "publish must not be attempted" }
+
+            $requested = Join-Path $script:repo.RepoRoot $script:toolName
+            "stub" | Set-Content -LiteralPath $requested -Encoding utf8
+
+            $resolved = Resolve-DmsSchemaTool -RequestedPath $requested -BuildIfMissing
+
+            [System.IO.Path]::GetFullPath($resolved) | Should -Be ([System.IO.Path]::GetFullPath($requested))
+            Should -Invoke -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish -Times 0 -Exactly
+        }
+
+        It "surfaces resolution guidance when the publish fails" {
+            Import-Module $script:schemaModule -Force
+            script:New-StubSchemaToolsProject
+            Mock -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish {
+                return [pscustomobject]@{ Succeeded = $false; Output = "build failed" }
+            }
+
+            $oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = "false"
+            try {
+                { Resolve-DmsSchemaTool -BuildIfMissing } | Should -Throw -ExpectedMessage "*api-schema-tools*"
+                Should -Invoke -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish -Times 1 -Exactly
+            }
+            finally {
+                $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $oldFallback
+            }
+        }
+
+        It "does not attempt a publish when the SchemaTools project is absent" {
+            Import-Module $script:schemaModule -Force
+            Mock -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish { throw "publish must not be attempted" }
+            # No stub project created: the isolated repo has no SchemaTools .csproj.
+
+            $oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = "false"
+            try {
+                { Resolve-DmsSchemaTool -BuildIfMissing } | Should -Throw -ExpectedMessage "*api-schema-tools*"
+                Should -Invoke -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish -Times 0 -Exactly
+            }
+            finally {
+                $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $oldFallback
+            }
+        }
+
+        It "does not attempt a publish when the .NET SDK is unavailable" {
+            Import-Module $script:schemaModule -Force
+            script:New-StubSchemaToolsProject
+            Mock -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish { throw "publish must not be attempted" }
+            Mock -ModuleName bootstrap-schema-tool Get-Command -ParameterFilter { $Name -eq "dotnet" } -MockWith { $null }
+
+            $oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = "false"
+            try {
+                { Resolve-DmsSchemaTool -BuildIfMissing } | Should -Throw -ExpectedMessage "*api-schema-tools*"
+                Should -Invoke -ModuleName bootstrap-schema-tool Invoke-DmsSchemaToolPublish -Times 0 -Exactly
+            }
+            finally {
+                $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $oldFallback
+            }
+        }
+
+        It "refreshes a stale already-loaded schema-tool module so -BuildIfMissing is accepted" {
+            # A long-lived session that loaded a pre-BuildIfMissing module retains the old resolver signature.
+            # Reproduce the exact shape: the module's own path holds stale content when it is first loaded,
+            # then the current content lands on disk (as after a pull/branch switch). A non-forced re-import
+            # reuses the loaded stale copy; -Force (what the start scripts now use) reloads the current file.
+            $sourceModule = Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-tool.psm1"
+
+            @'
+function Resolve-DmsSchemaTool { param([string] $RequestedPath) return "stale" }
+Export-ModuleMember -Function Resolve-DmsSchemaTool
+'@ | Set-Content -LiteralPath $script:schemaModule -Encoding utf8
+
+            Import-Module $script:schemaModule -Force
+            (Get-Command Resolve-DmsSchemaTool).Parameters.ContainsKey("BuildIfMissing") | Should -BeFalse
+
+            # Current content is back on disk, but a NON-forced import reuses the loaded stale copy.
+            Copy-Item -LiteralPath $sourceModule -Destination $script:schemaModule -Force
+            Import-Module $script:schemaModule
+            (Get-Command Resolve-DmsSchemaTool).Parameters.ContainsKey("BuildIfMissing") |
+                Should -BeFalse -Because "a non-forced import reuses the already-loaded stale module"
+
+            # -Force reloads the current content and the resolver gains -BuildIfMissing.
+            Import-Module $script:schemaModule -Force
+            (Get-Command Resolve-DmsSchemaTool).Parameters.ContainsKey("BuildIfMissing") | Should -BeTrue
+        }
+    }
 }

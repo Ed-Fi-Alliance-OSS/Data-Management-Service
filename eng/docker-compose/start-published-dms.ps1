@@ -206,6 +206,15 @@ if (-not $databaseOnlyStartup) {
 }
 Write-Output "Database Engine $DatabaseEngine"
 
+# Single authority for Configuration Service participation, decided from this script's own compose-file
+# selection: the config file is included when explicitly enabled, when the infrastructure-only phase needs
+# it, when self-contained identity requires it, or when bootstrap mode mounts the staged claims workspace.
+# The SAME variable both selects published-config.yml below and tells the runtime contract whether to
+# validate the local CMS provider/connection/OpenIddict invariants - so participation is never inferred from
+# null Compose fields. A Keycloak run without the config service (external CONFIG_SERVICE_URL, or none) is
+# therefore validated only for the stack invariants (SA password, datastore-name agreement).
+$configServiceIncluded = $EnableConfig -or $InfraOnly -or ($IdentityProvider -eq "self-contained") -or $bootstrapMode
+
 if (-not $d) {
     if ($InfraOnly -and $DmsOnly) {
         throw "Parameters -InfraOnly and -DmsOnly are mutually exclusive."
@@ -290,8 +299,9 @@ if (-not $databaseOnlyStartup) {
     }
 
     # Include Configuration Service when requested, when needed for self-contained identity,
-    # or when bootstrap mode activates the staged claims workspace mount.
-    if ($EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode) {
+    # or when bootstrap mode activates the staged claims workspace mount. $configServiceIncluded (computed
+    # once above) is the single participation authority, shared with the runtime-contract validation below.
+    if ($configServiceIncluded) {
         $files += @("-f", "published-config.yml")
     }
 
@@ -336,14 +346,17 @@ else {
     # diagnostic slice initializes no CMS, so it resolves only the SA-password credential it needs (below).
     if (-not $DbOnly) {
         # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool).
-        # Imported here in the startup path only (never on teardown or -DbOnly); it imports bootstrap-manifest
-        # without -Force, so it does not disturb the manifest functions this script already loaded.
+        # Imported here in the startup path only (never on teardown or -DbOnly), and with -Force so a
+        # long-lived session that loaded a pre-BuildIfMissing copy is refreshed to the current resolver
+        # signature. The module's own nested bootstrap-manifest import stays WITHOUT -Force, so this reload
+        # refreshes the resolver without re-homing the manifest functions this script already loaded.
         # -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the SDK is present.
-        Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1")
+        Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
         $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
         $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
         $contract = Resolve-EffectiveConfigRuntimeContract `
             -InfrastructureEngine $DatabaseEngine `
+            -ConfigServiceIncluded $configServiceIncluded `
             -ResolvedProvider $resolvedCompose.Provider `
             -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
             -SchemaToolPath $schemaToolPath `
@@ -545,14 +558,19 @@ else {
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below, all from the one contract.
-    $identityDbParams = @{
-        DbType = $contract.OpenIddict.DbType
-        DbUser = $contract.OpenIddict.DbUser
-        DbPort = $contract.OpenIddict.DbPort
-        DbName = $contract.OpenIddict.DbName
-    }
-    if ($contract.OpenIddict.DbPassword) {
-        $identityDbParams.DbPassword = $contract.OpenIddict.DbPassword
+    # Built (and $contract.OpenIddict read) only for self-contained identity - the sole consumer of these
+    # parameters, and the only path for which the contract populates OpenIddict. A Keycloak run never reads
+    # them, so this stays null when the config service is absent (where OpenIddict is deliberately $null).
+    if ($IdentityProvider -eq "self-contained") {
+        $identityDbParams = @{
+            DbType = $contract.OpenIddict.DbType
+            DbUser = $contract.OpenIddict.DbUser
+            DbPort = $contract.OpenIddict.DbPort
+            DbName = $contract.OpenIddict.DbName
+        }
+        if ($contract.OpenIddict.DbPassword) {
+            $identityDbParams.DbPassword = $contract.OpenIddict.DbPassword
+        }
     }
 
     Start-Sleep 20

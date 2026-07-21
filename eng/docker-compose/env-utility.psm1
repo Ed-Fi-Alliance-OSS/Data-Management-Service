@@ -960,8 +960,10 @@ function Resolve-EffectiveConfigRuntimeContract {
 
     .DESCRIPTION
         The engine the start script selected (-InfrastructureEngine) is authoritative and is NEVER
-        inferred from a connection string. The contract enforces, all fail-fast and before any Docker or
-        Keycloak mutation:
+        inferred from a connection string. The CMS invariants below are validated only when the caller says
+        the Configuration Service participates in this compose set (-ConfigServiceIncluded); the stack
+        invariants (SA password, datastore-name agreement) are validated either way. The contract enforces,
+        all fail-fast and before any Docker or Keycloak mutation:
           * the effective provider (Compose-resolved AppSettings__Datastore) is EXACTLY 'postgresql' or
             'mssql' and equals -InfrastructureEngine (a shell DMS_CONFIG_DATASTORE cannot point CMS at a
             different engine than the one that starts);
@@ -985,6 +987,15 @@ function Resolve-EffectiveConfigRuntimeContract {
     .PARAMETER InfrastructureEngine
         The engine the start script actually selected ('postgresql' | 'mssql'); drives the Compose
         database file and OpenIddict, and is the authoritative engine.
+
+    .PARAMETER ConfigServiceIncluded
+        Whether the Configuration Service participates in this compose set, decided by the caller from its
+        own compose-file selection (never inferred from null Compose fields). When $true the CMS invariants
+        (provider enum and engine agreement, connection string and configuration database, OpenIddict target)
+        are validated; when $false they are skipped - a Keycloak run that omits the local config service, or
+        one pointed at an external CONFIG_SERVICE_URL, has no local CMS to validate. The stack invariants
+        (SQL Server SA password and the datastore-name agreement) are validated either way, because the DMS
+        datastore container still starts.
 
     .PARAMETER ResolvedProvider
         The Compose-resolved AppSettings__Datastore value.
@@ -1018,6 +1029,7 @@ function Resolve-EffectiveConfigRuntimeContract {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'ResolvedMssqlSaPassword', Justification = 'The SQL Server SA password is the local docker-compose plaintext value resolved by Compose (mssql.yml MSSQL_SA_PASSWORD); it is passed as a string throughout these compose scripts by design.')]
     param(
         [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
+        [Parameter(Mandatory)][bool]$ConfigServiceIncluded,
         [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedProvider,
         [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedCmsConnectionString,
         [Parameter(Mandatory)][string]$SchemaToolPath,
@@ -1028,79 +1040,103 @@ function Resolve-EffectiveConfigRuntimeContract {
         [hashtable]$EnvValues
     )
 
-    # (1) Provider is an EXACT enum, read from the Compose-resolved AppSettings__Datastore. Only the two
-    # supported engines are accepted (case-insensitively, no surrounding whitespace); anything else -
-    # 'mysql', blank, ' mssql ' - fails fast rather than being coerced, because Compose passes the raw
-    # value straight to the Configuration Service.
-    $providerCanonical =
-        if ([string]::Equals($ResolvedProvider, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' }
-        elseif ([string]::Equals($ResolvedProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
-        else { $null }
-    if ($null -eq $providerCanonical) {
-        throw "Configuration runtime-contract error: the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedProvider', which is not a supported engine. Set DMS_CONFIG_DATASTORE to exactly 'postgresql' or 'mssql'."
-    }
-
-    # (2) Provider MUST equal the infrastructure engine the start script selected (which starts that
-    # Compose database file and initializes OpenIddict for it). A shell DMS_CONFIG_DATASTORE that differs
-    # cannot silently point the Configuration Service at a different engine than the one that starts.
-    if ($providerCanonical -ne $InfrastructureEngine) {
-        throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$providerCanonical'. Unset the conflicting DMS_CONFIG_DATASTORE shell override, or select that engine with -DatabaseEngine."
-    }
-
-    # (3) SQL Server SA password: Compose already resolved ${MSSQL_SA_PASSWORD:-<default>} at
-    # shell-over-file precedence. A blank value cannot authenticate CMS or OpenIddict.
+    # (STACK INVARIANT, always) SQL Server SA password, keyed on the AUTHORITATIVE engine the start script
+    # selected - not on the CMS provider - so it is enforced even when no local Configuration Service
+    # participates (a Keycloak run without the local config service still starts the SQL Server datastore).
+    # Compose already resolved ${MSSQL_SA_PASSWORD:-<default>} at shell-over-file precedence; a blank value
+    # cannot authenticate CMS, OpenIddict, or the datastore registration.
     $mssqlSaPassword = $null
-    if ($providerCanonical -eq 'mssql') {
+    if ($InfrastructureEngine -eq 'mssql') {
         $mssqlSaPassword = $ResolvedMssqlSaPassword
         if ([string]::IsNullOrWhiteSpace($mssqlSaPassword)) {
             throw "Configuration runtime-contract error: MSSQL_SA_PASSWORD resolves to a blank value on a SQL Server stack, so the Configuration Service connection and OpenIddict initialization cannot authenticate. Set MSSQL_SA_PASSWORD (or the variable it references)."
         }
     }
 
-    # (4) The effective CMS connection must be present, parse under the selected provider (wrong-engine
-    # strings are rejected by the provider's own builder), and target a concrete database.
-    if ([string]::IsNullOrWhiteSpace($ResolvedCmsConnectionString)) {
-        throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING (resolved by Docker Compose) is empty on a '$InfrastructureEngine' stack. On a SQL Server stack this occurs when no connection string is set and Compose would substitute the PostgreSQL-only compose-file fallback. Set a '$InfrastructureEngine' connection string targeting the effective configuration database."
-    }
-    $targetDatabases = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedCmsConnectionString -SchemaToolPath $SchemaToolPath)
-    if ($targetDatabases.Count -eq 0) {
-        throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets no database (set Database or Initial Catalog), so the Configuration Service would connect to the engine default instead of the effective configuration database."
-    }
-
-    # (5) Effective configuration database name. Full-stack lanes pass -ConfigDatabaseName (materialized by
-    # the topology resolver) and the connection MUST target it. The standalone lane omits it, so the
-    # resolved connection is authoritative and its single target IS the effective name.
+    # CMS INVARIANTS - validated only when the Configuration Service participates in this compose set. When
+    # it does not (a Keycloak run that omits the local config service, or one pointed at an external
+    # CONFIG_SERVICE_URL), Compose exposes no config-service provider/connection to resolve, so validating
+    # them would fail on values that are legitimately absent. Participation is decided by the caller from its
+    # own compose-file selection and is NEVER inferred from null Compose fields.
+    $providerCanonical = $null
     $effectiveDatabaseName = $null
-    if (-not [string]::IsNullOrWhiteSpace($ConfigDatabaseName)) {
-        foreach ($target in $targetDatabases) {
-            if (-not [string]::Equals($target, $ConfigDatabaseName, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$target', but the effective configuration database is '$ConfigDatabaseName'. Align the connection string (or the shell variable it routes through), or pass -SeparateConfigDatabase to select the dedicated configuration database."
+    $openIddict = $null
+    if ($ConfigServiceIncluded) {
+        # (1) Provider is an EXACT enum, read from the Compose-resolved AppSettings__Datastore. Only the two
+        # supported engines are accepted (case-insensitively, no surrounding whitespace); anything else -
+        # 'mysql', blank, ' mssql ' - fails fast rather than being coerced, because Compose passes the raw
+        # value straight to the Configuration Service.
+        $providerCanonical =
+            if ([string]::Equals($ResolvedProvider, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' }
+            elseif ([string]::Equals($ResolvedProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
+            else { $null }
+        if ($null -eq $providerCanonical) {
+            throw "Configuration runtime-contract error: the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedProvider', which is not a supported engine. Set DMS_CONFIG_DATASTORE to exactly 'postgresql' or 'mssql'."
+        }
+
+        # (2) Provider MUST equal the infrastructure engine the start script selected (which starts that
+        # Compose database file and initializes OpenIddict for it). A shell DMS_CONFIG_DATASTORE that differs
+        # cannot silently point the Configuration Service at a different engine than the one that starts.
+        if ($providerCanonical -ne $InfrastructureEngine) {
+            throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$providerCanonical'. Unset the conflicting DMS_CONFIG_DATASTORE shell override, or select that engine with -DatabaseEngine."
+        }
+
+        # (3) The effective CMS connection must be present, parse under the selected provider (wrong-engine
+        # strings are rejected by the provider's own builder), and target a concrete database.
+        if ([string]::IsNullOrWhiteSpace($ResolvedCmsConnectionString)) {
+            throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING (resolved by Docker Compose) is empty on a '$InfrastructureEngine' stack. On a SQL Server stack this occurs when no connection string is set and Compose would substitute the PostgreSQL-only compose-file fallback. Set a '$InfrastructureEngine' connection string targeting the effective configuration database."
+        }
+        $targetDatabases = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedCmsConnectionString -SchemaToolPath $SchemaToolPath)
+        if ($targetDatabases.Count -eq 0) {
+            throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets no database (set Database or Initial Catalog), so the Configuration Service would connect to the engine default instead of the effective configuration database."
+        }
+
+        # (4) Effective configuration database name. Full-stack lanes pass -ConfigDatabaseName (materialized
+        # by the topology resolver) and the connection MUST target it. The standalone lane omits it, so the
+        # resolved connection is authoritative and its single target IS the effective name.
+        if (-not [string]::IsNullOrWhiteSpace($ConfigDatabaseName)) {
+            foreach ($target in $targetDatabases) {
+                if (-not [string]::Equals($target, $ConfigDatabaseName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$target', but the effective configuration database is '$ConfigDatabaseName'. Align the connection string (or the shell variable it routes through), or pass -SeparateConfigDatabase to select the dedicated configuration database."
+                }
             }
+            $effectiveDatabaseName = $ConfigDatabaseName
         }
-        $effectiveDatabaseName = $ConfigDatabaseName
-    }
-    else {
-        $distinctTargets = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($target in $targetDatabases) { [void]$distinctTargets.Add($target) }
-        if ($distinctTargets.Count -gt 1) {
-            throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING specifies conflicting database targets ($($targetDatabases -join ', ')). Set a single database so OpenIddict initialization and the Configuration Service agree."
+        else {
+            $distinctTargets = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($target in $targetDatabases) { [void]$distinctTargets.Add($target) }
+            if ($distinctTargets.Count -gt 1) {
+                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING specifies conflicting database targets ($($targetDatabases -join ', ')). Set a single database so OpenIddict initialization and the Configuration Service agree."
+            }
+            $effectiveDatabaseName = $targetDatabases[0]
         }
-        $effectiveDatabaseName = $targetDatabases[0]
+
+        # A target Compose kept opaque (a shell-substituted ${...} it does not re-expand) is not a real
+        # database. In the full-stack lanes the equality check above already rejects it; guard the standalone
+        # lane too.
+        if ($effectiveDatabaseName -match '\$\{') {
+            throw "Configuration runtime-contract error: the effective configuration database resolves to '$effectiveDatabaseName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
+        }
+
+        # (5) OpenIddict host-side target, built from the EXPLICIT engine and the resolved name/password -
+        # never inferred from a string. Read only by the self-contained identity path (which always includes
+        # the config service), so it is populated exactly when a caller will consume it.
+        $openIddict = [pscustomobject]@{
+            DbType     = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
+            DbUser     = if ($InfrastructureEngine -eq 'mssql') { 'sa' } else { 'postgres' }
+            DbPort     = if ($InfrastructureEngine -eq 'mssql') { 'ENV:MSSQL_PORT' } else { 'ENV:POSTGRES_PORT' }
+            DbName     = $effectiveDatabaseName
+            DbPassword = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword } else { $null }
+        }
     }
 
-    # A target Compose kept opaque (a shell-substituted ${...} it does not re-expand) is not a real
-    # database. In the full-stack lanes the equality check above already rejects it; guard the standalone
-    # lane too.
-    if ($effectiveDatabaseName -match '\$\{') {
-        throw "Configuration runtime-contract error: the effective configuration database resolves to '$effectiveDatabaseName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
-    }
-
-    # (6) Datastore-name agreement (full-stack lanes only; -ResolvedDatastoreConnectionString is present
-    # only when the compose set includes the DMS service). The database the DMS container actually receives
-    # is read from Docker Compose's own resolution of the datastore admin connection - which honors a shell
-    # override of POSTGRES_DB_NAME / MSSQL_DB_NAME whether direct OR routed through an indirectly referenced
-    # variable - and must equal the datastore database host-side tooling reads from the env file. Otherwise
-    # configure/provision create and register one database while the DMS container connects to another.
+    # (STACK INVARIANT, always) Datastore-name agreement (-ResolvedDatastoreConnectionString is present only
+    # when the compose set includes the DMS service, regardless of whether the config service does). The
+    # database the DMS container actually receives is read from Docker Compose's own resolution of the
+    # datastore admin connection - which honors a shell override of POSTGRES_DB_NAME / MSSQL_DB_NAME whether
+    # direct OR routed through an indirectly referenced variable - and must equal the datastore database
+    # host-side tooling reads from the env file. Otherwise configure/provision create and register one
+    # database while the DMS container connects to another.
     if ($null -ne $EnvValues -and -not [string]::IsNullOrWhiteSpace($ResolvedDatastoreConnectionString)) {
         $datastoreKey = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL_DB_NAME' } else { 'POSTGRES_DB_NAME' }
         $fileRaw = [string]$EnvValues[$datastoreKey]
@@ -1114,16 +1150,8 @@ function Resolve-EffectiveConfigRuntimeContract {
         }
     }
 
-    # (7) OpenIddict host-side target and (8) datastore registration connection are built from the EXPLICIT
-    # engine and the resolved name/password - never inferred from a string.
-    $openIddict = [pscustomobject]@{
-        DbType     = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
-        DbUser     = if ($InfrastructureEngine -eq 'mssql') { 'sa' } else { 'postgres' }
-        DbPort     = if ($InfrastructureEngine -eq 'mssql') { 'ENV:MSSQL_PORT' } else { 'ENV:POSTGRES_PORT' }
-        DbName     = $effectiveDatabaseName
-        DbPassword = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword } else { $null }
-    }
-
+    # SQL Server datastore registration connection, built from the EXPLICIT engine and the resolved SA
+    # password - never inferred from a string, and independent of Configuration Service participation.
     $datastoreConnectionString = $null
     if ($InfrastructureEngine -eq 'mssql' -and -not [string]::IsNullOrWhiteSpace($DatastoreDatabaseName)) {
         $datastoreBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()

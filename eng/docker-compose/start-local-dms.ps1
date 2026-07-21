@@ -412,14 +412,19 @@ else {
     # only the SA-password credential it needs (below), not the full contract.
     if (-not $DbOnly) {
         # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool).
-        # Imported here in the startup path only (never on teardown or -DbOnly); it imports bootstrap-manifest
-        # without -Force, so it does not disturb the manifest functions this script already loaded.
+        # Imported here in the startup path only (never on teardown or -DbOnly), and with -Force so a
+        # long-lived session that loaded a pre-BuildIfMissing copy is refreshed to the current resolver
+        # signature. The module's own nested bootstrap-manifest import stays WITHOUT -Force, so this reload
+        # refreshes the resolver without re-homing the manifest functions this script already loaded.
         # -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the SDK is present.
-        Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1")
+        Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
         $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
         $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local"
+        # The local stack always includes local-config.yml (outside the DbOnly diagnostic phase), so the
+        # Configuration Service always participates and the CMS invariants are always validated.
         $contract = Resolve-EffectiveConfigRuntimeContract `
             -InfrastructureEngine $DatabaseEngine `
+            -ConfigServiceIncluded $true `
             -ResolvedProvider $resolvedCompose.Provider `
             -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
             -SchemaToolPath $schemaToolPath `
@@ -626,14 +631,18 @@ else {
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below, all from the one contract.
-    $identityDbParams = @{
-        DbType = $contract.OpenIddict.DbType
-        DbUser = $contract.OpenIddict.DbUser
-        DbPort = $contract.OpenIddict.DbPort
-        DbName = $contract.OpenIddict.DbName
-    }
-    if ($contract.OpenIddict.DbPassword) {
-        $identityDbParams.DbPassword = $contract.OpenIddict.DbPassword
+    # Built (and $contract.OpenIddict read) only for self-contained identity - the sole consumer of these
+    # parameters. A Keycloak run never reads them.
+    if ($IdentityProvider -eq "self-contained") {
+        $identityDbParams = @{
+            DbType = $contract.OpenIddict.DbType
+            DbUser = $contract.OpenIddict.DbUser
+            DbPort = $contract.OpenIddict.DbPort
+            DbName = $contract.OpenIddict.DbName
+        }
+        if ($contract.OpenIddict.DbPassword) {
+            $identityDbParams.DbPassword = $contract.OpenIddict.DbPassword
+        }
     }
 
     Start-Sleep 20

@@ -108,7 +108,7 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
         @{ Category = "happy path PostgreSQL"; Case = "valid full-stack contract resolves"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedProvider = 'postgresql'; ResolvedCmsConnectionString = 'PLACEHOLDER_pgConn'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $false }
         @{ Category = "happy path SQL Server"; Case = "valid full-stack contract resolves"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedProvider = 'mssql'; ResolvedCmsConnectionString = 'PLACEHOLDER_mssqlConn'; ResolvedMssqlSaPassword = 'abcdefgh1!'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $false }
     ) {
-        $resolvedArgs = @{ SchemaToolPath = $script:schemaTool }
+        $resolvedArgs = @{ SchemaToolPath = $script:schemaTool; ConfigServiceIncluded = $true }
         foreach ($k in $ContractArgs.Keys) {
             $v = $ContractArgs[$k]
             $resolvedArgs[$k] = switch ($v) {
@@ -129,20 +129,57 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
     }
 
     It "derives the effective configuration database from the connection when no -ConfigDatabaseName is supplied (standalone lane)" {
-        $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ResolvedProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool
+        $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -ResolvedProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool
         $contract.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
         $contract.OpenIddict.DbName | Should -Be 'edfi_datamanagementservice'
     }
 
     Context "datastore-name agreement (container Compose-resolved vs host env-file)" {
         It "rejects a datastore database the containers receive that differs from the env-file value (direct or indirect override)" {
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ResolvedProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=rogue_database' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -ResolvedProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=rogue_database' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
                 Should -Throw "*datastore database the containers receive*rogue_database*"
         }
 
         It "accepts when the container datastore database matches the env-file value" {
-            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ResolvedProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=edfi_datamanagementservice' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' }
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -ResolvedProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=edfi_datamanagementservice' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' }
             $contract.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
+        }
+    }
+
+    Context "Configuration Service participation split (Keycloak without a local config service)" {
+        # Blocker regression: a supported Keycloak start that omits the local config service (external
+        # CONFIG_SERVICE_URL, or none) composes no config service, so Compose exposes no provider/connection.
+        # The contract must SKIP the CMS invariants for that shape instead of throwing on the legitimately
+        # absent values - while still enforcing the stack invariants, because the DMS datastore still starts.
+        It "skips the CMS provider/connection/OpenIddict invariants when the config service does not participate" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -ResolvedProvider $null -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool
+            $contract.Provider | Should -BeNullOrEmpty
+            $contract.CmsDatabaseName | Should -BeNullOrEmpty
+            $contract.OpenIddict | Should -BeNullOrEmpty
+        }
+
+        It "does not reject an unsupported/absent provider when the config service does not participate" {
+            # With config participating this same 'mysql' provider is rejected (see the regression matrix);
+            # without it, the provider is never read.
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -ResolvedProvider 'mysql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool } |
+                Should -Not -Throw
+        }
+
+        It "still rejects a datastore-name mismatch when the config service does not participate" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -ResolvedProvider $null -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=rogue_database' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
+                Should -Throw "*datastore database the containers receive*rogue_database*"
+        }
+
+        It "still rejects a blank SQL Server SA password when the config service does not participate" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $false -ResolvedProvider $null -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword '' } |
+                Should -Throw "*MSSQL_SA_PASSWORD resolves to a blank value*"
+        }
+
+        It "still returns the SA password and SQL Server datastore registration connection when the config service does not participate" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $false -ResolvedProvider $null -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -DatastoreDatabaseName 'edfi_datamanagementservice'
+            $contract.MssqlSaPassword | Should -Be 'abcdefgh1!'
+            $contract.DatastoreConnectionString | Should -Match 'edfi_datamanagementservice'
+            $contract.OpenIddict | Should -BeNullOrEmpty
         }
     }
 }
@@ -165,13 +202,13 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
     It "keeps a shell-substituted terminal OPAQUE (finding 1): the container receives the literal reference, which the contract rejects" {
         $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgFiles -EnvironmentFile $script:envDefault -ShellOverrides @{ DMS_CONFIG_DATABASE_NAME = '${OTHER_DB}' }
         $r.CmsConnectionString | Should -Match 'database=\$\{OTHER_DB\}'
-        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ResolvedProvider $r.Provider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } | Should -Throw
+        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -ResolvedProvider $r.Provider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } | Should -Throw
     }
 
     It "passes an unsupported provider through unchanged (finding 4), which the contract rejects" {
         $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgFiles -EnvironmentFile $script:envDefault -ShellOverrides @{ DMS_CONFIG_DATASTORE = 'mysql' }
         $r.Provider | Should -Be 'mysql'
-        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ResolvedProvider $r.Provider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } | Should -Throw "*not a supported engine*"
+        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -ResolvedProvider $r.Provider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } | Should -Throw "*not a supported engine*"
     }
 
     Context "datastore-name split through Compose (full-stack, real dms service)" {
@@ -203,7 +240,7 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
                 $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:fullFiles -EnvironmentFile $resolvedEnv -ShellOverrides @{ DATASTORE_NAME = 'rogue_database' }
                 $resolved.DatastoreConnectionString | Should -Match 'database=rogue_database'
 
-                { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ResolvedProvider $resolved.Provider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString $resolved.DatastoreConnectionString -ConfigDatabaseName $envValues['DMS_CONFIG_DATABASE_NAME'] -EnvValues $envValues } |
+                { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -ResolvedProvider $resolved.Provider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString $resolved.DatastoreConnectionString -ConfigDatabaseName $envValues['DMS_CONFIG_DATABASE_NAME'] -EnvValues $envValues } |
                     Should -Throw "*datastore database the containers receive*rogue_database*"
             }
             finally {
@@ -294,6 +331,51 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         $source = Get-Content -LiteralPath (Join-Path $script:composeRoot 'bootstrap-schema-tool.psm1') -Raw
         $source | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "bootstrap-manifest\.psm1"\)'
         ([regex]::Matches($source, 'bootstrap-manifest\.psm1"\)\s*-Force')).Count | Should -Be 0
+    }
+
+    It "<Script> resolves the runtime contract exactly once and passes an explicit -ConfigServiceIncluded" -ForEach @(
+        @{ Script = 'start-local-dms.ps1' }
+        @{ Script = 'start-published-dms.ps1' }
+        @{ Script = 'start-local-config.ps1' }
+    ) {
+        # Participation must be stated explicitly, never inferred from null Compose fields, and the contract
+        # is a single policy resolved once per startup.
+        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot $Script) -Raw
+        ([regex]::Matches($source, '\$contract = Resolve-EffectiveConfigRuntimeContract')).Count |
+            Should -Be 1 -Because "$Script validates the runtime contract exactly once"
+        $source | Should -Match '-ConfigServiceIncluded ' -Because "$Script must pass config participation explicitly to the contract"
+    }
+
+    It "start-published-dms.ps1 uses ONE participation authority for both the config file and the contract" {
+        # The same $configServiceIncluded decides published-config.yml selection and CMS-invariant validation,
+        # so a Keycloak-without-config start never validates a CMS the compose set does not contain.
+        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot 'start-published-dms.ps1') -Raw
+        $source | Should -Match '\$configServiceIncluded\s*=\s*\$EnableConfig -or \$InfraOnly -or \(\$IdentityProvider -eq "self-contained"\) -or \$bootstrapMode'
+        $source | Should -Match 'if \(\$configServiceIncluded\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+        $source | Should -Match '-ConfigServiceIncluded \$configServiceIncluded'
+    }
+
+    It "the always-config lanes state participation as literally true" -ForEach @(
+        @{ Script = 'start-local-dms.ps1' }
+        @{ Script = 'start-local-config.ps1' }
+    ) {
+        # Both lanes always include the config service, so they declare participation as a constant rather
+        # than inferring it.
+        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot $Script) -Raw
+        $source | Should -Match '-ConfigServiceIncluded \$true'
+    }
+
+    It "<Script> imports bootstrap-schema-tool WITH -Force (refreshes a stale resolver in a long-lived session)" -ForEach @(
+        @{ Script = 'start-local-dms.ps1' }
+        @{ Script = 'start-published-dms.ps1' }
+        @{ Script = 'start-local-config.ps1' }
+    ) {
+        # A session that loaded a pre-BuildIfMissing schema-tool module retains the old resolver signature;
+        # a non-forced import reuses it and Resolve-DmsSchemaTool -BuildIfMissing fails with an unknown
+        # parameter. -Force on the outer module refreshes the resolver; the module's own nested
+        # bootstrap-manifest import stays non-forced (asserted separately) so the manifest is not re-homed.
+        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot $Script) -Raw
+        $source | Should -Match 'bootstrap-schema-tool\.psm1"?\)?\s*-Force' -Because "$Script must force-refresh the schema-tool module"
     }
 
     It "the topology resolver performs no CMS-connection or process-environment validation (single policy)" {

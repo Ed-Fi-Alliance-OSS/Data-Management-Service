@@ -61,13 +61,19 @@ else {
     # (the resolved connection's own single target IS the effective configuration database OpenIddict
     # initializes) and no datastore connection (there is no separate DMS datastore service in this lane).
     # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool);
-    # imported here in the startup path only (not on teardown). -BuildIfMissing publishes it from source once
-    # when no prebuilt copy exists and the .NET SDK is present.
-    Import-Module ./bootstrap-schema-tool.psm1
+    # imported here in the startup path only (not on teardown), and with -Force so a long-lived session that
+    # loaded a pre-BuildIfMissing copy is refreshed to the current resolver signature. The module's own nested
+    # bootstrap-manifest import stays WITHOUT -Force, so this reload refreshes the resolver without re-homing
+    # the manifest. -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the
+    # .NET SDK is present.
+    Import-Module ./bootstrap-schema-tool.psm1 -Force
     $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
     $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "cs-local"
+    # The standalone lane exists to run the Configuration Service, so it always participates and the CMS
+    # invariants are always validated.
     $contract = Resolve-EffectiveConfigRuntimeContract `
         -InfrastructureEngine $datastore `
+        -ConfigServiceIncluded $true `
         -ResolvedProvider $resolvedCompose.Provider `
         -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
         -SchemaToolPath $schemaToolPath `

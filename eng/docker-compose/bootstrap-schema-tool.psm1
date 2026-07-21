@@ -79,6 +79,33 @@ function Get-DmsSchemaToolCandidateDirectory {
     return @($candidateDirectories)
 }
 
+function Invoke-DmsSchemaToolPublish {
+    <#
+    .SYNOPSIS
+    Publishes the api-schema-tools CLI from source to a drop directory and returns the publish outcome.
+    .DESCRIPTION
+    Isolated as a seam so the -BuildIfMissing recovery branch in Resolve-DmsSchemaTool is directly testable
+    without a live .NET SDK: tests mock this function to simulate publish success or failure. The dotnet
+    output is captured (not returned) so it can never pollute the resolver's path assignment; the caller
+    re-probes for the executable on success or surfaces the captured output as guidance on failure.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ProjectPath,
+
+        [Parameter(Mandatory)]
+        [string]
+        $PublishDirectory
+    )
+
+    $output = & dotnet publish $ProjectPath -c Release -p:UseAppHost=true -o $PublishDirectory --nologo 2>&1
+    return [pscustomobject]@{
+        Succeeded = ($LASTEXITCODE -eq 0)
+        Output    = ($output | Out-String).Trim()
+    }
+}
+
 function Resolve-DmsSchemaTool {
     <#
     .SYNOPSIS
@@ -137,8 +164,8 @@ function Resolve-DmsSchemaTool {
         if ($null -ne $dotnetCommand -and (Test-Path -LiteralPath $schemaToolsProject -PathType Leaf)) {
             $publishDirectory = Join-Path (Get-BootstrapRoot) "tools/api-schema-tools"
             Write-Information "api-schema-tools was not found; publishing it from source to '$(Format-LogSafeText $publishDirectory)' (one-time build)..." -InformationAction Continue
-            $publishOutput = & dotnet publish $schemaToolsProject -c Release -p:UseAppHost=true -o $publishDirectory --nologo 2>&1
-            if ($LASTEXITCODE -eq 0) {
+            $publishResult = Invoke-DmsSchemaToolPublish -ProjectPath $schemaToolsProject -PublishDirectory $publishDirectory
+            if ($publishResult.Succeeded) {
                 foreach ($candidateName in $candidateNames) {
                     $candidate = Join-Path $publishDirectory $candidateName
                     if (Test-Path -LiteralPath $candidate -PathType Leaf) {
@@ -147,7 +174,7 @@ function Resolve-DmsSchemaTool {
                 }
             }
             else {
-                Write-Warning "Failed to publish api-schema-tools; falling back to resolution guidance. $(Format-LogSafeText (($publishOutput | Out-String).Trim()))"
+                Write-Warning "Failed to publish api-schema-tools; falling back to resolution guidance. $(Format-LogSafeText $publishResult.Output)"
             }
         }
     }
