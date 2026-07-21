@@ -793,8 +793,11 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $publishedConfigGuardPattern = 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
-            $startScript | Should -Match $publishedConfigGuardPattern -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+            # The single participation authority ($configServiceIncluded) folds in $bootstrapMode, and the
+            # published-config.yml inclusion is gated on it - so a bootstrap start always mounts the config
+            # service (and its staged claims) alongside DMS ApiSchema.
+            $startScript | Should -Match '\$configServiceIncluded\s*=\s*\$EnableConfig -or \$InfraOnly -or \(\$IdentityProvider -eq "self-contained"\) -or \$bootstrapMode'
+            $startScript | Should -Match 'if \(\$configServiceIncluded\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
         }
 
         It "start-published-dms.ps1 keeps non-bootstrap keycloak published-config.yml opt-in behavior" {
@@ -802,15 +805,23 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $guardMatch = [regex]::Match(
+            # Opt-in now lives in the $configServiceIncluded definition, not in the file-inclusion guard: a
+            # non-bootstrap keycloak start (no -EnableConfig, no -InfraOnly, not self-contained) leaves the
+            # variable false, so published-config.yml stays out and the runtime contract skips the CMS
+            # invariants. Participation is never inferred from Keycloak.
+            $definitionMatch = [regex]::Match(
                 $startScript,
-                'if \((?<condition>[^\r\n]+)\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+                '\$configServiceIncluded\s*=\s*(?<definition>[^\r\n]+)'
             )
-            $guardMatch.Success | Should -BeTrue
+            $definitionMatch.Success | Should -BeTrue
 
-            $condition = $guardMatch.Groups["condition"].Value
-            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode'
-            $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
+            $definition = $definitionMatch.Groups["definition"].Value
+            $definition | Should -Be '$EnableConfig -or $InfraOnly -or ($IdentityProvider -eq "self-contained") -or $bootstrapMode'
+            $definition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
+
+            # The file inclusion and the runtime contract both consume that one authority.
+            $startScript | Should -Match 'if \(\$configServiceIncluded\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+            $startScript | Should -Match '-ConfigServiceIncluded \$configServiceIncluded'
         }
     }
 
