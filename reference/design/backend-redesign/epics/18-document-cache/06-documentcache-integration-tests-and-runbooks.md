@@ -20,7 +20,7 @@ that links to, rather than restates, the authoritative design.
 
 ## Dependencies
 
-- Depends on the remaining E18 stories and informs CDC story 17-06.
+- Depends on the remaining E18 stories and informs CDC story 19-07.
 
 ## Deliverables
 
@@ -39,7 +39,7 @@ that links to, rather than restates, the authoritative design.
 5. Document the cache side of a compatible projection correction: stop old cache writers,
    including optional direct fill, use the provider-supported clear operation, start only
    corrected writers, and reconcile to an exact zero audit. Hand connector catch-up and
-   equal-version consumer verification to 17-06.
+   equal-version consumer verification to 19-07.
 
 ## Acceptance Evidence
 
@@ -63,7 +63,7 @@ that links to, rather than restates, the authoritative design.
   equal-version row, while an explicit clear/rebuild produces corrected rows with the same
   canonical `ContentVersion` after old cache writers are stopped.
 - Runbook tests cover internal-only full-cache clear/latch-reset/rebuild and hand off
-  possibly observed cache-ahead state to a new downstream state namespace, including E17's
+  possibly observed cache-ahead state to a new downstream state namespace, including E19's
   new-generation topic/snapshot recovery. Provider tests prove source equality and restart
   do not clear the latch, that a set latch disables cache reads and writes, and that the
   explicit recovery clears the full cache before resetting the latch in the same

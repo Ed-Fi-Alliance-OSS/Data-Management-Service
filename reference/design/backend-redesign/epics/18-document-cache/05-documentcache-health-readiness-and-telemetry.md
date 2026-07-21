@@ -21,8 +21,8 @@ process state.
 
 ## Dependencies
 
-- Depends on 18-00, 18-03, and 18-07.
-- Consumed by CDC stories 17-00, 17-03, and 17-06.
+- Depends on 18-00, 18-02, and 18-04.
+- Consumed by CDC stories 19-00, 19-04, and 19-07.
 
 ## Deliverables
 

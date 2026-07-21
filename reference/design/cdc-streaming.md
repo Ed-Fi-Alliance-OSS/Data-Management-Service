@@ -1352,7 +1352,7 @@ different source.
 Bootstrap integration coverage uses an authorization-enabled broker to prove ACL
 provisioning is repeatable and binding-scoped: a consumer principal configured for one
 instance can read that instance topic and is denied when it attempts to read a peer
-instance topic. This focused broker-backed check belongs to bootstrap story 17-03; the
+instance topic. This focused broker-backed check belongs to bootstrap story 19-04; the
 broad API-driven CDC E2E suite does not duplicate an ACL matrix.
 
 SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.

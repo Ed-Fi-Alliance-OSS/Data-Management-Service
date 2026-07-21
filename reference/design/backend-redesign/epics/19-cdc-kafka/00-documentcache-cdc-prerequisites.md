@@ -19,14 +19,14 @@ related:
 ## Outcome
 
 Add the deployment-owned durable binding state and status operation that combine DMS
-per-database projection health with E17-owned provider, topic, and connector checks.
+per-database projection health with E19-owned provider, topic, and connector checks.
 
 ## Dependencies
 
-- Consumes the explicit target contract from 18-00 and projection health from 18-09.
-- Provider-adapter implementation consumes the heartbeat/capture artifacts from 17-01
-  and the pinned connector configuration and source-offset shapes from 17-02.
-- Supplies binding and readiness behavior to 17-03; does not implement the projector or
+- Consumes the explicit target contract from 18-00 and projection health from 18-05.
+- Provider-adapter implementation consumes the heartbeat/capture artifacts from 19-01
+  and the pinned connector configuration and source-offset shapes from 19-02.
+- Supplies binding and readiness behavior to 19-04; does not implement the projector or
   connector REST registration.
 
 ## Deliverables
@@ -34,7 +34,7 @@ per-database projection health with E17-owned provider, topic, and connector che
 1. Define the deployment CDC target input and require each selected target to be present
    in DMS `DocumentCache:Targets` without adding Kafka-specific runtime DMS options.
 2. Obtain the database-owned physical-source fingerprint through the DMS current-source
-   observation contract from 18-09; do not normalize or fingerprint connection metadata
+   observation contract from 18-05; do not normalize or fingerprint connection metadata
    independently. Detect target aliases with the same reported fingerprint that conflict
    with topic-per-instance isolation.
 3. Define the versioned immutable binding-record schema, including the positive fixed
@@ -57,7 +57,7 @@ per-database projection health with E17-owned provider, topic, and connector che
    topic, ACL, `partitionerAlgorithm`, `maxRecordBytes`, effective broker
    request/record-batch/replica-fetch compatibility, and installed source-operation
    shaping against the binding before registration. This story defines the ACL and size
-   readiness checks; 17-03 owns provisioning, idempotent live validation, and broker-backed
+   readiness checks; 19-04 owns provisioning, idempotent live validation, and broker-backed
    authorization/maximum-record coverage.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,

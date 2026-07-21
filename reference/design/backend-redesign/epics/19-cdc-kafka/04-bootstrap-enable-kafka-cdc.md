@@ -22,8 +22,8 @@ backend.
 
 ## Dependencies
 
-- Depends on 17-00 through 17-02, the published transform from 17-02a, and the
-  projection/readiness inputs named by 17-00.
+- Depends on 19-00 through 19-02, the published transform from 19-03, and the
+  projection/readiness inputs named by 19-00.
 
 ## Deliverables
 
@@ -52,7 +52,7 @@ backend.
    acknowledgement, retry, maximum-in-flight, binding-derived maximum-request,
    no-compression, binding `partitionerAlgorithm`, `errors.tolerance=none`, or provider
    heartbeat values. Reject a missing/unknown algorithm token or live partitioner
-   configuration that does not implement `kafka-murmur2-v1`. Use the 17-00 provider
+   configuration that does not implement `kafka-murmur2-v1`. Use the 19-00 provider
    adapter and connector-offset REST response for the post-audit barrier; do not infer
    catch-up from task status or lag. Treat a failed connector task as not ready regardless
    of offset or lag observations. ACL and record-size verification must complete before

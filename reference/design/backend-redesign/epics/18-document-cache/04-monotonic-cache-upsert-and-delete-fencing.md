@@ -23,7 +23,7 @@ was canonical-current at commit.
 
 ## Dependencies
 
-- Depends on canonical `dms.Document` representation stamps and is required by 18-03.
+- Depends on canonical `dms.Document` representation stamps and is required by 18-02.
 
 ## Deliverables
 

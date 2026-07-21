@@ -77,7 +77,7 @@ DMS-1240. The generic transform remains available to connectors whose requiremen
 root-level JSON expansion.
 
 The new cross-repository implementation is explicitly planned in
-[Add the relational DocumentState transform](../epics/17-cdc-kafka/02a-document-state-transform.md).
+[Add the relational DocumentState transform](../epics/19-cdc-kafka/03-document-state-transform.md).
 Connector-template generation consumes that artifact; it does not silently implement it.
 
 ## DMS-1240 Contract Evidence
@@ -100,9 +100,9 @@ The implementation remains intentionally unaware of the DMS-1245 public record c
 | --- | --- |
 | Generic `sourceFields` expansion and removal of the RedHat plugin | DMS-1240 — complete |
 | Relational CDC sources, topic, key, value, delete, and compatibility contract | DMS-1245 |
-| DMS-specific `DocumentState` implementation in Ed-Fi-Kafka-Connect | Proposed `17-02a` story |
-| Provider connector templates using the published `DocumentState` class | Proposed `17-02` story |
-| API-driven relational Kafka scenarios | DMS-1232 / proposed `17-05` story |
+| DMS-specific `DocumentState` implementation in Ed-Fi-Kafka-Connect | Proposed `19-03` story |
+| Provider connector templates using the published `DocumentState` class | Proposed `19-02` story |
+| API-driven relational Kafka scenarios | DMS-1232 / proposed `19-06` story |
 
 DMS-1232's implementation criteria must be refined against the DMS-1245 topic/message
 contract before that work begins. In particular, the relational v1 delete is a Kafka-null

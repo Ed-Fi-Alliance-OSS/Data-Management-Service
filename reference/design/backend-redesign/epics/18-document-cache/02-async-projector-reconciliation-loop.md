@@ -22,8 +22,8 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 
 ## Dependencies
 
-- Depends on 18-00, 18-02, 18-07, and core source/cache DDL.
-- Supplies projection signals to 18-09 and CDC stories 17-00, 17-05, and 17-06.
+- Depends on 18-00, 18-01, 18-04, and core source/cache DDL.
+- Supplies projection signals to 18-05 and CDC stories 19-00, 19-06, and 19-07.
 
 ## Deliverables
 
@@ -61,7 +61,7 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 7. Implement one target-scoped administrative recovery operation that takes the exclusive
    singleton-state lock, requires a set latch, clears the entire cache and latch in one
    provider transaction, and requests an immediate full audit after commit. Expose no
-   latch-only reset; downstream publication-path recovery remains E17-owned.
+   latch-only reset; downstream publication-path recovery remains E19-owned.
 8. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
    telemetry, and measure realistic plans for both providers.
 9. Bind the configurable incremental interval, full-audit interval, page size,

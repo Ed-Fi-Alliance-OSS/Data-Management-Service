@@ -26,12 +26,12 @@ projection execution and cache-backed reads.
 ## Stories
 
 - `TBD` — `00-documentcache-configuration-and-target-selection.md` — Add configuration and target selection
-- `TBD` — `02-document-materializer-service.md` — Add reusable caller-agnostic document materialization
-- `TBD` — `03-async-projector-reconciliation-loop.md` — Add the asynchronous reconciliation loop
-- `TBD` — `05-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
-- `TBD` — `07-monotonic-cache-upsert-and-delete-fencing.md` — Implement monotonic cache upsert and post-delete fencing
-- `TBD` — `09-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
-- `TBD` — `11-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
+- `TBD` — `01-document-materializer-service.md` — Add reusable caller-agnostic document materialization
+- `TBD` — `02-async-projector-reconciliation-loop.md` — Add the asynchronous reconciliation loop
+- `TBD` — `03-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
+- `TBD` — `04-monotonic-cache-upsert-and-delete-fencing.md` — Implement monotonic cache upsert and post-delete fencing
+- `TBD` — `05-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
+- `TBD` — `06-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
 
 ## Delivery Dependencies
 

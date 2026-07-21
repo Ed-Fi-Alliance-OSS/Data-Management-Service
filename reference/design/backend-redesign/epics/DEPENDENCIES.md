@@ -3,8 +3,8 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 19 epic files and
-  206 story/support files).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 20 epic files and
+  199 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -42,8 +42,9 @@ graph TD
   E14["E14 Authorization (deferred)"]
   E15["E15 Runtime plan compilation + caching"]
   E16["E16 Bootstrap developer environment"]
-  E17["E17 Relational CDC/Kafka streaming"]
+  E17["E17 MSSQL implementation and parity gap closure"]
   E18["E18 DocumentCache reconciler + CDC guarantees"]
+  E19["E19 Relational CDC/Kafka streaming"]
 
   E00 --> E01 --> E02 --> E03 --> E04
 
@@ -81,17 +82,18 @@ graph TD
   E10 --> E18
   E11 --> E18
 
-  E16 --> E17
-  E18 --> E17
+  E16 --> E19
+  E18 --> E19
 
   E14
+  E17
 ```
 
 Notes:
 - `E07` and `E09` are tightly coupled in practice (write correctness requires transactional identity maintenance + propagation + deadlock retry), but are shown as a one-way dependency to keep the graph readable.
 - `E05` is optional; `E06` can select runtime-compiled mapping sets without packs.
-- `E17` can develop connector templates and fixture tests in parallel, but complete CDC
-  upsert readiness depends on `E18` per-database projection guarantees. E17 owns durable
+- `E19` can develop connector templates and fixture tests in parallel, but complete CDC
+  upsert readiness depends on `E18` per-database projection guarantees. E19 owns durable
   source bindings, provider/topic/connector lifecycle, combined readiness, and
   authoritative `dms.Document` delete capture; E18 neither stores connector bindings nor
   calls Kafka Connect.
@@ -119,26 +121,27 @@ Notes:
 | E14 | [Authorization Design Spike (Relational Primary Store)](14-authorization/EPIC.md) | — | Implementation-ready authorization design (implementation deferred); does not block baseline redesign |
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
 | E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
-| E17 | [Relational CDC/Kafka Streaming](17-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks |
-| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL and singleton cache-ahead latch with optional reconciliation/read behavior, optimistic materialization-coherence checks and atomic monotonic cache upserts without source-row commit-order locking, difference-derived health, bounded in-memory retry, and read fallback; E17 owns authoritative delete capture and published-ahead recovery |
+| E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
+| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL and singleton cache-ahead latch with optional reconciliation/read behavior, optimistic materialization-coherence checks and atomic monotonic cache upserts without source-row commit-order locking, difference-derived health, bounded in-memory retry, and read fallback; E19 owns authoritative delete capture and published-ahead recovery |
+| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks |
 
 ---
 
-## Focused E17/E18 Story Dependency Addendum
+## Focused E18/E19 Story Dependency Addendum
 
 This is the single cross-epic story dependency index. Design behavior is linked from the
 epics and is not repeated here.
 
-| `17-cdc-kafka` story | Implementation dependency |
+| `19-cdc-kafka` story | Implementation dependency |
 | --- | --- |
-| 17-00 | 17-01, 17-02, 18-00, 18-03, 18-07, 18-09 |
-| 17-01 | — |
-| 17-02 | — until upsert smoke tests |
-| 17-02a | —; external transform implementation consumed by 17-02 and 17-04 |
-| 17-03 | 18-00, 18-03, 18-09, plus 17-00 |
-| 17-04 | 18-02 (soft) |
-| 17-05 | 18-00, 18-03, 18-09, plus 17-00 through 17-04 |
-| 17-06 | 18-03, 18-09, 18-11 |
+| 19-00 | 19-01, 19-02, 18-00, 18-02, 18-04, 18-05 |
+| 19-01 | — |
+| 19-02 | — until upsert smoke tests |
+| 19-03 | —; external transform implementation consumed by 19-02 and 19-05 |
+| 19-04 | 18-00, 18-02, 18-05, plus 19-00 |
+| 19-05 | 18-01 (soft) |
+| 19-06 | 18-00, 18-02, 18-05, plus 19-00 through 19-05 |
+| 19-07 | 18-02, 18-05, 18-06 |
 
 ---
 

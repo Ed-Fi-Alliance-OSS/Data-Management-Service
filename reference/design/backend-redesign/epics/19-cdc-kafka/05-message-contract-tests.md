@@ -19,10 +19,10 @@ without requiring an API E2E path for every source operation.
 
 ## Dependencies
 
-- Depends on the transform artifact and unit-fixture contract from 17-02a and the provider
-  source setup from 17-01.
+- Depends on the transform artifact and unit-fixture contract from 19-03 and the provider
+  source setup from 19-01.
 - The broker-backed poison-record readiness scenario also depends on the status and
-  registration behavior from 17-00 and 17-03.
+  registration behavior from 19-00 and 19-04.
 
 ## Deliverables
 

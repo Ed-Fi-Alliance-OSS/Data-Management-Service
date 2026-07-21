@@ -22,7 +22,7 @@ reconciliation, optional direct fill, and CDC payload fixtures.
 ## Dependencies
 
 - Depends on relational read/reconstitution and update-tracking metadata.
-- Unblocks 18-03 and 18-05 and supplies realistic data to CDC contract/E2E tests.
+- Unblocks 18-02 and 18-03 and supplies realistic data to CDC contract/E2E tests.
 
 ## Deliverables
 
@@ -53,7 +53,7 @@ reconciliation, optional direct fill, and CDC payload fixtures.
    partial cache result.
 9. Supply a reusable CDC sizing fixture that runs a schema-valid maximum supported body
    through the real link-bearing materializer. The fixture exposes the resulting
-   `DocumentJson` to story 17-04 so its final envelope and Kafka framing, rather than the
+   `DocumentJson` to story 19-05 so its final envelope and Kafka framing, rather than the
    incoming HTTP body length, establish and verify `maxRecordBytes`.
 
 ## Acceptance Evidence

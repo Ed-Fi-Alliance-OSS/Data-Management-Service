@@ -23,7 +23,7 @@ separate from DMS-1240's completed generic `sourceFields` expander.
 ## Dependencies
 
 - Depends on the DMS-1245 source-operation and topic/message contracts.
-- Unblocks runnable connector templates in 17-02 and their fast contract tests in 17-04.
+- Unblocks runnable connector templates in 19-02 and their fast contract tests in 19-05.
 - Does not modify or replace the generic transform delivered by DMS-1240.
 
 ## Deliverables
@@ -45,7 +45,7 @@ separate from DMS-1240's completed generic `sourceFields` expander.
 6. Suppress duplicate automatic Debezium tombstones, intentionally drop every heartbeat
    record without routing it to the public topic, and fail malformed retained document
    records rather than publishing partial state.
-7. Publish the transform in the Ed-Fi Kafka Connect image consumed by 17-02; do not remove
+7. Publish the transform in the Ed-Fi Kafka Connect image consumed by 19-02; do not remove
    or redefine `ExpandJson$Value`.
 
 ## Acceptance Evidence

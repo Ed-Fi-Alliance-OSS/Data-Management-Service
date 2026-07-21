@@ -197,21 +197,21 @@ This index links design documents under `reference/design/backend-redesign/epics
 
 ## Proposed Epics Pending Jira Creation
 
-- `TBD` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/17-cdc-kafka/EPIC.md`
-  - `TBD` — Add deployment-owned CDC binding and readiness — `reference/design/backend-redesign/epics/17-cdc-kafka/00-documentcache-cdc-prerequisites.md`
-  - `TBD` — Emit/provision provider CDC key and database support — `reference/design/backend-redesign/epics/17-cdc-kafka/01-cdc-ddl-support.md`
-  - `TBD` — Generate PostgreSQL and SQL Server connector templates — `reference/design/backend-redesign/epics/17-cdc-kafka/02-connector-template-generation.md`
-  - `TBD` — Add the relational DocumentState Kafka Connect transform — `reference/design/backend-redesign/epics/17-cdc-kafka/02a-document-state-transform.md`
-  - `TBD` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/17-cdc-kafka/03-bootstrap-enable-kafka-cdc.md`
-  - `TBD` — Add Kafka message and source-routing contract tests — `reference/design/backend-redesign/epics/17-cdc-kafka/04-message-contract-tests.md`
-  - `TBD` — Replace legacy Kafka E2E expectations — `reference/design/backend-redesign/epics/17-cdc-kafka/05-e2e-kafka-scenarios.md`
-  - `TBD` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/17-cdc-kafka/06-ops-docs-runbooks.md`
-
 - `TBD` — `dms.DocumentCache` Projection — `reference/design/backend-redesign/epics/18-document-cache/EPIC.md`
   - `TBD` — Add DocumentCache configuration and target selection — `reference/design/backend-redesign/epics/18-document-cache/00-documentcache-configuration-and-target-selection.md`
-  - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md`
-  - `TBD` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/03-async-projector-reconciliation-loop.md`
-  - `TBD` — Add fresh-cache reads with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`
-  - `TBD` — Implement monotonic cache upsert and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/07-monotonic-cache-upsert-and-delete-fencing.md`
-  - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/09-documentcache-health-readiness-and-telemetry.md`
-  - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/11-documentcache-integration-tests-and-runbooks.md`
+  - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/01-document-materializer-service.md`
+  - `TBD` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/02-async-projector-reconciliation-loop.md`
+  - `TBD` — Add fresh-cache reads with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/03-cache-backed-read-path.md`
+  - `TBD` — Implement monotonic cache upsert and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/04-monotonic-cache-upsert-and-delete-fencing.md`
+  - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/05-documentcache-health-readiness-and-telemetry.md`
+  - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/06-documentcache-integration-tests-and-runbooks.md`
+
+- `TBD` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/19-cdc-kafka/EPIC.md`
+  - `TBD` — Add deployment-owned CDC binding and readiness — `reference/design/backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md`
+  - `TBD` — Emit/provision provider CDC key and database support — `reference/design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md`
+  - `TBD` — Generate PostgreSQL and SQL Server connector templates — `reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md`
+  - `TBD` — Add the relational DocumentState Kafka Connect transform — `reference/design/backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md`
+  - `TBD` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md`
+  - `TBD` — Add Kafka message and source-routing contract tests — `reference/design/backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md`
+  - `TBD` — Replace legacy Kafka E2E expectations — `reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md`
+  - `TBD` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md`

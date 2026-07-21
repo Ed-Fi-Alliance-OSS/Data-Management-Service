@@ -23,8 +23,8 @@ source routing and serialized public contract using the separately published
 
 ## Dependencies
 
-- Depends on 17-01 for provider CDC setup and 17-02a for a runnable published transform.
-  Template authoring and rendering tests may proceed in parallel with 17-02a, but no
+- Depends on 19-01 for provider CDC setup and 19-03 for a runnable published transform.
+  Template authoring and rendering tests may proceed in parallel with 19-03, but no
   connector is registered until the pinned image contains that class.
 
 ## Deliverables
@@ -43,7 +43,7 @@ source routing and serialized public contract using the separately published
    Ed-Fi `DocumentState` SMT convert `datetime2(7)`
    `io.debezium.time.NanoTimestamp` values to the existing DMS whole-second UTC string,
    deliberately truncating fractional seconds without rounding.
-4. Configure the `DocumentState` SMT delivered by 17-02a as the complete boundary from a raw
+4. Configure the `DocumentState` SMT delivered by 19-03 as the complete boundary from a raw
    Debezium record to a final public upsert, final public tombstone, or dropped record.
    Do not add an independent generic expand-JSON SMT or split the contract across stock
    predicate, unwrap, rename, and routing chains.
@@ -92,7 +92,7 @@ source routing and serialized public contract using the separately published
   changing the algorithm token or partition count requires a new binding generation/topic.
 - Template tests prove the configured class, source includes, key columns, converters,
   tombstone suppression, transform properties, and target topic match the binding and
-  17-02a contract.
+  19-03 contract.
 - Provider template/smoke tests prove the non-indexed cache UUID column produces the same
   public key bytes as the canonical document-delete source.
 - SQL Server rendering tests require `time.precision.mode=adaptive`; pinned-image smoke
@@ -114,7 +114,7 @@ source routing and serialized public contract using the separately published
   public topic while their source offsets remain available through the connector-offset
   REST endpoint with the provider fields required by readiness.
 - A pinned-image smoke test proves the configured transform class loads; detailed
-  transform behavior remains owned by 17-02a and the shared contract suite in 17-04.
+  transform behavior remains owned by 19-03 and the shared contract suite in 19-05.
 
 ## Out of Scope
 

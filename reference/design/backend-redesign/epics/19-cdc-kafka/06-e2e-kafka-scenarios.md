@@ -21,7 +21,7 @@ coverage against the actual provisioned data store and routed public topic.
 
 ## Dependencies
 
-- Depends on 17-00 through 17-04, including the published 17-02a transform, and the
+- Depends on 19-00 through 19-05, including the published 19-03 transform, and the
   completed projection path needed for upserts.
 
 ## Deliverables
@@ -65,5 +65,5 @@ coverage against the actual provisioned data store and routed public topic.
 
 - Exhaustive resource coverage.
 - A broader Kafka ACL matrix; focused broker-backed own-topic access and cross-instance
-  denial coverage is owned by 17-03.
+  denial coverage is owned by 19-04.
 - Connector scaling tests.

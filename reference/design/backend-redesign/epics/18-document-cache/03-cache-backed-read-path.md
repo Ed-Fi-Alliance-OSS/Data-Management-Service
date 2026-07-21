@@ -20,8 +20,8 @@ authorization, candidate selection, fallback, and response shaping.
 
 ## Dependencies
 
-- Depends on 18-00 and 18-02; optional direct fill additionally depends on 18-07. The
-  read path remains correct while 18-03 is disabled or behind.
+- Depends on 18-00 and 18-01; optional direct fill additionally depends on 18-04. The
+  read path remains correct while 18-02 is disabled or behind.
 
 ## Deliverables
 
@@ -33,8 +33,8 @@ authorization, candidate selection, fallback, and response shaping.
 2. Ignore the cache row's CDC-only `StreamEtag` and reuse existing profile, link, and
    request-specific `_etag` shaping after cache or relational assembly.
 3. Add relational fallback and an optional monotonic direct fill only while the durable
-   latch is clear. Direct fill uses 18-02's
-   final optimistic source-version check and 18-07's conditional upsert without requesting
+   latch is clear. Direct fill uses 18-01's
+   final optimistic source-version check and 18-04's conditional upsert without requesting
    or retaining an update/write source-row lock as a content-version fence. Apply one short
    end-to-end `ReadAcceleration:DirectFillTimeout` deadline across all source-read,
    cache-row, foreign-key, trigger, and ordinary database contention. Do not renew the
