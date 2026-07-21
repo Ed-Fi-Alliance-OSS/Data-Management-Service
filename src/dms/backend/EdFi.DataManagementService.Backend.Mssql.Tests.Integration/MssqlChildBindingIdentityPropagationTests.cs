@@ -14,18 +14,22 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <summary>
 /// Runtime proof that a rename of an upstream resource's identity (<c>ClassPeriod</c>)
 /// reaches stored child-collection bindings through the native <c>ON UPDATE CASCADE</c>
-/// foreign keys and that the child stamp triggers then bump the owning root document's
-/// <c>ContentVersion</c>. Exercises two different child-collection referrers cascading
-/// from the same target (<c>BellScheduleClassPeriod</c> with owning root
-/// <c>BellSchedule</c>, and <c>SectionClassPeriod</c> with owning root <c>Section</c>)
-/// to demonstrate that the cascade fan-out is general across multiple child-collection
-/// referrers of the same target, not hardcoded to a single binding.
+/// foreign keys and that the child stamp triggers preserve update tracking for the owning
+/// root. The <c>BellScheduleClassPeriod</c> → <c>BellSchedule</c> scenario proves the full
+/// committed outcome: the binding's own full-composite FK carries the cascade (not a retired
+/// propagation trigger); the owning root advances its content stamps and root-table mirror
+/// while its identity stamps stay frozen and it emits no key-change row; and the upstream
+/// <c>ClassPeriod</c> advances all four stamps and emits exactly one key-change row carrying
+/// the full composite identity with the three-way <c>ChangeVersion</c> linkage. The
+/// <c>SectionClassPeriod</c> → <c>Section</c> scenario additionally demonstrates that the
+/// cascade fan-out is general across multiple child-collection referrers of the same target,
+/// not hardcoded to a single binding.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard3)]
-public class MssqlChildBindingIdentityPropagationTests
+public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedule_Child_Binding
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
 
@@ -72,7 +76,7 @@ public class MssqlChildBindingIdentityPropagationTests
     }
 
     [Test]
-    public async Task Updating_ClassPeriod_identity_propagates_to_BellScheduleClassPeriod_and_bumps_BellSchedule_ContentVersion()
+    public async Task It_should_propagate_a_ClassPeriod_identity_rename_through_the_BellSchedule_child_binding_and_preserve_update_tracking()
     {
         // Arrange — seed the dependency chain
         //   School(id=100, doc=schoolDoc)
@@ -103,13 +107,57 @@ public class MssqlChildBindingIdentityPropagationTests
             classPeriodSchoolId: SchoolId
         );
 
-        var initialContentVersion = await QueryDocumentContentVersionAsync(bellScheduleDocumentId);
+        var classPeriodDocumentUuid = await QueryDocumentUuidAsync(classPeriodDocumentId);
+        var bellScheduleDocumentUuid = await QueryDocumentUuidAsync(bellScheduleDocumentId);
+
+        // Native FK contract — the defining requirement. Identity propagation into this
+        // binding is carried by the child FK's OWN native ON UPDATE CASCADE over the full
+        // composite reference key, not by any retired propagation trigger. This asserts THIS
+        // binding's FK only; the global absence of a %PropagateIdentity% trigger is already
+        // proven by
+        // MssqlGeneratedDdlAuthoritativeSmokeTests.It_should_not_install_any_retired_identity_propagation_trigger.
+        var bindingForeignKeys = await _database.GetForeignKeyMetadataAsync(
+            "edfi",
+            "BellScheduleClassPeriod"
+        );
+        var classPeriodReferenceKey = bindingForeignKeys.Single(foreignKey =>
+            foreignKey.ConstraintName == "FK_BellScheduleClassPeriod_ClassPeriod_RefKey"
+        );
+        classPeriodReferenceKey
+            .Columns.Should()
+            .Equal("ClassPeriod_ClassPeriodName", "ClassPeriod_SchoolId", "ClassPeriod_DocumentId");
+        classPeriodReferenceKey.ReferencedSchema.Should().Be("edfi");
+        classPeriodReferenceKey.ReferencedTable.Should().Be("ClassPeriod");
+        classPeriodReferenceKey
+            .ReferencedColumns.Should()
+            .Equal("ClassPeriodName", "School_SchoolId", "DocumentId");
+        classPeriodReferenceKey.DeleteAction.Should().Be("NO ACTION");
+        classPeriodReferenceKey
+            .UpdateAction.Should()
+            .Be("CASCADE", "identity propagation is carried by the native FK cascade, not a trigger");
+
         var childRowsBefore = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
         var childAnchorBefore = await QueryBellScheduleClassPeriodAnchorAsync(bellScheduleDocumentId);
         childRowsBefore.Should().Be(1);
+        var childCollectionItemIdBefore = Convert.ToInt64(
+            (await QuerySingleBellScheduleClassPeriodAsync(bellScheduleDocumentId))["CollectionItemId"],
+            CultureInfo.InvariantCulture
+        );
 
-        // Add a small delay so any stamp comparison that checks
-        // ContentLastModifiedAt would see a distinct timestamp too.
+        var beforeBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
+        var beforeClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var bellScheduleKeyChangesBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "BellSchedule",
+            bellScheduleDocumentUuid
+        );
+        var classPeriodKeyChangesBefore = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+
+        // A small delay so ContentLastModifiedAt (sysutcdatetime) advances to a distinct value.
         await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
 
         // Act — update the upstream ClassPeriod identity column.
@@ -123,14 +171,21 @@ public class MssqlChildBindingIdentityPropagationTests
             new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId)
         );
 
-        // Assert — the cascade updated the projected identity column on the child row
+        // Assert — the cascade updated the projected identity column on the child row.
         var childRow = await QuerySingleBellScheduleClassPeriodAsync(bellScheduleDocumentId);
         Convert
             .ToString(childRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
             .Should()
             .Be(NewClassPeriodName);
 
-        // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE
+        // The unchanged composite identity half (School) must NOT cascade — only the renamed
+        // ClassPeriodName component may move on the projected child row.
+        Convert
+            .ToInt64(childRow["ClassPeriod_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId, "the unchanged composite identity half must not cascade");
+
+        // Row count must be unchanged — the cascade is an UPDATE, not an INSERT/DELETE.
         var childRowsAfter = await QueryBellScheduleClassPeriodRowCountAsync(bellScheduleDocumentId);
         childRowsAfter
             .Should()
@@ -149,19 +204,110 @@ public class MssqlChildBindingIdentityPropagationTests
                 "ClassPeriod_DocumentId is the reference anchor and must not change during an identity cascade"
             );
 
-        // The child stamp trigger (TR_BellScheduleClassPeriod_Stamp) must fire from the
-        // cascade UPDATE and bump the owning BellSchedule root's ContentVersion.
-        var finalContentVersion = await QueryDocumentContentVersionAsync(bellScheduleDocumentId);
-        finalContentVersion
+        // CollectionItemId must survive the cascade — row-count and anchor stability alone would
+        // also pass a DELETE + re-INSERT with identical values; the sequence-assigned value cannot.
+        Convert
+            .ToInt64(childRow["CollectionItemId"], CultureInfo.InvariantCulture)
             .Should()
+            .Be(
+                childCollectionItemIdBefore,
+                "the cascade must update the child row in place, not delete and re-insert it"
+            );
+
+        var afterBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
+        var afterClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var afterBellScheduleMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "BellSchedule",
+            bellScheduleDocumentId
+        );
+        var afterClassPeriodMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "ClassPeriod",
+            classPeriodDocumentId
+        );
+
+        // Owning root BellSchedule: its representation changed (a child binding's projected
+        // identity was cascade-updated) but its OWN identity did not. Its content stamps advance
+        // and its root-table mirror tracks the document row, while its identity stamps stay frozen
+        // (a paired contract) and it emits no key-change row because its identity is unchanged.
+        afterBellSchedule
+            .ContentVersion.Should()
             .BeGreaterThan(
-                initialContentVersion,
+                beforeBellSchedule.ContentVersion,
                 "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
+        afterBellSchedule.ContentLastModifiedAt.Should().BeAfter(beforeBellSchedule.ContentLastModifiedAt);
+        afterBellSchedule
+            .IdentityVersion.Should()
+            .Be(
+                beforeBellSchedule.IdentityVersion,
+                "BellSchedule's own identity did not change, so IdentityVersion must be frozen"
+            );
+        afterBellSchedule
+            .IdentityLastModifiedAt.Should()
+            .Be(
+                beforeBellSchedule.IdentityLastModifiedAt,
+                "identity stamps are a paired contract and must both be frozen"
+            );
+        AssertMirrorContentMatchesDocument(afterBellScheduleMirror, afterBellSchedule);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "BellSchedule", bellScheduleDocumentUuid))
+            .Should()
+            .Be(
+                bellScheduleKeyChangesBefore,
+                "the referrer's identity did not change, so it must emit no key-change row"
+            );
+
+        // Upstream ClassPeriod: its own identity changed. All four stamps advance, and it emits
+        // exactly one key-change row.
+        afterClassPeriod.ContentVersion.Should().BeGreaterThan(beforeClassPeriod.ContentVersion);
+        afterClassPeriod.ContentLastModifiedAt.Should().BeAfter(beforeClassPeriod.ContentLastModifiedAt);
+        afterClassPeriod.IdentityVersion.Should().BeGreaterThan(beforeClassPeriod.IdentityVersion);
+        afterClassPeriod.IdentityLastModifiedAt.Should().BeAfter(beforeClassPeriod.IdentityLastModifiedAt);
+        AssertMirrorContentMatchesDocument(afterClassPeriodMirror, afterClassPeriod);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "ClassPeriod", classPeriodDocumentUuid))
+            .Should()
+            .Be(
+                classPeriodKeyChangesBefore + 1,
+                "the resource whose identity changed emits exactly one key-change row"
+            );
+
+        var classPeriodKeyChange = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+        Convert
+            .ToString(classPeriodKeyChange["OldClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(OldClassPeriodName);
+        Convert
+            .ToString(classPeriodKeyChange["NewClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(NewClassPeriodName);
+        // ClassPeriod identity is School + ClassPeriodName. The School half did not change, so
+        // both the old and new sides must carry SchoolId 100 — a row that mangled the unchanged
+        // component would be a malformed key-change and must fail here.
+        Convert
+            .ToInt64(classPeriodKeyChange["OldSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        Convert
+            .ToInt64(classPeriodKeyChange["NewSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        // Three-way linkage: the key-change ChangeVersion equals dms.Document.ContentVersion
+        // equals the edfi.ClassPeriod root-table mirror ContentVersion
+        // (16-tracked-change-trigger-rendering §29/§33).
+        Convert
+            .ToInt64(classPeriodKeyChange["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterClassPeriod.ContentVersion);
+        afterClassPeriodMirror.ContentVersion.Should().Be(afterClassPeriod.ContentVersion);
     }
 
     [Test]
-    public async Task Updating_ClassPeriod_identity_propagates_to_SectionClassPeriod_and_bumps_Section_ContentVersion()
+    public async Task It_should_propagate_a_ClassPeriod_identity_rename_through_the_SectionClassPeriod_child_binding_and_bump_the_owning_Section_ContentVersion()
     {
         // Arrange — seed a School document, a ClassPeriod referencing that School, a
         // synthetic Section root, and a SectionClassPeriod child binding referencing both
@@ -196,6 +342,10 @@ public class MssqlChildBindingIdentityPropagationTests
         var childRowsBefore = await QuerySectionClassPeriodRowCountAsync(sectionDocumentId);
         var childAnchorBefore = await QuerySectionClassPeriodAnchorAsync(sectionDocumentId);
         childRowsBefore.Should().Be(1);
+        var childCollectionItemIdBefore = Convert.ToInt64(
+            (await QuerySingleSectionClassPeriodAsync(sectionDocumentId))["CollectionItemId"],
+            CultureInfo.InvariantCulture
+        );
 
         // Small delay so any stamp comparison that checks ContentLastModifiedAt
         // would see a distinct timestamp too.
@@ -238,6 +388,16 @@ public class MssqlChildBindingIdentityPropagationTests
                 "ClassPeriod_DocumentId is the reference anchor and must not change during an identity cascade"
             );
 
+        // CollectionItemId must survive the cascade — row-count and anchor stability alone would
+        // also pass a DELETE + re-INSERT with identical values; the sequence-assigned value cannot.
+        Convert
+            .ToInt64(childRow["CollectionItemId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(
+                childCollectionItemIdBefore,
+                "the cascade must update the child row in place, not delete and re-insert it"
+            );
+
         // The child stamp trigger (TR_SectionClassPeriod_Stamp) must fire from the
         // cascade UPDATE and bump the owning Section root's ContentVersion via
         // the Section_DocumentId locator.
@@ -248,6 +408,233 @@ public class MssqlChildBindingIdentityPropagationTests
                 initialContentVersion,
                 "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
+    }
+
+    [Test]
+    public async Task It_should_stamp_atomically_before_commit_and_roll_back_cleanly_when_a_ClassPeriod_rename_runs_in_a_held_transaction()
+    {
+        // Same-transaction atomicity (genuine pre-commit observation, no rollback-only fallback): the
+        // cascade, the owning-root/upstream stamps, both root-table mirrors, and the ClassPeriod
+        // key-change row must all be observable on the same connection BEFORE commit, and a ROLLBACK
+        // must restore every baseline (sequence values excepted — allocation is non-transactional).
+        const int SchoolId = 100;
+        const string OldClassPeriodName = "Period 1";
+        const string NewClassPeriodName = "Period 1A";
+        const string BellScheduleName = "BS1";
+
+        var schoolDocumentId = await InsertSchoolDocumentAsync(SchoolId);
+        var classPeriodDocumentId = await InsertClassPeriodAsync(
+            schoolDocumentId,
+            SchoolId,
+            OldClassPeriodName
+        );
+        var bellScheduleDocumentId = await InsertBellScheduleAsync(
+            schoolDocumentId,
+            SchoolId,
+            BellScheduleName
+        );
+        await InsertBellScheduleClassPeriodAsync(
+            bellScheduleDocumentId,
+            ordinal: 1,
+            classPeriodDocumentId: classPeriodDocumentId,
+            classPeriodName: OldClassPeriodName,
+            classPeriodSchoolId: SchoolId
+        );
+
+        var classPeriodDocumentUuid = await QueryDocumentUuidAsync(classPeriodDocumentId);
+        var bellScheduleDocumentUuid = await QueryDocumentUuidAsync(bellScheduleDocumentId);
+
+        // Committed baselines (each read opens a fresh connection).
+        var baselineClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var baselineBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
+        var baselineClassPeriodMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "ClassPeriod",
+            classPeriodDocumentId
+        );
+        var baselineBellScheduleMirror = await GetRootMirrorStampStateAsync(
+            "edfi",
+            "BellSchedule",
+            bellScheduleDocumentId
+        );
+        var baselineClassPeriodKeyChanges = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+        var baselineBellScheduleKeyChanges = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "BellSchedule",
+            bellScheduleDocumentUuid
+        );
+
+        // Distinct-timestamp gap so the in-transaction sysutcdatetime() stamps are strictly later.
+        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        // await using guarantees ROLLBACK + disposal even if an assertion throws (an uncommitted
+        // SqlTransaction rolls back on dispose), so an assertion failure cannot leave an open transaction.
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        // Act — rename the upstream ClassPeriod identity inside the held transaction.
+        await ExecuteNonQueryInTransactionAsync(
+            connection,
+            transaction,
+            """
+            UPDATE [edfi].[ClassPeriod]
+            SET [ClassPeriodName] = @newName
+            WHERE [DocumentId] = @classPeriodDocumentId;
+            """,
+            new SqlParameter("@newName", NewClassPeriodName),
+            new SqlParameter("@classPeriodDocumentId", classPeriodDocumentId)
+        );
+
+        // Pre-commit, on the held connection: the source identity changed and the child binding cascaded.
+        (
+            await ExecuteScalarStringInTransactionAsync(
+                connection,
+                transaction,
+                "SELECT [ClassPeriodName] FROM [edfi].[ClassPeriod] WHERE [DocumentId] = @documentId;",
+                new SqlParameter("@documentId", classPeriodDocumentId)
+            )
+        )
+            .Should()
+            .Be(NewClassPeriodName);
+        (
+            await ExecuteScalarStringInTransactionAsync(
+                connection,
+                transaction,
+                "SELECT [ClassPeriod_ClassPeriodName] FROM [edfi].[BellScheduleClassPeriod] WHERE [BellSchedule_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", bellScheduleDocumentId)
+            )
+        )
+            .Should()
+            .Be(NewClassPeriodName);
+
+        var pendingClassPeriod = await GetDocumentStampStateInTransactionAsync(
+            connection,
+            transaction,
+            classPeriodDocumentId
+        );
+        var pendingBellSchedule = await GetDocumentStampStateInTransactionAsync(
+            connection,
+            transaction,
+            bellScheduleDocumentId
+        );
+        var pendingClassPeriodMirror = await GetRootMirrorStampStateInTransactionAsync(
+            connection,
+            transaction,
+            "edfi",
+            "ClassPeriod",
+            classPeriodDocumentId
+        );
+        var pendingBellScheduleMirror = await GetRootMirrorStampStateInTransactionAsync(
+            connection,
+            transaction,
+            "edfi",
+            "BellSchedule",
+            bellScheduleDocumentId
+        );
+
+        // Upstream ClassPeriod: all four stamps advance; mirror tracks the document.
+        pendingClassPeriod.ContentVersion.Should().BeGreaterThan(baselineClassPeriod.ContentVersion);
+        pendingClassPeriod.ContentLastModifiedAt.Should().BeAfter(baselineClassPeriod.ContentLastModifiedAt);
+        pendingClassPeriod.IdentityVersion.Should().BeGreaterThan(baselineClassPeriod.IdentityVersion);
+        pendingClassPeriod
+            .IdentityLastModifiedAt.Should()
+            .BeAfter(baselineClassPeriod.IdentityLastModifiedAt);
+        AssertMirrorContentMatchesDocument(pendingClassPeriodMirror, pendingClassPeriod);
+
+        // Owning root BellSchedule: content stamps advance, identity stamps frozen, mirror tracks.
+        pendingBellSchedule.ContentVersion.Should().BeGreaterThan(baselineBellSchedule.ContentVersion);
+        pendingBellSchedule
+            .ContentLastModifiedAt.Should()
+            .BeAfter(baselineBellSchedule.ContentLastModifiedAt);
+        pendingBellSchedule.IdentityVersion.Should().Be(baselineBellSchedule.IdentityVersion);
+        pendingBellSchedule.IdentityLastModifiedAt.Should().Be(baselineBellSchedule.IdentityLastModifiedAt);
+        AssertMirrorContentMatchesDocument(pendingBellScheduleMirror, pendingBellSchedule);
+
+        // ClassPeriod key-change delta is exactly one, with the full composite identity and three-way linkage.
+        (
+            await CountTrackedChangeRowsInTransactionAsync(
+                connection,
+                transaction,
+                "tracked_changes_edfi",
+                "ClassPeriod",
+                classPeriodDocumentUuid
+            )
+        )
+            .Should()
+            .Be(baselineClassPeriodKeyChanges + 1);
+        var pendingKeyChange = await GetLatestTrackedChangeRowInTransactionAsync(
+            connection,
+            transaction,
+            "tracked_changes_edfi",
+            "ClassPeriod",
+            classPeriodDocumentUuid
+        );
+        Convert
+            .ToString(pendingKeyChange["OldClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(OldClassPeriodName);
+        Convert
+            .ToString(pendingKeyChange["NewClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(NewClassPeriodName);
+        Convert
+            .ToInt64(pendingKeyChange["OldSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        Convert
+            .ToInt64(pendingKeyChange["NewSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(SchoolId);
+        Convert
+            .ToInt64(pendingKeyChange["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(pendingClassPeriod.ContentVersion);
+        pendingClassPeriodMirror.ContentVersion.Should().Be(pendingClassPeriod.ContentVersion);
+
+        // Owning root BellSchedule emits no key-change row (its identity did not change).
+        (
+            await CountTrackedChangeRowsInTransactionAsync(
+                connection,
+                transaction,
+                "tracked_changes_edfi",
+                "BellSchedule",
+                bellScheduleDocumentUuid
+            )
+        )
+            .Should()
+            .Be(baselineBellScheduleKeyChanges);
+
+        await transaction.RollbackAsync();
+
+        // After ROLLBACK, every source/binding/document/mirror/tracked-change baseline is restored
+        // (verified through fresh connections). Sequence values are intentionally NOT asserted to roll back.
+        (await QueryClassPeriodNameAsync(classPeriodDocumentId))
+            .Should()
+            .Be(OldClassPeriodName);
+        var restoredChildRow = await QuerySingleBellScheduleClassPeriodAsync(bellScheduleDocumentId);
+        Convert
+            .ToString(restoredChildRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(OldClassPeriodName);
+        (await GetDocumentStampStateAsync(classPeriodDocumentId)).Should().Be(baselineClassPeriod);
+        (await GetDocumentStampStateAsync(bellScheduleDocumentId)).Should().Be(baselineBellSchedule);
+        (await GetRootMirrorStampStateAsync("edfi", "ClassPeriod", classPeriodDocumentId))
+            .Should()
+            .Be(baselineClassPeriodMirror);
+        (await GetRootMirrorStampStateAsync("edfi", "BellSchedule", bellScheduleDocumentId))
+            .Should()
+            .Be(baselineBellScheduleMirror);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "ClassPeriod", classPeriodDocumentUuid))
+            .Should()
+            .Be(baselineClassPeriodKeyChanges);
+        (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "BellSchedule", bellScheduleDocumentUuid))
+            .Should()
+            .Be(baselineBellScheduleKeyChanges);
     }
 
     private async Task<long> InsertSchoolDocumentAsync(int schoolId)
@@ -618,5 +1005,332 @@ public class MssqlChildBindingIdentityPropagationTests
             new SqlParameter("@projectName", projectName),
             new SqlParameter("@resourceName", resourceName)
         );
+    }
+
+    private async Task<Guid> QueryDocumentUuidAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<Guid>(
+            """
+            SELECT [DocumentUuid]
+            FROM [dms].[Document]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT
+                    [ContentVersion],
+                    [IdentityVersion],
+                    [ContentLastModifiedAt],
+                    [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            ReadDateTimeOffset(row["IdentityLastModifiedAt"])
+        );
+    }
+
+    // Root tables carry ContentVersion/ContentLastModifiedAt mirror columns that resource
+    // change-version queries filter on; this reads the mirror pair for the owning root row.
+    private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
+        string schemaName,
+        string tableName,
+        long documentId
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT
+                    [ContentVersion],
+                    [ContentLastModifiedAt]
+                FROM [{schemaName}].[{tableName}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            IdentityVersion: 0,
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+        );
+    }
+
+    private static void AssertMirrorContentMatchesDocument(
+        DocumentStampState mirror,
+        DocumentStampState document
+    )
+    {
+        mirror.ContentVersion.Should().Be(document.ContentVersion);
+        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
+    }
+
+    // tracked_changes_* rows are keyed by [Id], which holds the DocumentUuid (not DocumentId).
+    private async Task<long> CountTrackedChangeRowsAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT(*)
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+    }
+
+    private async Task<IReadOnlyDictionary<string, object?>> GetLatestTrackedChangeRowAsync(
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            $"""
+            SELECT TOP (1) *
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid
+            ORDER BY [ChangeVersion] DESC;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+
+        return rows.Single();
+    }
+
+    private static DateTimeOffset ReadDateTimeOffset(object? value)
+    {
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
+            ),
+        };
+    }
+
+    private async Task<string?> QueryClassPeriodNameAsync(long classPeriodDocumentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT [ClassPeriodName]
+            FROM [edfi].[ClassPeriod]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", classPeriodDocumentId)
+        );
+
+        return Convert.ToString(rows.Single()["ClassPeriodName"], CultureInfo.InvariantCulture);
+    }
+
+    // The pooled QueryRowsAsync/ExecuteScalarAsync helpers open a fresh connection per call and cannot
+    // observe uncommitted state, so pre-commit reads issue transaction-bound commands on the held
+    // connection/transaction.
+    private static async Task ExecuteNonQueryInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string?> ExecuteScalarStringInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+        var result = await command.ExecuteScalarAsync();
+        return result is null or DBNull ? null : Convert.ToString(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<long> CountRowsInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<
+        IReadOnlyList<IReadOnlyDictionary<string, object?>>
+    > QueryRowsInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+
+        List<IReadOnlyDictionary<string, object?>> rows = [];
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            Dictionary<string, object?> row = new(StringComparer.Ordinal);
+            for (var ordinal = 0; ordinal < reader.FieldCount; ordinal++)
+            {
+                row[reader.GetName(ordinal)] = await reader.IsDBNullAsync(ordinal)
+                    ? null
+                    : reader.GetValue(ordinal);
+            }
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
+    private static async Task<DocumentStampState> GetDocumentStampStateInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long documentId
+    )
+    {
+        var row = (
+            await QueryRowsInTransactionAsync(
+                connection,
+                transaction,
+                """
+                SELECT
+                    [ContentVersion],
+                    [IdentityVersion],
+                    [ContentLastModifiedAt],
+                    [IdentityLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            ReadDateTimeOffset(row["IdentityLastModifiedAt"])
+        );
+    }
+
+    private static async Task<DocumentStampState> GetRootMirrorStampStateInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string schemaName,
+        string tableName,
+        long documentId
+    )
+    {
+        var row = (
+            await QueryRowsInTransactionAsync(
+                connection,
+                transaction,
+                $"""
+                SELECT
+                    [ContentVersion],
+                    [ContentLastModifiedAt]
+                FROM [{schemaName}].[{tableName}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            IdentityVersion: 0,
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+        );
+    }
+
+    private static async Task<long> CountTrackedChangeRowsInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        return await CountRowsInTransactionAsync(
+            connection,
+            transaction,
+            $"""
+            SELECT COUNT(*)
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+    }
+
+    private static async Task<
+        IReadOnlyDictionary<string, object?>
+    > GetLatestTrackedChangeRowInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string schemaName,
+        string tableName,
+        Guid documentUuid
+    )
+    {
+        var rows = await QueryRowsInTransactionAsync(
+            connection,
+            transaction,
+            $"""
+            SELECT TOP (1) *
+            FROM [{schemaName}].[{tableName}]
+            WHERE [Id] = @documentUuid
+            ORDER BY [ChangeVersion] DESC;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+
+        return rows.Single();
     }
 }
