@@ -745,6 +745,23 @@ bound to exactly one instance database, binding generation, and public topic, so
 source tables share one connector task and one target topic. A connector must not span
 multiple instance databases, even when the provider supports doing so.
 
+Every v1 connector pins these source-producer overrides:
+
+```text
+producer.override.enable.idempotence=true
+producer.override.acks=all
+producer.override.retries=2147483647
+producer.override.max.in.flight.requests.per.connection=5
+```
+
+These are fixed v1 values rather than binding or operator inputs. Together with one task,
+one key-based partitioner, and one routed partition per key, they prevent a retried upsert
+from being permanently reordered after its later tombstone. Template generation rejects
+duplicate or conflicting producer properties. Registration fails before connector
+startup when the Kafka Connect worker's client-configuration override policy does not
+permit these values, and live connector validation rejects drift from them. V1 does not
+rely on producer defaults supplied by the Kafka client or pinned Connect image.
+
 ### PostgreSQL
 
 - Use the Debezium PostgreSQL connector with `pgoutput` and logical replication.
@@ -1105,6 +1122,14 @@ later partition offset replaces an equal version. Repair tests clear and rebuild
 state into the same topic without advancing `ContentVersion`; incompatible-contract tests
 use a new topic suffix and matching `contractVersion`.
 
+Connector template and registration tests require the exact idempotence, acknowledgement,
+retry, and maximum-in-flight producer overrides, reject every conflicting value and an
+override-disallowing worker policy, and verify the registered connector retains the
+required configuration. A broker-backed retry-ordering test injects a retriable producer
+failure after an upsert is submitted and before its canonical tombstone, then proves the
+public partition contains the upsert before the tombstone and remains deleted after
+connector catch-up.
+
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including an attempted partition-count change, rejection of a topic configured
 with a cleanup policy that includes `delete`, provider aliases that resolve to the same
@@ -1136,8 +1161,9 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - a compatible correction stops old cache writers, rebuilds corrected equal-version
   cache rows into the same topic, and makes the later per-key offset authoritative without
   resetting connector offsets or allocating a new binding generation,
-- a cache upsert committed before canonical deletion appears before its tombstone for
-  that key in the routed public topic,
+- with the pinned idempotent-producer settings, a cache upsert committed before canonical
+  deletion appears before its tombstone for that key in the routed public topic even when
+  the upsert send receives a retriable failure,
 - a projector that captured an older version may commit it after a newer canonical version,
   the row remains cache-behind work, and reconciliation converges it to the newer version,
 - a source update committed before the final optimistic source-version check produces a

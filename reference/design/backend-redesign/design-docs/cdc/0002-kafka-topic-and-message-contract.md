@@ -304,7 +304,11 @@ The authoritative `dms.Document` delete produces the tombstone. Cache deletion,
 cascade, truncation, rebuild, and cleanup produce no public record. A canonical delete
 may therefore produce a tombstone without a preceding upsert. When a cache upsert commits
 before canonical deletion, both records use the same key and connector task so the
-upsert precedes the tombstone in that key's routed partition.
+upsert precedes the tombstone in that key's routed partition. This ordering promise also
+requires the connector's source producer to enable idempotence, acknowledge from all
+in-sync replicas, retain retries, and allow no more than five in-flight requests per
+connection. The deployment design pins those settings, rejects conflicting overrides,
+and verifies the retry path rather than relying on Kafka or image defaults.
 
 At-least-once connector replay can place a previously emitted upsert after an already
 observed tombstone and temporarily restore that document. The null tombstone carries no

@@ -38,8 +38,11 @@ backend.
    connector and instance consumer principals, plus their required consumer-group ACLs;
    do not emit shared-topic, wildcard-topic, or cross-instance consumer grants.
 5. Implement idempotent Kafka Connect create/update, external combined-status polling,
-   timeout, and condition-specific diagnostics. ACL verification must complete before
-   connector registration and before combined readiness can pass.
+   timeout, and condition-specific diagnostics. Fail before registration if the worker
+   does not permit the required source-producer overrides. After registration, read back
+   the connector configuration and reject drift from the required idempotence,
+   acknowledgement, retry, or maximum-in-flight values. ACL verification must complete
+   before connector registration and before combined readiness can pass.
 6. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
    destructive volume teardown.
@@ -56,6 +59,8 @@ backend.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
   in-place topic partition-count changes, time/delete retention on the v1 topic, and
   source/topic-generation reuse.
+- Registration tests reject a worker policy that disallows the required producer
+  overrides and any live connector configuration with conflicting ordering settings.
 - Broker-backed integration tests enable Kafka authorization and prove ACL provisioning
   is repeatable, a configured instance consumer can read its own literal topic, and that
   principal is denied when it attempts to read a peer instance topic.

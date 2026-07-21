@@ -54,6 +54,11 @@ source routing and serialized public contract using the separately published
    `edfialliance/ed-fi-kafka-connect` image.
 8. Pin and validate one key-based partitioner for the binding lifetime; do not rely on an
    image upgrade silently retaining equivalent key-to-partition behavior.
+9. Emit the fixed source-producer overrides `enable.idempotence=true`, `acks=all`,
+   `retries=2147483647`, and `max.in.flight.requests.per.connection=5` using the Kafka
+   Connect `producer.override.*` connector properties. Do not expose them as template
+   inputs. Reject duplicate properties or any attempted override that conflicts with
+   these values.
 
 ## Acceptance Evidence
 
@@ -72,6 +77,9 @@ source routing and serialized public contract using the separately published
   coverage proves the published transform converts a realistic retained record.
 - SQL Server rendering tests prove that each connector selects exactly one instance
   database and one binding topic, and reject attempted multi-database consolidation.
+- Rendering tests require the exact ordering-safe source-producer overrides and reject
+  idempotence disabled, acknowledgements other than `all`, fewer retries, more than five
+  in-flight requests, and duplicate/conflicting producer properties.
 - A pinned-image smoke test proves the configured transform class loads; detailed
   transform behavior remains owned by 17-02a and the shared contract suite in 17-04.
 

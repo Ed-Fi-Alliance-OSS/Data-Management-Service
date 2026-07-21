@@ -44,6 +44,10 @@ without requiring an API E2E path for every source operation.
    seen a newer canonical version may temporarily retain an older projection, then
    converges when the newer projection arrives. Across a tombstone, an older replayed
    upsert may temporarily restore state until the replayed tombstone arrives.
+9. Add a broker-backed producer retry scenario using the registered v1 connector and its
+   pinned idempotence, acknowledgement, retry, and maximum-in-flight settings. Inject a
+   retriable send failure after a cache upsert is submitted and before the later canonical
+   delete is sent.
 
 ## Acceptance Evidence
 
@@ -74,6 +78,9 @@ without requiring an API E2E path for every source operation.
   topic suffix and matching `contractVersion`.
 - Provider tests cover canonical deletion without a cache row, cache rebuild cleanup,
   and same-key routed ordering.
+- The producer retry test proves the routed partition contains the committed cache upsert
+  before its canonical tombstone despite the retriable send failure, and that connector
+  catch-up leaves the document deleted rather than resurrected.
 
 ## Out of Scope
 
