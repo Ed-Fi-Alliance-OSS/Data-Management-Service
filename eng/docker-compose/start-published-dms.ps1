@@ -135,12 +135,6 @@ $databaseOnlyStartup = $DbOnly -and -not $d
 if (-not $databaseOnlyStartup) {
     # Database-only startup must not depend on bootstrap module loading or workspace state.
     # Teardown keeps the normal full-stack behavior, including bootstrap cleanup support.
-    # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool the
-    # runtime contract uses). Import it FIRST so its own -Force reload of bootstrap-manifest is superseded by
-    # the script's bootstrap-manifest import below; that keeps bootstrap-manifest's functions (env snapshot,
-    # startup config) in script scope. Importing it AFTER bootstrap-manifest would re-home the manifest and
-    # break the snapshot restore.
-    Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
     Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
     Import-Module (Join-Path $PSScriptRoot "bootstrap-claims-gate.psm1") -Force
 }
@@ -341,7 +335,12 @@ else {
     # strings are parsed by the exact runtime providers via the api-schema-tools validator. The DbOnly
     # diagnostic slice initializes no CMS, so it resolves only the SA-password credential it needs (below).
     if (-not $DbOnly) {
-        $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
+        # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool).
+        # Imported here in the startup path only (never on teardown or -DbOnly); it imports bootstrap-manifest
+        # without -Force, so it does not disturb the manifest functions this script already loaded.
+        # -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the SDK is present.
+        Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1")
+        $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
         $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
         $contract = Resolve-EffectiveConfigRuntimeContract `
             -InfrastructureEngine $DatabaseEngine `

@@ -28,9 +28,6 @@ param (
 )
 
 Import-Module ./env-utility.psm1 -Force
-# bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool, the api-schema-tools connection-string
-# validator the runtime contract uses (the same tool the provisioning phase uses).
-Import-Module ./bootstrap-schema-tool.psm1 -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $datastore = if ($envValues["DMS_CONFIG_DATASTORE"]) { $envValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
 $databaseComposeFile = if ($datastore -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
@@ -63,7 +60,11 @@ else {
     # runtime providers via the api-schema-tools validator. The standalone lane passes no -ConfigDatabaseName
     # (the resolved connection's own single target IS the effective configuration database OpenIddict
     # initializes) and no datastore connection (there is no separate DMS datastore service in this lane).
-    $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
+    # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool);
+    # imported here in the startup path only (not on teardown). -BuildIfMissing publishes it from source once
+    # when no prebuilt copy exists and the .NET SDK is present.
+    Import-Module ./bootstrap-schema-tool.psm1
+    $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
     $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "cs-local"
     $contract = Resolve-EffectiveConfigRuntimeContract `
         -InfrastructureEngine $datastore `

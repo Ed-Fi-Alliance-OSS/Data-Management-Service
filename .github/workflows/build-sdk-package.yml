@@ -120,6 +120,14 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
 
+      # start-local-dms.ps1 validates the Configuration Service connection strings with the exact runtime
+      # providers via api-schema-tools, which it publishes from source when absent (-BuildIfMissing). That
+      # needs the .NET SDK on the runner; this lane otherwise only builds a Docker image.
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
       - name: Set SDK Version Numbers
         id: versions
         run: |

@@ -287,20 +287,13 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         $contractIndex | Should -BeLessThan $networkIndex -Because "$Script must validate before 'docker network create' - the first external action - which precedes image build, container up, and Keycloak/OpenIddict"
     }
 
-    It "<Script> imports bootstrap-schema-tool before bootstrap-manifest (avoids the -Force re-home that breaks the env snapshot)" -ForEach @(
-        @{ Script = 'start-local-dms.ps1' }
-        @{ Script = 'start-published-dms.ps1' }
-    ) {
-        # bootstrap-schema-tool.psm1 re-imports bootstrap-manifest with -Force at load; if the script imports
-        # it AFTER its own bootstrap-manifest import, the -Force re-homes bootstrap-manifest out of script
-        # scope and Get-/Restore-BootstrapEnvSnapshot / Invoke-BootstrapStartupConfiguration break. The
-        # schema-tool import must come first so the script's bootstrap-manifest import is the last one.
-        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot $Script) -Raw
-        $schemaToolImport = $source.IndexOf('Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1")')
-        $manifestImport = $source.IndexOf('Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1")')
-        $schemaToolImport | Should -BeGreaterThan -1
-        $manifestImport | Should -BeGreaterThan -1
-        $schemaToolImport | Should -BeLessThan $manifestImport
+    It "bootstrap-schema-tool imports bootstrap-manifest WITHOUT -Force (so importing it cannot re-home a caller's manifest)" {
+        # A -Force reload of bootstrap-manifest from within bootstrap-schema-tool removes and re-imports it,
+        # re-homing it out of a start script's session scope and breaking that script's env-snapshot restore
+        # / startup-config functions. This is the root cause of the earlier teardown-test breakage; guard it.
+        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot 'bootstrap-schema-tool.psm1') -Raw
+        $source | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "bootstrap-manifest\.psm1"\)'
+        ([regex]::Matches($source, 'bootstrap-manifest\.psm1"\)\s*-Force')).Count | Should -Be 0
     }
 
     It "the topology resolver performs no CMS-connection or process-environment validation (single policy)" {
