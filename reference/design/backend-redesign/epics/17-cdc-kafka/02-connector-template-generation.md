@@ -31,8 +31,10 @@ source routing and serialized public contract using the separately published
 1. Define inputs from the immutable deployment binding for provider/source fingerprint,
    target and generation identity, connector/topic names, fixed topic partition count,
    `contractVersion`, credentials, replication/capture identity, and snapshot behavior.
-2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
-   instance values.
+2. Generate one PostgreSQL or SQL Server connector configuration per DMS instance and
+   immutable binding, without hard-coded instance values. Scope each connector to exactly
+   one instance database and reject SQL Server configurations that select multiple
+   databases.
    Configure `message.key.columns` to use `DocumentUuid` for both captured tables without
    requiring it to be the `DocumentCache` primary key or a cache index.
 3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
@@ -68,6 +70,8 @@ source routing and serialized public contract using the separately published
   public key bytes as the canonical document-delete source.
 - SQL Server rendering tests require `time.precision.mode=adaptive`; pinned-image smoke
   coverage proves the published transform converts a realistic retained record.
+- SQL Server rendering tests prove that each connector selects exactly one instance
+  database and one binding topic, and reject attempted multi-database consolidation.
 - A pinned-image smoke test proves the configured transform class loads; detailed
   transform behavior remains owned by 17-02a and the shared contract suite in 17-04.
 
@@ -76,3 +80,4 @@ source routing and serialized public contract using the separately published
 - Bootstrap command wiring.
 - Full API-driven E2E scenarios.
 - Production credential provisioning.
+- Multi-database SQL Server connectors and source-aware topic routing.

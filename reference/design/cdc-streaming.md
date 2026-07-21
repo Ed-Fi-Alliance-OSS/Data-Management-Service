@@ -740,9 +740,10 @@ for multiple CMS aliases of the same physical document set.
 
 ## Connector Topology and Provider Setup
 
-The reference architecture registers one logical connector per DMS instance with
-`tasks.max = 1`, so both source tables share a connector task before routing to the
-public topic.
+V1 requires one logical connector per DMS instance with `tasks.max = 1`. A connector is
+bound to exactly one instance database, binding generation, and public topic, so both
+source tables share one connector task and one target topic. A connector must not span
+multiple instance databases, even when the provider supports doing so.
 
 ### PostgreSQL
 
@@ -783,11 +784,11 @@ database-per-instance isolation model.
   `document._lastModifiedDate`; a plain rename would leak the `INT64` representation into
   the public contract.
 
-SQL Server can capture multiple databases in one connector, but the reference deployment
-still registers one logical connector per instance for offset, routing, failure, and
-runbook parity with PostgreSQL. Advanced hosts may consolidate only when they preserve
-per-instance topics and ACLs, `DocumentUuid` tombstones, and acceptable failure/offset
-isolation.
+Although the Debezium SQL Server connector can capture multiple databases, v1 does not
+support that topology. Each instance database has its own connector, binding generation,
+offset state, failure boundary, and single `target.topic`. Multi-database consolidation
+requires a future source-aware routing contract and is not an operator-configurable v1
+exception.
 
 Provider CDC/key setup is opt-in and does not run during ordinary relational provisioning
 when CDC is not selected.
