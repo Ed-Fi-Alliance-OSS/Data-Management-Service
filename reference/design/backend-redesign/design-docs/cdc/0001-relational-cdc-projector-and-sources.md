@@ -53,7 +53,7 @@ defaults; the authoritative design owns their scheduling and coalescing semantic
 Missing cache rows and rows whose version is behind the canonical source are ordinary
 repair work. A cache row whose version is ahead of the canonical source is instead an
 invariant violation: the projector reports it, makes readiness false, and neither retries
-nor overwrites it automatically. Supported same-source writes and guarded projection
+nor overwrites it automatically. Supported same-source writes and monotonic projection
 cannot produce that state, so it indicates cache corruption, an in-place source
 restore/reset, or unsupported reuse of projected state against another canonical source.
 Internal-only recovery deletes the incompatible projected row and rebuilds it. If a
@@ -62,15 +62,14 @@ recovery uses a new downstream state namespace; Kafka CDC uses a new binding gen
 topic, consumer state namespace, and snapshot. The lower canonical version is never
 published as an in-place correction to the old namespace.
 
-All cache writes use a strong commit-order fence: after materialization, a short
-single-document transaction locks the current `dms.Document` row with a lock that
-conflicts with canonical version updates, verifies equality with the captured
-`ContentVersion` on the locked current row, and retains that lock through the monotonic
-cache upsert and commit. This prevents an older result from committing after a newer
-canonical version, replacing a newer cache row, or recreating cache state after canonical
-deletion. The same guard supports ordinary reconciliation and optional direct fill after
-relational read fallback. The authoritative design specifies the PostgreSQL and SQL
-Server locking semantics.
+Cache writes deliberately do not use a source-row commit-order fence. After materialization,
+a short single-document transaction inserts a missing cache row or updates only a lower
+cache `ContentVersion`; it never takes a PostgreSQL `FOR NO KEY UPDATE`, SQL Server
+`UPDLOCK`, or another write-conflicting `dms.Document` lock. The cache foreign key remains
+the post-delete fence. An older materialization may therefore commit after a newer
+canonical version, but it cannot replace a higher cache row and remains ordinary
+cache-behind work for reconciliation. The same monotonic upsert supports ordinary
+reconciliation and optional direct fill after relational read fallback.
 
 Initial population, restart, rebuild, and readiness require a full audit. At startup or
 restart, the projector captures the initial incremental boundary before that audit and
@@ -110,9 +109,16 @@ The database difference is sufficient durable projector state and invariant evid
 Every representation change allocates a monotonic `ContentVersion`, making it an
 efficient incremental discovery key, while full audits recover lower versions that
 commit late or cache rows lost below the cursor. Timestamp comparison adds provider
-precision risks without adding correctness. A guarded idempotent upsert makes duplicate
+precision risks without adding correctness. A monotonic idempotent upsert makes duplicate
 projectors and restart rediscovery safe; refusing to lower an ahead cache row preserves
 the stream's monotonic consumer contract.
+
+This choice is conscious: v1 guarantees monotonic, eventually convergent publication, not
+that every cache upsert was canonical-current at its database commit. A consumer that has
+not yet seen the newer version may temporarily retain the older projection. Avoiding the
+stronger guarantee keeps optional projection and direct fill from taking source-row locks
+that can conflict with canonical writers. A future downstream requirement for linearizable
+publication requires a separate design and performance decision.
 
 ## Consequences
 
@@ -123,10 +129,9 @@ the stream's monotonic consumer contract.
   to use relational sources.
 - Reads may use only fresh cache rows and always retain relational fallback.
 - Projection lag and failure are observable but never gate normal API traffic.
-- Guarded writes add one short per-document source-row lock after materialization.
-  Different documents remain concurrent; a hot canonical writer or duplicate projector
-  may wait through only the guarded cache upsert and commit. V1 does not hold source-row
-  locks during materialization or across a batch of candidates.
+- Projector and direct-fill cache writes take no write-conflicting source-row lock. They do
+  not make canonical writers wait for optional projection to commit; ordinary cache-row
+  and foreign-key concurrency still follows provider transaction semantics.
 - Ordinary updates use indexed incremental discovery; full relationship scans are
   reserved for startup, rebuild, periodic audit, and readiness verification.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows are invariant
@@ -163,8 +168,9 @@ the stream's monotonic consumer contract.
 | Add `(DocumentId, DocumentUuid)` as a canonical unique key and composite cache foreign key | Rejected: it adds a redundant wide index to the canonical `dms.Document` table for an optional projection. |
 | Make cache `DocumentUuid` a primary or unique key | Rejected: it adds a random 16-byte cache index and, on SQL Server, would make a poor clustered insertion key. Trigger-enforced denormalization preserves the compact `DocumentId` key. |
 | Trust only the projector to copy the right UUID | Rejected: a defective or unsupported cache writer could publish an upsert and tombstone under different keys. The cache-only validation trigger aborts the write before CDC can observe it. |
-| Require synchronous read-through population | Rejected for correctness; direct fill remains an optional guarded optimization. |
-| Allow a stale materialization to commit when only the cache version is monotonic | Rejected: read freshness and reconciliation would preserve API correctness, but CDC could capture an old cache upsert after a newer canonical version commits, contradicting the selected stale-write fence. |
+| Require synchronous read-through population | Rejected for correctness; direct fill remains an optional monotonic optimization. |
+| Add a source-row commit-order fence | Rejected for v1: it would make optional projection take write-conflicting locks on canonical `dms.Document` rows. Monotonic cache upserts, fresh-read validation, reconciliation, consumer version ordering, and the cache foreign key provide the selected eventual-consistency and delete guarantees. |
+| Require every cache upsert to be canonical-current at commit | Rejected for v1: a lower captured version may commit after a newer canonical version as ordinary monotonic projection lag. A consumer that has not yet observed the newer version may temporarily retain the lower state until reconciliation publishes the newer projection. |
 | Use the incremental cursor, a high-watermark, `ComputedAt`, or `LastModifiedAt` as completeness evidence | Rejected: none proves that every current document is projected at its current representation version. |
 | Store retry state on the cache row | Rejected: missing rows have nowhere to store it and operational fields would enter the captured row contract. |
 | Automatically overwrite a cache-ahead row with the lower canonical version | Rejected: the state cannot result from supported same-source concurrency and the lower record may be ignored by consumers that retained the higher published version. Explicit recovery distinguishes internal-only cache repair from downstream state reset. |

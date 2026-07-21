@@ -16,7 +16,7 @@ related:
 ## Outcome
 
 Implement the reusable optional document projection defined by the design references:
-configuration and target selection, materialization, reconciliation, guarded writes,
+configuration and target selection, materialization, reconciliation, monotonic writes,
 optional read acceleration, health/telemetry, provider tests, and runbooks. The CDC epic
 consumes this projection for upserts and independently owns connector lifecycle deletes.
 The small `dms.DocumentCache` table and `dms.DataStoreIdentity` singleton are always
@@ -28,7 +28,7 @@ provisioned; optionality applies to projection execution and cache-backed reads.
 - `TBD` — `02-document-materializer-service.md` — Add reusable caller-agnostic document materialization
 - `TBD` — `03-async-projector-reconciliation-loop.md` — Add the asynchronous reconciliation loop
 - `TBD` — `05-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
-- `TBD` — `07-projector-stale-write-fencing.md` — Enforce stale-write and post-delete fencing
+- `TBD` — `07-monotonic-cache-upsert-and-delete-fencing.md` — Implement monotonic cache upsert and post-delete fencing
 - `TBD` — `09-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
 - `TBD` — `11-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
 
@@ -42,8 +42,8 @@ implementation inputs.
 
 - The explicit target list selects and isolates projection, unresolved listed targets can
   become available after startup, and read acceleration selects no additional stores.
-- Both providers pass materialization, reconciliation, fencing, restart, retry, rebuild,
-  health, and read-fallback integration coverage.
+- Both providers pass materialization, reconciliation, monotonic-upsert, delete-fence,
+  restart, retry, rebuild, health, and read-fallback integration coverage.
 - In-process work uses documented implementation-tuned defaults, serialized per-target
   loops, bounded pages, fair process-wide target concurrency, coalesced audits, and
   observational health/readiness checks.

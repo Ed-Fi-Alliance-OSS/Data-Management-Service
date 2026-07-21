@@ -194,6 +194,15 @@ Kafka ordering is per partition and therefore per keyed document, not global
 `contentVersion` order. `contentVersion` remains the canonical-state ordering value;
 partition offset orders multiple projections of that same canonical state.
 
+Projection publication is monotonic and eventually convergent, not linearizable to the
+canonical source at each cache commit. A projector may materialize version 10, a canonical
+writer may commit version 11, and the version-10 cache upsert may then commit and publish
+before reconciliation publishes version 11. The database upsert never lets version 10
+replace an already cached version 11. A consumer that has not yet observed version 11 may
+temporarily retain version 10; this is ordinary projection lag, not a contract violation.
+V1 consciously accepts that lag so optional projection does not take a write-conflicting
+source-row lock that can delay canonical writers.
+
 Consequently, a lower `contentVersion` is never an in-place correction for a higher value
 already observed on the topic. If projection health detects
 `DocumentCache.ContentVersion > Document.ContentVersion` and that higher cache value may
@@ -301,6 +310,8 @@ The public topic never exposes:
 ## Consequences
 
 - Consumers can reconstruct current instance document state but not complete history.
+- Consumers may temporarily retain an older monotonic projection that committed after a
+  newer canonical source version but before that newer version was projected.
 - A published cache-ahead invariant cannot be repaired by sending the lower canonical
   version to the same topic; source rollback/reset recovery uses a new topic generation.
 - One ACL protects one instance while resource metadata supports downstream routing.

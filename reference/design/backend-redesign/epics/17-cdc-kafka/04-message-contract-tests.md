@@ -37,6 +37,9 @@ without requiring an API E2E path for every source operation.
    opaque ETag bytes.
 7. Exercise consumer ordering for higher, lower, and equal `contentVersion` records and
    verify that the topic partition count cannot change within a binding generation.
+8. Pin the monotonic-lag contract: a consumer that has not yet seen a newer canonical
+   version may temporarily retain an older projection, then converges when the newer
+   projection arrives.
 
 ## Acceptance Evidence
 
@@ -56,7 +59,8 @@ without requiring an API E2E path for every source operation.
   opaque value.
 - Ordering tests prove a higher `contentVersion` replaces, a lower version is ignored,
   and the later partition offset replaces an equal version without a public projection
-  generation field.
+  generation field. They also prove that an older projection received before the newer
+  projection is accepted temporarily and then replaced, as ordinary monotonic lag.
 - Repair tests prove a cache clear/rebuild republishes corrected equal-version values into
   the same topic, while incompatible key/field/type/delete-contract changes use a new
   topic suffix and matching `contractVersion`.

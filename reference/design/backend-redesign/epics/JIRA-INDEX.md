@@ -212,6 +212,6 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `TBD` — Add reusable caller-agnostic document materialization — `reference/design/backend-redesign/epics/18-document-cache/02-document-materializer-service.md`
   - `TBD` — Add the asynchronous DocumentCache reconciliation loop — `reference/design/backend-redesign/epics/18-document-cache/03-async-projector-reconciliation-loop.md`
   - `TBD` — Add fresh-cache reads with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`
-  - `TBD` — Enforce projector stale-write and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/07-projector-stale-write-fencing.md`
+  - `TBD` — Implement monotonic cache upsert and post-delete fencing — `reference/design/backend-redesign/epics/18-document-cache/07-monotonic-cache-upsert-and-delete-fencing.md`
   - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/09-documentcache-health-readiness-and-telemetry.md`
   - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/11-documentcache-integration-tests-and-runbooks.md`

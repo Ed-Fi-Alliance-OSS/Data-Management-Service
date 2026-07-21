@@ -120,7 +120,7 @@ Notes:
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
 | E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
 | E17 | [Relational CDC/Kafka Streaming](17-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks |
-| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL with optional reconciliation/read behavior, difference-derived health, cache-ahead invariant detection, bounded in-memory retry, and read fallback; E17 owns authoritative delete capture and published-ahead recovery |
+| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL with optional reconciliation/read behavior, monotonic cache upserts without source-row commit-order locking, difference-derived health, cache-ahead invariant detection, bounded in-memory retry, and read fallback; E17 owns authoritative delete capture and published-ahead recovery |
 
 ---
 

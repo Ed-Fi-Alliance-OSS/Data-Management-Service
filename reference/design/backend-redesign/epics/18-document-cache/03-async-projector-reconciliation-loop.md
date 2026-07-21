@@ -49,7 +49,7 @@ including the bounded in-memory retry behavior defined by the authoritative desi
    DDL emitter, unit, DB-apply, and snapshot fixtures to match the revised column,
    constraint, identity, and access-path inventory. Keep provider publication/capture
    artifacts outside this ordinary DDL path.
-6. Invoke the shared materializer and guarded upsert with fair retry and idle polling for
+6. Invoke the shared materializer and monotonic upsert with fair retry and idle polling for
    missing and cache-behind candidates. Report cache-ahead rows as invariant violations
    without materialization or retry.
 7. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
@@ -67,7 +67,7 @@ including the bounded in-memory retry behavior defined by the authoritative desi
   resolution, colliding local ids, population, create/update, restart, rebuild,
   transient/persistent failure, fairness, peer isolation, and multiple replicas.
 - Concurrency tests cover source update and deletion during materialization through the
-  shared guard.
+  shared monotonic upsert and foreign-key delete fence.
 - Query-plan tests prove ordinary high-version updates use indexed incremental discovery
   without a full relationship scan and that a full audit covers the relationship once
   rather than rescanning each repaired prefix.

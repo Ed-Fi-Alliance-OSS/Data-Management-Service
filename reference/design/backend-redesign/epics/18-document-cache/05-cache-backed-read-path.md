@@ -30,8 +30,9 @@ authorization, candidate selection, fallback, and response shaping.
    independently reported projection invariant violation.
 2. Ignore the cache row's CDC-only `StreamEtag` and reuse existing profile, link, and
    request-specific `_etag` shaping after cache or relational assembly.
-3. Add relational fallback and an optional guarded direct fill. Direct fill uses 18-07's
-   short bounded lock wait and is abandoned on contention without affecting the response.
+3. Add relational fallback and an optional monotonic direct fill. Direct fill uses 18-07's
+   conditional upsert without taking a write-conflicting source-row lock; failure or a
+   concurrent canonical change does not affect the response.
 4. Emit cache hit, miss, stale miss, and fallback telemetry.
 
 ## Acceptance Evidence
@@ -43,8 +44,8 @@ authorization, candidate selection, fallback, and response shaping.
   candidate selection.
 - Tests prove reads do not enqueue projector work and remain correct if direct fill
   fails.
-- Tests prove direct-fill lock contention or timeout does not delay beyond its bounded
-  wait or fail the relational response.
+- Tests prove direct fill takes no write-conflicting source-row lock and cannot delay or
+  fail the relational response through projection-held canonical-row contention.
 
 ## Out of Scope
 

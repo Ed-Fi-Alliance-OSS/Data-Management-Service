@@ -25,7 +25,8 @@ that links to, rather than restates, the authoritative design.
 ## Deliverables
 
 1. Add provider fixtures for explicit target selection, late resolution of already-listed
-   targets, projection, fallback, failure, restart, fencing, health, and rebuild.
+   targets, projection, fallback, failure, restart, monotonic upsert, delete fencing,
+   health, and rebuild.
 2. Exercise CDC projection-completeness transitions without requiring a Kafka connector.
 3. Publish DocumentCache operation/troubleshooting guidance and cross-link CDC connector
    operations separately. Include cache-ahead diagnosis and require operators to
@@ -47,6 +48,8 @@ that links to, rather than restates, the authoritative design.
 - Provider integration tests prove trigger-enforced UUID denormalization for insert and
   update, cascade deletion through the compact `DocumentId` FK, absence of a cache UUID
   index, and equivalent connector-key values from cache upserts and canonical deletes.
+- Concurrency tests prove a delayed lower projection is ordinary cache-behind work, never
+  replaces a higher cache row, and takes no write-conflicting canonical source-row lock.
 - Rebuild tests use ordinary reconciliation and never introduce a separate backfill
   workflow.
 - Compatible-correction tests prove ordinary reconciliation does not rewrite an existing
