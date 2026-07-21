@@ -31,6 +31,14 @@ and `dms.DocumentCache.StreamEtag` supplies the DMS-computed ETag for that fixed
 representation. `dms.Document` supplies the authoritative lifecycle delete and stable
 `DocumentUuid`. Cache deletion has no domain meaning.
 
+`dms.DocumentCache` retains `DocumentId` as its compact primary/foreign key and stores
+`DocumentUuid` as a non-indexed denormalized connector-key column. Provider-specific cache
+insert/update triggers compare that value with `dms.Document.DocumentUuid` through the
+existing `DocumentId` primary key and reject a mismatch. Canonical `DocumentUuid` is
+immutable, the parent already enforces its uniqueness, and the cache permits one row per
+`DocumentId`; therefore both captured sources have the same logical UUID key without a
+cache UUID index or a new composite index on the canonical table.
+
 The projector uses the current source/cache difference as both durable work inventory
 and completeness evidence. A cache row is fresh exactly when its `ContentVersion` equals
 the current `dms.Document.ContentVersion`. `LastModifiedAt` remains payload/diagnostic
@@ -128,7 +136,10 @@ the stream's monotonic consumer contract.
   intentional topic rebuild for an incompatible contract uses connector snapshot/topic
   recovery.
 - Both source tables use `DocumentUuid` as the connector key and share one connector task
-  so a committed upsert preceding canonical deletion retains per-key order.
+  so a committed upsert preceding canonical deletion retains per-key order. The cache key
+  column is non-indexed; its equality and logical uniqueness are consequences of the
+  cache-validation trigger, compact `DocumentId` primary/foreign key, and canonical UUID
+  uniqueness.
 - DMS, not Kafka Connect or a downstream consumer, owns stream ETag derivation; the
   connector copies the projected opaque value into the public message shape.
 - Consumers tolerate duplicate/replayed upserts and tombstones without a prior upsert.
@@ -149,6 +160,9 @@ the stream's monotonic consumer contract.
 | Persist queues, epochs, progress, retry, or failure rows | Rejected for v1: the current source/cache difference preserves repairable work and invariant evidence; add a small pending-work table or flag only if indexed incremental-discovery and full-audit benchmarks require it. |
 | Use the full mismatch anti-join for every steady-state poll | Rejected: it makes ordinary high-version update discovery scale with the complete document set. |
 | Build JSON in database triggers | Rejected: it duplicates application reconstitution and increases provider-specific logic. |
+| Add `(DocumentId, DocumentUuid)` as a canonical unique key and composite cache foreign key | Rejected: it adds a redundant wide index to the canonical `dms.Document` table for an optional projection. |
+| Make cache `DocumentUuid` a primary or unique key | Rejected: it adds a random 16-byte cache index and, on SQL Server, would make a poor clustered insertion key. Trigger-enforced denormalization preserves the compact `DocumentId` key. |
+| Trust only the projector to copy the right UUID | Rejected: a defective or unsupported cache writer could publish an upsert and tombstone under different keys. The cache-only validation trigger aborts the write before CDC can observe it. |
 | Require synchronous read-through population | Rejected for correctness; direct fill remains an optional guarded optimization. |
 | Allow a stale materialization to commit when only the cache version is monotonic | Rejected: read freshness and reconciliation would preserve API correctness, but CDC could capture an old cache upsert after a newer canonical version commits, contradicting the selected stale-write fence. |
 | Use the incremental cursor, a high-watermark, `ComputedAt`, or `LastModifiedAt` as completeness evidence | Rejected: none proves that every current document is projected at its current representation version. |

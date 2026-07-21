@@ -39,10 +39,13 @@ including the bounded in-memory retry behavior defined by the authoritative desi
    including bounded audit-local paging and an exact finishing aggregate that separates
    missing, cache-behind, and cache-ahead rows.
 5. Update core DDL for both providers: remove the obsolete
-   `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` index and provision the
-   required `dms.Document(ContentVersion, DocumentId)` index whenever
-   `dms.DocumentCache` is provisioned. Update DDL emitter, unit, and snapshot fixtures to
-   match the revised access-path inventory.
+   `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` and
+   `UX_DocumentCache_DocumentUuid` indexes, keep compact `DocumentId` as the cache
+   primary/foreign key, emit the provider-specific cache insert/update trigger that rejects
+   a UUID mismatch with the canonical row, and provision the required
+   `dms.Document(ContentVersion, DocumentId)` index whenever `dms.DocumentCache` is
+   provisioned. Update DDL emitter, unit, DB-apply, and snapshot fixtures to match the
+   revised constraint and access-path inventory.
 6. Invoke the shared materializer and guarded upsert with fair retry and idle polling for
    missing and cache-behind candidates. Report cache-ahead rows as invariant violations
    without materialization or retry.
@@ -66,8 +69,13 @@ including the bounded in-memory retry behavior defined by the authoritative desi
   without a full relationship scan and that a full audit covers the relationship once
   rather than rescanning each repaired prefix.
 - PostgreSQL and SQL Server DDL tests prove the emitted schema includes
-  `dms.Document(ContentVersion, DocumentId)` and excludes
-  `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`.
+  `dms.Document(ContentVersion, DocumentId)`, preserves the cache `DocumentId` primary/FK,
+  and excludes `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`,
+  `UX_DocumentCache_DocumentUuid`, and any new canonical
+  `(DocumentId, DocumentUuid)` index.
+- Provider DB-apply tests prove cache insert/update statements with the matching canonical
+  UUID succeed, mismatches fail atomically through the validation trigger, no mismatched CDC
+  row can commit, and ordinary canonical writes perform no cache-trigger work.
 - Completeness tests prove late lower-version commits and cache-row loss below the cursor
   are repaired by full audit, advancing past failures retains bounded retry, and no
   timestamp, epoch, `StreamEtag` comparison, or cursor/high-watermark becomes a second

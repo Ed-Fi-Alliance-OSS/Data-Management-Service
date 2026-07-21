@@ -33,6 +33,8 @@ source routing and serialized public contract using the separately published
    `contractVersion`, credentials, replication/capture identity, and snapshot behavior.
 2. Generate PostgreSQL and SQL Server connector configurations without hard-coded
    instance values.
+   Configure `message.key.columns` to use `DocumentUuid` for both captured tables without
+   requiring it to be the `DocumentCache` primary key or a cache index.
 3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
    Ed-Fi `DocumentState` SMT convert `datetime2(7)`
    `io.debezium.time.NanoTimestamp` values to the contract's lossless UTC ISO string.
@@ -61,6 +63,8 @@ source routing and serialized public contract using the separately published
 - Template tests prove the configured class, source includes, key columns, converters,
   tombstone suppression, transform properties, and target topic match the binding and
   17-02a contract.
+- Provider template/smoke tests prove the non-indexed cache UUID column produces the same
+  public key bytes as the canonical document-delete source.
 - SQL Server rendering tests require `time.precision.mode=adaptive`; pinned-image smoke
   coverage proves the published transform converts a realistic retained record.
 - A pinned-image smoke test proves the configured transform class loads; detailed

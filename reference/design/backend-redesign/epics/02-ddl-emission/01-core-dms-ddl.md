@@ -20,7 +20,9 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 - Generated DDL includes (at minimum) the v1 inventory from `ddl-generation.md`:
   - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
   - optional projection table: `dms.DocumentCache`, including the non-null opaque
-    `StreamEtag` produced by DMS for the fixed CDC representation
+    `StreamEtag` produced by DMS for the fixed CDC representation; keep `DocumentId` as
+    its compact primary/foreign key, keep `DocumentUuid` non-indexed, and emit the
+    provider-specific trigger that rejects a UUID mismatch with the canonical row
   - `dms.EffectiveSchema`, `dms.SchemaComponent`
   - `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`
   - required journaling triggers/functions on `dms.Document`
@@ -34,3 +36,5 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 2. Implement update-tracking trigger emission per `reference/design/backend-redesign/design-docs/update-tracking.md` (PG and MSSQL variants).
 3. Ensure deterministic ordering of statements (phased ordering per `ddl-generation.md`).
 4. Add snapshot tests that validate core DDL output for a small fixture (both dialects).
+5. Add provider DB-apply tests proving mismatched cache UUIDs are rejected and that no
+   cache UUID or canonical composite identity index is emitted.

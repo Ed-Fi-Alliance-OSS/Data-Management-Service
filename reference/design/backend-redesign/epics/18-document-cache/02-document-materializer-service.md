@@ -34,15 +34,17 @@ reconciliation, optional direct fill, and CDC payload fixtures.
    the cached document's backend-defined link context, and identity content coding.
    Ordinary resources use the link-bearing context regardless of the API resource-link
    option; descriptors use their links-off context.
-4. Load resource identity/version metadata and validate embedded/column/stream-ETag
-   consistency before returning a writable result.
+4. Load `DocumentUuid` and resource identity/version metadata from the canonical
+   `dms.Document` row. Validate embedded/column/stream-ETag consistency before returning a
+   writable result; callers do not supply an independent cache UUID.
 5. Report disappearance, reconstitution, and invariant failures without emitting a
    partial cache result.
 
 ## Acceptance Evidence
 
 - Unit/integration tests cover every cache result field and metadata invariant, including
-  exact `StreamEtag` equality with the existing DMS composer.
+  equality between the canonical, cache-column, and embedded document UUIDs and exact
+  `StreamEtag` equality with the existing DMS composer.
 - Contract fixtures prove `StreamEtag` is produced by the current shared composer for the
   fixed stream context and remains coherent with `ContentVersion`, effective schema, and
   document link context. They treat the resulting bytes as opaque rather than freezing

@@ -27,6 +27,10 @@ relational CDC source/key design.
    connector version.
 5. Add negative validation for missing key, replica-identity, capture prerequisites, or
    artifacts that exist without matching binding state.
+6. Validate that `DocumentCache.DocumentUuid` is available as the non-indexed custom
+   Debezium key column and that the provider cache trigger enforces equality with the
+   canonical UUID for the same `DocumentId`; do not add a cache UUID or canonical
+   composite identity index as a CDC prerequisite.
 
 ## Acceptance Evidence
 
@@ -35,6 +39,8 @@ relational CDC source/key design.
 - SQL Server DB-apply tests validate capture instances and the equivalent delete key.
 - Cache-source records for both providers expose the DMS-projected `StreamEtag` required
   by connector shaping.
+- Cache-source smoke tests use the non-indexed `DocumentUuid` custom key and prove its
+  serialized value matches the canonical delete key for the same document.
 - Both providers distinguish cache maintenance records for later filtering.
 - Ordinary relational provisioning tests prove CDC artifacts remain opt-in.
 

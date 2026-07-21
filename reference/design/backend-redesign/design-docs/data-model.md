@@ -529,6 +529,27 @@ Denormalized resource naming:
 - `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
 - `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json` (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and denormalized here for CDC/streaming convenience.
 
+Denormalized document identity:
+
+- `DocumentId` remains the compact cache primary key and the `ON DELETE CASCADE`
+  foreign key to `dms.Document`. SQL Server keeps it as the clustered key.
+- `DocumentUuid` is a non-indexed denormalized copy used as the Debezium message-key
+  column. `dms.DocumentCache` has no unique constraint or index on `DocumentUuid`.
+- Provider-specific `DocumentCache` insert/update validation triggers join the incoming
+  `DocumentId` to `dms.Document` through its existing primary key and reject the statement
+  unless the incoming `DocumentUuid` exactly equals the canonical row's `DocumentUuid`.
+  The existing foreign key remains responsible for rejecting a missing parent and fencing
+  deletion.
+- Canonical `dms.Document.DocumentUuid` is immutable after document creation. DMS update
+  plans never assign it; identity changes update referential identities without changing
+  the public document UUID.
+
+This implies one cache row per canonical `DocumentId` and the same UUID on both CDC
+sources without adding a composite or UUID index to `dms.Document`. The canonical table's
+existing `UX_Document_DocumentUuid` continues to own public-ID lookup and uniqueness.
+Because every cache UUID is trigger-validated against that unique canonical value, another
+cache UUID index would be redundant.
+
 **PostgreSQL**
 
 ```sql
@@ -544,8 +565,7 @@ CREATE TABLE dms.DocumentCache (
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object')
 );
 ```
 
@@ -566,10 +586,28 @@ CREATE TABLE dms.DocumentCache (
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
     CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{')
 );
 ```
+
+The DDL emitter also creates the provider-equivalent identity validation trigger. The
+stable trigger name is `TR_DocumentCache_ValidateDocumentUuid`; PostgreSQL uses the stable
+function name `TF_DocumentCache_ValidateDocumentUuid`:
+
+- PostgreSQL uses a `BEFORE INSERT OR UPDATE` trigger on `dms.DocumentCache`. It reads the
+  canonical UUID by `NEW.DocumentId`, returns the row when they match, and raises an
+  integrity error when they differ. The subsequent foreign-key check handles a missing
+  canonical row.
+- SQL Server uses one set-based `AFTER INSERT, UPDATE` trigger. It joins `inserted` to
+  `dms.Document` by `DocumentId` and throws when any UUID differs; the statement and its
+  change-data record are rolled back. The foreign key is checked independently for a
+  missing canonical row.
+
+The trigger compares only fixed-width identity values and uses the existing canonical
+`DocumentId` primary-key access path. It does not parse `DocumentJson`, add work to normal
+canonical document writes, or require a `DocumentCache.DocumentUuid` index. Projector and
+direct-fill statements still derive the cache UUID from the canonical source rather than
+accepting an independent caller value; the trigger is the database backstop.
 
 Uses:
 

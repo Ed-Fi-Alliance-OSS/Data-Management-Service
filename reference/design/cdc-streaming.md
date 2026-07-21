@@ -136,8 +136,14 @@ per current document. Its row contains:
 - `DocumentJson`
 - `ComputedAt`
 
-`DocumentId` is the internal primary key and an `ON DELETE CASCADE` foreign key to
-`dms.Document`. `DocumentUuid` is unique and is the public identity used by CDC.
+`DocumentId` is the compact internal primary key and an `ON DELETE CASCADE` foreign key to
+`dms.Document`. `DocumentUuid` is a non-indexed denormalized copy of the canonical public
+identity used as the Debezium message key. Provider-specific cache insert/update triggers
+join by the existing `DocumentId` primary key and reject the statement unless the cache UUID
+equals `dms.Document.DocumentUuid` for that same row. The foreign key independently rejects
+a missing/deleted parent. Because canonical `DocumentUuid` is immutable and unique and the
+cache has one row per canonical `DocumentId`, the trigger establishes cache UUID uniqueness
+without a cache UUID index or a new composite index on `dms.Document`.
 
 `DocumentJson` is produced by the same relational read-plan and reconstitution rules as
 GET/query response assembly. It includes stable top-level `id` and
@@ -164,12 +170,15 @@ A dedicated cache-projection materializer returns the row metadata and `Document
 one coherent result. Before a cache write it validates:
 
 ```text
+DocumentCache.DocumentUuid == Document.DocumentUuid for DocumentId
 DocumentJson.id == DocumentUuid
 DocumentJson._lastModifiedDate == formatted LastModifiedAt
 StreamEtag == DMS served-etag composition for the fixed stream representation
 ```
 
-An invariant failure is a materialization failure and produces no cache write.
+An application invariant failure is a materialization failure and produces no cache write;
+the provider trigger independently rejects a mismatched denormalized UUID if a defective or
+unsupported writer reaches the database.
 `LastModifiedAt` is sourced from `dms.Document.ContentLastModifiedAt`; this payload
 invariant does not make the timestamp a freshness condition.
 
@@ -635,6 +644,9 @@ public topic.
 - Create one narrowly scoped publication and one replication slot per instance
   connector; include only `dms.DocumentCache` and `dms.Document`.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
+- `DocumentCache.DocumentUuid` is a custom logical message key, not the cache primary key;
+  it does not require a cache UUID index. Its uniqueness follows from the cache identity
+  validation trigger and canonical UUID uniqueness.
 - Set `dms.Document` to `REPLICA IDENTITY FULL` so its non-primary-key
   `DocumentUuid` is available in delete records.
 - Verify exact quoted table identifiers, `message.key.columns`, replica-identity SQL,
@@ -653,6 +665,8 @@ database-per-instance isolation model.
   `DocumentUuid`.
 - Use a least-privilege login with CDC read access.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
+- `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
+  the configured custom key does not change the table's `DocumentId` clustered key.
 - Set `time.precision.mode=adaptive` explicitly. Under this mode SQL Server
   `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, are captured as
   `INT64` values with the `io.debezium.time.NanoTimestamp` logical type.
@@ -867,7 +881,10 @@ deployment-owned CDC binding record. Supporting DDL is limited to the projection
 measured access paths:
 
 - `DocumentCache(DocumentId)` remains the primary/foreign key with cascade deletion.
-- `DocumentCache.DocumentUuid` remains unique for connector keys.
+- `DocumentCache.DocumentUuid` is a non-indexed denormalized connector-key column.
+  Provider-specific insert/update triggers reject any value that differs from
+  `Document.DocumentUuid` for the same `DocumentId`; no composite parent index or cache UUID
+  unique index is provisioned.
 - `DocumentCache.StreamEtag` stores the DMS-computed opaque ETag for the fixed CDC
   representation; it is not used by API reads.
 - Provider-specific constraints ensure `DocumentJson` is a JSON object.

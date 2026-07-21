@@ -92,6 +92,9 @@ org.apache.kafka.connect.storage.StringConverter
 `DocumentUuid` is the stable public document identity. Internal `DocumentId` is not part
 of the public key or value. The key originates in the Debezium key path for both captured
 tables; it cannot be derived only from an unwrapped value because delete values are null.
+For `dms.DocumentCache`, `DocumentUuid` is a non-indexed custom message-key column rather
+than the relational primary key. Database validation triggers enforce that it equals the
+canonical UUID for the row's compact `DocumentId` primary/foreign key.
 
 ## Upsert Value
 

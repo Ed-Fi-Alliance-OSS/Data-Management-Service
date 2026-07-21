@@ -48,6 +48,10 @@ implementation inputs.
 - Every projected row carries a `StreamEtag` produced by the shared DMS served-ETag
   composer for the fixed CDC representation; API reads continue to compose their own
   request-specific validators.
+- `DocumentCache` retains one compact `DocumentId` primary/foreign-key index. Its
+  non-indexed `DocumentUuid` is copied from the canonical row and provider validation
+  triggers reject mismatches without adding a cache UUID index or a composite index to
+  `dms.Document`.
 - Exact source/cache differences establish repairable projection work and cache-ahead
   invariant evidence without durable workflow state. Missing and behind rows repair
   automatically; ahead rows require explicit CDC-aware recovery.

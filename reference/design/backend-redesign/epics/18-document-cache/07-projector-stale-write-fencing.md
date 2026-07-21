@@ -41,6 +41,9 @@ has advanced beyond its captured version.
    `ContentVersion` is lower. Persist `StreamEtag`, `ContentVersion`, and `DocumentJson`
    atomically in that row; treat a same-version duplicate as already fresh and a higher
    existing cache version as an invariant violation that receives no write or retry.
+   Copy `DocumentUuid` from the locked canonical source and rely on the cache identity
+   validation trigger as the final database backstop; never accept an independent UUID
+   from a projector or direct-fill caller.
 5. Execute one candidate per short guard transaction and route every projector/direct-fill
    write through it. Do not batch source-row locks across candidates in v1.
 6. Report missing/version-changed source rows as observable stale skips. Route deadlock,
@@ -58,6 +61,9 @@ has advanced beyond its captured version.
 - Provider tests cover deletion racing materialization, out-of-order candidates,
   same-version duplicate loops, multiple projector replicas, timeout/deadlock retry, and
   PostgreSQL/SQL Server parity.
+- Provider tests prove every guarded writer copies the canonical UUID and that the
+  cache-only validation trigger rolls back an intentionally mismatched write without
+  changing canonical write behavior.
 - Provider tests prove a cache-ahead row is never overwritten with the lower captured
   version and is returned as a distinct invariant result rather than a transient database
   failure or retryable stale skip.
