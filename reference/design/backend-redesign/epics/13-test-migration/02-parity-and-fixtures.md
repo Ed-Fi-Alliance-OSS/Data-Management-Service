@@ -17,13 +17,15 @@ Ensure the relational redesign behaves consistently across PostgreSQL and SQL Se
 
 This story provides confidence that PostgreSQL and SQL Server behave equivalently for the representative scenarios explicitly listed in this document. Existing DMS product behavior and product-level test coverage are accepted as the baseline; this story does not reopen the completeness of that coverage.
 
-For each scenario explicitly listed in the acceptance criteria or parity catalog:
+Only the scenarios and observable outcomes enumerated in the Jira Scope, the Scenario Families Required by `DMS-1285`, and the Acceptance Criteria define the closed parity matrix. The catalog records that matrix; it does not define or expand it.
+
+For each scenario in that closed parity matrix:
 
 1. Both backends execute the same provider-neutral input and behavioral contract.
 2. Both backends satisfy the same assertions for the observable outcomes explicitly named by that scenario.
 3. Any intentional dialect difference is internal and does not change those observable outcomes.
 
-The listed scenarios and observable outcomes form a closed parity matrix. Existing PostgreSQL tests, resource shapes, edge cases, and provider branches outside that matrix do not automatically become SQL Server parity requirements. Incidental behavior exercised by a representative fixture is not an additional parity obligation unless the acceptance criteria explicitly identify it. One representative scenario per listed behavior category is sufficient unless the acceptance criteria expressly require additional variants.
+The listed scenarios and observable outcomes form a closed parity matrix. Existing PostgreSQL tests, resource shapes, edge cases, and provider branches outside that matrix do not automatically become SQL Server parity requirements. Existing provider-level coverage outside the matrix is product coverage; it is not an automatic parity row or a `DMS-1285` obligation merely because it exists or is cataloged. Incidental behavior exercised by a representative fixture is not an additional parity obligation unless the acceptance criteria explicitly identify it. One representative scenario per listed behavior category is sufficient unless the acceptance criteria expressly require additional variants.
 
 The following are within this story's parity scope:
 
@@ -97,7 +99,7 @@ Story alignment:
 - `DMS-984` owns runtime execution for `NoProfileWriteBehavior` and `FullSurfaceCollectionReorder`.
 - `DMS-1124` owns runtime execution for the profiled scenario set.
 - `DMS-1104` owns the failure semantics for `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, plus invalid usage/forbidden-data cases that are not separate matrix scenarios.
-- `DMS-1022` executes the API matrix on both engines. `DMS-1023` establishes the authoritative catalog and the provider-neutral shared no-profile contracts, and delivers the PostgreSQL executions and proofs; the SQL Server no-profile executions are owned by `DMS-1285`.
+- `DMS-1022` executes the API matrix on both engines. `DMS-1023` establishes the authoritative catalog and the provider-neutral shared no-profile contracts, and records the existing PostgreSQL executions of the closed no-profile matrix; the SQL Server no-profile executions are owned by `DMS-1285`.
 
 ## Acceptance Criteria
 
@@ -147,4 +149,3 @@ Intentional dialect differences are recorded on the catalog row with a rationale
 ## Gap ownership
 
 - **`DMS-1285`** owns adding the missing SQL Server no-profile executions — the thin MSSQL wrappers and any bounded MSSQL production defects they expose. No-profile family rows are recorded `KnownGap` with `MssqlGapOwner = DMS-1285` until those twins land.
-- **`DMS-1023`** closed the PostgreSQL standalone-extension-child-collection deletion proof — the changed-PUT case (`NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection`), added in this story's no-profile-contract work (`PostgresqlRelationalWriteStandaloneExtensionChildDeleteTests.cs`). That row is now PostgreSQL `Covered` with no PostgreSQL owner; it remains `KnownGap` only for SQL Server, with `MssqlGapOwner = DMS-1285`, until the SQL Server twin lands.

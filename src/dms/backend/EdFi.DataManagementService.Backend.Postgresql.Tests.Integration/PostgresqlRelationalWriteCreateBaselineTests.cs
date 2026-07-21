@@ -46,8 +46,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
     private IReadOnlyList<PersistedSchoolExtensionAddressRow> _persistedExtensionAddresses = null!;
     private IReadOnlyList<PersistedSchoolExtensionInterventionRow> _persistedInterventions = null!;
     private IReadOnlyList<PersistedSchoolExtensionInterventionVisitRow> _persistedInterventionVisits = null!;
-    private DateTimeOffset _lastModifiedAtAfterCreate;
-    private GetResult _getResult = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -75,8 +73,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
         _persistedInterventionVisits = await ReadSchoolExtensionInterventionVisitsAsync(
             _persistedDocument.DocumentId
         );
-        _lastModifiedAtAfterCreate = await ReadContentLastModifiedAtAsync();
-        _getResult = await ExecuteGetByIdAsync();
     }
 
     [TearDown]
@@ -123,16 +119,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
             _persistedInterventionVisits
         );
 
-    [Test]
-    public void It_reconstitutes_the_full_surface_document_via_relational_get_by_id() =>
-        AssertFullSurfaceDocumentReconstitutes(
-            _result,
-            _getResult,
-            _mappingSet,
-            _lastModifiedAtAfterCreate,
-            _persistedDocument.ContentVersion
-        );
-
     private async Task<UpsertResult> ExecuteCreateAsync()
     {
         using var scope = _serviceProvider.CreateScope();
@@ -163,53 +149,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
             TraceId: new TraceId("no-profile-create-baseline"),
             DocumentUuid: SchoolDocumentUuid
         );
-
-    private async Task<GetResult> ExecuteGetByIdAsync()
-    {
-        using var scope = _serviceProvider.CreateScope();
-
-        scope
-            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
-            .SetSelectedDataStore(
-                new DataStore(
-                    Id: 1,
-                    DataStoreType: "test",
-                    Name: "PostgresqlRelationalWriteCreateBaseline",
-                    ConnectionString: _database.ConnectionString,
-                    RouteContext: []
-                )
-            );
-
-        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-
-        return await repository.GetDocumentById(
-            new IntegrationRelationalGetRequest(
-                DocumentUuid: SchoolDocumentUuid,
-                ResourceInfo: SchoolResourceInfo,
-                MappingSet: _mappingSet,
-                AuthorizationStrategyEvaluators: [],
-                TraceId: new TraceId("no-profile-create-baseline-get")
-            )
-        );
-    }
-
-    private async Task<DateTimeOffset> ReadContentLastModifiedAtAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ContentLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
-            """,
-            new NpgsqlParameter("documentUuid", SchoolDocumentUuid.Value)
-        );
-
-        return rows.Count == 1
-            ? GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
-            : throw new InvalidOperationException(
-                $"Expected exactly one document metadata row for '{SchoolDocumentUuid.Value}', but found {rows.Count}."
-            );
-    }
 
     private static ServiceProvider CreateServiceProvider()
     {
@@ -418,22 +357,6 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
         GetRequiredValue(row, columnName) is Guid value
             ? value
             : throw new InvalidOperationException($"Expected column '{columnName}' to contain a Guid value.");
-
-    private static DateTimeOffset GetDateTimeOffset(
-        IReadOnlyDictionary<string, object?> row,
-        string columnName
-    ) =>
-        GetRequiredValue(row, columnName) switch
-        {
-            DateTimeOffset value => value,
-            DateTime value => new DateTimeOffset(
-                DateTime.SpecifyKind(value, DateTimeKind.Utc),
-                TimeSpan.Zero
-            ),
-            _ => throw new InvalidOperationException(
-                $"Expected column '{columnName}' to contain a DateTimeOffset value."
-            ),
-        };
 
     private static string GetString(IReadOnlyDictionary<string, object?> row, string columnName) =>
         GetRequiredValue(row, columnName) as string

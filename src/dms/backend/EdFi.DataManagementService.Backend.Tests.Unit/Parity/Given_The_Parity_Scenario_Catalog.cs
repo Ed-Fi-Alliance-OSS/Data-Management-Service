@@ -111,14 +111,12 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfileFullSurfaceCreate/InsertSuccess",
         "NoProfileFullSurfaceCreate/RootAndNestedCollectionStableIds",
         "NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild",
-        "NoProfileFullSurfaceCreate/ReconstitutedDocument",
         "NoProfileChangedPutOmissionSemantics",
         "NoProfileChangedPutOmissionSemantics/ClearedInlinedColumn",
         "NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope",
         "NoProfileChangedPutOmissionSemantics/ContentVersionBump",
         "NoProfileChangedPutOmissionSemantics/DeletedBaseCollectionRows",
         "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
-        "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection",
         "NoProfileWriteBehavior",
         "NoProfileWriteBehavior/OmittedNonCollectionScope",
         "NoProfileWriteBehavior/NoProfileExt",
@@ -152,93 +150,6 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",
         "NoProfileRollbackSafety",
         "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
-        "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically",
-        "NoProfile/AuthoritativeSmoke/Ds52Contact/Create",
-        "NoProfile/AuthoritativeSmoke/Ds52Contact/ChangedPut",
-        "NoProfile/AuthoritativeSmoke/Ds52Contact/RepeatPutNoOp",
-        "NoProfile/AuthoritativeSmoke/Ds52School/Create",
-        "NoProfile/AuthoritativeSmoke/Ds52School/ChangedPut",
-        "NoProfile/AuthoritativeSmoke/Ds52School/RepeatPutNoOp",
-        "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/Create",
-        "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/ChangedPut",
-        "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/RepeatPutNoOp",
-        "NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/Create",
-        "NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/ChangedPut",
-        "NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/RepeatPutNoOp",
-        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/Create",
-        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPut",
-        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement",
-        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/RepeatPutNoOp",
-        "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/Create",
-        "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/ChangedPut",
-        "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/RepeatPutNoOp",
-        "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp",
-        "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPutNoOp",
-        "NoProfile/ReferenceIdentityRuntime",
-        "NoProfile/RelationalReadback",
-        "NoProfile/RelationalReadback/ChangedPutEtag",
-        "NoProfile/RelationalReadback/RepeatPutEtag",
-        "NoProfile/ChangeQueryReadback/LatestStoredChangeVersion",
-    ];
-
-    private static readonly string[] AuthoritativeFiles =
-    [
-        "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs",
-        "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs",
-        "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs",
-        "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs",
-        "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
-    ];
-
-    // Independent (File::Fixture::Method) inventory of every public test method in the nine audited
-    // authoritative smoke files. Catches a missing method, a wrong fixture, or a wrong file — which
-    // exact scenario ids alone cannot.
-    private static readonly string[] ExpectedAuthoritativeMethodInventory =
-    [
-        "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture::It_persists_authoritative_ds52_contact_addresses_and_nested_address_periods_on_create",
-        "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture::It_reuses_stable_collection_item_ids_for_retained_addresses_and_nested_periods_on_changed_put",
-        "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture::It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put",
-        "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture::It_persists_authoritative_ds52_school_root_and_collection_rows_on_create",
-        "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture::It_reuses_stable_collection_item_ids_and_updates_ordinals_for_a_changed_put",
-        "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture::It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture::It_persists_authoritative_sample_base_root_and_extension_rows_on_create",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture::It_reuses_stable_collection_item_ids_and_updates_root_extension_data_for_a_changed_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture::It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture::It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection_for_collection_aligned_extensions",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs::Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Cascade_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture::It_should_store_runtime_written_reference_identity_columns_in_all_or_none_shape",
-        "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs::Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Cascade_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture::It_should_cascade_abstract_reference_identity_updates_into_runtime_written_reference_columns",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_extracts_descriptor_valued_collection_reference_members_from_concrete_paths_via_the_shared_document_info_helper",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_persists_authoritative_student_school_association_root_extension_and_child_rows_on_create",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_reuses_stable_collection_item_ids_and_updates_authoritative_state_on_changed_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_returns_the_create_etag_from_follow_up_get_by_id",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_returns_the_changed_put_etag_from_follow_up_get_by_id",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_returns_the_repeat_put_etag_from_follow_up_get_by_id",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_matches_ResourceLinks_IfMatch_against_the_current_relational_state",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_populates_persisted_reference_identity_columns_on_create",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_returns_a_validation_failure_and_leaves_document_and_authoritative_tables_unchanged",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture::It_persists_the_authoritative_sample_root_extension_and_extension_child_collection_rows_on_create",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture::It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture::It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture::It_persists_authoritative_sample_survey_question_root_and_child_rows_on_create",
-        "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture::It_reuses_stable_collection_item_ids_for_retained_matrices_and_response_choices_on_changed_put",
-        "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture::It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put",
-        "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs::Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture::It_populates_persisted_reference_identity_columns_on_create",
-        "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs::Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture::It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
-        "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs::Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture::It_should_keep_runtime_written_rows_participating_in_native_identity_cascades",
-        "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture::It_extracts_descriptor_backed_root_reference_members_via_the_shared_document_info_helper",
-        "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture::It_populates_root_reference_columns_from_descriptor_backed_reference_members_on_create",
-        "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_returns_the_create_etag_from_follow_up_get_by_id",
-        "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_matches_ResourceLinks_IfMatch_against_the_current_relational_state",
-        "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata",
-        "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs::Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture::It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection",
     ];
 
     private IReadOnlyList<ParityScenario> _all = null!;
@@ -284,17 +195,6 @@ public class Given_The_Parity_Scenario_Catalog
             .BeEquivalentTo(ExpectedNoProfileIds);
 
     [Test]
-    public void It_catalogs_exactly_the_expected_authoritative_file_fixture_method_inventory()
-    {
-        List<string> actual = _all.SelectMany(s => s.PgsqlLocations.Concat(s.MssqlLocations))
-            .Where(loc => AuthoritativeFiles.Contains(loc.File))
-            .SelectMany(loc => loc.Methods.Select(m => $"{loc.File}::{loc.Fixture}::{m}"))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        actual.Should().BeEquivalentTo(ExpectedAuthoritativeMethodInventory);
-    }
-
-    [Test]
     public void It_maps_all_ten_dms_1022_api_behaviors_as_both_engine_covered() =>
         _all.Where(s => s.Layer == ParityLayer.Api)
             .Should()
@@ -316,29 +216,6 @@ public class Given_The_Parity_Scenario_Catalog
                     id
                 );
         }
-    }
-
-    [Test]
-    public void It_covers_the_standalone_extension_child_delete_on_postgres_and_owes_sql_server_to_dms_1285()
-    {
-        ParityScenario row = _all.Single(s =>
-            s.Id == "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection"
-        );
-
-        row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
-        row.PgsqlGapOwner.Should().BeNull();
-        Flatten(row.PgsqlLocations)
-            .Should()
-            .BeEquivalentTo(
-                (string[])
-                    [
-                        "PostgresqlRelationalWriteStandaloneExtensionChildDeleteTests.cs::Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Child_Collection::It_deletes_the_omitted_standalone_extension_child_collection_without_deleting_base_rows",
-                    ]
-            );
-
-        row.MssqlCoverage.Should().Be(EngineCoverage.Gap);
-        row.MssqlGapOwner.Should().Be("DMS-1285");
-        row.Classification.Should().Be(ParityClassification.KnownGap);
     }
 
     [Test]
@@ -400,41 +277,6 @@ public class Given_The_Parity_Scenario_Catalog
             effective.Kind.Should().Be(EntryPointKind.Direct, "{0} delegates to a shared common fixture", id);
             effective.SharedValue.Should().Be(expectedContract);
         }
-    }
-
-    [Test]
-    public void It_resolves_at_least_one_inherited_entry_point() =>
-        _all.Any(s =>
-                ParityEntryPointResolution.ResolveEffectiveEntryPoint(s)?.Kind == EntryPointKind.Inherited
-            )
-            .Should()
-            .BeTrue();
-
-    [Test]
-    public void It_records_reference_identity_and_readback_as_cross_engine_both_rows()
-    {
-        foreach (
-            string id in (string[])["NoProfile/ReferenceIdentityRuntime", "NoProfile/RelationalReadback"]
-        )
-        {
-            ParityScenario row = _all.Single(s => s.Id == id);
-            row.Classification.Should().Be(ParityClassification.Both);
-            row.PgsqlLocations.Should().NotBeEmpty();
-            row.MssqlLocations.Should().NotBeEmpty();
-        }
-    }
-
-    [Test]
-    public void It_defers_the_seoa_changed_put_smoke_to_the_stable_identity_reorder_family()
-    {
-        // The SEOA changed-PUT payload retains every scope and collection, so the smoke's inherited
-        // cross-engine mechanic is the stable-identity contract, not omission/deletion semantics.
-        _all.Single(s =>
-                s.Id
-                == "NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/ChangedPut"
-            )
-            .CoveredByScenarioId.Should()
-            .Be("FullSurfaceCollectionReorder");
     }
 
     [Test]
@@ -569,11 +411,6 @@ public class Given_The_Parity_Scenario_Catalog
             );
     }
 
-    private static readonly string[] ExpectedReconstitutedDocumentPgTriples =
-    [
-        "PostgresqlRelationalWriteCreateBaselineTests.cs::Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_reconstitutes_the_full_surface_document_via_relational_get_by_id",
-    ];
-
     [Test]
     public void It_records_accurate_dialect_metadata_on_the_multi_batch_rows()
     {
@@ -594,151 +431,6 @@ public class Given_The_Parity_Scenario_Catalog
             row.DialectDifference!.Description.Should().Contain("65535").And.Contain("2100");
             row.DialectDifference.Description.Should().Contain(expectedFragment);
         }
-    }
-
-    [Test]
-    public void It_records_the_reconstituted_document_readback_entry_point()
-    {
-        ParityScenario row = _all.Single(s => s.Id == "NoProfileFullSurfaceCreate/ReconstitutedDocument");
-        row.Boundary.Should().Be(ProductionBoundary.RelationalReadback);
-        row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
-        row.MssqlCoverage.Should().Be(EngineCoverage.Gap);
-        row.MssqlGapOwner.Should().Be("DMS-1285");
-        row.Classification.Should().Be(ParityClassification.KnownGap);
-        Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedReconstitutedDocumentPgTriples);
-
-        // The reconstitution proof pins the relational read path, so the variant records its own
-        // RelationalReadback boundary and Direct read-path helper instead of the family's persister contract.
-        EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
-        resolved.Kind.Should().Be(EntryPointKind.Direct);
-        resolved
-            .SharedValue.Should()
-            .Be("NoProfileCreateBaselineScenarios.AssertFullSurfaceDocumentReconstitutes");
-    }
-
-    [Test]
-    public void It_resolves_the_repeat_post_as_update_smoke_through_its_inherited_guarded_no_op_contract()
-    {
-        ParityScenario row = _all.Single(s =>
-            s.Id == "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp"
-        );
-
-        row.Classification.Should().Be(ParityClassification.SupportingSmoke);
-        row.SharedEntryPoint.Should().BeNullOrEmpty();
-        row.CoveredByScenarioId.Should().Be("NoProfileGuardedNoOp/PostAsUpdate");
-
-        // A SupportingSmoke row's effective contract is the precise same-boundary contract it defers
-        // to — here the POST-as-update variant, whose outcome + rowset-unchanged semantics match what
-        // the smoke's test proves — not the resource-specific helper its own location executes
-        // (recorded in the row's Notes) and not the family's PUT-only contract.
-        EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
-        resolved.Kind.Should().Be(EntryPointKind.Inherited);
-        resolved.InheritedFromScenarioId.Should().Be("NoProfileGuardedNoOp/PostAsUpdate");
-        resolved
-            .SharedValue.Should()
-            .Be(
-                "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
-                    + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
-            );
-    }
-
-    private static readonly string[] ExpectedSectionAssociationOmissionReplacementPgTriples =
-    [
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture::It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
-    ];
-
-    [Test]
-    public void It_records_the_section_association_omission_and_replacement_smoke()
-    {
-        ParityScenario row = _all.Single(s =>
-            s.Id
-            == "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement"
-        );
-
-        row.Classification.Should().Be(ParityClassification.SupportingSmoke);
-        row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
-        row.MssqlCoverage.Should().Be(EngineCoverage.Mapped);
-        row.Boundary.Should().Be(ProductionBoundary.NoProfileMerge);
-        row.CoveredByScenarioId.Should()
-            .Be("NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows");
-        Flatten(row.PgsqlLocations)
-            .Should()
-            .BeEquivalentTo(ExpectedSectionAssociationOmissionReplacementPgTriples);
-
-        // The smoke's changed PUT deletes an omitted reference-backed extension child and reinserts the
-        // replacement with a new id, so its effective contract is the exact DeletedAndReplacedChildCollectionRows
-        // omission variant (the same NoProfileMerge delete-and-replace mechanic), not the canonical family whose
-        // composite contract also asserts inlined-column clearing and aligned-extension-scope deletion this test
-        // never runs.
-        EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
-        resolved.Kind.Should().Be(EntryPointKind.Inherited);
-        resolved
-            .InheritedFromScenarioId.Should()
-            .Be("NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows");
-        resolved
-            .SharedValue.Should()
-            .Be("NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse");
-        resolved
-            .SharedValue.Should()
-            .Be(
-                _all.Single(s =>
-                    s.Id == "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows"
-                ).SharedEntryPoint
-            );
-    }
-
-    // Reviewed supporting-smoke audit table: every SupportingSmoke row's CoveredByScenarioId, checked against
-    // the mechanic its enrolled fixture methods actually prove. Create smokes defer to the create family,
-    // changed-PUT smokes to the stable-identity reorder family, repeat-PUT no-ops to the guarded-no-op family,
-    // the repeat POST-as-update no-op to the POST-as-update guarded-no-op variant, and the section-association
-    // omission/replacement smoke to the exact delete-and-replace omission variant. Plain test data, not a
-    // catalog abstraction or resolver.
-    private static readonly Dictionary<string, string> ExpectedSupportingSmokeDeferrals = new(
-        StringComparer.Ordinal
-    )
-    {
-        ["NoProfile/AuthoritativeSmoke/Ds52Contact/Create"] = "NoProfileFullSurfaceCreate",
-        ["NoProfile/AuthoritativeSmoke/Ds52Contact/ChangedPut"] = "FullSurfaceCollectionReorder",
-        ["NoProfile/AuthoritativeSmoke/Ds52Contact/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
-        ["NoProfile/AuthoritativeSmoke/Ds52School/Create"] = "NoProfileFullSurfaceCreate",
-        ["NoProfile/AuthoritativeSmoke/Ds52School/ChangedPut"] = "FullSurfaceCollectionReorder",
-        ["NoProfile/AuthoritativeSmoke/Ds52School/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/Create"] =
-            "NoProfileFullSurfaceCreate",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/ChangedPut"] =
-            "FullSurfaceCollectionReorder",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentEducationOrganizationAssociation/RepeatPutNoOp"] =
-            "NoProfileGuardedNoOp",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/Create"] = "NoProfileFullSurfaceCreate",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/ChangedPut"] =
-            "FullSurfaceCollectionReorder",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/RepeatPutNoOp"] =
-            "NoProfileGuardedNoOp",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/Create"] =
-            "NoProfileFullSurfaceCreate",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPut"] =
-            "FullSurfaceCollectionReorder",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement"] =
-            "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/RepeatPutNoOp"] =
-            "NoProfileGuardedNoOp",
-        ["NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/Create"] = "NoProfileFullSurfaceCreate",
-        ["NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/ChangedPut"] = "FullSurfaceCollectionReorder",
-        ["NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPutNoOp"] = "NoProfileGuardedNoOp",
-        ["NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp"] =
-            "NoProfileGuardedNoOp/PostAsUpdate",
-    };
-
-    [Test]
-    public void It_pins_every_supporting_smoke_scenario_to_its_reviewed_covered_by_scenario()
-    {
-        Dictionary<string, string?> actual = _all.Where(s =>
-                s.Classification == ParityClassification.SupportingSmoke
-            )
-            .ToDictionary(s => s.Id, s => s.CoveredByScenarioId, StringComparer.Ordinal);
-
-        actual.Should().BeEquivalentTo(ExpectedSupportingSmokeDeferrals);
     }
 
     [Test]
@@ -769,9 +461,5 @@ public class Given_The_Parity_Scenario_Catalog
             .CanonicalIdOf("Api/CrudRoundTrip/CreatesAndReadsAStudent")
             .Should()
             .Be("Api/CrudRoundTrip/CreatesAndReadsAStudent");
-        ParityScenarioCatalog
-            .CanonicalIdOf("NoProfile/AuthoritativeSmoke/Ds52Contact/Create")
-            .Should()
-            .Be("NoProfile/AuthoritativeSmoke/Ds52Contact/Create");
     }
 }

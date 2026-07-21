@@ -11,23 +11,11 @@ public static partial class ParityScenarioCatalog
 {
     private const string DmsGapOwner = "DMS-1285";
 
-    private const string ContactSmoke = "PostgresqlRelationalWriteAuthoritativeDs52ContactSmokeTests.cs";
-    private const string SchoolSmoke = "PostgresqlRelationalWriteAuthoritativeDs52SchoolSmokeTests.cs";
-    private const string SeoaSmoke = "PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs";
-    private const string SsaSmoke =
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs";
-    private const string SsecaSmoke =
-        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs";
-    private const string SurveyQuestionSmoke =
-        "PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs";
-
     /// <summary>
-    /// DMS-984 no-profile relational-write scenarios. Every canonical family is PostgreSQL-only
-    /// today and owed a SQL Server twin by DMS-1285 (KnownGap). Authoritative real-world smokes are
-    /// split into one row per behavioral mechanic: family mechanics (create / changed-PUT / no-op)
-    /// defer to a canonical family at the same boundary (SupportingSmoke, other engine Mapped), while
-    /// reference-identity and read-back mechanics — which are not among the eight no-profile write
-    /// families — are first-class Both rows on their own boundaries.
+    /// DMS-984 no-profile relational-write scenarios: the eight canonical families and the variants
+    /// that decompose the behavior each family requires. Every canonical family is PostgreSQL-only
+    /// today and owed a SQL Server twin by DMS-1285 (KnownGap). This catalog records the closed parity
+    /// matrix; it does not define or expand it.
     /// </summary>
     internal static readonly ImmutableArray<ParityScenario> NoProfileScenarios =
     [
@@ -65,16 +53,6 @@ public static partial class ParityScenarioCatalog
             "It_persists_root_extensions_collection_extensions_and_extension_child_collections",
             "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows"
         ),
-        Gap(
-            "NoProfileFullSurfaceCreate/ReconstitutedDocument",
-            "The created full-surface document reconstitutes correctly through the production relational GET-by-id read path: served id and _lastModifiedDate metadata from the stored stamp, a composed ETag whose leading component equals the persisted ContentVersion (write/read parity retained), and canonical semantic-JSON equality for the root scalar, nested address/period collections, root extension, collection-aligned extension addresses, and extension-child intervention/visit collections.",
-            ProductionBoundary.RelationalReadback,
-            "PostgresqlRelationalWriteCreateBaselineTests.cs",
-            "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
-            ["It_reconstitutes_the_full_surface_document_via_relational_get_by_id"],
-            sharedEntryPoint: "NoProfileCreateBaselineScenarios.AssertFullSurfaceDocumentReconstitutes",
-            notes: "Read-path reconstitution proof for the create family's full surface; recorded on its own RelationalReadback boundary so the canonical NoProfilePersister row's effective entry point does not mix mechanics."
-        ),
         // --- NoProfileChangedPutOmissionSemantics + variants --------------------------------
         Gap(
             "NoProfileChangedPutOmissionSemantics",
@@ -90,7 +68,7 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertUpdateSuccessAndContentVersionBump"
                 + " + NoProfileUpdateSemanticsScenarios.AssertClearedOmittedInlinedColumn"
                 + " + NoProfileUpdateSemanticsScenarios.AssertDeletedOmittedAlignedExtensionScope",
-            notes: "Core omission semantics are backed by the shared contract; the variants below decompose them and add the standalone extension-child deletion proof."
+            notes: "Core omission semantics are backed by the shared contract; the variants below decompose them."
         ),
         UpdateVariant(
             "ClearedInlinedColumn",
@@ -134,16 +112,6 @@ public static partial class ParityScenarioCatalog
             notes: "POST-as-update execution of the shared NoProfileMerge retained-id/omitted-row mechanic (the fixture "
                 + "reaches the merge through UpsertDocument, not a changed PUT). The changed-PUT twin of this "
                 + "collection-identity behavior is recorded by NoProfileMultiBatchCollection/AuthoritativeChangedPutIdentity."
-        ),
-        Gap(
-            "NoProfileChangedPutOmissionSemantics/DeletedStandaloneExtensionChildCollection",
-            "Changed PUT that omits a standalone extension-child collection deletes those rows without disturbing base rows.",
-            ProductionBoundary.NoProfileMerge,
-            "PostgresqlRelationalWriteStandaloneExtensionChildDeleteTests.cs",
-            "Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Child_Collection",
-            ["It_deletes_the_omitted_standalone_extension_child_collection_without_deleting_base_rows"],
-            sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertStandaloneExtensionChildCollectionDeleted",
-            notes: "DMS-1023 adds the PostgreSQL proof (G1 ruling) that omitting a standalone extension-child collection on a changed PUT deletes those rows; the SQL Server twin is owed to DMS-1285."
         ),
         // --- NoProfileWriteBehavior (umbrella) ----------------------------------------------
         Gap(
@@ -531,43 +499,6 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
                 + " + NoProfilePostAsUpdateScenarios.AssertAuthoritativeRootAndExtensionInPlace"
         ),
-        // This fixture also exercises retained-and-omitted child-collection replacement, which is a merge
-        // behavior owned by the DeletedAndReplacedChildCollectionRows omission-semantics variant, and a
-        // repeat POST-as-update guarded no-op recorded below. The no-op runs the guarded-no-op path yet
-        // asserts through NoProfilePostAsUpdateScenarios, so it records that shared contract directly while
-        // deferring its SQL Server twin to the NoProfileGuardedNoOp family.
-        new ParityScenario
-        {
-            Id = "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp",
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract =
-                "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op: the full persisted rowset, ContentVersion, and every stored update-tracking stamp stay unchanged.",
-            Notes =
-                "The PG location executes the resource-specific NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp helper; the cross-engine mechanic contract this row advertises is inherited from the NoProfileGuardedNoOp/PostAsUpdate variant via CoveredByScenarioId, whose POST-as-update outcome + rowset-unchanged contract matches the semantics this smoke proves.",
-            Boundary = ProductionBoundary.GuardedNoOp,
-            PgsqlLocations =
-            [
-                Loc(
-                    "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
-                    "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
-                    [
-                        "It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update",
-                    ]
-                ),
-            ],
-            PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Mapped,
-            Classification = ParityClassification.SupportingSmoke,
-            CoveredByScenarioId = "NoProfileGuardedNoOp/PostAsUpdate",
-        },
-        PgSmokeNoOp(
-            "SampleStudentAcademicRecord",
-            "Authoritative StudentAcademicRecord repeat PUT is a guarded no-op over the captured state: the stamp-complete dms.Document row (ContentVersion and every document stamp), the StudentAcademicRecord business row, its extension row, and all four collection rowsets stay unchanged.",
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"],
-            notes: "The enrolled snapshot does not cover the root-table stamps or dms.ReferentialIdentity; those surfaces of the same GuardedNoOp mechanic are inherited from canonical NoProfileGuardedNoOp via CoveredByScenarioId."
-        ),
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
         Gap(
             "NoProfileRollbackSafety",
@@ -595,304 +526,6 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites"
                 + " + NoProfileAtomicRollbackAssertions.AssertFullSurfaceRollbackToPreState"
         ),
-        Gap(
-            "NoProfileRollbackSafety/KeyUnificationConflictRejectedAtomically",
-            "A key-unification conflict is rejected as a validation failure and leaves every value-bearing surface exactly unchanged: stamp-complete document rows, referential identities, the conflicting Calendar seed row, and the association root/extension/collection and tracked-change rowsets (atomic rejection).",
-            ProductionBoundary.KeyUnificationValidation,
-            SsaSmoke,
-            "Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_returns_a_validation_failure_and_leaves_document_and_authoritative_tables_unchanged"],
-            sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertKeyUnificationConflictRejectedAtomically"
-        ),
-        // --- Authoritative PostgreSQL breadth smokes (one row per mechanic/boundary) --------
-        PgSmokeCreate(
-            "Ds52Contact",
-            "DS-5.2 Contact create with two-level nested grandchild collections.",
-            ContactSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture",
-            ["It_persists_authoritative_ds52_contact_addresses_and_nested_address_periods_on_create"]
-        ),
-        PgSmokeChangedPut(
-            "Ds52Contact",
-            "DS-5.2 Contact changed-PUT reuses stable ids for retained addresses and nested periods.",
-            ContactSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture",
-            ["It_reuses_stable_collection_item_ids_for_retained_addresses_and_nested_periods_on_changed_put"]
-        ),
-        PgSmokeNoOp(
-            "Ds52Contact",
-            "DS-5.2 Contact repeat-PUT is a guarded no-op.",
-            ContactSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_Contact_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
-        ),
-        PgSmokeCreate(
-            "Ds52School",
-            "DS-5.2 School create across parallel root collections.",
-            SchoolSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture",
-            ["It_persists_authoritative_ds52_school_root_and_collection_rows_on_create"]
-        ),
-        PgSmokeChangedPut(
-            "Ds52School",
-            "DS-5.2 School changed-PUT reuses stable ids and updates ordinals (reorder).",
-            SchoolSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture",
-            ["It_reuses_stable_collection_item_ids_and_updates_ordinals_for_a_changed_put"]
-        ),
-        PgSmokeNoOp(
-            "Ds52School",
-            "DS-5.2 School repeat-PUT is a guarded no-op.",
-            SchoolSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds52_School_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
-        ),
-        PgSmokeCreate(
-            "SampleStudentEducationOrganizationAssociation",
-            "Sample SEOA create with collection-aligned extension children.",
-            SeoaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
-            ["It_persists_authoritative_sample_base_root_and_extension_rows_on_create"]
-        ),
-        PgSmokeChangedPut(
-            "SampleStudentEducationOrganizationAssociation",
-            "Sample SEOA changed-PUT reuses stable CollectionItemIds for every retained row while matched root and extension values change.",
-            SeoaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
-            ["It_reuses_stable_collection_item_ids_and_updates_root_extension_data_for_a_changed_put"],
-            notes: "The payload retains every scope and collection, so the inherited cross-engine mechanic is the stable-identity contract of FullSurfaceCollectionReorder; the matched root/extension value assertions are additional PostgreSQL breadth, not part of the inherited contract."
-        ),
-        PgSmokeNoOp(
-            "SampleStudentEducationOrganizationAssociation",
-            "Sample SEOA repeat-PUT is a guarded no-op.",
-            SeoaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
-        ),
-        PgSmokeCreate(
-            "SampleStudentSchoolAssociation",
-            "Sample StudentSchoolAssociation create with root extension and child rows.",
-            SsaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_persists_authoritative_student_school_association_root_extension_and_child_rows_on_create"]
-        ),
-        PgSmokeChangedPut(
-            "SampleStudentSchoolAssociation",
-            "Sample StudentSchoolAssociation changed-PUT reuses stable ids and updates authoritative state.",
-            SsaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_reuses_stable_collection_item_ids_and_updates_authoritative_state_on_changed_put"]
-        ),
-        PgSmokeNoOp(
-            "SampleStudentSchoolAssociation",
-            "Sample StudentSchoolAssociation repeat-PUT is a guarded no-op.",
-            SsaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
-        ),
-        PgSmokeCreate(
-            "SampleStudentSectionAssociation",
-            "Sample StudentSectionAssociation create with a reference-backed extension child collection.",
-            SsecaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
-            [
-                "It_persists_the_authoritative_sample_root_extension_and_extension_child_collection_rows_on_create",
-            ]
-        ),
-        PgSmokeChangedPut(
-            "SampleStudentSectionAssociation",
-            "Sample StudentSectionAssociation changed-PUT reorders retained reference-backed extension children with stable CollectionItemIds and recomputed contiguous ordinals.",
-            SsecaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
-            [
-                "It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
-            ]
-        ),
-        // The same PG test also proves the omission/replacement mechanic, which is a distinct changed-PUT
-        // obligation from the reorder mechanic on the adjacent ChangedPut row, so it is recorded as its own
-        // supporting-smoke row. It defers to the exact DeletedAndReplacedChildCollectionRows omission variant —
-        // the same NoProfileMerge mechanic that deletes an omitted child-collection row, reuses the retained
-        // row's stable id, and reinserts the replacement with a new id — not the canonical family, whose
-        // contract also covers inlined-column clearing and aligned-extension-scope deletion this test never runs.
-        PgSmoke(
-            "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement",
-            "Sample StudentSectionAssociation changed-PUT deletes the omitted reference-backed extension child and persists the replacement item as a new row with a new CollectionItemId.",
-            ProductionBoundary.NoProfileMerge,
-            "NoProfileChangedPutOmissionSemantics/DeletedAndReplacedChildCollectionRows",
-            SsecaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
-            [
-                "It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
-            ],
-            notes: "Defers to the exact DeletedAndReplacedChildCollectionRows omission variant (the same "
-                + "NoProfileMerge retained-id-reuse / omitted-row-replacement mechanic), so the smoke inherits only "
-                + "the delete-and-replace contract its test proves rather than the broader canonical family contract."
-        ),
-        PgSmokeNoOp(
-            "SampleStudentSectionAssociation",
-            "Sample StudentSectionAssociation repeat-PUT is a guarded no-op.",
-            SsecaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
-        ),
-        PgSmokeCreate(
-            "SampleSurveyQuestion",
-            "Sample SurveyQuestion create with two sibling root child collections and a composite reference.",
-            SurveyQuestionSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture",
-            ["It_persists_authoritative_sample_survey_question_root_and_child_rows_on_create"]
-        ),
-        PgSmokeChangedPut(
-            "SampleSurveyQuestion",
-            "Sample SurveyQuestion changed-PUT reuses stable ids for retained matrices and response choices.",
-            SurveyQuestionSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture",
-            ["It_reuses_stable_collection_item_ids_for_retained_matrices_and_response_choices_on_changed_put"]
-        ),
-        PgSmokeNoOp(
-            "SampleSurveyQuestion",
-            "Sample SurveyQuestion repeat-PUT is a guarded no-op.",
-            SurveyQuestionSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture",
-            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
-        ),
-        // --- Reference-identity and read-back: cross-engine Both rows on their own boundaries -
-        NoProfileBoth(
-            "NoProfile/ReferenceIdentityRuntime",
-            "Runtime reference-identity: descriptor/reference-backed reference columns are populated on create, repopulated on changed PUT, and participate in identity-propagation cascade/trigger fallback. Covered on both engines (different resources; per-mechanic parity).",
-            ProductionBoundary.ReferenceIdentityRuntime,
-            [
-                Loc(
-                    SeoaSmoke,
-                    "Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Cascade_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
-                    [
-                        "It_should_store_runtime_written_reference_identity_columns_in_all_or_none_shape",
-                        "It_should_cascade_abstract_reference_identity_updates_into_runtime_written_reference_columns",
-                    ]
-                ),
-                Loc(
-                    SsaSmoke,
-                    "Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-                    [
-                        "It_populates_persisted_reference_identity_columns_on_create",
-                        "It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
-                    ]
-                ),
-                Loc(
-                    SsaSmoke,
-                    "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-                    [
-                        "It_extracts_descriptor_valued_collection_reference_members_from_concrete_paths_via_the_shared_document_info_helper",
-                    ]
-                ),
-            ],
-            [
-                Loc(
-                    "MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests.cs",
-                    "Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture",
-                    [
-                        "It_populates_persisted_reference_identity_columns_on_create",
-                        "It_repopulates_persisted_reference_identity_columns_from_resolved_references_on_changed_put",
-                        "It_should_keep_runtime_written_rows_participating_in_native_identity_cascades",
-                    ]
-                ),
-                Loc(
-                    "MssqlRelationalWriteAuthoritativeSampleStudentArtProgramAssociationSmokeTests.cs",
-                    "Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentArtProgramAssociation_Fixture",
-                    [
-                        "It_extracts_descriptor_backed_root_reference_members_via_the_shared_document_info_helper",
-                        "It_populates_root_reference_columns_from_descriptor_backed_reference_members_on_create",
-                    ]
-                ),
-            ],
-            notes: "Not one of the eight no-profile write families; a first-class cross-engine mechanic outside SupportingSmoke."
-        ),
-        NoProfileBoth(
-            "NoProfile/RelationalReadback",
-            "Relational GET-by-id read-back parity: served create ETag composed from the stored ContentVersion stamp, ResourceLinks If-Match against current relational state, semantic-JSON-equivalence + metadata, and readable-profile projection. Covered on both engines.",
-            ProductionBoundary.RelationalReadback,
-            [
-                Loc(
-                    SsaSmoke,
-                    "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-                    [
-                        "It_returns_the_create_etag_from_follow_up_get_by_id",
-                        "It_matches_ResourceLinks_IfMatch_against_the_current_relational_state",
-                        "It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata",
-                        "It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection",
-                    ]
-                ),
-                Loc(
-                    SeoaSmoke,
-                    "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture",
-                    [
-                        "It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection_for_collection_aligned_extensions",
-                    ]
-                ),
-            ],
-            [
-                Loc(
-                    "MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs",
-                    "Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-                    [
-                        "It_returns_the_create_etag_from_follow_up_get_by_id",
-                        "It_matches_ResourceLinks_IfMatch_against_the_current_relational_state",
-                        "It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata",
-                        "It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection",
-                    ]
-                ),
-            ],
-            notes: "Not one of the eight no-profile write families; a first-class cross-engine read-path mechanic outside SupportingSmoke."
-        ),
-        Gap(
-            "NoProfile/RelationalReadback/ChangedPutEtag",
-            "The served ETag from a follow-up GET-by-id after a changed PUT matches the current relational state and its leading component equals the stored ContentVersion stamp (PostgreSQL-only today; no audited SQL Server equivalent).",
-            ProductionBoundary.RelationalReadback,
-            SsaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_returns_the_changed_put_etag_from_follow_up_get_by_id"],
-            providerSpecificRationale: ReadbackProviderSpecificRationale
-        ),
-        Gap(
-            "NoProfile/RelationalReadback/RepeatPutEtag",
-            "The served ETag from a follow-up GET-by-id after a repeat (no-op) PUT matches the current relational state and its leading component equals the stored ContentVersion stamp (PostgreSQL-only today; no audited SQL Server equivalent).",
-            ProductionBoundary.RelationalReadback,
-            SsaSmoke,
-            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture",
-            ["It_returns_the_repeat_put_etag_from_follow_up_get_by_id"],
-            providerSpecificRationale: ReadbackProviderSpecificRationale
-        ),
-        new ParityScenario
-        {
-            Id = "NoProfile/ChangeQueryReadback/LatestStoredChangeVersion",
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract =
-                "A key-changes query collapses a multi-step key-change chain to one served item whose changeVersion equals the latest persisted tracked-change ChangeVersion stamp (served from the stored stamp, proven strictly advanced past the first), with the collapsed old/new key values spanning the full chain.",
-            SharedEntryPoint =
-                "ChangeQueryParityScenarios.AssertAcademicWeekKeyChangesCollapsedToLatestStoredChangeVersion",
-            Boundary = ProductionBoundary.ChangeQueryReadback,
-            PgsqlLocations =
-            [
-                Loc(
-                    "RelationalChangeQueryRepositoryTests.cs",
-                    "Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository",
-                    ["It_collapses_multiple_academic_week_key_changes_to_one_result"]
-                ),
-            ],
-            MssqlLocations =
-            [
-                Loc(
-                    "RelationalChangeQueryRepositoryTests.cs",
-                    "Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository",
-                    ["It_collapses_multiple_academic_week_key_changes_to_one_result"]
-                ),
-            ],
-            PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Covered,
-            Classification = ParityClassification.Both,
-            Notes =
-                "Not one of the eight no-profile write families; a first-class cross-engine change-query read-path mechanic consuming a provider-neutral shared assertion.",
-        },
     ];
 
     private static ScenarioLocation Loc(string file, string fixture, string[] methods) =>
@@ -928,13 +561,6 @@ public static partial class ParityScenarioCatalog
             ProviderSpecificEntryPointRationale = providerSpecificRationale,
             Notes = notes,
         };
-
-    // The relational read-back ETag gaps are a PostgreSQL-only read-path mechanic with no extracted provider-
-    // neutral shared contract (their Both parent NoProfile/RelationalReadback is itself provider-specific), so
-    // they resolve ProviderSpecific from the PostgreSQL fixture recorded on the row.
-    private const string ReadbackProviderSpecificRationale =
-        "PostgreSQL-only relational read-back ETag check with no extracted provider-neutral shared contract; the "
-        + "PostgreSQL fixture recorded on this row is the effective assertion entry point.";
 
     // Every variant names its own SharedEntryPoint: belonging to a canonical family does not resolve a contract
     // (a shared production boundary does not imply running the family's assertion helpers), so each variant must
@@ -1006,114 +632,4 @@ public static partial class ParityScenarioCatalog
             pgMethods,
             sharedEntryPoint: sharedEntryPoint
         );
-
-    private static ParityScenario PgSmokeCreate(
-        string suite,
-        string contract,
-        string file,
-        string fixture,
-        string[] methods
-    ) =>
-        PgSmoke(
-            $"NoProfile/AuthoritativeSmoke/{suite}/Create",
-            contract,
-            ProductionBoundary.NoProfilePersister,
-            "NoProfileFullSurfaceCreate",
-            file,
-            fixture,
-            methods
-        );
-
-    private static ParityScenario PgSmokeChangedPut(
-        string suite,
-        string contract,
-        string file,
-        string fixture,
-        string[] methods,
-        string coveredBy = "FullSurfaceCollectionReorder",
-        string? notes = null
-    ) =>
-        PgSmoke(
-            $"NoProfile/AuthoritativeSmoke/{suite}/ChangedPut",
-            contract,
-            ProductionBoundary.NoProfileMerge,
-            coveredBy,
-            file,
-            fixture,
-            methods,
-            notes
-        );
-
-    private static ParityScenario PgSmokeNoOp(
-        string suite,
-        string contract,
-        string file,
-        string fixture,
-        string[] methods,
-        string? notes = null
-    ) =>
-        PgSmoke(
-            $"NoProfile/AuthoritativeSmoke/{suite}/RepeatPutNoOp",
-            contract,
-            ProductionBoundary.GuardedNoOp,
-            "NoProfileGuardedNoOp",
-            file,
-            fixture,
-            methods,
-            notes
-        );
-
-    private static ParityScenario PgSmoke(
-        string id,
-        string contract,
-        ProductionBoundary boundary,
-        string coveredBy,
-        string file,
-        string fixture,
-        string[] methods,
-        string? notes = null
-    ) =>
-        new()
-        {
-            Id = id,
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract = contract,
-            Boundary = boundary,
-            PgsqlLocations = [new ScenarioLocation(file, fixture, [.. methods])],
-            PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Mapped,
-            Classification = ParityClassification.SupportingSmoke,
-            CoveredByScenarioId = coveredBy,
-            Notes = notes,
-        };
-
-    // A first-class cross-engine mechanic already covered on both engines by provider-specific fixtures, with no
-    // extracted provider-neutral shared contract; it resolves ProviderSpecific from its per-engine locations.
-    private const string NoProfileBothProviderSpecificRationale =
-        "Already covered on both PostgreSQL and SQL Server by the provider-specific fixtures recorded on this row; "
-        + "this first-class cross-engine mechanic has no extracted provider-neutral shared contract, so those "
-        + "existing per-engine fixtures are the effective entry points.";
-
-    private static ParityScenario NoProfileBoth(
-        string id,
-        string contract,
-        ProductionBoundary boundary,
-        ImmutableArray<ScenarioLocation> pgsql,
-        ImmutableArray<ScenarioLocation> mssql,
-        string? notes = null
-    ) =>
-        new()
-        {
-            Id = id,
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract = contract,
-            Boundary = boundary,
-            PgsqlLocations = pgsql,
-            MssqlLocations = mssql,
-            PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Covered,
-            Classification = ParityClassification.Both,
-            ProviderSpecificEntryPointRationale = NoProfileBothProviderSpecificRationale,
-            Notes = notes,
-        };
 }
