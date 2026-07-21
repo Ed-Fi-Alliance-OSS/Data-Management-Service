@@ -249,10 +249,18 @@ both engines; the choice is never inferred from the engine:
 
 `-SeparateConfigDatabase` is available on `start-local-dms.ps1`, `start-published-dms.ps1`,
 `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, the shared bootstrap wrapper, and
-`build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase. A
-caller-authored `DMS_CONFIG_DATABASE_CONNECTION_STRING` must target the effective
-`DMS_CONFIG_DATABASE_NAME`; an invalid, database-less, or conflicting target fails early with a
-clear diagnostic.
+`build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase.
+
+Before any container or Keycloak starts, the start scripts resolve the effective Configuration
+Service settings by asking Docker Compose itself (`docker compose config`, which applies your shell
+environment over the env file exactly as `up` will) and validate them once: the provider
+(`DMS_CONFIG_DATASTORE`) must be exactly `postgresql` or `mssql` and match the selected engine; the
+connection string must be a valid connection for that engine and target the effective
+`DMS_CONFIG_DATABASE_NAME`; the SQL Server SA password must be non-blank; and a shell
+`POSTGRES_DB_NAME` / `MSSQL_DB_NAME` override must agree with the env file. Anything else - an
+unsupported provider, a wrong-engine or database-less connection, an empty connection on a SQL
+Server stack, or a shell override that would split the container from host-side setup - fails fast
+with a clear diagnostic before Docker or Keycloak is touched.
 
 ```pwsh
 # Shared (default): CMS shares the DMS datastore database

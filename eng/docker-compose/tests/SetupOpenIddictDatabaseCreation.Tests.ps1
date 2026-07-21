@@ -214,11 +214,11 @@ Describe "start-local-config.ps1 self-contained OpenIddict ordering" {
         }
     }
 
-    It "resolves the standalone contract against the RAW env file (never -ConfigDatabaseNameMaterialized)" {
-        # The standalone lane hands docker-compose the RAW env file (DMS_CONFIG_DATABASE_NAME is not a
-        # materialized literal), so the contract must model compose re-resolving the seam with shell
-        # precedence. Passing -ConfigDatabaseNameMaterialized would pin the name and hide a shell
-        # POSTGRES_DB_NAME override the connection routes through.
+    It "resolves the standalone contract with no -ConfigDatabaseName (the resolved connection is authoritative)" {
+        # The standalone lane passes no -ConfigDatabaseName: Docker Compose resolves the CMS connection
+        # (shell over the RAW env file), and its own single target IS the effective configuration database
+        # OpenIddict initializes. Pinning a name would risk diverging from what Compose actually hands the
+        # container.
         $parseErrors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseInput($script:localConfigSource, [ref]$null, [ref]$parseErrors)
         $parseErrors | Should -BeNullOrEmpty
@@ -231,100 +231,14 @@ Describe "start-local-config.ps1 self-contained OpenIddict ordering" {
             },
             $true
         )
-        $contractCalls.Count | Should -BeGreaterThan 0
+        $contractCalls.Count | Should -Be 1 -Because "the standalone lane resolves the contract exactly once"
         foreach ($contractCall in $contractCalls) {
-            $materializedSwitch = $contractCall.CommandElements | Where-Object {
+            $configDbNameParam = $contractCall.CommandElements | Where-Object {
                 $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
-                $_.ParameterName -eq 'ConfigDatabaseNameMaterialized'
+                $_.ParameterName -eq 'ConfigDatabaseName'
             }
-            $materializedSwitch | Should -BeNullOrEmpty -Because "the standalone lane passes the RAW env file; pinning the name would hide a shell override the connection routes through"
+            $configDbNameParam | Should -BeNullOrEmpty -Because "the standalone lane derives the effective configuration database from the resolved connection, not a pinned name"
         }
-    }
-
-    It "exports the materialized connection for both identity providers before the Configuration Service starts" {
-        # On a SQL Server stack with no connection string the contract materializes a connection; the lane
-        # exports it so docker-compose reads it (shell over --env-file), for both identity providers - an
-        # index-only check would be fooled by the earlier OAuth/JWT self-contained block. Assert via AST that
-        # the export assignment has NO enclosing if/elseif clause whose condition references $IdentityProvider.
-        $parseErrors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseInput($script:localConfigSource, [ref]$null, [ref]$parseErrors)
-        $parseErrors | Should -BeNullOrEmpty -Because "start-local-config.ps1 must parse cleanly for the AST assertion to be meaningful"
-
-        $exportAssignments = $ast.FindAll(
-            {
-                param($node)
-                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-                $node.Left.Extent.Text -eq '$env:DMS_CONFIG_DATABASE_CONNECTION_STRING'
-            },
-            $true
-        )
-        $exportAssignments.Count | Should -Be 1 -Because "the standalone lane exports the materialized connection exactly once"
-
-        # Its only enclosing condition is the Source='Materialized' guard, never an identity-provider branch.
-        $node = $exportAssignments[0]
-        while ($null -ne $node.Parent) {
-            $node = $node.Parent
-            if ($node -is [System.Management.Automation.Language.IfStatementAst]) {
-                foreach ($clause in $node.Clauses) {
-                    $clause.Item1.Extent.Text | Should -Not -Match 'IdentityProvider' -Because "the materialized export must run for both self-contained and Keycloak"
-                }
-            }
-        }
-
-        $exportIndex = $script:localConfigSource.IndexOf('$env:DMS_CONFIG_DATABASE_CONNECTION_STRING =')
-        $configStartIndex = $script:localConfigSource.IndexOf('Write-Output "Starting locally-built DMS config service"')
-        $exportIndex | Should -BeGreaterThan -1
-        $exportIndex | Should -BeLessThan $configStartIndex -Because "the materialized connection must be exported before the Configuration Service container starts"
-    }
-
-    It "restores DMS_CONFIG_DATABASE_CONNECTION_STRING in a finally so the materialized export cannot leak into a later invocation" {
-        # The materialized SQL Server connection is exported into the PROCESS environment (so docker-compose
-        # reads it with shell precedence), which outlives the script. Left behind, a later invocation in the
-        # same shell honors it as a caller-authored override - reusing the prior database, carrying a SQL
-        # Server connection into a PostgreSQL run, or passing the database-name-only agreement guard when the
-        # names match. Assert via AST that the export is snapshotted beforehand and restored in a finally on
-        # every exit path (success, throw, teardown), so dropping the guard fails here rather than silently
-        # restoring the cross-invocation leak.
-        $parseErrors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseInput($script:localConfigSource, [ref]$null, [ref]$parseErrors)
-        $parseErrors | Should -BeNullOrEmpty -Because "start-local-config.ps1 must parse cleanly for the AST assertion to be meaningful"
-
-        # The single process-environment export of the materialized connection string.
-        $exportAssignments = $ast.FindAll(
-            {
-                param($node)
-                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-                $node.Left.Extent.Text -eq '$env:DMS_CONFIG_DATABASE_CONNECTION_STRING'
-            },
-            $true
-        )
-        $exportAssignments.Count | Should -Be 1 -Because "the standalone lane exports the materialized connection string exactly once"
-
-        # It must be enclosed by a try statement whose finally restores the variable.
-        $node = $exportAssignments[0]
-        $enclosingTry = $null
-        while ($null -ne $node.Parent) {
-            $node = $node.Parent
-            if ($node -is [System.Management.Automation.Language.TryStatementAst]) { $enclosingTry = $node; break }
-        }
-        $enclosingTry | Should -Not -BeNullOrEmpty -Because "the materialized export must be inside a try whose finally restores it"
-        $enclosingTry.Finally | Should -Not -BeNullOrEmpty -Because "a try without a finally would not restore the exported connection string on the throw or teardown path"
-
-        $restoreCalls = $enclosingTry.Finally.FindAll(
-            {
-                param($node)
-                $node -is [System.Management.Automation.Language.CommandAst] -and
-                $node.GetCommandName() -eq 'Restore-ProcessEnvironmentVariable'
-            },
-            $true
-        )
-        $restoreCalls.Count | Should -BeGreaterThan 0 -Because "the finally must restore DMS_CONFIG_DATABASE_CONNECTION_STRING to its pre-export state"
-
-        # The snapshot must be captured BEFORE the try, or the finally would restore a value already
-        # overwritten by the export.
-        $snapshotIndex = $script:localConfigSource.IndexOf('Get-ProcessEnvironmentVariableSnapshot')
-        $snapshotIndex | Should -BeGreaterThan -1 -Because "the lane must snapshot DMS_CONFIG_DATABASE_CONNECTION_STRING before exporting the materialized value"
-        $snapshotIndex | Should -BeLessThan $enclosingTry.Extent.StartOffset -Because "the snapshot must be taken before the try, capturing the pre-export state"
     }
 
     It "sources every setup-openiddict.ps1 database parameter from the runtime contract" {

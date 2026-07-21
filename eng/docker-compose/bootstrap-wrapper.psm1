@@ -710,19 +710,16 @@ function Invoke-BootstrapWrapper {
         # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
         # env-utility sibling module.
         # The wrapper composes the engine overlay only to source the DMS datastore settings for the
-        # phases; it never reads the CMS connection string. Skip the engine resolver's shared-only
-        # CMS-database invariant here - it is topology-blind and would reject a caller-authored
-        # separate Database=edfi_configurationservice. The start script owns validating the CMS
-        # connection against the effective configuration database (the shared invariant, or the
-        # topology-aware check in separate mode) before CMS starts.
+        # phases; it never reads the CMS connection string. The start script owns validating the whole
+        # Configuration Service runtime contract (engine, connection, and effective configuration
+        # database) once, up front, against Docker Compose's own resolution before CMS starts.
         $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
         if ($DatabaseEngine -eq "mssql" -and (Test-Path -LiteralPath $envUtilityPathForEngineOverlay)) {
             Import-Module $envUtilityPathForEngineOverlay -Force
             $baseEnvFile = Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -BaseEnvironmentFile $baseEnvFile `
-                -DockerComposeRoot $PSScriptRoot `
-                -SkipMssqlCmsDatabaseValidation
+                -DockerComposeRoot $PSScriptRoot
         }
 
         # Resolve identity provider once and forward the same value to both phases. This runs before

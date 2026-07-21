@@ -854,15 +854,16 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # The full-stack lane resolves one Resolve-EffectiveConfigRuntimeContract and reads every
-            # OpenIddict parameter, the readiness credential, and the SA password from it (modeling
-            # ${MSSQL_SA_PASSWORD:-abcdefgh1!} shell-over-file) - so a shell override cannot split the
-            # container (and CMS) from pre-CMS OpenIddict initialization.
-            $startScript | Should -Match 'Resolve-EffectiveConfigRuntimeContract .*-MssqlSaPasswordDefault "abcdefgh1!"'
+            # The full-stack lane resolves the runtime contract from Docker Compose's own resolution
+            # (Get-ComposeResolvedConfiguration) and reads every OpenIddict parameter, the readiness
+            # credential, and the SA password from it - so a shell override cannot split the container
+            # (and CMS) from pre-CMS OpenIddict initialization.
+            $startScript | Should -Match 'Get-ComposeResolvedConfiguration -ComposeFiles \$files -EnvironmentFile \$EnvironmentFile -ProjectName "dms-local"'
+            $startScript | Should -Match '-ResolvedProvider \$resolvedCompose\.Provider'
             $startScript | Should -Match 'DbType = \$contract\.OpenIddict\.DbType'
             $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
-            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\.Value'
-            ([regex]::Matches($startScript, 'Resolve-EffectiveMssqlSaPassword')).Count | Should -Be 0 -Because "the full-stack lane must derive the SA password from the runtime contract, not a separate shell-blind helper"
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
+            ([regex]::Matches($startScript, 'Resolve-ComposeVariable')).Count | Should -Be 0 -Because "the full-stack lane must not re-implement compose precedence; the SA password comes from the runtime contract"
 
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
@@ -878,11 +879,12 @@ $failureStatement
 
             # Same runtime-contract wiring as start-local-dms.ps1 (both full-stack lanes), extended to the DMS
             # datastore connection stored in CMS, so every SQL Server credential is the one effective value.
-            $startScript | Should -Match 'Resolve-EffectiveConfigRuntimeContract .*-MssqlSaPasswordDefault "abcdefgh1!"'
+            $startScript | Should -Match 'Get-ComposeResolvedConfiguration -ComposeFiles \$files -EnvironmentFile \$EnvironmentFile -ProjectName "dms-published"'
+            $startScript | Should -Match '-ResolvedProvider \$resolvedCompose\.Provider'
             $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
-            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\.Value'
-            $startScript | Should -Match '\$mssqlPassword = \$contract\.MssqlSaPassword\.Value'
-            ([regex]::Matches($startScript, 'Resolve-EffectiveMssqlSaPassword')).Count | Should -Be 0 -Because "the full-stack lane must derive every SA password from the runtime contract, not a separate shell-blind helper"
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
+            $startScript | Should -Match '\$mssqlPassword = \$contract\.MssqlSaPassword\b'
+            ([regex]::Matches($startScript, 'Resolve-ComposeVariable')).Count | Should -Be 0 -Because "the full-stack lane must not re-implement compose precedence; every SA password comes from the runtime contract"
 
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
@@ -1738,14 +1740,22 @@ Add-Content -LiteralPath '$callLog' -Value "start SeparateConfigDatabase=`$Separ
             $wrapperSource | Should -Match '(?m)^\s*\$dmsStartArgs\.SeparateConfigDatabase\s*=\s*\$SeparateConfigDatabase\s*$'
         }
 
-        It "the datastore-only overlay compositions (wrapper, configure, provision) skip the shared-only CMS-database validation" {
-            # These phases compose the engine overlay for the DMS datastore only and never read the
-            # CMS connection string, so they unconditionally skip the topology-blind shared-only
-            # invariant (owned by the start script). Otherwise the wrapper or configure would reject
-            # a caller-authored separate Database=edfi_configurationservice before CMS is reached.
+        It "the datastore-only overlay phases (wrapper, configure, provision) do not validate the CMS runtime contract" {
+            # These phases compose the engine overlay for the DMS datastore only; the Configuration
+            # Service engine/connection/database agreement is owned and validated once, up front, by the
+            # start scripts (Resolve-EffectiveConfigRuntimeContract, against Docker Compose's own
+            # resolution). There is a single policy, so these phases neither re-validate it nor carry the
+            # removed shared-only skip flag.
             foreach ($name in @('bootstrap-wrapper.psm1', 'configure-local-data-store.ps1', 'provision-dms-schema.ps1')) {
                 $source = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
-                $source | Should -Match '(?s)Resolve-DatabaseEngineEnvironmentFile.*?-SkipMssqlCmsDatabaseValidation(?!:)' -Because "$name composes the overlay for the datastore only"
+                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile' -Because "$name composes the engine overlay for the datastore"
+                # Count actual invocations via the AST, not comment mentions (these files reference the
+                # function by name in comments to document where CMS validation happens).
+                $perr = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$perr)
+                $contractCalls = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Resolve-EffectiveConfigRuntimeContract' }, $true)
+                $contractCalls.Count | Should -Be 0 -Because "$name is a datastore-only phase; the start script owns CMS runtime-contract validation"
+                ([regex]::Matches($source, 'SkipMssqlCmsDatabaseValidation')).Count | Should -Be 0 -Because "the shared-only CMS invariant and its skip flag no longer exist"
             }
         }
 
@@ -1853,7 +1863,8 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $source | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?Import-Module .*?bootstrap-manifest\.psm1.*?bootstrap-claims-gate\.psm1'
                 $source | Should -Match '(?s)\$bootstrapMode\s*=\s*\$false.*?\$bootstrapManifestPresent\s*=\s*\$false.*?if \(-not \$databaseOnlyStartup\) \{.*?Invoke-BootstrapStartupConfiguration.*?Get-BootstrapRoot'
                 $source | Should -Match '(?s)\$envValues\s*=\s*ReadValuesFromEnvFile.*?if \(-not \$databaseOnlyStartup\) \{.*?Resolve-IdentityClientSecretConfiguration'
-                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile[^\r\n]*-SkipMssqlCmsDatabaseValidation:\(\$databaseOnlyStartup -or \$d -or \$SeparateConfigDatabase\)' -Because "DbOnly and teardown must not parse application-only CMS database settings; separate topology defers CMS-database validation to the topology resolver"
+                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$EnvironmentFile -DockerComposeRoot \$PSScriptRoot' -Because "the engine overlay is composed for the datastore; the start script's runtime contract (Resolve-EffectiveConfigRuntimeContract) owns CMS validation"
+                ([regex]::Matches($source, 'SkipMssqlCmsDatabaseValidation')).Count | Should -Be 0 -Because "the shared-only CMS invariant and its skip flag no longer exist"
             }
         }
 
