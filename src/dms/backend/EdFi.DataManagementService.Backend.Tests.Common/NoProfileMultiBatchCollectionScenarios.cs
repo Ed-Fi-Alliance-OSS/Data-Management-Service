@@ -68,7 +68,9 @@ public static class NoProfileMultiBatchCollectionScenarios
     /// <summary>
     /// Asserts a multi-batch create (request count exceeding the compiled batch limit) returned
     /// InsertSuccess and persisted the full large base collection with the expected document/root
-    /// identity, contiguous 0-based ordinals, unique CollectionItemIds, and correct first/last values.
+    /// identity, unique CollectionItemIds, and — for every requested index, not just the batch
+    /// endpoints — the created document's parent id, the exact contiguous 0-based ordinal, and the
+    /// exact requested city value.
     /// </summary>
     public static void AssertLargeCollectionCreatePersisted(
         UpsertResult result,
@@ -93,24 +95,23 @@ public static class NoProfileMultiBatchCollectionScenarios
         school.Should().Be(new SchoolRow(document.DocumentId, 255901, "BATCH"));
 
         addresses.Should().HaveCount(requestedAddressCount);
-        addresses
-            .Select(address => address.Ordinal)
-            .Should()
-            .Equal(Enumerable.Range(0, requestedAddressCount));
         addresses.Select(address => address.CollectionItemId).Should().OnlyHaveUniqueItems();
 
-        addresses[0]
+        // Order-sensitive full-sequence equality: every persisted row (including every row in the
+        // interior of each batch) must carry the created document's parent id, the exact contiguous
+        // ordinal, and the exact requested value — endpoint-only checks would let corrupted, shifted,
+        // or misbound intermediate rows pass.
+        addresses
             .Should()
-            .Be(new SchoolAddressRow(addresses[0].CollectionItemId, document.DocumentId, 0, CreateCity(0)));
-        addresses[^1]
-            .Should()
-            .Be(
-                new SchoolAddressRow(
-                    addresses[^1].CollectionItemId,
-                    document.DocumentId,
-                    requestedAddressCount - 1,
-                    CreateCity(requestedAddressCount - 1)
-                )
+            .Equal(
+                Enumerable
+                    .Range(0, requestedAddressCount)
+                    .Select(index => new SchoolAddressRow(
+                        addresses[index].CollectionItemId,
+                        document.DocumentId,
+                        index,
+                        CreateCity(index)
+                    ))
             );
     }
 

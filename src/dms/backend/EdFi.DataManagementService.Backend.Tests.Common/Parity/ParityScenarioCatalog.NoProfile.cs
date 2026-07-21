@@ -466,7 +466,7 @@ public static partial class ParityScenarioCatalog
         ),
         Gap(
             "NoProfilePostAsUpdate/ImmutableIdentityRejected",
-            "POST-as-update that changes an immutable identity is rejected with UpsertFailureImmutableIdentity and commits no row changes.",
+            "POST-as-update that changes an immutable identity is rejected with UpsertFailureImmutableIdentity and commits no row changes: the document row including ContentVersion and every stored update-tracking stamp (IdentityVersion, ContentLastModifiedAt, IdentityLastModifiedAt, CreatedAt), the root, the base and aligned-extension collections, and the referential identity are all unchanged.",
             ProductionBoundary.IdentityStability,
             "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
             "Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture",
@@ -528,7 +528,8 @@ public static partial class ParityScenarioCatalog
             Layer = ParityLayer.NoProfile,
             BehavioralContract =
                 "Authoritative StudentAcademicRecord repeat POST-as-update is a guarded no-op: the full persisted rowset, ContentVersion, and every stored update-tracking stamp stay unchanged.",
-            SharedEntryPoint = "NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp",
+            Notes =
+                "The PG location executes the resource-specific NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp helper; the cross-engine mechanic contract this row advertises is inherited from NoProfileGuardedNoOp via CoveredByScenarioId, like every SupportingSmoke row.",
             Boundary = ProductionBoundary.GuardedNoOp,
             PgsqlLocations =
             [
@@ -678,7 +679,21 @@ public static partial class ParityScenarioCatalog
         ),
         PgSmokeChangedPut(
             "SampleStudentSectionAssociation",
-            "Sample StudentSectionAssociation changed-PUT reorders/removes/replaces reference-backed extension children with stable ids.",
+            "Sample StudentSectionAssociation changed-PUT reorders retained reference-backed extension children with stable CollectionItemIds and recomputed contiguous ordinals.",
+            SsecaSmoke,
+            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
+            [
+                "It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
+            ]
+        ),
+        // The same PG test also proves the omission/replacement mechanic, which is a distinct changed-PUT
+        // obligation from the reorder mechanic above, so it is recorded as its own supporting-smoke row
+        // deferring to the canonical omission-semantics family at the same merge boundary.
+        PgSmoke(
+            "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement",
+            "Sample StudentSectionAssociation changed-PUT deletes the omitted reference-backed extension child and persists the replacement item as a new row with a new CollectionItemId.",
+            ProductionBoundary.NoProfileMerge,
+            "NoProfileChangedPutOmissionSemantics",
             SsecaSmoke,
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture",
             [

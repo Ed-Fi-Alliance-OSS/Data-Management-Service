@@ -414,8 +414,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private FocusedPostAsUpdateDocumentRow _documentBeforeRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateDocumentRow _documentAfterRejectedPostAsUpdate = null!;
+    private NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot _documentBeforeRejectedPostAsUpdate =
+        null!;
+    private NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot _documentAfterRejectedPostAsUpdate =
+        null!;
     private FocusedPostAsUpdateSchoolRow _schoolBeforeRejectedPostAsUpdate = null!;
     private FocusedPostAsUpdateSchoolRow _schoolAfterRejectedPostAsUpdate = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesBeforeRejectedPostAsUpdate = null!;
@@ -520,8 +522,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     [Test]
     public void It_does_not_commit_row_changes_for_rejected_post_as_update() =>
         NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges(
-            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentBeforeRejectedPostAsUpdate),
-            PostAsUpdateIntegrationTestSupport.ToNeutral(_documentAfterRejectedPostAsUpdate),
+            _documentBeforeRejectedPostAsUpdate,
+            _documentAfterRejectedPostAsUpdate,
             PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolBeforeRejectedPostAsUpdate),
             PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterRejectedPostAsUpdate),
             [
@@ -615,11 +617,16 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         );
     }
 
-    private async Task<FocusedPostAsUpdateDocumentRow> ReadDocumentAsync(Guid documentUuid)
+    // The rejected-write proof compares the complete stored stamp set, so this fixture reads the
+    // stamp-complete document row rather than the narrow focused projection.
+    private async Task<NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot> ReadDocumentAsync(
+        Guid documentUuid
+    )
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
+                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -627,11 +634,15 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         );
 
         return rows.Count == 1
-            ? new FocusedPostAsUpdateDocumentRow(
+            ? new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."

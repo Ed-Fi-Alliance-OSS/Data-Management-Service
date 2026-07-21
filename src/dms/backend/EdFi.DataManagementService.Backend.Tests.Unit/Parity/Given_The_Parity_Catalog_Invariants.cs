@@ -291,6 +291,54 @@ public class Given_A_Supporting_Smoke_Without_A_Covered_By_Scenario
 }
 
 [TestFixture]
+public class Given_A_Supporting_Smoke_Declaring_A_Direct_Shared_Entry_Point
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[2] = scenarios[2] with
+        {
+            SharedEntryPoint = "NoProfileSampleScenarios.AssertSampleBehavior",
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_a_supporting_smoke_must_not_declare_a_direct_entry_point() =>
+        _violations
+            .Should()
+            .Contain(v => v.Contains("must not declare a direct SharedEntryPoint", StringComparison.Ordinal));
+}
+
+[TestFixture]
+public class Given_A_Supporting_Smoke_Declaring_A_Provider_Specific_Rationale
+{
+    private IReadOnlyList<string> _violations = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scenarios = ParityInvariantSamples.Valid();
+        scenarios[2] = scenarios[2] with
+        {
+            ProviderSpecificEntryPointRationale = "the PG smoke fixture is the effective entry point",
+        };
+        _violations = ParityInvariantSamples.Validate(scenarios);
+    }
+
+    [Test]
+    public void It_reports_that_a_supporting_smoke_must_not_declare_a_provider_specific_rationale() =>
+        _violations
+            .Should()
+            .Contain(v =>
+                v.Contains("must not declare a ProviderSpecificEntryPointRationale", StringComparison.Ordinal)
+            );
+}
+
+[TestFixture]
 public class Given_A_Supporting_Smoke_Deferring_To_A_Non_Canonical_Same_Boundary_Variant
 {
     private IReadOnlyList<string> _violations = null!;

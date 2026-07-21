@@ -284,6 +284,8 @@ public static class NoProfileUpdateSemanticsScenarios
 
     public sealed record ExtensionChildSchoolRow(long DocumentId, long SchoolId);
 
+    public sealed record ExtensionChildRootExtensionRow(long DocumentId, string CampusCode);
+
     public sealed record ExtensionChildAddressRow(
         long CollectionItemId,
         long SchoolDocumentId,
@@ -308,13 +310,16 @@ public static class NoProfileUpdateSemanticsScenarios
 
     /// <summary>
     /// Asserts that omitting the standalone extension-child collection on a changed PUT deletes its
-    /// intervention and visit rows while leaving the root School and its base address row intact
-    /// (same DocumentId, same base address CollectionItemId — not delete-and-reinserted).
+    /// intervention and visit rows while leaving the root School, its base address row, and the root
+    /// extension row intact (same DocumentId, same base address CollectionItemId, same retained
+    /// campusCode — not delete-and-reinserted and not deleted along with its child collection).
     /// </summary>
     public static void AssertStandaloneExtensionChildCollectionDeleted(
         UpdateResult result,
         ExtensionChildSchoolRow schoolBefore,
         ExtensionChildSchoolRow schoolAfter,
+        ExtensionChildRootExtensionRow extensionBefore,
+        ExtensionChildRootExtensionRow extensionAfter,
         IReadOnlyList<ExtensionChildAddressRow> addressesBefore,
         IReadOnlyList<ExtensionChildAddressRow> addressesAfter,
         IReadOnlyList<ExtensionInterventionRow> interventionsBefore,
@@ -325,7 +330,8 @@ public static class NoProfileUpdateSemanticsScenarios
     {
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
 
-        // Preconditions: the standalone extension-child collection and one base address exist.
+        // Preconditions: the standalone extension-child collection, one base address, and the root
+        // extension row all exist, so the survival assertions below cannot pass vacuously.
         schoolBefore.SchoolId.Should().Be(255901);
         interventionsBefore.Should().HaveCount(2);
         visitsBefore.Should().HaveCount(3);
@@ -334,13 +340,24 @@ public static class NoProfileUpdateSemanticsScenarios
             .ContainSingle("the create persists exactly one base address")
             .Which.City.Should()
             .Be("Austin");
+        extensionBefore
+            .Should()
+            .Be(
+                new ExtensionChildRootExtensionRow(schoolBefore.DocumentId, "North"),
+                "the create persists the root extension row the update body retains"
+            );
 
         interventionsAfter.Should().BeEmpty("the omitted standalone extension-child collection is deleted");
         visitsAfter.Should().BeEmpty("deleting the intervention rows deletes their child visit rows");
 
-        // The root and base address rows survive unchanged: same DocumentId/SchoolId and the same
-        // base address CollectionItemId/parent/ordinal/value (a delete-and-reinsert would fail this).
+        // The root, base address, and root extension rows survive unchanged: same DocumentId/SchoolId,
+        // the same base address CollectionItemId/parent/ordinal/value, and the same retained
+        // campusCode (deleting the whole root extension along with its child collection would fail
+        // this, as would a delete-and-reinsert).
         schoolAfter.Should().Be(schoolBefore, "the root School row keeps its DocumentId and SchoolId");
+        extensionAfter
+            .Should()
+            .Be(extensionBefore, "the retained root extension row survives the child-collection delete");
         addressesAfter
             .Should()
             .Equal(

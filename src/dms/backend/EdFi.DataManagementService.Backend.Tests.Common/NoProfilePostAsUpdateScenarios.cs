@@ -215,15 +215,17 @@ public static class NoProfilePostAsUpdateScenarios
 
     /// <summary>
     /// Asserts a rejected POST-as-update committed no row changes across the full seeded surface: the document
-    /// and School rows are byte-for-byte unchanged, the seeded base-address and collection-aligned extension
-    /// rows are unchanged, the School referential-identity row is unchanged, exactly one document remains, and
-    /// no row was created for the rejected request UUID. The base-address and aligned-extension collections must
-    /// be non-empty so a rejection that silently mutated those rows (or the referential identity) cannot pass a
+    /// row — including ContentVersion and every stored update-tracking stamp (IdentityVersion,
+    /// ContentLastModifiedAt, IdentityLastModifiedAt, CreatedAt) — and the School row are byte-for-byte
+    /// unchanged, the seeded base-address and collection-aligned extension rows are unchanged, the School
+    /// referential-identity row is unchanged, exactly one document remains, and no row was created for the
+    /// rejected request UUID. The base-address and aligned-extension collections must be non-empty so a
+    /// rejection that silently mutated those rows (or the referential identity) cannot pass a
     /// document/School-only comparison.
     /// </summary>
     public static void AssertRejectedPostAsUpdateCommittedNoChanges(
-        DocumentRow documentBefore,
-        DocumentRow documentAfter,
+        AuthoritativeDocumentSnapshot documentBefore,
+        AuthoritativeDocumentSnapshot documentAfter,
         SchoolRow schoolBefore,
         SchoolRow schoolAfter,
         IReadOnlyList<SchoolAddressRow> addressesBefore,

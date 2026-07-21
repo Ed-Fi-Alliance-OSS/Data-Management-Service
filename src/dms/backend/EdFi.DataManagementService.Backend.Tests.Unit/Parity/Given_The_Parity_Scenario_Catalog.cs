@@ -164,6 +164,7 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfile/AuthoritativeSmoke/SampleStudentSchoolAssociation/RepeatPutNoOp",
         "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/Create",
         "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPut",
+        "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement",
         "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/RepeatPutNoOp",
         "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/Create",
         "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/ChangedPut",
@@ -573,6 +574,60 @@ public class Given_The_Parity_Scenario_Catalog
         resolved
             .SharedValue.Should()
             .Be("NoProfileCreateBaselineScenarios.AssertFullSurfaceDocumentReconstitutes");
+    }
+
+    [Test]
+    public void It_resolves_the_repeat_post_as_update_smoke_through_its_inherited_guarded_no_op_contract()
+    {
+        ParityScenario row = _all.Single(s =>
+            s.Id == "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp"
+        );
+
+        row.Classification.Should().Be(ParityClassification.SupportingSmoke);
+        row.SharedEntryPoint.Should().BeNullOrEmpty();
+        row.CoveredByScenarioId.Should().Be("NoProfileGuardedNoOp");
+
+        // A SupportingSmoke row's effective contract is the canonical mechanic contract it defers to,
+        // not the resource-specific helper its own location executes (recorded in the row's Notes).
+        EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
+        resolved.Kind.Should().Be(EntryPointKind.Inherited);
+        resolved.InheritedFromScenarioId.Should().Be("NoProfileGuardedNoOp");
+        resolved
+            .SharedValue.Should()
+            .Be(
+                "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
+                    + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged"
+            );
+    }
+
+    private static readonly string[] ExpectedSectionAssociationOmissionReplacementPgTriples =
+    [
+        "PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests.cs::Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture::It_reuses_stable_collection_item_ids_when_extension_children_are_reordered_removed_and_replaced",
+    ];
+
+    [Test]
+    public void It_records_the_section_association_omission_and_replacement_smoke()
+    {
+        ParityScenario row = _all.Single(s =>
+            s.Id
+            == "NoProfile/AuthoritativeSmoke/SampleStudentSectionAssociation/ChangedPutOmissionAndReplacement"
+        );
+
+        row.Classification.Should().Be(ParityClassification.SupportingSmoke);
+        row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
+        row.MssqlCoverage.Should().Be(EngineCoverage.Mapped);
+        row.Boundary.Should().Be(ProductionBoundary.NoProfileMerge);
+        row.CoveredByScenarioId.Should().Be("NoProfileChangedPutOmissionSemantics");
+        Flatten(row.PgsqlLocations)
+            .Should()
+            .BeEquivalentTo(ExpectedSectionAssociationOmissionReplacementPgTriples);
+
+        EffectiveEntryPoint resolved = ParityEntryPointResolution.ResolveEffectiveEntryPoint(row)!;
+        resolved.Kind.Should().Be(EntryPointKind.Inherited);
+        resolved.InheritedFromScenarioId.Should().Be("NoProfileChangedPutOmissionSemantics");
+        resolved
+            .SharedValue.Should()
+            .Be(_all.Single(s => s.Id == "NoProfileChangedPutOmissionSemantics").SharedEntryPoint);
     }
 
     [Test]

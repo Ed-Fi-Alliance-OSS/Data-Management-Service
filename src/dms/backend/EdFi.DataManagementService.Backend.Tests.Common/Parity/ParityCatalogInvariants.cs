@@ -394,6 +394,23 @@ public static class ParityCatalogInvariants
             violations.Add($"{id}: a SupportingSmoke row must be in the NoProfile layer.");
         }
 
+        // A SupportingSmoke row's effective contract is always inherited through its explicit
+        // same-boundary CoveredByScenarioId deferral; a direct or provider-specific declaration would
+        // silently take precedence in entry-point resolution and bypass that deferral.
+        if (!string.IsNullOrWhiteSpace(scenario.SharedEntryPoint))
+        {
+            violations.Add(
+                $"{id}: a SupportingSmoke row must not declare a direct SharedEntryPoint; its contract is inherited via CoveredByScenarioId."
+            );
+        }
+
+        if (!string.IsNullOrWhiteSpace(scenario.ProviderSpecificEntryPointRationale))
+        {
+            violations.Add(
+                $"{id}: a SupportingSmoke row must not declare a ProviderSpecificEntryPointRationale; its contract is inherited via CoveredByScenarioId."
+            );
+        }
+
         bool oneCoveredOneMapped =
             (
                 scenario.PgsqlCoverage == EngineCoverage.Covered

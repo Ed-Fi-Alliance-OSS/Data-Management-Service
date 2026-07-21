@@ -44,6 +44,8 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
     private UpdateResult _updateResult = null!;
     private ExtensionChildSchoolRow _schoolBeforeUpdate = null!;
     private ExtensionChildSchoolRow _schoolAfterUpdate = null!;
+    private ExtensionChildRootExtensionRow _extensionBeforeUpdate = null!;
+    private ExtensionChildRootExtensionRow _extensionAfterUpdate = null!;
     private IReadOnlyList<ExtensionChildAddressRow> _addressesBeforeUpdate = null!;
     private IReadOnlyList<ExtensionChildAddressRow> _addressesAfterUpdate = null!;
     private IReadOnlyList<ExtensionInterventionRow> _interventionsBeforeUpdate = null!;
@@ -70,6 +72,7 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
         long documentId = await ExecuteCreateAsync();
 
         _schoolBeforeUpdate = await ReadSchoolAsync(documentId);
+        _extensionBeforeUpdate = await ReadSchoolExtensionAsync(documentId);
         _addressesBeforeUpdate = await ReadSchoolAddressesAsync(documentId);
         _interventionsBeforeUpdate = await ReadInterventionsAsync(documentId);
         _visitsBeforeUpdate = await ReadInterventionVisitsAsync(documentId);
@@ -77,6 +80,7 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
         _updateResult = await ExecuteUpdateAsync();
 
         _schoolAfterUpdate = await ReadSchoolAsync(documentId);
+        _extensionAfterUpdate = await ReadSchoolExtensionAsync(documentId);
         _addressesAfterUpdate = await ReadSchoolAddressesAsync(documentId);
         _interventionsAfterUpdate = await ReadInterventionsAsync(documentId);
         _visitsAfterUpdate = await ReadInterventionVisitsAsync(documentId);
@@ -108,6 +112,8 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
             _updateResult,
             _schoolBeforeUpdate,
             _schoolAfterUpdate,
+            _extensionBeforeUpdate,
+            _extensionAfterUpdate,
             _addressesBeforeUpdate,
             _addressesAfterUpdate,
             _interventionsBeforeUpdate,
@@ -232,6 +238,27 @@ public class Given_A_Postgresql_Changed_Put_Omitting_A_Standalone_Extension_Chil
             ? new ExtensionChildSchoolRow(GetInt64(rows[0], "DocumentId"), GetInt64(rows[0], "SchoolId"))
             : throw new InvalidOperationException(
                 $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<ExtensionChildRootExtensionRow> ReadSchoolExtensionAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "CampusCode"
+            FROM "sample"."SchoolExtension"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? new ExtensionChildRootExtensionRow(
+                GetInt64(rows[0], "DocumentId"),
+                GetString(rows[0], "CampusCode")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one school extension row for document id '{documentId}', but found {rows.Count}."
             );
     }
 
