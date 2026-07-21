@@ -4503,8 +4503,9 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "SchoolYear_DocumentId", "SchoolYear_SchoolYear", "School_DocumentId",
-                "School_SchoolId", "CalendarTypeDescriptor_DescriptorId", "CalendarCode"
+            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt", "SchoolYear_DocumentId",
+                "SchoolYear_SchoolYear", "School_DocumentId", "School_SchoolId",
+                "CalendarTypeDescriptor_DescriptorId", "CalendarCode"
             FROM "edfi"."Calendar"
             WHERE "DocumentId" = @documentId;
             """,
@@ -4516,6 +4517,14 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
                     rows[0],
                     "DocumentId"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "ContentVersion"
+                ),
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
+                    rows[0],
+                    "ContentLastModifiedAt"
                 ),
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
                     rows[0],

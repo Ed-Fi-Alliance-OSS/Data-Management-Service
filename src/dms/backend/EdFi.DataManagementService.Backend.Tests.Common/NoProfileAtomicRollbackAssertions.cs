@@ -141,9 +141,14 @@ public static class NoProfileAtomicRollbackAssertions
         short ResourceKeyId
     );
 
-    /// <summary>The key-unification target: the conflicting Calendar seed's full value-bearing row.</summary>
+    /// <summary>
+    /// The key-unification target: the conflicting Calendar seed's full value-bearing row, including
+    /// the root table's own replicated ContentVersion/ContentLastModifiedAt stamp columns.
+    /// </summary>
     public sealed record RejectedWriteCalendarRow(
         long DocumentId,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt,
         long SchoolYearDocumentId,
         int SchoolYear,
         long SchoolDocumentId,
