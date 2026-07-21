@@ -54,6 +54,11 @@ without requiring an API E2E path for every source operation.
     required `errors.tolerance=none`. Supply a malformed retained record that reaches the
     `DocumentState` transform, rather than an operation the transform intentionally
     drops.
+11. Add one maximum-record fixture sourced from the shared DMS materializer. It must use
+    the maximum supported link-bearing `DocumentJson`, add the public envelope, and run
+    through the real transform, converters, partitioner, and pinned producer. Publish,
+    replicate, and consume it with producer, topic, broker, replica-fetch, and consumer
+    limits set to the binding's exact `maxRecordBytes`; add an over-budget variant.
 
 ## Acceptance Evidence
 
@@ -91,6 +96,10 @@ without requiring an API E2E path for every source operation.
   failed state instead of skipping the malformed retained record, and deployment-owned
   combined readiness remains false even if offset or lag observations would otherwise
   appear caught up.
+- The maximum-record test proves the supported fully materialized link-bearing envelope
+  fits within the one-record byte budget and reaches a consumer without relying on
+  compression. The over-budget variant emits no partial record, fails the connector task,
+  and keeps combined readiness false.
 
 ## Out of Scope
 

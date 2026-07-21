@@ -81,6 +81,54 @@ Topic-per-instance supplies the Kafka authorization boundary, bounds topic count
 keeps resource routing in message metadata. Shared cross-instance topics and
 topic-per-resource are not the v1 contract.
 
+## Record Size
+
+Each immutable deployment binding contains one positive `maxRecordBytes` value. It is the
+maximum byte budget for a one-record produce request under the pinned v1 key/value
+converters and producer, including the lowercase UUID key, the final UTF-8 public value,
+Kafka record-batch framing, and produce-request framing. V1 pins producer compression to
+`none`, so successful publication never depends on a particular document compression
+ratio. Tombstones use the same budget and are necessarily smaller than the maximum
+non-null upsert.
+
+`maxRecordBytes` is established from the largest public record DMS supports, not by
+copying `AppSettings:MaxRequestBodySizeMegabytes`. The sizing path must use the real cache
+materializer, including reference-link injection, and the real `DocumentState` transform,
+converters, partitioner, and producer framing. It then selects a byte budget at least as
+large as that maximum materialized envelope and its Kafka overhead. A maximum-size
+request body alone is not the bound because materialization adds links and the public
+envelope adds metadata. Changing DMS/schema/link behavior so the supported maximum no
+longer fits requires a new binding generation with a newly established
+`maxRecordBytes`; an existing binding is never widened in place.
+
+The binding value drives every relevant Kafka limit rather than relying on approximately
+1 MiB defaults:
+
+- the connector sets `producer.override.max.request.size=<maxRecordBytes>` and
+  `producer.override.compression.type=none`;
+- the topic sets `max.message.bytes=<maxRecordBytes>`;
+- bootstrap verifies that the broker request and replication path accepts that budget;
+  for a self-managed broker this includes `socket.request.max.bytes`,
+  `message.max.bytes` or the effective topic override, `replica.fetch.max.bytes`, and
+  `replica.fetch.response.max.bytes`; and
+- consumers configure both `max.partition.fetch.bytes` and `fetch.max.bytes` to at least
+  `maxRecordBytes` and provision enough receive/deserialization memory for one such
+  record.
+
+See Kafka's authoritative
+[producer](https://kafka.apache.org/40/configuration/producer-configs/),
+[topic](https://kafka.apache.org/40/configuration/topic-level-configs/),
+[broker](https://kafka.apache.org/40/configuration/broker-configs/), and
+[consumer](https://kafka.apache.org/40/configuration/consumer-configs/) configuration
+references for those byte-limit semantics.
+
+Bootstrap fails before connector registration when it cannot verify this alignment.
+Consumer conformance is a public deployment requirement because the producer cannot
+validate independently operated consumers. A pinned-runtime boundary test materializes,
+publishes, replicates, and consumes the maximum supported envelope with every governed
+limit set to the binding value. An over-budget fixture must fail the connector task and
+combined readiness rather than be skipped.
+
 ## Key
 
 The public key is UTF-8 lowercase `DocumentUuid` text with no JSON quoting or Kafka
@@ -355,6 +403,9 @@ The public topic never exposes:
   repaired by later source equality or by sending the lower canonical version to the same
   topic; source rollback/reset recovery uses a new topic generation.
 - One ACL protects one instance while resource metadata supports downstream routing.
+- Each binding fixes one maximum-record budget; producers, the topic, brokers/replicas,
+  and consumers must all accept it, and a larger supported DMS envelope requires a new
+  binding generation rather than an in-place size change.
 - Public identity and per-document ordering survive canonical deletion because the key
   is independent of the value.
 - Consumers can preserve the exact DMS stream-representation ETag without access to

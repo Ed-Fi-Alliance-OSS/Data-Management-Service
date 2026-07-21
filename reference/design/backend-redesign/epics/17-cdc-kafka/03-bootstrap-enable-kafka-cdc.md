@@ -32,23 +32,30 @@ backend.
 3. Require the selected deployment target to be present in DMS
    `DocumentCache:Targets`, and reserve or exact-match its immutable binding before
    creating governed artifacts.
-4. Create or validate the topic with exactly `cleanup.policy=compact` and the binding's
-   fixed partition count. Reject any cleanup policy that includes `delete`. Provision and
+4. Create or validate the topic with exactly `cleanup.policy=compact`, the binding's
+   fixed partition count, and `max.message.bytes=<binding maxRecordBytes>`. Reject any
+   cleanup policy that includes `delete` or any missing/conflicting size. Provision and
    idempotently validate literal, binding-scoped topic ACLs for the deployment-supplied
    connector and instance consumer principals, plus their required consumer-group ACLs;
    do not emit shared-topic, wildcard-topic, or cross-instance consumer grants.
-5. Implement idempotent Kafka Connect create/update, external combined-status polling,
+5. Before connector registration, validate that the effective broker request,
+   record-batch, and replica-fetch limits accept `maxRecordBytes`. Configure the local
+   broker accordingly; require equivalent verifiable capability from a production-like
+   broker and fail closed when it is smaller or cannot be verified. Document that each
+   consumer must set `max.partition.fetch.bytes` and `fetch.max.bytes` to at least the
+   binding value and provision memory for one record.
+6. Implement idempotent Kafka Connect create/update, external combined-status polling,
    timeout, and condition-specific diagnostics. Fail before registration if the worker
    does not permit the required source-producer overrides. After registration, read back
    the connector configuration and reject drift from the required idempotence,
-   acknowledgement, retry, maximum-in-flight, or `errors.tolerance=none` values. Treat a
-   failed connector task as not ready regardless of offset or lag observations. ACL
-   verification must complete before connector registration and before combined
-   readiness can pass.
-6. Print sanitized binding-generation/connector/source/topic identity. Retain binding
+   acknowledgement, retry, maximum-in-flight, binding-derived maximum-request,
+   no-compression, or `errors.tolerance=none` values. Treat a failed connector task as not
+   ready regardless of offset or lag observations. ACL and record-size verification must
+   complete before connector registration and before combined readiness can pass.
+7. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
    destructive volume teardown.
-7. Expose the same workflow to E2E setup before observed test traffic begins.
+8. Expose the same workflow to E2E setup before observed test traffic begins.
 
 ## Acceptance Evidence
 
@@ -60,10 +67,11 @@ backend.
   high-watermark.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
   in-place topic partition-count changes, time/delete retention on the v1 topic, and
-  source/topic-generation reuse.
+  source/topic-generation reuse. It also rejects an in-place `maxRecordBytes` change or
+  producer, topic, broker, and replica-fetch limits below the binding value.
 - Registration tests reject a worker policy that disallows the required producer
   overrides and any live connector configuration with conflicting ordering settings or
-  missing/conflicting `errors.tolerance=none`.
+  missing/conflicting `errors.tolerance=none`, `max.request.size`, or compression.
 - Broker-backed integration tests enable Kafka authorization and prove ACL provisioning
   is repeatable, a configured instance consumer can read its own literal topic, and that
   principal is denied when it attempts to read a peer instance topic.

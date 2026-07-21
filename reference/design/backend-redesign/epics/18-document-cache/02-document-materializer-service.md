@@ -51,6 +51,10 @@ reconciliation, optional direct fill, and CDC payload fixtures.
    `DocumentJson._lastModifiedDate`; do not introduce a cache-specific timestamp format.
 8. Report disappearance, stale, reconstitution, and invariant failures without emitting a
    partial cache result.
+9. Supply a reusable CDC sizing fixture that runs a schema-valid maximum supported body
+   through the real link-bearing materializer. The fixture exposes the resulting
+   `DocumentJson` to story 17-04 so its final envelope and Kafka framing, rather than the
+   incoming HTTP body length, establish and verify `maxRecordBytes`.
 
 ## Acceptance Evidence
 
@@ -66,6 +70,10 @@ reconciliation, optional direct fill, and CDC payload fixtures.
   them independently of the composer.
 - Shape tests cover nested arrays, reference links, and excluded authorization/profile
   data.
+- The sizing fixture fills a test resource to the configured maximum supported DMS body,
+  exercises worst-case reference-link injection for that resource, and proves the
+  resulting `DocumentJson` is the input used by CDC's maximum-record boundary test. It
+  does not claim that the HTTP request-body byte count is the final Kafka record size.
 - Deterministically synchronized provider tests commit a source update during
   multi-result-set hydration and prove the final optimistic check returns a stale result,
   never a mixed document labeled with the captured version or an invariant failure. A

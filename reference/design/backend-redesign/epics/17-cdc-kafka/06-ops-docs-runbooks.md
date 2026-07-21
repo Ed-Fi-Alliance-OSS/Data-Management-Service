@@ -24,8 +24,10 @@ capability without redefining its architecture or contracts.
    artifacts, retention, restart, and cleanup.
 3. Document Kafka compact-only topic/ACL/consumer operation, including why time/delete
    retention is prohibited without a separately defined authoritative bootstrap source,
+   how immutable `maxRecordBytes` is established from the maximum fully materialized
+   link-bearing envelope, required producer/topic/broker/replica/consumer size settings,
    DMS per-database projection-health observation, and deployment-owned combined
-   readiness.
+   readiness. Warn that the HTTP request-body limit alone is not the record-size bound.
 4. Document connector restart, offset reset, resnapshot, topic recreation, cache rebuild,
    target migration/retirement, cache-ahead invariant recovery, and explicit destructive
    cleanup. A possibly published higher cache version requires a new binding generation,

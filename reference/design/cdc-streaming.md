@@ -593,7 +593,8 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
 - provisioned `dms.Document`, `dms.DocumentCache`, and `dms.DocumentCacheState` tables and
   provider CDC/key prerequisites,
 - topic name, compact-only cleanup policy, fixed partition count, ACL, transform, and
-  connector configuration that match the binding record,
+  `maxRecordBytes`, broker-size compatibility, and connector configuration that match the
+  binding record,
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
   through a database source position observed after DMS reported a sufficiently recent
   exact-zero audit,
@@ -678,6 +679,7 @@ The portable binding-record shape is:
   "connectorName": "dms-local-data-store-1-g1",
   "topicName": "edfi.dms.instance.data-store-1-g1.documents.v1",
   "partitionCount": 1,
+  "maxRecordBytes": 33554432,
   "contractVersion": "1"
 }
 ```
@@ -687,7 +689,12 @@ pooling, application-name, host-alias, or equivalent connection changes produce 
 fingerprint when they reach the same `dms.DataStoreIdentity` row. `partitionCount` is a
 positive topic-creation value and is immutable within the binding generation because the
 public consumer contract uses per-key partition offsets to order equal-version corrective
-republishes.
+republishes. The shown `maxRecordBytes` is illustrative rather than a default. It is a
+positive signed 32-bit byte budget established from the maximum link-bearing public
+record supported by the deployment, including the pinned Kafka serialization and
+one-record produce-request framing. It is immutable within the binding generation. It is
+not copied from the HTTP request-body limit because cache materialization can inject links
+and the transform adds the public envelope.
 
 For local development and CI, the deployment automation stores one JSON record per
 generation under a deployment-owned persistent state root, with the default layout:
@@ -753,15 +760,31 @@ producer.override.enable.idempotence=true
 producer.override.acks=all
 producer.override.retries=2147483647
 producer.override.max.in.flight.requests.per.connection=5
+producer.override.max.request.size=<binding maxRecordBytes>
+producer.override.compression.type=none
 ```
 
-These are fixed v1 values rather than binding or operator inputs. Together with one task,
-one key-based partitioner, and one routed partition per key, they prevent a retried upsert
-from being permanently reordered after its later tombstone. Template generation rejects
+The ordering and compression values are fixed v1 values; only `max.request.size` comes
+from the immutable binding. Together with one task, one key-based partitioner, and one
+routed partition per key, the ordering values prevent a retried upsert from being
+permanently reordered after its later tombstone. Compression is pinned to `none` so the
+record-size contract does not depend on compression ratio. Template generation rejects
 duplicate or conflicting producer properties. Registration fails before connector
 startup when the Kafka Connect worker's client-configuration override policy does not
 permit these values, and live connector validation rejects drift from them. V1 does not
 rely on producer defaults supplied by the Kafka client or pinned Connect image.
+
+The authoritative topic/message contract defines `maxRecordBytes` as the byte budget for
+the maximum supported fully materialized public record and its one-record Kafka framing.
+The topic sets `max.message.bytes` to that binding value. Before registration, deployment
+automation verifies that broker request, record-batch, and replica-fetch limits accept the
+same budget. A self-managed deployment configures `socket.request.max.bytes`, the
+effective `message.max.bytes`/topic override, `replica.fetch.max.bytes`, and
+`replica.fetch.response.max.bytes` accordingly; a managed deployment must provide an
+equivalent verifiable capability. Independently operated consumers set
+`max.partition.fetch.bytes` and `fetch.max.bytes` to at least the binding value and allow
+enough memory to deserialize one record. The ordinary HTTP request-body limit is not a
+substitute for this check because link injection and envelope shaping occur afterward.
 
 Every v1 connector also emits the top-level connector setting
 `errors.tolerance=none`. This is a fixed v1 value rather than a binding or operator
@@ -944,10 +967,12 @@ materializer implementations cannot alternate output for one version.
 
 ### New-topic cutover
 
-Changing the topic partition count or pinned key partitioner creates a new binding
-generation, topic, and consumer state namespace because offsets cannot order across the
-old and new partitions. It may retain `documents.v1` and `contractVersion: 1` when the
-public key/value/delete contract is otherwise unchanged.
+Changing the topic partition count, pinned key partitioner, or immutable
+`maxRecordBytes` creates a new binding generation, topic, and consumer state namespace.
+Partition changes require the cutover because offsets cannot order across old and new
+partitions; a size change requires it because producer/topic/consumer compatibility is
+bound to the retained generation. The new topic may retain `documents.v1` and
+`contractVersion: 1` when the public key/value/delete contract is otherwise unchanged.
 
 A change to key encoding, required field names or JSON types, delete semantics, or the
 document contract itself requires a new topic contract such as `documents.v2`. Operators:
@@ -1023,7 +1048,11 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
 - Topic provisioning requires and idempotently validates `cleanup.policy=compact`; it
-  rejects any cleanup policy that includes `delete`.
+  rejects any cleanup policy that includes `delete`, and sets
+  `max.message.bytes=<binding maxRecordBytes>`.
+- Before connector registration, bootstrap verifies the broker request, record-batch,
+  and replica-fetch path against `maxRecordBytes`; an unverifiable or smaller limit fails
+  setup rather than relying on Kafka defaults.
 - The same workflow provisions and idempotently validates the binding-scoped topic ACLs
   before connector registration. It emits literal instance-topic grants for the
   deployment-supplied connector and consumer principals and never emits a shared-topic,
@@ -1151,15 +1180,22 @@ topic routing. Materializer tests prove `StreamEtag` is produced by the shared D
 served-ETag composer for the fixed stream representation and remains coherent with the
 row's `ContentVersion` and effective schema. V1 fixtures pin contractual public fields,
 types, selectors, and metadata relationships without independently freezing opaque ETag
-bytes. Ordering tests prove higher versions replace, lower versions are ignored, and a
-later partition offset replaces an equal version. Repair tests clear and rebuild cache
+bytes. A boundary fixture uses the shared materializer to construct the maximum supported
+link-bearing document, shapes it through the real transform and converters, and proves
+that its one-record produce request fits when every governed producer, topic, broker,
+replica-fetch, and consumer limit equals the binding's `maxRecordBytes`. The broker-backed
+test publishes, replicates, and consumes that record; an over-budget variant fails the
+connector task and combined readiness instead of being skipped. Ordering tests prove
+higher versions replace, lower versions are ignored, and a later partition offset
+replaces an equal version. Repair tests clear and rebuild cache
 state into the same topic without advancing `ContentVersion`; incompatible-contract tests
 use a new topic suffix and matching `contractVersion`.
 
 Connector template and registration tests require the exact idempotence, acknowledgement,
-retry, and maximum-in-flight producer overrides, reject every conflicting value and an
-override-disallowing worker policy, and verify the registered connector retains the
-required configuration. They also require an explicit `errors.tolerance=none`, reject a
+retry, maximum-in-flight, no-compression, and binding-derived maximum-request producer
+overrides, reject every conflicting value and an override-disallowing worker policy, and
+verify the registered connector retains the required configuration. They also require an
+explicit `errors.tolerance=none`, reject a
 duplicate, missing, or conflicting value, and reject live configuration drift. A
 broker-backed retry-ordering test injects a retriable producer failure after an upsert is
 submitted and before its canonical tombstone, then proves the public partition contains
@@ -1170,13 +1206,14 @@ readiness remains false rather than accepting offset or lag catch-up beyond the 
 record.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
-mismatch including an attempted partition-count change, rejection of a topic configured
-with a cleanup policy that includes `delete`, provider aliases that resolve to the same
-fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop retention,
+mismatch including attempted partition-count or `maxRecordBytes` changes, rejection of a
+topic configured with a cleanup policy that includes `delete` or conflicting
+`max.message.bytes`, provider aliases that resolve to the same fingerprint, existing
+artifacts with missing state, cleanup ordering, normal-stop retention,
 destructive-teardown removal, and new-generation source migration.
 Multi-controller state backends additionally prove compare-and-set behavior. No test
-repairs a mismatch by rewriting a binding, changes a topic's partition count in place, or
-reuses a topic generation for a different source.
+repairs a mismatch by rewriting a binding, changes a topic's partition count or
+`maxRecordBytes` in place, or reuses a topic generation for a different source.
 
 Bootstrap integration coverage uses an authorization-enabled broker to prove ACL
 provisioning is repeatable and binding-scoped: a consumer principal configured for one

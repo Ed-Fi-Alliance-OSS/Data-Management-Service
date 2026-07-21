@@ -30,7 +30,8 @@ source routing and serialized public contract using the separately published
 
 1. Define inputs from the immutable deployment binding for provider/source fingerprint,
    target and generation identity, connector/topic names, fixed topic partition count,
-   `contractVersion`, credentials, replication/capture identity, and snapshot behavior.
+   positive signed 32-bit `maxRecordBytes`, `contractVersion`, credentials,
+   replication/capture identity, and snapshot behavior.
 2. Generate one PostgreSQL or SQL Server connector configuration per DMS instance and
    immutable binding, without hard-coded instance values. Scope each connector to exactly
    one instance database and reject SQL Server configurations that select multiple
@@ -63,6 +64,10 @@ source routing and serialized public contract using the separately published
     its Kafka Connect default or expose it as a template input. Reject a duplicate,
     missing, or conflicting value. Do not configure tolerant skipping or a dead-letter
     queue for malformed retained records.
+11. Emit `producer.override.max.request.size=<binding maxRecordBytes>` and the fixed
+    `producer.override.compression.type=none`. Do not infer the value from DMS's request
+    body limit or accept a separate producer-size input. Reject a missing, duplicate, or
+    conflicting property.
 
 ## Acceptance Evidence
 
@@ -86,6 +91,10 @@ source routing and serialized public contract using the separately published
   in-flight requests, and duplicate/conflicting producer properties.
 - Rendering tests require exactly one explicit `errors.tolerance=none` and reject an
   omitted, duplicate, or conflicting value such as `all`.
+- Rendering tests require the exact binding-derived `max.request.size` and fixed
+  no-compression override, reject nonpositive/out-of-range size values and every
+  duplicate/conflicting producer-size property, and prove a changed `maxRecordBytes`
+  requires a new binding generation.
 - A pinned-image smoke test proves the configured transform class loads; detailed
   transform behavior remains owned by 17-02a and the shared contract suite in 17-04.
 

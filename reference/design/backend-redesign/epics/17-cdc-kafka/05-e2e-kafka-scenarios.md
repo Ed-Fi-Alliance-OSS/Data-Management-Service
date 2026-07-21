@@ -31,7 +31,9 @@ coverage against the actual provisioned data store and routed public topic.
    `deleted=false`/`deleted=true` records carrying `EdFiDoc`.
 2. Opt E2E setup into CDC, persist its local JSON binding record, and wait for
    deployment-owned combined target readiness before observed writes.
-3. Add a consumer helper that selects the instance topic and filters by document key.
+3. Add a consumer helper that selects the instance topic and filters by document key,
+   with `max.partition.fetch.bytes` and `fetch.max.bytes` set to at least the binding's
+   `maxRecordBytes`.
 4. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
    same-key ordering, and compatible same-topic corrective rebuild scenarios.
 5. Capture connector status/logs, topics, and consumed records on timeout.

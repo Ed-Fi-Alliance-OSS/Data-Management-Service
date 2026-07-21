@@ -74,6 +74,10 @@ implementation inputs.
 - Connector templates and live registration pin `errors.tolerance=none`; a malformed
   retained record fails the task and combined readiness instead of being skipped as
   caught-up progress.
+- Every binding pins one `maxRecordBytes` derived from the maximum supported fully
+  materialized link-bearing envelope. Producer, topic, broker/replication, and consumer
+  limits align to it, and a broker-backed boundary test publishes and consumes that
+  maximum record without relying on compression.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported setup, security, observation, same-topic
   compatible repair, incompatible-contract migration, and explicit destructive cleanup.
