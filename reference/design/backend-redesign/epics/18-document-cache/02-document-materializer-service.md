@@ -46,7 +46,10 @@ reconciliation, optional direct fill, and CDC payload fixtures.
    locking may still block briefly when row-versioned reads are unavailable.
 6. After the optimistic check succeeds, validate embedded/column/stream-ETag consistency
    and compose the writable result.
-7. Report disappearance, stale, reconstitution, and invariant failures without emitting a
+7. Retain the canonical provider-precision `LastModifiedAt` in the cache-row result while
+   reusing the existing DMS whole-second UTC formatter for
+   `DocumentJson._lastModifiedDate`; do not introduce a cache-specific timestamp format.
+8. Report disappearance, stale, reconstitution, and invariant failures without emitting a
    partial cache result.
 
 ## Acceptance Evidence
@@ -54,6 +57,9 @@ reconciliation, optional direct fill, and CDC payload fixtures.
 - Unit/integration tests cover every cache result field and metadata invariant, including
   equality between the canonical, cache-column, and embedded document UUIDs and exact
   `StreamEtag` equality with the existing DMS composer.
+- Fractional provider timestamp fixtures prove the cache-row result retains the canonical
+  value, `DocumentJson._lastModifiedDate` discards the fraction without rounding, and
+  formatting the former exactly reproduces the latter.
 - Contract fixtures prove `StreamEtag` is produced by the current shared composer for the
   fixed stream context and remains coherent with `ContentVersion`, effective schema, and
   document link context. They treat the resulting bytes as opaque rather than freezing

@@ -65,7 +65,8 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 Each persisted document maintains representation-tracking metadata on `dms.Document`:
 
 - `ContentVersion` (`bigint`, globally monotonic), the representation stamp
-- `ContentLastModifiedAt` (UTC timestamp), payload metadata served as `_lastModifiedDate`
+- `ContentLastModifiedAt` (UTC timestamp), whose provider precision is retained in storage
+  and whose whole-second UTC formatting supplies `_lastModifiedDate`
 
 Note: `dms.Document` also carries metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Update-tracking rules defined in this document are unchanged by those additional columns.
 
@@ -157,7 +158,9 @@ Notes:
 
 For a document `P`:
 
-- `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
+- `_lastModifiedDate(P) = formatUtcWholeSeconds(dms.Document.ContentLastModifiedAt)` using
+  the existing DMS `yyyy-MM-ddTHH:mm:ssZ` representation; fractional seconds are discarded
+  without rounding
 - `ChangeVersion(P) = dms.Document.ContentVersion`
 - `_etag(P)` is composed, not hashed:
 

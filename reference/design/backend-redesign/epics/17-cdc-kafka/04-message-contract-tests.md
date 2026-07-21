@@ -29,7 +29,8 @@ without requiring an API E2E path for every source operation.
    JSON expansion, opaque `StreamEtag` copying, and topic routing.
 3. Include SQL Server `datetime2(7)` fixtures represented as
    `io.debezium.time.NanoTimestamp` and exercise the Ed-Fi shaping SMT's UTC ISO string
-   conversion at zero through seven significant fractional digits.
+   conversion at zero through seven significant fractional digits, with every fraction
+   deliberately truncated to the existing DMS whole-second representation.
 4. Add realistic nested/reference-link payload fixtures from the shared materializer.
 5. Add real-provider delete-key and routed-topic ordering coverage.
 6. Pin the v1 key, public fields/types, stream selectors, tombstone behavior, document
@@ -51,9 +52,9 @@ without requiring an API E2E path for every source operation.
 - Regression tests catch wrapper, quoting, escaped-JSON, timestamp, metadata, internal
   field, missing or incorrect `document._etag`, unexpected envelope `etag`, and Kafka-null
   contract violations.
-- SQL Server regression tests reject raw numeric timestamps, precision loss, a missing
-  trailing `Z`, more than seven fractional digits, unexpected temporal logical types,
-  and any difference between `lastModifiedAt` and `document._lastModifiedDate`.
+- SQL Server regression tests reject raw numeric or fractional public timestamps, rounding
+  into the next second, a missing trailing `Z`, unexpected temporal logical types, and any
+  difference between `lastModifiedAt` and `document._lastModifiedDate`.
 - Materializer fixtures use ETags produced by the shared DMS composer; connector tests
   prove `document._etag` is an exact copy rather than a Java-derived value.
 - Fixtures obtain `StreamEtag` from the current DMS composer and fail if the transform

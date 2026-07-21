@@ -150,8 +150,8 @@ Notes:
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
-- Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
+- Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 
 ##### 1a) `dms.ChangeVersionSequence`
@@ -545,14 +545,18 @@ The cached `DocumentJson` is the caller-agnostic, pre-profile, full API resource
 emitted by reconstitution. It includes top-level `id` and `_lastModifiedDate`, with
 `link` subtrees already present when link injection is compiled into the read plan. It
 does not contain a reusable `_etag`.
+`_lastModifiedDate` uses the existing DMS whole-second UTC formatter; the associated
+`LastModifiedAt` cache column retains the canonical provider-precision value.
 Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
 strip pass runs on the projected document immediately before serialization. The served `_etag` is
 then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
 participate in the request's `variantKey` (see
 [link-injection.md](link-injection.md#cache-and-etag)).
 
-`ContentVersion` and `LastModifiedAt` are the representation metadata associated with
-`DocumentJson`. `StreamEtag` is a separate opaque value computed by the DMS
+`ContentVersion` and provider-precision `LastModifiedAt` are the representation metadata
+associated with `DocumentJson`; formatting `LastModifiedAt` through the existing DMS
+whole-second rule must exactly reproduce `DocumentJson._lastModifiedDate`. `StreamEtag` is
+a separate opaque value computed by the DMS
 cache-projection materializer through the shared served-ETag composer. It applies only to
 the fixed CDC representation: JSON, no readable profile, the cached document's link mode,
 and identity content coding. Ordinary resource rows use the link-bearing context even

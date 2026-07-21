@@ -112,11 +112,11 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
   "resourceName": "Student",
   "resourceVersion": "5.2.0",
   "contentVersion": 123456,
-  "lastModifiedAt": "2026-07-06T15:30:45.1234567Z",
+  "lastModifiedAt": "2026-07-06T15:30:45Z",
   "document": {
     "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
     "_etag": "123456-a1b2c3d4.j._.l.i",
-    "_lastModifiedDate": "2026-07-06T15:30:45.1234567Z"
+    "_lastModifiedDate": "2026-07-06T15:30:45Z"
   }
 }
 ```
@@ -129,7 +129,7 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
 | `resourceName` | Resource name from the cache row |
 | `resourceVersion` | Project/schema resource version copied from `dms.ResourceKey` |
 | `contentVersion` | Signed 64-bit representation version used for canonical-state idempotency and stale-write ordering; equal versions are ordered by Kafka partition offset |
-| `lastModifiedAt` | UTC RFC 3339/ISO-8601 timestamp with up to seven fractional digits and trailing `Z` |
+| `lastModifiedAt` | UTC whole-second timestamp in the existing DMS `yyyy-MM-ddTHH:mm:ssZ` representation |
 | `document` | Expanded structured full API resource body, never an escaped JSON string |
 
 Database Pascal-case columns are renamed to lower camel case. `contractVersion` and
@@ -143,9 +143,11 @@ particular, SQL Server stores `dms.DocumentCache.LastModifiedAt` as `datetime2(7
 pinned Debezium connector's `adaptive` time-precision mode exposes that column as an `INT64`
 `io.debezium.time.NanoTimestamp`, not a JSON string. The required Ed-Fi `DocumentState`
 SMT owns its conversion to `lastModifiedAt`: it interprets the Debezium logical
-type as nanoseconds since the Unix epoch in UTC, preserves SQL Server's 100-nanosecond
-precision without rounding, and emits the RFC 3339/ISO-8601 string required above with
-at most seven fractional digits and a trailing `Z`. A raw numeric `lastModifiedAt` or a
+type as nanoseconds since the Unix epoch in UTC and deliberately truncates any fractional
+second to the same whole-second UTC representation already emitted by DMS materializers.
+`LastModifiedAt` retains its provider precision in the cache row, but subsecond precision is
+not part of the public stream contract and is not used for freshness or ordering. A raw
+numeric `lastModifiedAt`, fractional public timestamp, rounding into the next second, or
 plain field rename is non-conforming. The transform also verifies that the emitted value
 exactly matches `document._lastModifiedDate`; a mismatch fails the record rather than
 publishing inconsistent metadata.
@@ -365,4 +367,4 @@ The public topic never exposes:
 | Require strictly newer `contentVersion` for every replacement | Rejected: it makes a conforming projection or opaque-ETag correction require a new topic even though Kafka already orders the later record for the same key. |
 | Republish a corrected ETag at the same `contentVersion` in `documents.v1` | Accepted for a compatible repair: clear and rebuild the cache after stopping old cache writers, and let the later Kafka offset win. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
-| Require SQL Server `time.precision.mode=isostring` in the currently pinned image | Rejected for v1: the pinned Debezium 2.7 connector supports `adaptive` and `connect`, but not `isostring`; the required Ed-Fi `DocumentState` SMT performs the lossless conversion. |
+| Require SQL Server `time.precision.mode=isostring` in the currently pinned image | Rejected for v1: the pinned Debezium 2.7 connector supports `adaptive` and `connect`, but not `isostring`; the required Ed-Fi `DocumentState` SMT normalizes the adaptive temporal value to the existing DMS whole-second representation. |

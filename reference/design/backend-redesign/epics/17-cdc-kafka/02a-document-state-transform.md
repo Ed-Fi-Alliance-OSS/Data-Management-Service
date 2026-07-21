@@ -35,8 +35,9 @@ separate from DMS-1240's completed generic `sourceFields` expander.
 3. Emit exactly one final public upsert, final public tombstone, or no record according to
    the projector/source decision.
 4. Normalize the `DocumentUuid` key, parse `DocumentJson` directly, convert provider
-   timestamps without precision loss, copy opaque `StreamEtag` to `document._etag`, build
-   the public envelope, validate embedded metadata, and route the retained record.
+   timestamps to the existing DMS whole-second UTC representation by truncating rather
+   than rounding fractional seconds, copy opaque `StreamEtag` to `document._etag`, build the
+   public envelope, validate embedded metadata, and route the retained record.
 5. Expose only `provider` and `target.topic` as contract configuration. Keep source
    tables, operations, source columns, and v1 public fields fixed behavior rather than a
    mapping language.
@@ -53,8 +54,9 @@ separate from DMS-1240's completed generic `sourceFields` expander.
   structured `document`, opaque ETag copying, internal-field removal, and one Kafka-null
   tombstone per authoritative delete.
 - SQL Server fixtures cover `io.debezium.time.NanoTimestamp` through seven fractional
-  digits and reject precision loss, raw numeric public timestamps, and embedded timestamp
-  disagreement.
+  digits and prove every value within a second truncates to the same whole-second UTC
+  string without rounding into the next second. They reject fractional or raw numeric
+  public timestamps and embedded timestamp disagreement.
 - Invalid JSON, missing required fields, unexpected source schemas or logical types, and
   key/metadata disagreement fail closed.
 - Plugin-loading tests pass against the pinned Connect image and a Kafka Connect 4 test

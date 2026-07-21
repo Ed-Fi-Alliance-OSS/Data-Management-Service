@@ -155,6 +155,10 @@ GET/query response assembly. It includes stable top-level `id` and
 `_lastModifiedDate`. When link injection is compiled into the read plan, it also includes
 reference `link` subtrees. It does not contain authorization arrays, EdOrg hierarchy
 JSON, API client identity, or readable-profile-specific projections.
+`_lastModifiedDate` uses the existing DMS whole-second UTC
+`yyyy-MM-ddTHH:mm:ssZ` representation. The `LastModifiedAt` cache column retains the
+provider value, but its fractional seconds are deliberately not exposed in `DocumentJson`
+or the public CDC envelope and do not participate in freshness or ordering.
 
 The cache does not store an `_etag` inside `DocumentJson` and does not store an ETag
 reusable for arbitrary API responses. It does store `StreamEtag`, the ETag for the fixed
@@ -745,9 +749,10 @@ database-per-instance isolation model.
   `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, are captured as
   `INT64` values with the `io.debezium.time.NanoTimestamp` logical type.
 - Require the Ed-Fi `DocumentState` SMT to convert `LastModifiedAt` from that
-  logical type to the public UTC RFC 3339/ISO-8601 string. `connect` mode is forbidden
-  because it loses precision above milliseconds, and a plain rename would leak the
-  `INT64` representation into the public contract.
+  logical type to the existing DMS whole-second UTC string. The conversion deliberately
+  truncates fractional seconds rather than rounding, so it exactly matches the embedded
+  `document._lastModifiedDate`; a plain rename would leak the `INT64` representation into
+  the public contract.
 
 SQL Server can capture multiple databases in one connector, but the reference deployment
 still registers one logical connector per instance for offset, routing, failure, and
@@ -790,10 +795,11 @@ public fields are fixed transform behavior rather than a configurable mapping la
 4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
    structured JSON object. No independent generic expand-JSON SMT participates in the
    relational connector.
-5. Normalize `LastModifiedAt` to the public UTC RFC 3339/ISO-8601 representation. For SQL
-   Server, convert `io.debezium.time.NanoTimestamp` nanoseconds since the Unix epoch
-   without loss of 100-nanosecond precision, emitting at most seven fractional digits
-   with a trailing `Z`. Reject an unexpected provider representation or precision loss.
+5. Normalize `LastModifiedAt` to the existing DMS whole-second UTC
+   `yyyy-MM-ddTHH:mm:ssZ` representation. For SQL Server, interpret
+   `io.debezium.time.NanoTimestamp` nanoseconds since the Unix epoch, deliberately truncate
+   fractional seconds without rounding into the next second, and reject an unexpected
+   provider representation or a fractional/raw numeric public value.
 6. Build the complete lower-camel public envelope, copy the opaque DMS-computed
    `StreamEtag` to `document._etag`, remove all internal and operational fields, add
    `contractVersion`, and verify that the public key and normalized timestamp exactly
@@ -824,10 +830,12 @@ transform class are verified against the pinned
 
 The current pinned image uses Debezium 2.7, whose SQL Server connector supports
 `adaptive` and `connect` temporal modes but not the newer `isostring` mode. Consequently,
-v1 assigns SQL Server timestamp conversion to the required Ed-Fi `DocumentState` SMT. A
-future image may move that responsibility to `time.precision.mode=isostring` only through
-an explicit design and contract-test change; the same transform continues to own the rest
-of the document-state contract, and connector templates never rely on a Debezium default.
+v1 pins `adaptive` and assigns whole-second normalization to the required Ed-Fi
+`DocumentState` SMT. A future temporal-mode change requires an explicit design and
+contract-test change; no Debezium mode replaces the transform's responsibility to emit
+the existing DMS whole-second representation and verify embedded timestamp equality. The
+same transform continues to own the rest of the document-state contract, and connector
+templates never rely on a Debezium default.
 See Debezium's
 [2.7 SQL Server temporal mapping](https://debezium.io/documentation/reference/2.7/connectors/sqlserver.html#sqlserver-temporal-values)
 and the
@@ -1055,9 +1063,10 @@ reuses a topic generation for a different source.
 
 SQL Server template tests require the explicit `time.precision.mode=adaptive` setting.
 Transform tests use realistic `io.debezium.time.NanoTimestamp` values with zero, one,
-three, six, and seven significant fractional digits and assert lossless UTC strings,
-trailing `Z`, the seven-digit maximum, exact equality with
-`document._lastModifiedDate`, and rejection of unexpected or raw numeric output.
+three, six, and seven significant fractional digits and assert the same whole-second UTC
+string for every value within that second, truncation rather than rounding at the upper
+fractional boundary, exact equality with `document._lastModifiedDate`, and rejection of
+unexpected, fractional, or raw numeric public output.
 
 PostgreSQL and SQL Server integration/E2E coverage proves:
 

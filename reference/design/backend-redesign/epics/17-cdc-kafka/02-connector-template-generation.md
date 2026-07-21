@@ -37,7 +37,8 @@ source routing and serialized public contract using the separately published
    requiring it to be the `DocumentCache` primary key or a cache index.
 3. Configure SQL Server with `time.precision.mode=adaptive` explicitly and make the
    Ed-Fi `DocumentState` SMT convert `datetime2(7)`
-   `io.debezium.time.NanoTimestamp` values to the contract's lossless UTC ISO string.
+   `io.debezium.time.NanoTimestamp` values to the existing DMS whole-second UTC string,
+   deliberately truncating fractional seconds without rounding.
 4. Configure the `DocumentState` SMT delivered by 17-02a as the complete boundary from a raw
    Debezium record to a final public upsert, final public tombstone, or dropped record.
    Do not add an independent generic expand-JSON SMT or split the contract across stock
