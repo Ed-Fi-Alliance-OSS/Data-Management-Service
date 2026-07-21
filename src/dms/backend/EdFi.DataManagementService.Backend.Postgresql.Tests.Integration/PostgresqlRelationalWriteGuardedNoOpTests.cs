@@ -348,7 +348,13 @@ internal sealed record GuardedNoOpDocumentRow(
     DateTimeOffset CreatedAt
 );
 
-internal sealed record GuardedNoOpSchoolRow(long DocumentId, long SchoolId, string? ShortName);
+internal sealed record GuardedNoOpSchoolRow(
+    long DocumentId,
+    long SchoolId,
+    string? ShortName,
+    long ContentVersion,
+    DateTimeOffset ContentLastModifiedAt
+);
 
 internal sealed record GuardedNoOpSchoolAddressRow(
     long CollectionItemId,
@@ -609,7 +615,9 @@ file static class GuardedNoOpIntegrationTestSupport
             new NoProfileGuardedNoOpScenarios.SchoolRow(
                 state.School.DocumentId,
                 state.School.SchoolId,
-                state.School.ShortName
+                state.School.ShortName,
+                state.School.ContentVersion,
+                state.School.ContentLastModifiedAt
             ),
             [
                 .. state.Addresses.Select(address => new NoProfileGuardedNoOpScenarios.SchoolAddressRow(
@@ -774,7 +782,7 @@ file static class GuardedNoOpIntegrationTestSupport
     {
         var rows = await database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "SchoolId", "ShortName"
+            SELECT "DocumentId", "SchoolId", "ShortName", "ContentVersion", "ContentLastModifiedAt"
             FROM "edfi"."School"
             WHERE "DocumentId" = @documentId;
             """,
@@ -785,7 +793,9 @@ file static class GuardedNoOpIntegrationTestSupport
             ? new GuardedNoOpSchoolRow(
                 GetInt64(rows[0], "DocumentId"),
                 GetInt64(rows[0], "SchoolId"),
-                GetNullableString(rows[0], "ShortName")
+                GetNullableString(rows[0], "ShortName"),
+                GetInt64(rows[0], "ContentVersion"),
+                GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."

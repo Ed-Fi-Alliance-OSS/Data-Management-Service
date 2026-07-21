@@ -48,7 +48,13 @@ public static class NoProfileGuardedNoOpScenarios
         DateTimeOffset CreatedAt
     );
 
-    public sealed record SchoolRow(long DocumentId, long SchoolId, string? ShortName);
+    public sealed record SchoolRow(
+        long DocumentId,
+        long SchoolId,
+        string? ShortName,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt
+    );
 
     public sealed record SchoolAddressRow(
         long CollectionItemId,

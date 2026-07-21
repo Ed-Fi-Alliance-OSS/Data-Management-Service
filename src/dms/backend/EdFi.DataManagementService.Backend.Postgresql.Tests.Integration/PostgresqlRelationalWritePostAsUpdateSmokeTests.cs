@@ -152,7 +152,9 @@ file static class PostAsUpdateIntegrationTestSupport
         );
 
     public static NoProfilePostAsUpdateScenarios.AuthoritativePostAsUpdateSnapshot ToSnapshot(
-        AuthoritativeStudentAcademicRecordPersistedState state
+        AuthoritativeStudentAcademicRecordPersistedState state,
+        long academicRecordContentVersion,
+        DateTimeOffset academicRecordContentLastModifiedAt
     ) =>
         new(
             new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
@@ -167,6 +169,8 @@ file static class PostAsUpdateIntegrationTestSupport
             ),
             new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
                 state.AcademicRecord.DocumentId,
+                academicRecordContentVersion,
+                academicRecordContentLastModifiedAt,
                 state.AcademicRecord.EducationOrganizationDocumentId,
                 state.AcademicRecord.EducationOrganizationId,
                 state.AcademicRecord.SchoolYearDocumentId,
@@ -419,8 +423,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         null!;
     private NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot _documentAfterRejectedPostAsUpdate =
         null!;
-    private FocusedPostAsUpdateSchoolRow _schoolBeforeRejectedPostAsUpdate = null!;
-    private FocusedPostAsUpdateSchoolRow _schoolAfterRejectedPostAsUpdate = null!;
+    private NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot _schoolBeforeRejectedPostAsUpdate = null!;
+    private NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot _schoolAfterRejectedPostAsUpdate = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesBeforeRejectedPostAsUpdate = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRejectedPostAsUpdate = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesBeforeRejectedPostAsUpdate =
@@ -525,8 +529,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges(
             _documentBeforeRejectedPostAsUpdate,
             _documentAfterRejectedPostAsUpdate,
-            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolBeforeRejectedPostAsUpdate),
-            PostAsUpdateIntegrationTestSupport.ToNeutral(_schoolAfterRejectedPostAsUpdate),
+            _schoolBeforeRejectedPostAsUpdate,
+            _schoolAfterRejectedPostAsUpdate,
             [
                 .. _addressesBeforeRejectedPostAsUpdate.Select(row =>
                     PostAsUpdateIntegrationTestSupport.ToNeutral(row)
@@ -650,11 +654,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
             );
     }
 
-    private async Task<FocusedPostAsUpdateSchoolRow> ReadSchoolAsync(long documentId)
+    // The rejected-write proof compares the School root row including its replicated
+    // ContentVersion/ContentLastModifiedAt stamps, so this fixture reads the stamp-complete shape.
+    private async Task<NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot> ReadSchoolAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "SchoolId", "ShortName"
+            SELECT "DocumentId", "SchoolId", "ShortName", "ContentVersion", "ContentLastModifiedAt"
             FROM "edfi"."School"
             WHERE "DocumentId" = @documentId;
             """,
@@ -662,10 +668,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         );
 
         return rows.Count == 1
-            ? new FocusedPostAsUpdateSchoolRow(
+            ? new NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot(
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "SchoolId"),
-                PostAsUpdateIntegrationTestSupport.GetNullableString(rows[0], "ShortName")
+                PostAsUpdateIntegrationTestSupport.GetNullableString(rows[0], "ShortName"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
@@ -3857,6 +3865,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterCreate = null!;
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterPostAsUpdate = null!;
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterRepeatPostAsUpdate = null!;
+    private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterPostAsUpdate;
+    private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterRepeatPostAsUpdate;
     private UpsertResult _postAsUpdateResult = null!;
     private UpsertResult _repeatPostAsUpdateResult = null!;
     private ReferentialId _persistedStudentAcademicRecordReferentialId;
@@ -3931,6 +3941,9 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _stateAfterPostAsUpdate = await ReadPersistedStateAsync(
             ExistingStudentAcademicRecordDocumentUuid.Value
         );
+        _rootStampsAfterPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
+            _stateAfterPostAsUpdate.AcademicRecord.DocumentId
+        );
         _repeatPostAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             RepeatStudentAcademicRecordDocumentUuid,
@@ -3948,6 +3961,9 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _stateAfterRepeatPostAsUpdate = await ReadPersistedStateAsync(
             ExistingStudentAcademicRecordDocumentUuid.Value
         );
+        _rootStampsAfterRepeatPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
+            _stateAfterRepeatPostAsUpdate.AcademicRecord.DocumentId
+        );
         _resourceDocumentCount = await ReadDocumentCountAsync(
             _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
         );
@@ -3957,6 +3973,32 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _repeatIncomingDocumentUuidCount = await ReadDocumentCountAsync(
             RepeatStudentAcademicRecordDocumentUuid.Value
         );
+    }
+
+    // The repeat no-op snapshot compares the StudentAcademicRecord root table's own replicated
+    // stamps; the business-value persisted-state rows stay unchanged for the changed-write asserts.
+    private async Task<(
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt
+    )> ReadAcademicRecordRootStampsAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ContentVersion", "ContentLastModifiedAt"
+            FROM "edfi"."StudentAcademicRecord"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? (
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
+                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one StudentAcademicRecord row for document id '{documentId}', but found {rows.Count}."
+            );
     }
 
     [OneTimeTearDown]
@@ -4136,8 +4178,16 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         NoProfilePostAsUpdateScenarios.AssertRepeatPostAsUpdateNoOp(
             _repeatPostAsUpdateResult,
             ExistingStudentAcademicRecordDocumentUuid,
-            PostAsUpdateIntegrationTestSupport.ToSnapshot(_stateAfterPostAsUpdate),
-            PostAsUpdateIntegrationTestSupport.ToSnapshot(_stateAfterRepeatPostAsUpdate),
+            PostAsUpdateIntegrationTestSupport.ToSnapshot(
+                _stateAfterPostAsUpdate,
+                _rootStampsAfterPostAsUpdate.ContentVersion,
+                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt
+            ),
+            PostAsUpdateIntegrationTestSupport.ToSnapshot(
+                _stateAfterRepeatPostAsUpdate,
+                _rootStampsAfterRepeatPostAsUpdate.ContentVersion,
+                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt
+            ),
             _repeatIncomingDocumentUuidCount
         );
 

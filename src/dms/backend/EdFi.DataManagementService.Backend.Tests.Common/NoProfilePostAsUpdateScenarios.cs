@@ -32,6 +32,19 @@ public static class NoProfilePostAsUpdateScenarios
 
     public sealed record SchoolRow(long DocumentId, long SchoolId, string? ShortName);
 
+    /// <summary>
+    /// Stamp-complete School root row for the rejected-write proof, including the root table's own
+    /// replicated ContentVersion/ContentLastModifiedAt stamp columns. The ordinary changed-write
+    /// scenarios keep the business-value <see cref="SchoolRow"/> shape.
+    /// </summary>
+    public sealed record RejectedSchoolSnapshot(
+        long DocumentId,
+        long SchoolId,
+        string? ShortName,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt
+    );
+
     public sealed record SchoolAddressRow(
         long CollectionItemId,
         long SchoolDocumentId,
@@ -68,6 +81,8 @@ public static class NoProfilePostAsUpdateScenarios
 
     public sealed record AuthoritativeAcademicRecordSnapshot(
         long DocumentId,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt,
         long EducationOrganizationDocumentId,
         long EducationOrganizationId,
         long SchoolYearDocumentId,
@@ -217,7 +232,8 @@ public static class NoProfilePostAsUpdateScenarios
     /// <summary>
     /// Asserts a rejected POST-as-update committed no row changes across the full seeded surface: the document
     /// row — including ContentVersion and every stored update-tracking stamp (IdentityVersion,
-    /// ContentLastModifiedAt, IdentityLastModifiedAt, CreatedAt) — and the School row are byte-for-byte
+    /// ContentLastModifiedAt, IdentityLastModifiedAt, CreatedAt) — and the School row — including the
+    /// root table's own replicated ContentVersion/ContentLastModifiedAt stamps — are byte-for-byte
     /// unchanged, the seeded base-address and collection-aligned extension rows are unchanged, the School
     /// referential-identity row is unchanged, exactly one document remains, and no row was created for the
     /// rejected request UUID. The base-address and aligned-extension collections must be non-empty so a
@@ -227,8 +243,8 @@ public static class NoProfilePostAsUpdateScenarios
     public static void AssertRejectedPostAsUpdateCommittedNoChanges(
         AuthoritativeDocumentSnapshot documentBefore,
         AuthoritativeDocumentSnapshot documentAfter,
-        SchoolRow schoolBefore,
-        SchoolRow schoolAfter,
+        RejectedSchoolSnapshot schoolBefore,
+        RejectedSchoolSnapshot schoolAfter,
         IReadOnlyList<SchoolAddressRow> addressesBefore,
         IReadOnlyList<SchoolAddressRow> addressesAfter,
         IReadOnlyList<SchoolExtensionAddressRow> extensionAddressesBefore,
