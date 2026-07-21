@@ -31,20 +31,26 @@ process state.
    opaque current physical-source fingerprint for the active execution context without
    retaining or comparing an expected value; deployment automation consumes the same
    observation contract.
-2. Record exact mismatch/age snapshots from completed provider-equivalent full audits,
-   expose their observation time and age, and add configurable health thresholds without
-   running a full anti-join synchronously on health reads.
+2. Record exact unresolved/age snapshots from completed provider-equivalent full audits,
+   with separate missing-row, cache-behind-row, and cache-ahead-invariant counts. Expose
+   their observation time and age, and add configurable health thresholds without running
+   a full anti-join synchronously on health reads.
 3. Add the canonical structured logs and metrics without retaining an expected source
    binding, drift latch, connector state, or deployment aggregate.
 
 ## Acceptance Evidence
 
 - Tests cover unresolved/resolved targets, a new fingerprint observation and health reset
-  after connection-context replacement, missing tables, zero/nonzero mismatches,
-  lower-version gaps, oldest age, stale audits, known unresolved incremental work,
-  nonzero-audit invalidation, persistent bounded failure, and mixed targets.
+  after connection-context replacement, missing tables, zero/nonzero differences,
+  missing and cache-behind gaps, cache-ahead invariants, oldest age, stale audits, known
+  unresolved incremental work, nonzero-audit invalidation, persistent bounded failure,
+  and mixed targets.
 - Tests prove health reads reuse the latest audit snapshot and readiness requires a
-  sufficiently recent exact-zero finishing audit with no known unresolved work.
+  sufficiently recent exact-zero finishing audit with no known unresolved work or
+  cache-ahead invariant.
+- Tests prove a process-local cache-ahead observation remains unhealthy until a later
+  source change or full audit establishes that the row is no longer ahead, and that the
+  required restart audit re-establishes any persistent invariant.
 - Tests distinguish diagnostic process timestamps from database completeness evidence.
 - Provider tests prove equivalent connection aliases for one physical database produce
   the same opaque fingerprint, different databases produce different fingerprints, and

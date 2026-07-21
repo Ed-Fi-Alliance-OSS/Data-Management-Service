@@ -35,10 +35,13 @@ including the bounded in-memory retry behavior defined by the authoritative desi
    pre-audit boundary rather than a later maximum, so commits after the audit remain
    visible to incremental scanning.
 4. Implement startup, periodic, rebuild, and readiness-triggered full anti-join audits,
-   including bounded audit-local paging and an exact finishing aggregate.
+   including bounded audit-local paging and an exact finishing aggregate that separates
+   missing, cache-behind, and cache-ahead rows.
 5. Provision the required `dms.Document(ContentVersion, DocumentId)` index whenever
    `dms.DocumentCache` is provisioned.
-6. Invoke the shared materializer and guarded upsert with fair retry and idle polling.
+6. Invoke the shared materializer and guarded upsert with fair retry and idle polling for
+   missing and cache-behind candidates. Report cache-ahead rows as invariant violations
+   without materialization or retry.
 7. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
    telemetry, and measure realistic plans for both providers.
 
@@ -56,6 +59,9 @@ including the bounded in-memory retry behavior defined by the authoritative desi
   are repaired by full audit, advancing past failures retains bounded retry, and no
   timestamp, epoch, `StreamEtag` comparison, or cursor/high-watermark becomes a second
   completeness predicate.
+- Classification tests prove missing and cache-behind rows are repaired, while a
+  cache-ahead row is not materialized, does not enter the retry set, remains in the exact
+  audit result, and keeps projection readiness false.
 - A synchronized startup test commits a higher-key source update after the finishing
   audit observation but before incremental scanning begins and proves the update remains
   above the pre-audit boundary and is projected without waiting for the next full audit.

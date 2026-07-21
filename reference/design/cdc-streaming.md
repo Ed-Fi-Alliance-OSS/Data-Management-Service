@@ -178,20 +178,43 @@ WHERE DocumentCache.DocumentId IS NULL
    OR DocumentCache.ContentVersion <> Document.ContentVersion
 ```
 
+The projector classifies that difference rather than treating every unequal row as
+ordinary repair work:
+
+| Cache state | Meaning | Projector action |
+| --- | --- | --- |
+| Row missing | Repairable projection lag | Materialize and insert |
+| `DocumentCache.ContentVersion < Document.ContentVersion` | Repairable projection lag | Materialize and replace |
+| Versions equal | Fresh | No action |
+| `DocumentCache.ContentVersion > Document.ContentVersion` | Invariant violation | Do not materialize, retry, or overwrite automatically |
+
+A cache-ahead row cannot arise from supported same-source projection and canonical-write
+concurrency: canonical `ContentVersion` values advance monotonically and guarded cache
+writes never replace a higher cache version. It therefore indicates cache corruption, an
+in-place/partial canonical database restore or reset, or unsupported reuse of projected
+state against another canonical source. It remains part of the exact completeness
+difference and makes projection readiness false, but it is not placed in the normal retry
+set. A process-local cache-ahead observation is cleared only when a later incremental
+source change or full audit proves that the row is no longer ahead; the required restart
+audit re-establishes the observation after process loss.
+
 Candidate discovery is separate from completeness verification. For each selected data
 store, the projector has two cooperating lanes:
 
 1. A frequent incremental lane keyset-pages current `dms.Document` rows after a
    process-local `(ContentVersion, DocumentId)` cursor, ordered by those columns. Each
-   page left-joins `dms.DocumentCache` by `DocumentId`, and only missing or
-   version-mismatched rows become materialization candidates. The cursor advances to the
-   last source row examined whether the cache row was stale or already fresh; failed
-   candidates remain in the in-memory retry set described below.
+   page left-joins `dms.DocumentCache` by `DocumentId`. Missing and cache-behind rows
+   become materialization candidates; cache-ahead rows become observed invariant
+   violations. The cursor advances to the last source row examined whether the cache row
+   was behind, fresh, or ahead; failed repairable candidates remain in the in-memory retry
+   set described below.
 2. A periodic full-audit lane evaluates the complete source/cache anti-join above. It
-   repairs every mismatch it finds, including rows below the incremental cursor, and
-   finishes with one exact aggregate observation of total, missing-row, and
-   version-mismatched-row counts plus the oldest mismatch timestamp. Startup, restart,
-   cache rebuild, and any attempt to establish readiness require a completed full audit.
+   repairs every missing or cache-behind row it finds, including rows below the
+   incremental cursor, and reports cache-ahead rows without trying to overwrite them. It
+   finishes with one exact aggregate observation of total unresolved, missing-row,
+   cache-behind-row, and cache-ahead-invariant counts plus the oldest unresolved source
+   timestamp. Startup, restart, cache rebuild, and any attempt to establish readiness
+   require a completed full audit.
 
 The logical incremental page is:
 
@@ -212,10 +235,11 @@ A full repair audit may use one provider-optimized anti-join or bounded keyset p
 source/cache version pairs, but one audit pass must cover the complete current
 relationship. Bounded paging must carry an audit-local scan position forward so that
 repairing an early page does not cause every later page to rescan the already-fresh
-prefix. An audit may race with writes; guarded upserts make its repairs safe, and a
-nonzero finishing aggregate causes repair to continue. The full-audit interval is
-bounded so it also bounds discovery latency for work that the incremental lane cannot
-see.
+prefix. An audit may race with writes; guarded upserts make its repairs safe. A nonzero
+finishing aggregate causes repair to continue for missing and cache-behind rows. A
+cache-ahead count instead preserves unhealthy readiness and waits for the explicit
+recovery described below. The full-audit interval is bounded so it also bounds discovery
+latency for repairable work that the incremental lane cannot see.
 
 For each candidate from either lane, the projector:
 
@@ -261,7 +285,8 @@ then performs one candidate per short transaction:
    skip.
 3. While retaining the source-row lock, insert the cache row when absent or replace it
    only when the existing cache version is lower than the captured version. A duplicate
-   same-version result is already fresh and does not need another captured update.
+   same-version result is already fresh and does not need another captured update. An
+   existing higher cache version is an invariant violation, not a stale-write repair.
 4. Commit the cache write and release the source-row lock together.
 
 This transaction is the linearization boundary. If the projector acquires the source-row
@@ -292,12 +317,13 @@ future batching requires a separate measured design with stable lock ordering an
 lock-escalation and tail-latency bounds.
 
 There are no projection queues, enqueue APIs, persisted cursors, backfill epochs,
-projector-state rows, failure rows, retry classifications, dead-letter transitions,
-requeue APIs, or manual repair workflows in v1. The process-local incremental and audit
-cursors are disposable scan positions only. Empty-cache population,
-truncation/rebuild, recovery, and completeness all derive from the current database
-difference. A maximum scanned or projected version cannot prove completeness because a
-lower current version may still be missing.
+projector-state rows, failure rows, retry classifications, dead-letter transitions, or
+requeue APIs in v1. The process-local incremental and audit cursors are disposable scan
+positions only. Empty-cache population, ordinary truncation/rebuild, repairable recovery,
+and completeness all derive from the current database difference. A maximum scanned or
+projected version cannot prove completeness because a lower current version may still be
+missing. Cache-ahead recovery is the exceptional operator procedure below, not another
+projector workflow.
 
 Failures use bounded in-memory exponential backoff with jitter keyed by opaque data-store
 identity, `DocumentId`, and current `ContentVersion`. A deferred candidate does not
@@ -305,6 +331,32 @@ starve other work. Its entry is removed when the version changes, the document i
 deleted, or the cache becomes fresh. Restart loses only the delay and rediscovers work
 from database state. V1 has no retry budget or persisted attempt count; a persistent
 failure remains visible until its underlying data, mapping, or service cause is fixed.
+
+### Cache-Ahead Invariant Recovery
+
+The projector never automatically lowers a cache row from a higher `ContentVersion` to
+the current canonical version. Doing so would make the relational cache appear fresh
+while an active or previously active CDC topic could retain the higher version; conforming
+consumers may reject the lower replacement as stale.
+
+Recovery depends on whether the projection can have entered downstream ordered state:
+
+- If the projection is internal-only, such as read acceleration, and no downstream system
+  could have observed the row, delete the affected cache row, or truncate the cache when
+  the scope is not safely enumerable, and let ordinary reconciliation rebuild missing
+  rows from canonical state.
+- If an active or historical connector or another ordered downstream consumer may have
+  observed the higher cache version, stop the affected publication path and create a new
+  downstream state namespace. For Kafka CDC, this means a new immutable binding
+  generation, topic, and consumer state namespace. Clear the incompatible cache state,
+  complete ordinary reconciliation, and snapshot the rebuilt cache into that new
+  namespace. Do not publish the lower version as an in-place correction to the old one.
+- Treat any in-place canonical database restore/reset as the CDC case above even when the
+  physical database name or connection metadata did not change.
+
+The runbook requires operators to establish which case applies before deleting projected
+state. No recovery rewrites canonical `ContentVersion`, an immutable binding record, or an
+existing topic generation.
 
 The hosted supervisor creates an isolated, non-HTTP service scope for each startup
 target and explicitly selects its data store. It does not depend on
@@ -354,11 +406,13 @@ context. It reports at least:
 - whether the in-process loop is running,
 - whether an incremental scan or full audit is in progress,
 - the latest completed full audit's observation time, duration, and age,
-- that audit's exact total mismatch, missing-row, and version-mismatched-row counts,
-- its oldest mismatch source timestamp and age, derived from
+- that audit's exact total unresolved, missing-row, cache-behind-row, and
+  cache-ahead-invariant counts,
+- its oldest unresolved source timestamp and age, derived from
   `dms.Document.ContentLastModifiedAt`,
-- currently known unresolved incremental candidates and retry deferrals, identified as
-  process-local observations rather than exact database counts.
+- currently known unresolved incremental candidates, retry deferrals, and cache-ahead
+  invariant observations, identified as process-local observations rather than exact
+  database counts.
 
 Optional counts by project/resource may be exposed when operationally safe. Process-local
 incremental cursor, last scan, successful upsert, and last error are diagnostic only.
@@ -366,17 +420,18 @@ incremental cursor, last scan, successful upsert, and last error are diagnostic 
 are never completeness evidence.
 
 Health reads return the latest audit snapshot; they do not synchronously execute a full
-anti-join. Configurable audit-age, mismatch-count, and oldest-mismatch-age thresholds
+anti-join. Configurable audit-age, unresolved-count, and oldest-unresolved-age thresholds
 distinguish a fresh zero observation or brief asynchronous lag from a stale audit or
 sustained degradation. A nonzero finishing audit invalidates completeness until a later
 exact finishing aggregate returns zero. Incremental discovery makes readiness false
-while that known candidate or retry remains unresolved, but successful repair does not
-force another full scan; the last exact-zero audit retains its original observation time
-and must still satisfy the audit-age threshold. A same-version timestamp comparison is
-not another freshness or completeness test; embedded metadata consistency is enforced
-when a row is materialized and written. DMS projection readiness for one target requires
-a resolved execution context, a sufficiently recent exact-zero finishing audit, and no
-currently known unresolved incremental candidate or retry deferral.
+while that known candidate, retry, or cache-ahead invariant remains unresolved, but
+successful repair does not force another full scan; the last exact-zero audit retains its
+original observation time and must still satisfy the audit-age threshold. A same-version
+timestamp comparison is not another freshness or completeness test; embedded metadata
+consistency is enforced when a row is materialized and written. DMS projection readiness
+for one target requires a resolved execution context, a sufficiently recent exact-zero
+finishing audit, and no currently known unresolved incremental candidate, retry deferral,
+or cache-ahead invariant.
 
 DMS exposes only this per-database projection result. It does not expose
 `CanRegisterConnector`, compare the current source fingerprint with an expected source,
@@ -649,8 +704,8 @@ document/schema state, operators perform this coordinated cutover:
    an equivalently empty cache, so the same-`ContentVersion` guarded-upsert rule cannot
    preserve old-contract rows.
 4. Deploy and start only new-contract projector writers, then run ordinary full
-   reconciliation until an exact finishing audit reports zero missing or
-   version-mismatched rows.
+   reconciliation until an exact finishing audit reports zero missing, cache-behind, and
+   cache-ahead rows.
 5. Register the new connector from the new binding with a fresh initial snapshot of the
    completely reprojected cache, catch it up through the required post-audit source
    position, and advertise readiness only after the deployment-owned combined checks
@@ -696,7 +751,9 @@ For a new instance:
 For an existing instance, perform the same one-shot sequence before write/delete traffic
 that the host expects CDC to observe. If capture cannot be registered first, quiesce
 traffic until it is registered. Existing cache rows are handled by the connector's
-initial snapshot; remaining mismatches are repaired by ordinary reconciliation.
+initial snapshot; ordinary reconciliation repairs remaining missing or cache-behind rows.
+Any cache-ahead row is an invariant failure and must follow the explicit recovery path
+before CDC readiness can pass.
 
 ## Local Bootstrap and CI
 
@@ -763,7 +820,8 @@ Structured logs and metrics cover:
 - retry deferrals and backoff duration,
 - guarded stale-write skips,
 - guard lock-wait duration, timeout, deadlock, and serialization-retry counts,
-- mismatch count and oldest mismatch age,
+- unresolved, missing, cache-behind, and cache-ahead-invariant counts plus oldest
+  unresolved age,
 - cache hits, misses, stale misses, and relational fallback,
 - unresolved explicit targets, retryable source-resolution failures, and the current
   opaque projection-source fingerprint.
@@ -782,11 +840,13 @@ provider/source, topic, PostgreSQL slot or SQL Server capture instance, DMS proj
 health, snapshot state, lag, and last error. A failure for one target does not conceal
 peer status or stop unrelated DMS API instances.
 
-Runbooks cover connector restart, cache rebuild, guard-lock contention and timeout
+Runbooks cover connector restart, cache rebuild, cache-ahead invariant diagnosis and the
+internal-only/downstream-state recovery split, guard-lock contention and timeout
 diagnosis, offset reset, resnapshot, topic recreation, target migration/retirement, and
-provider artifact cleanup. They cover binding-state backup, fail-closed missing-state
-recovery, explicit adoption, cleanup ordering, and new-generation source migration; they
-never repair a mismatch by rewriting an immutable binding record. They also cover the
+provider artifact cleanup.
+They cover binding-state backup, fail-closed missing-state recovery, explicit adoption,
+cleanup ordering, and new-generation source migration; they never repair a mismatch by
+rewriting an immutable binding record. They also cover the
 coordinated immutable-contract cutover:
 freeze v1 publication, completely reproject the cache, snapshot into a new versioned
 topic, and bootstrap consumer state without advancing canonical `ContentVersion`. Offset
@@ -846,7 +906,12 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - cache-row loss below the incremental cursor is repaired by the next full audit,
 - advancing the cursor past a failed candidate retains that candidate for bounded
   in-memory retry,
-- a higher projected `ContentVersion` cannot hide a missing lower current version,
+- a cache-ahead row is reported as an invariant violation, receives no materialization or
+  retry loop, keeps projection readiness false, and cannot be overwritten with the lower
+  canonical version,
+- internal-only cache-ahead recovery by cache-row deletion rebuilds from canonical state,
+  while a possibly published higher version requires a new downstream state namespace;
+  Kafka CDC uses a new binding generation/topic and fresh snapshot,
 - projection or connector failure never blocks normal API deletion.
 
 Performance qualification compares projector-disabled and projector-enabled source-write

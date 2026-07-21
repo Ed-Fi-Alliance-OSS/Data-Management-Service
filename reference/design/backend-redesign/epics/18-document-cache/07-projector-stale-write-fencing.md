@@ -39,7 +39,8 @@ has advanced beyond its captured version.
    fence.
 4. Insert only when the cache row is absent and update only when its existing
    `ContentVersion` is lower. Persist `StreamEtag`, `ContentVersion`, and `DocumentJson`
-   atomically in that row; treat a same-version duplicate as already fresh.
+   atomically in that row; treat a same-version duplicate as already fresh and a higher
+   existing cache version as an invariant violation that receives no write or retry.
 5. Execute one candidate per short guard transaction and route every projector/direct-fill
    write through it. Do not batch source-row locks across candidates in v1.
 6. Report missing/version-changed source rows as observable stale skips. Route deadlock,
@@ -57,6 +58,9 @@ has advanced beyond its captured version.
 - Provider tests cover deletion racing materialization, out-of-order candidates,
   same-version duplicate loops, multiple projector replicas, timeout/deadlock retry, and
   PostgreSQL/SQL Server parity.
+- Provider tests prove a cache-ahead row is never overwritten with the lower captured
+  version and is returned as a distinct invariant result rather than a transient database
+  failure or retryable stale skip.
 - Tests prove a stale materialization cannot commit an old `StreamEtag`, pair an old
   `StreamEtag` with a newer cache row, or replace the ETag for a higher `ContentVersion`.
 - Tests prove the PostgreSQL foreign-key lock and a plain conditional

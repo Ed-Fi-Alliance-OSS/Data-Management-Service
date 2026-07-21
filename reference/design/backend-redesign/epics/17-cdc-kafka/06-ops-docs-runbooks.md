@@ -25,7 +25,10 @@ capability without redefining its architecture or contracts.
 3. Document Kafka topic/ACL/consumer operation, DMS per-database projection-health
    observation, and deployment-owned combined readiness.
 4. Document connector restart, offset reset, resnapshot, topic recreation, cache rebuild,
-   target migration/retirement, and explicit destructive cleanup.
+   target migration/retirement, cache-ahead invariant recovery, and explicit destructive
+   cleanup. A possibly published higher cache version requires a new binding generation,
+   topic, consumer state namespace, and snapshot rather than an in-place lower-version
+   correction.
 5. Document binding-state location, backup, normal-stop retention, fail-closed missing
    state, explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
    new-generation migration. Never instruct operators to rewrite a binding in place.
@@ -41,8 +44,8 @@ capability without redefining its architecture or contracts.
 - Instructions are verified against the implemented scripts, templates, and status
   output for both providers.
 - Troubleshooting covers persistent projection failure, provider key/filter/order
-  failure, missing target, source-resolution failure, binding mismatch, and governed
-  artifacts without binding state.
+  failure, cache-ahead invariant diagnosis, missing target, source-resolution failure,
+  binding mismatch, and governed artifacts without binding state.
 - Destructive or replay-producing operations are clearly marked and never inferred from
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal

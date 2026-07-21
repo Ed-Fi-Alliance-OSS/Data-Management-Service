@@ -508,6 +508,16 @@ stores only one `DocumentJson` and `StreamEtag`, simultaneous live publication o
 new representation contracts is outside v1; see the topic/message ADR's
 [compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-stream-representation-immutability).
 
+For a current canonical document, a missing cache row or a lower cached
+`ContentVersion` is repairable projection lag. A higher cached `ContentVersion` is not
+ordinary lag and is never overwritten automatically: it is an invariant violation that
+indicates corruption, an in-place/partial canonical restore or reset, or unsupported reuse
+of projected state against another canonical source. The authoritative design's
+[cache-ahead recovery](../../cdc-streaming.md#cache-ahead-invariant-recovery) distinguishes
+safe internal-only cache deletion/rebuild from the new downstream state namespace
+required when the higher version may already have been observed; Kafka CDC uses a new
+binding generation and topic.
+
 Denormalized resource naming:
 
 - `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.

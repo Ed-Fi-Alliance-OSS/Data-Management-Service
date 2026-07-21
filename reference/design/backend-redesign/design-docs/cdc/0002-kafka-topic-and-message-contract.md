@@ -172,6 +172,14 @@ apply a record only when its `contentVersion` is newer than the state they retai
 key. Kafka ordering is per partition and therefore per keyed document, not global
 `contentVersion` order.
 
+Consequently, a lower `contentVersion` is never an in-place correction for a higher value
+already observed on the topic. If projection health detects
+`DocumentCache.ContentVersion > Document.ContentVersion` and that higher cache value may
+have been published, recovery requires a new binding generation, topic, consumer state
+namespace, and snapshot. Internal-only projections whose rows cannot have been observed
+downstream may instead delete the incompatible cache row and rebuild it from canonical
+state.
+
 ## V1 Stream-Representation Immutability
 
 The `documents.v1` topic deliberately has no projection-generation or
@@ -247,6 +255,8 @@ The public topic never exposes:
 ## Consequences
 
 - Consumers can reconstruct current instance document state but not complete history.
+- A published cache-ahead invariant cannot be repaired by sending the lower canonical
+  version to the same topic; source rollback/reset recovery uses a new topic generation.
 - One ACL protects one instance while resource metadata supports downstream routing.
 - Public identity and per-document ordering survive canonical deletion because the key
   is independent of the value.

@@ -42,7 +42,8 @@ per-database projection health with E17-owned provider, topic, and connector che
 5. Validate provider tables, projected `StreamEtag`, keys, replica/capture setup, topic,
    ACL, and installed source-operation shaping against the binding before registration.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
-   current-source projection health, connector snapshot/catch-up, and lag checks.
+   current-source projection health, including cache-ahead invariant failure, connector
+   snapshot/catch-up, and lag checks.
 7. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
 
 ## Acceptance Evidence
@@ -54,8 +55,8 @@ per-database projection health with E17-owned provider, topic, and connector che
   identity-resolution failure, missing targets, and confirmed binding mismatch without a
   DMS-owned drift latch.
 - Readiness tests cover binding, migration, projection, post-audit source position,
-  connector snapshot/catch-up, second projection-health observation, lag, per-target
-  isolation, and aggregate results.
+  connector snapshot/catch-up, second projection-health observation, cache-ahead
+  invariant failure, lag, per-target isolation, and aggregate results.
 - API integration tests prove every reported CDC/projector failure remains observational,
   including deletion with unavailable cache state.
 

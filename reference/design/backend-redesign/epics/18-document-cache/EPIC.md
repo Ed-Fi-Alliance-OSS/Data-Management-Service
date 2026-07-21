@@ -45,8 +45,9 @@ implementation inputs.
 - Every projected row carries a `StreamEtag` produced by the shared DMS served-ETag
   composer for the fixed CDC representation; API reads continue to compose their own
   request-specific validators.
-- Exact database mismatches establish projection work and completeness without durable
-  workflow state.
+- Exact source/cache differences establish repairable projection work and cache-ahead
+  invariant evidence without durable workflow state. Missing and behind rows repair
+  automatically; ahead rows require explicit CDC-aware recovery.
 - Projection absence or failure never compromises canonical API behavior or deletion.
 - Runbooks describe implemented operation and link to the authoritative design.
 
