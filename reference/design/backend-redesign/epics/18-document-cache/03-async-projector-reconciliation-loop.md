@@ -38,8 +38,11 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 4. Implement startup, periodic, and rebuild-triggered full anti-join audits,
    including bounded audit-local paging and an exact finishing aggregate that separates
    missing, cache-behind, and cache-ahead rows.
-5. Provision the required `dms.Document(ContentVersion, DocumentId)` index whenever
-   `dms.DocumentCache` is provisioned.
+5. Update core DDL for both providers: remove the obsolete
+   `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt` index and provision the
+   required `dms.Document(ContentVersion, DocumentId)` index whenever
+   `dms.DocumentCache` is provisioned. Update DDL emitter, unit, and snapshot fixtures to
+   match the revised access-path inventory.
 6. Invoke the shared materializer and guarded upsert with fair retry and idle polling for
    missing and cache-behind candidates. Report cache-ahead rows as invariant violations
    without materialization or retry.
@@ -62,6 +65,9 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 - Query-plan tests prove ordinary high-version updates use indexed incremental discovery
   without a full relationship scan and that a full audit covers the relationship once
   rather than rescanning each repaired prefix.
+- PostgreSQL and SQL Server DDL tests prove the emitted schema includes
+  `dms.Document(ContentVersion, DocumentId)` and excludes
+  `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`.
 - Completeness tests prove late lower-version commits and cache-row loss below the cursor
   are repaired by full audit, advancing past failures retains bounded retry, and no
   timestamp, epoch, `StreamEtag` comparison, or cursor/high-watermark becomes a second

@@ -547,9 +547,6 @@ CREATE TABLE dms.DocumentCache (
     CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object'),
     CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
 );
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
 **SQL Server**
@@ -572,9 +569,6 @@ CREATE TABLE dms.DocumentCache (
     CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
     CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
 );
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
 Uses:
