@@ -352,7 +352,8 @@ public static class NoProfileCreateBaselineScenarios
         UpsertResult createResult,
         GetResult getResult,
         MappingSet mappingSet,
-        DateTimeOffset expectedLastModifiedAt
+        DateTimeOffset expectedLastModifiedAt,
+        long expectedContentVersion
     )
     {
         getResult.Should().BeOfType<GetResult.GetSuccess>();
@@ -363,7 +364,10 @@ public static class NoProfileCreateBaselineScenarios
         success.LastModifiedTraceId.Should().BeNull();
         success.LastModifiedDate.Should().Be(expectedLastModifiedAt.UtcDateTime);
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(SchoolDocumentUuid.Value.ToString());
-        RelationalGetIntegrationTestHelper.AssertComposedEtag(success.EdfiDoc["_etag"]!.GetValue<string>());
+        RelationalGetIntegrationTestHelper.AssertComposedEtagServesContentVersion(
+            success.EdfiDoc["_etag"]!.GetValue<string>(),
+            expectedContentVersion
+        );
         success.EdfiDoc["_lastModifiedDate"]!
             .GetValue<string>()
             .Should()

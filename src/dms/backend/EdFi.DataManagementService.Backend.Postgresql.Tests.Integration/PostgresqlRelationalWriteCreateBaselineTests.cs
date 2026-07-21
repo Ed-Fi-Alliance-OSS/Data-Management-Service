@@ -125,7 +125,13 @@ public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_
 
     [Test]
     public void It_reconstitutes_the_full_surface_document_via_relational_get_by_id() =>
-        AssertFullSurfaceDocumentReconstitutes(_result, _getResult, _mappingSet, _lastModifiedAtAfterCreate);
+        AssertFullSurfaceDocumentReconstitutes(
+            _result,
+            _getResult,
+            _mappingSet,
+            _lastModifiedAtAfterCreate,
+            _persistedDocument.ContentVersion
+        );
 
     private async Task<UpsertResult> ExecuteCreateAsync()
     {

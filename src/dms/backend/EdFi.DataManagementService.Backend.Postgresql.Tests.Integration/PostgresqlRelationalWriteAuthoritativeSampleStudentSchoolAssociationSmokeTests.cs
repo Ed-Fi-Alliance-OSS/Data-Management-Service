@@ -961,8 +961,14 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     }
 
     [Test]
-    public void It_returns_the_create_etag_from_follow_up_get_by_id() =>
+    public void It_returns_the_create_etag_from_follow_up_get_by_id()
+    {
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(_createResult, _getResultAfterCreate);
+        RelationalGetIntegrationTestHelper.AssertComposedEtagServesContentVersion(
+            RelationalGetIntegrationTestHelper.ReadResultEtag(_getResultAfterCreate),
+            _stateAfterCreate.Document.ContentVersion
+        );
+    }
 
     [Test]
     public void It_returns_the_changed_put_etag_from_follow_up_get_by_id() =>

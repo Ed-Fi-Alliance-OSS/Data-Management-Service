@@ -298,20 +298,15 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             totalCount: true
         );
 
-        result.TotalCount.Should().Be(1L);
-        result.Items.Should().ContainSingle();
-        JsonObject item = result.Items[0]!.AsObject();
-        item["id"]!.GetValue<string>().Should().Be(AcademicWeekDocumentUuid.Value.ToString("D"));
-        item["changeVersion"]!.GetValue<long>().Should().Be(latestChangeVersion);
-        item["changeVersion"]!.GetValue<long>().Should().BeGreaterThan(firstChangeVersion);
-
-        JsonObject oldKeyValues = item["oldKeyValues"]!.AsObject();
-        oldKeyValues["weekIdentifier"]!.GetValue<string>().Should().Be(WeekIdentifierA);
-        oldKeyValues["schoolId"]!.GetValue<long>().Should().Be(SchoolId);
-
-        JsonObject newKeyValues = item["newKeyValues"]!.AsObject();
-        newKeyValues["weekIdentifier"]!.GetValue<string>().Should().Be(WeekIdentifierC);
-        newKeyValues["schoolId"]!.GetValue<long>().Should().Be(SchoolId);
+        ChangeQueryParityScenarios.AssertAcademicWeekKeyChangesCollapsedToLatestStoredChangeVersion(
+            result,
+            AcademicWeekDocumentUuid.Value,
+            firstChangeVersion,
+            latestChangeVersion,
+            SchoolId,
+            WeekIdentifierA,
+            WeekIdentifierC
+        );
     }
 
     [Test]

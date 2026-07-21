@@ -67,7 +67,7 @@ public static partial class ParityScenarioCatalog
         ),
         Gap(
             "NoProfileFullSurfaceCreate/ReconstitutedDocument",
-            "The created full-surface document reconstitutes correctly through the production relational GET-by-id read path: served id and _lastModifiedDate metadata from the stored stamp, composed ETag shape with write/read ETag parity, and canonical semantic-JSON equality for the root scalar, nested address/period collections, root extension, collection-aligned extension addresses, and extension-child intervention/visit collections.",
+            "The created full-surface document reconstitutes correctly through the production relational GET-by-id read path: served id and _lastModifiedDate metadata from the stored stamp, a composed ETag whose leading component equals the persisted ContentVersion (write/read parity retained), and canonical semantic-JSON equality for the root scalar, nested address/period collections, root extension, collection-aligned extension addresses, and extension-child intervention/visit collections.",
             ProductionBoundary.RelationalReadback,
             "PostgresqlRelationalWriteCreateBaselineTests.cs",
             "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
@@ -791,7 +791,7 @@ public static partial class ParityScenarioCatalog
         ),
         NoProfileBoth(
             "NoProfile/RelationalReadback",
-            "Relational GET-by-id read-back parity: served create ETag, ResourceLinks If-Match against current relational state, semantic-JSON-equivalence + metadata, and readable-profile projection. Covered on both engines.",
+            "Relational GET-by-id read-back parity: served create ETag composed from the stored ContentVersion stamp, ResourceLinks If-Match against current relational state, semantic-JSON-equivalence + metadata, and readable-profile projection. Covered on both engines.",
             ProductionBoundary.RelationalReadback,
             [
                 Loc(
@@ -844,6 +844,37 @@ public static partial class ParityScenarioCatalog
             ["It_returns_the_repeat_put_etag_from_follow_up_get_by_id"],
             providerSpecificRationale: ReadbackProviderSpecificRationale
         ),
+        new ParityScenario
+        {
+            Id = "NoProfile/ChangeQueryReadback/LatestStoredChangeVersion",
+            Layer = ParityLayer.NoProfile,
+            BehavioralContract =
+                "A key-changes query collapses a multi-step key-change chain to one served item whose changeVersion equals the latest persisted tracked-change ChangeVersion stamp (served from the stored stamp, proven strictly advanced past the first), with the collapsed old/new key values spanning the full chain.",
+            SharedEntryPoint =
+                "ChangeQueryParityScenarios.AssertAcademicWeekKeyChangesCollapsedToLatestStoredChangeVersion",
+            Boundary = ProductionBoundary.ChangeQueryReadback,
+            PgsqlLocations =
+            [
+                Loc(
+                    "RelationalChangeQueryRepositoryTests.cs",
+                    "Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository",
+                    ["It_collapses_multiple_academic_week_key_changes_to_one_result"]
+                ),
+            ],
+            MssqlLocations =
+            [
+                Loc(
+                    "RelationalChangeQueryRepositoryTests.cs",
+                    "Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository",
+                    ["It_collapses_multiple_academic_week_key_changes_to_one_result"]
+                ),
+            ],
+            PgsqlCoverage = EngineCoverage.Covered,
+            MssqlCoverage = EngineCoverage.Covered,
+            Classification = ParityClassification.Both,
+            Notes =
+                "Not one of the eight no-profile write families; a first-class cross-engine change-query read-path mechanic consuming a provider-neutral shared assertion.",
+        },
     ];
 
     private static ScenarioLocation Loc(string file, string fixture, string[] methods) =>

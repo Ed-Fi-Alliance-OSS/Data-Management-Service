@@ -147,6 +147,9 @@ public enum ProductionBoundary
     /// <summary>Relational GET-by-id read-back / ETag / If-Match / readable-profile projection.</summary>
     RelationalReadback,
 
+    /// <summary>Change-query read-back: tracked-change stamps served as changeVersion (key changes, deletes, paging over tracked changes).</summary>
+    ChangeQueryReadback,
+
     /// <summary>Profile-aware persist-executor merge (profile layer).</summary>
     ProfilePersistExecutor,
 

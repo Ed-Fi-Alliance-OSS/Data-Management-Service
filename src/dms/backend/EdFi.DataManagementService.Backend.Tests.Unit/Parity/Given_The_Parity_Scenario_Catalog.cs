@@ -76,11 +76,14 @@ public class Given_The_Parity_Scenario_Catalog
         "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedCollection",
         "ProfileVisibleRowUpdateWithHiddenRowPreservation/RootLevelExtensionChildCollection",
         "ProfileVisibleRowUpdateWithHiddenRowPreservation/CollectionAlignedExtensionChildCollection",
+        "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedExtensionChildCollection",
         "ProfileVisibleRowUpdateWithHiddenRowPreservation/HiddenDescriptorBinding",
         "ProfileVisibleRowUpdateWithHiddenRowPreservation/SiblingOrdinalRenumbering",
         "ProfileVisibleRowDeleteWithHiddenRowPreservation",
         "ProfileVisibleRowDeleteWithHiddenRowPreservation/DeleteOmittedVisible",
         "ProfileVisibleRowDeleteWithHiddenRowPreservation/DeleteAllVisibleWhileHiddenRemain",
+        "ProfileVisibleRowDeleteWithHiddenRowPreservation/AlignedExtensionChildOmission",
+        "ProfileVisibleRowDeleteWithHiddenRowPreservation/NestedExtensionChildOmission",
         "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable",
         "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/CollectionOrCommonTypeItem",
         "ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable/NewVisible1To1Scope",
@@ -175,6 +178,7 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfile/RelationalReadback",
         "NoProfile/RelationalReadback/ChangedPutEtag",
         "NoProfile/RelationalReadback/RepeatPutEtag",
+        "NoProfile/ChangeQueryReadback/LatestStoredChangeVersion",
     ];
 
     private static readonly string[] AuthoritativeFiles =
@@ -503,16 +507,26 @@ public class Given_The_Parity_Scenario_Catalog
 
     private static readonly string[] ExpectedSiblingOrdinalPgTriples =
     [
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_returns_update_success",
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_yields_three_aligned_extension_child_rows_after_reorder_and_insert",
         "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_assigns_aligned_extension_child_ordinals_in_new_request_order",
         "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
-        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child::It_recomputes_the_surviving_aligned_extension_child_ordinal",
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_returns_update_success",
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_yields_three_nested_extension_child_rows_after_reorder_and_insert",
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_assigns_nested_extension_child_ordinals_in_new_request_order",
+        "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_preserves_collection_item_ids_for_matched_nested_extension_children_and_assigns_a_new_id_to_the_inserted_child",
     ];
 
     private static readonly string[] ExpectedSiblingOrdinalMssqlTriples =
     [
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_returns_update_success",
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_yields_three_aligned_extension_child_rows_after_reorder_and_insert",
         "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_assigns_aligned_extension_child_ordinals_in_new_request_order",
         "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
-        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child::It_recomputes_the_surviving_aligned_extension_child_ordinal",
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_returns_update_success",
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_yields_three_nested_extension_child_rows_after_reorder_and_insert",
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_assigns_nested_extension_child_ordinals_in_new_request_order",
+        "MssqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children::It_preserves_collection_item_ids_for_matched_nested_extension_children_and_assigns_a_new_id_to_the_inserted_child",
     ];
 
     [Test]

@@ -253,7 +253,8 @@ public static class ParityCatalogInvariants
                     or ProductionBoundary.BatchSqlEmitter
                     or ProductionBoundary.ReferenceIdentityRuntime
                     or ProductionBoundary.KeyUnificationValidation
-                    or ProductionBoundary.RelationalReadback,
+                    or ProductionBoundary.RelationalReadback
+                    or ProductionBoundary.ChangeQueryReadback,
             _ => false,
         };
 

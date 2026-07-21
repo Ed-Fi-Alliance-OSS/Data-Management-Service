@@ -219,11 +219,31 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/CollectionAlignedExtensionChildCollection",
-            "A profiled PUT updates matched collection-aligned extension child rows in place, preserving their CollectionItemIds.",
+            "A profiled PUT updates matched collection-aligned extension child rows in place: update success, unchanged row count, exactly the modified value changed, preserved ordinals, and preserved CollectionItemIds.",
             "ProfileCollectionAlignedExtensionMergeTests",
             "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_modifying_an_aligned_extension_child_value",
             "Given_a_ProfileCollectionAlignedExtension_update_request_modifying_an_aligned_extension_child_value",
-            ["It_updates_matched_aligned_extension_child_rows_in_place_preserving_collection_item_ids"],
+            [
+                "It_returns_update_success",
+                "It_preserves_the_aligned_extension_child_row_count",
+                "It_updates_only_the_modified_aligned_extension_child_value",
+                "It_preserves_the_aligned_extension_child_ordinals",
+                "It_updates_matched_aligned_extension_child_rows_in_place_preserving_collection_item_ids",
+            ],
+            sharedEntryPoint: AlignedExtensionSharedEntryPoint
+        ),
+        Profile(
+            "ProfileVisibleRowUpdateWithHiddenRowPreservation/NestedExtensionChildCollection",
+            "A profiled PUT updates matched nested extension child rows in place: update success, unchanged row count, exactly the modified value changed, and preserved CollectionItemIds.",
+            "ProfileCollectionAlignedExtensionMergeTests",
+            "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_modifying_a_nested_extension_child_value",
+            "Given_a_ProfileCollectionAlignedExtension_update_request_modifying_a_nested_extension_child_value",
+            [
+                "It_returns_update_success",
+                "It_preserves_the_nested_extension_child_row_count",
+                "It_updates_only_the_modified_nested_extension_child_value",
+                "It_updates_matched_nested_extension_child_rows_in_place_preserving_collection_item_ids",
+            ],
             sharedEntryPoint: AlignedExtensionSharedEntryPoint
         ),
         Profile(
@@ -236,20 +256,27 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileVisibleRowUpdateWithHiddenRowPreservation/SiblingOrdinalRenumbering",
-            "A profiled aligned-extension-child reorder+insert assigns ordinals in request order (preserving matched CollectionItemIds), and omitting an aligned extension child recomputes the surviving ordinal.",
+            "A profiled reorder+insert of aligned and nested extension children assigns ordinals in request order with the exact final row count, preserving matched CollectionItemIds and assigning a new id to the inserted child.",
             [
                 PgLoc(
                     "ProfileCollectionAlignedExtensionMergeTests",
                     "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
                     [
+                        "It_returns_update_success",
+                        "It_yields_three_aligned_extension_child_rows_after_reorder_and_insert",
                         "It_assigns_aligned_extension_child_ordinals_in_new_request_order",
                         "It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
                     ]
                 ),
                 PgLoc(
                     "ProfileCollectionAlignedExtensionMergeTests",
-                    "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child",
-                    ["It_recomputes_the_surviving_aligned_extension_child_ordinal"]
+                    "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children",
+                    [
+                        "It_returns_update_success",
+                        "It_yields_three_nested_extension_child_rows_after_reorder_and_insert",
+                        "It_assigns_nested_extension_child_ordinals_in_new_request_order",
+                        "It_preserves_collection_item_ids_for_matched_nested_extension_children_and_assigns_a_new_id_to_the_inserted_child",
+                    ]
                 ),
             ],
             [
@@ -257,14 +284,21 @@ public static partial class ParityScenarioCatalog
                     "ProfileCollectionAlignedExtensionMergeTests",
                     "Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children",
                     [
+                        "It_returns_update_success",
+                        "It_yields_three_aligned_extension_child_rows_after_reorder_and_insert",
                         "It_assigns_aligned_extension_child_ordinals_in_new_request_order",
                         "It_preserves_collection_item_ids_for_matched_aligned_extension_children_and_assigns_a_new_id_to_the_inserted_child",
                     ]
                 ),
                 MsLoc(
                     "ProfileCollectionAlignedExtensionMergeTests",
-                    "Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child",
-                    ["It_recomputes_the_surviving_aligned_extension_child_ordinal"]
+                    "Given_a_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_nested_extension_children",
+                    [
+                        "It_returns_update_success",
+                        "It_yields_three_nested_extension_child_rows_after_reorder_and_insert",
+                        "It_assigns_nested_extension_child_ordinals_in_new_request_order",
+                        "It_preserves_collection_item_ids_for_matched_nested_extension_children_and_assigns_a_new_id_to_the_inserted_child",
+                    ]
                 ),
             ],
             sharedEntryPoint: AlignedExtensionSharedEntryPoint
@@ -334,6 +368,32 @@ public static partial class ParityScenarioCatalog
                 ),
             ],
             providerSpecificRationale: ProfileMixedFixtureProviderSpecificRationale
+        ),
+        Profile(
+            "ProfileVisibleRowDeleteWithHiddenRowPreservation/AlignedExtensionChildOmission",
+            "A profiled PUT omitting an aligned extension child deletes that row and recomputes the surviving sibling ordinal.",
+            "ProfileCollectionAlignedExtensionMergeTests",
+            "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child",
+            "Given_a_ProfileCollectionAlignedExtension_update_request_omitting_an_aligned_extension_child",
+            [
+                "It_returns_update_success",
+                "It_deletes_the_omitted_aligned_extension_child_row",
+                "It_recomputes_the_surviving_aligned_extension_child_ordinal",
+            ],
+            sharedEntryPoint: AlignedExtensionSharedEntryPoint
+        ),
+        Profile(
+            "ProfileVisibleRowDeleteWithHiddenRowPreservation/NestedExtensionChildOmission",
+            "A profiled PUT omitting a nested extension child deletes that row and recomputes the surviving sibling ordinal.",
+            "ProfileCollectionAlignedExtensionMergeTests",
+            "Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_omitting_a_nested_extension_child",
+            "Given_a_ProfileCollectionAlignedExtension_update_request_omitting_a_nested_extension_child",
+            [
+                "It_returns_update_success",
+                "It_deletes_the_omitted_nested_extension_child_row",
+                "It_recomputes_the_surviving_nested_extension_child_ordinal",
+            ],
+            sharedEntryPoint: AlignedExtensionSharedEntryPoint
         ),
         // ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable + variants
         Profile(
@@ -459,7 +519,7 @@ public static partial class ParityScenarioCatalog
         // ProfileUnchangedWriteGuardedNoOp + variants
         Profile(
             "ProfileUnchangedWriteGuardedNoOp",
-            "An unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps.",
+            "An unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps: the root row (including its replicated content stamps), every document stamp (ContentVersion, ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt, CreatedAt), and the engine's max ChangeVersion allocation all stay unchanged.",
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
@@ -470,11 +530,13 @@ public static partial class ParityScenarioCatalog
                 "It_does_not_change_content_last_modified_at",
                 "It_does_not_change_identity_version",
                 "It_does_not_change_identity_last_modified_at",
+                "It_does_not_change_created_at",
+                "It_does_not_advance_the_change_version",
             ]
         ),
         Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPut",
-            "Root-only shape: an unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps.",
+            "Root-only shape: an unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps — root row including its replicated content stamps, every document stamp including CreatedAt, and no ChangeVersion allocation.",
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
@@ -485,11 +547,13 @@ public static partial class ParityScenarioCatalog
                 "It_does_not_change_content_last_modified_at",
                 "It_does_not_change_identity_version",
                 "It_does_not_change_identity_last_modified_at",
+                "It_does_not_change_created_at",
+                "It_does_not_advance_the_change_version",
             ]
         ),
         Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPostAsUpdate",
-            "An unchanged profiled POST-as-update is a guarded no-op that keeps the existing document uuid, does not insert the incoming uuid, and preserves the rowset, ContentVersion, ContentLastModifiedAt, IdentityVersion, and IdentityLastModifiedAt.",
+            "An unchanged profiled POST-as-update is a guarded no-op that keeps the existing document uuid, does not insert the incoming uuid, and preserves the rowset (root row including its replicated content stamps), ContentVersion, ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt, and CreatedAt with no ChangeVersion allocation.",
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape",
@@ -501,6 +565,8 @@ public static partial class ParityScenarioCatalog
                 "It_does_not_change_content_last_modified_at",
                 "It_does_not_change_identity_version",
                 "It_does_not_change_identity_last_modified_at",
+                "It_does_not_change_created_at",
+                "It_does_not_advance_the_change_version",
             ]
         ),
         Profile(
