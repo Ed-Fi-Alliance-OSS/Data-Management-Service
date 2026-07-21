@@ -7639,7 +7639,14 @@ public class Given_three_level_chain_contrasts_descendant_create_under_an_existi
             s.TableWritePlan.TableModel.Table == _acceptanceGrandchildrenPlan.TableModel.Table
         );
         grandchildrenTable.MergedRows.Length.Should().Be(1);
-        ((FlattenedWriteValue.Literal)grandchildrenTable.MergedRows[0].Values[3]).Value.Should().Be("G1");
+
+        // The new grandchild must attach to the EXISTING middle parent's collection item id with the
+        // expected contiguous ordinal — wrong-parent attachment or a wrong ordinal must fail, not
+        // just a wrong identity value.
+        var mergedRow = grandchildrenTable.MergedRows[0];
+        ((FlattenedWriteValue.Literal)mergedRow.Values[1]).Value.Should().Be(ExistingChildItemId);
+        ((FlattenedWriteValue.Literal)mergedRow.Values[2]).Value.Should().Be(0);
+        ((FlattenedWriteValue.Literal)mergedRow.Values[3]).Value.Should().Be("G1");
     }
 
     [Test]

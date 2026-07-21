@@ -243,11 +243,15 @@ internal static class CrudRoundTripScenario
 
     public static async Task It_pages_students_via_query(ApiIntegrationHarness harness)
     {
-        // Seed three students serially so their surrogate DocumentIds ascend in seed order. The
-        // relational query paging applies a dialect-neutral deterministic ORDER BY DocumentId, so
-        // limit/offset windows are stable across repeats and engines: the scenario asserts the exact
-        // ordered window for each page (which also proves complete, non-overlapping coverage).
+        // Seed three students serially so their surrogate DocumentIds ascend in seed order, then
+        // update the FIRST student with a changed non-identity field. On PostgreSQL the MVCC update
+        // relocates that tuple to the heap tail while its DocumentId is unchanged, so physical order
+        // no longer matches the required DocumentId order and the windows below fail if the
+        // production relational query paging drops its dialect-neutral deterministic ORDER BY
+        // DocumentId. Each limit/offset window is asserted twice to prove repeat stability, and the
+        // exact ordered windows together prove complete, non-overlapping coverage on both engines.
         string[] ids = ["smoke-page-001", "smoke-page-002", "smoke-page-003"];
+        string? firstStudentLocationPath = null;
         foreach (string id in ids)
         {
             var payload = new JsonObject { ["studentUniqueId"] = id, ["firstName"] = $"Name-{id}" };
@@ -259,33 +263,64 @@ internal static class CrudRoundTripScenario
             response
                 .StatusCode.Should()
                 .Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+
+            if (id == ids[0])
+            {
+                firstStudentLocationPath = response.Headers.Location!.IsAbsoluteUri
+                    ? response.Headers.Location!.AbsolutePath
+                    : response.Headers.Location!.OriginalString;
+            }
         }
 
-        using HttpResponseMessage firstPage = await harness.HttpClient.GetAsync(
-            $"{StudentsEndpoint}?offset=0&limit=2"
+        var updatedFirstStudent = new JsonObject
+        {
+            ["id"] = firstStudentLocationPath!.Split('/')[^1],
+            ["studentUniqueId"] = ids[0],
+            ["firstName"] = $"Relocated-{ids[0]}",
+        };
+        using var updateContent = new StringContent(
+            updatedFirstStudent.ToJsonString(),
+            Encoding.UTF8,
+            "application/json"
         );
-        string firstPageBody = await firstPage.Content.ReadAsStringAsync();
-        firstPage.StatusCode.Should().Be(HttpStatusCode.OK, firstPageBody);
-        string[] firstPageIds = PageStudentUniqueIds(firstPageBody);
-        firstPageIds
-            .Should()
-            .Equal(
-                ["smoke-page-001", "smoke-page-002"],
-                "limit=2 returns the first two seeded students in DocumentId order"
-            );
+        using HttpResponseMessage updateResponse = await harness.HttpClient.PutAsync(
+            firstStudentLocationPath,
+            updateContent
+        );
+        updateResponse
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NoContent, await updateResponse.Content.ReadAsStringAsync());
 
-        using HttpResponseMessage secondPage = await harness.HttpClient.GetAsync(
-            $"{StudentsEndpoint}?offset=2&limit=2"
-        );
-        string secondPageBody = await secondPage.Content.ReadAsStringAsync();
-        secondPage.StatusCode.Should().Be(HttpStatusCode.OK, secondPageBody);
-        string[] secondPageIds = PageStudentUniqueIds(secondPageBody);
-        secondPageIds
-            .Should()
-            .Equal(
-                ["smoke-page-003"],
-                "offset=2 returns the remaining seeded student, deterministically ordered after the first page"
+        for (int repeat = 0; repeat < 2; repeat++)
+        {
+            using HttpResponseMessage firstPage = await harness.HttpClient.GetAsync(
+                $"{StudentsEndpoint}?offset=0&limit=2"
             );
+            string firstPageBody = await firstPage.Content.ReadAsStringAsync();
+            firstPage.StatusCode.Should().Be(HttpStatusCode.OK, firstPageBody);
+            string[] firstPageIds = PageStudentUniqueIds(firstPageBody);
+            firstPageIds
+                .Should()
+                .Equal(
+                    ["smoke-page-001", "smoke-page-002"],
+                    "limit=2 returns the first two seeded students in DocumentId order even after the first tuple is physically relocated (repeat {0})",
+                    repeat
+                );
+
+            using HttpResponseMessage secondPage = await harness.HttpClient.GetAsync(
+                $"{StudentsEndpoint}?offset=2&limit=2"
+            );
+            string secondPageBody = await secondPage.Content.ReadAsStringAsync();
+            secondPage.StatusCode.Should().Be(HttpStatusCode.OK, secondPageBody);
+            string[] secondPageIds = PageStudentUniqueIds(secondPageBody);
+            secondPageIds
+                .Should()
+                .Equal(
+                    ["smoke-page-003"],
+                    "offset=2 returns the remaining seeded student, deterministically ordered after the first page (repeat {0})",
+                    repeat
+                );
+        }
     }
 
     private static string[] PageStudentUniqueIds(string pageBody) =>

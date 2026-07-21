@@ -42,7 +42,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CrudRoundTrip/PagesStudentsViaQuery",
-            "limit/offset paging returns deterministic DocumentId-ordered windows with complete, non-overlapping coverage of every seeded row.",
+            "limit/offset paging returns deterministic DocumentId-ordered windows with complete, non-overlapping coverage of every seeded row, asserted twice after a changed non-identity PUT physically relocates the first row so a dropped production ORDER BY cannot stay green.",
             "CrudRoundTripScenario.It_pages_students_via_query",
             "It_pages_students_via_query"
         ),

@@ -374,6 +374,7 @@ internal sealed record GuardedNoOpPersistedState(
     GuardedNoOpSchoolRow School,
     IReadOnlyList<GuardedNoOpSchoolAddressRow> Addresses,
     IReadOnlyList<GuardedNoOpSchoolExtensionAddressRow> ExtensionAddresses,
+    IReadOnlyList<GuardedNoOpReferentialIdentityRow> ReferentialIdentities,
     long DocumentCount
 );
 
@@ -593,9 +594,17 @@ file static class GuardedNoOpIntegrationTestSupport
         var school = await ReadSchoolAsync(database, document.DocumentId);
         var addresses = await ReadSchoolAddressesAsync(database, document.DocumentId);
         var extensionAddresses = await ReadSchoolExtensionAddressesAsync(database, document.DocumentId);
+        var referentialIdentities = await ReadAllReferentialIdentityRowsAsync(database);
         var documentCount = await ReadDocumentCountAsync(database);
 
-        return new GuardedNoOpPersistedState(document, school, addresses, extensionAddresses, documentCount);
+        return new GuardedNoOpPersistedState(
+            document,
+            school,
+            addresses,
+            extensionAddresses,
+            referentialIdentities,
+            documentCount
+        );
     }
 
     // Project the actual PostgreSQL readback into the full provider-neutral snapshot the shared
@@ -636,6 +645,15 @@ file static class GuardedNoOpIntegrationTestSupport
                     )
                 ),
             ],
+            [
+                .. state.ReferentialIdentities.Select(
+                    referentialIdentity => new NoProfileGuardedNoOpScenarios.ReferentialIdentityRow(
+                        referentialIdentity.ReferentialId,
+                        referentialIdentity.DocumentId,
+                        referentialIdentity.ResourceKeyId
+                    )
+                ),
+            ],
             state.DocumentCount
         );
 
@@ -665,6 +683,26 @@ file static class GuardedNoOpIntegrationTestSupport
             : throw new InvalidOperationException(
                 $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
             );
+    }
+
+    private static async Task<
+        IReadOnlyList<GuardedNoOpReferentialIdentityRow>
+    > ReadAllReferentialIdentityRowsAsync(PostgresqlGeneratedDdlTestDatabase database)
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
+            FROM "dms"."ReferentialIdentity"
+            ORDER BY "ReferentialId";
+            """
+        );
+
+        return rows.Select(row => new GuardedNoOpReferentialIdentityRow(
+                GetGuid(row, "ReferentialId"),
+                GetInt64(row, "DocumentId"),
+                GetInt16(row, "ResourceKeyId")
+            ))
+            .ToArray();
     }
 
     public static async Task<long> ReadDocumentCountAsync(

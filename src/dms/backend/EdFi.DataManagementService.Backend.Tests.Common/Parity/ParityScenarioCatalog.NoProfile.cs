@@ -226,7 +226,7 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileGuardedNoOp (10 variants) ---------------------------------------------
         Gap(
             "NoProfileGuardedNoOp",
-            "Unchanged PUT / POST-as-update compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op; rowsets, ContentVersion, and every stored update-tracking stamp (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt, CreatedAt) stay unchanged, and race variants retain the exact concurrent content stamps without an extra DMS write.",
+            "An unchanged PUT compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op: the full persisted rowset (including referential identity), ContentVersion, and every stored update-tracking stamp — document and root-table — stay unchanged.",
             ProductionBoundary.GuardedNoOp,
             "PostgresqlRelationalWriteGuardedNoOpTests.cs",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
@@ -236,7 +236,8 @@ public static partial class ParityScenarioCatalog
             ],
             sharedEntryPoint: "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchanged",
-            boundaryDetail: "RelationalWriteGuardedNoOp + IRelationalWriteFreshnessChecker/IRelationalWriteCurrentStateLoader"
+            boundaryDetail: "RelationalWriteGuardedNoOp + IRelationalWriteFreshnessChecker/IRelationalWriteCurrentStateLoader",
+            notes: "This row proves only the unchanged-PUT mechanic its own location executes. POST-as-update, post-reorder, stale-compare, current-state-refresh, and commit-window race semantics (including retained concurrent content stamps) are decomposed into the explicit NoProfileGuardedNoOp/* variant rows with their own entry points."
         ),
         GuardedNoOp(
             "Put",
@@ -345,7 +346,7 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileMultiBatchCollection + variants ---------------------------------------
         Gap(
             "NoProfileMultiBatchCollection",
-            "Collection create/update/delete are partitioned into batches at the compiled MaxRowsPerBatch / ParametersPerRow.",
+            "A collection create exceeding the compiled MaxRowsPerBatch persists the full requested collection (every row checked in order) and partitions its id-reservation and insert commands at the compiled MaxRowsPerBatch / ParametersPerRow limits.",
             ProductionBoundary.BatchSqlEmitter,
             "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture",
@@ -356,6 +357,7 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions",
             boundaryDetail: "WritePlanBatchSqlEmitter / PlanWriteBatchingConventions",
+            notes: "This row proves only the multi-batch create mechanic its own location executes. Update/delete batching, aligned-extension batching, parameter pressure, and changed-write identity are decomposed into the explicit NoProfileMultiBatchCollection/* variant rows with their own entry points.",
             diff: new DialectDifference(
                 "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent and caps at 2100 parameters / 1000 rows.",
                 "Dialect parameter limits and id-reservation strategy differ; behavioral parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts, not the SQL text."
@@ -546,6 +548,13 @@ public static partial class ParityScenarioCatalog
             Classification = ParityClassification.SupportingSmoke,
             CoveredByScenarioId = "NoProfileGuardedNoOp",
         },
+        PgSmokeNoOp(
+            "SampleStudentAcademicRecord",
+            "Authoritative StudentAcademicRecord repeat PUT is a guarded no-op: the full persisted rowset and ContentVersion stay unchanged.",
+            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+            ["It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_put"]
+        ),
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
         Gap(
             "NoProfileRollbackSafety",

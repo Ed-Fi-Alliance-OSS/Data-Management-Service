@@ -489,13 +489,18 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPostAsUpdate",
-            "An unchanged profiled POST-as-update is a guarded no-op that keeps the existing document uuid.",
+            "An unchanged profiled POST-as-update is a guarded no-op that keeps the existing document uuid, does not insert the incoming uuid, and preserves the rowset, ContentVersion, ContentLastModifiedAt, IdentityVersion, and IdentityLastModifiedAt.",
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape",
             [
                 "It_returns_update_success_with_the_existing_document_uuid",
                 "It_does_not_insert_the_incoming_document_uuid",
+                "It_does_not_change_rowsets",
+                "It_does_not_change_content_version",
+                "It_does_not_change_content_last_modified_at",
+                "It_does_not_change_identity_version",
+                "It_does_not_change_identity_last_modified_at",
             ]
         ),
         Profile(

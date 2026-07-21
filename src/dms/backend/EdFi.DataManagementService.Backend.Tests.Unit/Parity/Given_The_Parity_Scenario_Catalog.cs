@@ -170,6 +170,7 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/ChangedPut",
         "NoProfile/AuthoritativeSmoke/SampleSurveyQuestion/RepeatPutNoOp",
         "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPostAsUpdateNoOp",
+        "NoProfile/AuthoritativeSmoke/SampleStudentAcademicRecord/RepeatPutNoOp",
         "NoProfile/ReferenceIdentityRuntime",
         "NoProfile/RelationalReadback",
         "NoProfile/RelationalReadback/ChangedPutEtag",
