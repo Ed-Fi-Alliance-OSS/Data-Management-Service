@@ -117,8 +117,17 @@ public static class ProfileAwareAuthorizationProvider
         {
             string errorBody = await response.Content.ReadAsStringAsync();
 
-            // Check if it's a duplicate error (profile already exists)
-            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && errorBody.Contains("exists"))
+            // A pre-existing profile is tolerated: the helper finds and reuses it. The Configuration
+            // Service reports the duplicate either as a legacy 400 whose body mentions "exists", or as a
+            // 409 whose Problem Details type is the non-unique-identity conflict. Any other failure -
+            // including a 409 with an unrelated or unparseable body - falls through to the throw below.
+            if (
+                (response.StatusCode == System.Net.HttpStatusCode.BadRequest && errorBody.Contains("exists"))
+                || (
+                    response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    && IsNonUniqueIdentityConflict(errorBody)
+                )
+            )
             {
                 // Profile already exists, try to find it
                 return await FindExistingProfile(profileName);
@@ -149,6 +158,28 @@ public static class ProfileAwareAuthorizationProvider
         }
 
         return profileId;
+    }
+
+    /// <summary>
+    /// Returns true only when the response body is a Problem Details document whose type is the
+    /// non-unique-identity conflict, so an unrelated or malformed 409 is not mistaken for a duplicate
+    /// profile and continues to fail through the caller's InvalidOperationException.
+    /// </summary>
+    private static bool IsNonUniqueIdentityConflict(string errorBody)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(errorBody);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("type", out JsonElement type)
+                && type.ValueKind == JsonValueKind.String
+                && type.GetString() == "urn:ed-fi:api:conflict:non-unique-identity";
+        }
+        catch (JsonException)
+        {
+            // A malformed body is not a recognized duplicate conflict; let the caller throw.
+            return false;
+        }
     }
 
     /// <summary>
