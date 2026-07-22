@@ -12,7 +12,7 @@ related:
 
 - [Configuration and projection targets](../../../cdc-streaming.md#configuration-and-projection-target-selection)
 - [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
-- [V1 maintenance-window assumptions](../../../cdc-streaming.md#v1-maintenance-window-assumptions)
+- [V1 readiness scope](../../../cdc-streaming.md#v1-readiness-scope)
 - [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
 - [Deployment-owned physical source binding](../../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
@@ -49,7 +49,10 @@ per-database projection health with E19-owned provider, topic, and connector che
    implementation under `.cdc-state/bindings`, its Git ignore rule, and optional
    `-CdcBindingStatePath`; do not write binding state into the bootstrap manifest.
 4. Enforce fail-closed creation, exact-match retry, artifact-without-state rejection,
-   immutable lifetime, cleanup ordering, and new-generation source migration. Define the
+   immutable lifetime, cleanup ordering, and new-generation source migration. Treat the
+   derived SQL Server schema-history topic and ACLs as binding-governed artifacts retained
+   with connector offsets on ordinary stop and removed before binding state during explicit
+   destructive cleanup. Define the
    explicit guarded rotation operation for a rollback or restore that replaces an
    existing source; it changes `dms.DataStoreIdentity.SourceIdentity` only as part of
    reserving a new binding generation/topic and is never an ordinary setup retry. A newly
@@ -57,7 +60,8 @@ per-database projection health with E19-owned provider, topic, and connector che
    new UUID before binding creation under the provisioning/restore contract.
 5. Validate provider tables including the clear `dms.DocumentCacheState` latch, opt-in
    `dms.CdcHeartbeat` singleton, projected `StreamEtag`, keys, replica/capture setup,
-   topic, ACL, `partitionerAlgorithm`, the effective `maxRecordBytes` policy, producer
+   public/progress topics, SQL Server schema-history topic when applicable, ACLs,
+   `partitionerAlgorithm`, the effective `maxRecordBytes` policy, producer
    request/buffer memory, broker request/record-batch/replica-fetch compatibility, and
    installed source-operation shaping against the binding and operational policy before
    registration. This story defines the ACL and size readiness checks; 19-04 owns
@@ -65,13 +69,13 @@ per-database projection health with E19-owned provider, topic, and connector che
    coverage.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,
-   deployment-owned mutation-admission/drain state for initial readiness or explicit
-   baseline replacement,
+   deployment-owned evidence that first-time enablement is acting on a newly created
+   database that has not been published to any writer,
    connector configuration and task state, snapshot/catch-up, the provider source-position
    barrier, current lag checks, and Debezium 3.6 P50/P95/P99 source-lag telemetry.
-   For initial readiness or explicit baseline replacement, require a fresh startup/restart
-   audit begun only after canonical mutations are blocked and in-flight transactions drain;
-   never accept an older zero audit. Quantiles are diagnostic and do not replace the
+   For initial readiness, require a fresh startup audit from that offline provisioning
+   workflow; never accept an older zero audit. Do not model or claim a cross-replica
+   mutation gate or transaction drain. Quantiles are diagnostic and do not replace the
    barrier. Implement the PostgreSQL adapter by capturing
    `pg_current_wal_lsn()` after the fresh zero-audit health response and comparing its
    unsigned 64-bit value with committed Debezium `lsn_proc`. Implement the SQL Server
@@ -85,11 +89,12 @@ per-database projection health with E19-owned provider, topic, and connector che
    failure. Connector/task status, Kafka topic offsets, elapsed time, and lag are not
    substitutes. After catch-up, require a second ready DMS health observation for the
    same source fingerprint. A failed task or missing/conflicting
-   `errors.tolerance=none` keeps combined readiness false regardless of offset or lag
-   observations. Keep the mutation gate closed through that second observation and lag
-   check; release it only after the initial or baseline-replacing combined-ready transition
-   succeeds. Later connector-only recovery remains an eventual-consistency health
-   calculation and does not claim another exact baseline.
+   `errors.tolerance=none`, or missing/conflicting SQL Server schema-history configuration
+   or storage keeps combined readiness false regardless of offset or lag observations.
+   Keep first-write admission closed through that second observation and lag check; report
+   initial combined ready only afterward so the setup controller may publish the database
+   to writers. Later status and connector recovery remain eventual-consistency health
+   calculations and do not claim another exact baseline or control DMS request routing.
 8. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
 
 ## Acceptance Evidence
@@ -97,16 +102,17 @@ per-database projection health with E19-owned provider, topic, and connector che
 - State tests cover atomic first creation, exact-match retry, immutable mismatch including
   attempted partition-count or `partitionerAlgorithm` changes, rejection of a missing or
   unknown partitioner token, artifacts without state, normal-stop retention, destructive
-  cleanup ordering, and generation migration. They prove `maxRecordBytes` is not binding
-  identity.
+  cleanup ordering including SQL Server history/offset coupling, and generation migration.
+  They prove the history topic is derived rather than a binding field and
+  `maxRecordBytes` is not binding identity.
 - Provider tests cover equivalent physical aliases, conflicting targets, missing or
   malformed `dms.DataStoreIdentity`, transient identity-resolution failure, missing
   targets, guarded identity rotation/new-generation recovery, and confirmed binding
   mismatch without a DMS-owned drift latch.
-- Readiness tests cover binding, migration, projection, exact provider position parsing
-  and ordering, deployment-owned mutation admission and drain, rejection of a pre-drain
-  zero audit, a fresh startup/restart audit after the drain, a barrier captured after that
-  audit, committed connector
+- Readiness tests cover binding, new-database/offline eligibility, projection, exact
+  provider position parsing and ordering, rejection of an unbound existing database and a
+  previous zero audit, a fresh startup audit before first-write admission, a barrier
+  captured after that audit, committed connector
   snapshot/catch-up, idle-source heartbeat advancement, second projection-health
   observation, cache-ahead latching that remains false-ready after source equality,
   explicit `errors.tolerance=none`, producer request/buffer-memory and topic/broker size
@@ -115,11 +121,11 @@ per-database projection health with E19-owned provider, topic, and connector che
   aggregate results. They reject missing,
   malformed, snapshot, wrong-source, and multiple source-offset responses and prove that
   running/lag status cannot pass a connector that is below the barrier.
-- A synchronized provider test holds open a canonical transaction after it allocates a
-  lower `ContentVersion`, proves readiness cannot pass while that transaction is draining,
-  then commits it and proves only the restarted projector's fresh audit plus publication
-  barrier permits the mutation gate to reopen. Timeout or setup-controller restart before
-  completion remains fail-closed.
+- Initial-sequence tests prove only the setup controller's positive new/offline database
+  evidence can enter exact initial readiness, first-write admission remains closed through
+  the fresh audit and publication barrier, and timeout or setup-controller restart cannot
+  publish the database as CDC-ready. Post-admission tests prove a later ready result is
+  eventual health rather than another exact baseline.
 - API integration tests prove every reported CDC/projector failure remains observational,
   including deletion with unavailable cache state.
 
@@ -128,6 +134,8 @@ per-database projection health with E19-owned provider, topic, and connector che
 - Projector implementation.
 - Kafka Connect REST registration.
 - Publishing Kafka records.
+- A production cross-replica/external-writer admission gate or transaction drain.
+- Exact baseline-replacing repair or contract cutover after first-write admission.
 - A new production state service; production integrations adapt the existing deployment
   state backend.
 - In-place rebinding or topic reuse for a different physical source.

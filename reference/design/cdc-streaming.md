@@ -18,9 +18,9 @@ This is the authoritative integration and deployment design for relational DMS c
 data capture (CDC) and the `dms.DocumentCache` projection that supplies its upsert
 payloads. Runtime DMS owns explicit projection targets, projection mechanics, and
 per-database projection health. Deployment automation owns CDC target selection,
-durable connector/source bindings, topics, provider migrations, connector lifecycle,
-combined CDC readiness, bootstrap, and CDC operations. Verification follows the same
-boundary.
+durable connector/source bindings, topics, provider CDC setup, connector lifecycle,
+initial combined CDC readiness for a new offline database, later observational CDC
+status, bootstrap, and CDC operations. Verification follows the same boundary.
 
 Two focused decision records own the decisions and contracts they name:
 
@@ -78,6 +78,21 @@ ordinary DMS deployment leaves the small table empty and performs no projection 
 The canonical relational tables remain the authority for writes, authorization, identity
 resolution, Change Queries, and correct GET/query behavior.
 
+The v1 projection and CDC schema contract is supported only for a new physical database
+created by the completed E18 create-only provisioning path. V1 does not upgrade or retrofit
+an already-provisioned database. In particular, it does not replace legacy
+`DocumentCache.Etag`, remove the obsolete cache UUID constraint, or add the new singleton,
+trigger, and access-path inventory in place. Selecting CDC is part of initial database
+provisioning before DMS mutations are admitted. An interrupted initial workflow may retry
+only while deployment state still proves that the same newly provisioned database has not
+left that workflow. Enabling projection or CDC later on an existing database, or moving data
+from such an ineligible database into a replacement solely to obtain first-time enablement,
+requires separately designed migration support. A database successfully enabled through
+this new-database path may later exact-match its binding, validate artifacts, restart, and
+use the guarded source-replacement recovery defined below; those operations are not another
+initial enablement, never modify the core E18 schema, and expose only eventual status after
+first-write admission.
+
 Change Queries remain a separate polling API compatibility surface, including
 `/deletes`, `/keyChanges`, and live-resource version filters based on `ContentVersion`,
 `ContentLastModifiedAt`, and `tracked_changes_*` tables. They are not a Kafka source.
@@ -85,35 +100,37 @@ Change Queries remain a separate polling API compatibility surface, including
 Kafka Connect is the v1 deployment model. Debezium Server is deferred, embedded
 Debezium is not a reference path, and DMS does not publish directly to Kafka.
 
-### V1 Maintenance-Window Assumptions
+### V1 Readiness Scope
 
-V1 assumes that a deployment can place one selected physical data store in a maintenance
-window when initial combined CDC readiness is established and when an explicit projection
-repair or contract cutover replaces that complete baseline. The window has no design-level
-maximum duration. It may remain open for connector registration or restart, a complete
+V1 does not implement a production mutation-admission or transaction-drain gate. Exact
+combined readiness is supported only during initial provisioning of a new physical database
+while that database is offline: it has not been published to any DMS replica, bulk or seed
+loader, administrative mutation path, or other writer to the canonical resource tables.
+The setup controller owns this ordering and must retain positive evidence that it created
+the database and has not opened write admission. This is a provisioning lifecycle
+precondition, not a cross-replica runtime gate.
+
+The initial offline window may remain closed for connector registration, a complete
 projection audit and backed-off repair passes, connector snapshot/catch-up, and the
 post-audit provider barrier. An operator-configured automation timeout is diagnostic and
-fail-closed; elapsed time never substitutes for completing the sequence below.
+fail-closed; elapsed time never substitutes for completing the sequence below. Local and
+E2E bootstrap satisfy the same contract by creating the database and completing CDC setup
+before test/application writes begin.
 
-Before accepting the audit used for an initial or baseline-replacing combined-ready
-transition, deployment automation blocks every new canonical document mutation for that
-data store and drains already admitted mutation requests and database transactions. The
-gate covers every DMS replica,
-`POST`, `PUT`, and `DELETE`, bulk or seed loaders, administrative mutation paths, and any
-other supported writer to the canonical resource tables. No canonical mutation is admitted
-until combined readiness passes or the operator explicitly aborts the CDC transition and
-leaves CDC not ready. Read traffic may remain available. Optional direct fill may continue
-during ordinary enablement because it changes only captured cache state; a projection
-correction or contract cutover separately stops old cache writers as defined below.
+After write admission opens, DMS projection health and combined CDC status are
+observational, eventually consistent signals. A later ready observation does not certify a
+new exact canonical/cache/Kafka baseline and does not automatically block or release normal
+DMS traffic. V1 supports exact-match connector validation and restart for a database
+enabled through the initial offline path, but recovery after writes begin retains these
+eventual-consistency semantics.
 
-The maintenance gate and drain are deployment-owned operations, not DMS projection-health
-side effects or fields in the immutable binding. Deployment automation must know that its
-gate is active and its drain completed; an unverifiable gate fails closed. Local and E2E
-bootstrap satisfy the same contract by completing CDC setup before test/application writes
-begin. This operational assumption deliberately avoids a v1 correlated
-canonical-boundary/audit/publication-boundary protocol for initial population. Later
-steady-state health and connector recovery remain eventual-consistency observations and do
-not claim a new exact canonical/cache baseline.
+V1 does not support an exact baseline-replacing projection repair or contract cutover for
+an admitted database. Such a workflow requires a separately owned deployment capability
+that can fence every DMS replica and external writer, drain admitted requests and database
+transactions, and keep the fence closed through a fresh audit and publication barrier. The
+deferred correction and cutover contracts below describe the safety requirements for that
+future capability; they are not implemented production procedures and cannot be used to
+claim exact readiness in v1.
 
 ### Pinned Connector Runtime
 
@@ -194,9 +211,9 @@ Deployment automation selects CDC targets separately and must configure every CD
 on at least one designated DMS projector host as a `DocumentCache:Targets` entry. Kafka
 infrastructure, `-EnableKafkaUI`, and `-EnableKafkaCdc` do not implicitly select DMS
 projection targets. All projection and CDC health remains observational and never changes
-`IDataStoreSelection` or normal request routing by itself. The explicit deployment-owned
-maintenance workflow above may temporarily gate canonical mutation availability while
-establishing combined readiness; DMS health polling does not activate or release that gate.
+`IDataStoreSelection` or normal request routing by itself. Only the initial setup controller
+delays publishing a new offline database to writers while establishing first readiness;
+DMS health polling does not activate or release a runtime gate.
 
 ## Cached Document Contract
 
@@ -564,11 +581,11 @@ Recovery depends on whether the projection can have entered downstream ordered s
 - If an active or historical connector or another ordered downstream consumer may have
   observed the higher cache version, stop the affected publication path and create a new
   downstream state namespace. For Kafka CDC, this means a new immutable binding
-  generation, public and progress topics, and consumer state namespace. With old cache
-  writers and the old connector stopped, clear all cache rows and the latch in one provider
-  transaction, complete ordinary reconciliation, and snapshot the rebuilt cache into that
-  new namespace. Do not publish the lower version as an in-place correction to the old
-  one.
+  generation, public and progress topics, a SQL Server schema-history topic when
+  applicable, and consumer state namespace. With old cache writers and the old connector
+  stopped, clear all cache rows and the latch in one provider transaction, complete
+  ordinary reconciliation, and snapshot the rebuilt cache into that new namespace. Do not
+  publish the lower version as an in-place correction to the old one.
 - Treat any in-place canonical database restore/reset as the CDC case above even when the
   physical database name or connection metadata did not change.
 
@@ -672,10 +689,10 @@ An exact-zero audit is exact at its finishing observation, not continuous comple
 proof while canonical writes are admitted. In particular, a transaction may allocate a
 lower `ContentVersion`, remain in flight while an audit finishes, and commit below the
 incremental cursor afterward; the next full audit repairs it. DMS projection readiness
-therefore remains an eventually consistent operational signal. Initial combined readiness,
-and an explicit repair/cutover that replaces its baseline, uses a fresh startup/restart
-audit only after canonical mutation admission is closed and in-flight transactions are
-drained, eliminating that late-commit case from the established baseline.
+therefore remains an eventually consistent operational signal. Initial combined readiness
+uses a fresh startup/restart audit while the new database is still offline and no canonical
+mutation has ever been admitted, eliminating that late-commit case from the initial
+baseline. V1 makes no equivalent exact-baseline claim after write admission opens.
 
 DMS exposes only this per-database projection result. It does not expose
 `CanRegisterConnector`, compare the current source fingerprint with an expected source,
@@ -692,9 +709,11 @@ Deployment automation evaluates end-to-end CDC component health for each binding
   retention, fixed partition count, ACL, transform, and partitioner algorithm that match
   the binding record and fixed v1 contract; the current operational `maxRecordBytes`,
   producer request/buffer memory, broker-size compatibility, and connector configuration;
-  plus the derived compacted CDC progress topic and its connector-only ACL; both topics'
-  actual replica counts and explicit per-topic `min.insync.replicas` values must satisfy
-  the active deployment durability profile,
+  plus the derived compacted CDC progress topic and its connector-only ACL; for SQL Server,
+  the derived internal schema-history topic, exact connector configuration, infinite
+  retention without compaction, and connector-only ACLs; every applicable topic's actual
+  replica count and explicit per-topic `min.insync.replicas` value must satisfy the active
+  deployment durability profile,
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
   through the provider source-position barrier defined below, captured after DMS reported
   a sufficiently recent exact-zero audit,
@@ -706,18 +725,19 @@ do not assert that every currently committed document is projected at every heal
 There is no backfill epoch, completed backfill target, or maximum projected version in this
 calculation. The external status operation retains each target's result when calculating a
 deployment aggregate. A component-health failure does not automatically gate normal DMS
-traffic. Initial enablement and an explicit baseline-replacing repair/cutover deliberately
-keep the maintenance gate closed until their sequence succeeds; they may explicitly abort
-and reopen canonical writes only while continuing to report CDC not ready.
+traffic. Only the initial new-database workflow delays first-write admission until its
+sequence succeeds. It may explicitly abandon CDC and open first-write admission with the
+target not ready, after which that database is no longer eligible for v1 first-time CDC
+enablement.
 
 ### Provider Source-Position Barrier
 
 Connector/task `RUNNING` state, elapsed time, Kafka topic offsets, and a lag metric do not
 prove that every cache change committed by a projection audit has passed through the
 connector. Nor can a post-audit publication barrier discover or repair a canonical row
-that the audit missed. For initial enablement or an explicit baseline replacement, the
-maintenance gate plus the fresh post-drain exact-zero audit establishes the complete
-canonical/cache baseline; deployment automation then uses one
+that the audit missed. For initial enablement, the new database's offline precondition plus
+the fresh exact-zero audit establishes the complete canonical/cache baseline; deployment
+automation then uses one
 source-position adapter per provider to compare a post-audit database position with the
 connector's committed Debezium source offset and prove publication through that later
 boundary.
@@ -752,20 +772,16 @@ and [`SubmittedRecords`](https://github.com/apache/kafka/blob/4.3.0/connect/runt
 The heartbeat table is not projection work, completeness evidence, a public event source,
 or part of the immutable binding record.
 
-For initial combined readiness, and for an explicit projection repair or contract cutover
-that replaces its complete baseline, deployment automation performs this sequence:
+For initial combined readiness only, deployment automation performs this sequence:
 
-The byte-changing representation-restamp path applies the stronger read-and-mutation drain
-defined in that section; the general baseline sequence below requires only mutation drain.
-
-1. Enter or retain the target's maintenance window, block all new canonical mutations,
-   and drain every already-admitted mutation request and database transaction. A previous
-   zero audit is ineligible.
+1. Verify that the setup controller created the selected new physical database and has not
+   published it to any DMS replica or other writer. A previous zero audit is ineligible.
 2. After capture artifacts and the connector are established, restart or roll out every
    DMS projector execution context selected for the target. This resets prior health
-   evidence and forces the required immediate startup/restart audit after the drain.
+   evidence and forces the required immediate startup/restart audit while the database is
+   still offline.
 3. Wait for that fresh audit to finish at exact zero and retain its source fingerprint.
-   Keep the mutation gate closed; an older, pre-drain, stale, or merely recent audit cannot
+   Keep first-write admission closed; an older, stale, or merely recent audit cannot
    satisfy this step.
 4. Capture a provider barrier from that same bound physical database after receiving the
    fresh health result, using the provider procedure below.
@@ -782,13 +798,12 @@ defined in that section; the general baseline sequence below requires only mutat
    substitute for this comparison.
 7. Read projection health again and require it to remain ready for the same source
    fingerprint. Then apply the independent connector-lag threshold, transition the target
-   to combined ready, and only afterward release canonical mutation admission.
+   to combined ready, and only afterward publish the database to canonical writers.
 
-The window may remain open as long as this sequence needs. A failure or timeout cannot
-reuse the prior audit, release the gate as ready, or degrade into a status/lag-only success.
-Automation may keep retrying inside the window or explicitly abort and reopen writes with
-the target still not ready. The maintenance-window state is operational transition evidence
-and is not persisted in or added to the immutable binding. Later observational status and
+The database may remain offline as long as this sequence needs. A failure or timeout cannot
+reuse the prior audit, publish the database as CDC-ready, or degrade into a status/lag-only
+success. Automation may keep retrying before first-write admission or explicitly abandon
+CDC and publish the database with the target not ready. Later observational status and
 connector-only recovery use the component-health calculation above and retain the design's
 bounded eventual-consistency semantics; they do not claim another exact baseline.
 
@@ -879,8 +894,9 @@ replication and failover retain it. Creation of an independent writable data sto
 template, clone, or copied backup assigns a new UUID before the data store becomes
 available. A rollback or restore that replaces an existing source rotates
 `SourceIdentity` through the explicit CDC recovery workflow and, when CDC state exists,
-uses a new binding generation, public and progress topics, and consumer state namespace.
-Rotation is never part of ordinary DDL rerun or DMS startup.
+uses a new binding generation, public and progress topics, a SQL Server schema-history topic
+when applicable, and consumer state namespace. Rotation is never part of ordinary DDL
+rerun or DMS startup.
 Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
 display names, or unsanitized physical identifiers.
 
@@ -915,8 +931,8 @@ The record contains no connection string, credential, or source UUID. Credential
 pooling, application-name, host-alias, or equivalent connection changes produce the same
 fingerprint when they reach the same `dms.DataStoreIdentity` row. `partitionCount` is a
 positive topic-creation value and is immutable within the binding generation because the
-public consumer contract uses per-key partition offsets to order equal-version corrective
-republishes. `partitionerAlgorithm` is the immutable named behavior token
+public consumer contract uses per-key partition offsets to order equal-version records.
+`partitionerAlgorithm` is the immutable named behavior token
 `kafka-murmur2-v1`; it is not a Java class or library version. For non-null serialized key
 bytes `K` and partition count `N`, that token means
 `(KafkaMurmur2(K) & 0x7fffffff) % N`, byte-for-byte matching Kafka's Java-client Murmur2
@@ -940,6 +956,17 @@ derived name is not another binding field or operator input; template generation
 and bootstrap and live-configuration validation reject any different value. The progress
 topic has one partition and `cleanup.policy=compact`. It contains no public document state,
 and its retained contents are not part of the public bootstrap contract.
+
+A SQL Server binding additionally governs one Debezium internal database schema-history
+topic whose name is derived exactly as `topicName + ".schema-history"`. PostgreSQL does not
+use this artifact. The derived SQL Server name is not another binding field or operator
+input, and a new binding generation always derives a new history topic. The topic has
+exactly one partition, `cleanup.policy=delete`, `retention.ms=-1`, and
+`retention.bytes=-1`; compaction or finite time/size retention could remove an earlier DDL
+record that the connector must replay to reconstruct the schema at a retained source
+offset. It uses the same local or production replication-factor and
+`min.insync.replicas` durability profile as the other binding-governed topics. The history
+topic is connector-internal state, not a public stream or consumer-bootstrap source.
 
 The public topic has an explicit per-topic `delete.retention.ms` override of at least
 `604800000` milliseconds (seven days). This minimum is a fixed v1 contract value, not a
@@ -1000,7 +1027,7 @@ Binding creation and cleanup follow a fail-closed order:
 
 1. Obtain DMS's current fingerprint derived from `dms.DataStoreIdentity` and resolve the
    intended artifact names.
-2. Atomically create the immutable binding record before creating either derived topic, the
+2. Atomically create the immutable binding record before creating any derived topic, the
    connector, or a provider capture artifact. A record that already exists must match
    exactly; automation never rewrites its binding fields.
 3. If any governed artifact exists without its binding record, or differs from the
@@ -1020,8 +1047,9 @@ it must never leave surviving artifacts reusable after automatic record deletion
 
 V1 never reassigns an existing topic or connector generation to a different physical
 database. Moving a `DataStoreId` to another physical document set creates a new binding
-generation, connector, public topic, progress topic, and consumer state namespace.
-Removing a target requires explicit retain-or-delete decisions for every generation.
+generation, connector, public topic, progress topic, SQL Server schema-history topic when
+applicable, and consumer state namespace. Removing a target requires explicit
+retain-or-delete decisions for every generation.
 In-place source reset and topic reuse are deferred. The same-source provisioning workflow
 remains idempotent for an exact binding match, and deployment automation rejects separately
 authorized bindings for multiple CMS aliases of the same physical document set.
@@ -1048,14 +1076,14 @@ producer.override.compression.type=none
 ```
 
 `acks=all` is paired with an explicit durability profile for both the public and CDC
-progress topics. Production deployments require a replication factor of at least three
-and an explicit per-topic `min.insync.replicas` of at least two. Local development and CI
-may use a single-broker profile with replication factor one and
-`min.insync.replicas=1`. Provisioning validates the actual replica count and topic-level
-override before connector registration, and live validation keeps combined readiness
-false when either topic drifts below the active profile. These are operational deployment
-settings rather than binding fields, and changing them does not require a new binding
-generation.
+progress topics and, for SQL Server, its schema-history topic. Production deployments
+require a replication factor of at least three and an explicit per-topic
+`min.insync.replicas` of at least two. Local development and CI may use a single-broker
+profile with replication factor one and `min.insync.replicas=1`. Provisioning validates
+the actual replica count and topic-level override before connector registration, and live
+validation keeps combined readiness false when any applicable topic drifts below the
+active profile. These are operational deployment settings rather than binding fields, and
+changing them does not require a new binding generation.
 
 The ordering and compression values are fixed v1 values; `max.request.size` and
 `buffer.memory` come from the mutable per-target record-size policy. The generated producer
@@ -1134,6 +1162,25 @@ database-per-instance isolation model.
 ### SQL Server
 
 - Use the Debezium SQL Server connector and enable CDC for the instance database.
+- Configure its required Kafka-backed internal database schema history explicitly:
+
+  ```text
+  schema.history.internal.kafka.bootstrap.servers=<deployment Kafka bootstrap servers>
+  schema.history.internal.kafka.topic=<binding public topic>.schema-history
+  schema.history.internal.producer.enable.idempotence=true
+  schema.history.internal.producer.acks=all
+  schema.history.internal.producer.retries=2147483647
+  schema.history.internal.producer.max.in.flight.requests.per.connection=1
+  include.schema.changes=false
+  ```
+
+  The bootstrap servers identify the same Kafka cluster used by the Connect worker. The
+  template supplies the connector principal's externalized security settings to both the
+  `schema.history.internal.producer.*` and `schema.history.internal.consumer.*` clients;
+  neither credentials nor security property values become binding fields or diagnostics.
+  `include.schema.changes=false` suppresses the optional consumer-facing schema-change
+  topic but does not disable the required internal history store. Template and live
+  validation reject a missing, duplicate, or conflicting value.
 - Enable capture only on `dms.DocumentCache` and `dms.Document`, including
   `DocumentUuid`, plus the internal `dms.CdcHeartbeat` progress table.
 - Use a least-privilege login with CDC read access plus only the access needed to read and
@@ -1156,9 +1203,18 @@ database-per-instance isolation model.
 
 Although the Debezium SQL Server connector can capture multiple databases, v1 does not
 support that topology. Each instance database has its own connector, binding generation,
-offset state, failure boundary, public target topic, and derived progress topic.
-Multi-database consolidation requires a future source-aware routing contract and is not an
-operator-configurable v1 exception.
+offset state, failure boundary, public target topic, derived progress topic, and derived
+schema-history topic. Multi-database consolidation requires a future source-aware routing
+contract and is not an operator-configurable v1 exception.
+
+[Debezium's SQL Server connector](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-schema-history-topic)
+distinguishes the required internal history store from optional public schema-change
+events. Normal connector stop or restart retains the history topic and Connect source
+offsets. Missing, unreadable, empty-when-offsets-exist, or misconfigured history makes the
+connector not ready; automation never recreates it silently around retained offsets. An
+explicit destructive recovery stops the connector and resets or removes its offsets and
+history together before a controlled initial snapshot. Binding retirement removes the
+history topic and its ACLs with the connector and offsets before deleting binding state.
 
 Provider CDC/key setup is opt-in and does not run during ordinary relational provisioning
 when CDC is not selected.
@@ -1262,6 +1318,13 @@ offset orders multiple projections of the same canonical state. The topic partit
 and binding's `partitionerAlgorithm` token are immutable so one key retains that
 per-partition ordering for the topic's lifetime.
 
+V1 implements initial publication from a new offline database and the in-place record-size
+policy change below. The compatible projection correction and new-topic cutover procedures
+in this section are deferred design constraints. Integrating the representation-restamp
+utility into an exact CDC baseline replacement is likewise deferred. None is an implemented
+v1 production workflow because each requires the cross-replica and external-writer fence
+excluded by [V1 readiness scope](#v1-readiness-scope).
+
 Contract tests pin public field names, JSON types, key/tombstone behavior, document
 semantics, and metadata relationships. They prove that Kafka Connect copies the opaque
 DMS-computed `StreamEtag` exactly, but do not freeze its byte value independently of the
@@ -1271,12 +1334,12 @@ still applies: whenever the corrected public representation bytes differ, its
 `StreamEtag` must also differ. Kafka's later partition offset orders equal-version records;
 it does not make one strong ETag valid for two byte-different representations.
 
-### Compatible projection correction in `documents.v1`
+### Deferred compatible projection correction in `documents.v1`
 
-This equal-version path is allowed only when comparison of the affected old and corrected
-representations proves that every byte change also changes `StreamEtag`. Examples include
-a composer correction that changes the opaque tag itself or a correction that changes no
-public representation bytes. Operators:
+A future equal-version path is allowed only when comparison of the affected old and
+corrected representations proves that every byte change also changes `StreamEtag`.
+Examples include a composer correction that changes the opaque tag itself or a correction
+that changes no public representation bytes. That future deployment workflow must:
 
 1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
    mark the CDC target not ready, and stop every old cache writer, including projector
@@ -1300,25 +1363,26 @@ corrective inserts. Old cache writers remain stopped throughout the rebuild so t
 materializer implementations cannot alternate output for one version. If changed bytes
 would retain the prior `StreamEtag`, this path is prohibited.
 
-### Byte-changing representation correction
+### Offline byte-changing representation correction
 
 When corrected API or stream representation bytes would otherwise retain their prior
-strong ETag, operators use the supported out-of-band representation-restamp utility. This
-is a rare deployment repair, not a request-path feature and not ad hoc SQL. It advances the
-existing canonical representation stamps rather than adding a projection epoch or another
-Kafka ordering field.
+strong ETag, operators may use the out-of-band representation-restamp utility only while
+the selected data store is explicitly offline and every DMS replica, cache writer, and
+external writer has been stopped outside the utility. This is a rare deployment repair,
+not a request-path feature, not ad hoc SQL, and not an automated admission gate. It advances
+the existing canonical representation stamps rather than adding a projection epoch or
+another Kafka ordering field. V1 does not use the result to certify a replacement exact CDC
+baseline; projection and connector status after write admission remain eventual.
 
-The deployment performs the following guarded sequence:
+The offline operation follows this sequence:
 
-1. Enter a maintenance window that stops admission and drains all affected API reads and
-   canonical mutations. Mark the CDC target not ready and stop every old cache writer,
-   including projector loops and optional direct fill. A mutation-only drain is
-   insufficient because an intervening conditional GET could retain bytes under an ETag
-   that the corrected deployment would otherwise reuse.
-2. Deploy the corrected API materializer/composer while request admission and cache writers
-   remain stopped. When the stream contract remains compatible, the existing connector may
-   remain registered against the same binding and topic; an incompatible cutover instead
-   applies the old-connector fence and new-topic sequence below.
+1. Stop every affected DMS replica, API reader, canonical writer, projector loop, optional
+   direct-fill writer, bulk/seed loader, administrative path, and external writer outside
+   the utility. Mark the CDC target not ready when present. The utility requires an explicit
+   offline confirmation but does not implement or certify this fence.
+2. Deploy the corrected API materializer/composer while the data store remains offline.
+   The existing connector may remain registered against the same binding and topic when the
+   stream contract remains compatible.
 3. Run the out-of-band utility with an explicit affected-document scope and a persisted
    operation manifest. For each current affected document, allocate a fresh unique value
    from the normal change-version sequence, update `dms.Document.ContentVersion` and
@@ -1327,13 +1391,12 @@ The deployment performs the following guarded sequence:
    identity stamps, keys, or deletion history. The utility uses a captured pre-restamp
    version boundary so a retry resumes without stamping an already completed document
    again.
-4. Start only corrected projector writers. Existing affected cache rows are now behind and
-   ordinary reconciliation replaces them; missing rows are rebuilt. Run a full audit until
-   an exact finishing result reports zero missing, cache-behind, and cache-ahead rows.
-5. Complete the provider source-position barrier captured after that zero audit, recheck
-   projection readiness, and verify that affected public records have higher
-   `contentVersion` and different `document._etag` values. Restore combined CDC readiness
-   and only then reopen API request admission.
+4. After the utility completes, start only corrected DMS and projector instances. Existing
+   affected cache rows are behind and ordinary reconciliation replaces them; missing rows
+   are rebuilt. API reads retain relational fallback while projection catches up.
+5. Observe eventual projection and connector recovery and verify that affected public
+   records have higher `contentVersion` and different `document._etag` values. A later ready
+   observation does not certify an exact replacement baseline or control API admission.
 
 The utility is provider-aware and supports both PostgreSQL and SQL Server. It records the
 physical-source fingerprint, scope, reason, pre-restamp boundary, counts, and completion
@@ -1341,11 +1404,12 @@ status for audit and safe resume. The higher versions deliberately make affected
 visible as representation updates to Change Queries and cause conforming Kafka consumers
 to replace prior state without a new topic, binding generation, or offset reset. The
 dedicated implementation story owns the utility, provider behavior, tests, and operator
-examples; general cache and CDC runbooks invoke it but do not recreate it with manual SQL.
+examples; general cache and CDC runbooks describe only its offline scope and do not
+recreate it with manual SQL.
 
 ### In-place record-size increase
 
-Increasing `maxRecordBytes` does not change the binding, public/progress topics, keying,
+Increasing `maxRecordBytes` does not change the binding, any derived topic, keying,
 partitioning, ordering, or public message contract. Deployment automation marks the target
 not ready, confirms independently operated consumers have raised fetch and deserialization
 capacity, raises broker/replica and public-topic limits, then updates producer
@@ -1355,21 +1419,22 @@ readiness. A partial, out-of-order, or unverifiable rollout remains not ready. I
 over-budget record already failed the connector, the task resumes from its uncommitted
 source position after the larger policy is effective.
 
-### New-topic cutover
+### Deferred new-topic cutover
 
 Changing the topic partition count or `partitionerAlgorithm` token creates a new binding
-generation, public and progress topics, and consumer state namespace because offsets
-cannot order equal-version records across old and new partitions. The new public topic may
-retain `documents.v1` and `contractVersion: 1` when the public key/value/delete contract is
-otherwise unchanged.
+generation, public and progress topics, a SQL Server schema-history topic when applicable,
+and consumer state namespace because offsets cannot order equal-version records across old
+and new partitions. The new public topic may retain `documents.v1` and
+`contractVersion: 1` when the public key/value/delete contract is otherwise unchanged.
 
 A change to key encoding, required field names or JSON types, delete semantics, or the
-document contract itself requires a new topic contract such as `documents.v2`. Operators:
+document contract itself requires a new topic contract such as `documents.v2`. A future
+deployment workflow must:
 
 1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
    mark the CDC target not ready, and reserve the new binding generation, public and
-   progress topics, ACLs, and consumer state namespace without changing the old binding in
-   place.
+   progress topics, SQL Server schema-history topic when applicable, ACLs, and consumer
+   state namespace without changing the old binding in place.
 2. Stop the old connector and verify that all of its tasks are stopped or otherwise fenced
    from the source database. Stop every old-contract cache writer, including projector
    loops and optional direct fill. Neither old publication path may be restarted against
@@ -1383,8 +1448,9 @@ document contract itself requires a new topic contract such as `documents.v2`. O
    complete the provider source-position barrier captured after the zero audit, recheck
    projection readiness, and bootstrap consumers in the new state namespace before
    restoring combined CDC readiness and reopening canonical mutation admission.
-6. Explicitly retain or retire the old public and progress topics and consumer state; never
-   restart the old connector against the rebuilt cache.
+6. Explicitly retain or retire every old governed topic, including SQL Server schema
+   history when applicable, its connector offsets, and consumer state; never restart the
+   old connector against the rebuilt cache.
 
 Stopping or fencing the old connector before the cache clear is a required cutover
 barrier. Otherwise it could capture rows rebuilt under the new contract and publish them
@@ -1408,53 +1474,61 @@ included tables. The operation filter drops every `dms.Document` snapshot record
 not satisfy the streaming source-position barrier; the adapter still rejects snapshot
 offsets and waits for the post-audit action-query update.
 
-For a new instance, write admission begins closed, so the maintenance-window precondition
-is satisfied without interrupting existing traffic:
+V1 has one initial-enable path: a new physical database still in its initial provisioning
+workflow under the completed E18 schema contract. Write admission has never opened, so the
+offline precondition is satisfied without interrupting traffic:
 
-1. Select the deployment CDC target and ensure the same `(tenant key, DataStoreId)` is an
-   explicit DMS `DocumentCache:Targets` entry.
-2. Resolve the physical source and atomically create its deployment-owned immutable
+1. Select CDC while creating the physical database and ensure the resulting
+   `(tenant key, DataStoreId)` is an explicit DMS `DocumentCache:Targets` entry.
+2. Provision and validate the complete current relational schema, including the E18 cache,
+   identity, state, trigger, and access-path inventory. Do not alter a legacy cache schema.
+3. Resolve the new physical source and atomically create its deployment-owned immutable
    binding record.
-3. Provision and validate the relational schema and cache table, apply provider CDC/key
-   setup, and create the binding's compact-only public and progress topics and their ACLs.
-4. Register the connector from that exact binding before DMS reconciliation or
+4. Apply provider CDC/key setup and create the binding's compact-only public and progress
+   topics and their ACLs. For SQL Server, also create its persistent single-partition
+   schema-history topic and connector-only ACLs.
+5. Register the connector from that exact binding before DMS reconciliation or
    application writes that must be observed.
-5. Start or roll out DMS only after the write gate is closed and drained, so the resulting
+6. Start or roll out DMS while write admission remains closed, so the resulting
    startup/restart audit is fresh and monotonic cache upserts flow through established
    capture.
-6. Wait for that fresh audit to produce DMS projection readiness, capture the provider
+7. Wait for that fresh audit to produce DMS projection readiness, capture the provider
    source-position barrier afterward, and wait for connector snapshot/catch-up through
    that barrier using the committed Connect source offset.
-7. Recheck DMS projection readiness for the same source fingerprint and advertise
+8. Recheck DMS projection readiness for the same source fingerprint and advertise
    combined CDC readiness only when connector lag is also acceptable; then open write
    admission.
 
-For an existing instance, enter the maintenance window before connector setup, block new
-canonical mutations, drain in-flight mutation requests and transactions, and perform the
-same sequence while the gate remains closed. Existing cache rows are handled by the
-connector's initial snapshot; the fresh post-drain audit repairs remaining missing or
-cache-behind rows. Any cache-ahead row is an invariant failure and must follow the explicit
-recovery path before CDC readiness can pass. There is no design maximum for the window;
-failure may be retried while it remains closed or explicitly aborted with CDC still not
-ready.
+An already-provisioned physical database is not eligible for v1 initial enablement, even if
+it has never had a connector. Bootstrap must reject it before creating a binding, provider
+capture artifact, topic, ACL, or connector. Exact current-schema validation remains
+required for a retry of the same not-yet-admitted initial workflow, but schema introspection
+alone must not turn an unrelated existing database into an eligible target. Operators must
+provision a new database; database upgrade, data movement, and CDC retrofit are outside v1.
 
 ## Local Bootstrap and CI
 
 Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 
 - `-EnableKafkaUI` starts only Kafka UI.
-- CDC opt-in starts Kafka and Kafka Connect if needed, resolves the selected configured
-  deployment target, verifies that it is an explicit DMS projection target, and generates
-  a connector without hard-coded database, topic, slot/capture, or data-store values.
+- First-time CDC opt-in is accepted only when bootstrap reports that it created the selected
+  physical database for this initial provisioning workflow; an unbound path that reuses an
+  existing data store is rejected. A later invocation may exact-match and validate a binding
+  previously created by the supported new-database path. Bootstrap starts Kafka and Kafka
+  Connect if needed, verifies that the target is an explicit DMS projection target, and
+  generates a connector without hard-coded database, topic, slot/capture, or data-store
+  values. The initial eligibility check occurs before binding or external CDC artifacts are
+  created.
 - The local default binding state root is `eng/docker-compose/.cdc-state`; an explicit
   `-CdcBindingStatePath` may select another persistent deployment-owned location. It is
   never placed in `.bootstrap/bootstrap-manifest.json`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
-- Topic provisioning applies the explicit durability profile above to both the public and
-  progress topics. The local single-broker default is replication factor one with
-  `min.insync.replicas=1`; production-like automation requires at least three replicas and
-  `min.insync.replicas` of at least two. It does not rely on broker defaults.
+- Topic provisioning applies the explicit durability profile above to the public and
+  progress topics and to the SQL Server schema-history topic when applicable. The local
+  single-broker default is replication factor one with `min.insync.replicas=1`;
+  production-like automation requires at least three replicas and `min.insync.replicas` of
+  at least two. It does not rely on broker defaults.
 - Public-topic provisioning requires and idempotently validates `cleanup.policy=compact`,
   an explicit per-topic `delete.retention.ms` of at least `604800000`, and
   `max.message.bytes=<maxRecordBytes>` from the current operational policy. It rejects any
@@ -1464,6 +1538,9 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   partition and
   `cleanup.policy=compact`, and does not apply the public record-size or consumer-bootstrap
   contract.
+  SQL Server schema-history provisioning derives its name from the binding and requires
+  exactly one partition, `cleanup.policy=delete`, `retention.ms=-1`, and
+  `retention.bytes=-1`; it rejects compaction or any finite time/size retention.
 - Before connector registration, bootstrap verifies producer `max.request.size` and
   `buffer.memory` plus the broker request, record-batch, and replica-fetch path against
   `maxRecordBytes`; an unverifiable or smaller limit fails setup rather than relying on
@@ -1473,25 +1550,37 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   before connector registration. It emits literal public-topic grants for the connector
   and deployment-supplied consumer principals. It grants the connector principal only the
   required producer access to the progress topic and grants no instance-consumer access to
-  that topic. It never emits a shared-topic, wildcard-topic, or cross-instance consumer
-  grant.
+  that topic. For the SQL Server schema-history topic, it grants only that connector
+  principal the literal `READ`, `WRITE`, `DESCRIBE`, and `DESCRIBE_CONFIGS` permissions
+  required by Debezium's history clients; the deployment principal owns creation and
+  deletion, and instance consumers receive no access. It never emits a shared-topic,
+  wildcard-topic, or cross-instance consumer grant.
 - Bootstrap prints connector name, provider, database, opaque instance key, and public and
-  progress topics; secrets are excluded.
+  progress topics plus the SQL Server schema-history topic when applicable; secrets are
+  excluded.
 - It calculates the combined readiness sequence above and reports whether binding,
-  migration, maintenance admission/drain, fresh post-drain DMS projection,
+  new-database/offline eligibility, fresh startup DMS projection,
   heartbeat/capture progress, provider-barrier catch-up, or lag failed. A timeout never
   opens writes as ready.
-- E2E setup registers capture against the same provisioned database used by the DMS test
-  process before issuing writes it expects to consume.
-- A normal local stop retains binding, connector, and Kafka state. Destructive local
-  volume teardown removes governed artifacts first and their binding records last.
+- E2E setup creates a fresh database, provisions its current schema, and registers capture
+  against that same database before issuing writes it expects to consume.
+- A normal local stop retains binding, connector, Kafka offsets, and every governed topic.
+  Destructive local volume teardown removes the SQL Server history topic and ACLs with the
+  connector and offsets, then removes the remaining governed artifacts, and deletes the
+  binding record last.
 
-Production-like automation repeats this workflow for each deployment-selected CDC target
-using its durable state backend and deployment-specific mutation-admission/drain mechanism.
-The maintenance window is allowed to span the complete audit, repair, snapshot, and catch-up
-duration.
+Production-like automation may repeat this workflow only while initially provisioning each
+new deployment-selected CDC database and while it can prove that the database has not been
+published to any writer. It does not add CDC to an already-provisioned database and does not
+implement a later baseline-replacing maintenance window.
 
 ## DDL and Query Support
+
+The schema inventory below is create-only and applies to new physical databases. V1 emits
+no `ALTER`/migration path for an older `dms.DocumentCache`. Provisioning reruns may validate
+and preserve an already-current schema created by the same initial workflow, but encountering
+legacy `Etag`, the obsolete cache UUID constraint, or any missing required E18 object makes
+the database ineligible rather than triggering an in-place repair.
 
 V1 provisions no durable projection queue, cursor, retry record, or backfill workflow.
 Core DMS DDL provisions one `dms.DocumentCacheState` singleton solely to durably latch the
@@ -1584,14 +1673,16 @@ document bodies, raw student data, connection strings, credentials, tenant displ
 names, or unsanitized physical identifiers.
 
 The deployment status operation identifies binding generation, connector,
-provider/source, public and progress topics, PostgreSQL slot or SQL Server capture
-instance, DMS projection health, snapshot state, lag, and last error. A failure for one
-target does not conceal peer status or stop unrelated DMS API instances.
+provider/source, public and progress topics, the SQL Server schema-history topic when
+applicable, PostgreSQL slot or SQL Server capture instance, DMS projection health, snapshot
+state, lag, and last error. A failure for one target does not conceal peer status or stop
+unrelated DMS API instances.
 
 Runbooks cover connector restart, cache rebuild, same-topic compatible projection repair,
 cache-ahead invariant diagnosis and the internal-only/downstream-state recovery split,
 ordinary monotonic projection lag, offset reset, resnapshot, topic recreation,
-progress-topic diagnosis, target migration/retirement, and provider artifact cleanup.
+progress-topic diagnosis, SQL Server schema-history recovery, target migration/retirement,
+and provider artifact cleanup.
 They document the seven-day public-topic tombstone-retention minimum and the 24-hour
 consumer-bootstrap deadline, how a consumer captures and completes an end-offset barrier,
 how to capacity-test the largest supported retained log rather than only its live-key count,
@@ -1602,18 +1693,12 @@ concurrency, and maximum audit age, and how to identify API-resource contention 
 audit that cannot complete within its readiness window.
 They cover binding-state backup, fail-closed missing-state recovery, explicit adoption,
 cleanup ordering, and new-generation source migration; they never repair a mismatch by
-rewriting an immutable binding record. They distinguish a conforming same-topic
-equal-version repair, a byte-changing representation restamp, and an
-incompatible-contract cutover. The equal-version path stops old cache writers, clears and
-rebuilds the cache, and lets later equal-version offsets replace prior values only when
-changed bytes have a different strong ETag. The restamp path drains all affected API
-traffic, runs the supported out-of-band utility, and publishes higher-version corrected
-projections in the existing topic. The incompatible path stops or source-fences the old
-connector and stops old-contract cache writers before the cache clear, completely
-reprojects into a new versioned topic, and bootstraps new consumer state without restarting
-the old connector. The equal-version path never advances canonical `ContentVersion`; a
-new-topic cutover advances it only when that cutover also requires the restamp utility.
-Offset reset and resnapshot can replay current document state.
+rewriting an immutable binding record. They state that same-topic baseline replacement and
+incompatible-contract cutover are deferred until an owned cross-replica/external-writer
+fence exists. The representation-restamp utility is documented only for an explicitly
+offline data store and does not certify another exact CDC baseline. Offset reset and
+resnapshot can replay current document state but remain eventual recovery after first-write
+admission.
 Topic, offset, ACL, slot, and capture deletion is destructive and always explicit; removal
 from configuration is not cleanup authority.
 
@@ -1634,13 +1719,9 @@ consumes an under-budget record with `max.request.size` set to the operational
 consumer configuration able to carry it; an over-budget variant fails the connector task
 and combined readiness instead of being skipped. These fixtures prove enforcement and
 aligned configuration, not a universal maximum valid record. Ordering tests prove higher
-versions replace, lower versions are ignored, and a later partition offset
-replaces an equal version. Equal-version repair tests clear and rebuild cache state into
-the same topic without advancing `ContentVersion` and prove that changed public bytes have
-a different `StreamEtag`. Byte-changing repair tests use the out-of-band utility, prove
-that corrected bytes which would otherwise retain an ETag receive a higher
-`ContentVersion`, and publish into the existing topic. Incompatible-contract tests use a
-new topic suffix and matching `contractVersion`.
+versions replace, lower versions are ignored, and a later partition offset replaces an
+equal version. Contract fixtures retain the equal-version and new-contract consumer rules,
+but v1 does not include baseline-replacing correction or cutover integration tests.
 
 Connector template and registration tests require the exact idempotence, acknowledgement,
 retry, maximum-in-flight, no-compression, and operational maximum-request/buffer-memory
@@ -1664,8 +1745,8 @@ Source-position adapter tests pin PostgreSQL `X/Y` and signed Debezium `lsn_proc
 normalization to the same unsigned 64-bit order. SQL Server tests pin binary and
 `xxxxxxxx:xxxxxxxx:xxxx` LSN normalization and lexicographic commit/change/event-serial
 ordering. Both reject snapshot, null, malformed, wrong-partition, and ambiguous offset
-responses. Initial-readiness real-provider tests start from an idle source, take a barrier
-after the fresh post-drain zero audit, let the configured heartbeat action query advance
+responses. Initial-readiness real-provider tests start from a new offline source, take a
+barrier after the fresh startup zero audit, let the configured heartbeat action query advance
 capture, and prove combined readiness stays false until
 `GET /connectors/{connectorName}/offsets` reaches that barrier.
 They also prove a heartbeat is produced and acknowledged in the progress topic, advances
@@ -1673,14 +1754,13 @@ the committed source offset only after it and every earlier retained record comp
 processing, and emits no public document record. Returning `null` for the same heartbeat
 must fail this test by leaving the committed offset behind the barrier.
 
-Combined-readiness sequence tests begin with a previously ready zero audit, hold open a
-canonical transaction that has already allocated a lower `ContentVersion`, and prove that
-closing new admission alone is insufficient: readiness remains false until the transaction
-drains, the projector execution contexts restart, and a fresh post-drain audit repairs the
-row. The test then proves the mutation gate remains closed until the cache write and
-heartbeat are acknowledged through the provider barrier. Pre-drain zero audits, connector
-`RUNNING`, acceptable lag, timeout, and setup-controller restart cannot bypass the sequence
-or reopen writes as ready.
+Initial combined-readiness sequence tests prove the setup controller created the selected
+database and has not published it to a writer, reject a prior audit, force a fresh startup
+audit, and keep first-write admission closed until the cache writes and heartbeat are
+acknowledged through the provider barrier. Connector `RUNNING`, acceptable lag, timeout,
+and setup-controller restart cannot bypass the sequence or publish the database as
+CDC-ready. Tests after first-write admission treat a later ready result as eventual health
+and never as another exact baseline.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including attempted partition-count or `partitionerAlgorithm` changes, rejection
@@ -1696,6 +1776,13 @@ repairs a mismatch by rewriting a binding, changes a topic's partition count or
 Operational-policy tests prove a downstream-first `maxRecordBytes` increase retains the
 binding and topics, validates consumer/broker/replica/topic capacity before producer
 request/buffer-memory changes, and remains not ready after any partial rollout.
+
+Initial-enable tests prove a freshly created database with the complete current E18 schema
+can proceed, a reserved exact binding can retry idempotently, and any unbound
+already-provisioned or legacy-schema database is rejected before binding state or provider,
+topic, ACL, and connector artifacts are created. A later exact-match validation/restart of a
+successfully enabled database remains supported. No test upgrades `DocumentCache.Etag` or
+removes the obsolete UUID constraint in place.
 
 Bootstrap integration coverage uses an authorization-enabled broker to prove ACL
 provisioning is repeatable and binding-scoped: a consumer principal configured for one
@@ -1719,13 +1806,6 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - create/update/snapshot upserts conform to the topic/message ADR,
 - canonical deletion emits a tombstone when no cache row exists,
 - cache delete/truncate/rebuild emits no domain tombstone,
-- a safe equal-version correction stops old cache writers, rebuilds corrected cache rows
-  into the same topic, proves every public byte change has a different `StreamEtag`, and
-  makes the later per-key offset authoritative without resetting connector offsets or
-  allocating a new binding generation,
-- a byte-changing correction that would reuse its ETag drains affected API traffic, uses
-  the out-of-band restamp utility, and publishes corrected higher-version rows into the
-  same topic without resetting connector offsets or allocating a new binding generation,
 - with the pinned idempotent-producer settings, a cache upsert committed before canonical
   deletion appears before its tombstone for that key in the routed public topic even when
   the upsert send receives a retriable failure,
@@ -1757,9 +1837,9 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   the incremental lane,
 - a lower version committed after the incremental cursor advances is repaired by the
   next full audit,
-- initial combined readiness quiesces and drains canonical mutations, rejects a prior
-  zero audit, forces a fresh startup/restart audit, waits through the post-audit publication
-  barrier, and reopens mutation admission only after readiness passes,
+- initial combined readiness starts from a new offline database, rejects a prior zero
+  audit, forces a fresh startup audit, waits through the post-audit publication barrier,
+  and opens first-write admission only after readiness passes,
 - cache-row loss below the incremental cursor is repaired by the next full audit,
 - advancing the cursor past a failed candidate retains no document-scoped retry state,
   marks the target repair-required, and lets the next full audit rediscover the database

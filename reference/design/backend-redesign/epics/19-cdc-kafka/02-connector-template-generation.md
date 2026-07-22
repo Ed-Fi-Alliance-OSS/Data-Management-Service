@@ -33,8 +33,8 @@ source routing and serialized public contract using the separately published
    target and generation identity, connector/topic names, fixed topic partition count,
    `partitionerAlgorithm`, and `contractVersion`. Accept the positive signed 32-bit
    `maxRecordBytes` ceiling and optional larger `producerBufferBytes` from mutable
-   deployment-owned operational policy alongside credentials, replication/capture
-   identity, and snapshot behavior.
+   deployment-owned operational policy alongside database and Kafka credentials, Kafka
+   bootstrap/security settings, replication/capture identity, and snapshot behavior.
 2. Generate one PostgreSQL or SQL Server connector configuration per DMS instance and
    immutable binding, without hard-coded instance values. Scope each connector to exactly
    one instance database and reject SQL Server configurations that select multiple
@@ -47,50 +47,65 @@ source routing and serialized public contract using the separately published
    `io.debezium.time.IsoTimestamp` strings, deliberately truncate fractional seconds
    without rounding to the existing DMS whole-second UTC string, and fail a retained
    upsert whose required `DocumentJson` carries the unavailable marker.
-4. Configure the `DocumentState` SMT delivered by 19-03 as the complete boundary from a raw
+4. For SQL Server, derive the internal database schema-history topic exactly as
+   `binding.topicName + ".schema-history"`; do not add it to the immutable binding or expose
+   it as an independent operator input. Emit
+   `schema.history.internal.kafka.topic=<derived topic>` and
+   `schema.history.internal.kafka.bootstrap.servers=<deployment Kafka bootstrap servers>`,
+   requiring the same Kafka cluster used by the Connect worker. Pass externalized security
+   settings to both schema-history clients through
+   `schema.history.internal.producer.*` and `schema.history.internal.consumer.*` without
+   persisting secrets in binding state or diagnostics. Emit the fixed history-producer
+   settings `enable.idempotence=true`, `acks=all`, `retries=2147483647`, and
+   `max.in.flight.requests.per.connection=1`. Emit the fixed
+   `include.schema.changes=false` so the required internal history remains enabled without
+   creating an optional consumer-facing schema-change stream. Reject every missing,
+   duplicate, free-form, or conflicting history property. PostgreSQL emits none of these
+   schema-history settings.
+5. Configure the `DocumentState` SMT delivered by 19-03 as the complete boundary from a raw
    Debezium record to a final public upsert, final public tombstone, internal progress
    record, or dropped record. Do not add an independent generic expand-JSON SMT or split
    the contract across stock predicate, unwrap, rename, and routing chains.
-5. Configure only the transform's `provider`, `target.topic`, and `progress.topic` values.
+6. Configure only the transform's `provider`, `target.topic`, and `progress.topic` values.
    Generate `progress.topic` exactly as `target.topic + ".cdc-progress"`; do not expose it
    as an independent operator input, and reject any different value. Keep the DMS source
    table/column and v1 public-field mapping fixed in the versioned transform rather than
    generating a mapping DSL.
-6. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
+7. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
    of connector transforms.
-7. Validate all version-specific properties and transform classes against the
+8. Validate all version-specific properties and transform classes against the
    `edfialliance/ed-fi-kafka-connect` image built from
    `quay.io/debezium/connect:3.6.0.Final@sha256:6f3fe6407bae8f2a7714b9fc174d545d52d81044b4f4add1565854f020943d47`.
    Require deployment to select the published Ed-Fi image by immutable digest.
-8. Accept only the binding token `partitionerAlgorithm: "kafka-murmur2-v1"` for v1 and
+9. Accept only the binding token `partitionerAlgorithm: "kafka-murmur2-v1"` for v1 and
    map it to a compatible producer implementation in the pinned connector image. The
    token means `(KafkaMurmur2(serializedKeyBytes) & 0x7fffffff) % partitionCount`; it is
    not a Java class or library version. Reject a missing/unknown token and any independent
    partitioner class or configuration that conflicts with the token-defined behavior.
-9. Emit the fixed source-producer overrides `enable.idempotence=true`, `acks=all`,
+10. Emit the fixed source-producer overrides `enable.idempotence=true`, `acks=all`,
    `retries=2147483647`, and `max.in.flight.requests.per.connection=5` using the Kafka
    Connect `producer.override.*` connector properties. Do not expose them as template
    inputs. Reject duplicate properties or any attempted override that conflicts with
    these values.
-10. Emit the fixed top-level connector setting `errors.tolerance=none`; do not rely on
+11. Emit the fixed top-level connector setting `errors.tolerance=none`; do not rely on
     its Kafka Connect default or expose it as a template input. Reject a duplicate,
     missing, or conflicting value. Do not configure tolerant skipping or a dead-letter
     queue for malformed retained records.
-11. Emit `producer.override.max.request.size=<maxRecordBytes>`,
+12. Emit `producer.override.max.request.size=<maxRecordBytes>`,
     `producer.override.buffer.memory=<producerBufferBytes>`, and the fixed
     `producer.override.compression.type=none`. Default `producerBufferBytes` to the greater
     of `33554432` and `maxRecordBytes`, permit an explicit larger operational value, and
     reject a smaller one. Do not infer the record ceiling from DMS's request body limit.
     Reject a missing, duplicate, or conflicting property and document the additional Kafka
     Connect worker heap headroom required beyond `buffer.memory`.
-12. Include `dms.CdcHeartbeat` beside the two document tables and emit a positive
+13. Include `dms.CdcHeartbeat` beside the two document tables and emit a positive
     `heartbeat.interval.ms` with a generated, provider-qualified
     `heartbeat.action.query` that atomically increments the singleton. Default the
     interval to 5,000 ms, permit an explicit positive operational override within the
     readiness timeout, and require SQL Server `poll.interval.ms` to be no greater than
     it. These timing values are not binding fields. Reject missing, duplicate, free-form,
     or conflicting heartbeat properties.
-13. Emit and live-validate `statistics.metrics.enabled=true` for both providers so the
+14. Emit and live-validate `statistics.metrics.enabled=true` for both providers so the
     Debezium 3.6 P50/P95/P99 `MilliSecondsBehindSource` telemetry remains available.
 
 ## Acceptance Evidence
@@ -111,6 +126,14 @@ source routing and serialized public contract using the separately published
 - SQL Server rendering tests require `time.precision.mode=isostring` and the exact
   unavailable-value marker; pinned-image smoke coverage proves the published transform
   converts a realistic retained record and fails a required marker value.
+- SQL Server rendering tests require the exact derived schema-history topic, same-cluster
+  bootstrap servers, externalized producer/consumer security settings, fixed durable
+  history-producer settings, and `include.schema.changes=false`. They reject an
+  independently supplied topic, missing or conflicting history properties, inline
+  secrets, and every SQL Server history property in a PostgreSQL rendering.
+- A pinned-image SQL Server smoke test persists history, restarts the connector with its
+  retained Connect offsets, recovers the history, and resumes capture without producing a
+  consumer-facing schema-change event.
 - Pinned-image SQL Server integration coverage includes SQL Server 2025.
 - SQL Server rendering tests prove that each connector selects exactly one instance
   database and one binding topic, and reject attempted multi-database consolidation.

@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- [Byte-changing representation correction](../../../cdc-streaming.md#byte-changing-representation-correction)
+- [Offline byte-changing representation correction](../../../cdc-streaming.md#offline-byte-changing-representation-correction)
 - [ETag strong-validator decision](../../../../adr-etag-from-content-version.md#etag-format-and-http-validator-semantics-rfc-9110)
 - [Topic and message compatibility](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
 - [Change Query stamping and mirrors](../../design-docs/change-queries.md#concrete-resource-contentversion--contentlastmodifiedat-mirror)
@@ -19,9 +19,10 @@ related:
 
 Provide a supported PostgreSQL and SQL Server utility for the rare case in which corrected
 API or CDC representation bytes would otherwise reuse a strong ETag. The utility runs
-outside ordinary DMS request processing during a guarded maintenance window, advances the
-existing canonical content stamps for an explicit document scope, and lets ordinary
-projection and streaming publish corrected higher-version state.
+outside ordinary DMS request processing while the selected data store is explicitly
+offline, advances the existing canonical content stamps for an explicit document scope,
+and lets ordinary projection and streaming publish corrected higher-version state
+eventually. The utility does not implement or certify a cross-replica/external-writer gate.
 
 This is a separate implementation story. General DocumentCache and CDC runbooks invoke
 the utility but must not approximate it with hand-written database updates.
@@ -32,8 +33,8 @@ the utility but must not approximate it with hand-written database updates.
   Query selection semantics.
 - Depends on 18-00, 18-02, 18-04, and 18-06 for schema, corrected materialization,
   reconciliation, and readiness verification.
-- CDC verification consumes 19-00 readiness/barrier behavior but the utility remains
-  usable for API-only or cache-only deployments.
+- CDC may observe the resulting higher-version records through ordinary eventual recovery,
+  but the utility does not restore or certify another exact CDC baseline.
 
 ## Example Use Scenarios
 
@@ -61,8 +62,9 @@ The utility is not necessary for:
 - an equal-version compatible correction for which comparison proves every changed public
   representation already has a different corrected `StreamEtag`; or
 - an incompatible key, field/type, delete, or document-contract change merely because it
-  needs a new topic. The cutover is separate; if it also changes representation bytes that
-  would reuse a strong ETag, it invokes this utility as an additional step.
+  needs a new topic. That cutover is deferred; a future implementation may invoke this
+  utility as an additional offline step if it also changes representation bytes that would
+  reuse a strong ETag.
 
 ## Deliverables
 
@@ -84,13 +86,14 @@ The utility is not necessary for:
    normal provider sequence are above the boundary, so a completed row is not stamped
    again. Refuse resume when the source fingerprint, provider, scope, or corrected
    deployment identity differs from the manifest.
-5. Integrate with deployment-owned maintenance admission. Before any stamp update, require
-   evidence that affected API reads and canonical mutations have stopped admission and
-   drained, the CDC target is not ready when present, old application/materializer
-   instances are stopped or fenced, projector/direct-fill writers are stopped, and the
-   durable cache-ahead latch is clear. A latched target uses its existing explicit recovery
-   procedure first; the restamp utility must not clear or bypass the latch. Keep the gate
-   closed through corrected projection and final verification.
+5. Require an explicit non-interactive confirmation that the operator has taken the
+   selected data store offline by stopping every affected DMS replica, API reader, cache
+   writer, bulk/seed loader, administrative mutation path, and external writer. Refuse to
+   run without that confirmation and record it in the manifest, while stating that the
+   flag is not a fence or proof. Require the durable cache-ahead latch to be clear; a
+   latched target uses its existing explicit recovery procedure first, and the utility must
+   not clear or bypass the latch. The operator remains responsible for keeping the data
+   store offline through corrected deployment and verification.
 6. In bounded provider transactions, allocate one fresh unique `ContentVersion` per
    selected current document from the normal change-version sequence. Advance
    `dms.Document.ContentVersion` and `ContentLastModifiedAt`, and atomically write the same
@@ -106,11 +109,11 @@ The utility is not necessary for:
    cache-ahead latch, reset connector offsets, or create Kafka topics.
 9. Emit machine-readable progress and a final report with selected, stamped, skipped-
    already-complete, missing/deleted, and failed counts. A partial failure remains
-   resumable with API admission closed and readiness false.
-10. Add operator documentation showing preview, execute, resume, abort-with-gate-closed,
-    and verification workflows. Include all example scenarios above and explain how to
-    decide between equal-version repair, this restamp, and an incompatible-contract
-    cutover.
+   resumable and requires the operator to keep the data store offline.
+10. Add operator documentation showing preview, execute, resume, abort-while-offline,
+    and verification workflows. Include all example scenarios above, distinguish this
+    offline utility from ordinary eventual recovery, and identify equal-version baseline
+    replacement and incompatible-contract cutover as deferred.
 
 ## Acceptance Evidence
 
@@ -126,9 +129,10 @@ The utility is not necessary for:
 - Resume tests interrupt after at least one committed batch and prove a resume with the
   original manifest does not allocate another version for completed rows. Mismatched source
   fingerprint, provider, scope, deployment identity, or manifest fails closed.
-- Maintenance tests prove the command refuses to mutate when request drain or writer
-  fencing is absent or unverifiable or the cache-ahead latch is set, and that timeout,
-  controller loss, or partial failure never reopens admission automatically.
+- Safety tests prove the command refuses to mutate without the explicit offline
+  confirmation or while the cache-ahead latch is set, records the confirmation without
+  presenting it as proof, and never starts or reopens application admission after timeout,
+  process loss, or partial failure.
 - Projection tests prove existing affected cache rows become behind, corrected projector
   output replaces them through the normal monotonic upsert, and an exact zero audit is
   required before completion.
@@ -149,5 +153,8 @@ The utility is not necessary for:
 - Ad hoc SQL instructions for direct stamp manipulation.
 - A new representation epoch, Kafka ordering field, topic generation, or connector-offset
   reset.
-- Ownership of incompatible stream-contract migration; its cutover may still invoke this
-  utility when its changed representation bytes would otherwise reuse a strong ETag.
+- A production cross-replica/external-writer admission gate or transaction drain.
+- Certification of an exact CDC baseline after first-write admission.
+- Ownership of incompatible stream-contract migration; a future cutover may still invoke
+  this utility offline when its changed representation bytes would otherwise reuse a strong
+  ETag.

@@ -22,7 +22,7 @@ coverage against the actual provisioned data store and routed public topic.
 ## Dependencies
 
 - Depends on 19-00 through 19-05, including the published 19-03 transform, the completed
-  projection path needed for upserts, and 18-08 for byte-changing restamp coverage.
+  projection path needed for upserts.
 
 ## Deliverables
 
@@ -30,15 +30,16 @@ coverage against the actual provisioned data store and routed public topic.
    the DMS-1245 envelope and deletes use Kafka-null tombstones, not
    `deleted=false`/`deleted=true` records carrying `EdFiDoc`.
 2. Opt E2E setup into CDC, persist its local JSON binding record, and wait for
-   deployment-owned combined target readiness before observed writes. Treat the lack of
-   admitted test writes as the maintenance gate and require the fresh startup/restart audit
-   and post-audit publication barrier before opening the test write phase.
+   deployment-owned combined target readiness before observed writes. Create and provision
+   a fresh physical database in the same setup flow; never reuse an already-provisioned test
+   database. Retain setup-controller evidence that the database has not been published to a
+   writer, and require the fresh startup audit and post-audit publication barrier before
+   opening the test write phase.
 3. Add a consumer helper that selects the instance topic and filters by document key,
    with `max.partition.fetch.bytes` and `fetch.max.bytes` set to at least the target's
    operational `maxRecordBytes`.
 4. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
-   same-key ordering, a safe equal-version same-topic correction, and a byte-changing
-   correction performed through 18-08's out-of-band restamp utility.
+   and same-key ordering.
 5. Capture connector status/logs, topics, and consumed records on timeout.
 6. Remove legacy ignore markers only after consistent relational scenario results.
 7. Exercise combined readiness from an otherwise idle database and retain diagnostics for
@@ -51,26 +52,24 @@ coverage against the actual provisioned data store and routed public topic.
   shards permit.
 - PostgreSQL and SQL Server use real connectors and public routed topics; the SQL Server
   provider matrix includes SQL Server 2025 with the pinned Debezium 3.6 image and current
-  `nvarchar(max)` `DocumentJson` schema.
+  `nvarchar(max)` `DocumentJson` schema. A SQL Server restart retains and recovers its
+  binding-derived schema history and Connect offsets before capture resumes, and no
+  consumer-facing schema-change event is emitted.
 - Consumed records conform to the topic/message ADR and never assert legacy fields.
 - Consumed upserts carry the exact DMS-projected stream ETag in `document._etag` and have
   no top-level envelope `etag`; ordinary resource scenarios prove API link disabling does
   not change the link-bearing stream variant.
 - Provider scenarios prove the deletion, cache-maintenance, and ordering cases required
   by the authoritative verification section.
-- A corrective-rebuild scenario proves the later equal-`contentVersion` record replaces
-  prior consumer state in the same topic without a new binding generation or offset reset,
-  and that every changed public representation has a different `StreamEtag`.
-- A byte-changing correction fixture that would otherwise retain its ETag uses 18-08's
-  utility and proves the corrected record reaches the same topic with a higher
-  `contentVersion` and different `document._etag`, without resetting offsets or creating a
-  binding generation.
 - Both providers prove setup does not pass on connector status or lag alone: a barrier is
-  captured after the fresh post-drain zero audit, an internal heartbeat advances the idle
+  captured after the fresh startup zero audit, an internal heartbeat advances the idle
   source, and readiness passes only after the committed connector source offset reaches the
   barrier and before observed writes are admitted.
 - Setup/teardown evidence proves normal restart retains binding state and destructive
   teardown removes governed artifacts before the binding record.
+- A negative setup case proves an unbound already-provisioned database is rejected before
+  any CDC binding or external artifact is created; E2E setup never exercises an implicit
+  schema upgrade.
 
 ## Out of Scope
 

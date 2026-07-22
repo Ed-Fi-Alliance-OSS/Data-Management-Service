@@ -100,12 +100,9 @@ operation.
 - Delete-boundary replay tests prove a previously emitted upsert received after a tombstone
   may temporarily restore state and that the subsequent replayed tombstone deletes it
   again; they do not assert monotonic applied state across the tombstone.
-- Repair tests prove a cache clear/rebuild republishes corrected equal-version values into
-  the same topic only when every public byte change also changes `StreamEtag`. A fixture
-  whose changed `DocumentJson` would retain the prior ETag is not accepted as an
-  equal-version correction. Byte-changing restamp coverage is owned by 18-08 and 19-06;
-  incompatible key/field/type/delete-contract changes use a new topic suffix and matching
-  `contractVersion`.
+- Contract fixtures prove the later-offset consumer rule for equal-version values and that
+  one strong `StreamEtag` cannot identify byte-different public representations. They do
+  not exercise a baseline-replacing producer workflow or incompatible-contract cutover.
 - Provider tests cover canonical deletion without a cache row, cache rebuild cleanup,
   and same-key routed ordering.
 - The producer retry test proves the routed partition contains the committed cache upsert
@@ -120,7 +117,8 @@ operation.
   compression or an implicit producer buffer default. The over-budget variant emits no
   partial record, fails the connector task, and keeps combined readiness false. The tests
   make no universal-maximum claim across configurable schemas or extensions.
-- The idle-source test captures a barrier after the fresh post-drain zero audit and proves
+- The idle-source test captures a barrier after the fresh startup zero audit on the new
+  offline database and proves
   `RUNNING` plus acceptable lag remains not ready below it, then observes the action-query
   heartbeat acknowledged in the progress topic and passes only when the committed
   PostgreSQL `lsn_proc` or SQL Server commit/change/event-serial position reaches it. No

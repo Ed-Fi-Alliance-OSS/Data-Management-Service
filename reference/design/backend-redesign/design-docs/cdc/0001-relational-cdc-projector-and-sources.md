@@ -99,9 +99,10 @@ The one-bit cache-ahead latch is durable invariant safety state, not work invent
 completeness evidence. An exact zero finishing audit count is projection completeness at
 its observation only when that latch is clear; connector/source-position catch-up is a
 separate deployment-owned CDC readiness concern. Because a lower-version transaction can
-commit below the cursor after a live audit, initial combined readiness uses a fresh
-startup/restart audit only after deployment automation has blocked canonical mutations and
-drained in-flight transactions.
+commit below the cursor after a live audit, initial combined readiness uses a fresh startup
+audit while the newly provisioned database is still offline and has never admitted a
+canonical mutation. V1 does not implement a cross-replica admission gate or transaction
+drain and makes no exact-baseline claim after first-write admission.
 
 API deletion remains independent of projection. It deletes the canonical relational
 document and lets the connector derive the tombstone from that delete. It does not wait
@@ -109,7 +110,8 @@ for or materialize cache state. A tombstone without a preceding projected upsert
 state-stream behavior.
 
 Deployment-owned initial readiness uses the captured heartbeat only to establish a provider
-source-position barrier after a fresh, post-drain exact-zero projection audit. Later
+source-position barrier after a fresh startup exact-zero projection audit on that new
+offline database. Later
 operational status remains eventual-consistency health and does not claim another exact
 baseline. PostgreSQL compares the database WAL position with Debezium's committed
 completely-processed LSN; SQL Server
@@ -159,6 +161,10 @@ decision.
 
 ## Consequences
 
+- V1 projection and CDC support applies only to new physical databases provisioned with the
+  completed E18 create-only schema before DMS mutations are admitted. It provides no
+  in-place upgrade for an older `dms.DocumentCache` and no later CDC retrofit for an
+  already-provisioned database.
 - `dms.DocumentCache` is always provisioned. Every deployment-selected Kafka CDC target
   must also be an explicit DMS `DocumentCache:Targets` entry; non-target data stores leave
   the table empty and run no projector.
@@ -167,12 +173,12 @@ decision.
 - Reads may use only fresh cache rows while the durable cache-ahead latch is clear and
   always retain relational fallback.
 - Projection lag and failure are observable but never gate normal API traffic.
-- Establishing initial combined CDC readiness, or replacing its complete baseline during
-  an explicit repair/cutover, uses a deployment-owned, flexibly sized maintenance window:
-  canonical mutations are blocked and drained through a fresh startup/restart audit and the
-  later provider publication barrier. A byte-changing representation restamp additionally
-  drains affected API reads so no corrected and uncorrected bytes are served under one
-  strong ETag. DMS projection health does not itself activate either gate.
+- Initial combined CDC readiness is supported only while a newly provisioned database is
+  offline and has not been published to a DMS replica or other writer. First-write admission
+  waits through a fresh startup audit and the later provider publication barrier. After
+  admission opens, projection and CDC status remain eventual; exact baseline replacement is
+  deferred until a separately owned deployment capability can fence replicas and external
+  writers and drain admitted work. DMS projection health does not activate such a gate.
 - Projector and direct-fill cache writes take no explicit write-conflicting source-row lock
   as a content-version fence. They do not deliberately serialize ordinary canonical
   version updates behind cache commits; ordinary cache-row, trigger, and foreign-key
@@ -186,13 +192,12 @@ decision.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows durably latch the
   database, disable cache reads and writes, and keep readiness false across version
   equality and restart until explicit CDC-aware recovery completes.
-- Cache clear/rebuild emits no domain tombstones. A compatible projection correction may
-  rebuild into the existing topic and publish equal-version rows at later offsets only
-  when every changed public representation also changes its strong `StreamEtag`. A
-  byte-changing correction that would reuse an ETag uses the supported out-of-band
-  representation-restamp utility and publishes higher canonical versions in the existing
-  topic. An intentional topic rebuild for an incompatible contract uses connector
-  snapshot/topic recovery.
+- Cache clear/rebuild emits no domain tombstones, and consumers order equal-version rows by
+  later Kafka offset. A production baseline-replacing rebuild or incompatible-contract
+  cutover after first-write admission is deferred until deployment owns the required writer
+  fence and drain. An explicitly offline byte-changing repair may use the out-of-band
+  representation-restamp utility and publish higher canonical versions eventually without
+  certifying another exact CDC baseline.
 - Both document source tables use `DocumentUuid` as the connector key and share one
   connector task so a committed upsert preceding canonical deletion retains per-key
   order. The cache key column is non-indexed; its equality and logical uniqueness are
@@ -232,6 +237,6 @@ decision.
 | Clear a cache-ahead observation when source/cache versions later become equal | Rejected: equality does not prove payload identity and could make corrupt possibly published state appear fresh. The durable latch clears only with the full-cache recovery transaction. |
 | Fail normal reads when projection is unhealthy | Rejected: relational fallback preserves API correctness. |
 | Treat connector status alone as CDC readiness | Rejected: a running connector cannot supply current documents that remain unprojected. |
-| Establish an initial complete baseline under live writes with correlated canonical, audit, and publication boundaries | Deferred for v1: deployments accept a flexibly sized maintenance window, which removes the late lower-version commit race without adding another durable coordination protocol. |
+| Establish an initial complete baseline under live writes with correlated canonical, audit, and publication boundaries | Deferred for v1: exact initial readiness is limited to a new offline database before first-write admission. |
 | Derive tombstones from cache deletes | Rejected: cache and domain lifecycles are intentionally independent. |
 | Publish from the API delete path | Rejected: it introduces a distributed write/retry boundary. |

@@ -16,8 +16,9 @@ related:
 
 ## Outcome
 
-Deliver the always-provisioned PostgreSQL and SQL Server schema foundation consumed by
-all DocumentCache materialization, write, reconciliation, read, health, and CDC work.
+Deliver the always-provisioned PostgreSQL and SQL Server schema foundation for newly
+provisioned databases, consumed by all DocumentCache materialization, write,
+reconciliation, read, health, and CDC work.
 
 ## Dependencies
 
@@ -52,7 +53,9 @@ all DocumentCache materialization, write, reconciliation, read, health, and CDC 
    provisioning reruns never reset an existing latch.
 6. Update the relational model, both DDL emitters, provisioning composition, unit and
    snapshot fixtures, DB-apply manifests, and create-only provisioning documentation to
-   match the complete column, constraint, identity, state, and access-path inventory.
+   match the complete column, constraint, identity, state, and access-path inventory. State
+   that v1 supports only newly provisioned databases and does not alter a legacy cache
+   schema in place.
 
 ## Acceptance Evidence
 
@@ -78,10 +81,14 @@ all DocumentCache materialization, write, reconciliation, read, health, and CDC 
   `CacheAheadRecoveryRequired` latch.
 - Introspection manifests and create-only provisioning tests cover the new objects for both
   providers and detect accidental reintroduction of the obsolete cache inventory.
+- Scope tests and documentation prove the v1 schema is created for new databases only; no
+  emitted path renames legacy `Etag`, removes the obsolete UUID constraint, or otherwise
+  upgrades an already-provisioned database.
 
 ## Out of Scope
 
 - Runtime materialization, cache upsert, reconciliation, cache-backed reads, or health.
-- Migrations for already-provisioned databases; provisioning remains create-only.
+- V1 support for already-provisioned databases, including schema migration or upgrade;
+  provisioning remains create-only.
 - CDC heartbeat/publication objects, replica/capture configuration, connectors, topics, or
   Kafka message shaping.

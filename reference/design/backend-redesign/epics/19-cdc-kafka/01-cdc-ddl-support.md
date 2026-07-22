@@ -15,7 +15,8 @@ epic: TBD
 ## Outcome
 
 Implement opt-in PostgreSQL and SQL Server database provisioning required by the
-relational CDC source/key design.
+relational CDC source/key design for a new physical database in its initial provisioning
+workflow.
 
 ## Dependencies
 
@@ -25,7 +26,10 @@ relational CDC source/key design.
 ## Deliverables
 
 1. Add provider-specific publication/capture and delete-key setup.
-2. Extend generated provisioning manifests and diagnostics with CDC setup status.
+2. Extend generated provisioning manifests and diagnostics with CDC setup status. Reject
+   first-time invocation for an unbound already-provisioned database; permit exact-match
+   validation of artifacts created through the supported new-database flow. Do not alter a
+   legacy E18 cache schema into compliance.
 3. Derive publication/slot or capture-instance identity from the immutable deployment
    binding generation and validate existing artifacts against that binding.
 4. Verify exact provider identifiers and syntax against generated DDL and the pinned
@@ -65,8 +69,12 @@ relational CDC source/key design.
 - Least-privilege tests prove the connector principal can advance the heartbeat but cannot
   insert, update, or delete canonical or cache document rows.
 - Ordinary relational provisioning tests prove CDC artifacts remain opt-in.
+- Eligibility tests prove first-time provider setup runs only for a new database with the
+  complete current E18 inventory, later exact-match validation remains idempotent, and
+  neither path serves as an upgrade for a legacy cache schema.
 
 ## Out of Scope
 
 - Connector JSON generation or REST registration.
 - Projector implementation.
+- Migration, upgrade, or CDC retrofit of an already-provisioned database.

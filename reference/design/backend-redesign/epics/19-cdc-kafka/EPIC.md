@@ -23,7 +23,12 @@ including deployment-owned durable binding state, provider setup, connector gene
 and registration, combined readiness, contract verification, API-driven E2E coverage,
 and operator guidance. This epic owns connector-side lifecycle capture;
 `18-document-cache` owns explicit projection targets and the reusable projected upsert
-source.
+source. V1 initial enablement is restricted to new physical databases provisioned with the
+completed E18 schema before DMS writes are admitted; retrofitting an existing database is
+outside the epic. Exact combined readiness exists only in that initial offline workflow.
+After first-write admission, status is observational and eventually consistent. This epic
+does not implement a production cross-replica/external-writer gate or an exact
+baseline-replacing repair/cutover.
 
 ## Stories
 
@@ -67,34 +72,38 @@ implementation inputs.
 - Connector transforms copy the DMS-projected opaque stream ETag and contain no schema,
   link-configuration, or ETag-composition rules.
 - Contract fixtures pin the v1 key, fields/types, tombstones, document semantics, and
-  metadata relationships while treating `StreamEtag` bytes as opaque DMS output.
-  Compatible projection corrections rebuild into the existing topic and replace an equal
-  `contentVersion` at the later Kafka offset only when every byte change also changes the
-  strong `StreamEtag`. Corrections that would reuse an ETag consume E18's out-of-band
-  restamp utility and publish higher versions in the existing topic; incompatible contract
-  changes use a new versioned topic and additionally restamp when their changed document
-  bytes would otherwise reuse a strong ETag.
-- Local and E2E setup registers against selected provisioned data stores without
-  hard-coded instance values.
+  metadata relationships while treating `StreamEtag` bytes as opaque DMS output. They pin
+  the consumer rule that a later Kafka offset replaces an equal `contentVersion`, but the
+  epic does not implement a baseline-replacing producer workflow or contract cutover.
+- Local and E2E setup creates a fresh selected database, provisions the current E18 schema,
+  retains positive evidence that it has not been published to a writer, and registers
+  against it without hard-coded instance values. It rejects first-time use of an unbound
+  already-provisioned database before creating governed CDC artifacts; later exact-match
+  validation and restart of a successfully enabled binding remain supported.
 - Binding state survives DMS and connector restarts, fails closed around missing or
   mismatched state, and prevents a topic generation from changing physical source.
 - DMS exposes only per-database projection health; deployment automation combines it
-  with binding, migration, maintenance admission/drain, provider source-position catch-up,
-  and lag status. Initial readiness and explicit baseline-replacing repair/cutover use a
-  flexibly sized deployment-owned maintenance window, reject prior audit evidence, and keep
-  canonical mutations drained through a fresh startup/restart audit and the later
-  publication barrier. PostgreSQL
-  and SQL Server adapters compare a barrier captured after that zero audit with the
-  connector's committed Debezium offset, and an internal captured heartbeat advances idle
-  sources. A durable cache-ahead latch keeps combined readiness false across later source
-  equality and process restart until explicit recovery.
+  with binding, new-database/offline eligibility for first-time enablement, provider
+  source-position catch-up, and lag status. Initial readiness rejects prior audit evidence
+  and keeps first-write admission closed through a fresh startup audit and the later
+  publication barrier. PostgreSQL and SQL Server adapters compare a barrier captured after
+  that zero audit with the connector's committed Debezium offset, and an internal captured
+  heartbeat advances idle sources. After admission opens, the same inputs produce eventual
+  operational status rather than another exact baseline. A durable cache-ahead latch keeps
+  combined readiness false across later source equality and process restart until explicit
+  recovery.
 - Connector templates and live registration pin `errors.tolerance=none`; a malformed
   retained record fails the task and combined readiness instead of being skipped as
   caught-up progress.
 - SQL Server templates pin `time.precision.mode=isostring` and the Debezium 3.6
   unavailable-value marker. The transform validates `IsoTimestamp` input, rejects an
   unavailable required `DocumentJson`, and emits only the existing whole-second public
-  timestamp.
+  timestamp. They also pin the binding-derived internal schema-history topic, same-cluster
+  bootstrap/security configuration, durable history producer, and
+  `include.schema.changes=false`. Provisioning gives the single-partition,
+  infinite-retention history topic the active durability profile and connector-only ACLs;
+  restart recovers retained history and offsets, while destructive cleanup removes both
+  before binding state.
 - Connector templates pin `statistics.metrics.enabled=true`, and deployment telemetry
   exposes Debezium 3.6 P50/P95/P99 source lag without treating it as a substitute for the
   provider position barrier.
@@ -112,10 +121,15 @@ implementation inputs.
   evidence for the largest retained topic log it claims to support, not only its live-key
   count.
 - API deletion remains correct when projection is absent or failing.
-- Operator documentation covers supported setup, security, observation, safe same-topic
-  equal-version repair, E18's byte-changing representation-restamp operation,
-  incompatible-contract migration, flexibly sized maintenance windows and fail-closed
-  drain/timeout behavior, and explicit destructive cleanup.
+- Operator documentation covers supported initial offline setup, later eventual status,
+  security, observation, restart/recovery, and explicit destructive cleanup. It identifies
+  exact baseline replacement and incompatible-contract cutover as deferred rather than
+  presenting an unimplemented write gate as an operator procedure.
+
+## Out of Scope
+
+- A production cross-replica/external-writer admission gate or transaction drain.
+- Exact baseline-replacing repair or contract cutover after first-write admission.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a
 new decision record changes that design.

@@ -32,16 +32,16 @@ that links to, rather than restates, the authoritative design.
    operations separately. Include cache-ahead diagnosis and require operators to
    establish whether CDC could have published the higher version before recovery. Require
    a full cache clear and latch reset in one provider transaction; never document a
-   latch-only reset.
+   latch-only reset. State that v1 is delivered only through create-only provisioning of a
+   new database and provides no upgrade path for a legacy cache schema.
 4. Document the shipped implementation defaults and tuning guidance for scan/audit
    intervals, page size, concurrent targets, maximum audit age, and the direct-fill timeout,
    including how to diagnose audit overruns and API-resource contention.
-5. Document the cache side of a safe equal-version projection correction: first prove that
-   every changed public representation has a different corrected `StreamEtag`, stop old
-   cache writers including optional direct fill, use the provider-supported clear
-   operation, start only corrected writers, and reconcile to an exact zero audit. Direct a
-   correction whose changed bytes would reuse an ETag to 18-08's out-of-band restamp
-   utility. Hand connector catch-up and equal-version consumer verification to 19-07.
+5. Document ordinary cache clear/rebuild as eventual recovery, not as an exact CDC baseline
+   replacement. State that a production same-topic equal-version correction is deferred
+   until an owned cross-replica/external-writer fence exists. Direct byte-changing API/cache
+   repair to 18-08 only for an explicitly offline data store, and do not claim that either
+   path restores exact combined readiness after first-write admission.
 
 ## Acceptance Evidence
 
@@ -61,12 +61,10 @@ that links to, rather than restates, the authoritative design.
   trigger.
 - Rebuild tests use ordinary reconciliation and never introduce a separate backfill
   workflow.
-- Compatible-correction tests prove ordinary reconciliation does not rewrite an existing
-  equal-version row, while an explicit clear/rebuild produces corrected rows with the same
-  canonical `ContentVersion` after old cache writers are stopped. Fixtures prove every
-  public byte difference in that path has a different `StreamEtag`; a changed
-  `DocumentJson` fixture that would retain its ETag is rejected as an equal-version repair
-  and handed to 18-08.
+- Provider behavior tests prove ordinary reconciliation does not rewrite an existing
+  equal-version row, while an explicit clear/rebuild can produce rows with the same
+  canonical `ContentVersion`. These mechanics do not constitute a supported production
+  baseline-replacement workflow or another exact readiness guarantee.
 - Runbook tests cover internal-only full-cache clear/latch-reset/rebuild and hand off
   possibly observed cache-ahead state to a new downstream state namespace, including E19's
   new-generation topic/snapshot recovery. Provider tests prove source equality and restart
@@ -74,7 +72,8 @@ that links to, rather than restates, the authoritative design.
   explicit recovery clears the full cache before resetting the latch in the same
   transaction; instructions never lower a cache version or reset only the latch.
 - Runbook procedures are checked against implemented configuration, health output, and
-  recovery behavior.
+  recovery behavior. They never instruct operators to enable DocumentCache on an
+  already-provisioned database or alter legacy `Etag`/UUID-constraint inventory in place.
 - Scheduling coverage proves bounded in-process work remains isolated across targets and
   that an overdue audit degrades readiness instead of creating overlapping catch-up work.
 

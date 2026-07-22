@@ -152,8 +152,8 @@ epics and is not repeated here.
 | 19-03 | —; external transform implementation consumed by 19-02 and 19-05 |
 | 19-04 | 18-01, 18-04, 18-06, plus 19-00 |
 | 19-05 | 18-02 (soft) |
-| 19-06 | 18-01, 18-04, 18-06, 18-08, plus 19-00 through 19-05 |
-| 19-07 | 18-04, 18-06, 18-07, 18-08 |
+| 19-06 | 18-01, 18-04, 18-06, plus 19-00 through 19-05 |
+| 19-07 | 18-04, 18-06, and 18-07 |
 
 ---
 

@@ -64,8 +64,9 @@ completed full audit and current process state.
 - Tests distinguish diagnostic process timestamps from database completeness evidence.
 - Tests make explicit that a zero audit is exact only at its finishing observation and that
   a late lower-version commit may remain undiscovered until the next full audit; E19 owns
-  the maintenance-window requirement that turns a fresh post-drain startup/restart audit
-  into a combined-readiness baseline.
+  the initial new/offline-database workflow that uses a fresh startup audit before
+  first-write admission. Neither this story nor E19 turns later projection health into
+  another exact baseline or implements a production write gate.
 - Shared conformance vectors pin the exact fingerprint bytes for both provider tokens.
   Provider tests prove equivalent connection aliases for one database read the same
   singleton and produce the same opaque fingerprint, independently provisioned databases
