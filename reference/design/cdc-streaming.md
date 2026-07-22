@@ -325,6 +325,8 @@ Deployment automation evaluates end-to-end CDC component health for each binding
 - a DMS projection-health result whose current source fingerprint matches that binding,
 - provisioned `dms.Document`, `dms.DocumentCache`, `dms.DocumentCacheState`, and opt-in
   `dms.CdcHeartbeat` tables and provider CDC/key prerequisites,
+- a Kafka Connect worker whose shared offset store satisfies the cluster-scoped durability,
+  cleanup-policy, and authorization prerequisites below,
 - public topic name, compact-only cleanup policy, explicit seven-day minimum tombstone
   retention, fixed partition count, ACL, transform, and partitioner algorithm that match
   the binding record and fixed v1 contract; the current operational `maxRecordBytes`,
@@ -786,6 +788,33 @@ progress topic; both use the same connector task, source partition, offset state
 failure boundary. A connector must not span multiple instance databases, even when the
 provider supports doing so.
 
+### Kafka Connect Offset Store
+
+The Kafka Connect worker's configured `offset.storage.topic` is shared cluster-scoped
+source-position state for every binding registered with that worker. It is not derived from
+a binding, is not a binding field, and is not created, replaced, or deleted as part of one
+binding's lifecycle.
+
+Production deployments pre-create this topic before starting the worker with
+`cleanup.policy=compact`, a replication factor of at least three, and an explicit
+topic-level `min.insync.replicas` of at least two. Local development and CI may use
+replication factor one and `min.insync.replicas=1`. Deployment automation resolves the
+configured topic name and validates its actual cleanup policy, replica count, and
+topic-level override before accepting a worker, before connector registration or
+start/resume, and during live status checks. It never relies on Connect topic auto-creation
+or broker defaults.
+
+On this topic, an authorization-enabled deployment grants the Kafka Connect worker service
+principal only literal `READ`, `WRITE`, and `DESCRIBE` access. The deployment control plane
+retains topic/configuration and ACL administration, and instance consumer principals receive
+no access. Provisioning and live validation verify the effective deployment-managed grants.
+
+An unavailable or nonconforming shared offset store makes every binding assigned to that
+worker not ready. Inability to obtain authoritative evidence is nonterminal and fail-closed;
+a successful query proving an established binding's expected offset absent remains the
+per-binding terminal source-history loss defined above. Replication and authorization
+reduce the risk of offset loss but are not a recovery mechanism after loss.
+
 Every v1 connector pins these source-producer overrides:
 
 ```text
@@ -1164,7 +1193,12 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   `unknown` connector stopped until affirmative evidence returns and durably terminates a
   binding whose continuity is `lost`; it never resets offsets or resnapshots the existing
   public topic.
-- Topic provisioning applies the explicit durability profile above to the public and
+- Before bootstrap starts local Kafka Connect, it pre-creates and validates the configured
+  shared offset topic and its worker-only ACLs using the cluster-scoped contract above. For
+  an already-running or externally managed worker, it requires equivalent authoritative
+  validation before registering, starting, or resuming a connector. The shared topic is not
+  a binding-governed artifact and is never removed by per-binding teardown.
+- Binding-topic provisioning applies the explicit durability profile above to the public and
   progress topics and to the SQL Server schema-history topic when applicable. The local
   single-broker default is replication factor one with `min.insync.replicas=1`;
   production-like automation requires at least three replicas and `min.insync.replicas` of
@@ -1250,9 +1284,10 @@ Topic-per-instance ACLs are the Kafka authorization boundary. Shared topics requ
 consumer-side instance filtering are not supported. The public stream contains sensitive
 data. The binding-scoped CDC progress topic may contain raw connector source metadata and
 is available only to the connector principal and deployment control plane; instance
-consumer principals receive no access. Kafka Connect worker internal topics, its REST API,
-and database credentials are likewise not exposed to third-party consumers. Local
-insecure defaults must be replaced in production.
+consumer principals receive no access. The shared Kafka Connect offset topic follows the
+worker-only ACL and validation contract above. Other Kafka Connect worker internal topics,
+its REST API, and database credentials are likewise not exposed to third-party consumers.
+Local insecure defaults must be replaced in production.
 
 Deployment bootstrap owns ACL provisioning as part of the one-shot binding workflow. For
 each binding it idempotently creates and verifies the literal topic grants required by the
@@ -1287,8 +1322,9 @@ Deployment-owned CDC status additionally covers binding presence and match, conn
 running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, last error,
 snapshot completion, heartbeat/capture progress, the provider barrier and committed
 Connect source offset in sanitized form, existing artifacts without binding state, source
-mismatch, source-history continuity outcome and remaining provider-retention margin, the
-durable terminal loss latch, and guarded source-replacement state.
+mismatch, shared Connect offset-store durability and ACL health, source-history continuity
+outcome and remaining provider-retention margin, the durable terminal loss latch, and
+guarded source-replacement state.
 
 Use provider, safe project/resource identity, failure category, target-resolution state,
 and opaque data-store identity only where cardinality policy permits. Never log
@@ -1306,8 +1342,9 @@ Runbooks cover connector restart, cache rebuild, same-topic compatible projectio
 cache-ahead invariant diagnosis, supported internal-only recovery, and containment of
 possibly published state pending the deferred downstream-state reset,
 ordinary monotonic projection lag, source-history continuity monitoring, progress-topic
-diagnosis, SQL Server schema-history diagnosis, target migration/retirement, and provider
-artifact cleanup. They also cover sensitive-data disclosure containment and destructive
+diagnosis, shared Connect offset-store durability and ACL diagnosis, SQL Server
+schema-history diagnosis, target migration/retirement, and provider artifact cleanup. They
+also cover sensitive-data disclosure containment and destructive
 binding-generation retirement, require recorded platform purge evidence, and leave CDC
 unavailable rather than republishing into or recreating the affected topic.
 They distinguish the projection-scoped SQL Server RCSI prerequisite from ordinary

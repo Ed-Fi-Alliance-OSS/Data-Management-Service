@@ -33,7 +33,8 @@ needed to provision, validate, start, stop, and retire a target.
 - Add the local/bootstrap command surface and controller orchestration.
 - Integrate new-database evidence, provider setup, projection startup, binding lifecycle,
   and connector rendering.
-- Add Kafka topic, durability, record-size, and ACL provisioning/validation.
+- Add cluster-scoped Kafka Connect offset-store provisioning/validation and binding-scoped
+  Kafka topic, durability, record-size, and ACL provisioning/validation.
 - Add Kafka Connect registration, live validation, status polling, restart, guarded
   adoption/source replacement, and teardown operations.
 - Expose the same workflow to the E2E harness.
@@ -42,8 +43,9 @@ needed to provision, validate, start, stop, and retire a target.
 
 - Script and integration tests cover the setup, retry, rejection, timeout, restart,
   guarded lifecycle, and teardown cases defined by the integration design.
-- Broker-backed tests cover topic policy, durability, ACL, record-size, connector, offset,
-  heartbeat, and image validation.
+- Broker-backed tests cover the shared Connect offset store's compaction, durability, and
+  worker-only ACLs plus binding-topic policy, record-size, connector, offset, heartbeat, and
+  image validation.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
 - Diagnostics tests cover each implementation boundary without exposing secrets.
