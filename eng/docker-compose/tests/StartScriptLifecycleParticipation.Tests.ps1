@@ -117,9 +117,11 @@ Describe "Topology materialization is gated to full startup (finding 6, AST part
         $conditionText | Should -Match '\$DbOnly' -Because "the database-only diagnostic slice must not materialize CMS topology"
     }
 
-    It "<Script> resolves the schema tool only on the non-DbOnly startup path (never for -DbOnly or teardown)" -ForEach @(
-        @{ Script = 'start-local-dms.ps1' }
-        @{ Script = 'start-published-dms.ps1' }
+    It "<Script> resolves the connection validator ('<Resolver>') only on the non-DbOnly startup path (never for -DbOnly or teardown)" -ForEach @(
+        # The local lane resolves a host executable; the published lane resolves a host-exe-or-container
+        # validator (finding 4). Either way the resolution must be gated away from -DbOnly and teardown.
+        @{ Script = 'start-local-dms.ps1';     Resolver = 'Resolve-DmsSchemaTool' }
+        @{ Script = 'start-published-dms.ps1'; Resolver = 'Resolve-DmsConnectionValidator' }
     ) {
         $path = Join-Path $script:composeRoot $Script
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
@@ -128,9 +130,9 @@ Describe "Topology materialization is gated to full startup (finding 6, AST part
             {
                 param($node)
                 $node -is [System.Management.Automation.Language.CommandAst] -and
-                $node.GetCommandName() -eq 'Resolve-DmsSchemaTool'
+                $node.GetCommandName() -eq $Resolver
             }, $true)
-        @($resolveCalls).Count | Should -Be 1 -Because "$Script resolves the schema tool in one place"
+        @($resolveCalls).Count | Should -Be 1 -Because "$Script resolves the connection validator in one place"
 
         $node = $resolveCalls[0]
         $guardConditions = [System.Collections.Generic.List[string]]::new()
@@ -140,6 +142,6 @@ Describe "Topology materialization is gated to full startup (finding 6, AST part
             }
             $node = $node.Parent
         }
-        ($guardConditions -join " `n") | Should -Match '\$DbOnly' -Because "$Script must not resolve the schema tool for -DbOnly or teardown"
+        ($guardConditions -join " `n") | Should -Match '\$DbOnly' -Because "$Script must not resolve the connection validator for -DbOnly or teardown"
     }
 }

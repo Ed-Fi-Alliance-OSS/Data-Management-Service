@@ -23,9 +23,11 @@ COPY backend/EdFi.DataManagementService.Backend.Plans/*.csproj backend/EdFi.Data
 COPY backend/EdFi.DataManagementService.Backend.RelationalModel/*.csproj backend/EdFi.DataManagementService.Backend.RelationalModel/packages.lock.json ./backend/EdFi.DataManagementService.Backend.RelationalModel/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj backend/EdFi.DataManagementService.Backend.Postgresql/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj clis/EdFi.DataManagementService.ApiSchemaDownloader/packages.lock.json ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
+COPY clis/EdFi.DataManagementService.SchemaTools/*.csproj clis/EdFi.DataManagementService.SchemaTools/packages.lock.json ./clis/EdFi.DataManagementService.SchemaTools/
 
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj --locked-mode && \
-    dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj --locked-mode
+    dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj --locked-mode && \
+    dotnet restore clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj --locked-mode
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
@@ -38,6 +40,7 @@ COPY backend/EdFi.DataManagementService.Backend.Plans/ ./backend/EdFi.DataManage
 COPY backend/EdFi.DataManagementService.Backend.RelationalModel/ ./backend/EdFi.DataManagementService.Backend.RelationalModel/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
+COPY clis/EdFi.DataManagementService.SchemaTools/ ./clis/EdFi.DataManagementService.SchemaTools/
 
 ARG VERSION=""
 ARG ASSEMBLY_VERSION=""
@@ -54,7 +57,9 @@ RUN set -- ; \
     dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
     -c Release --no-restore --self-contained false -o /app/Frontend "$@" && \
     dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
-    -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader "$@"
+    -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader "$@" && \
+    dotnet publish clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
+    -c Release --no-restore --self-contained false -o /app/ApiSchemaTools "$@"
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.9-alpine3.23@sha256:f03685b2735e0d3d25d6c60672e74b21bb6334f1402f71bae2d2cf02307163cd AS runtimebase
 
@@ -83,6 +88,10 @@ COPY --from=build /app/Frontend/appsettings.json ./
 COPY --from=build /app/Frontend/*runtimeconfig.json ./
 COPY --from=build /app/Frontend/*.deps.json ./
 COPY --from=build /app/ApiSchemaDownloader/*.* ./ApiSchemaDownloader/
+# Bundle the api-schema-tools CLI (framework-dependent) so the docker-compose start scripts can run the
+# exact-provider 'connection validate' verb inside this image on a clean Docker/PowerShell-only host,
+# without a .NET SDK or source build. Invoked as: dotnet /app/ApiSchemaTools/api-schema-tools.dll ...
+COPY --from=build /app/ApiSchemaTools/ ./ApiSchemaTools/
 COPY --chmod=700 run.sh /app/run.sh
 
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
