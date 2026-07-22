@@ -10,10 +10,10 @@ epic: TBD
 
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 - [Connector transformation](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation)
-- [Verification](../../../cdc-streaming.md#verification)
+- [Contract-to-evidence traceability](../../../cdc-streaming.md#contract-to-evidence-traceability)
 
-The linked design sections are the contract and verification authority. This story builds
-the conformance suites and does not duplicate their fixtures or rules in planning text.
+The linked design sections own the normative contracts. This story owns the executable
+conformance scenarios and pass evidence without duplicating the contract text.
 
 ## Outcome
 
@@ -32,16 +32,17 @@ the v1 stream.
 - Add transform and serialized-record conformance suites.
 - Add provider key/routing/ordering and broker retry/failure scenarios.
 - Add record-size and idle-source readiness fixtures against the real connector.
-- Add the reference consumer-continuity fixture required by the verification design.
+- Add the reference consumer-continuity fixture assigned to this story by the design
+  traceability table.
 
 ## Acceptance Evidence
 
-- A traceability table maps each test case to the applicable message-ADR or verification
-  section.
-- Provider and serialized-record suites cover every source and output category in that
-  table.
-- Broker-backed suites cover the delivery, failure, sizing, and progress cases assigned by
-  the verification design.
+- Story-owned traceability maps each test identifier to the applicable `CDC-INV-*`
+  contract ID.
+- Provider and serialized-record suites cover every source and output category assigned to
+  this story by the design traceability table.
+- Broker-backed suites cover the delivery, failure, sizing, and progress evidence assigned
+  to this story.
 - Consumer-conformance fixtures cover bootstrap and continuity behavior from the public
   contract.
 

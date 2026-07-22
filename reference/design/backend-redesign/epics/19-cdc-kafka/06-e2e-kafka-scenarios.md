@@ -12,7 +12,7 @@ related:
 
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 - [Local bootstrap and CI](../../../cdc-streaming.md#local-bootstrap-and-ci)
-- [Verification](../../../cdc-streaming.md#verification)
+- [Contract-to-evidence traceability](../../../cdc-streaming.md#contract-to-evidence-traceability)
 - [Source-history continuity](../../../cdc-streaming.md#source-history-continuity)
 
 The linked design sections define the supported E2E workflow and observable stream. This
@@ -33,15 +33,15 @@ coverage.
 - Integrate E2E setup/teardown with the explicit bootstrap CDC workflow.
 - Add topic-consumer helpers and failure diagnostics.
 - Add the API mutation, cache lifecycle, ordering, restart, and source-history scenarios
-  assigned by the verification design.
+  assigned to this story by the design traceability table.
 - Remove legacy ignore markers after the relational lanes are stable.
 
 ## Acceptance Evidence
 
 - PostgreSQL and SQL Server lanes use real provider capture, connectors, routed topics,
   and API traffic.
-- Scenario traceability maps each E2E case to the message ADR or integration verification
-  section it proves.
+- Story-owned traceability maps each E2E test identifier to the `CDC-INV-*` contract ID it
+  proves.
 - Setup, restart, teardown, and failure artifacts are retained by the test harness for
   diagnosis.
 

@@ -16,9 +16,9 @@ related:
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
-The linked design documents are the acceptance authority. This epic only partitions the
-implementation work and does not restate connector, topic, message, durability,
-readiness, or recovery contracts.
+The linked design documents own the normative connector, topic, message, durability,
+readiness, and recovery contracts. This epic partitions implementation work, and its
+stories own the executable acceptance evidence for those contracts.
 
 ## Outcome
 
@@ -44,11 +44,11 @@ implementation inputs.
 
 ## Completion Evidence
 
-- Every story's scoped implementation and documentation is delivered.
-- Pull requests trace tests to the applicable design sections without copying their
-  requirements into epic or story acceptance text.
-- The connector-image, provider, broker-backed, contract, E2E, and operational
-  verification required by the owning design documents passes in the supported lanes.
+- Every story's scoped implementation, documentation, and acceptance evidence is delivered.
+- Pull requests trace test identifiers to the applicable `CDC-INV-*` contract IDs without
+  copying design requirements into epic or story text.
+- The evidence owned by the stories passes in the supported connector-image, provider,
+  broker-backed, contract, E2E, and operational test layers.
 - Operator documentation is checked against the shipped tooling and links back to the
   owning design sections for behavior.
 

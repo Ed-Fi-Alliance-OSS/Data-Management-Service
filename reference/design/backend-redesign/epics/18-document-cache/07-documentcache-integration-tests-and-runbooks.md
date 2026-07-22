@@ -35,7 +35,7 @@ guidance.
 
 ## Acceptance Evidence
 
-- The provider integration matrix covers every E18 design verification category not
+- The provider integration matrix covers every E18 `CDC-INV-*` contract assignment not
   already proven in a narrower story suite.
 - Runbook steps are exercised against the implemented commands and status output.
 - Runbooks link to the owning design sections for contracts, recovery constraints, and

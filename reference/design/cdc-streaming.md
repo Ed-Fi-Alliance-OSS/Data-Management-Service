@@ -1329,217 +1329,30 @@ deferred future workflow, not a v1 runbook.
 Connector, topic, offset, ACL, slot, and capture deletion is destructive and always
 explicit; removal from configuration is not cleanup authority.
 
-## Verification
+## Contract-to-Evidence Traceability
 
-SQL Server provider tests prove a target with RCSI disabled or unreadable remains
-projection-ineligible, uses no cache rows, performs no source/cache classification, and
-cannot set the durable cache-ahead latch. A synchronized RCSI-enabled test races a canonical
-advance and its later cache projection with an incremental or audit comparison and proves
-the one-statement observation cannot fabricate a cache-ahead pair. A setting change after
-initial target resolution is detected on the next newly opened comparison connection before
-classification. Mixed-target tests prove the failure is isolated and relational API work,
-unlisted SQL Server stores, PostgreSQL targets, and eligible SQL Server peers continue.
+The design documents linked below own the normative invariants. The listed stories own the
+executable scenarios, test identifiers, and pass evidence. A contract ID is stable shorthand
+for its linked design section; it does not restate or replace that section. Test layers show
+where evidence belongs without prescribing duplicate test cases here.
 
-Fast contract and transform tests cover every public, progress-routed, and dropped source
-operation, serialized key/value bytes, duplicate-tombstone suppression, JSON expansion,
-exact copying of the DMS-computed stream ETag, timestamp format, metadata consistency, and
-topic routing. Materializer tests prove `StreamEtag` is produced by the shared DMS
-served-ETag composer for the fixed stream representation and remains coherent with the
-row's `ContentVersion` and effective schema. V1 fixtures pin contractual public fields,
-types, selectors, and metadata relationships without independently freezing opaque ETag
-bytes. Representative boundary fixtures use the shared materializer across selected
-configured schemas, extensions, nested collections, and reference links, then shape them
-through the real transform and converters. A broker-backed test publishes, replicates, and
-consumes an under-budget record with `max.request.size` set to the operational
-`maxRecordBytes` and producer buffer-memory, public-topic, broker, replica-fetch, and
-consumer configuration able to carry it; an over-budget variant fails the connector task
-and combined readiness instead of being skipped. These fixtures prove enforcement and
-aligned configuration, not a universal maximum valid record. Ordering tests prove higher
-versions replace while lower and equal versions are ignored. Contract fixtures prove that
-equal versions are byte-identical duplicates and retain the new-contract consumer rules;
-v1 does not include baseline-replacing correction or cutover integration tests.
-
-Connector template and registration tests require the exact idempotence, acknowledgement,
-retry, maximum-in-flight, no-compression, and operational maximum-request/buffer-memory
-producer overrides, reject every conflicting value and an override-disallowing worker
-policy, and verify the registered connector retains the required configuration. Fixed UUID
-key fixtures verify that the generated producer implementation maps exactly to the binding's
-`kafka-murmur2-v1` behavior across representative partition counts; missing, unknown, or
-changed algorithm tokens and conflicting partitioner configuration fail closed. The tests
-do not couple binding state to a Java class or library version. They also require an
-explicit `errors.tolerance=none`, reject a
-duplicate, missing, or conflicting value, and reject live configuration drift. A
-broker-backed retry-ordering test injects a retriable producer failure after an upsert is
-submitted and before its canonical tombstone, then proves the public partition contains
-the upsert before the tombstone and remains deleted after connector catch-up. One
-broker-backed poison-record test supplies a malformed retained record and proves that no
-public record is emitted, the connector task fails instead of skipping it, and combined
-readiness remains false rather than accepting offset or lag catch-up beyond the poison
-record.
-
-Source-position adapter tests pin PostgreSQL `X/Y` and signed Debezium `lsn_proc`
-normalization to the same unsigned 64-bit order. SQL Server tests pin binary and
-`xxxxxxxx:xxxxxxxx:xxxx` LSN normalization and lexicographic commit/change/event-serial
-ordering. Both reject snapshot, null, malformed, wrong-partition, and ambiguous offset
-responses. Initial-readiness real-provider tests start from a new offline source, take a
-barrier after the fresh startup zero audit, let the configured heartbeat action query advance
-capture, and prove combined readiness stays false until
-`GET /connectors/{connectorName}/offsets` reaches that barrier.
-They also prove a heartbeat is produced and acknowledged in the progress topic, advances
-the committed source offset only after it and every earlier retained record complete
-processing, and emits no public document record. Returning `null` for the same heartbeat
-must fail this test by leaving the committed offset behind the barrier.
-
-Initial combined-readiness sequence tests prove the setup controller created the selected
-database and has not published it to a writer, reject a prior audit, force a fresh startup
-audit, and keep first-write admission closed until the cache writes and heartbeat are
-acknowledged through the provider barrier. Connector `RUNNING`, acceptable lag, timeout,
-and setup-controller restart cannot bypass the sequence or publish the database as
-CDC-ready. Tests after first-write admission treat a later ready result as eventual health
-and never as another exact baseline.
-
-Source-history continuity tests prove a transiently unavailable provider reports `unknown`,
-keeps combined readiness false, and cannot start or resume the connector until complete
-evidence returns. PostgreSQL tests cover a missing, re-created, invalidated, or lost slot and
-a committed offset outside retained WAL. SQL Server tests cover a missing or re-created
-capture instance, a committed position below retained CDC history, and missing or
-inconsistent schema history and offsets. A stopped/failed capture or cleanup job remains a
-nonterminal fail-closed health condition while retained history is affirmatively proved.
-Proven loss durably latches
-`SourceHistoryContinuityLost`, stops the connector, survives controller restart, and cannot
-be cleared by recreating artifacts, changing offsets, or requesting a snapshot. No test
-publishes a recovery snapshot into the old public topic or reuses its consumer namespace.
-
-Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
-mismatch including attempted partition-count or `partitionerAlgorithm` changes, rejection
-of a public topic configured with a cleanup policy that includes
-`delete`, a missing topic-level `delete.retention.ms` override, an explicit value below
-`604800000`, or conflicting `max.message.bytes`, rejection of a missing, misnamed,
-non-single-partition, or non-compacted progress topic, provider aliases that resolve to the
-same fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop
-retention, destructive-teardown removal, guarded adoption, and guarded new-generation
-source replacement.
-Adoption tests require a complete operator-supplied record and exact live verification of
-every governed artifact and prove failed or concurrent adoption changes nothing. Source-
-replacement tests fence the old connector, reserve the new binding before creating its
-artifacts, never reuse the old generation, and reject terminal source-history loss or a
-possibly published cache-ahead latch. Destructive-teardown tests preserve incident and
-binding state until every connector, offset, topic, ACL, and provider capture artifact is
-absent.
-Multi-controller state backends additionally prove compare-and-set behavior. No test
-repairs a mismatch by rewriting a binding, changes a topic's partition count or
-`partitionerAlgorithm` in place, or reuses a topic generation for a different source.
-Operational-policy tests prove a downstream-first `maxRecordBytes` increase retains the
-binding and topics, validates consumer/broker/replica/topic capacity before producer
-request/buffer-memory changes, and remains not ready after any partial rollout.
-
-Consumer-conformance tests use a controllable clock and partition barriers to prove an
-incremental consumer renews durable continuity evidence at least every 24 hours. A stale,
-missing, corrupt, or partition-mismatched checkpoint invalidates and discards all local
-state, then requires the complete bounded earliest-offset bootstrap before state is
-advertised again.
-
-Initial-enable tests prove a freshly created database with the complete current E18 schema
-can proceed, a reserved exact binding can retry idempotently, and any unbound
-already-provisioned or legacy-schema database is rejected before binding state or provider,
-topic, ACL, and connector artifacts are created. A later exact-match validation/restart of a
-successfully enabled database remains supported. No test upgrades `DocumentCache.Etag` or
-removes the obsolete UUID constraint in place.
-
-Bootstrap integration coverage uses an authorization-enabled broker to prove ACL
-provisioning is repeatable and binding-scoped: a consumer principal configured for one
-instance can read that instance topic and is denied when it attempts to read a peer
-instance topic or either instance's progress topic. The connector principal can write the
-progress topic. This focused broker-backed check belongs to bootstrap story 19-04; the
-broad API-driven CDC E2E suite does not duplicate an ACL matrix.
-
-SQL Server template tests require the explicit `time.precision.mode=isostring` and
-`unavailable.value.placeholder=__debezium_unavailable_value` settings. Transform tests use
-realistic `io.debezium.time.IsoTimestamp` strings with zero through seven significant
-fractional digits and assert the same whole-second UTC string for every value within that
-second, truncation rather than rounding at the upper fractional boundary, exact equality
-with `document._lastModifiedDate`, and rejection of unexpected, non-UTC, fractional, raw
-numeric, or unavailable-marker public output. Pinned-image provider tests include SQL
-Server 2025.
-
-PostgreSQL and SQL Server integration/E2E coverage proves:
-
-- provider key and delete-record prerequisites,
-- create/update/snapshot upserts conform to the topic/message ADR,
-- canonical deletion emits a tombstone when no cache row exists,
-- cache delete/truncate/rebuild emits no domain tombstone,
-- with the pinned idempotent-producer settings, a cache upsert committed before canonical
-  deletion appears before its tombstone for that key in the routed public topic even when
-  the upsert send receives a retriable failure,
-- a projector that captured an older version may commit it after a newer canonical version,
-  the row remains cache-behind work, and reconciliation converges it to the newer version,
-- a source update committed before the final optimistic source-version check produces a
-  stale skip, while an update committed after that check may produce the allowed coherent
-  lower-version cache row,
-- a delayed lower-version candidate never replaces a higher cache row, while a consumer
-  that has not yet seen the higher version may temporarily retain the lower monotonic
-  projection,
-- raw Kafka delivery may replay a lower non-null version after a higher non-null version,
-  while the conforming consumer ordering rule keeps applied upsert state monotonic,
-- raw at-least-once replay may temporarily place an older upsert after a tombstone, while a
-  subsequent replayed tombstone restores deleted state and connector catch-up re-establishes
-  convergence,
-- projector and direct-fill cache writes request no explicit update/write lock on
-  `dms.Document` as a content-version fence and carry no lock from the optimistic source
-  check into the cache transaction; ordinary locks acquired by foreign-key enforcement and
-  the UUID-validation trigger remain intact and are distinguished from that fence,
-- the cache foreign key prevents a delayed candidate from recreating cache state after
-  canonical deletion,
-- projection selection, empty-cache population, update, restart, backed-off repair, rebuild,
-  monotonic upsert, delete fencing, health, cache fallback, and mixed-target isolation,
-- ordinary high-version updates are discovered through the incremental lane without a
-  full relationship scan,
-- a source update committed after the startup audit's finishing observation but before
-  incremental scanning begins remains above the pre-audit boundary and is discovered by
-  the incremental lane,
-- a lower version committed after the incremental cursor advances is repaired by the
-  next full audit,
-- initial combined readiness starts from a new offline database, rejects a prior zero
-  audit, forces a fresh startup audit, waits through the post-audit publication barrier,
-  and opens first-write admission only after readiness passes,
-- cache-row loss below the incremental cursor is repaired by the next full audit,
-- advancing the cursor past a failed candidate retains no document-scoped retry state,
-  marks the target repair-required, and lets the next full audit rediscover the database
-  difference,
-- a cache-ahead row atomically sets the durable database latch, receives no materialization
-  or ordinary repair, disables cache reads and writes, keeps projection readiness false
-  across restart, and cannot be overwritten with the lower canonical version,
-- after a latched ahead row's source advances to exactly the cached `ContentVersion`, the
-  row remains ineligible and readiness remains false; only a proven internal-only case can
-  invoke the v1 recovery operation,
-- internal-only cache-ahead recovery clears the entire cache and latch in one transaction
-  before rebuilding from canonical state, while a possibly published higher version keeps
-  the latch set and publication stopped because the required new binding generation/topic,
-  consumer namespace, and fresh-snapshot workflow is deferred from v1,
-- projection or connector failure never blocks normal API deletion.
-
-Projector scheduling tests prove one serialized loop per target, process-wide target
-concurrency, bounded pages with no document-scoped retry queue, fair progress across a large
-and small target, audit-request coalescing, startup/rebuild immediate audits, observational
-health reads, interval-based incremental and full-audit eligibility, stale-audit readiness,
-and graceful cancellation. A systemic failure across more documents than `PageSize` proves
-candidate memory remains bounded by active pages, paging continues, every failed document is
-rediscovered from database state, and readiness remains false until an exact-zero audit.
-Configuration tests validate all execution settings and pin the implementation-tuned
-defaults as documented release behavior rather than stream-contract constants.
-
-Performance qualification compares projector-disabled and projector-enabled source-write
-throughput and p95/p99 latency for uniformly distributed writes, a deliberately hot
-single document, duplicate projector replicas, and optional direct fill. Rebuild tests
-also verify that projection adds no PostgreSQL or SQL Server wait attributable to an
-explicit content-version source-row lock; ordinary cache-row, trigger, and foreign-key
-contention remains visible. Direct-fill tests bound request-path latency under that
-ordinary contention. V1 performs one short monotonic cache transaction per candidate;
-future batching remains a separate measured design.
-
-The quarantined KafkaMessaging scenarios are replaced only after the relational scenarios
-pass consistently. SQL Server ordering requires a real connector and routed Kafka topic;
-fixture-only transform coverage is insufficient.
+| Contract ID | Design owner | Evidence-owning stories | Test layers |
+| --- | --- | --- | --- |
+| `CDC-INV-01` | [Configuration and target selection](#configuration-and-projection-target-selection) and [projection readiness](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S01](backend-redesign/epics/18-document-cache/01-documentcache-configuration-and-target-selection.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md) | Configuration/unit; PostgreSQL and SQL Server provider integration; mixed-target isolation |
+| `CDC-INV-02` | [Cached document contract](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract) and [upsert value](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value) | [E18-S00](backend-redesign/epics/18-document-cache/00-documentcache-schema-and-provider-ddl.md), [E18-S02](backend-redesign/epics/18-document-cache/02-document-materializer-service.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | DDL snapshot/DB-apply; materializer unit/provider integration; serialized-record contract |
+| `CDC-INV-03` | [Freshness and reconciliation](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation) | [E18-S03](backend-redesign/epics/18-document-cache/03-monotonic-cache-upsert-and-delete-fencing.md), [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Provider concurrency/integration; performance qualification; cross-feature integration; API-driven Kafka E2E |
+| `CDC-INV-04` | [Bounded in-process execution policy](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#bounded-in-process-execution-policy) and [projection readiness](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | Scheduling/unit; bounded-load and memory; multi-target/provider integration; health and restart integration |
+| `CDC-INV-05` | [Cache-backed reads and domain lifecycle](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle) | [E18-S05](backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | API/provider integration; authorization; fallback and concurrency integration |
+| `CDC-INV-06` | [Connector topology and provider setup](#connector-topology-and-provider-setup) and [schema integration](#schema-and-query-integration) | [E19-S01](backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md), [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | DDL/DB-apply; provider integration; pinned-image connector integration; API-driven Kafka E2E |
+| `CDC-INV-07` | [Topic](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic), [record size](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#key), [upsert](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value), and [delete](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#delete) | [E19-S03](backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Transform unit; serialized-record contract; broker-backed integration; consumer conformance; API-driven Kafka E2E |
+| `CDC-INV-08` | [Connector transformation](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation) | [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S03](backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Rendering/unit; provider-record fixtures; plugin-loading/pinned-image; serialized-record contract |
+| `CDC-INV-09` | [Pinned connector runtime](#pinned-connector-runtime) and [connector topology](#connector-topology-and-provider-setup) | [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Template validation; pinned-image integration; Connect REST integration; broker-backed fault injection |
+| `CDC-INV-10` | [Provider source-position barrier](#provider-source-position-barrier) and [enablement sequence](#enablement-and-initial-readiness-sequence) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Position-adapter unit; provider integration; controller integration; broker-backed heartbeat/readiness |
+| `CDC-INV-11` | [Source-history continuity](#source-history-continuity) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Adapter/unit; real-provider integration; pinned-image lifecycle; API-driven failure E2E |
+| `CDC-INV-12` | [Deployment-owned binding](#deployment-owned-cdc-target-and-physical-source-binding), [local bootstrap](#local-bootstrap-and-ci), and [security](#security-telemetry-and-operations) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md) | State-store/CAS unit; controller/script integration; broker-backed topic and ACL integration; destructive-lifecycle integration |
+| `CDC-INV-13` | [Public consumer bootstrap](#public-consumer-bootstrap) and [topic retention](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) | [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Consumer conformance; controllable-clock/partition-barrier; broker-backed bootstrap |
+| `CDC-INV-14` | [Contract change and repair](#contract-change-and-repair-operations), [v1 compatibility](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes), and [cache-ahead recovery](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery) | [E18-S08](backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md), [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Administrative-command/provider integration; lifecycle integration; contract/consumer conformance |
+| `CDC-INV-15` | [Security, telemetry, and operations](#security-telemetry-and-operations) | [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md), [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S07](backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md) | Status/telemetry unit and integration; diagnostics sanitization; exercised runbook/documentation checks |
 
 ## Historical and Deferred Material
 
