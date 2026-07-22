@@ -11,11 +11,6 @@ namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public abstract class ContainerSetupBase
 {
-    private const string PgAdminUser = "postgres";
-    private const string PgAdminPassword = "abcdefgh1!";
-
-    private const ushort DbPortExternal = 5435;
-
     // The three DMS metadata tables preserved (not truncated) across an E2E reset on both engines.
     private static readonly (string Schema, string Table)[] _mssqlExcludedTables =
     [
@@ -78,14 +73,16 @@ public abstract class ContainerSetupBase
 
     public static async Task ResetDatabase()
     {
-        // Resolve the host-side reset connection per engine: PostgreSQL preserves the existing
-        // localhost Npgsql connection; MSSQL uses the opaque admin/reset connection string the build
-        // orchestration resolved from the environment and set for the test process.
-        string connectionString = IsMssql(AppSettings.DatabaseEngine)
-            ? AppSettings.DataStoreAdminConnectionString
-            : BuildHostConnectionString(AppSettings.DataStoreDatabaseName);
-
-        await ResetDatabaseAsync(AppSettings.DatabaseEngine, connectionString, ExecuteResetAsync);
+        // Both engines consume the opaque host-side admin/reset connection string the build
+        // orchestration resolved once from the selected environment (custom credentials, published
+        // port, and database, plus NoResetOnClose=true for PostgreSQL). PostgreSQL keeps Npgsql and the
+        // existing DO $$ reset SQL; MSSQL uses SqlClient and the shared MssqlDatabaseResetSql. The C#
+        // harness never re-derives ports or credentials.
+        await ResetDatabaseAsync(
+            AppSettings.DatabaseEngine,
+            AppSettings.DataStoreAdminConnectionString,
+            ExecuteResetAsync
+        );
     }
 
     // Test seam: build the engine-specific reset plan and hand it to an executor. Kept internal so
@@ -138,11 +135,6 @@ public abstract class ContainerSetupBase
 
     private static bool IsMssql(string databaseEngine) =>
         string.Equals(databaseEngine, "mssql", StringComparison.OrdinalIgnoreCase);
-
-    private static string BuildHostConnectionString(string databaseName)
-    {
-        return $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={databaseName};NoResetOnClose=true;";
-    }
 }
 
 internal enum DatabaseResetProvider

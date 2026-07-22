@@ -73,6 +73,32 @@ public class Given_Container_Setup_Base_Database_Reset
     }
 
     [Test]
+    public void It_passes_a_custom_postgresql_admin_connection_string_verbatim_to_the_reset_plan()
+    {
+        // The PostgreSQL reset consumes the opaque admin/reset connection string verbatim (custom host,
+        // port, user, password, database, and NoResetOnClose=true) rather than re-deriving them.
+        const string customAdmin =
+            "host=custom-host;port=6543;username=customuser;password=custompass;database=custom_e2e;NoResetOnClose=true;";
+
+        var plan = ContainerSetupBase.BuildResetPlan("postgresql", customAdmin);
+
+        plan.Provider.Should().Be(DatabaseResetProvider.Postgres);
+        plan.ConnectionString.Should().Be(customAdmin);
+    }
+
+    [Test]
+    public void It_passes_a_custom_mssql_admin_connection_string_verbatim_to_the_reset_plan()
+    {
+        const string customAdmin =
+            "Server=custom-host,14333;Database=custom_e2e;User Id=sa;Password=Custom!Pass9;TrustServerCertificate=true;";
+
+        var plan = ContainerSetupBase.BuildResetPlan("mssql", customAdmin);
+
+        plan.Provider.Should().Be(DatabaseResetProvider.SqlServer);
+        plan.ConnectionString.Should().Be(customAdmin);
+    }
+
+    [Test]
     public async Task It_dispatches_only_the_sql_server_provider_for_the_mssql_engine()
     {
         DatabaseResetProvider? executedProvider = null;
