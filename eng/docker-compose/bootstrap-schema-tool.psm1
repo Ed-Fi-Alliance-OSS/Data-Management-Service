@@ -192,6 +192,63 @@ function Resolve-DmsSchemaTool {
     throw "Unable to resolve the api-schema-tools executable. Build src/dms/clis/EdFi.DataManagementService.SchemaTools or set DMS_SCHEMA_TOOL_PATH."
 }
 
+function Resolve-DmsConnectionValidator {
+    <#
+    .SYNOPSIS
+    Resolves HOW to run the exact-provider connection-string validator on this host, returning a
+    descriptor the runtime contract passes through to the connection-validation seam.
+    .DESCRIPTION
+    Returns one of:
+      [pscustomobject]@{ Kind = 'HostExe';     Path  = <path> }
+      [pscustomobject]@{ Kind = 'DockerImage'; Image = <image>; ToolPath = <in-image dll path> }
+
+    A host executable is preferred: an explicit -RequestedPath, a prebuilt in-repo copy, or a
+    -BuildIfMissing publish when the .NET SDK is present (Resolve-DmsSchemaTool). When no host executable
+    can be resolved AND a -DmsImage is supplied, it falls back to running the SAME 'connection validate'
+    verb inside that image, which bundles the api-schema-tools CLI. This is the published-image path on a
+    clean Docker/PowerShell-only host: exact-provider parsing (Npgsql / Microsoft.Data.SqlClient) stays
+    available with no .NET SDK and no source build. The parser is never weakened or replaced.
+
+    Throws only when neither a host executable nor a container image is available (so a source checkout on
+    an SDK-less host with no image still fails with the original build/configuration guidance).
+    .PARAMETER RequestedPath
+    Optional explicit host path to the api-schema-tools executable (DMS_SCHEMA_TOOL_PATH). When set it must
+    exist or host resolution fails - and the container fallback then applies only if -DmsImage is supplied.
+    .PARAMETER DmsImage
+    The DMS container image (resolved from Docker Compose) that bundles the tool. When host resolution
+    fails and this is supplied, the validator runs inside this image.
+    .PARAMETER ContainerToolPath
+    Path to the bundled tool assembly inside -DmsImage. Defaults to the image's documented drop location.
+    #>
+    param(
+        [string]
+        $RequestedPath,
+
+        [string]
+        $DmsImage,
+
+        [string]
+        $ContainerToolPath = "/app/ApiSchemaTools/api-schema-tools.dll"
+    )
+
+    try {
+        $hostTool = Resolve-DmsSchemaTool -RequestedPath $RequestedPath -BuildIfMissing
+        return [pscustomobject]@{ Kind = "HostExe"; Path = $hostTool }
+    }
+    catch {
+        if ([string]::IsNullOrWhiteSpace($DmsImage)) {
+            throw
+        }
+
+        Write-Information "api-schema-tools is not available on the host; the connection-string validator will run inside the '$(Format-LogSafeText $DmsImage)' image (no host .NET SDK or source build required)." -InformationAction Continue
+        return [pscustomobject]@{
+            Kind     = "DockerImage"
+            Image    = $DmsImage
+            ToolPath = $ContainerToolPath
+        }
+    }
+}
+
 function Invoke-DmsSchemaHash {
     <#
     .SYNOPSIS
@@ -240,4 +297,4 @@ function Invoke-DmsSchemaHash {
     return $matches[1].ToLowerInvariant()
 }
 
-Export-ModuleMember -Function Resolve-DmsSchemaTool, Invoke-DmsSchemaHash
+Export-ModuleMember -Function Resolve-DmsSchemaTool, Resolve-DmsConnectionValidator, Invoke-DmsSchemaHash

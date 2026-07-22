@@ -246,6 +246,10 @@ both engines; the choice is never inferred from the engine:
   (`POSTGRES_DB_NAME` / `MSSQL_DB_NAME`), so CMS shares that database.
 * **Separate (`-SeparateConfigDatabase`).** `DMS_CONFIG_DATABASE_NAME` resolves to the dedicated
   `edfi_configurationservice` database. The DMS datastore selection is unchanged; only CMS moves.
+  Selecting separate mode when the DMS datastore is the same physical database as
+  `edfi_configurationservice` (under the engine's identity semantics - PostgreSQL is case-sensitive, SQL
+  Server case-insensitive) is rejected with a clear diagnostic, because the topology would not actually be
+  separate.
 
 `-SeparateConfigDatabase` is available on `start-local-dms.ps1`, `start-published-dms.ps1`,
 `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, the shared bootstrap wrapper, and
@@ -294,6 +298,16 @@ touched.
 > A published Keycloak start with no local Configuration Service still resolves the tool, because the
 > DMS datastore validation above remains active even when the CMS checks are skipped. In contrast,
 > `prepare-dms-schema.ps1` does not auto-publish: it still requires an already-resolvable prebuilt tool.
+>
+> On a clean Docker/PowerShell-only **published-image** host (no .NET SDK and no source build),
+> `start-published-dms.ps1` cannot build the host tool. It instead runs the exact same
+> `connection validate` verb **inside the DMS image**, which bundles the `api-schema-tools` CLI at
+> `/app/ApiSchemaTools/` (invoked as `dotnet /app/ApiSchemaTools/api-schema-tools.dll ...` with
+> `docker run --network none`, so it only parses the string and never connects). Connection strings are
+> therefore still validated with the exact runtime providers - the parser is never weakened - without an
+> SDK. A resolvable host tool (`DMS_SCHEMA_TOOL_PATH`, a prebuilt copy, or an SDK build) is still preferred
+> when present. Only the database-only diagnostic startup and teardown skip the validator entirely, because
+> they do not initialize CMS.
 
 ```pwsh
 # Shared (default): CMS shares the DMS datastore database

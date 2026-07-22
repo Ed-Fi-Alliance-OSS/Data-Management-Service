@@ -858,15 +858,35 @@ function Invoke-ConnectionStringValidation {
     param(
         [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
         [Parameter(Mandatory)][AllowEmptyString()][string]$ConnectionString,
-        [Parameter(Mandatory)][string]$SchemaToolPath
+        [Parameter(Mandatory)][object]$SchemaToolPath
     )
     # Canonicalize before the token crosses to the CLI: ValidateSet accepts and preserves a case
     # variant ('MSSQL'), so route it through the single engine-token boundary to forward the canonical
     # 'postgresql'/'mssql' the verb parses with.
     $Engine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
-    $output = $ConnectionString | & $SchemaToolPath connection validate --engine $Engine 2>$null
+
+    # -SchemaToolPath is either a host executable path (string) or a validator descriptor from
+    # Resolve-DmsConnectionValidator. A DockerImage descriptor runs the SAME 'connection validate' verb
+    # inside the DMS image, so a clean Docker/PowerShell-only host parses with the exact runtime providers
+    # without a host tool. Either way the verb reads the connection string from stdin (no password in argv).
+    $validator = if ($SchemaToolPath -is [string]) {
+        [pscustomobject]@{ Kind = 'HostExe'; Path = $SchemaToolPath }
+    }
+    else {
+        $SchemaToolPath
+    }
+
+    if ([string]$validator.Kind -eq 'DockerImage') {
+        # --network none: the verb only parses the string, never connects, so it must run offline.
+        $validatorDescription = "image '$($validator.Image)'"
+        $output = $ConnectionString | & docker run --rm -i --network none --entrypoint dotnet $validator.Image $validator.ToolPath connection validate --engine $Engine 2>$null
+    }
+    else {
+        $validatorDescription = "tool at '$($validator.Path)'"
+        $output = $ConnectionString | & $validator.Path connection validate --engine $Engine 2>$null
+    }
     if ($LASTEXITCODE -ne 0) {
-        throw "The connection-string validator (api-schema-tools 'connection validate') exited $LASTEXITCODE for engine '$Engine'. Ensure the tool at '$SchemaToolPath' is built and runnable; a build that predates the 'connection validate' verb exits non-zero, so rebuild or re-publish api-schema-tools (dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools)."
+        throw "The connection-string validator (api-schema-tools 'connection validate') exited $LASTEXITCODE for engine '$Engine'. Ensure the $validatorDescription is runnable; a build that predates the 'connection validate' verb exits non-zero, so rebuild or re-publish api-schema-tools (dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools) or repull the DMS image."
     }
     $json = ($output | Out-String)
     if ([string]::IsNullOrWhiteSpace($json)) {
@@ -894,7 +914,9 @@ function Get-CmsConnectionStringDatabaseName {
     param(
         [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
         [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ConnectionString,
-        [Parameter(Mandatory)][string]$SchemaToolPath
+        # Host executable path (string) OR a validator descriptor from Resolve-DmsConnectionValidator;
+        # passed through to Invoke-ConnectionStringValidation, which dispatches host-exe vs container.
+        [Parameter(Mandatory)][object]$SchemaToolPath
     )
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
@@ -1000,6 +1022,7 @@ function Get-ComposeResolvedConfiguration {
     $configEnvironment = $null
     $dbEnvironment = $null
     $dmsEnvironment = $null
+    $dmsImage = $null
     $services = $parsed.services
     if ($null -ne $services) {
         if ($services.PSObject.Properties.Name -contains $ConfigServiceName) {
@@ -1010,6 +1033,12 @@ function Get-ComposeResolvedConfiguration {
         }
         if ($services.PSObject.Properties.Name -contains $DmsServiceName) {
             $dmsEnvironment = $services.$DmsServiceName.environment
+            # The concrete DMS image Compose resolved - the same image the ensuing `up` runs. On a clean
+            # Docker/PowerShell-only host it bundles the api-schema-tools CLI, so the runtime contract can
+            # run the exact-provider 'connection validate' verb inside it without a host tool or SDK.
+            if ($services.$DmsServiceName.PSObject.Properties.Name -contains "image") {
+                $dmsImage = [string]$services.$DmsServiceName.image
+            }
         }
     }
 
@@ -1019,6 +1048,7 @@ function Get-ComposeResolvedConfiguration {
         CmsConnectionString       = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "DatabaseSettings__DatabaseConnection"
         MssqlSaPassword           = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key "MSSQL_SA_PASSWORD"
         DatastoreConnectionString = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "DATABASE_CONNECTION_STRING_ADMIN"
+        DmsImage                  = $dmsImage
     }
 }
 
@@ -1095,9 +1125,11 @@ function Resolve-EffectiveConfigRuntimeContract {
         The Compose-resolved DatabaseSettings__DatabaseConnection value (final text the container receives).
 
     .PARAMETER SchemaToolPath
-        Path to the api-schema-tools executable used to parse connection strings with the exact runtime
-        providers. The start scripts resolve it with Resolve-DmsSchemaTool (bootstrap-schema-tool.psm1),
-        the same tool the provisioning phase uses.
+        The connection-string validator: either a host executable path (string) or a descriptor from
+        Resolve-DmsConnectionValidator ({ Kind = 'HostExe' | 'DockerImage' ... }). Connection strings are
+        parsed with the exact runtime providers via the api-schema-tools 'connection validate' verb, run on
+        the host or - on a clean Docker/PowerShell-only published host - inside the DMS image that bundles
+        the tool. Passed through to Get-CmsConnectionStringDatabaseName / Invoke-ConnectionStringValidation.
 
     .PARAMETER ResolvedMssqlSaPassword
         The Compose-resolved db-service MSSQL_SA_PASSWORD value (SQL Server stacks).
@@ -1125,7 +1157,7 @@ function Resolve-EffectiveConfigRuntimeContract {
         [AllowEmptyString()][AllowNull()][string]$ResolvedConfigProvider,
         [AllowEmptyString()][AllowNull()][string]$ResolvedDmsProvider,
         [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedCmsConnectionString,
-        [Parameter(Mandatory)][string]$SchemaToolPath,
+        [Parameter(Mandatory)][object]$SchemaToolPath,
         [AllowEmptyString()][AllowNull()][string]$ResolvedMssqlSaPassword,
         [AllowEmptyString()][AllowNull()][string]$ResolvedDatastoreConnectionString,
         [AllowEmptyString()][AllowNull()][string]$ConfigDatabaseName,

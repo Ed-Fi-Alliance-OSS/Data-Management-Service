@@ -368,8 +368,11 @@ else {
         # refreshes the resolver without re-homing the manifest functions this script already loaded.
         # -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the SDK is present.
         Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
-        $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
         $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
+        # Resolve the connection-string validator from either a host executable (preferred, when a prebuilt
+        # tool or the .NET SDK is present) or - on a clean Docker/PowerShell-only published host - the DMS
+        # image that bundles the tool, so exact-provider parsing needs no host SDK or source build.
+        $schemaToolPath = Resolve-DmsConnectionValidator -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -DmsImage $resolvedCompose.DmsImage
         # published-dms.yml is always in the compose set on the startup path, so the DMS service always
         # participates (its runtime provider is validated even on a Keycloak start without a local config
         # service); config participation follows the single $configServiceIncluded authority.

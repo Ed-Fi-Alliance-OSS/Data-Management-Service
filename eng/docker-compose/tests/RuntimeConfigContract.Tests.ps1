@@ -529,6 +529,23 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         $source | Should -Not -Match '\$contract\.Provider\b' -Because "$Script must use \$contract.ConfigProvider / .DmsProvider, not the removed ambiguous .Provider"
     }
 
+    It "start-published-dms.ps1 resolves the connection validator with an in-image fallback (finding 4)" {
+        # Published startup must resolve a host-exe OR a container validator (the DMS image that bundles the
+        # tool) so a clean Docker/PowerShell-only host validates connection strings with the exact runtime
+        # providers without a host .NET SDK or source build. A revert to Resolve-DmsSchemaTool (host-only)
+        # would reintroduce the failure this guards.
+        $source = Get-Content -LiteralPath (Join-Path $script:composeRoot 'start-published-dms.ps1') -Raw
+        $source | Should -Match 'Resolve-DmsConnectionValidator' -Because "published startup must resolve a host-exe-or-container validator"
+        $source | Should -Match 'Resolve-DmsConnectionValidator[^\r\n]*-DmsImage \$resolvedCompose\.DmsImage' -Because "the resolved DMS image must be passed so the validator can run inside it"
+
+        # The image must be resolved (Get-ComposeResolvedConfiguration) before the validator, so the fallback
+        # has an image to run in.
+        $composeIndex = $source.IndexOf('$resolvedCompose = Get-ComposeResolvedConfiguration')
+        $validatorIndex = $source.IndexOf('Resolve-DmsConnectionValidator')
+        $composeIndex | Should -BeGreaterThan -1
+        $composeIndex | Should -BeLessThan $validatorIndex -Because "the DMS image must be resolved before the validator fallback needs it"
+    }
+
     It "start-published-dms.ps1 uses ONE participation authority for both the config file and the contract" {
         # The same $configServiceIncluded decides published-config.yml selection and CMS-invariant validation,
         # so a Keycloak-without-config start never validates a CMS the compose set does not contain.
