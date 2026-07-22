@@ -301,16 +301,16 @@ public class VendorModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Company": [
+                    "$.company": [
                       "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactName": [
+                    "$.contactName": [
                       "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactEmailAddress": [
+                    "$.contactEmailAddress": [
                       "'Contact Email Address' is not a valid email address."
                     ],
-                    "NamespacePrefixes": [
+                    "$.namespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
                   },
@@ -329,16 +329,16 @@ public class VendorModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Company": [
+                    "$.company": [
                       "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactName": [
+                    "$.contactName": [
                       "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactEmailAddress": [
+                    "$.contactEmailAddress": [
                       "'Contact Email Address' is not a valid email address."
                     ],
-                    "NamespacePrefixes": [
+                    "$.namespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
                   },

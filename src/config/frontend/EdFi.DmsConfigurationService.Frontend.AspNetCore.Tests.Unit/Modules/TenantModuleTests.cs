@@ -205,8 +205,8 @@ public class TenantModuleTests
                 actualPostResponse["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
 
                 var validationErrors = actualPostResponse["validationErrors"]!.AsObject();
-                validationErrors.Should().ContainKey("Name");
-                var nameErrors = validationErrors["Name"]!.AsArray();
+                validationErrors.Should().ContainKey("$.name");
+                var nameErrors = validationErrors["$.name"]!.AsArray();
                 nameErrors.Should().HaveCount(1);
                 nameErrors[0]!.GetValue<string>().Should().Contain("256 characters or fewer");
                 nameErrors[0]!.GetValue<string>().Should().Contain("280 characters");

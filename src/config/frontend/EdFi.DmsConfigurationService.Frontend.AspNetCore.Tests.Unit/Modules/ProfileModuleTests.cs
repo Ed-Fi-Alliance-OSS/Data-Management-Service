@@ -121,7 +121,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        actualResponse!["validationErrors"]!["$.name"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile name is required.");
@@ -175,7 +175,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Name must match the name attribute in the XML definition");
@@ -200,8 +200,8 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"].Should().NotBeNull();
-        actualResponse["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"].Should().NotBeNull();
+        actualResponse["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Name must match the name attribute in the XML definition.");
@@ -226,7 +226,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile definition XML is invalid or does not match the XSD.");
@@ -251,7 +251,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile definition XML is invalid or does not match the XSD.");
@@ -350,7 +350,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        actualResponse!["validationErrors"]!["$.name"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile name is required.");
@@ -418,7 +418,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Id"]![0]!
+        actualResponse!["validationErrors"]!["$.id"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Request body id must match the id in the url");
@@ -496,7 +496,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Name must match the name attribute in the XML definition");

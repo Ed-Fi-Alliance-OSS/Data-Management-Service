@@ -594,7 +594,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The claim set name must be less than 256 characters."
                     ]
                   },
@@ -615,7 +615,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "Claim set name must not contain white spaces."
                     ]
                   },
@@ -637,7 +637,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The claim set name must be less than 256 characters."
                     ]
                   },
@@ -656,7 +656,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The claim set name must be less than 256 characters."
                     ]
                   },
@@ -675,7 +675,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
                     ]
                   },

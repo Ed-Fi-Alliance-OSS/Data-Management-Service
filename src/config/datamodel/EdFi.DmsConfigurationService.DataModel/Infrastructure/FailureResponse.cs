@@ -148,7 +148,8 @@ public static class FailureResponse
             status: 400,
             correlationId: correlationId,
             validationFailures
-                .GroupBy(x => x.PropertyName)
+                // Normalize before grouping so failures that map to the same JSON path merge under one key.
+                .GroupBy(x => NormalizeToJsonPath(x.PropertyName))
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
         );
 
@@ -218,4 +219,53 @@ public static class FailureResponse
             correlationId: correlationId,
             errors: []
         );
+
+    /// <summary>
+    /// Converts a FluentValidation property name into the request document's JSON path so validationErrors
+    /// keys point at the submitted field (matching the wider Ed-Fi contract, e.g. "$.namespacePrefixes"
+    /// rather than "NamespacePrefixes"). Each dot-separated segment's identifier is camel-cased with
+    /// JsonNamingPolicy.CamelCase (so leading acronyms like "APIKey" become "apiKey", not "aPIKey") while
+    /// any array-index suffix (e.g. "[0]") is preserved, then the JSON-path root "$" is prefixed. The
+    /// empty/root property name maps to "$". The policy leaves snake_case and already-camel-cased names
+    /// (including explicit .OverridePropertyName sources such as "claimSetName") unchanged, so the transform
+    /// is idempotent: a value already in this form maps to itself.
+    /// </summary>
+    private static string NormalizeToJsonPath(string? propertyName)
+    {
+        if (string.IsNullOrEmpty(propertyName) || propertyName == "$")
+        {
+            return "$";
+        }
+
+        // Accept an already-normalized value so repeated normalization is a no-op.
+        string path = propertyName.StartsWith("$.", StringComparison.Ordinal)
+            ? propertyName[2..]
+            : propertyName;
+
+        if (path.Length == 0)
+        {
+            return "$";
+        }
+
+        return $"$.{string.Join('.', path.Split('.').Select(CamelCaseSegment))}";
+    }
+
+    /// <summary>
+    /// Camel-cases a single JSON-path segment's identifier with JsonNamingPolicy.CamelCase (so leading
+    /// acronyms such as "APIKey" become "apiKey" rather than "aPIKey") while preserving any trailing
+    /// array-index suffix (e.g. "ResourceClaims[0]" -> "resourceClaims[0]").
+    /// </summary>
+    private static string CamelCaseSegment(string segment)
+    {
+        int bracketIndex = segment.IndexOf('[', StringComparison.Ordinal);
+        string identifier = bracketIndex >= 0 ? segment[..bracketIndex] : segment;
+        string suffix = bracketIndex >= 0 ? segment[bracketIndex..] : string.Empty;
+
+        if (identifier.Length == 0)
+        {
+            return segment;
+        }
+
+        return $"{JsonNamingPolicy.CamelCase.ConvertName(identifier)}{suffix}";
+    }
 }

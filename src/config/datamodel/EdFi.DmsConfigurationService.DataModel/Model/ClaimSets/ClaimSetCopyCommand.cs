@@ -19,7 +19,14 @@ public class ClaimSetCopyCommand
     {
         public Validator()
         {
-            RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
+            // The CLR property is Name but the request field is claimSetName. Override the property key so
+            // the normalizer reports "$.claimSetName", while keeping the existing "Name" display text in the
+            // default FluentValidation messages via WithName.
+            RuleFor(c => c.Name)
+                .NotEmpty()
+                .MaximumLength(256)
+                .WithName("Name")
+                .OverridePropertyName("claimSetName");
         }
     }
 }

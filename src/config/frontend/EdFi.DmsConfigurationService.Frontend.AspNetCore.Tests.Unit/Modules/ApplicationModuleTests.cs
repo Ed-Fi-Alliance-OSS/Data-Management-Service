@@ -444,13 +444,13 @@ public class ApplicationModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "ApplicationName": [
+                    "$.applicationName": [
                       "The length of 'Application Name' must be 256 characters or fewer. You entered 266 characters."
                     ],
-                    "ClaimSetName": [
+                    "$.claimSetName": [
                       "'Claim Set Name' must not be empty."
                     ],
-                    "EducationOrganizationIds[0]": [
+                    "$.educationOrganizationIds[0]": [
                       "'Education Organization Ids' must be greater than '0'."
                     ]
                   },
@@ -475,7 +475,7 @@ public class ApplicationModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "ClaimSetName": [
+                    "$.claimSetName": [
                       "Claim set name must not contain white spaces."
                     ]
                   },
@@ -528,7 +528,7 @@ public class ApplicationModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "ProfileIds[0]": [
+                    "$.profileIds[0]": [
                       "'Profile Ids' must be greater than '0'."
                     ]
                   },

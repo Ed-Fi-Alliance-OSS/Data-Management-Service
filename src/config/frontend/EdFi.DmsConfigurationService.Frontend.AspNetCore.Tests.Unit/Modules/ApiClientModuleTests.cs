@@ -534,9 +534,9 @@ public class ApiClientModuleTests
             var actualResponse = JsonNode.Parse(responseContent);
 
             // Verify the validation errors are present
-            actualResponse!["validationErrors"]!["ApplicationId"].Should().NotBeNull();
-            actualResponse!["validationErrors"]!["Name"].Should().NotBeNull();
-            actualResponse!["validationErrors"]!["DataStoreIds"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["$.applicationId"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["$.name"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["$.dataStoreIds"].Should().NotBeNull();
         }
 
         [Test]
@@ -565,7 +565,7 @@ public class ApiClientModuleTests
             string responseContent = await insertResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseContent);
 
-            actualResponse!["validationErrors"]!["Name"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["$.name"].Should().NotBeNull();
         }
     }
 

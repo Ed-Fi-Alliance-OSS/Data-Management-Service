@@ -195,19 +195,84 @@ public class FailureResponseTests
         // Each property keeps its own messages, in order, with nothing lost, duplicated, moved between
         // properties, or reordered.
         var validationErrors = result["validationErrors"]!.AsObject();
-        validationErrors.Select(property => property.Key).Should().BeEquivalentTo("Property1", "Property2");
-        validationErrors["Property1"]!
+        validationErrors
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("$.property1", "$.property2");
+        validationErrors["$.property1"]!
             .AsArray()
             .Select(value => value!.GetValue<string>())
             .Should()
             .Equal("Error1", "Error2");
-        validationErrors["Property2"]!
+        validationErrors["$.property2"]!
             .AsArray()
             .Select(value => value!.GetValue<string>())
             .Should()
             .Equal("Error3");
 
         result["errors"]!.AsArray().Should().BeEmpty();
+    }
+
+    // The validationErrors key is the request document's JSON path: each segment's identifier is
+    // camel-cased with JsonNamingPolicy.CamelCase (preserving array indices and snake_case, and lowering
+    // leading acronyms correctly), the root "$" is prefixed, an empty property name maps to "$", and a
+    // value already in this form is left unchanged (idempotent).
+    [TestCase("Company", "$.company")]
+    [TestCase("NamespacePrefixes", "$.namespacePrefixes")]
+    [TestCase("Contact.Email", "$.contact.email")]
+    [TestCase("EducationOrganizationIds[0]", "$.educationOrganizationIds[0]")]
+    [TestCase("ResourceClaims[0].Name", "$.resourceClaims[0].name")]
+    [TestCase("client_id", "$.client_id")]
+    [TestCase("claimSetName", "$.claimSetName")]
+    [TestCase("APIKey", "$.apiKey")]
+    [TestCase("ID", "$.id")]
+    [TestCase("", "$")]
+    [TestCase("$", "$")]
+    [TestCase("$.claimSets[0].claimSetName", "$.claimSets[0].claimSetName")]
+    public void ForDataValidation_normalizes_the_property_name_to_a_json_path(
+        string propertyName,
+        string expectedKey
+    )
+    {
+        // Act
+        var result = FailureResponse.ForDataValidation(
+            [new ValidationFailure(propertyName, "message")],
+            CorrelationId
+        );
+
+        // Assert
+        result["validationErrors"]!
+            .AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(expectedKey);
+    }
+
+    [Test]
+    public void ForDataValidation_groups_failures_that_normalize_to_the_same_json_path()
+    {
+        // "Name", "name", and "$.name" all normalize to "$.name", so their messages merge under one key
+        // (normalization happens before grouping) rather than producing three separate entries.
+        var validationFailures = new List<ValidationFailure>
+        {
+            new("Name", "Error1"),
+            new("name", "Error2"),
+            new("$.name", "Error3"),
+        };
+
+        // Act
+        var result = FailureResponse.ForDataValidation(validationFailures, CorrelationId);
+
+        // Assert
+        var validationErrors = result["validationErrors"]!.AsObject();
+        validationErrors.Select(property => property.Key).Should().BeEquivalentTo("$.name");
+        validationErrors["$.name"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
+            .Equal("Error1", "Error2", "Error3");
     }
 
     [Test]

@@ -284,7 +284,11 @@ public class ClaimsManagementModule : IEndpointModule
         );
         return FailureResults.DataValidation(
             failures.Select(failure => new ValidationFailure(
-                string.IsNullOrEmpty(failure.Path) ? failure.FailureType : failure.Path,
+                // A pathless failure has no request location, so its key is the document root ("$"), not
+                // its diagnostic FailureType (which is retained above only for classification and logging).
+                string.IsNullOrEmpty(failure.Path)
+                    ? string.Empty
+                    : failure.Path,
                 failure.Message
             )),
             httpContext.TraceIdentifier

@@ -190,7 +190,7 @@ internal class TenantResolutionMiddlewareTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Tenant": ["The 'Tenant' header is required when multi-tenancy is enabled."]
+                    "$.tenant": ["The 'Tenant' header is required when multi-tenancy is enabled."]
                   },
                   "errors": []
                 }
@@ -227,7 +227,7 @@ internal class TenantResolutionMiddlewareTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Tenant": ["The 'Tenant' header is required when multi-tenancy is enabled."]
+                    "$.tenant": ["The 'Tenant' header is required when multi-tenancy is enabled."]
                   },
                   "errors": []
                 }
@@ -266,7 +266,7 @@ internal class TenantResolutionMiddlewareTests
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
-                  "validationErrors": { "Tenant": ["Invalid tenant: nonexistent-tenant"] },
+                  "validationErrors": { "$.tenant": ["Invalid tenant: nonexistent-tenant"] },
                   "errors": []
                 }
                 """
@@ -398,7 +398,7 @@ internal class TenantResolutionMiddlewareTests
             // be sanitized before it is echoed back in the response body.
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
             var body = await ReadResponseBody(httpContext);
-            string tenantError = body["validationErrors"]!["Tenant"]!.AsArray()[0]!.GetValue<string>();
+            string tenantError = body["validationErrors"]!["$.tenant"]!.AsArray()[0]!.GetValue<string>();
             tenantError.Should().NotContain("<");
             tenantError.Should().NotContain(">");
             tenantError.Should().StartWith("Invalid tenant: ");

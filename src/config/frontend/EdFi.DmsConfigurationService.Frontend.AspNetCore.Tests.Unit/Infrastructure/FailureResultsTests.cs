@@ -118,8 +118,8 @@ public class FailureResultsTests
 
             var validationErrors = body["validationErrors"]!.AsObject();
             validationErrors.Count.Should().Be(2);
-            validationErrors["Claims"]!.AsArray().Count.Should().Be(2);
-            validationErrors["Name"]!.AsArray().Count.Should().Be(1);
+            validationErrors["$.claims"]!.AsArray().Count.Should().Be(2);
+            validationErrors["$.name"]!.AsArray().Count.Should().Be(1);
             body["errors"]?.AsArray().Count.Should().Be(0);
         }
 

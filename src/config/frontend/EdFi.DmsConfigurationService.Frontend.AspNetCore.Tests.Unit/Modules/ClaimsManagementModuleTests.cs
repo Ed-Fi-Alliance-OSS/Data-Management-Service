@@ -794,7 +794,7 @@ public abstract class ClaimsManagementModuleTests
             var body = await AssertDataValidationContract(response);
             var validationErrors = body["validationErrors"]!.AsObject();
             validationErrors.Count.Should().Be(1);
-            validationErrors["Claims"]!.AsArray()[0]!
+            validationErrors["$.claims"]!.AsArray()[0]!
                 .GetValue<string>()
                 .Should()
                 .Be("Claims JSON is required.");
@@ -842,10 +842,38 @@ public abstract class ClaimsManagementModuleTests
 
             var body = await AssertDataValidationContract(response);
             var validationErrors = body["validationErrors"]!.AsObject();
-            validationErrors["Structure"]!.AsArray()[0]!
+            validationErrors["$"]!.AsArray()[0]!
                 .GetValue<string>()
                 .Should()
                 .Be("Missing required 'claimSets' property");
+        }
+
+        [Test]
+        public async Task It_groups_pathless_validation_failures_under_the_document_root()
+        {
+            // Failures without a request path (e.g. document-level structure/validation problems) share the
+            // root "$" key rather than being split by their diagnostic FailureType.
+            A.CallTo(() => ClaimsUploadService.UploadClaimsAsync(A<JsonNode>._))
+                .Returns(
+                    new ClaimsLoadStatus(
+                        false,
+                        [
+                            new ClaimsFailure("Structure", "Missing required 'claimSets' property"),
+                            new ClaimsFailure("Validation", "At least one claim set is required."),
+                        ]
+                    )
+                );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, ClaimsBody());
+
+            var body = await AssertDataValidationContract(response);
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Select(property => property.Key).Should().BeEquivalentTo("$");
+            validationErrors["$"]!
+                .AsArray()
+                .Select(value => value!.GetValue<string>())
+                .Should()
+                .Equal("Missing required 'claimSets' property", "At least one claim set is required.");
         }
 
         [Test]

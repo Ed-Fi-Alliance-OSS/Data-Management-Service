@@ -74,7 +74,7 @@ internal class GlobalExceptionHandlerTests
 
         var validationErrors = body["validationErrors"]!.AsObject();
         validationErrors.Count.Should().Be(1);
-        validationErrors["PropertyName"]!
+        validationErrors["$.propertyName"]!
             .AsArray()
             .Select(node => node!.GetValue<string>())
             .Should()
