@@ -37,6 +37,26 @@ Older references to legacy `dms.Document` JSON columns, `EdfiDoc`, OpenSearch, a
 `edfi.dms.document` topic, or `deleted=true` messages are historical and are not active
 relational CDC contracts.
 
+### Documentation Audit and Disposition
+
+For `dms.DocumentCache` projection and relational CDC/Kafka subjects, this document and
+the two decision records above are the normative design set. If another document conflicts
+with that set, this set prevails even when the other document remains current for its own
+subject. The classifications below apply only to each artifact's DocumentCache or CDC/Kafka
+content, not to unrelated material in the same artifact.
+
+| Existing material | Classification | Disposition |
+| --- | --- | --- |
+| This `cdc-streaming.md` document | Current | Rewritten as the authoritative cross-cutting design for relational DocumentCache projection and CDC/Kafka. |
+| [`0001-relational-cdc-projector-and-sources.md`](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md) and [`0002-kafka-topic-and-message-contract.md`](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md) | Current | Normative only for the focused decisions they own; this document defines their integration and deployment context. |
+| [`data-model.md`](backend-redesign/design-docs/data-model.md), [`transactions-and-concurrency.md`](backend-redesign/design-docs/transactions-and-concurrency.md), [`link-injection.md`](backend-redesign/design-docs/link-injection.md), and [`update-tracking.md`](backend-redesign/design-docs/update-tracking.md) | Current | Reconciled supporting descriptions of local relational, cache, representation, lifecycle, and ETag facts. They defer to the normative design set for projection and streaming behavior. |
+| [`ddl-generation.md`](backend-redesign/design-docs/ddl-generation.md) and [`flattening-reconstitution.md`](backend-redesign/design-docs/flattening-reconstitution.md) | Current | Supporting DDL and API materialization context. JSON response streaming in reconstitution is not CDC/Kafka streaming. |
+| [`expandjsonsmt-replacement.md`](backend-redesign/design-docs/expandjsonsmt-replacement.md) | Current | Owns the implemented generic expand-JSON transform only. Legacy DMS record-shape discussion is context; the relational source, transform, topic, and message contracts are owned here and in the focused ADRs. |
+| [`multitenancy-analysis.md`](multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
+| Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
+| Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
+| [`eng/docker-compose/README.md`](../../eng/docker-compose/README.md), [`local-development-setup.http`](../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Describe present implementation state: Kafka infrastructure may be started, but relational connector registration has not landed. Their future opt-in must implement this design. |
+
 ## Scope and Architecture
 
 The CDC deployment publishes a compacted document-state stream by reading database
