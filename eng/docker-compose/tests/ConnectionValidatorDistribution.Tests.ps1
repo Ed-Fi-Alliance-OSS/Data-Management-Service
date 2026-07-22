@@ -12,6 +12,11 @@
 
 BeforeAll {
     $script:composeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+    # Defensive: this suite's 'Mock -ModuleName bootstrap-schema-tool' requires exactly one module of that
+    # name in the session. The isolated-repo suites now unload their temp-workspace modules in AfterEach, so
+    # no copy should leak in; dropping any already-loaded copy before importing the canonical one keeps this
+    # suite correct regardless of run order, even if a future fixture regresses that cleanup.
+    Get-Module bootstrap-schema-tool, env-utility | Remove-Module -Force -ErrorAction SilentlyContinue
     Import-Module (Join-Path $script:composeRoot "env-utility.psm1") -Force
     Import-Module (Join-Path $script:composeRoot "bootstrap-schema-tool.psm1") -Force
 }

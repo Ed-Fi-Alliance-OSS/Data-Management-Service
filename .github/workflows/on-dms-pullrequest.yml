@@ -183,8 +183,11 @@ jobs:
           # silently.
           DMS_BOOTSTRAP_RUN_PACKAGE_TESTS: "true"
         run: |
-          # Every eng/docker-compose/tests spec runs here except BootstrapDockerSmoke.Tests.ps1,
-          # which requires a live Docker stack and is deliberately excluded from this unit lane.
+          # Hand-maintained list of eng/docker-compose/tests specs. Two specs are intentionally NOT run in
+          # this lane: BootstrapDockerSmoke.Tests.ps1 (requires a live Docker stack) and
+          # OpenIddictCrypto.Tests.ps1 (runs in on-config-pullrequest.yml). Keeping this list in sync by hand
+          # is a known gap; a follow-up replaces it with glob discovery over the tests directory plus an
+          # explicit, existence-checked exclusion set so a newly added spec cannot silently go unrun.
           $paths = @(
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
@@ -203,6 +206,9 @@ jobs:
             "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
             "eng/docker-compose/tests/SetupOpenIddictDatabaseCreation.Tests.ps1",
             "eng/docker-compose/tests/RuntimeConfigContract.Tests.ps1",
+            "eng/docker-compose/tests/DatabaseIdentityAndEngineToken.Tests.ps1",
+            "eng/docker-compose/tests/StartScriptLifecycleParticipation.Tests.ps1",
+            "eng/docker-compose/tests/ConnectionValidatorDistribution.Tests.ps1",
             "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1"

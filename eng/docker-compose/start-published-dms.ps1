@@ -387,6 +387,25 @@ else {
             -SchemaToolPath $schemaToolPath `
             -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
             -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName
+
+        # Resolve and VALIDATE the registered DMS datastore target now, so an invalid effective target (a blank
+        # effective target, an unsafe identifier, or a separate-topology collision with
+        # edfi_configurationservice) fails in preflight - before any container start, CMS, or OpenIddict init -
+        # not after. A blank -DataStoreDatabaseName is treated as omitted and uses the anchor; it does not
+        # itself fail. This runs ONLY when the invocation actually registers a datastore in-process: full
+        # startup off the -DbOnly path, excluding -InfraOnly and -DmsOnly (which start infrastructure or the DMS
+        # service and return before the registration block below, so an invalid -DataStoreDatabaseName they
+        # never consume must not block them) and -NoDataStore without -SchoolYearRange (which selects an
+        # existing record). A full -PreflightOnly run still validates: it is a full-startup preflight, never
+        # combined with -InfraOnly/-DmsOnly. The in-process registration below reuses this value.
+        $registeredDatastoreDatabaseName = $null
+        if ((-not $NoDataStore -or $SchoolYearRange) -and -not $InfraOnly -and -not $DmsOnly) {
+            $registeredDatastoreDatabaseName = Resolve-RegisteredDatastoreTarget `
+                -InfrastructureEngine $DatabaseEngine `
+                -RequestedDatabaseName $DataStoreDatabaseName `
+                -TopologyDatastoreDatabaseName $contract.TopologyDatastoreDatabaseName `
+                -SeparateConfigDatabase:$SeparateConfigDatabase
+        }
     }
 
     if ($PreflightOnly) {
@@ -747,13 +766,12 @@ else {
 
             # Get tenant from environment (for multi-tenant support)
             $tenant = $envValues.CONFIG_SERVICE_TENANT
-            $postgresDbName =
-                if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-                    $envValues.POSTGRES_DB_NAME
-                }
-                else {
-                    $DataStoreDatabaseName
-                }
+            # The registered DMS datastore database was resolved and validated in preflight
+            # (Resolve-RegisteredDatastoreTarget), so an invalid explicit replacement already failed before
+            # any mutation. Reuse that value: the CMS record registers the SAME database the DMS container
+            # uses - an explicit -DataStoreDatabaseName replacement (e.g. the E2E database) or the runtime
+            # contract's Compose-resolved topology anchor.
+            $postgresDbName = $registeredDatastoreDatabaseName
             $postgresUser =
                 if ([string]::IsNullOrWhiteSpace([string]$envValues.POSTGRES_USER)) {
                     "postgres"
@@ -773,24 +791,13 @@ else {
                 # effective SA password (docker-compose's ${MSSQL_SA_PASSWORD:-abcdefgh1!}, a shell export
                 # over the env file) so the datastore connection stored in CMS matches the credential the
                 # container was initialized with, even under a shell override.
-                $mssqlPassword = $contract.MssqlSaPassword
-                $mssqlDbName =
-                    if (-not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-                        $DataStoreDatabaseName
-                    }
-                    elseif (-not [string]::IsNullOrWhiteSpace([string]$envValues.MSSQL_DB_NAME)) {
-                        [string]$envValues.MSSQL_DB_NAME
-                    }
-                    else {
-                        "edfi_datamanagementservice"
-                    }
                 $dataStoreConnectionString = New-DataStoreConnectionString `
                     -DatabaseEngine "mssql" `
                     -DbHost "dms-mssql" `
                     -Port 1433 `
                     -Username "sa" `
-                    -Password $mssqlPassword `
-                    -DatabaseName $mssqlDbName
+                    -Password $contract.MssqlSaPassword `
+                    -DatabaseName $registeredDatastoreDatabaseName
             }
 
             # Handle school year range data stores

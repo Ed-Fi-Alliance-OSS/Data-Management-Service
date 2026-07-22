@@ -290,7 +290,7 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         $script:overlayValues["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
         # DMS_CONFIG_DATABASE_NAME is the single configuration-database seam and defaults to the
         # DMS datastore database (MSSQL_DB_NAME) for the shared-database default.
-        $script:overlayValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be '${MSSQL_DB_NAME}'
+        $script:overlayValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be '${MSSQL_DB_NAME:-edfi_datamanagementservice}'
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
             Should -Match '^Server=dms-mssql,1433;Database=\$\{DMS_CONFIG_DATABASE_NAME\};'
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
@@ -328,7 +328,7 @@ Describe "The .env.example MSSQL hint block" {
     It "defines every variable referenced by the commented CMS SQL Server connection string" {
         $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_DB_NAME=edfi_datamanagementservice$'
         $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_SA_PASSWORD=abcdefgh1!$'
-        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_NAME=\$\{MSSQL_DB_NAME\}$'
+        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_NAME=\$\{MSSQL_DB_NAME:-edfi_datamanagementservice\}$'
         $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_CONNECTION_STRING=.*\$\{DMS_CONFIG_DATABASE_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
     }
 }
@@ -370,7 +370,7 @@ Describe "Resolve-ConfigDatabaseTopologyEnvironmentFile" {
     }
 
     Context "shared topology (default)" {
-        It "resolves the PostgreSQL datastore database as the configuration database and materializes it concretely" {
+        It "keeps DMS_CONFIG_DATABASE_NAME as the PostgreSQL datastore-key reference (Compose resolves it, no PowerShell interpolation)" {
             Set-Content -LiteralPath $script:basePath -Value @"
 DMS_DATASTORE=postgresql
 POSTGRES_DB_NAME=edfi_datamanagementservice
@@ -381,12 +381,12 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=pos
 
             $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
 
-            $result | Should -Not -Be $script:basePath -Because "a base carrying a reference must be materialized to a concrete name"
-            $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            # The base already carries the seam reference, so shared mode is an idempotent no-op; the
+            # configuration database follows the datastore because Docker Compose resolves ${POSTGRES_DB_NAME}.
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
         }
 
-        It "resolves the SQL Server datastore database as the configuration database" {
+        It "keeps DMS_CONFIG_DATABASE_NAME as the SQL Server datastore-key reference" {
             Set-Content -LiteralPath $script:basePath -Value @"
 DMS_DATASTORE=mssql
 MSSQL_DB_NAME=edfi_datamanagementservice
@@ -397,21 +397,23 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONF
 
             $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "mssql"
 
-            $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${MSSQL_DB_NAME:-edfi_datamanagementservice}'
         }
 
-        It "honors a customized datastore database name" {
+        It "materializes the datastore-key reference even when the base carries a non-seam DMS_CONFIG_DATABASE_NAME (custom datastore honored via Compose)" {
+            # A custom datastore name (district_local) is honored because the materialized reference
+            # ${POSTGRES_DB_NAME} lets Docker Compose resolve it - the resolver never bakes a concrete literal.
             Set-Content -LiteralPath $script:basePath -Value @"
 DMS_DATASTORE=postgresql
 POSTGRES_DB_NAME=district_local
-DMS_CONFIG_DATABASE_NAME=`${POSTGRES_DB_NAME}
+DMS_CONFIG_DATABASE_NAME=some_stale_literal
 DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};username=postgres;password=abc;
 "@ -NoNewline
 
             $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
 
-            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "district_local"
+            $result | Should -Not -Be $script:basePath -Because "a base carrying a non-seam value is materialized to the datastore-key reference"
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
         }
     }
 
@@ -447,11 +449,11 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONF
     }
 
     Context "idempotency" {
-        It "returns the base file unchanged when it already carries the concrete shared name" {
+        It "returns the base file unchanged when it already carries the default-bearing datastore-key reference (shared no-op)" {
             Set-Content -LiteralPath $script:basePath -Value @"
 DMS_DATASTORE=postgresql
 POSTGRES_DB_NAME=edfi_datamanagementservice
-DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_NAME=`${POSTGRES_DB_NAME:-edfi_datamanagementservice}
 DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};username=postgres;password=abc;
 "@ -NoNewline
 
@@ -460,10 +462,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG
             $result | Should -Be $script:basePath
         }
 
-        It "resolves to the datastore database when the switch is omitted, even if the base carries a separate configuration database name" {
-            # Per the topology contract, omitting -SeparateConfigDatabase always resolves the
-            # configuration database to the DMS datastore database - a base carrying a separate or
-            # custom DMS_CONFIG_DATABASE_NAME is reset, not preserved.
+        It "resets a stale separate configuration-database name to the datastore-key reference when the switch is omitted" {
+            # Per the topology contract, omitting -SeparateConfigDatabase always resolves the configuration
+            # database to the DMS datastore (the seam reference) - a base carrying a separate or custom
+            # DMS_CONFIG_DATABASE_NAME is reset, not preserved.
             Set-Content -LiteralPath $script:basePath -Value @"
 DMS_DATASTORE=postgresql
 POSTGRES_DB_NAME=edfi_datamanagementservice
@@ -473,7 +475,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG
 
             $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
 
-            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
         }
 
         It "is idempotent in separate mode when the switch is re-supplied (no-op)" {
@@ -494,11 +496,14 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG
         }
     }
 
-    It "fails fast when neither a datastore name nor a configuration-database name can be determined" {
+    It "materializes the datastore-key reference without inspecting the datastore value (blank-datastore validation is the contract's job)" {
+        # The resolver no longer parses or validates the datastore value in PowerShell; a base with no
+        # POSTGRES_DB_NAME still materializes the ${POSTGRES_DB_NAME} reference, and the runtime contract
+        # rejects a blank Compose-resolved anchor.
         Set-Content -LiteralPath $script:basePath -Value "DMS_DATASTORE=postgresql`nLOG_LEVEL=Warning`n" -NoNewline
 
-        { Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql" } |
-            Should -Throw "*could not determine the effective configuration database name*"
+        $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
+        (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
     }
 }
 
@@ -573,12 +578,14 @@ Describe "Configuration database topology matrix (per-cell DB targeting on the r
             -SeparateConfigDatabase:$Separate
         $resolvedValues = ReadValuesFromEnvFile $resolved
 
-        # The topology resolver materializes DMS_CONFIG_DATABASE_NAME to the expected configuration
-        # database for this cell. Because the sibling test proves every tracked env file routes the CMS
-        # connection string through the ${DMS_CONFIG_DATABASE_NAME} seam, this hermetically proves CMS
-        # targets $ExpectedConfigDb when Docker Compose interpolates it (the end-to-end compose oracle
-        # confirms the same in the docker-gated RuntimeConfigContract suite).
-        $resolvedValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be $ExpectedConfigDb -Because "the $Topology topology must point CMS at $ExpectedConfigDb"
+        # The topology resolver materializes DMS_CONFIG_DATABASE_NAME to the datastore-key REFERENCE in
+        # shared mode (Docker Compose resolves ${<key>} to the datastore) and to the dedicated literal in
+        # separate mode. Because the sibling test proves every tracked env file routes the CMS connection
+        # string through the ${DMS_CONFIG_DATABASE_NAME} seam, this hermetically proves CMS targets
+        # $ExpectedConfigDb when Compose interpolates it (the end-to-end compose oracle confirms the same in
+        # the docker-gated RuntimeConfigContract suite).
+        $expectedSeam = if ($Separate) { $ExpectedConfigDb } else { "`${${DatastoreKey}:-edfi_datamanagementservice}" }
+        $resolvedValues["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly $expectedSeam -Because "the $Topology topology materializes $(if ($Separate) { "the dedicated literal $ExpectedConfigDb" } else { "the default-bearing datastore-key reference (Compose resolves it to $ExpectedConfigDb)" })"
 
         # The DMS datastore selection is topology-invariant (these files define it as a literal).
         $resolvedValues[$DatastoreKey] | Should -Be $Datastore -Because "the DMS datastore database must never change with the topology switch"

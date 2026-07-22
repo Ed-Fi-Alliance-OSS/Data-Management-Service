@@ -241,8 +241,13 @@ exit $ExitCode
 
     AfterEach {
         if ($null -ne $script:repo) {
-            Get-Module Dms-Management, SmokeTest |
-                Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" } |
+            # Unload EVERY module imported from this run's temporary repository before its directory is
+            # removed, so no temp-path module object lingers in a shared Pester session. A lingering
+            # same-named module (e.g. bootstrap-schema-tool) would otherwise make a later suite's
+            # 'Mock -ModuleName' ambiguous. Filter by resolved Path under the temp repo root rather than a
+            # module-name list, so any module a fixture script imports is cleaned up automatically.
+            Get-Module |
+                Where-Object { $_.Path -and $_.Path.StartsWith($script:repo.RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) } |
                 Remove-Module -Force -ErrorAction SilentlyContinue
         }
 
@@ -972,6 +977,68 @@ exit $ExitCode
         }
     }
 
+    Context "E2E database dedication safety guard (concrete, provider-resolved targets)" {
+        # Assert-E2EDatabaseIsDedicated is a pure guard: it compares the E2E target against already-resolved
+        # CONCRETE protected names (records from Docker Compose + the provider verb), and never expands a
+        # ${...} expression itself. Dot-source the real script per test (the dot-source guard stops before the
+        # provisioning flow) so strict-mode/import side effects stay scoped to each It.
+        It "accepts a dedicated E2E database that matches no protected target" {
+            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
+            {
+                Assert-E2EDatabaseIsDedicated -EnvironmentFilePath "env" -E2EDatabaseName "edfi_datamanagementservice_e2e" -ProtectedDatabaseTarget @(
+                    @{ Source = "topology datastore anchor"; DatabaseName = "edfi_datamanagementservice" }
+                    @{ Source = "CMS persistence target"; DatabaseName = "edfi_datamanagementservice" }
+                    @{ Source = "DMS admin/readiness target"; DatabaseName = "edfi_datamanagementservice" }
+                )
+            } | Should -Not -Throw
+        }
+
+        It "rejects an E2E database equal to the <Source> and names that colliding source" -ForEach @(
+            @{ Source = "topology datastore anchor"; Anchor = "edfi_datamanagementservice_e2e"; Cms = "cms_db"; Admin = "admin_db" }
+            @{ Source = "CMS persistence target"; Anchor = "anchor_db"; Cms = "edfi_datamanagementservice_e2e"; Admin = "admin_db" }
+            @{ Source = "DMS admin/readiness target"; Anchor = "anchor_db"; Cms = "cms_db"; Admin = "edfi_datamanagementservice_e2e" }
+        ) {
+            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
+            {
+                Assert-E2EDatabaseIsDedicated -EnvironmentFilePath "env" -E2EDatabaseName "edfi_datamanagementservice_e2e" -ProtectedDatabaseTarget @(
+                    @{ Source = "topology datastore anchor"; DatabaseName = $Anchor }
+                    @{ Source = "CMS persistence target"; DatabaseName = $Cms }
+                    @{ Source = "DMS admin/readiness target"; DatabaseName = $Admin }
+                )
+            } | Should -Throw -ExpectedMessage "*$Source*"
+        }
+
+        It "rejects a case-variant collision (deliberately conservative in front of DROP DATABASE)" {
+            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
+            {
+                Assert-E2EDatabaseIsDedicated -EnvironmentFilePath "env" -E2EDatabaseName "EDFI_DATAMANAGEMENTSERVICE" -ProtectedDatabaseTarget @(
+                    @{ Source = "topology datastore anchor"; DatabaseName = "edfi_datamanagementservice" }
+                )
+            } | Should -Throw -ExpectedMessage "*topology datastore anchor*"
+        }
+
+        It "fails closed when a protected target did not resolve to a concrete name" {
+            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
+            {
+                Assert-E2EDatabaseIsDedicated -EnvironmentFilePath "env" -E2EDatabaseName "edfi_datamanagementservice_e2e" -ProtectedDatabaseTarget @(
+                    @{ Source = "topology datastore anchor"; DatabaseName = "edfi_datamanagementservice" }
+                    @{ Source = "CMS persistence target"; DatabaseName = "" }
+                )
+            } | Should -Throw -ExpectedMessage "*could not resolve a concrete database name for the CMS persistence target*"
+        }
+
+        It "resolves protected targets through Compose and the provider verb, never a handwritten interpolation/parser" {
+            $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1") -Raw
+            # The two handwritten authorities are deleted; the single Compose + provider-verb authorities are used.
+            $content | Should -Not -Match "Resolve-EnvironmentValueReference"
+            $content | Should -Not -Match "Get-DatabaseNameFromConnectionString"
+            $content | Should -Not -Match "DbConnectionStringBuilder"
+            $content | Should -Match "Get-ComposeResolvedConfiguration"
+            $content | Should -Match "Get-CmsConnectionStringDatabaseName"
+            $content | Should -Match "Resolve-EffectiveConfigRuntimeContract"
+        }
+    }
+
     Context "instance configuration" {
         It "returns a structured object for NoDataStore route-unqualified selection" {
             . $script:repo.ConfigureScript
@@ -993,6 +1060,30 @@ exit $ExitCode
             $result.DataStoreIds | Should -Be @(77)
             $result.HasRouteQualifiedDataStores | Should -BeFalse
             $result.RouteContexts.Count | Should -Be 0
+        }
+
+        It "skips Compose topology resolution entirely for -NoDataStore (throwing stub is never invoked)" {
+            . $script:repo.ConfigureScript
+
+            # -NoDataStore reuses an existing CMS data store and registers no new datastore target, so
+            # configure must not resolve the Compose topology anchor at all. A stub that throws on any
+            # invocation proves the skip directly, rather than relying on the isolated fixture omitting
+            # the db compose file.
+            function Get-ComposeResolvedConfiguration { throw "Get-ComposeResolvedConfiguration must not be invoked for -NoDataStore" }
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 77
+                        name = "Existing"
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -NoDataStore } |
+                Should -Not -Throw
         }
 
         It "rejects NoDataStore when the sole existing data store is route-qualified" {
@@ -1075,9 +1166,47 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                 )
             }
 
+            # Registration path: configure resolves the topology anchor via Compose. The isolated fixture
+            # copies no db compose file, so stub it (production-compatible shape) for this registration test.
+            function Get-ComposeResolvedConfiguration { [pscustomobject]@{ TopologyDatastoreDatabaseName = 'edfi_datamanagementservice'; MssqlSaPassword = 'abcdefgh1!' } }
             Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials | Out-Null
 
             @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke ids=101,102 tenant="
+        }
+
+        It "fails a separate-topology anchor collision BEFORE any CMS mutation (Add-CmsClient never called)" {
+            . $script:repo.ConfigureScript
+
+            # The Compose-resolved topology anchor IS edfi_configurationservice, so -SeparateConfigDatabase
+            # would collapse. Configure must reject it during pre-mutation validation - before creating the
+            # bootstrap admin client or any other CMS state.
+            $script:addCmsClientCalled = $false
+            function Get-ComposeResolvedConfiguration { [pscustomobject]@{ TopologyDatastoreDatabaseName = 'edfi_configurationservice'; MssqlSaPassword = 'abcdefgh1!' } }
+            function Add-CmsClient { $script:addCmsClientCalled = $true }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { throw "Add-DataStore must not be reached on a rejected topology" }
+
+            { Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -SeparateConfigDatabase } |
+                Should -Throw "*same physical database as the dedicated configuration database*"
+            $script:addCmsClientCalled | Should -BeFalse -Because "the separate-topology collision must fail before any CMS mutation"
+        }
+
+        It "fails a connection-string-injection -DataStoreDatabaseName BEFORE any CMS mutation (Add-CmsClient never called)" {
+            . $script:repo.ConfigureScript
+
+            # A replacement carrying ';Database=...' would inject a duplicate keyword into the connection
+            # string the CMS data store stores (last-wins), redirecting it. The identifier-safety check in
+            # Resolve-RegisteredDatastoreTarget must reject it during pre-mutation validation, before the
+            # bootstrap admin client is created.
+            $script:addCmsClientCalled = $false
+            function Get-ComposeResolvedConfiguration { [pscustomobject]@{ TopologyDatastoreDatabaseName = 'edfi_datamanagementservice'; MssqlSaPassword = 'abcdefgh1!' } }
+            function Add-CmsClient { $script:addCmsClientCalled = $true }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { throw "Add-DataStore must not be reached on a rejected datastore target" }
+
+            { Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -DataStoreDatabaseName 'edfi_e2e;Database=edfi_configurationservice' } |
+                Should -Throw "*not valid in a database identifier*"
+            $script:addCmsClientCalled | Should -BeFalse -Because "an injection-unsafe datastore name must fail before any CMS mutation"
         }
 
         It "uses an explicit database name when creating the default local data store" {
@@ -1100,6 +1229,7 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                 return 303
             }
 
+            function Get-ComposeResolvedConfiguration { [pscustomobject]@{ TopologyDatastoreDatabaseName = 'edfi_datamanagementservice'; MssqlSaPassword = 'abcdefgh1!' } }
             $result = Invoke-ConfigureLocalDataStore `
                 -EnvironmentFile $script:repo.EnvFile `
                 -DataStoreDatabaseName "edfi_datamanagementservice_e2e"
@@ -1131,6 +1261,7 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                 )
             }
 
+            function Get-ComposeResolvedConfiguration { [pscustomobject]@{ TopologyDatastoreDatabaseName = 'edfi_datamanagementservice'; MssqlSaPassword = 'abcdefgh1!' } }
             $result = Invoke-ConfigureLocalDataStore `
                 -EnvironmentFile $script:repo.EnvFile `
                 -SchoolYearRange "2024-2025" `
@@ -3027,122 +3158,4 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
         }
     }
 
-    Context "E2E dedicated-database guard (engine-aware)" {
-        BeforeAll {
-            # Dot-source stops at the script's dot-source guard, exposing the guard functions
-            # without provisioning anything.
-            . (Join-Path $script:sourceDockerComposeRoot "provision-e2e-database.ps1")
-        }
-
-        It "rejects a case-variant of the bootstrap database name" {
-            # SQL Server's default collation treats identifiers case-insensitively, so a
-            # case-variant of the protected name is the same physical database there.
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi_datamanagementservice" } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "EDFI_DataManagementService"
-            } | Should -Throw "*must be dedicated*POSTGRES_DB_NAME*"
-        }
-
-        It "protects MSSQL_DB_NAME as a first-class database-name key" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_datamanagementservice" } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "Edfi_DataManagementService"
-            } | Should -Throw "*MSSQL_DB_NAME*"
-        }
-
-        It "extracts the database name from an Initial Catalog connection-string segment" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{
-                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
-                    } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_datamanagementservice"
-            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
-        }
-
-        It "rejects a Compose-quoted connection string that targets the E2E database" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{
-                        DMS_CONFIG_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
-                    } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "shared"
-            } | Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING*"
-        }
-
-        It "rejects a Compose-quoted database-name key that matches the E2E database" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{ MSSQL_DB_NAME = "'shared' # local database" } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "shared"
-            } | Should -Throw "*MSSQL_DB_NAME*"
-        }
-
-        It "resolves a variable-referenced connection-string database before comparing" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{
-                        SHARED_DB                           = "shared"
-                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
-                    } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "shared"
-            } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
-        }
-
-        It "fails closed when a protected database reference is undefined" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{
-                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
-                    } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "shared"
-            } | Should -Throw "*SHARED_DB*not defined*"
-        }
-
-        It "fails closed when protected database references are cyclic" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{
-                        SHARED_DB                           = '${OTHER_DB}'
-                        OTHER_DB                            = '${SHARED_DB}'
-                        DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${SHARED_DB};User ID=sa;Password=p;'
-                    } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "shared"
-            } | Should -Throw "*cyclic*SHARED_DB*"
-        }
-
-        It "fails closed when a configured protected connection string has no database name" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{
-                        DMS_CONFIG_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
-                    } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "shared"
-            } | Should -Throw "*could not determine a database name*"
-        }
-
-        It "accepts a dedicated E2E database name" {
-            {
-                Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{
-                        POSTGRES_DB_NAME                 = "edfi_datamanagementservice"
-                        MSSQL_DB_NAME                    = "edfi_datamanagementservice"
-                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
-                    } `
-                    -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_e2e"
-            } | Should -Not -Throw
-        }
-    }
 }
