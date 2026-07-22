@@ -14,7 +14,8 @@ public static class CliTestHelper
     public static (int ExitCode, string Output, string Error) RunProcess(
         string fileName,
         IEnumerable<string> arguments,
-        IDictionary<string, string>? environmentVariables = null
+        IDictionary<string, string>? environmentVariables = null,
+        string? standardInput = null
     )
     {
         var startInfo = new ProcessStartInfo
@@ -22,6 +23,7 @@ public static class CliTestHelper
             FileName = fileName,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = standardInput is not null,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -40,6 +42,13 @@ public static class CliTestHelper
         }
 
         using var process = Process.Start(startInfo)!;
+        if (standardInput is not null)
+        {
+            // The 'connection validate' verb reads the connection string from stdin; write it and
+            // close the stream so the verb's ReadToEnd() observes EOF instead of blocking.
+            process.StandardInput.Write(standardInput);
+            process.StandardInput.Close();
+        }
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
 
@@ -109,6 +118,21 @@ public static class CliTestHelper
         }
 
         return RunProcess(exePath, args);
+    }
+
+    public static (int ExitCode, string Output, string Error) RunCliWithStandardInput(
+        string standardInput,
+        params string[] args
+    )
+    {
+        var exePath = GetExecutablePath();
+
+        if (exePath.EndsWith(".dll"))
+        {
+            return RunProcess("dotnet", [exePath, .. args], standardInput: standardInput);
+        }
+
+        return RunProcess(exePath, args, standardInput: standardInput);
     }
 
     public static string[] GetAuthoritativeSchemaPaths()
