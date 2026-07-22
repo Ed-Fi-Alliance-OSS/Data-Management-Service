@@ -950,18 +950,19 @@ function Get-ComposeResolvedConfiguration {
         text the container receives and is compared literally by the runtime contract.
 
         Returns a record { ConfigProvider; DmsProvider; CmsConnectionString; MssqlSaPassword;
-        DatastoreConnectionString }. ConfigProvider is the Configuration Service (config) service's
-        AppSettings__Datastore (interpolated from DMS_CONFIG_DATASTORE); DmsProvider is the DMS (dms)
-        service's AppSettings__Datastore (interpolated INDEPENDENTLY from DMS_DATASTORE). The two are
-        deliberately separate fields so a consumer can never confuse the CMS runtime provider with the DMS
-        runtime provider - a shell DMS_DATASTORE could otherwise point the DMS container at a different engine
-        than the one that starts, unnoticed. A field is $null when its service or key is absent from the
-        composed set (e.g. the standalone-CMS lane composes no dms service, so DmsProvider and
-        DatastoreConnectionString are $null). DatastoreConnectionString is the DMS datastore admin connection
-        the DMS container actually receives - Compose resolves the datastore database name in it at
-        shell-over-env-file precedence, including through indirectly referenced variables - so the runtime
-        contract compares the container's datastore database to the host-side env-file value without examining
-        direct process-environment keys.
+        DatastoreConnectionString; TopologyDatastoreDatabaseName; DmsImage }. ConfigProvider is the
+        Configuration Service (config) service's AppSettings__Datastore (interpolated from DMS_CONFIG_DATASTORE);
+        DmsProvider is the DMS (dms) service's AppSettings__Datastore (interpolated INDEPENDENTLY from
+        DMS_DATASTORE). The two are deliberately separate fields so a consumer can never confuse the CMS runtime
+        provider with the DMS runtime provider - a shell DMS_DATASTORE could otherwise point the DMS container at
+        a different engine than the one that starts, unnoticed. A field is $null when its service or key is
+        absent from the composed set (e.g. the standalone-CMS lane composes no dms service, so DmsProvider and
+        DatastoreConnectionString are $null). TopologyDatastoreDatabaseName is the AUTHORITATIVE DMS datastore
+        database name: the db service's engine-specific datastore key (POSTGRES_DB_NAME or MSSQL_DB_NAME,
+        selected by -InfrastructureEngine, never positionally), which Compose resolves with the compose-file
+        default and shell-over-env-file precedence. It is deliberately NOT read from DatastoreConnectionString
+        (DATABASE_CONNECTION_STRING_ADMIN), which run.sh consumes only for a readiness probe (host/port/username)
+        and whose database can legitimately differ; that admin connection is never the datastore-name oracle.
 
     .PARAMETER ComposeFiles
         The docker compose "-f <file>" arguments, exactly as the ensuing `up` uses them.
@@ -980,6 +981,12 @@ function Get-ComposeResolvedConfiguration {
 
     .PARAMETER DmsServiceName
         The DMS service name to read for the datastore admin connection (default "dms").
+
+    .PARAMETER InfrastructureEngine
+        The engine the caller selected ('postgresql' | 'mssql'), used to choose the db-service datastore key
+        for TopologyDatastoreDatabaseName ('postgresql' -> POSTGRES_DB_NAME, 'mssql' -> MSSQL_DB_NAME). The
+        anchor is never chosen positionally, so an unrelated engine's key can never become the anchor. When
+        omitted (callers that do not consume the anchor), TopologyDatastoreDatabaseName is $null.
     #>
     param(
         [Parameter(Mandatory)][string[]]$ComposeFiles,
@@ -987,7 +994,8 @@ function Get-ComposeResolvedConfiguration {
         [Parameter(Mandatory)][string]$ProjectName,
         [string]$ConfigServiceName = "config",
         [string]$DbServiceName = "db",
-        [string]$DmsServiceName = "dms"
+        [string]$DmsServiceName = "dms",
+        [ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine
     )
 
     function Get-ComposeEnvironmentValue {
@@ -1042,13 +1050,28 @@ function Get-ComposeResolvedConfiguration {
         }
     }
 
+    # The topology datastore anchor: the engine-specific datastore database name the db service is
+    # initialized with (POSTGRES_DB_NAME on postgresql.yml, MSSQL_DB_NAME on mssql.yml), resolved by Docker
+    # Compose with the compose-file default and shell-over-env-file precedence. This is the AUTHORITATIVE
+    # datastore-name source - never DATABASE_CONNECTION_STRING_ADMIN, which run.sh consumes only for a
+    # readiness probe (host/port/username) and whose database can legitimately differ (a documented admin
+    # connection). The key is selected by the EXPLICIT engine, never positionally, so an unrelated engine's
+    # key (should both ever appear through composition) can never become the anchor. Callers that do not
+    # consume the anchor omit -InfrastructureEngine and receive $null.
+    $topologyDatastoreDatabaseName = $null
+    if (-not [string]::IsNullOrWhiteSpace($InfrastructureEngine)) {
+        $datastoreKeyName = if ((ConvertTo-CanonicalDatabaseEngine -Engine $InfrastructureEngine) -eq 'mssql') { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
+        $topologyDatastoreDatabaseName = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key $datastoreKeyName
+    }
+
     return [pscustomobject]@{
-        ConfigProvider            = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "AppSettings__Datastore"
-        DmsProvider               = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "AppSettings__Datastore"
-        CmsConnectionString       = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "DatabaseSettings__DatabaseConnection"
-        MssqlSaPassword           = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key "MSSQL_SA_PASSWORD"
-        DatastoreConnectionString = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "DATABASE_CONNECTION_STRING_ADMIN"
-        DmsImage                  = $dmsImage
+        ConfigProvider                = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "AppSettings__Datastore"
+        DmsProvider                   = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "AppSettings__Datastore"
+        CmsConnectionString           = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "DatabaseSettings__DatabaseConnection"
+        MssqlSaPassword               = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key "MSSQL_SA_PASSWORD"
+        DatastoreConnectionString     = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "DATABASE_CONNECTION_STRING_ADMIN"
+        TopologyDatastoreDatabaseName = $topologyDatastoreDatabaseName
+        DmsImage                      = $dmsImage
     }
 }
 
@@ -1077,20 +1100,21 @@ function Resolve-EffectiveConfigRuntimeContract {
         any Docker or Keycloak mutation:
           * on SQL Server, the SA password resolves to a non-blank value (stack invariant, always);
           * (when the DMS service participates) the DMS provider (Compose-resolved dms AppSettings__Datastore)
-            is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and the datastore database
-            the DMS container receives - read from Compose's own resolution of the datastore admin connection,
-            so any shell override of POSTGRES_DB_NAME / MSSQL_DB_NAME (direct or through an indirectly
-            referenced variable) is reflected - equals the datastore database host-side tooling reads from the
-            env file;
+            is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and the DMS topology datastore
+            database (POSTGRES_DB_NAME / MSSQL_DB_NAME, resolved by Compose on the db service - NOT the
+            readiness/admin connection) is a single nonblank, concrete value;
           * (when the Configuration Service participates) the CMS provider (Compose-resolved config
             AppSettings__Datastore) is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and
             the CMS connection string parses under the selected provider's own builder (a wrong-engine string
-            is rejected by the builder, not by keyword classification) and targets a concrete database - the
-            effective configuration database when -ConfigDatabaseName is supplied (full-stack lanes), or the
-            connection's own single target when it is not (standalone lane).
+            is rejected by the builder, not by keyword classification) and targets a concrete database that
+            equals the INDEPENDENTLY expected configuration database - the DMS datastore anchor in shared
+            topology, or the dedicated 'edfi_configurationservice' under -SeparateConfigDatabase - so a
+            caller-authored connection can never redefine the topology; it must agree. In the standalone lane
+            (no DMS service) the connection's own single target IS the effective name. Separate topology
+            additionally requires the datastore and configuration databases to be different physical databases.
 
         The Compose-resolved values are passed in (-ResolvedConfigProvider / -ResolvedDmsProvider /
-        -ResolvedCmsConnectionString / -ResolvedMssqlSaPassword / -ResolvedDatastoreConnectionString); the
+        -ResolvedCmsConnectionString / -ResolvedMssqlSaPassword / -ResolvedTopologyDatastoreDatabaseName); the
         start scripts obtain them from Get-ComposeResolvedConfiguration. Connection strings are parsed by the
         exact runtime providers via the SchemaTools `connection validate` verb (Get-CmsConnectionStringDatabaseName),
         located by -SchemaToolPath. Unit tests mock Get-CmsConnectionStringDatabaseName to exercise the
@@ -1110,9 +1134,16 @@ function Resolve-EffectiveConfigRuntimeContract {
     .PARAMETER DmsServiceIncluded
         Whether the DMS service participates in this compose set, decided by the caller from its own
         compose-file selection (never inferred from null Compose fields). When $true the DMS provider
-        (enum + engine agreement) and the datastore-name agreement are validated; when $false they are
+        (enum + engine agreement) and the DMS topology datastore anchor (a single nonblank, concrete value)
+        are validated, and the configuration database is expected against that anchor; when $false they are
         skipped - the standalone Configuration Service lane composes no dms service. The stack SA-password
         invariant is validated regardless of both participation flags.
+
+    .PARAMETER SeparateConfigDatabase
+        The topology the start script selected (never inferred from a name). When set, the expected
+        configuration database is the dedicated 'edfi_configurationservice' and must be a different physical
+        database from the DMS datastore anchor; when omitted (shared) the expected configuration database IS
+        the datastore anchor.
 
     .PARAMETER ResolvedConfigProvider
         The Compose-resolved Configuration Service AppSettings__Datastore value (from DMS_CONFIG_DATASTORE).
@@ -1134,35 +1165,28 @@ function Resolve-EffectiveConfigRuntimeContract {
     .PARAMETER ResolvedMssqlSaPassword
         The Compose-resolved db-service MSSQL_SA_PASSWORD value (SQL Server stacks).
 
-    .PARAMETER ResolvedDatastoreConnectionString
-        The Compose-resolved DMS-service DATABASE_CONNECTION_STRING_ADMIN (full-stack lanes). Its database
-        is the datastore database the DMS container receives; omitted (null) in the standalone-CMS lane.
-
-    .PARAMETER ConfigDatabaseName
-        The effective configuration database name the full-stack lanes materialized (the connection must
-        target it). Omit for the standalone lane, where the resolved connection's single target is the
-        effective name.
+    .PARAMETER ResolvedTopologyDatastoreDatabaseName
+        The Compose-resolved DMS topology datastore database name (POSTGRES_DB_NAME / MSSQL_DB_NAME on the db
+        service, from Get-ComposeResolvedConfiguration.TopologyDatastoreDatabaseName). When the DMS service
+        participates it is validated for a single nonblank, concrete value and is the expected configuration
+        database in shared topology. Omitted (null) in the standalone-CMS lane.
 
     .PARAMETER DatastoreDatabaseName
         The DMS datastore database name, used to build the SQL Server datastore registration connection.
-
-    .PARAMETER EnvValues
-        Env-file values, for the datastore-name agreement check (the host-side side of the comparison).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'ResolvedMssqlSaPassword', Justification = 'The SQL Server SA password is the local docker-compose plaintext value resolved by Compose (mssql.yml MSSQL_SA_PASSWORD); it is passed as a string throughout these compose scripts by design.')]
     param(
         [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
         [Parameter(Mandatory)][bool]$ConfigServiceIncluded,
         [Parameter(Mandatory)][bool]$DmsServiceIncluded,
+        [switch]$SeparateConfigDatabase,
         [AllowEmptyString()][AllowNull()][string]$ResolvedConfigProvider,
         [AllowEmptyString()][AllowNull()][string]$ResolvedDmsProvider,
         [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedCmsConnectionString,
         [Parameter(Mandatory)][object]$SchemaToolPath,
         [AllowEmptyString()][AllowNull()][string]$ResolvedMssqlSaPassword,
-        [AllowEmptyString()][AllowNull()][string]$ResolvedDatastoreConnectionString,
-        [AllowEmptyString()][AllowNull()][string]$ConfigDatabaseName,
-        [AllowEmptyString()][AllowNull()][string]$DatastoreDatabaseName,
-        [hashtable]$EnvValues
+        [AllowEmptyString()][AllowNull()][string]$ResolvedTopologyDatastoreDatabaseName,
+        [AllowEmptyString()][AllowNull()][string]$DatastoreDatabaseName
     )
 
     # Canonicalize the selected engine once at entry through the single engine-token boundary, so every
@@ -1192,6 +1216,7 @@ function Resolve-EffectiveConfigRuntimeContract {
     # standalone Configuration Service lane, which composes no dms service. Participation is decided by the
     # caller from its own compose-file selection and is NEVER inferred from null Compose fields.
     $dmsProviderCanonical = $null
+    $topologyDatastoreName = $null
     if ($DmsServiceIncluded) {
         # (1) DMS provider is an EXACT enum (case-insensitively, no surrounding whitespace); anything else -
         # 'mysql', blank, ' mssql ' - fails fast rather than being coerced.
@@ -1210,22 +1235,19 @@ function Resolve-EffectiveConfigRuntimeContract {
             throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective DMS runtime provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$dmsProviderCanonical'. Unset the conflicting DMS_DATASTORE shell override, or select that engine with -DatabaseEngine."
         }
 
-        # (3) Datastore-name agreement. The database the DMS container actually receives is read from Docker
-        # Compose's own resolution of the datastore admin connection - which honors a shell override of
-        # POSTGRES_DB_NAME / MSSQL_DB_NAME whether direct OR routed through an indirectly referenced variable -
-        # and must equal the datastore database host-side tooling reads from the env file. Otherwise
-        # configure/provision create and register one database while the DMS container connects to another.
-        if ($null -ne $EnvValues -and -not [string]::IsNullOrWhiteSpace($ResolvedDatastoreConnectionString)) {
-            $datastoreKey = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL_DB_NAME' } else { 'POSTGRES_DB_NAME' }
-            $fileRaw = [string]$EnvValues[$datastoreKey]
-            if (-not [string]::IsNullOrWhiteSpace($fileRaw)) {
-                $fileDatastore = Resolve-EnvValueReference -Value $fileRaw -EnvValues $EnvValues
-                $containerTargets = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedDatastoreConnectionString -SchemaToolPath $SchemaToolPath)
-                $containerDatastore = if ($containerTargets.Count -gt 0) { $containerTargets[0] } else { '' }
-                if (-not (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $containerDatastore -Right $fileDatastore)) {
-                    throw "Configuration runtime-contract error: the DMS datastore database the containers receive resolves (via Docker Compose) to '$containerDatastore', but host-side configuration and provisioning read '$fileDatastore' from the env file for $datastoreKey. Docker Compose gives the shell environment precedence over --env-file - directly or through an indirectly referenced variable - so this split would create/provision one database while the DMS container targets another. Unset or align the conflicting shell variable."
-                }
-            }
+        # (3) Topology datastore anchor. The DMS datastore database is the engine-specific datastore name
+        # (POSTGRES_DB_NAME / MSSQL_DB_NAME) Docker Compose resolved on the db service - the authoritative
+        # source, never DATABASE_CONNECTION_STRING_ADMIN (a readiness/admin connection whose database can
+        # legitimately differ). A participating DMS service must have exactly one nonblank, concrete target
+        # (not an unexpanded shell terminal). The container-vs-host-tooling agreement - that configure /
+        # provision register this same database - is guaranteed by the host-side tooling converging on this
+        # Compose-resolved anchor (wired in a follow-up commit), not by comparing an env-file projection here.
+        $topologyDatastoreName = $ResolvedTopologyDatastoreDatabaseName
+        if ([string]::IsNullOrWhiteSpace($topologyDatastoreName)) {
+            throw "Configuration runtime-contract error: the DMS topology datastore database is blank, so a participating DMS service has no database target. Set POSTGRES_DB_NAME (PostgreSQL) or MSSQL_DB_NAME (SQL Server), or the variable it references."
+        }
+        if ($topologyDatastoreName -match '\$\{') {
+            throw "Configuration runtime-contract error: the DMS topology datastore database resolves to '$topologyDatastoreName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
         }
     }
 
@@ -1267,18 +1289,33 @@ function Resolve-EffectiveConfigRuntimeContract {
             throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets no database (set Database or Initial Catalog), so the Configuration Service would connect to the engine default instead of the effective configuration database."
         }
 
-        # (4) Effective configuration database name. Full-stack lanes pass -ConfigDatabaseName (materialized
-        # by the topology resolver) and the connection MUST target it. The standalone lane omits it, so the
-        # resolved connection is authoritative and its single target IS the effective name.
-        if (-not [string]::IsNullOrWhiteSpace($ConfigDatabaseName)) {
+        # (4) Effective configuration database name and topology relationship.
+        if ($DmsServiceIncluded) {
+            # FULL-STACK: the expected configuration database is computed INDEPENDENTLY of the connection -
+            # shared topology uses the DMS datastore anchor, -SeparateConfigDatabase the dedicated
+            # configuration database - so a caller-authored connection can never redefine the topology (the
+            # DMS_CONFIG_DATABASE_NAME seam remains definitive); the connection must AGREE with it.
+            $separateConfigDatabaseName = 'edfi_configurationservice'
+            $expectedConfigDatabaseName = if ($SeparateConfigDatabase) { $separateConfigDatabaseName } else { $topologyDatastoreName }
             foreach ($target in $targetDatabases) {
-                if (-not (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $target -Right $ConfigDatabaseName)) {
-                    throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$target', but the effective configuration database is '$ConfigDatabaseName'. Align the connection string (or the shell variable it routes through), or pass -SeparateConfigDatabase to select the dedicated configuration database."
+                if (-not (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $target -Right $expectedConfigDatabaseName)) {
+                    throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$target', but the effective configuration database is '$expectedConfigDatabaseName' (shared topology uses the DMS datastore database; -SeparateConfigDatabase uses the dedicated configuration database). Align the connection string, or the shell variable it routes through."
                 }
             }
-            $effectiveDatabaseName = $ConfigDatabaseName
+            $effectiveDatabaseName = $expectedConfigDatabaseName
+
+            # Separate topology requires the DMS datastore and the configuration database to be DIFFERENT
+            # physical databases under the engine's identity policy, so the topology is not "separate" in
+            # name only. (Shared topology deliberately makes them the same - already enforced by the equality
+            # above, since the expected name IS the datastore anchor.)
+            if ($SeparateConfigDatabase -and (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $topologyDatastoreName -Right $expectedConfigDatabaseName)) {
+                throw "Configuration runtime-contract error: -SeparateConfigDatabase selects the dedicated configuration database '$expectedConfigDatabaseName', but the DMS datastore database ('$topologyDatastoreName') is the same physical database under $InfrastructureEngine identity semantics, so the topology would not be separate. Choose a different DMS datastore name, or omit -SeparateConfigDatabase for the shared topology."
+            }
         }
         else {
+            # STANDALONE (no DMS service participates): there is no datastore anchor to expect against, so the
+            # resolved connection is authoritative and its single target IS the effective configuration
+            # database (which OpenIddict initialization then uses).
             $distinctTargets = [System.Collections.Generic.HashSet[string]]::new((Get-DatabaseNameComparer -Engine $InfrastructureEngine))
             foreach ($target in $targetDatabases) { [void]$distinctTargets.Add($target) }
             if ($distinctTargets.Count -gt 1) {
@@ -1320,15 +1357,16 @@ function Resolve-EffectiveConfigRuntimeContract {
     }
 
     return [pscustomobject]@{
-        InfrastructureEngine      = $InfrastructureEngine
-        ConfigProvider            = $configProviderCanonical
-        DmsProvider               = $dmsProviderCanonical
-        CmsConnectionString       = $ResolvedCmsConnectionString
-        CmsDatabaseName           = $effectiveDatabaseName
-        MssqlSaPassword           = $mssqlSaPassword
-        OpenIddict                = $openIddict
-        DatastoreDatabaseName     = $DatastoreDatabaseName
-        DatastoreConnectionString = $datastoreConnectionString
+        InfrastructureEngine          = $InfrastructureEngine
+        ConfigProvider                = $configProviderCanonical
+        DmsProvider                   = $dmsProviderCanonical
+        CmsConnectionString           = $ResolvedCmsConnectionString
+        CmsDatabaseName               = $effectiveDatabaseName
+        TopologyDatastoreDatabaseName = $topologyDatastoreName
+        MssqlSaPassword               = $mssqlSaPassword
+        OpenIddict                    = $openIddict
+        DatastoreDatabaseName         = $DatastoreDatabaseName
+        DatastoreConnectionString     = $datastoreConnectionString
     }
 }
 
@@ -1702,8 +1740,8 @@ function Resolve-ConfigDatabaseTopologyEnvironmentFile {
         $DockerComposeRoot = $PSScriptRoot
     }
 
-    # Canonicalize through the single engine-token boundary so the datastore-key selection and the
-    # provider-aware collision guard below use the canonical engine even under a case variant.
+    # Canonicalize through the single engine-token boundary so the datastore-key selection below uses the
+    # canonical engine even under a case variant.
     $DatabaseEngine = ConvertTo-CanonicalDatabaseEngine -Engine $DatabaseEngine
 
     $separateConfigDatabaseName = "edfi_configurationservice"
@@ -1728,17 +1766,11 @@ function Resolve-ConfigDatabaseTopologyEnvironmentFile {
     # already carries. Idempotency in separate mode comes from forwarding the switch to every phase
     # (so a re-resolution stays separate and no-ops below), not from preserving an existing name.
     if ($SeparateConfigDatabase) {
+        # The dedicated configuration database. The datastore-vs-configuration distinctness ("separate" is
+        # not separate in name only) is enforced by the runtime contract against Docker Compose's own
+        # resolution of the topology datastore anchor - not here against an env-file projection that a shell
+        # override could bypass and that a blank datastore silently skipped.
         $effectiveName = $separateConfigDatabaseName
-
-        # Separate mode requires a configuration database physically distinct from the DMS datastore.
-        # Reject a datastore that is the same physical database as the dedicated name under the engine's
-        # identity semantics (Test-DatabaseNameEquivalent) - PostgreSQL ordinal, SQL Server
-        # case-insensitive - so the topology is not "separate" in name only. This routes through the one
-        # provider-aware equivalence policy shared with the runtime contract's target comparisons.
-        if (-not [string]::IsNullOrWhiteSpace($datastoreName) -and
-            (Test-DatabaseNameEquivalent -Engine $DatabaseEngine -Left $datastoreName -Right $separateConfigDatabaseName)) {
-            throw "Resolve-ConfigDatabaseTopologyEnvironmentFile: -SeparateConfigDatabase selects the dedicated configuration database '$separateConfigDatabaseName', but the DMS datastore database ('$datastoreKey' = '$datastoreName') is the same physical database under $DatabaseEngine identity semantics, so the topology would not be separate. Choose a different DMS datastore name, or omit -SeparateConfigDatabase to use the shared topology."
-        }
     }
     else {
         $effectiveName = $datastoreName

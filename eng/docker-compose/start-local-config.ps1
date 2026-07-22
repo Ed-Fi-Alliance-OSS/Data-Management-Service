@@ -57,9 +57,9 @@ else {
     # action (network creation, image build, container start, Keycloak/OpenIddict). `docker compose config`
     # is read-only and resolves the same files, env file, and shell the `up` calls below use, so what is
     # validated here is exactly what the container receives; connection strings are parsed by the exact
-    # runtime providers via the api-schema-tools validator. The standalone lane passes no -ConfigDatabaseName
-    # (the resolved connection's own single target IS the effective configuration database OpenIddict
-    # initializes) and no datastore connection (there is no separate DMS datastore service in this lane).
+    # runtime providers via the api-schema-tools validator. The standalone lane composes no dms service, so
+    # DMS participation is false and there is no topology datastore anchor; the resolved CMS connection's own
+    # single target IS the effective configuration database OpenIddict initializes.
     # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool);
     # imported here in the startup path only (not on teardown), and with -Force so a long-lived session that
     # loaded a pre-BuildIfMissing copy is refreshed to the current resolver signature. The module's own nested
@@ -79,8 +79,7 @@ else {
         -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
         -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
         -SchemaToolPath $schemaToolPath `
-        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
-        -EnvValues $envValues
+        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword
 
     $existingNetwork = docker network ls --filter name="dms" -q
     if (! $existingNetwork) {

@@ -368,7 +368,7 @@ else {
         # refreshes the resolver without re-homing the manifest functions this script already loaded.
         # -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the SDK is present.
         Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
-        $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published"
+        $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-published" -InfrastructureEngine $DatabaseEngine
         # Resolve the connection-string validator from either a host executable (preferred, when a prebuilt
         # tool or the .NET SDK is present) or - on a clean Docker/PowerShell-only published host - the DMS
         # image that bundles the tool, so exact-provider parsing needs no host SDK or source build.
@@ -380,14 +380,13 @@ else {
             -InfrastructureEngine $DatabaseEngine `
             -ConfigServiceIncluded $configServiceIncluded `
             -DmsServiceIncluded $true `
+            -SeparateConfigDatabase:$SeparateConfigDatabase `
             -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
             -ResolvedDmsProvider $resolvedCompose.DmsProvider `
             -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
             -SchemaToolPath $schemaToolPath `
             -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
-            -ResolvedDatastoreConnectionString $resolvedCompose.DatastoreConnectionString `
-            -ConfigDatabaseName $envValues["DMS_CONFIG_DATABASE_NAME"] `
-            -EnvValues $envValues
+            -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName
     }
 
     if ($PreflightOnly) {
