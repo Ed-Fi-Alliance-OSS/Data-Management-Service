@@ -52,10 +52,13 @@ public static class ConnectionCommand
 
     private static int Execute(ILogger logger, string engine, string connectionString)
     {
-        // The engine is supplied by the caller's explicit provider selection (already an exact
-        // postgresql|mssql enum); an unrecognized value is a usage error, distinct from an invalid
-        // connection string, so it exits non-zero rather than producing a { valid: false } result.
-        if (engine is not ("postgresql" or "mssql"))
+        // Canonical engine-token boundary. This is the direct CLI entry point, so it must be robust on
+        // its own: publicly documented case variants (e.g. MSSQL, PostgreSQL) resolve to the canonical
+        // lowercase token, while an unsupported value or a surrounding-whitespace variant is a usage
+        // error - distinct from an invalid connection string - and exits non-zero rather than producing
+        // a { valid: false } result.
+        string? canonicalEngine = CanonicalizeEngine(engine);
+        if (canonicalEngine is null)
         {
             Console.Error.WriteLine($"Unsupported engine '{engine}'. Use 'postgresql' or 'mssql'.");
             return 2;
@@ -66,9 +69,10 @@ public static class ConnectionCommand
         string? error = null;
         try
         {
-            database = engine == "postgresql"
-                ? ParsePostgreSql(connectionString)
-                : ParseSqlServer(connectionString);
+            database =
+                canonicalEngine == "postgresql"
+                    ? ParsePostgreSql(connectionString)
+                    : ParseSqlServer(connectionString);
             valid = true;
         }
         catch (Exception ex)
@@ -81,9 +85,31 @@ public static class ConnectionCommand
         // Structured result on stdout; Program.cs routes all logs to stderr when stdout is redirected,
         // so a caller capturing stdout receives exactly this one JSON line.
         Console.Out.WriteLine(
-            JsonSerializer.Serialize(new ConnectionValidationResult(valid, database, error), SerializerOptions)
+            JsonSerializer.Serialize(
+                new ConnectionValidationResult(valid, database, error),
+                SerializerOptions
+            )
         );
         return 0;
+    }
+
+    /// <summary>
+    /// The single engine-token boundary for this CLI. Accepts the two supported engines
+    /// case-insensitively (so publicly documented variants such as <c>MSSQL</c> and <c>PostgreSQL</c>
+    /// resolve to the canonical <c>mssql</c> / <c>postgresql</c>) and returns <c>null</c> for anything
+    /// else, including surrounding-whitespace variants, which are usage errors rather than engines.
+    /// </summary>
+    private static string? CanonicalizeEngine(string engine)
+    {
+        if (string.Equals(engine, "postgresql", StringComparison.OrdinalIgnoreCase))
+        {
+            return "postgresql";
+        }
+        if (string.Equals(engine, "mssql", StringComparison.OrdinalIgnoreCase))
+        {
+            return "mssql";
+        }
+        return null;
     }
 
     private static string? ParsePostgreSql(string connectionString)
