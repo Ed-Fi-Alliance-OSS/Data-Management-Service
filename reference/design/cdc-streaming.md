@@ -672,7 +672,9 @@ Deployment automation evaluates end-to-end CDC component health for each binding
   retention, fixed partition count, ACL, transform, and partitioner algorithm that match
   the binding record and fixed v1 contract; the current operational `maxRecordBytes`,
   producer request/buffer memory, broker-size compatibility, and connector configuration;
-  plus the derived compacted CDC progress topic and its connector-only ACL,
+  plus the derived compacted CDC progress topic and its connector-only ACL; both topics'
+  actual replica counts and explicit per-topic `min.insync.replicas` values must satisfy
+  the active deployment durability profile,
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
   through the provider source-position barrier defined below, captured after DMS reported
   a sufficiently recent exact-zero audit,
@@ -1024,6 +1026,16 @@ producer.override.max.request.size=<maxRecordBytes>
 producer.override.buffer.memory=<producerBufferBytes>
 producer.override.compression.type=none
 ```
+
+`acks=all` is paired with an explicit durability profile for both the public and CDC
+progress topics. Production deployments require a replication factor of at least three
+and an explicit per-topic `min.insync.replicas` of at least two. Local development and CI
+may use a single-broker profile with replication factor one and
+`min.insync.replicas=1`. Provisioning validates the actual replica count and topic-level
+override before connector registration, and live validation keeps combined readiness
+false when either topic drifts below the active profile. These are operational deployment
+settings rather than binding fields, and changing them does not require a new binding
+generation.
 
 The ordering and compression values are fixed v1 values; `max.request.size` and
 `buffer.memory` come from the mutable per-target record-size policy. The generated producer
@@ -1419,6 +1431,10 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   never placed in `.bootstrap/bootstrap-manifest.json`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
+- Topic provisioning applies the explicit durability profile above to both the public and
+  progress topics. The local single-broker default is replication factor one with
+  `min.insync.replicas=1`; production-like automation requires at least three replicas and
+  `min.insync.replicas` of at least two. It does not rely on broker defaults.
 - Public-topic provisioning requires and idempotently validates `cleanup.policy=compact`,
   an explicit per-topic `delete.retention.ms` of at least `604800000`, and
   `max.message.bytes=<maxRecordBytes>` from the current operational policy. It rejects any
