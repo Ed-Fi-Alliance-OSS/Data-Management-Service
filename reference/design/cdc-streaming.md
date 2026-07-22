@@ -501,10 +501,11 @@ Recovery depends on whether the projection can have entered downstream ordered s
 - If an active or historical connector or another ordered downstream consumer may have
   observed the higher cache version, stop the affected publication path and create a new
   downstream state namespace. For Kafka CDC, this means a new immutable binding
-  generation, topic, and consumer state namespace. With old cache writers and the old
-  connector stopped, clear all cache rows and the latch in one provider transaction,
-  complete ordinary reconciliation, and snapshot the rebuilt cache into that new
-  namespace. Do not publish the lower version as an in-place correction to the old one.
+  generation, public and progress topics, and consumer state namespace. With old cache
+  writers and the old connector stopped, clear all cache rows and the latch in one provider
+  transaction, complete ordinary reconciliation, and snapshot the rebuilt cache into that
+  new namespace. Do not publish the lower version as an in-place correction to the old
+  one.
 - Treat any in-place canonical database restore/reset as the CDC case above even when the
   physical database name or connection metadata did not change.
 
@@ -612,9 +613,10 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
 - a DMS projection-health result whose current source fingerprint matches that binding,
 - provisioned `dms.Document`, `dms.DocumentCache`, `dms.DocumentCacheState`, and opt-in
   `dms.CdcHeartbeat` tables and provider CDC/key prerequisites,
-- topic name, compact-only cleanup policy, fixed partition count, ACL, transform,
+- public topic name, compact-only cleanup policy, fixed partition count, ACL, transform,
   partitioner algorithm, `maxRecordBytes`, broker-size compatibility, and connector
-  configuration that match the binding record,
+  configuration that match the binding record, plus the derived compacted CDC progress
+  topic and its connector-only ACL,
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
   through the provider source-position barrier defined below, captured after DMS reported
   a sufficiently recent exact-zero audit,
@@ -644,12 +646,25 @@ ms. Deployments may lower it or raise it within their readiness timeout, but tem
 live-configuration validation reject zero, a negative value, a missing/conflicting action
 query, or, for SQL Server, `poll.interval.ms > heartbeat.interval.ms`.
 
-`dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, delete,
-and Debezium heartbeat records are intentionally dropped by the `DocumentState` transform
-before public-record validation and are never routed to the instance document topic. A
-dropped heartbeat still advances the source task's source offset only after earlier source
-records have completed Kafka Connect processing. The table is not projection work,
-completeness evidence, a public event source, or part of the immutable binding record.
+`dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, and delete
+records and Debezium heartbeat records are routed by the `DocumentState` transform to the
+binding-scoped CDC progress topic before public-record validation; they are never routed to
+the instance document topic. The progress topic is a transport acknowledgement boundary,
+not a status store: deployment automation does not consume it and continues to read the
+connector's committed source offsets through the REST API.
+
+The transform must not return `null` for a heartbeat relied upon for readiness. In the
+pinned Kafka Connect 4.3 runtime, a transformed-away record invokes `recordDropped()`
+before `prepareToSendRecord()` and therefore never enters `SubmittedRecords`; invoking the
+connector callback alone does not make that source offset committable. A routed heartbeat
+enters the normal producer acknowledgement path, so its source offset becomes committable
+only after that heartbeat and every earlier record for the same source partition have been
+acknowledged. See Kafka Connect's
+[source-task send loop](https://github.com/apache/kafka/blob/4.3.0/connect/runtime/src/main/java/org/apache/kafka/connect/runtime/AbstractWorkerSourceTask.java#L413-L425),
+[`WorkerSourceTask` callbacks](https://github.com/apache/kafka/blob/4.3.0/connect/runtime/src/main/java/org/apache/kafka/connect/runtime/WorkerSourceTask.java#L130-L142),
+and [`SubmittedRecords`](https://github.com/apache/kafka/blob/4.3.0/connect/runtime/src/main/java/org/apache/kafka/connect/runtime/SubmittedRecords.java#L34-L75).
+The heartbeat table is not projection work, completeness evidence, a public event source,
+or part of the immutable binding record.
 
 For every transition to combined ready, deployment automation performs this sequence:
 
@@ -712,7 +727,7 @@ and
 
 ## Deployment-Owned CDC Target and Physical Source Binding
 
-Each logical instance topic maps to exactly one physical database containing the
+Each logical public instance topic maps to exactly one physical database containing the
 captured tables. Registering separately authorized topics for multiple CMS aliases of
 the same physical document set is rejected because the rows contain no tenant or
 data-store discriminator.
@@ -756,8 +771,8 @@ replication and failover retain it. Creation of an independent writable data sto
 template, clone, or copied backup assigns a new UUID before the data store becomes
 available. A rollback or restore that replaces an existing source rotates
 `SourceIdentity` through the explicit CDC recovery workflow and, when CDC state exists,
-uses a new binding generation, topic, and consumer state namespace. Rotation is never
-part of ordinary DDL rerun or DMS startup.
+uses a new binding generation, public and progress topics, and consumer state namespace.
+Rotation is never part of ordinary DDL rerun or DMS startup.
 Diagnostics identify conflicting opaque data-store IDs without credentials, tenant
 display names, or unsanitized physical identifiers.
 
@@ -810,6 +825,13 @@ framing. It is immutable within the binding generation. It is not copied from th
 request-body limit because cache materialization can inject links and the transform adds
 the public envelope.
 
+`topicName` is the public instance document topic. Each binding also governs one internal
+CDC progress topic whose name is derived exactly as `topicName + ".cdc-progress"`. The
+derived name is not another binding field or operator input; template generation emits it,
+and bootstrap and live-configuration validation reject any different value. The progress
+topic has one partition and `cleanup.policy=compact`. It contains no public document state,
+and its retained contents are not part of the public bootstrap contract.
+
 For local development and CI, the deployment automation stores one JSON record per
 generation under a deployment-owned persistent state root, with the default layout:
 
@@ -834,12 +856,12 @@ Binding creation and cleanup follow a fail-closed order:
 
 1. Obtain DMS's current fingerprint derived from `dms.DataStoreIdentity` and resolve the
    intended artifact names.
-2. Atomically create the immutable binding record before creating a topic, connector, or
-   provider capture artifact. A record that already exists must match exactly; automation
-   never rewrites its binding fields.
+2. Atomically create the immutable binding record before creating either derived topic, the
+   connector, or a provider capture artifact. A record that already exists must match
+   exactly; automation never rewrites its binding fields.
 3. If any governed artifact exists without its binding record, or differs from the
    record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
-   binding from an existing topic name or connector configuration. Explicit adoption
+   binding from existing topic names or connector configuration. Explicit adoption
    requires an operator-supplied complete record plus live verification of the physical
    source and every retained artifact.
 4. On retirement, either retain the binding record with every retained governed
@@ -854,18 +876,19 @@ it must never leave surviving artifacts reusable after automatic record deletion
 
 V1 never reassigns an existing topic or connector generation to a different physical
 database. Moving a `DataStoreId` to another physical document set creates a new binding
-generation, connector, topic, and consumer state namespace. Removing a target requires
-explicit retain-or-delete decisions for every generation. In-place source reset and
-topic reuse are deferred. The same-source provisioning workflow remains idempotent for
-an exact binding match, and deployment automation rejects separately authorized bindings
-for multiple CMS aliases of the same physical document set.
+generation, connector, public topic, progress topic, and consumer state namespace.
+Removing a target requires explicit retain-or-delete decisions for every generation.
+In-place source reset and topic reuse are deferred. The same-source provisioning workflow
+remains idempotent for an exact binding match, and deployment automation rejects separately
+authorized bindings for multiple CMS aliases of the same physical document set.
 
 ## Connector Topology and Provider Setup
 
 V1 requires one logical connector per DMS instance with `tasks.max = 1`. A connector is
-bound to exactly one instance database, binding generation, and public topic, so both
-document source tables and the internal heartbeat source share one connector task and one
-target topic. A connector must not span multiple instance databases, even when the
+bound to exactly one instance database and binding generation. Document records route to
+that binding's public topic, while heartbeat progress routes to its derived internal
+progress topic; both use the same connector task, source partition, offset state, and
+failure boundary. A connector must not span multiple instance databases, even when the
 provider supports doing so.
 
 Every v1 connector pins these source-producer overrides:
@@ -970,9 +993,9 @@ database-per-instance isolation model.
 
 Although the Debezium SQL Server connector can capture multiple databases, v1 does not
 support that topology. Each instance database has its own connector, binding generation,
-offset state, failure boundary, and single `target.topic`. Multi-database consolidation
-requires a future source-aware routing contract and is not an operator-configurable v1
-exception.
+offset state, failure boundary, public target topic, and derived progress topic.
+Multi-database consolidation requires a future source-aware routing contract and is not an
+operator-configurable v1 exception.
 
 Provider CDC/key setup is opt-in and does not run during ordinary relational provisioning
 when CDC is not selected.
@@ -980,7 +1003,8 @@ when CDC is not selected.
 ## Connector Transform Pipeline
 
 The connector uses one Ed-Fi-owned `DocumentState` SMT as the contract boundary between
-raw Debezium records and the public topic. The transform implements the source mapping
+raw Debezium records and the public document and internal progress topics. The transform
+implements the source mapping
 from the
 [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 and the serialized contract from the
@@ -993,9 +1017,12 @@ transforms=documentState
 transforms.documentState.type=org.edfi.kafka.connect.transforms.DocumentState
 transforms.documentState.provider=<postgresql|sqlserver>
 transforms.documentState.target.topic=<instance document topic>
+transforms.documentState.progress.topic=<derived CDC progress topic>
 ```
 
-Those are its only contract configuration values. The `dms.DocumentCache`,
+Those are its only contract configuration values. `progress.topic` is generated as
+`target.topic + ".cdc-progress"`; it is not operator-configurable, and template and live
+configuration validation reject another value. The `dms.DocumentCache`,
 `dms.Document`, and `dms.CdcHeartbeat` source identities, Debezium operation mapping,
 source columns, and v1 public fields are fixed transform behavior rather than a
 configurable mapping language.
@@ -1003,9 +1030,10 @@ configurable mapping language.
 1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
    internal heartbeat singleton for source-position progress.
 2. Inspect the original Debezium source table and operation before discarding the
-   envelope. Accept cache create, update, and snapshot/read records as upserts; accept
-   canonical document deletes as authoritative deletes; intentionally drop heartbeat
-   table operations, Debezium heartbeat records, and every other captured operation.
+   envelope. Retain `dms.CdcHeartbeat` table operations and Debezium heartbeat records as
+   internal progress records; accept cache create, update, and snapshot/read records as
+   public upserts; accept canonical document deletes as authoritative public deletes; and
+   intentionally drop every other captured operation.
 3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
    `D`-format text, and use it for both upserts and authoritative tombstones.
 4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
@@ -1024,20 +1052,23 @@ configurable mapping language.
    Suppress Debezium's additional automatic tombstone, for example with
    `tombstones.on.delete=false`, so one canonical delete produces exactly one public
    tombstone and cache deletion produces none.
-8. Route either retained result to the configured instance document topic. Returning
-   `null` from the transform drops an operation excluded by the source mapping.
+8. Route a retained document result to the configured instance document topic. Route a
+   retained heartbeat record, without applying the public document contract, to the
+   configured progress topic. Returning `null` from the transform drops only an operation
+   excluded by the source mapping and never a progress record used by readiness.
 
 The transform consumes schema-backed raw Debezium records and emits only one of three
-results: a final public upsert, a final public tombstone, or no record. Expected excluded
-operations are dropped; a malformed retained record, unexpected source shape, invalid
-`DocumentJson`, inconsistent embedded metadata, or unsupported temporal logical type
-fails transformation rather than publishing a partial or ambiguous record. Because the
-connector pins `errors.tolerance=none`, that failure stops the connector task instead of
-skipping the record. A failed task makes combined readiness false; offset or lag
-observations cannot reclassify it as caught up. Recovery requires correcting the cause
-and restarting or replacing the connector so the retained record is processed under the
-contract. Returning `null` for an explicitly excluded operation remains normal transform
-behavior and does not use the error-tolerance path.
+classes of result: a final public upsert or tombstone, an internal progress record, or no
+record. Expected excluded operations are dropped; a malformed retained record, unexpected
+source shape, invalid `DocumentJson`, inconsistent embedded metadata, or unsupported
+temporal logical type fails transformation rather than publishing a partial or ambiguous
+record. Because the connector pins `errors.tolerance=none`, that failure stops the connector
+task instead of skipping the record. A failed task makes combined readiness false; offset
+or lag observations cannot reclassify it as caught up. Recovery requires correcting the
+cause and restarting or replacing the connector so the retained record is processed under
+the contract. Returning `null` for an explicitly excluded operation remains normal
+transform behavior and does not use the error-tolerance path; readiness never depends on
+such a record advancing the committed source offset.
 
 Kafka Connect does not calculate `schemaEpoch`, interpret
 `DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
@@ -1101,17 +1132,19 @@ materializer implementations cannot alternate output for one version.
 ### New-topic cutover
 
 Changing the topic partition count, `partitionerAlgorithm` token, or immutable
-`maxRecordBytes` creates a new binding generation, topic, and consumer state namespace.
-Partition changes require the cutover because offsets cannot order across old and new
-partitions; a size change requires it because producer/topic/consumer compatibility is
-bound to the retained generation. The new topic may retain `documents.v1` and
-`contractVersion: 1` when the public key/value/delete contract is otherwise unchanged.
+`maxRecordBytes` creates a new binding generation, public and progress topics, and consumer
+state namespace. Partition changes require the cutover because offsets cannot order across
+old and new partitions; a size change requires it because producer/topic/consumer
+compatibility is bound to the retained generation. The new public topic may retain
+`documents.v1` and `contractVersion: 1` when the public key/value/delete contract is
+otherwise unchanged.
 
 A change to key encoding, required field names or JSON types, delete semantics, or the
 document contract itself requires a new topic contract such as `documents.v2`. Operators:
 
-1. Mark the CDC target not ready and reserve the new binding generation, topic, ACLs, and
-   consumer state namespace without changing the old binding in place.
+1. Mark the CDC target not ready and reserve the new binding generation, public and
+   progress topics, ACLs, and consumer state namespace without changing the old binding in
+   place.
 2. Stop the old connector and verify that all of its tasks are stopped or otherwise fenced
    from the source database. Stop every old-contract cache writer, including projector
    loops and optional direct fill. Neither old publication path may be restarted against
@@ -1121,12 +1154,12 @@ document contract itself requires a new topic contract such as `documents.v2`. O
    rebuild operation.
 4. Start only new-contract projector writers and completely reproject the cache until an
    exact finishing audit reports zero missing, cache-behind, and cache-ahead rows.
-5. Register the new connector against the new binding and topic with a fresh snapshot,
+5. Register the new connector against the new binding and topics with a fresh snapshot,
    complete the provider source-position barrier captured after the zero audit, recheck
    projection readiness, and bootstrap consumers in the new state namespace before
    restoring combined CDC readiness.
-6. Explicitly retain or retire the old topic and consumer state; never restart the old
-   connector against the rebuilt cache.
+6. Explicitly retain or retire the old public and progress topics and consumer state; never
+   restart the old connector against the rebuilt cache.
 
 Stopping or fencing the old connector before the cache clear is a required cutover
 barrier. Otherwise it could capture rows rebuilt under the new contract and publish them
@@ -1142,8 +1175,10 @@ versioned projection state and another design decision.
 ## Enablement and Initial Readiness Sequence
 
 The connector supports an initial snapshot of `dms.DocumentCache`. It may snapshot all
-included tables, but the operation filter drops every `dms.Document` and
-`dms.CdcHeartbeat` snapshot record.
+included tables. The operation filter drops every `dms.Document` snapshot record, while a
+`dms.CdcHeartbeat` snapshot record routes to the progress topic. A snapshot heartbeat does
+not satisfy the streaming source-position barrier; the adapter still rejects snapshot
+offsets and waits for the post-audit action-query update.
 
 For a new instance:
 
@@ -1152,7 +1187,7 @@ For a new instance:
 2. Resolve the physical source and atomically create its deployment-owned immutable
    binding record.
 3. Provision and validate the relational schema and cache table, apply provider CDC/key
-   setup, and create the binding's compact-only instance topic and ACLs.
+   setup, and create the binding's compact-only public and progress topics and their ACLs.
 4. Register the connector from that exact binding before DMS reconciliation or
    application writes that must be observed.
 5. Start or roll out DMS so monotonic cache upserts flow through established capture.
@@ -1182,18 +1217,22 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   never placed in `.bootstrap/bootstrap-manifest.json`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
-- Topic provisioning requires and idempotently validates `cleanup.policy=compact`; it
-  rejects any cleanup policy that includes `delete`, and sets
-  `max.message.bytes=<binding maxRecordBytes>`.
+- Public-topic provisioning requires and idempotently validates `cleanup.policy=compact`;
+  it rejects any cleanup policy that includes `delete`, and sets
+  `max.message.bytes=<binding maxRecordBytes>`. Progress-topic provisioning derives the
+  name from the binding, requires exactly one partition and `cleanup.policy=compact`, and
+  does not apply the public record-size or consumer-bootstrap contract.
 - Before connector registration, bootstrap verifies the broker request, record-batch,
   and replica-fetch path against `maxRecordBytes`; an unverifiable or smaller limit fails
   setup rather than relying on Kafka defaults.
 - The same workflow provisions and idempotently validates the binding-scoped topic ACLs
-  before connector registration. It emits literal instance-topic grants for the
-  deployment-supplied connector and consumer principals and never emits a shared-topic,
-  wildcard-topic, or cross-instance consumer grant.
-- Bootstrap prints connector name, provider, database, opaque instance key, and topic;
-  secrets are excluded.
+  before connector registration. It emits literal public-topic grants for the connector
+  and deployment-supplied consumer principals. It grants the connector principal only the
+  required producer access to the progress topic and grants no instance-consumer access to
+  that topic. It never emits a shared-topic, wildcard-topic, or cross-instance consumer
+  grant.
+- Bootstrap prints connector name, provider, database, opaque instance key, and public and
+  progress topics; secrets are excluded.
 - It calculates the combined readiness sequence above and reports whether binding,
   migration, DMS projection, heartbeat/capture progress, provider-barrier catch-up, or lag
   failed.
@@ -1251,19 +1290,24 @@ reconciliation, health, monotonic-upsert, and delete-fence behavior.
 ## Security, Telemetry, and Operations
 
 Topic-per-instance ACLs are the Kafka authorization boundary. Shared topics requiring
-consumer-side instance filtering are not supported. The stream contains sensitive data;
-Kafka Connect internal topics, its REST API, and database credentials are not exposed to
-third-party consumers. Local insecure defaults must be replaced in production.
+consumer-side instance filtering are not supported. The public stream contains sensitive
+data. The binding-scoped CDC progress topic may contain raw connector source metadata and
+is available only to the connector principal and deployment control plane; instance
+consumer principals receive no access. Kafka Connect worker internal topics, its REST API,
+and database credentials are likewise not exposed to third-party consumers. Local
+insecure defaults must be replaced in production.
 
 Deployment bootstrap owns ACL provisioning as part of the one-shot binding workflow. For
 each binding it idempotently creates and verifies the literal topic grants required by the
 connector producer and the deployment-supplied instance consumer principals, plus only
-the consumer-group grants required by those consumers. Repeated execution must accept an
-exact ACL match, repair missing required grants, and fail closed when the effective
-deployment-managed ACL set would grant a configured instance consumer access to another
-instance topic. ACL verification completes before connector registration and before
-combined readiness can pass. It does not rely on consumer-side filtering as an isolation
-control.
+the consumer-group grants required by those consumers. The derived progress topic receives
+only the connector's required producer grants; the deployment control plane retains its
+administrative access outside the instance-consumer grant set. Repeated execution must
+accept an exact ACL match, repair missing required grants, and fail closed when the
+effective deployment-managed ACL set would grant a configured instance consumer access to
+another instance topic or any progress topic. ACL verification completes before connector
+registration and before combined readiness can pass. It does not rely on consumer-side
+filtering as an isolation control.
 
 Structured logs and metrics cover:
 
@@ -1293,14 +1337,14 @@ document bodies, raw student data, connection strings, credentials, tenant displ
 names, or unsanitized physical identifiers.
 
 The deployment status operation identifies binding generation, connector,
-provider/source, topic, PostgreSQL slot or SQL Server capture instance, DMS projection
-health, snapshot state, lag, and last error. A failure for one target does not conceal
-peer status or stop unrelated DMS API instances.
+provider/source, public and progress topics, PostgreSQL slot or SQL Server capture
+instance, DMS projection health, snapshot state, lag, and last error. A failure for one
+target does not conceal peer status or stop unrelated DMS API instances.
 
 Runbooks cover connector restart, cache rebuild, same-topic compatible projection repair,
 cache-ahead invariant diagnosis and the internal-only/downstream-state recovery split,
 ordinary monotonic projection lag, offset reset, resnapshot, topic recreation,
-target migration/retirement, and provider artifact cleanup.
+progress-topic diagnosis, target migration/retirement, and provider artifact cleanup.
 They document the shipped projector defaults, how to tune intervals, page size, target
 concurrency, and maximum audit age, and how to identify API-resource contention or an
 audit that cannot complete within its readiness window.
@@ -1313,24 +1357,24 @@ stops or source-fences the old connector and stops old-contract cache writers be
 cache clear, completely reprojects into a new versioned topic, and bootstraps new consumer
 state without restarting the old connector. Neither path advances canonical
 `ContentVersion`. Offset reset and resnapshot can replay current document state.
-Topic/offset/ACL/slot/capture deletion is destructive and always explicit; removal from
-configuration is not cleanup authority.
+Topic, offset, ACL, slot, and capture deletion is destructive and always explicit; removal
+from configuration is not cleanup authority.
 
 ## Verification
 
-Fast contract and transform tests cover every retained and dropped source operation,
-serialized key/value bytes, duplicate-tombstone suppression, JSON expansion, exact
-copying of the DMS-computed stream ETag, timestamp format, metadata consistency, and
+Fast contract and transform tests cover every public, progress-routed, and dropped source
+operation, serialized key/value bytes, duplicate-tombstone suppression, JSON expansion,
+exact copying of the DMS-computed stream ETag, timestamp format, metadata consistency, and
 topic routing. Materializer tests prove `StreamEtag` is produced by the shared DMS
 served-ETag composer for the fixed stream representation and remains coherent with the
 row's `ContentVersion` and effective schema. V1 fixtures pin contractual public fields,
 types, selectors, and metadata relationships without independently freezing opaque ETag
 bytes. A boundary fixture uses the shared materializer to construct the maximum supported
 link-bearing document, shapes it through the real transform and converters, and proves
-that its one-record produce request fits when every governed producer, topic, broker,
-replica-fetch, and consumer limit equals the binding's `maxRecordBytes`. The broker-backed
-test publishes, replicates, and consumes that record; an over-budget variant fails the
-connector task and combined readiness instead of being skipped. Ordering tests prove
+that its one-record produce request fits when every governed producer, public-topic,
+broker, replica-fetch, and consumer limit equals the binding's `maxRecordBytes`. The
+broker-backed test publishes, replicates, and consumes that record; an over-budget variant
+fails the connector task and combined readiness instead of being skipped. Ordering tests prove
 higher versions replace, lower versions are ignored, and a later partition offset
 replaces an equal version. Repair tests clear and rebuild cache
 state into the same topic without advancing `ContentVersion`; incompatible-contract tests
@@ -1361,15 +1405,18 @@ ordering. Both reject snapshot, null, malformed, wrong-partition, and ambiguous 
 responses. Real-provider tests start from an idle source, take a barrier after a zero
 audit, let the configured heartbeat action query advance capture, and prove combined
 readiness stays false until `GET /connectors/{connectorName}/offsets` reaches that barrier.
-They also prove a dropped heartbeat advances the committed source offset only after every
-earlier retained record completes processing and emits no public document record.
+They also prove a heartbeat is produced and acknowledged in the progress topic, advances
+the committed source offset only after it and every earlier retained record complete
+processing, and emits no public document record. Returning `null` for the same heartbeat
+must fail this test by leaving the committed offset behind the barrier.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including attempted partition-count, `partitionerAlgorithm`, or `maxRecordBytes`
-changes, rejection of a topic configured with a cleanup policy that includes `delete` or
-conflicting `max.message.bytes`, provider aliases that resolve to the same fingerprint,
-existing artifacts with missing state, cleanup ordering, normal-stop retention,
-destructive-teardown removal, and new-generation source migration.
+changes, rejection of a public topic configured with a cleanup policy that includes
+`delete` or conflicting `max.message.bytes`, rejection of a missing, misnamed,
+non-single-partition, or non-compacted progress topic, provider aliases that resolve to the
+same fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop
+retention, destructive-teardown removal, and new-generation source migration.
 Multi-controller state backends additionally prove compare-and-set behavior. No test
 repairs a mismatch by rewriting a binding, changes a topic's partition count,
 `partitionerAlgorithm`, or `maxRecordBytes` in place, or reuses a topic generation for a
@@ -1378,7 +1425,8 @@ different source.
 Bootstrap integration coverage uses an authorization-enabled broker to prove ACL
 provisioning is repeatable and binding-scoped: a consumer principal configured for one
 instance can read that instance topic and is denied when it attempts to read a peer
-instance topic. This focused broker-backed check belongs to bootstrap story 19-04; the
+instance topic or either instance's progress topic. The connector principal can write the
+progress topic. This focused broker-backed check belongs to bootstrap story 19-04; the
 broad API-driven CDC E2E suite does not duplicate an ACL matrix.
 
 SQL Server template tests require the explicit `time.precision.mode=isostring` and
