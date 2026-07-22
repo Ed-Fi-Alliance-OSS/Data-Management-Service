@@ -31,8 +31,10 @@ source routing and serialized public contract using the separately published
 
 1. Define inputs from the immutable deployment binding for provider/source fingerprint,
    target and generation identity, connector/topic names, fixed topic partition count,
-   `partitionerAlgorithm`, positive signed 32-bit `maxRecordBytes`, `contractVersion`,
-   credentials, replication/capture identity, and snapshot behavior.
+   `partitionerAlgorithm`, and `contractVersion`. Accept the positive signed 32-bit
+   `maxRecordBytes` ceiling and optional larger `producerBufferBytes` from mutable
+   deployment-owned operational policy alongside credentials, replication/capture
+   identity, and snapshot behavior.
 2. Generate one PostgreSQL or SQL Server connector configuration per DMS instance and
    immutable binding, without hard-coded instance values. Scope each connector to exactly
    one instance database and reject SQL Server configurations that select multiple
@@ -72,10 +74,13 @@ source routing and serialized public contract using the separately published
     its Kafka Connect default or expose it as a template input. Reject a duplicate,
     missing, or conflicting value. Do not configure tolerant skipping or a dead-letter
     queue for malformed retained records.
-11. Emit `producer.override.max.request.size=<binding maxRecordBytes>` and the fixed
-    `producer.override.compression.type=none`. Do not infer the value from DMS's request
-    body limit or accept a separate producer-size input. Reject a missing, duplicate, or
-    conflicting property.
+11. Emit `producer.override.max.request.size=<maxRecordBytes>`,
+    `producer.override.buffer.memory=<producerBufferBytes>`, and the fixed
+    `producer.override.compression.type=none`. Default `producerBufferBytes` to the greater
+    of `33554432` and `maxRecordBytes`, permit an explicit larger operational value, and
+    reject a smaller one. Do not infer the record ceiling from DMS's request body limit.
+    Reject a missing, duplicate, or conflicting property and document the additional Kafka
+    Connect worker heap headroom required beyond `buffer.memory`.
 12. Include `dms.CdcHeartbeat` beside the two document tables and emit a positive
     `heartbeat.interval.ms` with a generated, provider-qualified
     `heartbeat.action.query` that atomically increments the singleton. Default the
@@ -112,10 +117,12 @@ source routing and serialized public contract using the separately published
   in-flight requests, and duplicate/conflicting producer properties.
 - Rendering tests require exactly one explicit `errors.tolerance=none` and reject an
   omitted, duplicate, or conflicting value such as `all`.
-- Rendering tests require the exact binding-derived `max.request.size` and fixed
-  no-compression override, reject nonpositive/out-of-range size values and every
-  duplicate/conflicting producer-size property, and prove a changed `maxRecordBytes`
-  requires a new binding generation.
+- Rendering tests require the exact operational `max.request.size`, explicit
+  `buffer.memory` no smaller than it, and fixed no-compression override; prove the
+  `33554432` minimum/default and a larger explicit buffer; reject
+  nonpositive/out-of-range size values and every duplicate/conflicting producer-size
+  property; and prove a changed `maxRecordBytes` rerenders the same binding generation and
+  topic.
 - Rendering tests require the emitted heartbeat table include, positive interval, exact
   provider action query, and valid SQL Server poll relationship. Pinned-image smoke tests
   prove heartbeat table and Debezium heartbeat records are intentionally dropped from the

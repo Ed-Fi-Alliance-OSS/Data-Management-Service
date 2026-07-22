@@ -42,10 +42,13 @@ capability without redefining its architecture or contracts.
    cleaner-health and earliest-to-end scan-volume observation; live-key count alone is not
    sufficient evidence. Distinguish deployment validation of topic retention from the
    independently operated consumer's responsibility to prove its runtime conformance.
-   Also document how immutable `maxRecordBytes` is established from the maximum materialized
-   link-bearing envelope, required producer/topic/broker/replica/consumer size settings,
-   DMS per-database projection-health observation, and deployment-owned combined
-   readiness. Explain provider barrier capture/comparison, the internal heartbeat's idle-
+   Also document `maxRecordBytes` as a mutable operational ceiling rather than a universal
+   schema maximum or immutable binding field; its pre-publication producer enforcement;
+   explicit `buffer.memory` and worker-heap requirements; required
+   producer/topic/broker/replica/consumer settings; and the downstream-first procedure for
+   increasing it without a new topic generation. Cover DMS per-database projection-health
+   observation and deployment-owned combined readiness. Explain provider barrier
+   capture/comparison, the internal heartbeat's idle-
    source role, and why connector status or lag alone is insufficient. Document the v1
    maintenance-window assumption for initial readiness and explicit baseline replacement:
    deployment automation blocks all canonical mutation sources, drains in-flight requests

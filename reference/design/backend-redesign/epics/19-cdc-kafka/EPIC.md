@@ -98,10 +98,11 @@ implementation inputs.
 - Connector templates pin `statistics.metrics.enabled=true`, and deployment telemetry
   exposes Debezium 3.6 P50/P95/P99 source lag without treating it as a substitute for the
   provider position barrier.
-- Every binding pins one `maxRecordBytes` derived from the maximum supported fully
-  materialized link-bearing envelope. Producer, topic, broker/replication, and consumer
-  limits align to it, and a broker-backed boundary test publishes and consumes that
-  maximum record without relying on compression.
+- Every target has one mutable operational `maxRecordBytes` ceiling enforced by the real
+  producer before publication. Producer request/buffer memory, topic, broker/replication,
+  and consumer limits align to it; representative boundary tests prove acceptance and
+  rejection without claiming a universal schema maximum; and a downstream-first increase
+  reuses the binding and topic.
 - Every public topic explicitly retains tombstones for at least seven days. Topic
   provisioning and live validation reject a missing topic-level `delete.retention.ms`
   override or a lower value, and conforming consumers must prove that a complete

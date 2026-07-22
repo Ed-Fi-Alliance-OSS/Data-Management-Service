@@ -57,11 +57,14 @@ without requiring an API E2E path for every source operation.
     required `errors.tolerance=none`. Supply a malformed retained record that reaches the
     `DocumentState` transform, rather than an operation the transform intentionally
     drops.
-11. Add one maximum-record fixture sourced from the shared DMS materializer. It must use
-    the maximum supported link-bearing `DocumentJson`, add the public envelope, and run
-    through the real transform, converters, partitioner, and pinned producer. Publish,
-    replicate, and consume it with producer, topic, broker, replica-fetch, and consumer
-    limits set to the binding's exact `maxRecordBytes`; add an over-budget variant.
+11. Add representative near-boundary fixtures sourced from the shared DMS materializer.
+    Include configured schemas, extensions, nested collections, and reference links; add
+    the public envelope; and run through the real transform, converters, partitioner, and
+    pinned producer. Publish, replicate, and consume an under-budget fixture with
+    `max.request.size` set to the operational `maxRecordBytes` and producer buffer-memory,
+    topic, broker, replica-fetch, and consumer configuration able to carry it; add an
+    over-budget variant. These fixtures verify the enforced boundary and do not claim to
+    identify the largest valid DMS record.
 12. Add provider heartbeat fixtures and a broker-backed idle-source scenario. Prove the
     heartbeat table and Debezium heartbeat records emit no public document record, while
     their committed source offsets advance only after earlier retained records complete
@@ -107,10 +110,11 @@ without requiring an API E2E path for every source operation.
   failed state instead of skipping the malformed retained record, and deployment-owned
   combined readiness remains false even if offset or lag observations would otherwise
   appear caught up.
-- The maximum-record test proves the supported fully materialized link-bearing envelope
-  fits within the one-record byte budget and reaches a consumer without relying on
-  compression. The over-budget variant emits no partial record, fails the connector task,
-  and keeps combined readiness false.
+- The record-size tests prove a representative fully materialized link-bearing envelope
+  immediately below the configured ceiling reaches a consumer without relying on
+  compression or an implicit producer buffer default. The over-budget variant emits no
+  partial record, fails the connector task, and keeps combined readiness false. The tests
+  make no universal-maximum claim across configurable schemas or extensions.
 - The idle-source test captures a barrier after the fresh post-drain zero audit and proves
   `RUNNING` plus acceptable lag remains not ready below it, then observes the action-query
   heartbeat and passes only when the committed PostgreSQL `lsn_proc` or SQL Server

@@ -32,19 +32,21 @@ per-database projection health with E19-owned provider, topic, and connector che
 
 ## Deliverables
 
-1. Define the deployment CDC target input and require each selected target to be present
-   in DMS `DocumentCache:Targets` without adding Kafka-specific runtime DMS options.
+1. Define the deployment CDC target input, including a positive signed 32-bit mutable
+   `maxRecordBytes` operational ceiling and optional larger `producerBufferBytes`, and
+   require each selected target to be present in DMS `DocumentCache:Targets` without adding
+   Kafka-specific runtime DMS options. Default producer buffer memory to the greater of
+   `33554432` and `maxRecordBytes`; reject any explicit value below `maxRecordBytes`.
 2. Obtain the database-owned physical-source fingerprint through the DMS current-source
    observation contract from 18-06; do not normalize or fingerprint connection metadata
    independently. Detect target aliases with the same reported fingerprint that conflict
    with topic-per-instance isolation.
 3. Define the versioned immutable binding-record schema, including the positive fixed
-   topic partition count, the required `partitionerAlgorithm: "kafka-murmur2-v1"`
-   behavior token, and positive signed 32-bit `maxRecordBytes` established from the
-   maximum supported link-bearing materialized envelope and its pinned Kafka framing,
-   and a state-store abstraction with atomic
-   create/compare-and-set behavior. Provide the single-controller local JSON implementation
-   under `.cdc-state/bindings`, its Git ignore rule, and optional
+   topic partition count and required `partitionerAlgorithm: "kafka-murmur2-v1"` behavior
+   token, and a state-store abstraction with atomic create/compare-and-set behavior. Keep
+   `maxRecordBytes` outside binding identity so a coordinated size-policy change does not
+   rotate an otherwise compatible topic. Provide the single-controller local JSON
+   implementation under `.cdc-state/bindings`, its Git ignore rule, and optional
    `-CdcBindingStatePath`; do not write binding state into the bootstrap manifest.
 4. Enforce fail-closed creation, exact-match retry, artifact-without-state rejection,
    immutable lifetime, cleanup ordering, and new-generation source migration. Define the
@@ -55,11 +57,12 @@ per-database projection health with E19-owned provider, topic, and connector che
    new UUID before binding creation under the provisioning/restore contract.
 5. Validate provider tables including the clear `dms.DocumentCacheState` latch, opt-in
    `dms.CdcHeartbeat` singleton, projected `StreamEtag`, keys, replica/capture setup,
-   topic, ACL, `partitionerAlgorithm`, `maxRecordBytes`, effective broker
-   request/record-batch/replica-fetch compatibility, and installed source-operation
-   shaping against the binding before registration. This story defines the ACL and size
-   readiness checks; 19-04 owns provisioning, idempotent live validation, and broker-backed
-   authorization/maximum-record coverage.
+   topic, ACL, `partitionerAlgorithm`, the effective `maxRecordBytes` policy, producer
+   request/buffer memory, broker request/record-batch/replica-fetch compatibility, and
+   installed source-operation shaping against the binding and operational policy before
+   registration. This story defines the ACL and size readiness checks; 19-04 owns
+   provisioning, idempotent live validation, and broker-backed authorization/record-size
+   coverage.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,
    deployment-owned mutation-admission/drain state for initial readiness or explicit
@@ -92,9 +95,10 @@ per-database projection health with E19-owned provider, topic, and connector che
 ## Acceptance Evidence
 
 - State tests cover atomic first creation, exact-match retry, immutable mismatch including
-  attempted partition-count, `partitionerAlgorithm`, or `maxRecordBytes` changes,
-  rejection of a missing or unknown partitioner token, artifacts without state,
-  normal-stop retention, destructive cleanup ordering, and generation migration.
+  attempted partition-count or `partitionerAlgorithm` changes, rejection of a missing or
+  unknown partitioner token, artifacts without state, normal-stop retention, destructive
+  cleanup ordering, and generation migration. They prove `maxRecordBytes` is not binding
+  identity.
 - Provider tests cover equivalent physical aliases, conflicting targets, missing or
   malformed `dms.DataStoreIdentity`, transient identity-resolution failure, missing
   targets, guarded identity rotation/new-generation recovery, and confirmed binding
@@ -105,10 +109,10 @@ per-database projection health with E19-owned provider, topic, and connector che
   audit, committed connector
   snapshot/catch-up, idle-source heartbeat advancement, second projection-health
   observation, cache-ahead latching that remains false-ready after source equality,
-  explicit `errors.tolerance=none`, producer/topic/broker size alignment with
-  `maxRecordBytes`, failed connector task state despite otherwise acceptable offset/lag
-  observations, current and quantile lag reporting, per-target isolation, and aggregate
-  results. They reject missing,
+  explicit `errors.tolerance=none`, producer request/buffer-memory and topic/broker size
+  alignment with `maxRecordBytes`, failed connector task state despite otherwise acceptable
+  offset/lag observations, current and quantile lag reporting, per-target isolation, and
+  aggregate results. They reject missing,
   malformed, snapshot, wrong-source, and multiple source-offset responses and prove that
   running/lag status cannot pass a connector that is below the barrier.
 - A synchronized provider test holds open a canonical transaction after it allocates a

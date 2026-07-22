@@ -51,10 +51,11 @@ reconciliation, optional direct fill, and CDC payload fixtures.
    `DocumentJson._lastModifiedDate`; do not introduce a cache-specific timestamp format.
 8. Report disappearance, stale, reconstitution, and invariant failures without emitting a
    partial cache result.
-9. Supply a reusable CDC sizing fixture that runs a schema-valid maximum supported body
-   through the real link-bearing materializer. The fixture exposes the resulting
-   `DocumentJson` to story 19-05 so its final envelope and Kafka framing, rather than the
-   incoming HTTP body length, establish and verify `maxRecordBytes`.
+9. Supply reusable schema-valid CDC sizing fixtures that run representative configured
+   schemas, extensions, nested collections, and reference-link shapes through the real
+   link-bearing materializer. The fixtures expose the resulting `DocumentJson` to story
+   19-05 for record-size enforcement tests; they do not establish a universal largest
+   valid DMS document or the deployment's `maxRecordBytes` policy.
 
 ## Acceptance Evidence
 
@@ -70,10 +71,10 @@ reconciliation, optional direct fill, and CDC payload fixtures.
   them independently of the composer.
 - Shape tests cover nested arrays, reference links, and excluded authorization/profile
   data.
-- The sizing fixture fills a test resource to the configured maximum supported DMS body,
-  exercises worst-case reference-link injection for that resource, and proves the
-  resulting `DocumentJson` is the input used by CDC's maximum-record boundary test. It
-  does not claim that the HTTP request-body byte count is the final Kafka record size.
+- The sizing fixtures exercise selected near-limit bodies and reference-link expansion and
+  prove their resulting `DocumentJson` values are inputs to CDC's serialized record-size
+  enforcement tests. They neither claim to cover every configurable schema/extension nor
+  derive a global maximum from the HTTP request-body byte count.
 - Deterministically synchronized provider tests commit a source update during
   multi-result-set hydration and prove the final optimistic check returns a stale result,
   never a mixed document labeled with the captured version or an invariant failure. A

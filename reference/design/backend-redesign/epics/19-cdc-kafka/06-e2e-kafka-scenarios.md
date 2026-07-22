@@ -34,8 +34,8 @@ coverage against the actual provisioned data store and routed public topic.
    admitted test writes as the maintenance gate and require the fresh startup/restart audit
    and post-audit publication barrier before opening the test write phase.
 3. Add a consumer helper that selects the instance topic and filters by document key,
-   with `max.partition.fetch.bytes` and `fetch.max.bytes` set to at least the binding's
-   `maxRecordBytes`.
+   with `max.partition.fetch.bytes` and `fetch.max.bytes` set to at least the target's
+   operational `maxRecordBytes`.
 4. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
    same-key ordering, a safe equal-version same-topic correction, and a byte-changing
    correction performed through 18-08's out-of-band restamp utility.

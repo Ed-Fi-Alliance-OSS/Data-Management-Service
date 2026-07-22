@@ -122,29 +122,33 @@ topic-per-resource are not the v1 contract.
 
 ## Record Size
 
-Each immutable deployment binding contains one positive `maxRecordBytes` value. It is the
-maximum byte budget for a one-record produce request under the pinned v1 key/value
-converters and producer, including the lowercase UUID key, the final UTF-8 public value,
-Kafka record-batch framing, and produce-request framing. V1 pins producer compression to
-`none`, so successful publication never depends on a particular document compression
-ratio. Tombstones use the same budget and are necessarily smaller than the maximum
-non-null upsert.
+Each deployment target has one positive signed 32-bit `maxRecordBytes` operational
+ceiling. It is the maximum byte budget for a one-record produce request under the pinned
+v1 key/value converters and producer, including the lowercase UUID key, final UTF-8 public
+value, Kafka record-batch framing, and produce-request framing. It is deliberately not an
+immutable binding field and does not claim to describe the largest schema-valid DMS
+document across configurable schemas and extensions. The ordinary HTTP request-body limit
+is not a substitute because materialization can inject links and the public envelope adds
+metadata.
 
-`maxRecordBytes` is established from the largest public record DMS supports, not by
-copying `AppSettings:MaxRequestBodySizeMegabytes`. The sizing path must use the real cache
-materializer, including reference-link injection, and the real `DocumentState` transform,
-converters, partitioner, and producer framing. It then selects a byte budget at least as
-large as that maximum materialized envelope and its Kafka overhead. A maximum-size
-request body alone is not the bound because materialization adds links and the public
-envelope adds metadata. Changing DMS/schema/link behavior so the supported maximum no
-longer fits requires a new binding generation with a newly established
-`maxRecordBytes`; an existing binding is never widened in place.
+The pinned producer is the authoritative per-record enforcement boundary. After the real
+transform and converters serialize a record, its `max.request.size` check rejects an
+over-budget record locally before broker publication. With the required
+`errors.tolerance=none`, that rejection fails the connector task, emits no partial public
+record, and keeps combined readiness false until an operator raises the policy or changes
+the source projection. V1 pins producer compression to `none`, so acceptance never depends
+on a document's compression ratio. Tombstones use the same ceiling and are necessarily
+smaller than the largest accepted non-null upsert.
 
-The binding value drives every relevant Kafka limit rather than relying on approximately
-1 MiB defaults:
+The operational value drives every relevant Kafka limit rather than relying on defaults:
 
-- the connector sets `producer.override.max.request.size=<maxRecordBytes>` and
-  `producer.override.compression.type=none`;
+- the connector sets `producer.override.max.request.size=<maxRecordBytes>`, an explicit
+  `producer.override.buffer.memory=<producerBufferBytes>` where `producerBufferBytes` is at
+  least `maxRecordBytes`, and
+  `producer.override.compression.type=none`; bootstrap validates that the Kafka Connect
+  worker has additional heap headroom because `buffer.memory` is not a hard total-memory
+  bound. `producerBufferBytes` defaults to the greater of `33554432` and
+  `maxRecordBytes`; an operator may configure a larger value for throughput;
 - the topic sets `max.message.bytes=<maxRecordBytes>`;
 - bootstrap verifies that the broker request and replication path accepts that budget;
   for a self-managed broker this includes `socket.request.max.bytes`,
@@ -163,10 +167,20 @@ references for those byte-limit semantics.
 
 Bootstrap fails before connector registration when it cannot verify this alignment.
 Consumer conformance is a public deployment requirement because the producer cannot
-validate independently operated consumers. A pinned-runtime boundary test materializes,
-publishes, replicates, and consumes the maximum supported envelope with every governed
-limit set to the binding value. An over-budget fixture must fail the connector task and
-combined readiness rather than be skipped.
+validate independently operated consumers. A pinned-runtime boundary test sends
+representative materialized envelopes immediately below and above a configured ceiling
+through the real transform, converters, partitioner, and producer. It proves enforcement
+and governed-limit alignment, not that one fixture is the largest valid record.
+
+An increase is a coordinated in-place operational change, not a new topic generation.
+Deployment automation first marks the target not ready and confirms consumer fetch and
+deserialization capacity, then raises broker/replica and topic limits, then raises
+producer `buffer.memory` to at least the new ceiling and `max.request.size` last and
+restarts or resumes the connector. It validates every effective value before restoring
+readiness. This ordering prevents the producer from publishing a newly accepted size
+before the downstream path can carry it.
+Partition count, partitioner behavior, keying, ordering, topic namespace, and public schema
+remain unchanged.
 
 ## Key
 
@@ -481,9 +495,9 @@ The public topic never exposes:
 - Each binding records the stable `kafka-murmur2-v1` behavior token rather than a Java
   class/version; its fixed key-to-partition mapping and partition count preserve the
   per-key offset ordering contract.
-- Each binding fixes one maximum-record budget; producers, the topic, brokers/replicas,
-  and consumers must all accept it, and a larger supported DMS envelope requires a new
-  binding generation rather than an in-place size change.
+- Each deployment target enforces one mutable maximum-record ceiling. Producer memory and
+  request limits, the topic, brokers/replicas, and consumers must all accept it; a
+  downstream-first increase reuses the binding and topic.
 - Public identity and per-document ordering survive canonical deletion because the key
   is independent of the value.
 - Consumers can preserve the exact DMS stream-representation ETag without access to
@@ -518,6 +532,8 @@ The public topic never exposes:
 | Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |
 | Compose `_etag` in Kafka Connect | Rejected: schema and representation selection belong to DMS; the connector treats the projected `StreamEtag` as opaque and only copies it into the public shape. |
 | Add a projection/stream generation to v1 | Rejected for v1: Kafka's per-key partition offset orders equal-`contentVersion` corrective republishes without another database column or public field. |
+| Establish a universal maximum from one materializer fixture | Rejected: configurable schemas and extensions make that claim unprovable; representative fixtures instead test the enforced operational boundary. |
+| Rotate the topic when only `maxRecordBytes` increases | Rejected: record capacity does not change keying, partitioning, ordering, topic identity, or the public message contract. |
 | Require strictly newer `contentVersion` for every replacement | Rejected as a universal rule: Kafka already orders equal-version records whose changed bytes have a different corrected strong ETag. A newer version is required when corrected bytes would otherwise reuse the ETag. |
 | Republish a corrected ETag at the same `contentVersion` in `documents.v1` | Accepted only for a compatible repair in which every public byte change also changes the corrected ETag: clear and rebuild the cache after stopping old cache writers, and let the later Kafka offset win. |
 | Add an out-of-band representation-restamp utility | Accepted for byte-changing corrections that would otherwise reuse a strong ETag; it advances existing content stamps and publishes higher versions without adding a projection epoch or new topic. |

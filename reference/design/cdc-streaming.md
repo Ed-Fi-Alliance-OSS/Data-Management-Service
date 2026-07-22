@@ -669,10 +669,10 @@ Deployment automation evaluates end-to-end CDC component health for each binding
 - provisioned `dms.Document`, `dms.DocumentCache`, `dms.DocumentCacheState`, and opt-in
   `dms.CdcHeartbeat` tables and provider CDC/key prerequisites,
 - public topic name, compact-only cleanup policy, explicit seven-day minimum tombstone
-  retention, fixed partition count, ACL, transform, partitioner algorithm,
-  `maxRecordBytes`, broker-size compatibility, and connector configuration that match the
-  binding record and fixed v1 contract, plus the derived compacted CDC progress topic and
-  its connector-only ACL,
+  retention, fixed partition count, ACL, transform, and partitioner algorithm that match
+  the binding record and fixed v1 contract; the current operational `maxRecordBytes`,
+  producer request/buffer memory, broker-size compatibility, and connector configuration;
+  plus the derived compacted CDC progress topic and its connector-only ACL,
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
   through the provider source-position barrier defined below, captured after DMS reported
   a sufficiently recent exact-zero audit,
@@ -885,7 +885,6 @@ The portable binding-record shape is:
   "topicName": "edfi.dms.instance.data-store-1-g1.documents.v1",
   "partitionCount": 1,
   "partitionerAlgorithm": "kafka-murmur2-v1",
-  "maxRecordBytes": 33554432,
   "contractVersion": "1"
 }
 ```
@@ -904,12 +903,14 @@ token to a compatible implementation in the pinned connector image, and validati
 fixed serialized-key/partition fixtures so an image or implementation change cannot
 silently change the mapping. A different algorithm requires a new token and binding
 generation; an implementation change that preserves every token-defined result does not.
-The shown `maxRecordBytes` is illustrative rather than a default. It is a positive signed
-32-bit byte budget established from the maximum link-bearing public record supported by
-the deployment, including the pinned Kafka serialization and one-record produce-request
-framing. It is immutable within the binding generation. It is not copied from the HTTP
-request-body limit because cache materialization can inject links and the transform adds
-the public envelope.
+
+`maxRecordBytes` is intentionally absent from the binding record. It is a positive signed
+32-bit per-target operational ceiling for the pinned Kafka serialization and one-record
+produce-request framing, not a claim about the largest valid document across configurable
+schemas and extensions. It is not copied from the HTTP request-body limit because cache
+materialization can inject links and the transform adds the public envelope. Deployment
+automation may increase it in place through the coordinated procedure below without
+changing the binding generation or topic.
 
 `topicName` is the public instance document topic. Each binding also governs one internal
 CDC progress topic whose name is derived exactly as `topicName + ".cdc-progress"`. The
@@ -1019,32 +1020,41 @@ producer.override.enable.idempotence=true
 producer.override.acks=all
 producer.override.retries=2147483647
 producer.override.max.in.flight.requests.per.connection=5
-producer.override.max.request.size=<binding maxRecordBytes>
+producer.override.max.request.size=<maxRecordBytes>
+producer.override.buffer.memory=<producerBufferBytes>
 producer.override.compression.type=none
 ```
 
-The ordering and compression values are fixed v1 values; only `max.request.size` comes
-from the immutable binding. The generated producer partitioner must implement the
-binding's `kafka-murmur2-v1` token; operators do not supply a separate partitioner class
-or configuration. Together with one task and one routed partition per key, the ordering
-values prevent a retried upsert from being permanently reordered after its later
-tombstone. Compression is pinned to `none` so the record-size contract does not depend on
-compression ratio. Template generation rejects duplicate or conflicting producer
-properties. Registration fails before connector startup when the Kafka Connect worker's
-client-configuration override policy does not permit these values, and live connector
-validation rejects drift from them. V1 does not rely on producer defaults supplied by the
-Kafka client or pinned Connect image.
+The ordering and compression values are fixed v1 values; `max.request.size` and
+`buffer.memory` come from the mutable per-target record-size policy. The generated producer
+partitioner must implement the binding's `kafka-murmur2-v1` token; operators do not supply
+a separate partitioner class or configuration. Together with one task and one routed
+partition per key, the ordering values prevent a retried upsert from being permanently
+reordered after its later tombstone. Compression is pinned to `none` so the record-size
+contract does not depend on compression ratio. Template generation rejects duplicate or
+conflicting producer properties. Registration fails before connector startup when the
+Kafka Connect worker's client-configuration override policy does not permit these values,
+and live connector validation rejects drift from them. V1 does not rely on producer
+defaults supplied by the Kafka client or pinned Connect image.
 
-The authoritative topic/message contract defines `maxRecordBytes` as the byte budget for
-the maximum supported fully materialized public record and its one-record Kafka framing.
-The topic sets `max.message.bytes` to that binding value. Before registration, deployment
+The authoritative topic/message contract defines `maxRecordBytes` as an enforced
+operational ceiling for a fully materialized public record and its one-record Kafka
+framing. After the real transform and converters serialize each retained record, the
+pinned producer's `max.request.size` check is the authoritative pre-publication guard. An
+over-budget record emits no partial public record, fails the connector task under
+`errors.tolerance=none`, and keeps combined readiness false. The topic sets
+`max.message.bytes` to the same operational value. Before registration, deployment
 automation verifies that broker request, record-batch, and replica-fetch limits accept the
 same budget. A self-managed deployment configures `socket.request.max.bytes`, the
 effective `message.max.bytes`/topic override, `replica.fetch.max.bytes`, and
 `replica.fetch.response.max.bytes` accordingly; a managed deployment must provide an
 equivalent verifiable capability. Independently operated consumers set
-`max.partition.fetch.bytes` and `fetch.max.bytes` to at least the binding value and allow
-enough memory to deserialize one record. The ordinary HTTP request-body limit is not a
+`max.partition.fetch.bytes` and `fetch.max.bytes` to at least the operational value and
+allow enough memory to deserialize one record. Deployment also provisions Kafka Connect
+worker heap beyond `buffer.memory`, which Kafka documents as approximate producer buffer
+capacity rather than a hard total-memory bound. `producerBufferBytes` defaults to the
+greater of `33554432` and `maxRecordBytes`; an operator may configure a larger value for
+throughput, but never a smaller one. The ordinary HTTP request-body limit is not a
 substitute for this check because link injection and envelope shaping occur afterward.
 
 Every v1 connector also emits the top-level connector setting
@@ -1301,14 +1311,24 @@ to replace prior state without a new topic, binding generation, or offset reset.
 dedicated implementation story owns the utility, provider behavior, tests, and operator
 examples; general cache and CDC runbooks invoke it but do not recreate it with manual SQL.
 
+### In-place record-size increase
+
+Increasing `maxRecordBytes` does not change the binding, public/progress topics, keying,
+partitioning, ordering, or public message contract. Deployment automation marks the target
+not ready, confirms independently operated consumers have raised fetch and deserialization
+capacity, raises broker/replica and public-topic limits, then updates producer
+`buffer.memory` to at least the new ceiling and `max.request.size` last and restarts or
+resumes the connector. It reads back and validates every effective value before restoring
+readiness. A partial, out-of-order, or unverifiable rollout remains not ready. If an
+over-budget record already failed the connector, the task resumes from its uncommitted
+source position after the larger policy is effective.
+
 ### New-topic cutover
 
-Changing the topic partition count, `partitionerAlgorithm` token, or immutable
-`maxRecordBytes` creates a new binding generation, public and progress topics, and consumer
-state namespace. Partition changes require the cutover because offsets cannot order across
-old and new partitions; a size change requires it because producer/topic/consumer
-compatibility is bound to the retained generation. The new public topic may retain
-`documents.v1` and `contractVersion: 1` when the public key/value/delete contract is
+Changing the topic partition count or `partitionerAlgorithm` token creates a new binding
+generation, public and progress topics, and consumer state namespace because offsets
+cannot order equal-version records across old and new partitions. The new public topic may
+retain `documents.v1` and `contractVersion: 1` when the public key/value/delete contract is
 otherwise unchanged.
 
 A change to key encoding, required field names or JSON types, delete semantics, or the
@@ -1401,15 +1421,18 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   fail closed for missing or mismatched state around existing artifacts.
 - Public-topic provisioning requires and idempotently validates `cleanup.policy=compact`,
   an explicit per-topic `delete.retention.ms` of at least `604800000`, and
-  `max.message.bytes=<binding maxRecordBytes>`. It rejects any cleanup policy that includes
-  `delete`, a missing topic-level tombstone-retention override, or a value below seven days.
+  `max.message.bytes=<maxRecordBytes>` from the current operational policy. It rejects any
+  cleanup policy that includes `delete`, a missing topic-level tombstone-retention
+  override, or a value below seven days.
   Progress-topic provisioning derives the name from the binding, requires exactly one
   partition and
   `cleanup.policy=compact`, and does not apply the public record-size or consumer-bootstrap
   contract.
-- Before connector registration, bootstrap verifies the broker request, record-batch,
-  and replica-fetch path against `maxRecordBytes`; an unverifiable or smaller limit fails
-  setup rather than relying on Kafka defaults.
+- Before connector registration, bootstrap verifies producer `max.request.size` and
+  `buffer.memory` plus the broker request, record-batch, and replica-fetch path against
+  `maxRecordBytes`; an unverifiable or smaller limit fails setup rather than relying on
+  Kafka defaults. It also requires deployment-provisioned Kafka Connect worker heap beyond
+  the configured producer buffer.
 - The same workflow provisions and idempotently validates the binding-scoped topic ACLs
   before connector registration. It emits literal public-topic grants for the connector
   and deployment-supplied consumer principals. It grants the connector principal only the
@@ -1567,13 +1590,15 @@ topic routing. Materializer tests prove `StreamEtag` is produced by the shared D
 served-ETag composer for the fixed stream representation and remains coherent with the
 row's `ContentVersion` and effective schema. V1 fixtures pin contractual public fields,
 types, selectors, and metadata relationships without independently freezing opaque ETag
-bytes. A boundary fixture uses the shared materializer to construct the maximum supported
-link-bearing document, shapes it through the real transform and converters, and proves
-that its one-record produce request fits when every governed producer, public-topic,
-broker, replica-fetch, and consumer limit equals the binding's `maxRecordBytes`. The
-broker-backed test publishes, replicates, and consumes that record; an over-budget variant
-fails the connector task and combined readiness instead of being skipped. Ordering tests
-prove higher versions replace, lower versions are ignored, and a later partition offset
+bytes. Representative boundary fixtures use the shared materializer across selected
+configured schemas, extensions, nested collections, and reference links, then shape them
+through the real transform and converters. A broker-backed test publishes, replicates, and
+consumes an under-budget record with `max.request.size` set to the operational
+`maxRecordBytes` and producer buffer-memory, public-topic, broker, replica-fetch, and
+consumer configuration able to carry it; an over-budget variant fails the connector task
+and combined readiness instead of being skipped. These fixtures prove enforcement and
+aligned configuration, not a universal maximum valid record. Ordering tests prove higher
+versions replace, lower versions are ignored, and a later partition offset
 replaces an equal version. Equal-version repair tests clear and rebuild cache state into
 the same topic without advancing `ContentVersion` and prove that changed public bytes have
 a different `StreamEtag`. Byte-changing repair tests use the out-of-band utility, prove
@@ -1582,10 +1607,10 @@ that corrected bytes which would otherwise retain an ETag receive a higher
 new topic suffix and matching `contractVersion`.
 
 Connector template and registration tests require the exact idempotence, acknowledgement,
-retry, maximum-in-flight, no-compression, and binding-derived maximum-request producer
-overrides, reject every conflicting value and an override-disallowing worker policy, and
-verify the registered connector retains the required configuration. Fixed UUID key
-fixtures verify that the generated producer implementation maps exactly to the binding's
+retry, maximum-in-flight, no-compression, and operational maximum-request/buffer-memory
+producer overrides, reject every conflicting value and an override-disallowing worker
+policy, and verify the registered connector retains the required configuration. Fixed UUID
+key fixtures verify that the generated producer implementation maps exactly to the binding's
 `kafka-murmur2-v1` behavior across representative partition counts; missing, unknown, or
 changed algorithm tokens and conflicting partitioner configuration fail closed. The tests
 do not couple binding state to a Java class or library version. They also require an
@@ -1622,17 +1647,19 @@ heartbeat are acknowledged through the provider barrier. Pre-drain zero audits, 
 or reopen writes as ready.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
-mismatch including attempted partition-count, `partitionerAlgorithm`, or `maxRecordBytes`
-changes, rejection of a public topic configured with a cleanup policy that includes
+mismatch including attempted partition-count or `partitionerAlgorithm` changes, rejection
+of a public topic configured with a cleanup policy that includes
 `delete`, a missing topic-level `delete.retention.ms` override, an explicit value below
 `604800000`, or conflicting `max.message.bytes`, rejection of a missing, misnamed,
 non-single-partition, or non-compacted progress topic, provider aliases that resolve to the
 same fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop
 retention, destructive-teardown removal, and new-generation source migration.
 Multi-controller state backends additionally prove compare-and-set behavior. No test
-repairs a mismatch by rewriting a binding, changes a topic's partition count,
-`partitionerAlgorithm`, or `maxRecordBytes` in place, or reuses a topic generation for a
-different source.
+repairs a mismatch by rewriting a binding, changes a topic's partition count or
+`partitionerAlgorithm` in place, or reuses a topic generation for a different source.
+Operational-policy tests prove a downstream-first `maxRecordBytes` increase retains the
+binding and topics, validates consumer/broker/replica/topic capacity before producer
+request/buffer-memory changes, and remains not ready after any partial rollout.
 
 Bootstrap integration coverage uses an authorization-enabled broker to prove ACL
 provisioning is repeatable and binding-scoped: a consumer principal configured for one
