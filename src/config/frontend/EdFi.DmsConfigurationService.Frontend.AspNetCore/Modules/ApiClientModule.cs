@@ -395,12 +395,15 @@ public class ApiClientModule : IEndpointModule
                     httpContext.TraceIdentifier
                 );
             case ClientUpdateResult.FailureNotFound notFound:
+                // The configuration store row exists (the entity precheck passed) but the identity
+                // provider reports no such client. That is an upstream inconsistency, not a client-facing
+                // 404, so surface a sanitized 502 without echoing the raw provider message.
                 logger.LogError(
                     "Client not found in identity provider: {Failure}",
                     SanitizeForLog(notFound.FailureMessage)
                 );
-                return FailureResults.NotFound(
-                    "ApiClient not found in identity provider",
+                return FailureResults.BadGateway(
+                    "Identity provider client not found during client update",
                     httpContext.TraceIdentifier
                 );
             case ClientUpdateResult.Success updateSuccess:
@@ -706,8 +709,10 @@ public class ApiClientModule : IEndpointModule
                         Secret = resetSuccess.ClientSecret,
                     }
                 ),
-                ClientResetResult.FailureClientNotFound => FailureResults.NotFound(
-                    "ApiClient not found in identity provider",
+                // The identity provider reports no such client for an ApiClient that exists in the
+                // configuration store: an upstream inconsistency (sanitized 502), not a client-facing 404.
+                ClientResetResult.FailureClientNotFound => FailureResults.BadGateway(
+                    "Identity provider client not found during credential reset",
                     httpContext.TraceIdentifier
                 ),
                 ClientResetResult.FailureIdentityProvider failureIdentityProvider =>

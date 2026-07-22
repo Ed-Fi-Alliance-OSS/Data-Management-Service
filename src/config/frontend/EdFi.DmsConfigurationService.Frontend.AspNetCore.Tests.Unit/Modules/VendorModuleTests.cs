@@ -1033,4 +1033,69 @@ public class VendorModuleTests
             raw.Should().NotContain("hunter2");
         }
     }
+
+    /// <summary>
+    /// A vendor update succeeds but the identity provider reports no such client for an affected client
+    /// that exists in the configuration store. That is an upstream inconsistency, so the endpoint must
+    /// return the fixed 502 bad-gateway contract (not an internal 500) and never surface the raw provider
+    /// message.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Vendor_Update_Whose_Client_Is_Missing_At_The_Identity_Provider : VendorModuleTests
+    {
+        private const string SensitiveProviderMessage = "client 9f3c not found in realm edfi at idp.internal";
+
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            // The vendor row updates successfully and reports one affected client, so the endpoint then
+            // calls the identity provider to update that client's namespace claim.
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.Success([Guid.NewGuid()]));
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientNamespaceClaimAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound(SensitiveProviderMessage));
+
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            JsonNode body = await _updateResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadGateway,
+                "urn:ed-fi:api:bad-gateway",
+                "Bad Gateway",
+                "The request could not be processed. See 'errors' for details.",
+                errors: ["Identity provider client not found during client update"]
+            );
+
+            // The raw provider message must never be surfaced to the caller.
+            string raw = body.ToJsonString();
+            raw.Should().NotContain(SensitiveProviderMessage);
+            raw.Should().NotContain("idp.internal");
+        }
+    }
 }

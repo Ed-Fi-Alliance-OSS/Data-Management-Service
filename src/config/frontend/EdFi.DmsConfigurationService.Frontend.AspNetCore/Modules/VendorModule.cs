@@ -188,8 +188,17 @@ public class VendorModule : IEndpointModule
                             httpContext.TraceIdentifier
                         );
                     case ClientUpdateResult.FailureNotFound notFound:
-                        logger.LogError(notFound.FailureMessage);
-                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                        // The vendor exists in the configuration store but the identity provider reports
+                        // no such client: an upstream inconsistency (sanitized 502), not an internal
+                        // error. Log the sanitized reason without leaking the raw provider message.
+                        logger.LogError(
+                            "Client not found in identity provider: {FailureMessage}",
+                            LoggingUtility.SanitizeForLog(notFound.FailureMessage)
+                        );
+                        return FailureResults.BadGateway(
+                            "Identity provider client not found during client update",
+                            httpContext.TraceIdentifier
+                        );
                     case ClientUpdateResult.FailureUnknown unknownFailure:
                         logger.LogError(
                             "Error updating apiClient {ClientUuid}: {Message}",

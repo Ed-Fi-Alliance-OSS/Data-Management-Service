@@ -455,8 +455,17 @@ public class ApplicationModule : IEndpointModule
                                 httpContext.TraceIdentifier
                             );
                         case ClientUpdateResult.FailureNotFound notFound:
-                            logger.LogError(notFound.FailureMessage);
-                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            // The application exists in the configuration store but the identity provider
+                            // reports no such client: an upstream inconsistency (sanitized 502), not an
+                            // internal error. Log the sanitized reason without leaking the raw message.
+                            logger.LogError(
+                                "Client not found in identity provider: {Failure}",
+                                SanitizeForLog(notFound.FailureMessage)
+                            );
+                            return FailureResults.BadGateway(
+                                "Identity provider client not found during client update",
+                                httpContext.TraceIdentifier
+                            );
                         case ClientUpdateResult.FailureUnknown unknownFailure:
                             logger.LogError(
                                 "Error updating client {ClientId} {ClientUuid}: {Message}",
@@ -581,8 +590,11 @@ public class ApplicationModule : IEndpointModule
                                     }
                                 );
                             case ClientResetResult.FailureClientNotFound:
-                                return FailureResults.NotFound(
-                                    "Application client not found in identity provider",
+                                // The identity provider reports no such client for an application that
+                                // exists in the configuration store: an upstream inconsistency (sanitized
+                                // 502), not a client-facing 404.
+                                return FailureResults.BadGateway(
+                                    "Identity provider client not found during credential reset",
                                     httpContext.TraceIdentifier
                                 );
                             case ClientResetResult.FailureIdentityProvider failureIdentityProvider:

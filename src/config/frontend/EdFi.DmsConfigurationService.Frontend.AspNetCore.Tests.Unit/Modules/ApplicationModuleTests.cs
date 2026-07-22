@@ -330,6 +330,66 @@ public class ApplicationModuleTests
             actualResponse!["secret"]!.GetValue<string>().Should().HaveLength(configuredMinimumLength);
             actualResponse!["secret"]!.GetValue<string>().Should().Be(generatedSecret);
         }
+
+        [Test]
+        public async Task Should_return_bad_gateway_when_update_client_not_found_in_identity_provider()
+        {
+            // The application exists in the configuration store but the identity provider reports no such
+            // client on update: an upstream inconsistency (502), and the database update must not run. The
+            // raw provider message must not leak. Recorded calls are cleared because the fixture instance
+            // (and its fakes) is shared across tests.
+            Fake.ClearRecordedCalls(_applicationRepository);
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound("sensitive idp client detail"));
+
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    """
+                    {
+                       "id": 1,
+                       "ApplicationName": "Application 11",
+                        "ClaimSetName": "Test",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            var body = await updateResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadGateway,
+                "urn:ed-fi:api:bad-gateway",
+                "Bad Gateway",
+                "The request could not be processed. See 'errors' for details.",
+                errors: ["Identity provider client not found during client update"]
+            );
+            body.ToJsonString().Should().NotContain("sensitive idp client detail");
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 
     [TestFixture]
@@ -1960,15 +2020,25 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_not_found_when_application_client_is_missing_in_identity_provider()
+        public async Task Should_return_bad_gateway_when_application_client_is_missing_in_identity_provider()
         {
+            // The application exists in the configuration store but the identity provider reports no such
+            // client on reset: an upstream inconsistency (502 bad-gateway), not a client-facing 404. The
+            // raw provider message must not leak into the response.
             using var client = SetUpClient();
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
-                .Returns(new ClientResetResult.FailureClientNotFound("Client not found"));
+                .Returns(new ClientResetResult.FailureClientNotFound("sensitive idp client detail"));
 
             var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
-            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var body = await resetResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadGateway,
+                "urn:ed-fi:api:bad-gateway",
+                "Bad Gateway",
+                "The request could not be processed. See 'errors' for details.",
+                errors: ["Identity provider client not found during credential reset"]
+            );
+            body.ToJsonString().Should().NotContain("sensitive idp client detail");
         }
 
         [Test]
