@@ -7,21 +7,17 @@ namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
 internal static class DataStoreConnectionStringProvider
 {
-    private const string ConnectionStringPrefix =
-        "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=";
-
+    // The Docker-network Configuration Service registration connection string is resolved once from
+    // the selected engine and environment by the build orchestration and passed to the test process
+    // (AppSettings.DataStoreConnectionString). Return it verbatim so the registered data store matches
+    // the running engine (dms-postgresql:5432 or dms-mssql,1433) instead of a hardcoded PostgreSQL form.
     public static string Create()
     {
-        return Create(AppSettings.DataStoreDatabaseName);
+        return AppSettings.DataStoreConnectionString;
     }
 
     internal static string Create(AppSettingsValues settings)
     {
-        return Create(settings.DataStoreDatabaseName);
-    }
-
-    private static string Create(string databaseName)
-    {
-        return $"{ConnectionStringPrefix}{databaseName};";
+        return settings.DataStoreConnectionString;
     }
 }

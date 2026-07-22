@@ -10,6 +10,7 @@ namespace EdFi.DataManagementService.Tests.E2E;
 public static class AppSettings
 {
     public const string DefaultDataStoreDatabaseName = "edfi_datamanagementservice_e2e";
+    public const string DefaultDatabaseEngine = "postgresql";
     public const int BytesPerMegabyte = 1024 * 1024;
     public const int DefaultMaxRequestBodySizeMegabytes = 10;
 
@@ -24,6 +25,15 @@ public static class AppSettings
     public static string ConfigServicePort => _settings.ConfigServicePort;
     public static string AuthenticationService => _settings.AuthenticationService;
     public static string DataStoreDatabaseName => _settings.DataStoreDatabaseName;
+
+    // Database engine backing the E2E stack ("postgresql" default or "mssql"), and the two opaque
+    // connection strings the standard E2E orchestration sets for the test process: the host-side
+    // admin/reset connection string and the Docker-network Configuration Service registration string.
+    // The two connection strings are empty unless set by build-dms.ps1's E2E process context.
+    public static string DatabaseEngine => _settings.DatabaseEngine;
+    public static string DataStoreAdminConnectionString => _settings.DataStoreAdminConnectionString;
+    public static string DataStoreConnectionString => _settings.DataStoreConnectionString;
+
     public static int MaxRequestBodySizeMegabytes => _settings.MaxRequestBodySizeMegabytes;
 
     internal static AppSettingsValues Create(IConfiguration configuration)
@@ -33,6 +43,9 @@ public static class AppSettings
             GetString(configuration, nameof(ConfigServicePort), DefaultConfigServicePort),
             GetString(configuration, nameof(AuthenticationService), DefaultAuthenticationService),
             GetString(configuration, nameof(DataStoreDatabaseName), DefaultDataStoreDatabaseName),
+            GetString(configuration, nameof(DatabaseEngine), DefaultDatabaseEngine),
+            GetString(configuration, nameof(DataStoreAdminConnectionString), string.Empty),
+            GetString(configuration, nameof(DataStoreConnectionString), string.Empty),
             GetInt(configuration, nameof(MaxRequestBodySizeMegabytes), DefaultMaxRequestBodySizeMegabytes)
         );
     }
@@ -66,5 +79,8 @@ internal sealed record AppSettingsValues(
     string ConfigServicePort,
     string AuthenticationService,
     string DataStoreDatabaseName,
+    string DatabaseEngine,
+    string DataStoreAdminConnectionString,
+    string DataStoreConnectionString,
     int MaxRequestBodySizeMegabytes
 );

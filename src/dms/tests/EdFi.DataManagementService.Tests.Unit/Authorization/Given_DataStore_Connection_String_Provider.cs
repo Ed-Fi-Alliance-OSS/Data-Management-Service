@@ -14,9 +14,28 @@ namespace EdFi.DataManagementService.Tests.Unit.Authorization;
 public class Given_DataStore_Connection_String_Provider
 {
     [Test]
-    public void It_uses_the_default_e2e_database_name_by_default()
+    public void It_returns_an_empty_string_when_no_connection_string_is_configured()
     {
         var settings = AppSettings.Create(new ConfigurationBuilder().Build());
+
+        string connectionString = DataStoreConnectionStringProvider.Create(settings);
+
+        connectionString.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_returns_the_configured_postgresql_data_store_connection_string_verbatim()
+    {
+        var settings = AppSettings.Create(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection([
+                    KeyValuePair.Create<string, string?>(
+                        nameof(AppSettings.DataStoreConnectionString),
+                        "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_e2e;"
+                    ),
+                ])
+                .Build()
+        );
 
         string connectionString = DataStoreConnectionStringProvider.Create(settings);
 
@@ -28,14 +47,14 @@ public class Given_DataStore_Connection_String_Provider
     }
 
     [Test]
-    public void It_uses_the_database_name_from_shared_app_settings()
+    public void It_returns_the_configured_sql_server_data_store_connection_string_verbatim()
     {
         var settings = AppSettings.Create(
             new ConfigurationBuilder()
                 .AddInMemoryCollection([
                     KeyValuePair.Create<string, string?>(
-                        nameof(AppSettings.DataStoreDatabaseName),
-                        "edfi_datamanagementservice_e2e_override"
+                        nameof(AppSettings.DataStoreConnectionString),
+                        "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
                     ),
                 ])
                 .Build()
@@ -46,7 +65,7 @@ public class Given_DataStore_Connection_String_Provider
         connectionString
             .Should()
             .Be(
-                "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_e2e_override;"
+                "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
             );
     }
 }
