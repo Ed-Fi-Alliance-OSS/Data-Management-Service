@@ -784,6 +784,13 @@ public class Given_A_Valid_Client_Credentials_Token_Request : TokenEndpointTestB
 
     [Test]
     public void It_sets_the_no_store_cache_headers() => AssertNoStoreCacheHeaders();
+
+    [Test]
+    public void It_omits_the_scope_property_entirely() =>
+        // The provider payload omits scope, so the public response omits the property entirely.
+        // ContainsKey distinguishes an omitted property from an explicit JSON null, which
+        // body["scope"].Should().BeNull() cannot.
+        JsonNode.Parse(RawBody)!.AsObject().ContainsKey("scope").Should().BeFalse();
 }
 
 [TestFixture]

@@ -152,7 +152,7 @@ public class FailureResponseTests
     }
 
     [Test]
-    public void ForDataValidation_ShouldReturnCorrectJsonNode()
+    public void It_returns_the_complete_grouped_data_validation_contract()
     {
         // Arrange
         var validationFailures = new List<ValidationFailure>
@@ -167,6 +167,22 @@ public class FailureResponseTests
 
         // Assert
         result.Should().BeOfType<JsonObject>();
+
+        // Exactly the Ed-Fi Problem Details members, no more and no fewer.
+        result
+            .AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+
         result["detail"]
             ?.GetValue<string>()
             .Should()
@@ -175,7 +191,23 @@ public class FailureResponseTests
         result["title"]?.GetValue<string>().Should().Be("Data Validation Failed");
         result["status"]?.GetValue<int>().Should().Be(400);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
-        result["validationErrors"]?.AsObject().Count.Should().Be(2);
+
+        // Each property keeps its own messages, in order, with nothing lost, duplicated, moved between
+        // properties, or reordered.
+        var validationErrors = result["validationErrors"]!.AsObject();
+        validationErrors.Select(property => property.Key).Should().BeEquivalentTo("Property1", "Property2");
+        validationErrors["Property1"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
+            .Equal("Error1", "Error2");
+        validationErrors["Property2"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
+            .Equal("Error3");
+
+        result["errors"]!.AsArray().Should().BeEmpty();
     }
 
     [Test]
