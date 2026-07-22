@@ -16,7 +16,8 @@ Implement the representation-sensitive update tracking design in:
 Deliverables include:
 - write-side stamping of `ContentVersion/IdentityVersion` (global monotonic stamps),
 - journal emission via triggers,
-- serving `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` from stored stamps,
+- composing `_etag` from `ContentVersion` plus the active `variantKey`, and serving
+  `_lastModifiedDate` and per-item `ChangeVersion` from stored stamps,
 - ensuring successful no-op updates leave stored stamps and journal rows unchanged,
 - `If-Match` enforcement using stored representation stamps,
 - ChangeQueries feature does not introduce any breaking changes to its API interface
@@ -26,8 +27,8 @@ Deliverables include:
 
 - `DMS-1002` — `00-token-stamping.md` — Allocate stamps and update token columns only for representation changes
 - `DMS-1003` — `01-journaling-contract.md` — _Retired_ (superseded by DMS-1169 + DMS-1179)
-- `DMS-1004` — `02-derived-metadata.md` — Serve `_etag/_lastModifiedDate/ChangeVersion` from stored stamps
-- `DMS-1005` — `03-if-match.md` — Enforce optimistic concurrency using stored `_etag`
+- `DMS-1004` — `02-derived-metadata.md` — Compose `_etag`; serve `_lastModifiedDate/ChangeVersion` from stored stamps
+- `DMS-1005` — `03-if-match.md` — Enforce optimistic concurrency using stored representation stamps
 - `DMS-1006` — `04-change-query-selection.md` — _Retired_ (superseded by DMS-1182 + DMS-1186 + DMS-1187)
 - `DMS-1007` — `05-change-query-api.md` — _Retired_ (superseded by DMS-1184, DMS-1186, DMS-1187, DMS-1188, and the split non-relationship `ReadChanges` strategy story)
 - `DMS-1008` — `06-descriptor-stamping.md` — Ensure descriptor writes stamp/journal correctly (triggers on `dms.Descriptor`)

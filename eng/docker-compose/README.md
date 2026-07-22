@@ -32,8 +32,9 @@ needs no manual step. Edit `.env` to customize — `.env.example` itself is
 documentation only and is never consumed at runtime.
 
 Kafka and Kafka UI compose files remain available for local infrastructure
-testing. Relational DMS CDC/Kafka support is pending a separate implementation,
-so this compose setup does not register DMS source connectors.
+testing. The relational DMS CDC/Kafka design uses an explicit CDC opt-in for
+connector registration; until that implementation lands, this compose setup does
+not register DMS source connectors.
 
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
@@ -403,8 +404,14 @@ Standard 5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM
 into core.
 
 Bootstrap mode provisions the relational DMS schema only. Relational DMS
-CDC/Kafka support is pending a separate implementation, so bootstrap startup
-does not register DMS source connectors.
+CDC/Kafka connector registration is pending a separate implementation and should
+be controlled by an explicit CDC opt-in such as `-EnableKafkaCdc`; bootstrap
+startup does not register DMS source connectors today. The planned opt-in keeps
+immutable deployment-owned binding records under a separate persistent `.cdc-state`
+root (or an explicit `-CdcBindingStatePath`) and never stores them in the bootstrap
+manifest. Runtime DMS receives only explicit `DocumentCache:Targets` and exposes
+per-database projection health; deployment automation owns connector registration and
+combined CDC readiness.
 
 The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
 Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize

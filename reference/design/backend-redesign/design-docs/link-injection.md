@@ -300,14 +300,15 @@ A single configuration key controls link emission:
 - **Key**: `DataManagement:ResourceLinks:Enabled`
 - **Default**: `true`
 - **Behavior when `false`**: `link` subtrees are stripped from the served body as the **final
-  response-shaping pass** in the repository wrapper — after the materializer injects API metadata
-  (`id`/`_etag`/`_lastModifiedDate`) and after readable-profile projection runs, and immediately
+  response-shaping pass** in the repository wrapper — after the materializer injects stable API
+  metadata (`id`/`_lastModifiedDate`) and after readable-profile projection runs, and immediately
   before the body is returned to the caller. The materializer's reconstituted intermediate is
-  always link-bearing (caller-agnostic), while the served `_etag` is composed for the final request
-  variant from stored `ContentVersion` plus `variantKey`. `variantKey.linkFlag` is `l` when links
-  are served and `n` when they are stripped, so the two byte-different responses carry different
-  strong validators without hashing either document. The auxiliary lookup and plan compilation are
-  unaffected.
+  always link-bearing (caller-agnostic) and does not carry a reusable `_etag`; the served `_etag` is
+  composed for the final request variant from stored `ContentVersion` plus `variantKey` after
+  readable profile, link mode, format, and content coding are known. `variantKey.linkFlag` is `l`
+  when links are served and `n` when they are stripped, so the two byte-different responses carry
+  different strong validators without hashing either document. The auxiliary lookup and plan
+  compilation are unaffected.
 
 **Rationale for response-shaping rather than plan-shaping.** Treating the flag as a response
 filter eliminates dual plan shapes, startup plan-fingerprint reconciliation, and the mixed-plan
@@ -357,24 +358,25 @@ profile namespace; nevertheless, the flag participates in served `_etag` derivat
 `link` subtrees already present (since the plan always emits them). The `ResourceLinks:Enabled`
 flag is applied as the final response-shaping pass in the repository wrapper — after the
 readable-profile projection (when applicable) runs and before serialization. The cache stores the
-`ContentVersion` associated with `DocumentJson`, not a materialized `_etag`. At the serving boundary,
-DMS composes `_etag` from that cached `ContentVersion` plus the request's full `variantKey`, including
-the active `profileCode`, `linkFlag`, and `contentCoding`. Flag-on, flag-off, profiled, unprofiled,
-identity, and compressed responses can
-therefore share one caller-agnostic cached document while carrying distinct validators whenever
-their served bytes differ. CDC and indexing consumers observe the unprojected intermediate (with
-`link` subtrees); DMS does not maintain a second link-free projection. See
-[update-tracking.md](update-tracking.md) §Serving API metadata for the normative derivation.
+`ContentVersion` and `LastModifiedAt` associated with `DocumentJson`; `DocumentJson` does
+not contain a reusable `_etag`. At the serving boundary, DMS composes `_etag` from that
+cached `ContentVersion` plus the request's full `variantKey`, including the active
+`profileCode`, `linkFlag`, and `contentCoding`. Flag-on, flag-off, profiled, unprofiled,
+identity, and compressed responses can therefore share one caller-agnostic cached
+document while carrying distinct validators whenever their served bytes differ.
+
+The fixed CDC representation, its `StreamEtag`, and its public consumer mapping are outside
+this document's response-shaping scope. They are owned by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
+and the [topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md#upsert-value).
 
 A flag flip does not require cache truncation, fingerprint reconciliation, or an advisory lock:
 the cached state and `ContentVersion` remain valid, while per-request composition changes
 `linkFlag` and therefore rotates the served `_etag`.
 
-Cache freshness follows the resource-state stamp:
-
-```
-cached ContentVersion == dms.Document.ContentVersion
-```
+Cache selection and freshness are defined by
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation),
+not by link configuration.
 
 Cached hrefs are bound to `EffectiveSchemaHash`: any change to a `projectEndpointName` or
 `resourceNameMapping` entry shifts the hash, and the DDL-generator preflight refuses a mismatched

@@ -28,7 +28,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - [Write Path (POST Upsert / PUT by id)](#write-path-post-upsert--put-by-id)
 - [Read Path (GET by id / GET query)](#read-path-get-by-id--get-query)
 - [Caching (Low-Complexity Options)](#caching-low-complexity-options)
-- [Optional Database Projection: `dms.DocumentCache`](#optional-database-projection-dmsdocumentcache)
+- [Optional Database Projection Behavior: `dms.DocumentCache`](#optional-database-projection-behavior-dmsdocumentcache)
 - [Delete Path (DELETE by id)](#delete-path-delete-by-id)
 - [Schema Validation (EffectiveSchema)](#schema-validation-effectiveschema)
 - [Operational Considerations](#operational-considerations)
@@ -407,12 +407,21 @@ Recommended: bounded retry (e.g., 3 attempts) with jittered backoff. Treat these
 - PostgreSQL: `40P01` (deadlock detected)
 - SQL Server: `1205` (deadlock victim), and optionally `1222` (lock request timeout, if configured)
 
-### SQL Server isolation defaults (recommended)
+### SQL Server isolation defaults
 
-To reduce reader/writer blocking and deadlocks under concurrent write load, strongly recommend enabling MVCC reads:
+To reduce reader/writer blocking and deadlocks under concurrent write load, strongly
+recommend enabling MVCC reads for ordinary relational DMS operation:
 
-- `READ_COMMITTED_SNAPSHOT ON` (recommended)
+- `READ_COMMITTED_SNAPSHOT ON` (recommended generally; required for any data store
+  selected as a `DocumentCache` projection target)
 - optionally `ALLOW_SNAPSHOT_ISOLATION ON` (if a snapshot isolation level is ever used explicitly)
+
+The scoped projection requirement is a correctness prerequisite for coherent SQL Server
+source/cache comparison and the durable cache-ahead latch; it does not make RCSI a global
+requirement for unlisted relational-only data stores. Runtime DMS validates the option and
+fails only projection/cache use for the affected target rather than executing
+`ALTER DATABASE`. The authoritative details are in
+[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
 
 ---
 
@@ -516,45 +525,27 @@ Invalidation approaches:
 
 ---
 
-## Optional Database Projection: `dms.DocumentCache`
+## Optional Database Projection Behavior: `dms.DocumentCache`
 
-`dms.DocumentCache` is an optional **materialized JSON projection** of GET/query results, intended for:
+The `dms.DocumentCache` table is always provisioned. Populating and reading its
+**materialized JSON projection** remain optional behaviors intended for:
 - accelerating GET/query response assembly (skip reconstitution),
 - CDC streaming (e.g., Debezium → Kafka), and
-- downstream indexing (e.g., OpenSearch).
+- downstream indexing and external integrations.
 
-Correctness must not depend on this table:
-- rows may be missing/stale and rebuilt asynchronously,
-- authorization must not use it as a source of truth.
-
-### Freshness contract (recommended)
-
-When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare the cached `ContentVersion` to the current `dms.Document.ContentVersion`,
-- if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
-
-### Rebuild/invalidation triggers (eventual consistency)
-
-Because indirect representation changes are materialized as local updates to referrers through retained native FK
-cascades, referrer `ContentVersion` is bumped by the same `*_Stamp` trigger that handles direct writes.
-`dms.Document.ContentVersion` therefore captures direct content changes and indirect reference-identity changes on
-referrers, without reverse dependency expansion at the projector layer.
-
-A minimal projector approach:
-
-1. Consume `dms.Document` in `ContentVersion` order.
-2. Rebuild `dms.DocumentCache` for `(DocumentId, ContentVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce the freshness
-   contract above; `_etag` is composed per request from `ContentVersion` + `variantKey` and is not
-   stored in the cache.
+Its concurrency boundary is intentionally small: correctness and authorization do not
+depend on projection, and every asynchronous/direct-fill write is fenced by current
+canonical state. The authoritative freshness, reconciliation, retry, read-fallback, and
+cache/domain lifecycle behavior is defined in
+[Relational CDC and Document Projection](../../cdc-streaming.md).
 
 ---
 
 ## Delete Path (DELETE by id)
 
 1. Resolve `DocumentUuid` → `DocumentId`.
-2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
-3. Delete the corresponding `dms.Document` row. The remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize lifecycle cleanup.
+2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the Change Queries tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
+3. Delete the corresponding `dms.Document` row. Remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize relational cleanup. The CDC lifecycle consequence is defined in the [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
 Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.

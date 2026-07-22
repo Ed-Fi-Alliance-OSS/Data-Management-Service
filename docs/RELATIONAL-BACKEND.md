@@ -213,11 +213,12 @@ document `Id`, and the `ChangeVersion` for a given write. Only the separator aft
 
 #### Read metadata (`_etag`, `_lastModifiedDate`)
 
-On read, `_lastModifiedDate` is served from the stored `ContentLastModifiedAt` and `_etag` is derived
-as a hash over the materialized content. When a served `_etag` or `_lastModifiedDate` looks wrong,
+On read, `_lastModifiedDate` is served from the stored `ContentLastModifiedAt` and `_etag` is
+composed from `ContentVersion` plus the active representation `variantKey`; the materialized
+content is not hashed to build `_etag`. When a served `_etag` or `_lastModifiedDate` looks wrong,
 start here:
 
-- [`RelationalReadMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs) — derives `_etag` and serves `_lastModifiedDate` for resources
+- [`RelationalReadMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs) — composes `_etag` and serves `_lastModifiedDate` for resources
 - [`DescriptorDocumentMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs) — the same for descriptors
 
 #### Change-version filtering (`minChangeVersion` / `maxChangeVersion`)

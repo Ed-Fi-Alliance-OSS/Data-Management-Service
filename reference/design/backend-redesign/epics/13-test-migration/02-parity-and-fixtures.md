@@ -106,7 +106,8 @@ Story alignment:
 - A shared fixture set exists that can run the same CRUD/query and shared profile scenario matrix above on pgsql and mssql.
 - Parity assertions cover:
   - response bodies (JSON semantics),
-  - update-tracking metadata behavior (`_etag/_lastModifiedDate/ChangeVersion` served from stored stamps),
+  - update-tracking metadata behavior (`_etag` composed from `ContentVersion` plus
+    `variantKey`; `_lastModifiedDate/ChangeVersion` served from stored stamps),
   - paging determinism,
   - `NoProfileWriteBehavior`, including one omitted non-collection scope case, one no-profile `_ext` case, and `FullSurfaceCollectionReorder` with semantic-identity-based visible-row matching rather than request ordinal,
   - hidden-data preservation, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, key-unified canonical storage preservation, synthetic presence-flag preservation, hidden reference/descriptor FK preservation, and delete/clear behavior for profiled non-collection scopes across `ProfileVisibleRowUpdateWithHiddenRowPreservation`, `ProfileVisibleRowDeleteWithHiddenRowPreservation`, `ProfileVisibleButAbsentNonCollectionScope`, `ProfileHiddenInlinedColumnPreservation`, `ProfileHiddenExtensionRowPreservation`, and `ProfileHiddenExtensionChildCollectionPreservation`, and

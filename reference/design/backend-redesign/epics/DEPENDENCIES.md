@@ -3,7 +3,8 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 125 story files).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 20 epic files and
+  200 story/support files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -40,6 +41,10 @@ graph TD
   E13["E13 Runtime/E2E test migration"]
   E14["E14 Authorization (deferred)"]
   E15["E15 Runtime plan compilation + caching"]
+  E16["E16 Bootstrap developer environment"]
+  E17["E17 MSSQL implementation and parity gap closure"]
+  E18["E18 DocumentCache projection"]
+  E19["E19 Relational CDC/Kafka streaming"]
 
   E00 --> E01 --> E02 --> E03 --> E04
 
@@ -70,12 +75,26 @@ graph TD
   E08 --> E13
   E11 --> E13
 
+  E03 --> E16
+
+  E02 --> E18
+  E08 --> E18
+  E10 --> E18
+  E11 --> E18
+
+  E16 --> E19
+  E18 --> E19
+
   E14
+  E17
 ```
 
 Notes:
 - `E07` and `E09` are tightly coupled in practice (write correctness requires transactional identity maintenance + propagation + deadlock retry), but are shown as a one-way dependency to keep the graph readable.
 - `E05` is optional; `E06` can select runtime-compiled mapping sets without packs.
+- `E19` connector-template and fixture work can proceed in parallel, but its integrated
+  delivery consumes the E18 projection and status outputs. Behavioral ownership is defined
+  only by the design documents linked from the two epics.
 
 ---
 
@@ -93,12 +112,46 @@ Notes:
 | E07 | [Relational Write Path (POST/PUT)](07-relational-write-path/EPIC.md) | E06, E01, E02, E15 | End-to-end relational writes; includes write-side current-document reconstitution for profile projection, populates propagated reference identity columns, and relies on DB triggers for stamps/identity maintenance |
 | E08 | [Relational Read Path (GET + Query)](08-relational-read-path/EPIC.md) | E06, E01, E02 | End-to-end relational reads and reconstitution (incl. abstract+descriptor projection) |
 | E09 | [Strict Identity Maintenance & Concurrency](09-identity-concurrency/EPIC.md) | E07, E02 | Transactional referential-identity correctness + cascade/trigger propagation semantics + deadlock retry |
-| E10 | [Update Tracking + Change Queries](10-update-tracking-change-queries/EPIC.md) | E07, E08, E02 | Stored `_etag/_lastModifiedDate/ChangeVersion`, journaling triggers, change selection |
+| E10 | [Update Tracking + Change Queries](10-update-tracking-change-queries/EPIC.md) | E07, E08, E02 | Stored representation stamps, composed `_etag`, journaling triggers, change selection |
 | E11 | [Delete Path & Conflict Diagnostics](11-delete-path/EPIC.md) | E07, E02 | Delete-by-id + FK conflict mapping + diagnostics |
 | E12 | [Operational Guardrails](12-ops-guardrails/EPIC.md) | E07, E09 (and E10 recommended) | Drift prevention/repair + observability + identity-update fan-out guardrails + benchmarks |
 | E13 | [Test Strategy & Migration](13-test-migration/EPIC.md) | E03, E06–E08, E11 | E2E/integration/parity tests and docs aligned to provisioning model |
 | E14 | [Authorization Design Spike (Relational Primary Store)](14-authorization/EPIC.md) | — | Implementation-ready authorization design (implementation deferred); does not block baseline redesign |
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
+| E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
+| E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
+| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Projection schema, runtime, verification, utility, and operator work packages |
+| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Provider, connector, bootstrap, verification, E2E, and operator work packages |
+
+---
+
+## Focused E18/E19 Story Dependency Addendum
+
+This is the single cross-epic story dependency index. Design behavior is linked from the
+epics and is not repeated here.
+
+| `18-document-cache` story | Immediate implementation dependency |
+| --- | --- |
+| 18-00 | E02 DDL/provisioning infrastructure and E10 representation stamps |
+| 18-01 | — within E18; may proceed alongside 18-00 |
+| 18-02 | 18-00, E08, and E10 |
+| 18-03 | 18-00, 18-02, E10, and E11 |
+| 18-04 | 18-00, 18-01, 18-02, and 18-03 |
+| 18-05 | 18-00 through 18-04 |
+| 18-06 | 18-00, 18-01, 18-04, and 18-05 |
+| 18-07 | 18-00 through 18-06 |
+| 18-08 | E10, 18-00, 18-02, 18-04, and 18-06 |
+
+| `19-cdc-kafka` story | Implementation dependency |
+| --- | --- |
+| 19-00 | 19-01, 19-02, 18-01, 18-03, 18-04, 18-06 |
+| 19-01 | 18-00 |
+| 19-02 | 19-01 and 19-03 (hard); template/rendering work may begin earlier |
+| 19-03 | —; external transform implementation consumed by 19-02 and 19-05 |
+| 19-04 | 18-01, 18-04, 18-06, plus 19-00 |
+| 19-05 | 19-01 and 19-03 (hard); 18-02 (soft) |
+| 19-06 | 18-01, 18-04, 18-06, plus 19-00 through 19-05 |
+| 19-07 | 18-04, 18-06, and 18-07 |
 
 ---
 
@@ -262,8 +315,8 @@ Epic: `10-update-tracking-change-queries/EPIC.md`
 | --- | --- | --- | --- | --- |
 | E10-S00 | [`00-token-stamping.md`](10-update-tracking-change-queries/00-token-stamping.md) | E02-S01, E07-S03 | — | Stamping triggers for `dms.Document` (Content/Identity stamps) |
 | E10-S01 | [`01-journaling-contract.md`](10-update-tracking-change-queries/01-journaling-contract.md) | E02-S01, E03-S01 | E10-S00 | Triggers own journal writes; integration smoke tests |
-| E10-S02 | [`02-derived-metadata.md`](10-update-tracking-change-queries/02-derived-metadata.md) | E10-S00, E08-S01 | — | Serve `_etag/_lastModifiedDate/ChangeVersion` from stored stamps |
-| E10-S03 | [`03-if-match.md`](10-update-tracking-change-queries/03-if-match.md) | E10-S02, E07-S03 | — | `If-Match` enforcement using stored `_etag` + guarded no-op stale-compare handling |
+| E10-S02 | [`02-derived-metadata.md`](10-update-tracking-change-queries/02-derived-metadata.md) | E10-S00, E08-S01 | — | Compose `_etag`; serve `_lastModifiedDate/ChangeVersion` from stored stamps |
+| E10-S03 | [`03-if-match.md`](10-update-tracking-change-queries/03-if-match.md) | E10-S02, E07-S03 | — | `If-Match` enforcement using stored representation stamps + guarded no-op stale-compare handling |
 | E10-S04 | [`04-change-query-selection.md`](10-update-tracking-change-queries/04-change-query-selection.md) | E10-S01 | — | Change Query candidate selection (journal + verify) |
 | E10-S05 | [`05-change-query-api.md`](10-update-tracking-change-queries/05-change-query-api.md) | E10-S04 | — | Optional HTTP endpoints for change queries |
 | E10-S06 | [`06-descriptor-stamping.md`](10-update-tracking-change-queries/06-descriptor-stamping.md) | E10-S00 | E07-S06 | Ensure `dms.Descriptor` updates stamp/journal descriptor documents |

@@ -36,7 +36,7 @@ adoption. A defer decision keeps `nvarchar(max)` and links a follow-up without p
 
 The native `json` type is a physical storage decision behind `ISqlDialect.JsonColumnType`. Shared document
 semantics and PostgreSQL `jsonb` behavior do not change. Today that dialect property is used only by the
-optional `dms.DocumentCache.DocumentJson` DDL; DMS has no production cache projector or cache-backed read path.
+always-provisioned `dms.DocumentCache.DocumentJson` DDL; DMS has no production cache projector or cache-backed read path.
 Ordinary resource CRUD, query, batching, and reconstitution therefore cannot prove native-JSON parameter or
 result behavior, and this story must not claim that coverage unless it also receives explicit ownership of a
 production `DocumentCache` path.

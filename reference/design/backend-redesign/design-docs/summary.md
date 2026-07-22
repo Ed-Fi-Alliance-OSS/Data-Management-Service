@@ -18,6 +18,10 @@ Source documents:
 - Transactions & concurrency: `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
 - Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/design-docs/update-tracking.md`
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, ContentVersion mirror): `reference/design/backend-redesign/design-docs/change-queries.md`
+- Authoritative DocumentCache projection and relational CDC design:
+  `reference/design/cdc-streaming.md`
+- Focused projector/source and topic/message decisions:
+  `reference/design/backend-redesign/design-docs/cdc/`
 - DDL generation: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 - DDL generator verification harness: `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`
 - Strengths/risks: `reference/design/backend-redesign/design-docs/strengths-risks.md`
@@ -31,6 +35,10 @@ Source documents:
 - Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
+- The `DocumentCache` table is always provisioned; optional projection/read behavior and
+  relational CDC follow the authoritative
+  configuration, lifecycle, readiness, and deployment design in
+  [`cdc-streaming.md`](../../cdc-streaming.md).
 - Authentication & authorization are addressed in [auth.md](auth.md), including:
   - token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens),
   - `auth.*` companion objects, and
@@ -43,7 +51,7 @@ Source documents:
 - `DocumentId`: internal surrogate key (`bigint`) used for FKs and clustering.
 - `ReferentialId`: deterministic UUIDv5 used as the canonical “natural identity key”; stored in `dms.ReferentialIdentity`.
 - **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally as reference-identity bindings (which may be generated/persisted aliases of canonical stored columns under key unification) so referential ids can be recomputed row-locally.
-- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as native FK-cascade updates to canonical stored identity columns that back the local bindings, including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
+- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as native FK-cascade updates to canonical stored identity columns that back the local bindings, including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `ContentVersion` / `ContentLastModifiedAt`; `_etag` is composed from `ContentVersion` plus `variantKey`.
 
 ## Data model summary
 
@@ -72,6 +80,14 @@ Source documents:
 - `dms.Descriptor` (unified)
   - Unified descriptor table keyed by the descriptor document’s `DocumentId` so descriptor references can FK to `dms.Descriptor(DocumentId)` without per-descriptor tables.
   - Used for “is a descriptor” enforcement and (optionally) type diagnostics/validation.
+
+- `dms.DataStoreIdentity`
+  - Always-provisioned singleton random source UUID, stable during ordinary operation and
+    used only through the versioned opaque CDC source-fingerprint contract.
+
+- `dms.DocumentCache`
+  - Always-provisioned projection table; target configuration controls whether it is
+    populated, and read acceleration independently controls whether API reads use it.
 
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.
@@ -240,7 +256,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - extension schemas/tables,
     - abstract identity tables (and optional union views),
     - update tracking sequences and triggers,
-  - records the singleton `dms.EffectiveSchema` row (including smallint-bounded `ResourceKeyCount` and `ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
+  - initializes `dms.DataStoreIdentity` once and records the singleton `dms.EffectiveSchema` row (including smallint-bounded `ResourceKeyCount` and `ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
   - provision semantics: create-only (no migrations), optional database creation as a pre-step, and a single transaction for schema + seeds.
 - (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/design-docs/aot-compilation.md`).
 - DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).
