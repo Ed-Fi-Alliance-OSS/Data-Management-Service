@@ -30,7 +30,9 @@ coverage against the actual provisioned data store and routed public topic.
    the DMS-1245 envelope and deletes use Kafka-null tombstones, not
    `deleted=false`/`deleted=true` records carrying `EdFiDoc`.
 2. Opt E2E setup into CDC, persist its local JSON binding record, and wait for
-   deployment-owned combined target readiness before observed writes.
+   deployment-owned combined target readiness before observed writes. Treat the lack of
+   admitted test writes as the maintenance gate and require the fresh startup/restart audit
+   and post-audit publication barrier before opening the test write phase.
 3. Add a consumer helper that selects the instance topic and filters by document key,
    with `max.partition.fetch.bytes` and `fetch.max.bytes` set to at least the binding's
    `maxRecordBytes`.
@@ -58,8 +60,9 @@ coverage against the actual provisioned data store and routed public topic.
 - A corrective-rebuild scenario proves the later equal-`contentVersion` record replaces
   prior consumer state in the same topic without a new binding generation or offset reset.
 - Both providers prove setup does not pass on connector status or lag alone: a barrier is
-  captured after the zero audit, an internal heartbeat advances the idle source, and
-  readiness passes only after the committed connector source offset reaches the barrier.
+  captured after the fresh post-drain zero audit, an internal heartbeat advances the idle
+  source, and readiness passes only after the committed connector source offset reaches the
+  barrier and before observed writes are admitted.
 - Setup/teardown evidence proves normal restart retains binding state and destructive
   teardown removes governed artifacts before the binding record.
 

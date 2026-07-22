@@ -9,6 +9,7 @@ epic: TBD
 ## Design References
 
 - [Enablement and initial readiness sequence](../../../cdc-streaming.md#enablement-and-initial-readiness-sequence)
+- [V1 maintenance-window assumptions](../../../cdc-streaming.md#v1-maintenance-window-assumptions)
 - [Local bootstrap and CI](../../../cdc-streaming.md#local-bootstrap-and-ci)
 - [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
 - [Deployment-owned physical source binding](../../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
@@ -17,7 +18,7 @@ epic: TBD
 
 Add explicit, idempotent local topic/ACL provisioning and connector registration for a
 selected configured target, using deployment-owned binding state, and document how
-production-like deployment repeats the same one-shot workflow with its durable state
+production-like deployment repeats the same readiness workflow with its durable state
 backend.
 
 ## Dependencies
@@ -46,7 +47,13 @@ backend.
    consumer must set `max.partition.fetch.bytes` and `fetch.max.bytes` to at least the
    binding value and provision memory for one record.
 6. Implement idempotent Kafka Connect create/update, external combined-status polling,
-   timeout, and condition-specific diagnostics. Fail before registration if the worker
+   timeout, and condition-specific diagnostics. Integrate the deployment-owned maintenance
+   contract: block new canonical mutations, drain admitted requests and transactions,
+   establish capture, and restart or roll out the selected DMS projector contexts so their
+   immediate audit begins after the drain. Keep the gate closed through the post-audit
+   barrier and open it only after combined readiness passes. Local and E2E bootstrap satisfy
+   the gate by running before observed writes. Production-like automation uses its own
+   mutation-admission/drain integration. Fail before registration if the worker
    does not run the deployment-pinned Ed-Fi image digest built from the required Debezium
    3.6 base or permit the required source-producer overrides. After registration, read
    back the connector configuration and reject drift from the required idempotence,
@@ -58,7 +65,9 @@ backend.
    adapter and connector-offset REST response for the post-audit barrier; do not infer
    catch-up from task status or lag. Treat a failed connector task as not ready regardless
    of offset or lag observations. ACL and record-size verification must complete before
-   connector registration and before combined readiness can pass.
+   connector registration and before combined readiness can pass. A timeout leaves the
+   target not ready and cannot open writes as ready; the window may remain open for retry or
+   be explicitly aborted.
 7. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
    destructive volume teardown.
@@ -68,11 +77,13 @@ backend.
 
 - Script/integration tests cover disabled, UI-only, invalid or unprojected target,
   successful, repeated, timeout, normal-stop retention, missing binding around existing
-  artifacts, and destructive teardown flows.
+  artifacts, maintenance/drain failure, and destructive teardown flows.
 - Sequence tests prove binding reservation precedes artifact creation and that external
-  combined readiness follows the authoritative algorithm without a backfill epoch. An
+  combined readiness follows the authoritative maintenance-window algorithm without a
+  backfill epoch. They reject a previous zero audit, keep mutation admission closed through
+  a fresh post-drain startup/restart audit, and reopen it only after readiness passes. An
   idle-provider case proves the generated heartbeat advances the committed source offset
-  through a barrier captured after the zero audit before readiness passes.
+  through a barrier captured after that audit before readiness passes.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
   in-place topic partition-count or `partitionerAlgorithm` changes, time/delete retention
   on the v1 topic, and source/topic-generation reuse. It also rejects an in-place

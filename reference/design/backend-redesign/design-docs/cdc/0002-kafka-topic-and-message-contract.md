@@ -311,7 +311,8 @@ required fields or their types, document contract, or delete behavior.
 
 Operators repair a compatible projection defect in the existing topic:
 
-1. Report the CDC target not ready and stop every old cache writer, including projector
+1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
+   report the CDC target not ready, and stop every old cache writer, including projector
    loops and optional direct fill.
 2. Deploy the corrected materializer/composer while keeping old cache writers stopped.
 3. Clear `dms.DocumentCache` with the provider-supported rebuild operation. Cache
@@ -321,7 +322,8 @@ Operators repair a compatible projection defect in the existing topic:
    publishes corrective upserts with their unchanged `contentVersion` values at later
    offsets.
 5. Complete the authoritative provider source-position barrier captured after the zero
-   audit, recheck projection readiness, and then restore combined CDC readiness.
+   audit, recheck projection readiness, restore combined CDC readiness, and only then
+   reopen canonical mutation admission.
 
 The repair does not advance canonical `ContentVersion`, reset connector offsets, create a
 new topic, or require a new binding generation. While the cache-ahead recovery latch is
@@ -340,12 +342,15 @@ records.
 An incompatible public-contract change requires a new topic contract such as
 `documents.v2`, a matching `contractVersion`, a new binding generation/topic, complete
 reprojection, and consumer bootstrap in the new state namespace. Before clearing or
-rebuilding the shared cache, operators stop the old connector and verify that all of its
+rebuilding the shared cache, operators enter the deployment-owned maintenance window,
+block and drain canonical mutations, stop the old connector, and verify that all of its
 tasks are stopped or otherwise fenced from the source database; they also stop every
 old-contract cache writer. Only new-contract writers may populate the rebuilt cache, and
-the new connector uses a fresh snapshot against the new topic. The old connector is never
-restarted against that cache. This barrier prevents new-contract cache rows from being
-captured and published into the old topic. Incompatible changes include changing key
+the new connector uses a fresh snapshot against the new topic. The maintenance gate remains
+closed until the fresh post-drain audit, provider publication barrier, consumer bootstrap,
+and combined-readiness checks finish. The old connector is never restarted against that
+cache. This barrier prevents new-contract cache rows from being captured and published
+into the old topic. Incompatible changes include changing key
 encoding, removing or changing the JSON type of a required field, changing delete
 semantics, or intentionally replacing the documented v1 document semantics rather than
 correcting their implementation. Schema reprovisioning likewise uses a new topic when

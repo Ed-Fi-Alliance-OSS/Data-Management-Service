@@ -15,9 +15,9 @@ related:
 
 ## Outcome
 
-Expose per-data-store projection health, audit-backed exact completeness, current-source
-observation, and sanitized telemetry from the latest completed full audit and current
-process state.
+Expose per-data-store projection health, an exact audit observation rather than continuous
+completeness proof, current-source observation, and sanitized telemetry from the latest
+completed full audit and current process state.
 
 ## Dependencies
 
@@ -61,6 +61,10 @@ process state.
   unhealthy across later source equality, a zero audit, canonical deletion, health polling,
   and process restart. Only the explicit full-cache recovery transaction clears it.
 - Tests distinguish diagnostic process timestamps from database completeness evidence.
+- Tests make explicit that a zero audit is exact only at its finishing observation and that
+  a late lower-version commit may remain undiscovered until the next full audit; E19 owns
+  the maintenance-window requirement that turns a fresh post-drain startup/restart audit
+  into a combined-readiness baseline.
 - Shared conformance vectors pin the exact fingerprint bytes for both provider tokens.
   Provider tests prove equivalent connection aliases for one database read the same
   singleton and produce the same opaque fingerprint, independently provisioned databases

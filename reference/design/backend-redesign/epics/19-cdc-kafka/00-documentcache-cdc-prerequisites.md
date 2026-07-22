@@ -12,6 +12,7 @@ related:
 
 - [Configuration and projection targets](../../../cdc-streaming.md#configuration-and-projection-target-selection)
 - [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
+- [V1 maintenance-window assumptions](../../../cdc-streaming.md#v1-maintenance-window-assumptions)
 - [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
 - [Deployment-owned physical source binding](../../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
@@ -61,15 +62,19 @@ per-database projection health with E19-owned provider, topic, and connector che
    authorization/maximum-record coverage.
 6. Implement per-target and deployment aggregate status by combining the binding, DMS
    current-source projection health, including the durable cache-ahead recovery latch,
+   deployment-owned mutation-admission/drain state for initial readiness or explicit
+   baseline replacement,
    connector configuration and task state, snapshot/catch-up, the provider source-position
    barrier, current lag checks, and Debezium 3.6 P50/P95/P99 source-lag telemetry.
-   Quantiles are diagnostic and do not replace the barrier. Implement the PostgreSQL
-   adapter by capturing
-   `pg_current_wal_lsn()` after the zero-audit health response and comparing its unsigned
-   64-bit value with committed Debezium `lsn_proc`. Implement the SQL Server adapter by
-   reading `HeartbeatSequence` after that response, locating a later update after-image
-   in its CDC capture instance, and comparing its commit/change LSN and event serial with
-   committed Debezium `commit_lsn`, `change_lsn`, and `event_serial_no`.
+   For initial readiness or explicit baseline replacement, require a fresh startup/restart
+   audit begun only after canonical mutations are blocked and in-flight transactions drain;
+   never accept an older zero audit. Quantiles are diagnostic and do not replace the
+   barrier. Implement the PostgreSQL adapter by capturing
+   `pg_current_wal_lsn()` after the fresh zero-audit health response and comparing its
+   unsigned 64-bit value with committed Debezium `lsn_proc`. Implement the SQL Server
+   adapter by reading `HeartbeatSequence` after that response, locating a later update
+   after-image in its CDC capture instance, and comparing its commit/change LSN and event
+   serial with committed Debezium `commit_lsn`, `change_lsn`, and `event_serial_no`.
 7. Obtain committed source offsets from
    `GET /connectors/{connectorName}/offsets`, select exactly the source partition matching
    the bound database, and fail closed for an unsupported endpoint, snapshot/null or
@@ -78,7 +83,10 @@ per-database projection health with E19-owned provider, topic, and connector che
    substitutes. After catch-up, require a second ready DMS health observation for the
    same source fingerprint. A failed task or missing/conflicting
    `errors.tolerance=none` keeps combined readiness false regardless of offset or lag
-   observations.
+   observations. Keep the mutation gate closed through that second observation and lag
+   check; release it only after the initial or baseline-replacing combined-ready transition
+   succeeds. Later connector-only recovery remains an eventual-consistency health
+   calculation and does not claim another exact baseline.
 8. Emit sanitized, condition-specific diagnostics without changing DMS request routing.
 
 ## Acceptance Evidence
@@ -92,7 +100,9 @@ per-database projection health with E19-owned provider, topic, and connector che
   targets, guarded identity rotation/new-generation recovery, and confirmed binding
   mismatch without a DMS-owned drift latch.
 - Readiness tests cover binding, migration, projection, exact provider position parsing
-  and ordering, a barrier captured after the zero audit, committed connector
+  and ordering, deployment-owned mutation admission and drain, rejection of a pre-drain
+  zero audit, a fresh startup/restart audit after the drain, a barrier captured after that
+  audit, committed connector
   snapshot/catch-up, idle-source heartbeat advancement, second projection-health
   observation, cache-ahead latching that remains false-ready after source equality,
   explicit `errors.tolerance=none`, producer/topic/broker size alignment with
@@ -101,6 +111,11 @@ per-database projection health with E19-owned provider, topic, and connector che
   results. They reject missing,
   malformed, snapshot, wrong-source, and multiple source-offset responses and prove that
   running/lag status cannot pass a connector that is below the barrier.
+- A synchronized provider test holds open a canonical transaction after it allocates a
+  lower `ContentVersion`, proves readiness cannot pass while that transaction is draining,
+  then commits it and proves only the restarted projector's fresh audit plus publication
+  barrier permits the mutation gate to reopen. Timeout or setup-controller restart before
+  completion remains fail-closed.
 - API integration tests prove every reported CDC/projector failure remains observational,
   including deletion with unavailable cache state.
 

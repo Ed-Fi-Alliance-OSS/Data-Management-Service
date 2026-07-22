@@ -76,8 +76,12 @@ implementation inputs.
 - Binding state survives DMS and connector restarts, fails closed around missing or
   mismatched state, and prevents a topic generation from changing physical source.
 - DMS exposes only per-database projection health; deployment automation combines it
-  with binding, migration, provider source-position catch-up, and lag status. PostgreSQL
-  and SQL Server adapters compare a barrier captured after the zero audit with the
+  with binding, migration, maintenance admission/drain, provider source-position catch-up,
+  and lag status. Initial readiness and explicit baseline-replacing repair/cutover use a
+  flexibly sized deployment-owned maintenance window, reject prior audit evidence, and keep
+  canonical mutations drained through a fresh startup/restart audit and the later
+  publication barrier. PostgreSQL
+  and SQL Server adapters compare a barrier captured after that zero audit with the
   connector's committed Debezium offset, and an internal captured heartbeat advances idle
   sources. A durable cache-ahead latch keeps combined readiness false across later source
   equality and process restart until explicit recovery.
@@ -97,7 +101,8 @@ implementation inputs.
   maximum record without relying on compression.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported setup, security, observation, same-topic
-  compatible repair, incompatible-contract migration, and explicit destructive cleanup.
+  compatible repair, incompatible-contract migration, flexibly sized maintenance windows
+  and fail-closed drain/timeout behavior, and explicit destructive cleanup.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a
 new decision record changes that design.

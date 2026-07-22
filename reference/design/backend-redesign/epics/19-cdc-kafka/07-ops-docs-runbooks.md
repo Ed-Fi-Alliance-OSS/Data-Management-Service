@@ -31,8 +31,13 @@ capability without redefining its architecture or contracts.
    link-bearing envelope, required producer/topic/broker/replica/consumer size settings,
    DMS per-database projection-health observation, and deployment-owned combined
    readiness. Explain provider barrier capture/comparison, the internal heartbeat's idle-
-   source role, and why connector status or lag alone is insufficient. Warn that the HTTP
-   request-body limit alone is not the record-size bound.
+   source role, and why connector status or lag alone is insufficient. Document the v1
+   maintenance-window assumption for initial readiness and explicit baseline replacement:
+   deployment automation blocks all canonical mutation sources, drains in-flight requests
+   and transactions, forces a fresh startup/restart audit, and keeps the gate closed through
+   the later publication barrier. State that the window has no design maximum and that
+   timeout or unverifiable drain state remains fail-closed. Warn that the HTTP request-body
+   limit alone is not the record-size bound.
 4. Document connector restart, offset reset, resnapshot, topic recreation, cache rebuild,
    target migration/retirement, cache-ahead invariant recovery, and explicit destructive
    cleanup. A possibly published higher cache version requires a new binding generation,
@@ -48,9 +53,10 @@ capability without redefining its architecture or contracts.
    operators to rewrite a binding in place or rotate identity during an ordinary setup
    retry.
 6. Document both compatibility paths: for a conforming projection or opaque-ETag
-   correction, stop old cache writers including direct fill, clear and rebuild cache
-   state, retain the binding/topic/offsets, and verify later equal-version records; for an
-   incompatible key/field/type/delete/document-contract change, mark readiness false,
+   correction, enter the maintenance window, drain canonical mutations, stop old cache
+   writers including direct fill, clear and rebuild cache state, retain the
+   binding/topic/offsets, and verify later equal-version records before reopening writes;
+   for an incompatible key/field/type/delete/document-contract change, mark readiness false,
    reserve the new binding/topic/`contractVersion`, stop or fence the old connector and
    verify its tasks cannot capture from the source, stop old-contract cache writers,
    clear and completely reproject the cache with only new-contract writers, snapshot it
@@ -74,6 +80,11 @@ capability without redefining its architecture or contracts.
   governed artifacts without binding state. It also covers a missing/stalled heartbeat,
   SQL Server capture-agent delay, malformed or ambiguous Connect source offsets, and a
   connector that is running but remains below its post-audit provider barrier.
+- Procedures distinguish an automatic health failure from an explicit maintenance window,
+  list every mutation source that must be gated, and require evidence that admitted
+  requests and transactions drained. They allow an indefinitely extended window, retry, or
+  explicit abort with CDC still not ready, but never reopen writes as ready after timeout or
+  setup-controller loss before completion.
 - Destructive or replay-producing operations are clearly marked and never inferred from
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal

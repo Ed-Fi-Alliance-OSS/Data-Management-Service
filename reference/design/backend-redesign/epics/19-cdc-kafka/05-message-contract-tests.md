@@ -107,9 +107,9 @@ without requiring an API E2E path for every source operation.
   fits within the one-record byte budget and reaches a consumer without relying on
   compression. The over-budget variant emits no partial record, fails the connector task,
   and keeps combined readiness false.
-- The idle-source test captures a barrier after a zero audit and proves `RUNNING` plus
-  acceptable lag remains not ready below it, then observes the action-query heartbeat and
-  passes only when the committed PostgreSQL `lsn_proc` or SQL Server
+- The idle-source test captures a barrier after the fresh post-drain zero audit and proves
+  `RUNNING` plus acceptable lag remains not ready below it, then observes the action-query
+  heartbeat and passes only when the committed PostgreSQL `lsn_proc` or SQL Server
   commit/change/event-serial position reaches it. No heartbeat appears in the public
   topic.
 

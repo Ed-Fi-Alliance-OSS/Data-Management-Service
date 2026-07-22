@@ -98,16 +98,21 @@ progress/high-watermark, backfill epoch, retry record, or database-backed repair
 The one-bit cache-ahead latch is durable invariant safety state, not work inventory or
 completeness evidence. An exact zero finishing audit count is projection completeness at
 its observation only when that latch is clear; connector/source-position catch-up is a
-separate deployment-owned CDC readiness concern.
+separate deployment-owned CDC readiness concern. Because a lower-version transaction can
+commit below the cursor after a live audit, initial combined readiness uses a fresh
+startup/restart audit only after deployment automation has blocked canonical mutations and
+drained in-flight transactions.
 
 API deletion remains independent of projection. It deletes the canonical relational
 document and lets the connector derive the tombstone from that delete. It does not wait
 for or materialize cache state. A tombstone without a preceding projected upsert is valid
 state-stream behavior.
 
-Deployment-owned readiness uses the captured heartbeat only to establish a provider
-source-position barrier after an exact-zero projection audit. PostgreSQL compares the
-database WAL position with Debezium's committed completely-processed LSN; SQL Server
+Deployment-owned initial readiness uses the captured heartbeat only to establish a provider
+source-position barrier after a fresh, post-drain exact-zero projection audit. Later
+operational status remains eventual-consistency health and does not claim another exact
+baseline. PostgreSQL compares the database WAL position with Debezium's committed
+completely-processed LSN; SQL Server
 compares a post-audit heartbeat change's commit/change LSN position with the committed
 connector offset. Running/task state or lag alone is not barrier evidence. The
 authoritative design defines the provider capture and comparison algorithms.
@@ -162,6 +167,11 @@ decision.
 - Reads may use only fresh cache rows while the durable cache-ahead latch is clear and
   always retain relational fallback.
 - Projection lag and failure are observable but never gate normal API traffic.
+- Establishing initial combined CDC readiness, or replacing its complete baseline during
+  an explicit repair/cutover, uses a deployment-owned, flexibly sized maintenance window:
+  canonical mutations are blocked and drained through a fresh startup/restart audit and the
+  later provider publication barrier. DMS projection health does not itself activate that
+  gate.
 - Projector and direct-fill cache writes take no explicit write-conflicting source-row lock
   as a content-version fence. They do not deliberately serialize ordinary canonical
   version updates behind cache commits; ordinary cache-row, trigger, and foreign-key
@@ -214,5 +224,6 @@ decision.
 | Clear a cache-ahead observation when source/cache versions later become equal | Rejected: equality does not prove payload identity and could make corrupt possibly published state appear fresh. The durable latch clears only with the full-cache recovery transaction. |
 | Fail normal reads when projection is unhealthy | Rejected: relational fallback preserves API correctness. |
 | Treat connector status alone as CDC readiness | Rejected: a running connector cannot supply current documents that remain unprojected. |
+| Establish an initial complete baseline under live writes with correlated canonical, audit, and publication boundaries | Deferred for v1: deployments accept a flexibly sized maintenance window, which removes the late lower-version commit race without adding another durable coordination protocol. |
 | Derive tombstones from cache deletes | Rejected: cache and domain lifecycles are intentionally independent. |
 | Publish from the API delete path | Rejected: it introduces a distributed write/retry boundary. |

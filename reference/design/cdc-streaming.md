@@ -65,6 +65,36 @@ Change Queries remain a separate polling API compatibility surface, including
 Kafka Connect is the v1 deployment model. Debezium Server is deferred, embedded
 Debezium is not a reference path, and DMS does not publish directly to Kafka.
 
+### V1 Maintenance-Window Assumptions
+
+V1 assumes that a deployment can place one selected physical data store in a maintenance
+window when initial combined CDC readiness is established and when an explicit projection
+repair or contract cutover replaces that complete baseline. The window has no design-level
+maximum duration. It may remain open for connector registration or restart, a complete
+projection audit and repair pass, transient retries, connector snapshot/catch-up, and the
+post-audit provider barrier. An operator-configured automation timeout is diagnostic and
+fail-closed; elapsed time never substitutes for completing the sequence below.
+
+Before accepting the audit used for an initial or baseline-replacing combined-ready
+transition, deployment automation blocks every new canonical document mutation for that
+data store and drains already admitted mutation requests and database transactions. The
+gate covers every DMS replica,
+`POST`, `PUT`, and `DELETE`, bulk or seed loaders, administrative mutation paths, and any
+other supported writer to the canonical resource tables. No canonical mutation is admitted
+until combined readiness passes or the operator explicitly aborts the CDC transition and
+leaves CDC not ready. Read traffic may remain available. Optional direct fill may continue
+during ordinary enablement because it changes only captured cache state; a projection
+correction or contract cutover separately stops old cache writers as defined below.
+
+The maintenance gate and drain are deployment-owned operations, not DMS projection-health
+side effects or fields in the immutable binding. Deployment automation must know that its
+gate is active and its drain completed; an unverifiable gate fails closed. Local and E2E
+bootstrap satisfy the same contract by completing CDC setup before test/application writes
+begin. This operational assumption deliberately avoids a v1 correlated
+canonical-boundary/audit/publication-boundary protocol for initial population. Later
+steady-state health and connector recovery remain eventual-consistency observations and do
+not claim a new exact canonical/cache baseline.
+
 ### Pinned Connector Runtime
 
 The v1 Ed-Fi Kafka Connect image must be rebuilt from the immutable Debezium 3.6 base
@@ -144,7 +174,9 @@ Deployment automation selects CDC targets separately and must configure every CD
 on at least one designated DMS projector host as a `DocumentCache:Targets` entry. Kafka
 infrastructure, `-EnableKafkaUI`, and `-EnableKafkaCdc` do not implicitly select DMS
 projection targets. All projection and CDC health remains observational and never changes
-`IDataStoreSelection`, normal request routing, or API read/mutation availability.
+`IDataStoreSelection` or normal request routing by itself. The explicit deployment-owned
+maintenance workflow above may temporarily gate canonical mutation availability while
+establishing combined readiness; DMS health polling does not activate or release that gate.
 
 ## Cached Document Contract
 
@@ -602,12 +634,21 @@ projection readiness for one target requires a resolved execution context, a suf
 recent exact-zero finishing audit, a clear durable cache-ahead latch, and no currently
 known unresolved incremental candidate or retry deferral.
 
+An exact-zero audit is exact at its finishing observation, not continuous completeness
+proof while canonical writes are admitted. In particular, a transaction may allocate a
+lower `ContentVersion`, remain in flight while an audit finishes, and commit below the
+incremental cursor afterward; the next full audit repairs it. DMS projection readiness
+therefore remains an eventually consistent operational signal. Initial combined readiness,
+and an explicit repair/cutover that replaces its baseline, uses a fresh startup/restart
+audit only after canonical mutation admission is closed and in-flight transactions are
+drained, eliminating that late-commit case from the established baseline.
+
 DMS exposes only this per-database projection result. It does not expose
 `CanRegisterConnector`, compare the current source fingerprint with an expected source,
 retain source-drift state, inspect provider capture artifacts, call Kafka Connect, or
 calculate a deployment aggregate.
 
-Deployment automation calculates end-to-end CDC readiness for each binding from:
+Deployment automation evaluates end-to-end CDC component health for each binding from:
 
 - a durable binding record that matches the target's currently resolved physical source,
 - a DMS projection-health result whose current source fingerprint matches that binding,
@@ -623,18 +664,26 @@ Deployment automation calculates end-to-end CDC readiness for each binding from:
 - a second DMS projection-health observation that remains ready for the same source, and
 - connector lag within its configured threshold.
 
-There is no backfill epoch, completed backfill target, or maximum projected version in
-this readiness calculation. The external status operation retains each target's result
-when calculating a deployment aggregate. A combined-readiness failure does not gate
-normal DMS traffic.
+These component conditions remain eventually consistent after write admission opens; they
+do not assert that every currently committed document is projected at every health read.
+There is no backfill epoch, completed backfill target, or maximum projected version in this
+calculation. The external status operation retains each target's result when calculating a
+deployment aggregate. A component-health failure does not automatically gate normal DMS
+traffic. Initial enablement and an explicit baseline-replacing repair/cutover deliberately
+keep the maintenance gate closed until their sequence succeeds; they may explicitly abort
+and reopen canonical writes only while continuing to report CDC not ready.
 
 ### Provider Source-Position Barrier
 
 Connector/task `RUNNING` state, elapsed time, Kafka topic offsets, and a lag metric do not
-prove that every database change committed before a projection audit has passed through
-the connector. Deployment automation implements one source-position adapter per provider
-and compares a post-audit database position with the connector's committed Debezium source
-offset.
+prove that every cache change committed by a projection audit has passed through the
+connector. Nor can a post-audit publication barrier discover or repair a canonical row
+that the audit missed. For initial enablement or an explicit baseline replacement, the
+maintenance gate plus the fresh post-drain exact-zero audit establishes the complete
+canonical/cache baseline; deployment automation then uses one
+source-position adapter per provider to compare a post-audit database position with the
+connector's committed Debezium source offset and prove publication through that later
+boundary.
 
 Both adapters use the opt-in singleton `dms.CdcHeartbeat` table. It contains only
 `HeartbeatId = 1`, a nonnegative `HeartbeatSequence` value, and `HeartbeatAt`; it
@@ -666,34 +715,52 @@ and [`SubmittedRecords`](https://github.com/apache/kafka/blob/4.3.0/connect/runt
 The heartbeat table is not projection work, completeness evidence, a public event source,
 or part of the immutable binding record.
 
-For every transition to combined ready, deployment automation performs this sequence:
+For initial combined readiness, and for an explicit projection repair or contract cutover
+that replaces its complete baseline, deployment automation performs this sequence:
 
-1. Read a ready DMS projection-health result and retain its source fingerprint and exact-
-   zero audit observation.
-2. Capture a provider barrier from that same bound physical database after receiving the
-   health result, using the provider procedure below.
-3. Read the connector's committed source offsets through
+1. Enter or retain the target's maintenance window, block all new canonical mutations,
+   and drain every already-admitted mutation request and database transaction. A previous
+   zero audit is ineligible.
+2. After capture artifacts and the connector are established, restart or roll out every
+   DMS projector execution context selected for the target. This resets prior health
+   evidence and forces the required immediate startup/restart audit after the drain.
+3. Wait for that fresh audit to finish at exact zero and retain its source fingerprint.
+   Keep the mutation gate closed; an older, pre-drain, stale, or merely recent audit cannot
+   satisfy this step.
+4. Capture a provider barrier from that same bound physical database after receiving the
+   fresh health result, using the provider procedure below.
+5. Read the connector's committed source offsets through
    `GET /connectors/{connectorName}/offsets`. Select exactly one source partition matching
    the connector and bound database: PostgreSQL requires exactly
    `{ "server": <configured topic.prefix> }`, while SQL Server requires exactly
    `{ "server": <configured topic.prefix>, "database": <configured database name> }`.
    A missing endpoint, missing or multiple matching partitions, snapshot offset, null
    field, malformed field, or source-partition mismatch is not ready.
-4. Parse and compare the provider position. Poll until the committed connector position
+6. Parse and compare the provider position. Poll until the committed connector position
    is greater than or equal to the captured barrier, while continuing to require the sole
    task to be `RUNNING`. Connector status, topic end offsets, elapsed time, and lag never
    substitute for this comparison.
-5. Read projection health again and require it to remain ready for the same source
-   fingerprint. Then apply the independent connector-lag threshold.
+7. Read projection health again and require it to remain ready for the same source
+   fingerprint. Then apply the independent connector-lag threshold, transition the target
+   to combined ready, and only afterward release canonical mutation admission.
+
+The window may remain open as long as this sequence needs. A failure or timeout cannot
+reuse the prior audit, release the gate as ready, or degrade into a status/lag-only success.
+Automation may keep retrying inside the window or explicitly abort and reopen writes with
+the target still not ready. The maintenance-window state is operational transition evidence
+and is not persisted in or added to the immutable binding. Later observational status and
+connector-only recovery use the component-health calculation above and retain the design's
+bounded eventual-consistency semantics; they do not claim another exact baseline.
 
 The barrier is transient status evidence and is not persisted in or used to mutate the
 immutable binding.
 
 **PostgreSQL adapter**
 
-After the first health response, execute `SELECT pg_current_wal_lsn()` through the bound
-database connection. Normalize PostgreSQL's `X/Y` value to its unsigned 64-bit WAL byte
-position. From the Connect source offset, require the Debezium 3.6 `lsn_proc` field, which
+After the projection-health response selected by the applicable readiness sequence,
+execute `SELECT pg_current_wal_lsn()` through the bound database connection. Normalize
+PostgreSQL's `X/Y` value to its unsigned 64-bit WAL byte position. From the Connect source
+offset, require the Debezium 3.6 `lsn_proc` field, which
 is the last completely processed LSN, interpret its signed JSON integer as the same
 unsigned 64-bit bit pattern, and require `lsn_proc >= barrierLsn`. Do not compare the less
 strict `lsn`, `lsn_commit`, a replication-slot flush position, or formatted strings. The
@@ -702,8 +769,9 @@ database drives logical decoding beyond the captured WAL position.
 
 **SQL Server adapter**
 
-After the first health response, read `HeartbeatSequence` through the bound database
-connection. Wait until the heartbeat CDC capture instance exposes an update after-image
+After the projection-health response selected by the applicable readiness sequence, read
+`HeartbeatSequence` through the bound database connection. Wait until the heartbeat CDC
+capture instance exposes an update after-image
 whose `HeartbeatSequence` is greater than that value. Use that row's `__$start_lsn` as the
 barrier commit LSN and `__$seqval` as the barrier change LSN; this also proves that the SQL
 Server capture job has processed a transaction committed after the audit observation.
@@ -1110,7 +1178,8 @@ contract.
 
 For a conforming output correction, operators:
 
-1. Mark the CDC target not ready and stop every old cache writer, including projector
+1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
+   mark the CDC target not ready, and stop every old cache writer, including projector
    loops and optional direct fill.
 2. Deploy the corrected materializer/composer while old cache writers remain stopped.
 3. Clear `dms.DocumentCache` with the provider-supported rebuild operation. The existing
@@ -1120,7 +1189,8 @@ For a conforming output correction, operators:
    finishing audit reports zero missing, cache-behind, and cache-ahead rows. Rebuilt cache
    inserts publish at later offsets with unchanged `contentVersion` values.
 5. Complete the provider source-position barrier captured after the zero audit, recheck
-   projection readiness, and restore combined CDC readiness.
+   projection readiness, restore combined CDC readiness, and only then reopen canonical
+   mutation admission.
 
 The correction does not advance canonical `ContentVersion`, reset offsets, create a new
 topic, or reserve a new binding generation. Consumers replace an equal-`contentVersion`
@@ -1142,7 +1212,8 @@ otherwise unchanged.
 A change to key encoding, required field names or JSON types, delete semantics, or the
 document contract itself requires a new topic contract such as `documents.v2`. Operators:
 
-1. Mark the CDC target not ready and reserve the new binding generation, public and
+1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
+   mark the CDC target not ready, and reserve the new binding generation, public and
    progress topics, ACLs, and consumer state namespace without changing the old binding in
    place.
 2. Stop the old connector and verify that all of its tasks are stopped or otherwise fenced
@@ -1157,7 +1228,7 @@ document contract itself requires a new topic contract such as `documents.v2`. O
 5. Register the new connector against the new binding and topics with a fresh snapshot,
    complete the provider source-position barrier captured after the zero audit, recheck
    projection readiness, and bootstrap consumers in the new state namespace before
-   restoring combined CDC readiness.
+   restoring combined CDC readiness and reopening canonical mutation admission.
 6. Explicitly retain or retire the old public and progress topics and consumer state; never
    restart the old connector against the rebuilt cache.
 
@@ -1180,7 +1251,8 @@ included tables. The operation filter drops every `dms.Document` snapshot record
 not satisfy the streaming source-position barrier; the adapter still rejects snapshot
 offsets and waits for the post-audit action-query update.
 
-For a new instance:
+For a new instance, write admission begins closed, so the maintenance-window precondition
+is satisfied without interrupting existing traffic:
 
 1. Select the deployment CDC target and ensure the same `(tenant key, DataStoreId)` is an
    explicit DMS `DocumentCache:Targets` entry.
@@ -1190,19 +1262,24 @@ For a new instance:
    setup, and create the binding's compact-only public and progress topics and their ACLs.
 4. Register the connector from that exact binding before DMS reconciliation or
    application writes that must be observed.
-5. Start or roll out DMS so monotonic cache upserts flow through established capture.
-6. Wait for DMS projection readiness, capture the provider source-position barrier
-   afterward, and wait for connector snapshot/catch-up through that barrier using the
-   committed Connect source offset.
+5. Start or roll out DMS only after the write gate is closed and drained, so the resulting
+   startup/restart audit is fresh and monotonic cache upserts flow through established
+   capture.
+6. Wait for that fresh audit to produce DMS projection readiness, capture the provider
+   source-position barrier afterward, and wait for connector snapshot/catch-up through
+   that barrier using the committed Connect source offset.
 7. Recheck DMS projection readiness for the same source fingerprint and advertise
-   combined CDC readiness only when connector lag is also acceptable.
+   combined CDC readiness only when connector lag is also acceptable; then open write
+   admission.
 
-For an existing instance, perform the same one-shot sequence before write/delete traffic
-that the host expects CDC to observe. If capture cannot be registered first, quiesce
-traffic until it is registered. Existing cache rows are handled by the connector's
-initial snapshot; ordinary reconciliation repairs remaining missing or cache-behind rows.
-Any cache-ahead row is an invariant failure and must follow the explicit recovery path
-before CDC readiness can pass.
+For an existing instance, enter the maintenance window before connector setup, block new
+canonical mutations, drain in-flight mutation requests and transactions, and perform the
+same sequence while the gate remains closed. Existing cache rows are handled by the
+connector's initial snapshot; the fresh post-drain audit repairs remaining missing or
+cache-behind rows. Any cache-ahead row is an invariant failure and must follow the explicit
+recovery path before CDC readiness can pass. There is no design maximum for the window;
+failure may be retried while it remains closed or explicitly aborted with CDC still not
+ready.
 
 ## Local Bootstrap and CI
 
@@ -1234,15 +1311,18 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 - Bootstrap prints connector name, provider, database, opaque instance key, and public and
   progress topics; secrets are excluded.
 - It calculates the combined readiness sequence above and reports whether binding,
-  migration, DMS projection, heartbeat/capture progress, provider-barrier catch-up, or lag
-  failed.
+  migration, maintenance admission/drain, fresh post-drain DMS projection,
+  heartbeat/capture progress, provider-barrier catch-up, or lag failed. A timeout never
+  opens writes as ready.
 - E2E setup registers capture against the same provisioned database used by the DMS test
   process before issuing writes it expects to consume.
 - A normal local stop retains binding, connector, and Kafka state. Destructive local
   volume teardown removes governed artifacts first and their binding records last.
 
-Production-like automation repeats this one-shot workflow for each deployment-selected
-CDC target using its durable state backend.
+Production-like automation repeats this workflow for each deployment-selected CDC target
+using its durable state backend and deployment-specific mutation-admission/drain mechanism.
+The maintenance window is allowed to span the complete audit, retry, snapshot, and catch-up
+duration.
 
 ## DDL and Query Support
 
@@ -1402,13 +1482,23 @@ Source-position adapter tests pin PostgreSQL `X/Y` and signed Debezium `lsn_proc
 normalization to the same unsigned 64-bit order. SQL Server tests pin binary and
 `xxxxxxxx:xxxxxxxx:xxxx` LSN normalization and lexicographic commit/change/event-serial
 ordering. Both reject snapshot, null, malformed, wrong-partition, and ambiguous offset
-responses. Real-provider tests start from an idle source, take a barrier after a zero
-audit, let the configured heartbeat action query advance capture, and prove combined
-readiness stays false until `GET /connectors/{connectorName}/offsets` reaches that barrier.
+responses. Initial-readiness real-provider tests start from an idle source, take a barrier
+after the fresh post-drain zero audit, let the configured heartbeat action query advance
+capture, and prove combined readiness stays false until
+`GET /connectors/{connectorName}/offsets` reaches that barrier.
 They also prove a heartbeat is produced and acknowledged in the progress topic, advances
 the committed source offset only after it and every earlier retained record complete
 processing, and emits no public document record. Returning `null` for the same heartbeat
 must fail this test by leaving the committed offset behind the barrier.
+
+Combined-readiness sequence tests begin with a previously ready zero audit, hold open a
+canonical transaction that has already allocated a lower `ContentVersion`, and prove that
+closing new admission alone is insufficient: readiness remains false until the transaction
+drains, the projector execution contexts restart, and a fresh post-drain audit repairs the
+row. The test then proves the mutation gate remains closed until the cache write and
+heartbeat are acknowledged through the provider barrier. Pre-drain zero audits, connector
+`RUNNING`, acceptable lag, timeout, and setup-controller restart cannot bypass the sequence
+or reopen writes as ready.
 
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including attempted partition-count, `partitionerAlgorithm`, or `maxRecordBytes`
@@ -1478,6 +1568,9 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   the incremental lane,
 - a lower version committed after the incremental cursor advances is repaired by the
   next full audit,
+- initial combined readiness quiesces and drains canonical mutations, rejects a prior
+  zero audit, forces a fresh startup/restart audit, waits through the post-audit publication
+  barrier, and reopens mutation admission only after readiness passes,
 - cache-row loss below the incremental cursor is repaired by the next full audit,
 - advancing the cursor past a failed candidate retains that candidate for bounded
   in-memory retry,
