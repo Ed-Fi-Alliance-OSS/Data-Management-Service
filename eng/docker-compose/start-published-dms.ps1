@@ -130,11 +130,15 @@ param (
     [Switch]
     $SeparateConfigDatabase,
 
-    # Resolve and validate the effective Configuration Service runtime contract, then return WITHOUT any
-    # external action (no network create, container start, or Keycloak/OpenIddict). This is the preflight
-    # the full startup path runs, exposed as a stop point so an outer orchestrator (build-dms.ps1
-    # StartEnvironment) can invoke the exact same validation semantics before it builds images or tears
-    # down volumes. Not valid with teardown (-d).
+    # Resolve and validate the effective Configuration Service runtime contract, then stop before starting
+    # the stack. Preflight may resolve Compose configuration (`docker compose config`) and validate the
+    # connection string with the exact-provider validator - resolving, reusing, or building a host validator
+    # tool, or, where none is available on a clean Docker-only host, pulling the selected published image and
+    # running an isolated `docker run --network none` validator container. It completes before any stack
+    # lifecycle mutation: no DMS/config Docker-image build, Compose up/down, volume deletion, network creation,
+    # stack-service startup, or identity/CMS initialization. Same preflight the full startup path runs, exposed
+    # as a stop point so an outer orchestrator (build-dms.ps1 StartEnvironment) gets identical validation
+    # before it builds images or tears down volumes. Not valid with teardown (-d).
     [Switch]
     $PreflightOnly
 )
@@ -354,9 +358,13 @@ if ($d) {
     }
 }
 else {
-    # Resolve and validate the effective Configuration Service runtime contract ONCE, BEFORE any external
-    # action (network creation, container start, Keycloak/OpenIddict). `docker compose config` is read-only
-    # and needs no network, images, or containers, and it resolves the same files, env file, and shell the
+    # Resolve and validate the effective Configuration Service runtime contract ONCE, before starting the
+    # stack. Preflight may resolve Compose configuration (`docker compose config`) and run the exact-provider
+    # validator - resolving, reusing, or building a host validator tool, or, where none is available on a
+    # clean Docker-only host, pulling the selected published image and running an isolated `docker run
+    # --network none` validator container; it completes before any stack lifecycle mutation (no DMS/config
+    # Docker-image build, Compose up/down, volume deletion, network creation, stack-service startup, or
+    # identity/CMS initialization). `docker compose config` resolves the same files, env file, and shell the
     # `up` calls below use - so what is validated here is exactly what the containers receive. Connection
     # strings are parsed by the exact runtime providers via the api-schema-tools validator. The DbOnly
     # diagnostic slice initializes no CMS, so it resolves only the SA-password credential it needs (below).
@@ -409,10 +417,13 @@ else {
     }
 
     if ($PreflightOnly) {
-        # The runtime contract (and, in DbOnly, nothing) resolved and validated above without touching
-        # Docker. Return before the first external action so an outer orchestrator can gate image build,
+        # The runtime contract resolved and validated above. Preflight may have resolved Compose configuration
+        # and validated the connection string with a host validator tool (resolved, reused, or built) or,
+        # where none was available on a clean Docker-only host, by pulling the selected published image to run
+        # an isolated `docker run --network none` validator container; it completes before any stack lifecycle
+        # mutation. Return before the first such mutation so an outer orchestrator can gate image build,
         # teardown, and volume deletion on this exact preflight.
-        Write-Output "Preflight validation complete. No Docker action was taken."
+        Write-Output "Preflight validation complete. Preflight may resolve Compose configuration and validate the connection string: it may resolve, reuse, or build a host validator tool, or, where none is available on a clean Docker-only host, pull the selected published image and run an isolated docker run --network none validator container. It completes before any stack lifecycle mutation: no DMS/config Docker-image build, Compose up/down, volume deletion, network creation, stack-service startup, or identity/CMS initialization."
         return
     }
 

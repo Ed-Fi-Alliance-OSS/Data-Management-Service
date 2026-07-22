@@ -568,7 +568,7 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         $envUtility | Should -Not -Match 'System\.Data\.SqlClient' -Because "the built-in SqlClient is not the runtime provider (the runtime is Microsoft.Data.SqlClient); parsing must go through the verb"
     }
 
-    It "<Script> resolves and validates the runtime contract before the FIRST external mutation (network create, build, up, keycloak)" -ForEach @(
+    It "<Script> resolves and validates the runtime contract before the first stack-lifecycle mutation (network create, build, up, keycloak)" -ForEach @(
         @{ Script = 'start-local-dms.ps1' }
         @{ Script = 'start-published-dms.ps1' }
         @{ Script = 'start-local-config.ps1' }
@@ -579,7 +579,7 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
 
         $contractIndex | Should -BeGreaterThan -1 -Because "$Script resolves the runtime contract"
         $networkIndex | Should -BeGreaterThan -1
-        $contractIndex | Should -BeLessThan $networkIndex -Because "$Script must validate before 'docker network create' - the first external action - which precedes image build, container up, and Keycloak/OpenIddict"
+        $contractIndex | Should -BeLessThan $networkIndex -Because "$Script must validate before 'docker network create' - the first stack-lifecycle mutation - which precedes image build, container up, and Keycloak/OpenIddict"
     }
 
     It "build-dms.ps1 StartEnvironment runs the runtime-contract preflight before image build and teardown (finding 1)" {
