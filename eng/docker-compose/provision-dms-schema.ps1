@@ -10,12 +10,15 @@
     Schema provisioning phase. Supports PostgreSQL and SQL Server data stores.
 .DESCRIPTION
     Invokes SchemaTools against each distinct effective target database from the
-    selected CMS instances. The dialect (--dialect pgsql|mssql) is auto-detected from
-    the shape of the data store connection string CMS hands back: PostgreSQL uses
-    host/database/username keys, SQL Server uses Server/Database/User Id keys. The
-    Docker-internal database host is translated to the host-side mapped port before
-    SchemaTools runs (dms-postgresql -> localhost:POSTGRES_PORT,
-    dms-mssql -> 127.0.0.1,MSSQL_PORT).
+    selected CMS instances. The dialect (--dialect pgsql|mssql) is the effective
+    DMS_DATASTORE provider (postgresql -> pgsql, mssql -> mssql; an unsupported value
+    fails at the engine-token boundary), NOT inferred from the data store connection
+    string. The CMS-stored connection is then parsed under that
+    provider's required keys (PostgreSQL: host/database/username; SQL Server:
+    Server/Database/User Id); a stored connection for the other engine lacks those
+    keys and is rejected as a stale data store. The Docker-internal database host is
+    translated to the host-side mapped port before SchemaTools runs
+    (dms-postgresql -> localhost:POSTGRES_PORT, dms-mssql -> 127.0.0.1,MSSQL_PORT).
 
     See command-boundaries.md Section 3.5 for the phase contract and
     01-schema-deployment-safety.md for the DMS-1151 story.
@@ -297,20 +300,28 @@ function Resolve-ExpectedProvisioningDialect {
     <#
     .SYNOPSIS
     Resolves the SchemaTools dialect the effective environment expects for provisioning targets,
-    from the effective DMS_DATASTORE value: mssql -> mssql, postgresql -> pgsql. A missing or
-    blank value defaults to postgresql -> pgsql, matching local-dms.yml's compose-level default
-    (AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}).
+    from the effective DMS_DATASTORE value: mssql -> mssql, postgresql -> pgsql. A missing or blank
+    value defaults to postgresql -> pgsql, matching local-dms.yml's compose-level default
+    (AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}). The value is canonicalized through the
+    single engine-token boundary (ConvertTo-CanonicalDatabaseEngine): case variants ('MSSQL') resolve,
+    and an unsupported token (a 'mysql' typo) THROWS here rather than silently mapping to PostgreSQL.
     #>
     param(
         [hashtable]
         $EnvValues
     )
 
+    # Apply the blank/missing PostgreSQL default first, then canonicalize: only 'postgresql' / 'mssql'
+    # (case-insensitive) survive; anything else fails at the explicit engine authority, never as PostgreSQL.
     $engineValue = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_DATASTORE" -DefaultValue "postgresql"
-    $expectedDialect = if ($engineValue -eq "mssql") { "mssql" } else { "pgsql" }
+    if ([string]::IsNullOrWhiteSpace($engineValue)) {
+        $engineValue = "postgresql"
+    }
+    $canonicalEngine = ConvertTo-CanonicalDatabaseEngine -Engine $engineValue
+    $expectedDialect = if ($canonicalEngine -eq "mssql") { "mssql" } else { "pgsql" }
 
     return [pscustomobject]@{
-        EngineValue = $engineValue
+        EngineValue = $canonicalEngine
         ExpectedDialect = $expectedDialect
     }
 }
@@ -417,8 +428,9 @@ function Convert-CmsConnectionStringToHostSideTarget {
 
     $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString
     # The provisioning dialect is the effective datastore provider (DMS_DATASTORE), not inferred from the
-    # connection string. SchemaTools provisions both (--dialect pgsql|mssql); New-ProvisionTarget has
-    # already verified the stored connection's shape matches this engine (stale-datastore guard).
+    # connection string. SchemaTools provisions both (--dialect pgsql|mssql). Parsing the stored connection
+    # under THIS provider's required keys is also the stale-datastore guard: a connection for the other engine
+    # lacks the selected engine's keys and throws below (New-ProvisionTarget surfaces it with a stale hint).
     $dialect = (Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues).ExpectedDialect
 
     if ($dialect -eq "mssql") {
@@ -673,31 +685,29 @@ function New-ProvisionTarget {
         -ConnectionString $connectionString `
         -EnvValues $EnvValues
 
+    # Resolve the effective provisioning dialect from the explicit DMS_DATASTORE (canonicalized). An
+    # unsupported token (e.g. a 'mysql' typo) throws HERE, at the single engine-token boundary, before any
+    # connection parse or provisioning - never silently proceeding as PostgreSQL.
+    $expectedProvisioningDialect = Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues
+
     # Stale-datastore guard. configure-local-data-store.ps1 -NoDataStore can select a pre-existing
     # route-unqualified CMS data store from a previous run with the OTHER database engine, which would
     # otherwise be provisioned silently while DMS starts against DMS_DATASTORE from this same environment.
-    # The engine is NOT inferred from a keyword table: configure writes a PostgreSQL data store connection
-    # with a `host=` key and a SQL Server one with a `Server=` key (no host), so the stored connection's
-    # shape must match the effective DMS_DATASTORE engine. Runs before the host-side conversion so the
-    # diagnostic is precise (the conversion would otherwise fail on a missing engine-specific key).
-    $expectedProvisioningDialect = Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues
-    $storedBuilder = ConvertTo-ConnectionStringBuilder -ConnectionString $resolvedConnectionString
-    # A PostgreSQL data store connection carries a `host` key; a SQL Server one carries `server` /
-    # `data source` (never host). A connection with neither is not engine-identifiable here, so let the
-    # host-side conversion below raise its specific missing-key diagnostic rather than guess an engine.
-    $storedEngineValue =
-        if ($storedBuilder.ContainsKey("host")) { "postgresql" }
-        elseif ($storedBuilder.ContainsKey("server") -or $storedBuilder.ContainsKey("data source")) { "mssql" }
-        else { $null }
-    if ($null -ne $storedEngineValue -and $storedEngineValue -ne $expectedProvisioningDialect.EngineValue) {
-        $dataStoreName = [string](Get-ProvisionProperty -Object $Instance -Names @("name", "Name"))
-        $storedDatabaseName = [string](Get-ConnectionStringValue -Builder $storedBuilder -Keys @("database", "initial catalog"))
-        throw "CMS data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName), database=$(Format-LogSafeText $storedDatabaseName)) is a '$(Format-LogSafeText $storedEngineValue)' connection, but the environment's DMS_DATASTORE is '$(Format-LogSafeText $expectedProvisioningDialect.EngineValue)'. This usually means a stale data store from a previous run with the other database engine is being reused (commonly selected via -NoDataStore). Reset the local CMS state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or, when invoking the phase commands directly, make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
+    # The engine is NEVER inferred from the stored connection's keywords (a generic connection-string builder
+    # accepts cross-engine aliases - e.g. Npgsql treats Server= as a Host alias - which a keyword shape-sniff
+    # would misclassify). The dialect is the effective DMS_DATASTORE (resolved above), and
+    # Convert-CmsConnectionStringToHostSideTarget parses the stored connection under THAT provider's required
+    # keys. A stored connection for the other engine lacks the selected engine's keys, so the conversion
+    # throws - which IS the stale-datastore signal, surfaced here with a precise hint before any provisioning.
+    try {
+        $target = Convert-CmsConnectionStringToHostSideTarget `
+            -ConnectionString $resolvedConnectionString `
+            -EnvValues $EnvValues
     }
-
-    $target = Convert-CmsConnectionStringToHostSideTarget `
-        -ConnectionString $resolvedConnectionString `
-        -EnvValues $EnvValues
+    catch {
+        $dataStoreName = [string](Get-ProvisionProperty -Object $Instance -Names @("name", "Name"))
+        throw "CMS data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName)): its connection string could not be parsed under the effective DMS_DATASTORE='$(Format-LogSafeText $expectedProvisioningDialect.EngineValue)' provider ($($_.Exception.Message)). This usually means a stale data store from a previous run with the other database engine is being reused (commonly selected via -NoDataStore). Reset the local CMS state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or, when invoking the phase commands directly, make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
+    }
 
     $routeContexts = @(
         Get-ProvisionRouteContexts -Instance $Instance | ForEach-Object {

@@ -879,11 +879,13 @@ exit $ExitCode
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
 
-        It "fails fast when a selected data store's dialect does not match the environment's DMS_DATASTORE" {
-            # configure-local-data-store.ps1 -NoDataStore can silently reuse a route-unqualified
-            # CMS data store from a previous run without checking its connection-string dialect.
-            # A stale PostgreSQL data store combined with an env configured for DMS_DATASTORE=mssql
-            # must fail fast here rather than provisioning against the wrong engine.
+        It "fails fast when a stale PostgreSQL data store is selected under DMS_DATASTORE=mssql" {
+            # configure-local-data-store.ps1 -NoDataStore can silently reuse a route-unqualified CMS data
+            # store from a previous run with the other engine. The engine is NEVER keyword-sniffed from the
+            # stored connection (a generic builder accepts cross-engine aliases); the provisioning dialect is
+            # the effective DMS_DATASTORE, and the host-side conversion parses the stored connection under that
+            # provider - a PostgreSQL connection (host=, no server) cannot be parsed under the mssql provider,
+            # so the conversion throws and is surfaced as a stale-datastore signal before any provisioning.
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
@@ -909,7 +911,66 @@ exit $ExitCode
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(9) } |
-                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*database=stale_pg*is a 'postgresql' connection*DMS_DATASTORE is 'mssql'*-NoDataStore*"
+                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*could not be parsed under the effective DMS_DATASTORE='mssql'*stale data store*-NoDataStore*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse
+        }
+
+        It "fails fast when a stale SQL Server data store is selected under DMS_DATASTORE=postgresql (reverse direction; a Server= alias is never keyword-sniffed as PostgreSQL)" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            # Base repo env has no DMS_DATASTORE, so the effective provider defaults to postgresql.
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 12
+                        name = "StaleMssql"
+                        connectionString = 'Server=dms-mssql,1433;Database=stale_mssql;User Id=sa;Password=${POSTGRES_PASSWORD};TrustServerCertificate=true;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(12) } |
+                Should -Throw -ExpectedMessage "*CMS data store 12*name=StaleMssql*could not be parsed under the effective DMS_DATASTORE='postgresql'*stale data store*-NoDataStore*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse
+        }
+
+        It "fails fast on an unsupported DMS_DATASTORE token before invoking SchemaTools" {
+            # DMS_DATASTORE=mysql (a typo / unsupported engine) must fail at the explicit engine-token boundary,
+            # not silently proceed with PostgreSQL DDL.
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            $envFile = Join-Path $script:repo.DockerComposeRoot "env-unsupported-engine.env"
+            Get-Content -LiteralPath $script:repo.EnvFile |
+                Set-Content -LiteralPath $envFile -Encoding utf8
+            Add-Content -LiteralPath $envFile -Value "DMS_DATASTORE=mysql"
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 13
+                        name = "UnsupportedEngine"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=whatever;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(13) } |
+                Should -Throw -ExpectedMessage "*Unsupported database engine*mysql*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
 
@@ -1643,7 +1704,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(1)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
-            # SchemaTools is invoked with the mssql dialect, auto-detected from the connection string.
+            # SchemaTools is invoked with the mssql dialect, selected from the effective DMS_DATASTORE.
             $captured | Should -Contain "--dialect"
             $captured | Should -Contain "mssql"
             $captured | Should -Not -Contain "pgsql"
@@ -1837,9 +1898,11 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
     }
 
     Context "Resolve-ExpectedProvisioningDialect (dialect from the explicit engine, never inferred from the connection string)" {
-        # Provisioning no longer guesses the SchemaTools dialect from connection-string keywords. The
-        # effective datastore provider (DMS_DATASTORE) IS the dialect; New-ProvisionTarget separately
-        # guards against a stale wrong-engine data store by the stored connection's shape.
+        # Provisioning never guesses the SchemaTools dialect from connection-string keywords. The effective
+        # datastore provider (DMS_DATASTORE) IS the dialect, canonicalized through the single engine-token
+        # boundary; New-ProvisionTarget guards a stale wrong-engine data store by whether the stored
+        # connection parses under that provider (Convert-CmsConnectionStringToHostSideTarget), not by a
+        # keyword shape-sniff.
         It "maps DMS_DATASTORE=mssql to the mssql dialect" {
             . $script:repo.ProvisionScript
             (Resolve-ExpectedProvisioningDialect -EnvValues @{ DMS_DATASTORE = "mssql" }).ExpectedDialect | Should -Be "mssql"
@@ -1853,6 +1916,42 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
         It "defaults a missing DMS_DATASTORE to the pgsql dialect (the compose-level default)" {
             . $script:repo.ProvisionScript
             (Resolve-ExpectedProvisioningDialect -EnvValues @{}).ExpectedDialect | Should -Be "pgsql"
+        }
+
+        It "canonicalizes a case-variant DMS_DATASTORE (<Value>) through the engine-token boundary" -ForEach @(
+            @{ Value = "MSSQL"; Engine = "mssql"; Dialect = "mssql" }
+            @{ Value = "PostgreSQL"; Engine = "postgresql"; Dialect = "pgsql" }
+        ) {
+            . $script:repo.ProvisionScript
+            $resolved = Resolve-ExpectedProvisioningDialect -EnvValues @{ DMS_DATASTORE = $Value }
+            $resolved.ExpectedDialect | Should -Be $Dialect
+            $resolved.EngineValue | Should -Be $Engine
+        }
+
+        It "throws for an unsupported DMS_DATASTORE token ('<Value>') rather than defaulting to PostgreSQL" -ForEach @(
+            @{ Value = "mysql" }
+            @{ Value = "postgres" }
+            @{ Value = " postgresql " }
+        ) {
+            . $script:repo.ProvisionScript
+            { Resolve-ExpectedProvisioningDialect -EnvValues @{ DMS_DATASTORE = $Value } } |
+                Should -Throw "*Unsupported database engine*"
+        }
+
+        It "the provisioning docs describe the explicit DMS_DATASTORE dialect model (no connection-string auto-detection, no deleted Resolve-TargetDialect)" {
+            # Guards the F10 correction: neither the deleted Resolve-TargetDialect nor the old
+            # "auto-detected from the connection string" model may reappear in the provisioning docs.
+            $docs = @(
+                (Join-Path $script:sourceDockerComposeRoot "provision-dms-schema.ps1"),
+                (Join-Path $script:sourceDockerComposeRoot "README.md"),
+                (Join-Path $script:sourceRepoRoot "reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md")
+            )
+            foreach ($doc in $docs) {
+                $content = Get-Content -LiteralPath $doc -Raw
+                $content | Should -Not -Match 'Resolve-TargetDialect' -Because "$doc must not name the deleted Resolve-TargetDialect"
+                $content | Should -Not -Match 'auto-detect' -Because "$doc must not describe the provisioning dialect as auto-detected from the connection string"
+                $content | Should -Not -Match 'otherwise[\s,>-]*pgsql' -Because "$doc must not describe an unsupported engine as falling through to pgsql; unsupported values fail at the engine-token boundary"
+            }
         }
     }
 
