@@ -78,9 +78,9 @@ implementation inputs.
   latches the database, disables cache reads and writes, and requires explicit CDC-aware
   full-cache recovery even if the source later reaches the same version.
 - Projection absence or failure never compromises canonical API behavior or deletion.
-- Byte-changing implementation corrections that would otherwise reuse a strong ETag use
-  the dedicated out-of-band utility only while the selected data store is explicitly
-  offline and all DMS replicas and external writers have been stopped outside the utility.
+- Every byte-changing implementation correction without an ordinary domain write uses the
+  dedicated out-of-band utility only while the selected data store is explicitly offline
+  and all DMS replicas and external writers have been stopped outside the utility.
   The utility does not implement or certify that fence. It advances canonical content
   stamps and mirrors for the explicit affected scope, is safely resumable across bounded
   batches, and leaves ordinary reconciliation and CDC to publish corrected higher-version

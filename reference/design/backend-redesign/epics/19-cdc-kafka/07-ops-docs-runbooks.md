@@ -106,15 +106,16 @@ relational CDC capability without redefining its architecture or contracts.
    operators to rewrite a binding in place or rotate identity during an ordinary setup
    retry. Do not present planned source replacement as a way to clear or reuse a binding
    whose source-history loss is already latched.
-6. State explicitly that same-topic baseline-replacing correction and incompatible-contract
+6. State explicitly that exact same-topic baseline replacement and incompatible-contract
    cutover are deferred until a separately owned deployment capability can fence every DMS
    replica and external writer and drain admitted work. Cross-link the design-only safety
    constraints without presenting them as executable v1 runbooks. Link E18's
-   representation-restamp utility only as an explicitly offline API/cache repair; do not
-   claim that it restores an exact CDC baseline after first-write admission. State that a
-   safe recovery from source-history loss would also require a new binding generation,
-   topics, consumer state namespace, and snapshot, and that this is a deferred future
-   workflow rather than a v1 procedure.
+   representation-restamp utility as the required explicitly offline path for every byte-
+   changing API/cache correction; it publishes higher versions eventually but does not
+   restore an exact CDC baseline after first-write admission. State that a safe recovery
+   from source-history loss would also require a new binding generation, topics, consumer
+   state namespace, and snapshot, and that this is a deferred future workflow rather than a
+   v1 procedure.
 7. Cross-link the canonical design and both ADRs instead of repeating their normative
    tables or algorithms.
 8. Document Debezium 3.6 P50/P95/P99 `MilliSecondsBehindSource` telemetry, the explicit
@@ -157,11 +158,12 @@ relational CDC capability without redefining its architecture or contracts.
   and remove connector offsets plus the SQL Server schema-history topic and ACLs with the
   other governed artifacts, then remove terminal incident state immediately before/with
   their JSON binding records.
-- Documentation identifies same-topic baseline replacement and incompatible-contract
+- Documentation identifies exact same-topic baseline replacement and incompatible-contract
   cutover as deferred and provides no v1 command sequence that could be mistaken for an
-  implemented production write gate. Offline restamp guidance does not claim exact CDC
-  readiness. It identifies source-history loss as terminal for the v1 binding and contains
-  no same-topic offset-reset, provider-artifact recreation, or resnapshot recovery steps.
+  implemented production write gate. Offline restamp guidance requires higher versions for
+  every byte-changing correction and does not claim exact CDC readiness. It identifies
+  source-history loss as terminal for the v1 binding and contains no same-topic offset-reset,
+  provider-artifact recreation, or resnapshot recovery steps.
 - Documentation distinguishes CDC from Change Queries and from response serialization.
 - Instructions never present a consumer reconstruction that exceeded 24 hours as valid,
   even when the topic retains tombstones longer than seven days, and never retain

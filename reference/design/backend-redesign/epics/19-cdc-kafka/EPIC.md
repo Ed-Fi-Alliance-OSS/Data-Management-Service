@@ -60,8 +60,8 @@ implementation inputs.
   combination.
 - Generated and published records pass the topic/message contract suite.
 - Each binding fixes its topic partition count and the named `kafka-murmur2-v1`
-  partitioner behavior token so a document's later Kafka offset remains a valid
-  equal-version tie-breaker without binding state depending on a Java class/version.
+  partitioner behavior token so keyed upserts and versionless tombstones remain in one
+  ordered compaction domain without binding state depending on a Java class/version.
 - Cache-row transitions and conforming consumer-applied non-null upserts are monotonic, and
   the stream is eventually convergent rather than linearizable to each canonical commit.
   Raw at-least-once delivery may contain duplicates or lower-version replays. A consumer may
@@ -75,8 +75,9 @@ implementation inputs.
   link-configuration, or ETag-composition rules.
 - Contract fixtures pin the v1 key, fields/types, tombstones, document semantics, and
   metadata relationships while treating `StreamEtag` bytes as opaque DMS output. They pin
-  the consumer rule that a later Kafka offset replaces an equal `contentVersion`, but the
-  epic does not implement a baseline-replacing producer workflow or contract cutover.
+  the consumer rule that only a higher `contentVersion` replaces retained non-null state;
+  equal versions are byte-identical duplicates. The epic does not implement an exact
+  baseline-replacing producer workflow or contract cutover.
 - Local and E2E setup creates a fresh selected database, provisions the current E18 schema,
   retains positive evidence that it has not been published to a writer, and registers
   against it without hard-coded instance values. It rejects first-time use of an unbound

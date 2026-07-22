@@ -42,10 +42,10 @@ that links to, rather than restates, the authoritative design.
    intervals, page size, concurrent targets, maximum audit age, and the direct-fill timeout,
    including how to diagnose audit overruns and API-resource contention.
 5. Document ordinary cache clear/rebuild as eventual recovery, not as an exact CDC baseline
-   replacement. State that a production same-topic equal-version correction is deferred
-   until an owned cross-replica/external-writer fence exists. Direct byte-changing API/cache
-   repair to 18-08 only for an explicitly offline data store, and do not claim that either
-   path restores exact combined readiness after first-write admission.
+   replacement or byte-changing correction. State that equal-version rebuild output must be
+   byte-identical and is a duplicate for consumers. Direct every byte-changing API/cache
+   repair to 18-08 for an explicitly offline data store, and do not claim that the utility
+   restores exact combined readiness after first-write admission.
 
 ## Acceptance Evidence
 
@@ -72,8 +72,9 @@ that links to, rather than restates, the authoritative design.
   workflow.
 - Provider behavior tests prove ordinary reconciliation does not rewrite an existing
   equal-version row, while an explicit clear/rebuild can produce rows with the same
-  canonical `ContentVersion`. These mechanics do not constitute a supported production
-  baseline-replacement workflow or another exact readiness guarantee.
+  canonical `ContentVersion` only when their public projection is byte-identical. Consumers
+  treat those records as duplicates. These mechanics do not constitute a correction,
+  supported production baseline-replacement workflow, or another exact readiness guarantee.
 - Runbook tests cover internal-only full-cache clear/latch-reset/rebuild and hand off
   possibly observed cache-ahead state to a new downstream state namespace, including E19's
   new-generation topic/snapshot recovery. Provider tests prove source equality and restart

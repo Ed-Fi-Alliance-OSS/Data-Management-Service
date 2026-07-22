@@ -193,11 +193,13 @@ stores a separate opaque `StreamEtag`, produced through the same served-ETag com
 the fixed CDC representation. API reads ignore `StreamEtag` and compose their
 request-specific validator from `ContentVersion` and the active request `variantKey`.
 The v1 stream has no projection generation. `StreamEtag` is opaque and its exact bytes are
-not independently frozen: a compatible materialization or ETag correction clears and
-rebuilds the cache without advancing canonical `ContentVersion`, and a later Kafka offset
-replaces the prior equal-version record in the existing topic. A change to the public key,
-required field names or types, delete semantics, or document contract uses a new versioned
-topic after complete reprojection. See the topic/message ADR's
+not independently frozen. Every compatible materialization or ETag correction that changes
+public bytes uses the explicitly offline representation-restamp utility to advance canonical
+`ContentVersion`; ordinary projection then publishes a higher-version record in the existing
+topic. Equal-version records are byte-identical duplicates and do not replace consumer
+state. A change to the public key, required field names or types, delete semantics, or
+document contract uses a new versioned topic after complete reprojection. See the
+topic/message ADR's
 [compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
 The cache projection and freshness behavior is defined in
 [Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation).

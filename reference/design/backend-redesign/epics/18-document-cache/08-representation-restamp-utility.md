@@ -17,16 +17,16 @@ related:
 
 ## Outcome
 
-Provide a supported PostgreSQL and SQL Server utility for the rare case in which corrected
-API or CDC representation bytes would otherwise reuse a strong ETag. The utility runs
-outside ordinary DMS request processing while the selected data store is explicitly
-offline, advances the existing canonical content stamps for an explicit document scope,
-and lets ordinary projection and streaming publish corrected higher-version state
-eventually when prior Kafka records do not require purging. When a correction removes
-sensitive bytes that should never have been published, the utility is only the database/API
-correction step in E19's destructive disclosure-response workflow; same-topic republication
-is prohibited. The utility does not implement or certify a cross-replica/external-writer
-gate or Kafka purge.
+Provide a supported PostgreSQL and SQL Server utility for every rare correction that changes
+API or CDC representation bytes without an ordinary domain write. The utility runs outside
+ordinary DMS request processing while the selected data store is explicitly offline,
+advances the existing canonical content stamps for an explicit document scope, and lets
+ordinary projection and streaming publish corrected higher-version state eventually when
+prior Kafka records do not require purging. When a correction removes sensitive bytes that
+should never have been published, the utility is only the database/API correction step in
+E19's destructive disclosure-response workflow; same-topic republication is prohibited.
+The utility does not implement or certify a cross-replica/external-writer gate or Kafka
+purge.
 
 This is a separate implementation story. General DocumentCache and CDC runbooks invoke
 the utility but must not approximate it with hand-written database updates.
@@ -42,7 +42,8 @@ the utility but must not approximate it with hand-written database updates.
 
 ## Example Use Scenarios
 
-The utility is necessary when corrected bytes would retain the old ETag, including:
+The utility is necessary for every byte-changing correction without an ordinary domain
+write, including:
 
 1. A reconstitution or serialization defect omitted a field, emitted an incorrect value,
    changed stable JSON ordering, or formatted a timestamp/number incorrectly for existing
@@ -57,20 +58,18 @@ The utility is necessary when corrected bytes would retain the old ETag, includi
    affected documents' stamps. If those bytes were published to Kafka and require purging,
    the connector must be fenced and the affected binding generation destructively retired
    through the E19 runbook; restamping and same-topic republication alone are insufficient.
-5. A DMS upgrade fixes a materializer/composer interaction so `DocumentJson` changes while
-   the composed `StreamEtag` would remain the same for the fixed stream context.
+5. A DMS upgrade fixes a materializer/composer interaction so `DocumentJson`,
+   `StreamEtag`, or both change for the fixed stream context.
 
 The utility is not necessary for:
 
 - an ordinary resource or descriptor mutation that already advances `ContentVersion`;
 - a schema or profile-definition change whose `schemaEpoch` change gives every changed
   representation a different strong ETag;
-- an equal-version compatible correction for which comparison proves every changed public
-  representation already has a different corrected `StreamEtag`; or
 - an incompatible key, field/type, delete, or document-contract change merely because it
   needs a new topic. That cutover is deferred; a future implementation may invoke this
-  utility as an additional offline step if it also changes representation bytes that would
-  reuse a strong ETag.
+  utility as an additional offline step if it also includes a byte-changing representation
+  correction for existing documents.
 
 ## Deliverables
 
@@ -118,10 +117,11 @@ The utility is not necessary for:
    resumable and requires the operator to keep the data store offline.
 10. Add operator documentation showing preview, execute, resume, abort-while-offline,
     and verification workflows. Include all example scenarios above, distinguish this
-    offline utility from ordinary eventual recovery, and identify equal-version baseline
-    replacement and incompatible-contract cutover as deferred. Cross-link E19's
-    sensitive-data disclosure response and state that the ordinary same-topic workflow must
-    not be used when previously published bytes require purging.
+    offline utility from ordinary eventual recovery, state that byte-changing equal-version
+    publication is prohibited, and identify exact baseline certification and incompatible-
+    contract cutover as deferred. Cross-link E19's sensitive-data disclosure response and
+    state that the ordinary same-topic workflow must not be used when previously published
+    bytes require purging.
 
 ## Acceptance Evidence
 
@@ -144,10 +144,11 @@ The utility is not necessary for:
 - Projection tests prove existing affected cache rows become behind, corrected projector
   output replaces them through the normal monotonic upsert, and an exact zero audit is
   required before completion.
-- Strong-validator tests use a fixture whose corrected representation bytes would have
-  retained the original ETag. After restamp and corrected materialization, both the API
-  ETag and `StreamEtag` differ because `ContentVersion` differs; a conditional GET using
-  the old ETag does not return `304` for the corrected representation.
+- Strong-validator tests use fixtures whose corrected representation bytes would retain the
+  original ETag and whose corrected composer would independently produce a different ETag.
+  Both are restamped. After corrected materialization, the API ETag and `StreamEtag` differ
+  because `ContentVersion` differs; a conditional GET using the old ETag does not return
+  `304` for the corrected representation.
 - CDC integration tests for corrections that do not require prior-record purging retain the
   binding, topic, partitioning, and connector offsets, publish affected documents at higher
   `contentVersion` values, and prove conforming consumers replace the prior state. The
@@ -169,5 +170,5 @@ The utility is not necessary for:
 - A production cross-replica/external-writer admission gate or transaction drain.
 - Certification of an exact CDC baseline after first-write admission.
 - Ownership of incompatible stream-contract migration; a future cutover may still invoke
-  this utility offline when its changed representation bytes would otherwise reuse a strong
-  ETag.
+  this utility offline when it also includes a byte-changing representation correction for
+  existing documents.

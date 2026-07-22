@@ -203,17 +203,17 @@ decision.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows durably latch the
   database, disable cache reads and writes, and keep readiness false across version
   equality and restart until explicit CDC-aware recovery completes.
-- Cache clear/rebuild emits no domain tombstones, and consumers order equal-version rows by
-  later Kafka offset. A production baseline-replacing rebuild or incompatible-contract
-  cutover after first-write admission is deferred until deployment owns the required writer
-  fence and drain. An explicitly offline byte-changing repair may use the out-of-band
-  representation-restamp utility and publish higher canonical versions eventually only
-  when prior Kafka records do not require purging; this does not certify another exact CDC
-  baseline. Sensitive-data disclosure correction fences the connector, revokes consumer
-  access, and requires verified destructive retirement of the affected binding generation;
-  CDC remains unavailable afterward in v1. Loss of PostgreSQL WAL/slot or SQL Server CDC
-  source-history continuity is never repaired by resnapshotting the existing topic and is
-  an unrecoverable terminal condition for that binding in v1.
+- Cache clear/rebuild emits no domain tombstones. Equal-version rows are duplicate
+  projections and do not replace consumer state; every byte-changing correction uses the
+  explicitly offline representation-restamp utility and eventually publishes higher
+  canonical versions when prior Kafka records do not require purging. This does not certify
+  another exact CDC baseline. An incompatible-contract cutover after first-write admission
+  is deferred until deployment owns the required writer fence and drain. Sensitive-data
+  disclosure correction fences the connector, revokes consumer access, and requires
+  verified destructive retirement of the affected binding generation; CDC remains
+  unavailable afterward in v1. Loss of PostgreSQL WAL/slot or SQL Server CDC source-history
+  continuity is never repaired by resnapshotting the existing topic and is an unrecoverable
+  terminal condition for that binding in v1.
 - Both document source tables use `DocumentUuid` as the connector key and share one
   connector task so a committed upsert preceding canonical deletion retains per-key
   order. The cache key column is non-indexed; its equality and logical uniqueness are
@@ -222,9 +222,9 @@ decision.
 - DMS, not Kafka Connect or a downstream consumer, owns stream ETag derivation; the
   connector copies the projected opaque value into the public message shape.
 - Consumers tolerate duplicate/replayed upserts and tombstones without a prior upsert.
-  `contentVersion` rejects lower non-null state, while the later per-key partition offset
-  replaces an equal-version projection. Across a tombstone, at-least-once replay may
-  temporarily restore an older upsert until the replayed tombstone arrives.
+  `contentVersion` rejects lower non-null state and treats equal non-null state as a
+  duplicate; only a higher version replaces it. Across a tombstone, at-least-once replay
+  may temporarily restore an older upsert until the replayed tombstone arrives.
 
 ## Alternatives Considered
 

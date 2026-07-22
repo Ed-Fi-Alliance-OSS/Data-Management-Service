@@ -1021,8 +1021,9 @@ The portable binding-record shape is:
 The record contains no connection string, credential, or source UUID. Credential, timeout,
 pooling, application-name, host-alias, or equivalent connection changes produce the same
 fingerprint when they reach the same `dms.DataStoreIdentity` row. `partitionCount` is a
-positive topic-creation value and is immutable within the binding generation because the
-public consumer contract uses per-key partition offsets to order equal-version records.
+positive topic-creation value and is immutable within the binding generation so keyed
+upserts and versionless tombstones remain in one ordered partition and one compaction
+domain.
 `partitionerAlgorithm` is the immutable named behavior token
 `kafka-murmur2-v1`; it is not a Java class or library version. For non-null serialized key
 bytes `K` and partition count `N`, that token means
@@ -1425,68 +1426,42 @@ rely on a Debezium default. See Debezium's
 ## Stream Contract Compatibility, Repair, and Version Cutover
 
 The [topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
-defines both the v1 compatibility boundary and the equal-version consumer rule. V1 adds
-no projection-generation column or public ordering field. `ContentVersion` remains the
-sole cache freshness value and orders different canonical states; the Kafka partition
-offset orders multiple projections of the same canonical state. The topic partition count
-and binding's `partitionerAlgorithm` token are immutable so one key retains that
-per-partition ordering for the topic's lifetime.
+defines the v1 compatibility boundary and the higher-version consumer rule. V1 adds no
+projection-generation column or public ordering field. `ContentVersion` remains the sole
+cache freshness and non-null consumer ordering value. The topic partition count and
+binding's `partitionerAlgorithm` token are immutable so one key's upserts and versionless
+tombstones remain in the same ordered compaction domain for the topic's lifetime.
 
 V1 implements initial publication from a new offline database and the in-place record-size
-policy change below. The compatible projection correction and new-topic cutover procedures
-in this section are deferred design constraints. Integrating the representation-restamp
-utility into an exact CDC baseline replacement is likewise deferred. None is an implemented
-v1 production workflow because each requires the cross-replica and external-writer fence
-excluded by [V1 readiness scope](#v1-readiness-scope).
+policy change below. The offline representation-restamp utility supports eventual
+byte-changing correction without certifying another exact CDC baseline. The new-topic
+cutover procedure remains a deferred design constraint because it requires the cross-
+replica and external-writer fence excluded by [V1 readiness scope](#v1-readiness-scope).
 
 Contract tests pin public field names, JSON types, key/tombstone behavior, document
 semantics, and metadata relationships. They prove that Kafka Connect copies the opaque
 DMS-computed `StreamEtag` exactly, but do not freeze its byte value independently of the
 current DMS composer. A refactor or bug fix may change `DocumentJson` or `StreamEtag` while
-remaining compatible with the documented v1 contract, but the strong-validator invariant
-still applies: whenever the corrected public representation bytes differ, its
-`StreamEtag` must also differ. Kafka's later partition offset orders equal-version records;
-it does not make one strong ETag valid for two byte-different representations.
+remaining compatible with the documented v1 contract, but every affected document whose
+public representation bytes change must be restamped before corrected output is published.
+The higher `ContentVersion` gives the corrected representation a new strong `StreamEtag`
+and makes it replace prior consumer state. Publishing byte-different equal-version records
+is a producer contract violation even when the corrected opaque ETag would differ.
 
-### Deferred compatible projection correction in `documents.v1`
-
-A future equal-version path is allowed only when comparison of the affected old and
-corrected representations proves that every byte change also changes `StreamEtag`.
-Examples include a composer correction that changes the opaque tag itself or a correction
-that changes no public representation bytes. That future deployment workflow must:
-
-1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
-   mark the CDC target not ready, and stop every old cache writer, including projector
-   loops and optional direct fill.
-2. Deploy the corrected materializer/composer while old cache writers remain stopped.
-3. Clear `dms.DocumentCache` with the provider-supported rebuild operation. The existing
-   connector remains registered against the same binding and ignores cache maintenance
-   deletes/truncation.
-4. Start only corrected projector writers and run full reconciliation until an exact
-   finishing audit reports zero missing, cache-behind, and cache-ahead rows. Rebuilt cache
-   inserts publish at later offsets with unchanged `contentVersion` values.
-5. Complete the provider source-position barrier captured after the zero audit, recheck
-   projection readiness, restore combined CDC readiness, and only then reopen canonical
-   mutation admission.
-
-The correction does not advance canonical `ContentVersion`, reset offsets, create a new
-topic, or reserve a new binding generation. Consumers replace an equal-`contentVersion`
-record at a later partition offset. Ordinary reconciliation continues to treat an existing
-equal-version row as fresh; the explicit clear-and-rebuild operation produces the
-corrective inserts. Old cache writers remain stopped throughout the rebuild so two
-materializer implementations cannot alternate output for one version. If changed bytes
-would retain the prior `StreamEtag`, this path is prohibited.
+An ordinary cache clear/rebuild may republish byte-identical equal-version records from the
+same conforming materializer. Consumers treat them as duplicates. It is not a correction
+mechanism and requires no per-document Kafka offset tie-breaker.
 
 ### Offline byte-changing representation correction
 
-When corrected API or stream representation bytes would otherwise retain their prior
-strong ETag, operators may use the out-of-band representation-restamp utility only while
-the selected data store is explicitly offline and every DMS replica, cache writer, and
-external writer has been stopped outside the utility. This is a rare deployment repair,
-not a request-path feature, not ad hoc SQL, and not an automated admission gate. It advances
-the existing canonical representation stamps rather than adding a projection epoch or
-another Kafka ordering field. V1 does not use the result to certify a replacement exact CDC
-baseline; projection and connector status after write admission remain eventual.
+For every correction that changes API or stream representation bytes, operators use the
+out-of-band representation-restamp utility only while the selected data store is explicitly
+offline and every DMS replica, cache writer, and external writer has been stopped outside
+the utility. This is a rare deployment repair, not a request-path feature, not ad hoc SQL,
+and not an automated admission gate. It advances the existing canonical representation
+stamps rather than adding a projection epoch or another Kafka ordering field. V1 does not
+use the result to certify a replacement exact CDC baseline; projection and connector status
+after write admission remain eventual.
 
 The offline operation follows this sequence:
 
@@ -1570,9 +1545,10 @@ source position after the larger policy is effective.
 
 Changing the topic partition count or `partitionerAlgorithm` token creates a new binding
 generation, public and progress topics, a SQL Server schema-history topic when applicable,
-and consumer state namespace because offsets cannot order equal-version records across old
-and new partitions. The new public topic may retain `documents.v1` and
-`contractVersion: 1` when the public key/value/delete contract is otherwise unchanged.
+and consumer state namespace. Compaction and versionless tombstone ordering do not cross
+partitions, so an existing key cannot safely move between old and new mappings in one topic.
+The new public topic may retain `documents.v1` and `contractVersion: 1` when the public
+key/value/delete contract is otherwise unchanged.
 
 A change to key encoding, required field names or JSON types, delete semantics, or the
 document contract itself requires a new topic contract such as `documents.v2`. A future
@@ -1897,9 +1873,9 @@ consumes an under-budget record with `max.request.size` set to the operational
 consumer configuration able to carry it; an over-budget variant fails the connector task
 and combined readiness instead of being skipped. These fixtures prove enforcement and
 aligned configuration, not a universal maximum valid record. Ordering tests prove higher
-versions replace, lower versions are ignored, and a later partition offset replaces an
-equal version. Contract fixtures retain the equal-version and new-contract consumer rules,
-but v1 does not include baseline-replacing correction or cutover integration tests.
+versions replace while lower and equal versions are ignored. Contract fixtures prove that
+equal versions are byte-identical duplicates and retain the new-contract consumer rules;
+v1 does not include baseline-replacing correction or cutover integration tests.
 
 Connector template and registration tests require the exact idempotence, acknowledgement,
 retry, maximum-in-flight, no-compression, and operational maximum-request/buffer-memory

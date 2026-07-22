@@ -39,11 +39,12 @@ operation.
 5. Add real-provider delete-key and routed-topic ordering coverage.
 6. Pin the v1 key, public fields/types, stream selectors, tombstone behavior, document
    semantics, and served-ETag source/copy relationship without independently freezing the
-   opaque ETag bytes. Prove that equal-version corrected public bytes never reuse the prior
-   strong `StreamEtag`.
+   opaque ETag bytes. Prove that equal-version records are byte-identical duplicates and
+   that every byte-changing correction publishes a higher `contentVersion`.
 7. Exercise consumer ordering for higher, lower, and equal `contentVersion` records and
-   verify that neither the topic partition count nor the binding's
-   `partitionerAlgorithm` token can change within a binding generation.
+   verify that only the higher version replaces retained non-null state. Verify that neither
+   the topic partition count nor the binding's `partitionerAlgorithm` token can change
+   within a binding generation.
 8. Pin the delivery and monotonic-lag contract: raw at-least-once delivery may contain
    duplicates or a lower-version replay after a higher version, while conforming
    consumer-applied non-null upsert state remains monotonic. A consumer that has not yet
@@ -99,16 +100,18 @@ operation.
   with it; they do not fail merely because a conforming composer correction changes the
   opaque value.
 - Ordering tests prove a higher `contentVersion` replaces, a lower version is ignored,
-  and the later partition offset replaces an equal version without a public projection
-  generation field. They prove both that a lower replay received after a higher version
-  does not regress applied state and that an older projection received before the newer
-  projection is accepted temporarily and then replaced, as ordinary monotonic lag.
+  and an equal version is ignored as a duplicate without a public projection generation
+  field or per-document Kafka offset state. They prove both that a lower replay received
+  after a higher version does not regress applied state and that an older projection
+  received before the newer projection is accepted temporarily and then replaced, as
+  ordinary monotonic lag.
 - Delete-boundary replay tests prove a previously emitted upsert received after a tombstone
   may temporarily restore state and that the subsequent replayed tombstone deletes it
   again; they do not assert monotonic applied state across the tombstone.
-- Contract fixtures prove the later-offset consumer rule for equal-version values and that
-  one strong `StreamEtag` cannot identify byte-different public representations. They do
-  not exercise a baseline-replacing producer workflow or incompatible-contract cutover.
+- Contract fixtures prove equal-version values are byte-identical duplicates and reject a
+  byte-different equal-version value as a producer contract violation. Byte-changing repair
+  fixtures use restamped higher versions. They do not exercise an exact baseline-replacing
+  producer workflow or incompatible-contract cutover.
 - Provider tests cover canonical deletion without a cache row, cache rebuild cleanup,
   and same-key routed ordering.
 - The producer retry test proves the routed partition contains the committed cache upsert

@@ -121,10 +121,11 @@ the pinned image, and fixed key/partition fixtures validate the mapping.
 
 V1 accepts only `kafka-murmur2-v1`. The token and partition count are immutable for the
 binding's lifetime; otherwise the same key could move to another partition and lose the
-per-key offset ordering used for corrective republishes. A deployment that needs a
-different partition count or algorithm creates a new token, binding generation, and
-topic. Replacing an implementation while preserving every result defined by the token
-does not change the binding.
+same-partition ordering used by upserts and versionless tombstones and leave prior records
+for that key in a different compaction domain. A deployment that needs a different
+partition count or algorithm creates a new token, binding generation, and topic. Replacing
+an implementation while preserving every result defined by the token does not change the
+binding.
 
 Topic-per-instance supplies the Kafka authorization boundary, bounds topic count, and
 keeps resource routing in message metadata. Shared cross-instance topics and
@@ -246,7 +247,7 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
 | `projectName` | MetaEd project name from the cache row |
 | `resourceName` | Resource name from the cache row |
 | `resourceVersion` | Project/schema resource version copied from `dms.ResourceKey` |
-| `contentVersion` | Signed 64-bit representation version used for canonical-state idempotency and stale-write ordering; equal versions are ordered by Kafka partition offset |
+| `contentVersion` | Signed 64-bit representation version used for canonical-state idempotency and stale-write ordering; only a higher version replaces retained non-null state |
 | `lastModifiedAt` | UTC whole-second timestamp in the existing DMS `yyyy-MM-ddTHH:mm:ssZ` representation |
 | `document` | Expanded structured full API resource body, never an escaped JSON string |
 
@@ -286,7 +287,8 @@ served-ETag composer as the API with that fixed stream context. Kafka Connect co
 opaque value to `document._etag`; it does not derive `schemaEpoch`, interpret link
 configuration, or implement DMS ETag encoding. `document._etag` is not a digest or an
 HTTP quoted entity-tag. Consumers preserve it as opaque; `contentVersion` orders canonical
-states and Kafka partition offset orders equal-version projections.
+states. Kafka partition offsets remain delivery checkpoints, not a second document-state
+ordering value.
 
 `document` is caller-agnostic, pre-profile full resource JSON. It includes `id`, the
 stream `_etag`, and `_lastModifiedDate`. When the compiled read plan injects reference
@@ -302,23 +304,22 @@ the ETag, and emits the structured `document` value. Invalid JSON or inconsisten
 embedded metadata fails transformation rather than publishing a partial record.
 
 A non-null value is an upsert. Duplicates, replays, snapshots, and explicit corrective
-republishes are allowed. For one key, consumers apply non-null records against retained
-non-null upsert state as follows:
+republishes are allowed. A consumer applies the first non-null record retained for one key.
+After that:
 
 - a higher `contentVersion` replaces retained state,
 - a lower `contentVersion` is stale and is ignored, and
-- an equal `contentVersion` replaces retained state when it has the later Kafka partition
-  offset.
+- an equal `contentVersion` is a duplicate and is ignored.
 
-The topic's fixed partition count keeps one key in one partition, so Kafka supplies the
-equal-version tie-breaker without another payload field. A consumer that processes a
-partition serially may replace on every equal-version record. A consumer that applies
-records concurrently or persists independent materialized state retains the last applied
-partition and offset with the document. Exact duplicates remain harmless.
+For one key and `contentVersion`, every conforming non-null record has the same public
+value. A byte-different equal-version record is a producer contract violation, not a
+correction or tie to resolve. Consumers retain ordinary per-partition Kafka checkpoints,
+but do not retain a partition or offset with each materialized document.
 
 Kafka ordering is per partition and therefore per keyed document, not global
-`contentVersion` order. `contentVersion` remains the canonical-state ordering value;
-partition offset orders multiple projections of that same canonical state.
+`contentVersion` order. `contentVersion` is the sole non-null document-state ordering
+value. The fixed key-to-partition mapping preserves upsert/tombstone delivery and
+compaction semantics.
 
 Database cache transitions and consumer-applied non-null upserts are monotonic, and the
 stream is eventually convergent rather than linearizable to the canonical source at each
@@ -344,9 +345,8 @@ state.
 ## V1 Compatibility and Corrective Republishes
 
 The `documents.v1` topic deliberately has no projection-generation or
-stream-representation-generation field. The Kafka partition offset already orders
-multiple projections of the same canonical `contentVersion`; adding another public
-generation would duplicate that ordering mechanism.
+stream-representation-generation field. `contentVersion` is the sole non-null state
+ordering field, and every correction that changes public representation bytes advances it.
 
 Within v1, the compatibility contract fixes:
 
@@ -361,23 +361,15 @@ The exact opaque `StreamEtag` bytes and implementation details of document mater
 are not independently frozen. A refactor or bug fix may change `DocumentJson` or
 `StreamEtag` while remaining compatible when the new value conforms more accurately to the
 existing v1 semantics and does not change the key, required fields or their types,
-document contract, or delete behavior. Compatibility does not relax strong-validator
-semantics: if corrected public bytes differ, the corrected `StreamEtag` must differ too.
-Kafka partition offsets order equal-version projections but do not make one ETag valid for
-two byte-different representations.
+document contract, or delete behavior. Before corrected output is published, every
+affected document whose public representation bytes change is assigned a fresh
+`ContentVersion`. This preserves both the consumer ordering rule and strong-validator
+semantics. Rebuilding byte-different cache rows at the same version is prohibited even
+when the corrected `StreamEtag` would differ.
 
-The consumer contract permits a later equal-version record to replace an earlier record at
-the later partition offset. V1 does not, however, implement a production workflow that
-replaces an admitted database's exact CDC baseline. A future equal-version correction must
-prove that every public byte change also changes `StreamEtag`, stop all obsolete cache
-writers, rebuild without emitting domain tombstones, and satisfy the fence, audit, and
-publication-barrier requirements in the authoritative design. That workflow is deferred
-until deployment automation owns a cross-replica/external-writer fence and transaction
-drain.
-
-For a byte-changing case that would otherwise reuse a strong ETag, the out-of-band
-representation-restamp utility may run only while the selected data store is explicitly
-offline and all DMS replicas and external writers have been stopped outside the utility.
+The out-of-band representation-restamp utility may run only while the selected data store
+is explicitly offline and all DMS replicas and external writers have been stopped outside
+the utility.
 It assigns fresh `ContentVersion` values so ordinary projection and streaming can publish
 higher-version state eventually when prior Kafka records do not require purging. It does
 not certify another exact CDC baseline. If corrected bytes remove or mask sensitive data
@@ -391,8 +383,8 @@ requirements are defined in
 
 Changing the partition count or `partitionerAlgorithm` token is not necessarily a
 message-shape change, but it still creates a new binding generation, topic, and consumer
-state namespace because offsets from different partitions cannot order equal-version
-records.
+state namespace. Compaction and versionless tombstone ordering do not cross partitions, so
+an existing key must not move to a different partition within one topic generation.
 
 An incompatible public-contract change requires a new topic contract such as
 `documents.v2`, a matching `contractVersion`, a new binding generation/topic, complete
@@ -479,7 +471,7 @@ The public topic never exposes:
 - One ACL protects one instance while resource metadata supports downstream routing.
 - Each binding records the stable `kafka-murmur2-v1` behavior token rather than a Java
   class/version; its fixed key-to-partition mapping and partition count preserve the
-  per-key offset ordering contract.
+  per-key compaction and upsert/tombstone ordering contract.
 - Each deployment target enforces one mutable maximum-record ceiling. Producer memory and
   request limits, the topic, brokers/replicas, and consumers must all accept it; a
   downstream-first increase reuses the binding and topic.
@@ -494,12 +486,12 @@ The public topic never exposes:
 - `StreamEtag` is not a reusable ETag for a differently profiled, link-shaped, formatted,
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
-- Consumers replace an equal-`contentVersion` record at the later Kafka offset. Producing a
-  baseline-replacing correction or incompatible-contract cutover after first-write
-  admission is deferred. An offline byte-changing repair may use the restamp utility and
-  publish higher versions eventually only when old Kafka records do not require purging;
-  this does not claim another exact baseline. A sensitive-data disclosure instead requires
-  verified destructive retirement of the affected topic generation.
+- Equal-`contentVersion` records are duplicates and do not replace retained state. An
+  offline byte-changing repair uses the restamp utility and publishes higher versions
+  eventually only when old Kafka records do not require purging; this does not claim
+  another exact baseline. An incompatible-contract cutover after first-write admission is
+  deferred. A sensitive-data disclosure instead requires verified destructive retirement
+  of the affected topic generation.
 - DMS-1232 KafkaMessaging coverage must replace the shared-topic,
   `deleted=false`/`deleted=true`, and `EdFiDoc` expectations.
 
@@ -517,11 +509,11 @@ The public topic never exposes:
 | Publish delete envelopes | Rejected: compacted state streams use Kafka tombstones and no deleted body is guaranteed. |
 | Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |
 | Compose `_etag` in Kafka Connect | Rejected: schema and representation selection belong to DMS; the connector treats the projected `StreamEtag` as opaque and only copies it into the public shape. |
-| Add a projection/stream generation to v1 | Rejected for v1: Kafka's per-key partition offset orders equal-`contentVersion` corrective republishes without another database column or public field. |
+| Add a projection/stream generation to v1 | Rejected for v1: every byte-changing correction advances `contentVersion`, so another database column and public ordering field are unnecessary. |
 | Establish a universal maximum from one materializer fixture | Rejected: configurable schemas and extensions make that claim unprovable; representative fixtures instead test the enforced operational boundary. |
 | Rotate the topic when only `maxRecordBytes` increases | Rejected: record capacity does not change keying, partitioning, ordering, topic identity, or the public message contract. |
-| Require strictly newer `contentVersion` for every replacement | Rejected as a universal rule: Kafka already orders equal-version records whose changed bytes have a different corrected strong ETag. A newer version is required when corrected bytes would otherwise reuse the ETag. |
-| Republish a corrected ETag at the same `contentVersion` in `documents.v1` | The consumer ordering rule is accepted, but a production baseline-replacing producer workflow is deferred until deployment owns the required writer fence and drain. |
-| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store; it advances existing content stamps and publishes higher versions eventually without certifying another exact CDC baseline. It is not a Kafka purge mechanism; sensitive-data disclosure correction requires verified destructive retirement. |
+| Require strictly newer `contentVersion` for every replacement | Accepted: equal versions are duplicates, while every byte-changing correction is restamped and publishes a higher version. |
+| Republish corrected bytes at the same `contentVersion` in `documents.v1` | Rejected: it makes ordinary consumers retain per-document Kafka offsets for a rare repair and weakens `contentVersion` as the sole non-null ordering value. |
+| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store; every byte-changing correction uses it to advance existing content stamps and publish higher versions eventually without certifying another exact CDC baseline. It is not a Kafka purge mechanism; sensitive-data disclosure correction requires verified destructive retirement. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
 | Require SQL Server `time.precision.mode=isostring` in the pinned Debezium 3.6 image | Accepted for v1: it preserves the source precision in an unambiguous UTC `IsoTimestamp` and removes signed-nanosecond parsing; the required Ed-Fi `DocumentState` SMT still validates and truncates it to the existing DMS whole-second representation. |

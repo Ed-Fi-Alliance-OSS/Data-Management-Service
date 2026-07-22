@@ -569,13 +569,13 @@ freshness rules.
 
 The row has no projection-generation column. While the cache-ahead latch is clear,
 ordinary reconciliation treats a same-`ContentVersion` row as fresh and does not rewrite
-it. A compatible materialization or opaque-ETag correction is applied operationally by
-stopping old cache writers,
-including optional direct fill, clearing the cache, and completely rebuilding it. Debezium
-publishes the rebuilt rows to
-the existing topic at later Kafka offsets, and consumers replace equal-version state at
-the later offset. The exact opaque `StreamEtag` bytes are therefore not independently
-frozen; they must remain DMS-computed and coherent with the projected document.
+it. A clear/rebuild may republish a byte-identical row at the same version; consumers treat
+that row as a duplicate. Every compatible materialization or opaque-ETag correction that
+changes public bytes uses the explicitly offline representation-restamp utility before
+corrected projection. Existing affected cache rows are then behind, and ordinary
+reconciliation publishes corrected higher-version rows. The exact opaque `StreamEtag`
+bytes are not independently frozen, but they must remain DMS-computed and coherent with
+the projected document.
 
 An incompatible key, field/type, delete-semantics, or document-contract change still uses
 a new versioned topic and `contractVersion`. Because the table stores only one
