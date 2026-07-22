@@ -16,6 +16,12 @@ epic: TBD
 Publish operator guidance for the implemented local and production-like relational CDC
 capability without redefining its architecture or contracts.
 
+## Dependencies
+
+- Depends on 18-07 for general DocumentCache operation, 18-08 for byte-changing
+  representation restamps, and the completed E19 setup/readiness behavior documented by
+  this runbook.
+
 ## Deliverables
 
 1. Document local opt-in, connector registration, topic discovery, Kafka UI use, and
@@ -52,17 +58,23 @@ capability without redefining its architecture or contracts.
    guarded identity-rotation and new-binding/topic recovery workflow. Never instruct
    operators to rewrite a binding in place or rotate identity during an ordinary setup
    retry.
-6. Document both compatibility paths: for a conforming projection or opaque-ETag
-   correction, enter the maintenance window, drain canonical mutations, stop old cache
-   writers including direct fill, clear and rebuild cache state, retain the
-   binding/topic/offsets, and verify later equal-version records before reopening writes;
-   for an incompatible key/field/type/delete/document-contract change, mark readiness false,
-   reserve the new binding/topic/`contractVersion`, stop or fence the old connector and
-   verify its tasks cannot capture from the source, stop old-contract cache writers,
-   clear and completely reproject the cache with only new-contract writers, snapshot it
-   with the new connector, bootstrap the new consumer namespace, and explicitly retain
-   or retire the old topic. The old connector must stop before the cache clear and must
-   never restart against the rebuilt cache.
+6. Document all three correction paths. A safe equal-version correction first proves every
+   changed public representation has a different corrected `StreamEtag`, enters the
+   maintenance window, drains canonical mutations, stops old cache writers including
+   direct fill, clears and rebuilds cache state, retains binding/topic/offsets, and verifies
+   later equal-version records before reopening writes. A byte-changing correction that
+   would reuse an ETag drains all affected API reads and mutations, invokes E18's supported
+   out-of-band restamp utility, starts only corrected cache writers, and verifies corrected
+   higher-version records before reopening any API traffic. An incompatible
+   key/field/type/delete/document-contract change marks readiness false, reserves the new
+   binding/topic/`contractVersion`, stops or fences the old connector and verifies its tasks
+   cannot capture from the source, stops old-contract cache writers, clears and completely
+   reprojects the cache with only new-contract writers, snapshots it with the new connector,
+   bootstraps the new consumer namespace, and explicitly retains or retires the old topic.
+   If that incompatible change also changes bytes that would reuse a strong ETag, invoke
+   18-08 within the same maintenance window before new-contract projection begins.
+   The old connector must stop before the incompatible cache clear and must never restart
+   against the rebuilt cache.
 7. Cross-link the canonical design and both ADRs instead of repeating their normative
    tables or algorithms.
 8. Document Debezium 3.6 P50/P95/P99 `MilliSecondsBehindSource` telemetry, the explicit
@@ -89,10 +101,13 @@ capability without redefining its architecture or contracts.
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal
   and remove governed artifacts before their JSON binding records.
-- Neither procedure advances canonical `ContentVersion` or claims simultaneous
-  incompatible-contract publication from the single cache row. The compatible repair
-  proves that old cache writers are stopped and later equal-version offsets replace
-  prior values in the existing topic.
+- The safe equal-version procedure never advances canonical `ContentVersion`; a new-topic
+  cutover advances it only when it also invokes the byte-changing restamp. The
+  equal-version repair proves old cache writers are stopped, changed bytes have different
+  strong ETags, and later equal-version offsets replace prior values in the existing topic.
+  The restamp procedure proves affected API traffic is drained and corrected
+  higher-version state reaches the intended topic. No procedure claims simultaneous
+  incompatible-contract publication from the single cache row.
 - The incompatible-contract procedure has a verified old-connector stop or source fence
   before cache clearing/reprojection, so no rebuilt row can reach the old topic; only the
   new connector snapshots the rebuilt cache.

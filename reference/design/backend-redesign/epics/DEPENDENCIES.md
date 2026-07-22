@@ -122,8 +122,8 @@ Notes:
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
 | E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
 | E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
-| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL and singleton cache-ahead latch with optional reconciliation/read behavior, optimistic materialization-coherence checks and atomic monotonic cache upserts without source-row commit-order locking, difference-derived health, bounded in-memory retry, and read fallback; E19 owns authoritative delete capture and published-ahead recovery |
-| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks |
+| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL and singleton cache-ahead latch with optional reconciliation/read behavior, optimistic materialization-coherence checks and atomic monotonic cache upserts without source-row commit-order locking, difference-derived health, bounded in-memory retry, read fallback, and the out-of-band representation-restamp utility; E19 owns authoritative delete capture and published-ahead recovery |
+| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks that consume E18's restamp utility for byte-changing corrections |
 
 ---
 
@@ -142,6 +142,7 @@ epics and is not repeated here.
 | 18-05 | 18-00 through 18-04 |
 | 18-06 | 18-00, 18-01, 18-04, and 18-05 |
 | 18-07 | 18-00 through 18-06 |
+| 18-08 | E10, 18-00, 18-02, 18-04, and 18-06 |
 
 | `19-cdc-kafka` story | Implementation dependency |
 | --- | --- |
@@ -151,8 +152,8 @@ epics and is not repeated here.
 | 19-03 | —; external transform implementation consumed by 19-02 and 19-05 |
 | 19-04 | 18-01, 18-04, 18-06, plus 19-00 |
 | 19-05 | 18-02 (soft) |
-| 19-06 | 18-01, 18-04, 18-06, plus 19-00 through 19-05 |
-| 19-07 | 18-04, 18-06, 18-07 |
+| 19-06 | 18-01, 18-04, 18-06, 18-08, plus 19-00 through 19-05 |
+| 19-07 | 18-04, 18-06, 18-07, 18-08 |
 
 ---
 

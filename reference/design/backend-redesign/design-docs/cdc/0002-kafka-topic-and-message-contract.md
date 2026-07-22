@@ -304,12 +304,16 @@ Within v1, the compatibility contract fixes:
 - publication of the DMS-computed opaque value only as `document._etag`.
 
 The exact opaque `StreamEtag` bytes and implementation details of document materialization
-are not independently frozen. A refactor or bug fix that changes `DocumentJson` or
-`StreamEtag` for an unchanged canonical `ContentVersion` is compatible when the new value
-conforms more accurately to the existing v1 semantics and does not change the key,
-required fields or their types, document contract, or delete behavior.
+are not independently frozen. A refactor or bug fix may change `DocumentJson` or
+`StreamEtag` while remaining compatible when the new value conforms more accurately to the
+existing v1 semantics and does not change the key, required fields or their types,
+document contract, or delete behavior. Compatibility does not relax strong-validator
+semantics: if corrected public bytes differ, the corrected `StreamEtag` must differ too.
+Kafka partition offsets order equal-version projections but do not make one ETag valid for
+two byte-different representations.
 
-Operators repair a compatible projection defect in the existing topic:
+Operators use the equal-version repair below only after proving for the affected old and
+corrected representations that every public byte change also changes `StreamEtag`:
 
 1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
    report the CDC target not ready, and stop every old cache writer, including projector
@@ -332,7 +336,21 @@ rewrite it; the explicit clear-and-rebuild operation is what produces the correc
 inserts. Consumers apply those later
 equal-version records according to the ordering rule above. Old cache writers must remain
 stopped throughout the rebuild so obsolete and corrected materializers cannot
-alternate outputs for one version.
+alternate outputs for one version. A correction whose changed bytes would retain the prior
+`StreamEtag` is not eligible for this path.
+
+For that byte-changing case, operators retain the existing topic and binding but drain all
+affected API traffic, deploy the corrected implementation, and run the supported
+out-of-band representation-restamp utility before corrected projection resumes. The
+utility assigns every affected current document a fresh unique `ContentVersion` from the
+normal provider sequence, advances `ContentLastModifiedAt`, and updates the corresponding
+resource-root or descriptor stamp mirror without changing domain or identity data. It uses
+an explicit scope and persisted pre-restamp boundary so an interrupted operation can resume
+without stamping completed rows twice. The ordinary projector then observes cache-behind
+rows and publishes corrected higher-version upserts. Change Queries deliberately observe
+those representation updates. This operation creates no new topic or offset namespace;
+its maintenance, audit, and provider requirements are defined in
+[Relational CDC and Document Projection](../../../cdc-streaming.md#byte-changing-representation-correction).
 
 Changing the partition count or `partitionerAlgorithm` token is not necessarily a
 message-shape change, but it still creates a new binding generation, topic, and consumer
@@ -355,7 +373,10 @@ encoding, removing or changing the JSON type of a required field, changing delet
 semantics, or intentionally replacing the documented v1 document semantics rather than
 correcting their implementation. Schema reprovisioning likewise uses a new topic when
 retained consumer state could otherwise observe reused document keys and versions under
-an incompatible schema.
+an incompatible schema. The new-topic cutover alone does not rotate strong ETags; when the
+incompatible change also changes API or fixed-stream bytes that would retain an ETag, the
+same maintenance window invokes the out-of-band restamp utility before new-contract
+projection begins.
 
 Because one `DocumentCache` row stores one `DocumentJson` and one `StreamEtag`, it cannot
 supply two incompatible contracts concurrently. A zero-gap overlap between contract
@@ -440,10 +461,12 @@ The public topic never exposes:
 - `StreamEtag` is not a reusable ETag for a differently profiled, link-shaped, formatted,
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
-- A compatible projection or opaque-ETag defect is repaired by clearing and rebuilding
-  the cache into the existing topic; the later Kafka offset replaces an equal
-  `contentVersion`. Incompatible public-contract changes still require a new versioned
-  topic.
+- A compatible projection or opaque-ETag defect may be repaired by clearing and rebuilding
+  the cache into the existing topic at equal `contentVersion` only when every changed
+  public representation has a different corrected `StreamEtag`; the later Kafka offset
+  replaces it. A byte-changing correction that would reuse an ETag uses the out-of-band
+  restamp utility and publishes higher versions in the existing topic. Incompatible
+  public-contract changes still require a new versioned topic.
 - DMS-1232 KafkaMessaging coverage must replace the shared-topic,
   `deleted=false`/`deleted=true`, and `EdFiDoc` expectations.
 
@@ -460,7 +483,8 @@ The public topic never exposes:
 | Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |
 | Compose `_etag` in Kafka Connect | Rejected: schema and representation selection belong to DMS; the connector treats the projected `StreamEtag` as opaque and only copies it into the public shape. |
 | Add a projection/stream generation to v1 | Rejected for v1: Kafka's per-key partition offset orders equal-`contentVersion` corrective republishes without another database column or public field. |
-| Require strictly newer `contentVersion` for every replacement | Rejected: it makes a conforming projection or opaque-ETag correction require a new topic even though Kafka already orders the later record for the same key. |
-| Republish a corrected ETag at the same `contentVersion` in `documents.v1` | Accepted for a compatible repair: clear and rebuild the cache after stopping old cache writers, and let the later Kafka offset win. |
+| Require strictly newer `contentVersion` for every replacement | Rejected as a universal rule: Kafka already orders equal-version records whose changed bytes have a different corrected strong ETag. A newer version is required when corrected bytes would otherwise reuse the ETag. |
+| Republish a corrected ETag at the same `contentVersion` in `documents.v1` | Accepted only for a compatible repair in which every public byte change also changes the corrected ETag: clear and rebuild the cache after stopping old cache writers, and let the later Kafka offset win. |
+| Add an out-of-band representation-restamp utility | Accepted for byte-changing corrections that would otherwise reuse a strong ETag; it advances existing content stamps and publishes higher versions without adding a projection epoch or new topic. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
 | Require SQL Server `time.precision.mode=isostring` in the pinned Debezium 3.6 image | Accepted for v1: it preserves the source precision in an unambiguous UTC `IsoTimestamp` and removes signed-nanosecond parsing; the required Ed-Fi `DocumentState` SMT still validates and truncates it to the existing DMS whole-second representation. |

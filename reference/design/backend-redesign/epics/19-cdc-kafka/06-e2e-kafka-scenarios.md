@@ -21,8 +21,8 @@ coverage against the actual provisioned data store and routed public topic.
 
 ## Dependencies
 
-- Depends on 19-00 through 19-05, including the published 19-03 transform, and the
-  completed projection path needed for upserts.
+- Depends on 19-00 through 19-05, including the published 19-03 transform, the completed
+  projection path needed for upserts, and 18-08 for byte-changing restamp coverage.
 
 ## Deliverables
 
@@ -37,7 +37,8 @@ coverage against the actual provisioned data store and routed public topic.
    with `max.partition.fetch.bytes` and `fetch.max.bytes` set to at least the binding's
    `maxRecordBytes`.
 4. Cover API create, update, and delete plus focused missing-cache delete, cache rebuild,
-   same-key ordering, and compatible same-topic corrective rebuild scenarios.
+   same-key ordering, a safe equal-version same-topic correction, and a byte-changing
+   correction performed through 18-08's out-of-band restamp utility.
 5. Capture connector status/logs, topics, and consumed records on timeout.
 6. Remove legacy ignore markers only after consistent relational scenario results.
 7. Exercise combined readiness from an otherwise idle database and retain diagnostics for
@@ -58,7 +59,12 @@ coverage against the actual provisioned data store and routed public topic.
 - Provider scenarios prove the deletion, cache-maintenance, and ordering cases required
   by the authoritative verification section.
 - A corrective-rebuild scenario proves the later equal-`contentVersion` record replaces
-  prior consumer state in the same topic without a new binding generation or offset reset.
+  prior consumer state in the same topic without a new binding generation or offset reset,
+  and that every changed public representation has a different `StreamEtag`.
+- A byte-changing correction fixture that would otherwise retain its ETag uses 18-08's
+  utility and proves the corrected record reaches the same topic with a higher
+  `contentVersion` and different `document._etag`, without resetting offsets or creating a
+  binding generation.
 - Both providers prove setup does not pass on connector status or lag alone: a barrier is
   captured after the fresh post-drain zero audit, an internal heartbeat advances the idle
   source, and readiness passes only after the committed connector source offset reaches the

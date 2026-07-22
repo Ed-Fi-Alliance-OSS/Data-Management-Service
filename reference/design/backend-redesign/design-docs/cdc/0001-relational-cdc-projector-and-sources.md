@@ -170,8 +170,9 @@ decision.
 - Establishing initial combined CDC readiness, or replacing its complete baseline during
   an explicit repair/cutover, uses a deployment-owned, flexibly sized maintenance window:
   canonical mutations are blocked and drained through a fresh startup/restart audit and the
-  later provider publication barrier. DMS projection health does not itself activate that
-  gate.
+  later provider publication barrier. A byte-changing representation restamp additionally
+  drains affected API reads so no corrected and uncorrected bytes are served under one
+  strong ETag. DMS projection health does not itself activate either gate.
 - Projector and direct-fill cache writes take no explicit write-conflicting source-row lock
   as a content-version fence. They do not deliberately serialize ordinary canonical
   version updates behind cache commits; ordinary cache-row, trigger, and foreign-key
@@ -182,10 +183,13 @@ decision.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows durably latch the
   database, disable cache reads and writes, and keep readiness false across version
   equality and restart until explicit CDC-aware recovery completes.
-- Cache clear/rebuild emits no domain tombstones. A compatible projection correction
-  rebuilds into the existing topic and publishes equal-version rows at later offsets; an
-  intentional topic rebuild for an incompatible contract uses connector snapshot/topic
-  recovery.
+- Cache clear/rebuild emits no domain tombstones. A compatible projection correction may
+  rebuild into the existing topic and publish equal-version rows at later offsets only
+  when every changed public representation also changes its strong `StreamEtag`. A
+  byte-changing correction that would reuse an ETag uses the supported out-of-band
+  representation-restamp utility and publishes higher canonical versions in the existing
+  topic. An intentional topic rebuild for an incompatible contract uses connector
+  snapshot/topic recovery.
 - Both document source tables use `DocumentUuid` as the connector key and share one
   connector task so a committed upsert preceding canonical deletion retains per-key
   order. The cache key column is non-indexed; its equality and logical uniqueness are

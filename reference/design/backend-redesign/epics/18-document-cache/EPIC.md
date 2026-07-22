@@ -18,8 +18,9 @@ related:
 Implement the reusable optional document projection defined by the design references:
 schema and provider DDL, configuration and target selection, materialization, monotonic
 writes, reconciliation, optional read acceleration, health/telemetry, provider tests, and
-runbooks. The CDC epic consumes this projection for upserts and independently owns
-connector lifecycle deletes.
+runbooks, plus an out-of-band representation-restamp utility for coordinated
+strong-validator repairs. The CDC epic consumes this projection for upserts and
+independently owns connector lifecycle deletes.
 The small `dms.DocumentCache` table plus `dms.DataStoreIdentity` and
 `dms.DocumentCacheState` singletons are always provisioned; optionality applies to
 projection execution and cache-backed reads.
@@ -34,6 +35,7 @@ projection execution and cache-backed reads.
 - `TBD` — `05-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
 - `TBD` — `06-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
 - `TBD` — `07-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
+- `TBD` — `08-representation-restamp-utility.md` — Add the out-of-band representation-restamp utility
 
 ## Delivery Dependencies
 
@@ -66,6 +68,11 @@ implementation inputs.
   latches the database, disables cache reads and writes, and requires explicit CDC-aware
   full-cache recovery even if the source later reaches the same version.
 - Projection absence or failure never compromises canonical API behavior or deletion.
+- Byte-changing implementation corrections that would otherwise reuse a strong ETag use
+  the dedicated out-of-band utility during a drained maintenance window. It advances
+  canonical content stamps and mirrors for the explicit affected scope, is safely
+  resumable across bounded batches, and leaves ordinary reconciliation and CDC to publish
+  corrected higher-version state.
 - Runbooks describe implemented operation and link to the authoritative design.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a

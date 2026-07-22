@@ -38,7 +38,8 @@ without requiring an API E2E path for every source operation.
 5. Add real-provider delete-key and routed-topic ordering coverage.
 6. Pin the v1 key, public fields/types, stream selectors, tombstone behavior, document
    semantics, and served-ETag source/copy relationship without independently freezing the
-   opaque ETag bytes.
+   opaque ETag bytes. Prove that equal-version corrected public bytes never reuse the prior
+   strong `StreamEtag`.
 7. Exercise consumer ordering for higher, lower, and equal `contentVersion` records and
    verify that neither the topic partition count nor the binding's
    `partitionerAlgorithm` token can change within a binding generation.
@@ -92,8 +93,11 @@ without requiring an API E2E path for every source operation.
   may temporarily restore state and that the subsequent replayed tombstone deletes it
   again; they do not assert monotonic applied state across the tombstone.
 - Repair tests prove a cache clear/rebuild republishes corrected equal-version values into
-  the same topic, while incompatible key/field/type/delete-contract changes use a new
-  topic suffix and matching `contractVersion`.
+  the same topic only when every public byte change also changes `StreamEtag`. A fixture
+  whose changed `DocumentJson` would retain the prior ETag is not accepted as an
+  equal-version correction. Byte-changing restamp coverage is owned by 18-08 and 19-06;
+  incompatible key/field/type/delete-contract changes use a new topic suffix and matching
+  `contractVersion`.
 - Provider tests cover canonical deletion without a cache row, cache rebuild cleanup,
   and same-key routed ordering.
 - The producer retry test proves the routed partition contains the committed cache upsert

@@ -718,6 +718,9 @@ or part of the immutable binding record.
 For initial combined readiness, and for an explicit projection repair or contract cutover
 that replaces its complete baseline, deployment automation performs this sequence:
 
+The byte-changing representation-restamp path applies the stronger read-and-mutation drain
+defined in that section; the general baseline sequence below requires only mutation drain.
+
 1. Enter or retain the target's maintenance window, block all new canonical mutations,
    and drain every already-admitted mutation request and database transaction. A previous
    zero audit is ineligible.
@@ -1170,13 +1173,18 @@ per-partition ordering for the topic's lifetime.
 Contract tests pin public field names, JSON types, key/tombstone behavior, document
 semantics, and metadata relationships. They prove that Kafka Connect copies the opaque
 DMS-computed `StreamEtag` exactly, but do not freeze its byte value independently of the
-current DMS composer. A refactor or bug fix may change `DocumentJson` or `StreamEtag` for
-an unchanged `ContentVersion` when the result remains compatible with the documented v1
-contract.
+current DMS composer. A refactor or bug fix may change `DocumentJson` or `StreamEtag` while
+remaining compatible with the documented v1 contract, but the strong-validator invariant
+still applies: whenever the corrected public representation bytes differ, its
+`StreamEtag` must also differ. Kafka's later partition offset orders equal-version records;
+it does not make one strong ETag valid for two byte-different representations.
 
 ### Compatible projection correction in `documents.v1`
 
-For a conforming output correction, operators:
+This equal-version path is allowed only when comparison of the affected old and corrected
+representations proves that every byte change also changes `StreamEtag`. Examples include
+a composer correction that changes the opaque tag itself or a correction that changes no
+public representation bytes. Operators:
 
 1. Enter the deployment-owned maintenance window, block and drain canonical mutations,
    mark the CDC target not ready, and stop every old cache writer, including projector
@@ -1197,7 +1205,51 @@ topic, or reserve a new binding generation. Consumers replace an equal-`contentV
 record at a later partition offset. Ordinary reconciliation continues to treat an existing
 equal-version row as fresh; the explicit clear-and-rebuild operation produces the
 corrective inserts. Old cache writers remain stopped throughout the rebuild so two
-materializer implementations cannot alternate output for one version.
+materializer implementations cannot alternate output for one version. If changed bytes
+would retain the prior `StreamEtag`, this path is prohibited.
+
+### Byte-changing representation correction
+
+When corrected API or stream representation bytes would otherwise retain their prior
+strong ETag, operators use the supported out-of-band representation-restamp utility. This
+is a rare deployment repair, not a request-path feature and not ad hoc SQL. It advances the
+existing canonical representation stamps rather than adding a projection epoch or another
+Kafka ordering field.
+
+The deployment performs the following guarded sequence:
+
+1. Enter a maintenance window that stops admission and drains all affected API reads and
+   canonical mutations. Mark the CDC target not ready and stop every old cache writer,
+   including projector loops and optional direct fill. A mutation-only drain is
+   insufficient because an intervening conditional GET could retain bytes under an ETag
+   that the corrected deployment would otherwise reuse.
+2. Deploy the corrected API materializer/composer while request admission and cache writers
+   remain stopped. When the stream contract remains compatible, the existing connector may
+   remain registered against the same binding and topic; an incompatible cutover instead
+   applies the old-connector fence and new-topic sequence below.
+3. Run the out-of-band utility with an explicit affected-document scope and a persisted
+   operation manifest. For each current affected document, allocate a fresh unique value
+   from the normal change-version sequence, update `dms.Document.ContentVersion` and
+   `ContentLastModifiedAt`, and update the concrete resource-root or `dms.Descriptor`
+   content-stamp mirror in the same provider transaction. Do not change domain fields,
+   identity stamps, keys, or deletion history. The utility uses a captured pre-restamp
+   version boundary so a retry resumes without stamping an already completed document
+   again.
+4. Start only corrected projector writers. Existing affected cache rows are now behind and
+   ordinary reconciliation replaces them; missing rows are rebuilt. Run a full audit until
+   an exact finishing result reports zero missing, cache-behind, and cache-ahead rows.
+5. Complete the provider source-position barrier captured after that zero audit, recheck
+   projection readiness, and verify that affected public records have higher
+   `contentVersion` and different `document._etag` values. Restore combined CDC readiness
+   and only then reopen API request admission.
+
+The utility is provider-aware and supports both PostgreSQL and SQL Server. It records the
+physical-source fingerprint, scope, reason, pre-restamp boundary, counts, and completion
+status for audit and safe resume. The higher versions deliberately make affected documents
+visible as representation updates to Change Queries and cause conforming Kafka consumers
+to replace prior state without a new topic, binding generation, or offset reset. The
+dedicated implementation story owns the utility, provider behavior, tests, and operator
+examples; general cache and CDC runbooks invoke it but do not recreate it with manual SQL.
 
 ### New-topic cutover
 
@@ -1237,7 +1289,10 @@ barrier. Otherwise it could capture rows rebuilt under the new contract and publ
 into the old topic. Schema reprovisioning follows this path when retained consumer state
 could otherwise observe reused keys and versions under an incompatible schema.
 
-The cutover does not advance canonical `ContentVersion`. Normal API correctness does not
+The new-topic cutover by itself does not advance canonical `ContentVersion`. If the
+incompatible change also changes API or fixed-stream representation bytes that would reuse
+their prior strong ETag, the maintenance sequence additionally runs the out-of-band
+restamp utility before new-contract projection starts. Normal API correctness does not
 depend on projection, but the old connector and old-contract projector writers must be
 stopped or fenced before the cache is cleared or rebuilt. One cache row cannot supply two
 incompatible contracts concurrently; a zero-gap overlap requirement needs separate
@@ -1430,13 +1485,18 @@ concurrency, and maximum audit age, and how to identify API-resource contention 
 audit that cannot complete within its readiness window.
 They cover binding-state backup, fail-closed missing-state recovery, explicit adoption,
 cleanup ordering, and new-generation source migration; they never repair a mismatch by
-rewriting an immutable binding record. They distinguish a conforming same-topic repair
-from an incompatible-contract cutover. The former stops old cache writers, clears and
-rebuilds the cache, and lets later equal-version offsets replace prior values. The latter
-stops or source-fences the old connector and stops old-contract cache writers before the
-cache clear, completely reprojects into a new versioned topic, and bootstraps new consumer
-state without restarting the old connector. Neither path advances canonical
-`ContentVersion`. Offset reset and resnapshot can replay current document state.
+rewriting an immutable binding record. They distinguish a conforming same-topic
+equal-version repair, a byte-changing representation restamp, and an
+incompatible-contract cutover. The equal-version path stops old cache writers, clears and
+rebuilds the cache, and lets later equal-version offsets replace prior values only when
+changed bytes have a different strong ETag. The restamp path drains all affected API
+traffic, runs the supported out-of-band utility, and publishes higher-version corrected
+projections in the existing topic. The incompatible path stops or source-fences the old
+connector and stops old-contract cache writers before the cache clear, completely
+reprojects into a new versioned topic, and bootstraps new consumer state without restarting
+the old connector. The equal-version path never advances canonical `ContentVersion`; a
+new-topic cutover advances it only when that cutover also requires the restamp utility.
+Offset reset and resnapshot can replay current document state.
 Topic, offset, ACL, slot, and capture deletion is destructive and always explicit; removal
 from configuration is not cleanup authority.
 
@@ -1454,11 +1514,14 @@ link-bearing document, shapes it through the real transform and converters, and 
 that its one-record produce request fits when every governed producer, public-topic,
 broker, replica-fetch, and consumer limit equals the binding's `maxRecordBytes`. The
 broker-backed test publishes, replicates, and consumes that record; an over-budget variant
-fails the connector task and combined readiness instead of being skipped. Ordering tests prove
-higher versions replace, lower versions are ignored, and a later partition offset
-replaces an equal version. Repair tests clear and rebuild cache
-state into the same topic without advancing `ContentVersion`; incompatible-contract tests
-use a new topic suffix and matching `contractVersion`.
+fails the connector task and combined readiness instead of being skipped. Ordering tests
+prove higher versions replace, lower versions are ignored, and a later partition offset
+replaces an equal version. Equal-version repair tests clear and rebuild cache state into
+the same topic without advancing `ContentVersion` and prove that changed public bytes have
+a different `StreamEtag`. Byte-changing repair tests use the out-of-band utility, prove
+that corrected bytes which would otherwise retain an ETag receive a higher
+`ContentVersion`, and publish into the existing topic. Incompatible-contract tests use a
+new topic suffix and matching `contractVersion`.
 
 Connector template and registration tests require the exact idempotence, acknowledgement,
 retry, maximum-in-flight, no-compression, and binding-derived maximum-request producer
@@ -1534,9 +1597,13 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - create/update/snapshot upserts conform to the topic/message ADR,
 - canonical deletion emits a tombstone when no cache row exists,
 - cache delete/truncate/rebuild emits no domain tombstone,
-- a compatible correction stops old cache writers, rebuilds corrected equal-version
-  cache rows into the same topic, and makes the later per-key offset authoritative without
-  resetting connector offsets or allocating a new binding generation,
+- a safe equal-version correction stops old cache writers, rebuilds corrected cache rows
+  into the same topic, proves every public byte change has a different `StreamEtag`, and
+  makes the later per-key offset authoritative without resetting connector offsets or
+  allocating a new binding generation,
+- a byte-changing correction that would reuse its ETag drains affected API traffic, uses
+  the out-of-band restamp utility, and publishes corrected higher-version rows into the
+  same topic without resetting connector offsets or allocating a new binding generation,
 - with the pinned idempotent-producer settings, a cache upsert committed before canonical
   deletion appears before its tombstone for that key in the routed public topic even when
   the upsert send receives a retriable failure,

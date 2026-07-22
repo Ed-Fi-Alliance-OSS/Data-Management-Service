@@ -127,6 +127,15 @@ A bare `ContentVersion` is a strong validator only when each resource state maps
 
 **Prescription — the etag MUST be `"{ContentVersion}-{variantKey}"`.** `variantKey` is a short, deterministic, stable token encoding every byte-affecting representation selector in scope — the response **format / media type**, the active **profile** (or its absence), the **link mode**, and the selected **content coding**. This keeps each representation's etag distinct (strict RFC 9110 §8.8.1 adherence) while staying cheap: it composes the counter with a small key and performs no hashing of the document body.
 
+An implementation correction or deployment may change representation bytes without
+changing any `variantKey` selector. In that case the corrected representation MUST NOT be
+served with the prior strong ETag. Before corrected traffic is admitted, the deployment
+must either prove that the corrected composer produces a different ETag for every changed
+representation or use the supported out-of-band representation-restamp operation to
+advance `ContentVersion` for every affected document. The restamp is a coordinated
+maintenance operation, not an ordinary no-op resource update; see
+[Byte-changing representation correction](design/cdc-streaming.md#byte-changing-representation-correction).
+
 **`ContentVersion` MUST be treated as a string.** HTTP entity-tags are opaque, quoted strings (e.g. `ETag: "5-json"`). Neither the server nor clients may interpret the `ContentVersion` portion as a number: serialize it as a string in the `_etag` body field and as a quoted value in the `ETag` header, compare it as an opaque string (RFC strong comparison is character-by-character), and document it to clients as opaque so they never parse it or compare it numerically.
 
 **`If-Match` comparison (decided).** The *served* etag carries the full `variantKey`, but `If-Match` evaluation compares only the **state-significant projection** of the tag. The origin server mints these tags and may therefore compare them with knowledge of their structure — etag opacity binds clients, not the server. The compared components are `ContentVersion` and `schemaEpoch`. The `variantKey` components **`format`**, **`profileCode`**, **`linkFlag`**, and **`contentCoding`** encode representation selectors rather than resource state, so they are excluded from the write-time `If-Match` match. This preserves optimistic-concurrency safety — ignored components cannot mask a state change because any persisted change advances `ContentVersion` — while avoiding false `412`s across representation variants that denote the same state. The *served* etags remain full strong validators for conditional **GET** / `If-None-Match` cache correctness, and only the write-time `If-Match` comparison is projected to the state-significant subset.

@@ -36,10 +36,12 @@ that links to, rather than restates, the authoritative design.
 4. Document the shipped implementation defaults and tuning guidance for scan/audit
    intervals, page size, concurrent targets, maximum audit age, and the direct-fill timeout,
    including how to diagnose audit overruns and API-resource contention.
-5. Document the cache side of a compatible projection correction: stop old cache writers,
-   including optional direct fill, use the provider-supported clear operation, start only
-   corrected writers, and reconcile to an exact zero audit. Hand connector catch-up and
-   equal-version consumer verification to 19-07.
+5. Document the cache side of a safe equal-version projection correction: first prove that
+   every changed public representation has a different corrected `StreamEtag`, stop old
+   cache writers including optional direct fill, use the provider-supported clear
+   operation, start only corrected writers, and reconcile to an exact zero audit. Direct a
+   correction whose changed bytes would reuse an ETag to 18-08's out-of-band restamp
+   utility. Hand connector catch-up and equal-version consumer verification to 19-07.
 
 ## Acceptance Evidence
 
@@ -61,7 +63,10 @@ that links to, rather than restates, the authoritative design.
   workflow.
 - Compatible-correction tests prove ordinary reconciliation does not rewrite an existing
   equal-version row, while an explicit clear/rebuild produces corrected rows with the same
-  canonical `ContentVersion` after old cache writers are stopped.
+  canonical `ContentVersion` after old cache writers are stopped. Fixtures prove every
+  public byte difference in that path has a different `StreamEtag`; a changed
+  `DocumentJson` fixture that would retain its ETag is rejected as an equal-version repair
+  and handed to 18-08.
 - Runbook tests cover internal-only full-cache clear/latch-reset/rebuild and hand off
   possibly observed cache-ahead state to a new downstream state namespace, including E19's
   new-generation topic/snapshot recovery. Provider tests prove source equality and restart

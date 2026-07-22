@@ -69,8 +69,11 @@ implementation inputs.
 - Contract fixtures pin the v1 key, fields/types, tombstones, document semantics, and
   metadata relationships while treating `StreamEtag` bytes as opaque DMS output.
   Compatible projection corrections rebuild into the existing topic and replace an equal
-  `contentVersion` at the later Kafka offset; incompatible contract changes use a new
-  versioned topic.
+  `contentVersion` at the later Kafka offset only when every byte change also changes the
+  strong `StreamEtag`. Corrections that would reuse an ETag consume E18's out-of-band
+  restamp utility and publish higher versions in the existing topic; incompatible contract
+  changes use a new versioned topic and additionally restamp when their changed document
+  bytes would otherwise reuse a strong ETag.
 - Local and E2E setup registers against selected provisioned data stores without
   hard-coded instance values.
 - Binding state survives DMS and connector restarts, fails closed around missing or
@@ -100,9 +103,10 @@ implementation inputs.
   limits align to it, and a broker-backed boundary test publishes and consumes that
   maximum record without relying on compression.
 - API deletion remains correct when projection is absent or failing.
-- Operator documentation covers supported setup, security, observation, same-topic
-  compatible repair, incompatible-contract migration, flexibly sized maintenance windows
-  and fail-closed drain/timeout behavior, and explicit destructive cleanup.
+- Operator documentation covers supported setup, security, observation, safe same-topic
+  equal-version repair, E18's byte-changing representation-restamp operation,
+  incompatible-contract migration, flexibly sized maintenance windows and fail-closed
+  drain/timeout behavior, and explicit destructive cleanup.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a
 new decision record changes that design.

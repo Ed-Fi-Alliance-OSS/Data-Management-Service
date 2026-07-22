@@ -206,6 +206,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `TBD` — Add fresh-cache reads with relational fallback — `reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md`
   - `TBD` — Add DocumentCache health, readiness, and telemetry — `reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md`
   - `TBD` — Add DocumentCache integration coverage and runbooks — `reference/design/backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md`
+  - `TBD` — Add an out-of-band representation-restamp utility — `reference/design/backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md`
 
 - `TBD` — Relational CDC/Kafka Streaming — `reference/design/backend-redesign/epics/19-cdc-kafka/EPIC.md`
   - `TBD` — Add deployment-owned CDC binding and readiness — `reference/design/backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md`
