@@ -535,15 +535,17 @@ deployment, readiness, and operations.
 
 Denormalized resource naming:
 
-- `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
-- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json` (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and denormalized here for CDC/streaming convenience.
+- `ProjectName`/`ResourceName` are denormalized copies from `dms.ResourceKey`.
+- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json`
+  (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and
+  denormalized here.
 
 Denormalized document identity:
 
 - `DocumentId` remains the compact cache primary key and the `ON DELETE CASCADE`
   foreign key to `dms.Document`. SQL Server keeps it as the clustered key.
-- `DocumentUuid` is a non-indexed denormalized copy used as the Debezium message-key
-  column. `dms.DocumentCache` has no unique constraint or index on `DocumentUuid`.
+- `DocumentUuid` is a non-indexed denormalized copy. `dms.DocumentCache` has no unique
+  constraint or index on `DocumentUuid`.
 - Provider-specific `DocumentCache` insert/update validation triggers join the incoming
   `DocumentId` to `dms.Document` through its existing primary key and reject the statement
   unless the incoming `DocumentUuid` exactly equals the canonical row's `DocumentUuid`.
@@ -553,8 +555,8 @@ Denormalized document identity:
   plans never assign it; identity changes update referential identities without changing
   the public document UUID.
 
-This implies one cache row per canonical `DocumentId` and the same UUID on both CDC
-sources without adding a composite or UUID index to `dms.Document`. The canonical table's
+This implies one cache row per canonical `DocumentId`, with a UUID matching its canonical
+parent, without adding a composite or UUID index to `dms.Document`. The canonical table's
 existing `UX_Document_DocumentUuid` continues to own public-ID lookup and uniqueness.
 Because every cache UUID is trigger-validated against that unique canonical value, another
 cache UUID index would be redundant.
@@ -608,21 +610,14 @@ function name `TF_DocumentCache_ValidateDocumentUuid`:
   integrity error when they differ. The subsequent foreign-key check handles a missing
   canonical row.
 - SQL Server uses one set-based `AFTER INSERT, UPDATE` trigger. It joins `inserted` to
-  `dms.Document` by `DocumentId` and throws when any UUID differs; the statement and its
-  change-data record are rolled back. The foreign key is checked independently for a
-  missing canonical row.
+  `dms.Document` by `DocumentId` and throws when any UUID differs, rolling back the
+  statement. The foreign key is checked independently for a missing canonical row.
 
 The trigger compares only fixed-width identity values and uses the existing canonical
 `DocumentId` primary-key access path. It does not parse `DocumentJson`, add work to normal
 canonical document writes, or require a `DocumentCache.DocumentUuid` index. Projector
 writer behavior is owned by the projector/source ADR; this trigger is only its physical
 database backstop.
-
-Uses:
-
-- Faster GET/query responses (skip reconstitution)
-- Relational CDC streaming (Debezium/Kafka) when CDC is enabled
-- Downstream indexing / external integrations
 
 ##### 7) `dms.DocumentCacheState` (singleton invariant latch)
 

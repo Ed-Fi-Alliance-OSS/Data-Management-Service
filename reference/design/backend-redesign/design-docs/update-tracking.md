@@ -187,22 +187,13 @@ Representation-state change is tracked by stored `ContentVersion`; `ContentLastM
 the representation's `_lastModifiedDate` payload metadata. `_etag` additionally reflects the
 representation selectors via `variantKey`.
 
-`dms.DocumentCache` stores the `ContentVersion` needed by this document's `_etag`
-composition rules, but `DocumentJson` does not contain a reusable `_etag`. The row also
-stores a separate opaque `StreamEtag`, produced through the same served-ETag composer for
-the fixed CDC representation. API reads ignore `StreamEtag` and compose their
-request-specific validator from `ContentVersion` and the active request `variantKey`.
-The v1 stream has no projection generation. `StreamEtag` is opaque and its exact bytes are
-not independently frozen. Every compatible materialization or ETag correction that changes
-public bytes uses the explicitly offline representation-restamp utility to advance canonical
-`ContentVersion`; ordinary projection then publishes a higher-version record in the existing
-topic. Equal-version records are byte-identical duplicates and do not replace consumer
-state. A change to the public key, required field names or types, delete semantics, or
-document contract would require a new versioned topic and complete reprojection; v1 does
-not implement that cutover after first-write admission. See the topic/message ADR's
-[compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
-The cache projection and freshness behavior is defined in
-[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation).
+When an API read uses `dms.DocumentCache`, it applies the same rule: compose the
+request-specific validator from the cached `ContentVersion` and the active request
+`variantKey`; API reads do not use `StreamEtag`. The fixed CDC representation and
+`StreamEtag` materialization are owned by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract),
+and stream compatibility, correction, and consumer behavior are owned by the
+[topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
 
 ### `variantKey` encoding (normative)
 

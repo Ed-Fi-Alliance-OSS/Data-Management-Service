@@ -365,14 +365,10 @@ cached `ContentVersion` plus the request's full `variantKey`, including the acti
 identity, and compressed responses can therefore share one caller-agnostic cached
 document while carrying distinct validators whenever their served bytes differ.
 
-The row also stores a separate opaque `StreamEtag`, computed by the cache-projection
-materializer through the shared DMS served-ETag composer for the fixed CDC representation.
-For ordinary resources that representation is the unprojected, link-bearing, unprofiled
-JSON document with identity content coding, so its `linkFlag` is `l` regardless of
-`ResourceLinks:Enabled`. Descriptors retain their backend-defined links-off context.
-Kafka Connect copies this value; API reads ignore it. CDC and indexing consumers observe
-the unprojected intermediate, and DMS does not maintain a second link-free projection. See
-[update-tracking.md](update-tracking.md) §Serving API metadata for the normative derivation.
+The fixed CDC representation, its `StreamEtag`, and its public consumer mapping are outside
+this document's response-shaping scope. They are owned by the
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
+and the [topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md#upsert-value).
 
 A flag flip does not require cache truncation, fingerprint reconciliation, or an advisory lock:
 the cached state and `ContentVersion` remain valid, while per-request composition changes
