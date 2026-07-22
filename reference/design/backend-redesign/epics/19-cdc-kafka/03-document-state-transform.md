@@ -32,7 +32,8 @@ Connect plugin without changing the completed generic transform.
 ## Implementation Scope
 
 - Add the transform class and its small typed configuration surface.
-- Add provider-record adapters, routing, validation, and serialization.
+- Add provider-record adapters, routing, validation, serialization, and fixed non-null
+  progress-key normalization for every retained heartbeat shape.
 - Package the transform in the qualified Ed-Fi Kafka Connect image.
 - Retain regression coverage for the existing generic transform.
 
@@ -40,6 +41,9 @@ Connect plugin without changing the completed generic transform.
 
 - JUnit provider fixtures cover every source-operation class and output category defined by
   the source and message ADRs.
+- JUnit fixtures prove a schema-backed heartbeat key and a Debezium heartbeat with a null
+  source key both produce the fixed Kafka Connect string progress key, with no source-key
+  pass-through.
 - Invalid-record and provider-temporal fixtures cover the design-owned failure rules.
 - Plugin-loading tests pass on the qualified connector runtime.
 - Regression tests cover the unchanged generic transform artifact.

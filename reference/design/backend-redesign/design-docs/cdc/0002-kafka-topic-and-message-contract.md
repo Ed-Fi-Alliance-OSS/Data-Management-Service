@@ -197,6 +197,8 @@ remain unchanged.
 
 ## Key
 
+### Public Document Key
+
 The public key is UTF-8 lowercase `DocumentUuid` text with no JSON quoting or Kafka
 Connect schema wrapper:
 
@@ -216,6 +218,27 @@ tables; it cannot be derived only from an unwrapped value because delete values 
 For `dms.DocumentCache`, `DocumentUuid` is a non-indexed custom message-key column rather
 than the relational primary key. Database validation triggers enforce that it equals the
 canonical UUID for the row's compact `DocumentId` primary/foreign key.
+
+### Internal Progress Key
+
+Every record routed to the binding-scoped CDC progress topic has the non-null Kafka
+Connect `org.apache.kafka.connect.data.Schema.STRING_SCHEMA` key and fixed string value:
+
+```text
+cdc-progress
+```
+
+The `StringConverter` serializes that value as the exact UTF-8 bytes of `cdc-progress`,
+without JSON quoting or a Kafka Connect schema wrapper. Before routing any retained
+`dms.CdcHeartbeat` operation or Debezium heartbeat record, the `DocumentState` transform
+replaces the source key and key schema with this internal progress key. It never passes
+through a provider-specific structured key or a null heartbeat key.
+
+The progress topic is binding-scoped and has one partition, so its key does not repeat
+instance, generation, provider, or source-partition identity. The fixed non-null key makes
+every retained progress record valid for the compacted topic and places them in one
+compaction domain. The topic remains only a transport acknowledgement boundary; neither
+the retained key nor value is deployment readiness state.
 
 ## Upsert Value
 
@@ -452,10 +475,12 @@ configurable mapping language.
    Suppress Debezium's additional automatic tombstone, for example with
    `tombstones.on.delete=false`, so one canonical delete produces exactly one public
    tombstone and cache deletion produces none.
-8. Route a retained document result to the configured instance document topic. Route a
-   retained heartbeat record, without applying the public document contract, to the
-   configured progress topic. Returning `null` from the transform drops only an operation
-   excluded by the source mapping and never a progress record used by readiness.
+8. Route a retained document result to the configured instance document topic. For a
+   retained heartbeat record, replace its source key and key schema with the fixed
+   [internal progress key](#internal-progress-key), then route it without applying the
+   public document contract to the configured progress topic. Returning `null` from the
+   transform drops only an operation excluded by the source mapping and never a progress
+   record used by readiness.
 
 The transform consumes schema-backed raw Debezium records and emits only one of three
 classes of result: a final public upsert or tombstone, an internal progress record, or no

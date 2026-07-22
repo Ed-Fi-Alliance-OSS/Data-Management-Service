@@ -377,9 +377,13 @@ query, or, for SQL Server, `poll.interval.ms > heartbeat.interval.ms`.
 `dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, and delete
 records and Debezium heartbeat records are routed by the `DocumentState` transform to the
 binding-scoped CDC progress topic before public-record validation; they are never routed to
-the instance document topic. The progress topic is a transport acknowledgement boundary,
-not a status store: deployment automation does not consume it and continues to read the
-connector's committed source offsets through the REST API.
+the instance document topic. Before routing, the transform replaces every source key,
+whether structured, scalar, or null, with the fixed non-null
+[internal progress key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#internal-progress-key)
+required by the shared `StringConverter` and compacted progress topic. The progress topic
+is a transport acknowledgement boundary, not a status store: deployment automation does
+not consume it and continues to read the connector's committed source offsets through the
+REST API.
 
 The transform must not return `null` for a heartbeat relied upon for readiness. In the
 pinned Kafka Connect 4.3 runtime, a transformed-away record invokes `recordDropped()`
@@ -606,7 +610,7 @@ The portable binding-record shape is:
   "topicName": "edfi.dms.instance.data-store-1-g1.documents.v1",
   "partitionCount": 1,
   "partitionerAlgorithm": "kafka-murmur2-v1",
-  "contractVersion": "1"
+  "contractVersion": 1
 }
 ```
 
@@ -645,8 +649,11 @@ changing the binding generation or topic.
 CDC progress topic whose name is derived exactly as `topicName + ".cdc-progress"`. The
 derived name is not another binding field or operator input; template generation emits it,
 and bootstrap and live-configuration validation reject any different value. The progress
-topic has one partition and `cleanup.policy=compact`. It contains no public document state,
-and its retained contents are not part of the public bootstrap contract.
+topic has one partition and `cleanup.policy=compact`. Every progress record uses the fixed
+non-null [internal progress key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#internal-progress-key),
+so compaction can retain the latest published progress record without accepting a null or
+provider-specific structured key. It contains no public document state, and its retained
+contents are not part of the public bootstrap contract.
 
 A SQL Server binding additionally governs one Debezium internal database schema-history
 topic whose name is derived exactly as `topicName + ".schema-history"`. PostgreSQL does not
@@ -1344,10 +1351,10 @@ where evidence belongs without prescribing duplicate test cases here.
 | `CDC-INV-04` | [Bounded in-process execution policy](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#bounded-in-process-execution-policy) and [projection readiness](#projection-health-and-deployment-owned-cdc-readiness) | [E18-S04](backend-redesign/epics/18-document-cache/04-async-projector-reconciliation-loop.md), [E18-S06](backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | Scheduling/unit; bounded-load and memory; multi-target/provider integration; health and restart integration |
 | `CDC-INV-05` | [Cache-backed reads and domain lifecycle](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle) | [E18-S05](backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md), [E18-S07](backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md) | API/provider integration; authorization; fallback and concurrency integration |
 | `CDC-INV-06` | [Connector topology and provider setup](#connector-topology-and-provider-setup) and [schema integration](#schema-and-query-integration) | [E19-S01](backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md), [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | DDL/DB-apply; provider integration; pinned-image connector integration; API-driven Kafka E2E |
-| `CDC-INV-07` | [Topic](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic), [record size](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#key), [upsert](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value), and [delete](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#delete) | [E19-S03](backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Transform unit; serialized-record contract; broker-backed integration; consumer conformance; API-driven Kafka E2E |
+| `CDC-INV-07` | [Topic](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic), [record size](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [public and internal keys](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#key), [upsert](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value), and [delete](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#delete) | [E19-S03](backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Transform unit; serialized-record contract; broker-backed integration; consumer conformance; API-driven Kafka E2E |
 | `CDC-INV-08` | [Connector transformation](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation) | [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S03](backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Rendering/unit; provider-record fixtures; plugin-loading/pinned-image; serialized-record contract |
 | `CDC-INV-09` | [Pinned connector runtime](#pinned-connector-runtime) and [connector topology](#connector-topology-and-provider-setup) | [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Template validation; pinned-image integration; Connect REST integration; broker-backed fault injection |
-| `CDC-INV-10` | [Provider source-position barrier](#provider-source-position-barrier) and [enablement sequence](#enablement-and-initial-readiness-sequence) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Position-adapter unit; provider integration; controller integration; broker-backed heartbeat/readiness |
+| `CDC-INV-10` | [Provider source-position barrier](#provider-source-position-barrier), [internal progress key](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#internal-progress-key), and [enablement sequence](#enablement-and-initial-readiness-sequence) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Position-adapter unit; provider integration; controller integration; broker-backed heartbeat/readiness |
 | `CDC-INV-11` | [Source-history continuity](#source-history-continuity) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S02](backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md), [E19-S06](backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md) | Adapter/unit; real-provider integration; pinned-image lifecycle; API-driven failure E2E |
 | `CDC-INV-12` | [Deployment-owned binding](#deployment-owned-cdc-target-and-physical-source-binding), [local bootstrap](#local-bootstrap-and-ci), and [security](#security-telemetry-and-operations) | [E19-S00](backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md), [E19-S04](backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md) | State-store/CAS unit; controller/script integration; broker-backed topic and ACL integration; destructive-lifecycle integration |
 | `CDC-INV-13` | [Public consumer bootstrap](#public-consumer-bootstrap) and [topic retention](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) | [E19-S05](backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md) | Consumer conformance; controllable-clock/partition-barrier; broker-backed bootstrap |

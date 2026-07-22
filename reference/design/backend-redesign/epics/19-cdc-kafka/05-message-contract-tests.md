@@ -29,7 +29,8 @@ the v1 stream.
 ## Implementation Scope
 
 - Add canonical PostgreSQL and SQL Server source-record fixtures.
-- Add transform and serialized-record conformance suites.
+- Add transform and serialized-record conformance suites, including the exact fixed UTF-8
+  progress-key bytes produced by `StringConverter`.
 - Add provider key/routing/ordering and broker retry/failure scenarios.
 - Add record-size and idle-source readiness fixtures against the real connector.
 - Add the reference consumer-continuity fixture assigned to this story by the design
@@ -41,8 +42,11 @@ the v1 stream.
   contract ID.
 - Provider and serialized-record suites cover every source and output category assigned to
   this story by the design traceability table.
+- Progress-key suites cover structured and null source keys and prove that the resulting
+  non-null string key publishes successfully to the compacted progress topic.
 - Broker-backed suites cover the delivery, failure, sizing, and progress evidence assigned
-  to this story.
+  to this story, including committed source-offset advancement only after the keyed
+  progress record is acknowledged.
 - Consumer-conformance fixtures cover bootstrap and continuity behavior from the public
   contract.
 
