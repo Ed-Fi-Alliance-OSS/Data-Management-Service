@@ -902,6 +902,27 @@ function Start-BootstrapDockerEnvironment {
             $DatabaseEngine
         }
 
+    # Validate the effective runtime contract BEFORE any external mutation (image build, teardown, volume
+    # deletion). This invokes the SAME preflight the eventual start path runs - the start script's own
+    # -PreflightOnly stop point - so an invalid Compose-resolved provider or connection string is reported
+    # before existing databases are destroyed rather than after. The start script throws on a contract
+    # violation, aborting this orchestration ahead of the build and teardown steps that follow.
+    $preflightStartScript = if ($UsePublishedImage) { "start-published-dms.ps1" } else { "start-local-dms.ps1" }
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
+                & "./$preflightStartScript" -PreflightOnly -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $effectiveDatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "$preflightStartScript -PreflightOnly failed with exit code $LASTEXITCODE."
+                }
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
     }
