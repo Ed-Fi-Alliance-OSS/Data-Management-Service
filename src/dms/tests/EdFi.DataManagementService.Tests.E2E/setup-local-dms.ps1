@@ -22,7 +22,10 @@
     ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DatabaseName <E2E_DATABASE_NAME>
     ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -AddExtensionSecurityMetadata
 
-    Teardown the matching engine with: ./teardown-local-dms.ps1 -DatabaseEngine <engine>.
+    On completion the script prints a copyable teardown command carrying the same -DatabaseEngine and
+    the resolved -EnvironmentFile, so a custom or MSSQL run is torn down against its own compose
+    definition/environment rather than the teardown wrapper's postgresql/.env.e2e defaults:
+    ./teardown-local-dms.ps1 -DatabaseEngine <engine> -EnvironmentFile '<resolved env file>'.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -37,6 +40,23 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string] $DatabaseEngine = "postgresql"
 )
+
+function Get-DirectSetupTeardownCommand {
+    # Builds a copyable teardown command that carries the same engine and environment file this setup
+    # used, so a custom or MSSQL run is torn down against its own compose definition/environment rather
+    # than the teardown wrapper's postgresql/.env.e2e defaults. The path is single-quoted (with embedded
+    # single quotes doubled) so a path containing spaces or quotes is safe to paste back.
+    param(
+        [Parameter(Mandatory)]
+        [string] $DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [string] $EnvironmentFile
+    )
+
+    $quotedEnvironmentFile = "'" + ($EnvironmentFile -replace "'", "''") + "'"
+    return "./teardown-local-dms.ps1 -DatabaseEngine $DatabaseEngine -EnvironmentFile $quotedEnvironmentFile"
+}
 
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for E2E Testing
@@ -154,8 +174,9 @@ try {
         exit $LASTEXITCODE
     }
 
+    $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $baseEnvironmentFile
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
-    Write-Host "To tear down this environment, run: ./teardown-local-dms.ps1" -ForegroundColor Cyan
+    Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
 }
 finally {
     # Return to original location

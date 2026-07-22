@@ -404,10 +404,19 @@ function Invoke-WithE2ETestProcessContext {
         $Action
     )
 
+    # Capture existence independently from value for every variable this context mutates. PowerShell
+    # retains empty and whitespace-valued environment variables (Test-Path Env:<name> is true), so a
+    # value-only check would convert an existing empty/whitespace variable into an unset one on
+    # restore. Existence + verbatim value preserves the unset-versus-valued distinction exactly.
+    $previousDataStoreDatabaseNameExists = Test-Path Env:AppSettings__DataStoreDatabaseName
     $previousDataStoreDatabaseName = $env:AppSettings__DataStoreDatabaseName
+    $previousDatabaseEngineExists = Test-Path Env:AppSettings__DatabaseEngine
     $previousDatabaseEngine = $env:AppSettings__DatabaseEngine
+    $previousDataStoreAdminConnectionStringExists = Test-Path Env:AppSettings__DataStoreAdminConnectionString
     $previousDataStoreAdminConnectionString = $env:AppSettings__DataStoreAdminConnectionString
+    $previousDataStoreConnectionStringExists = Test-Path Env:AppSettings__DataStoreConnectionString
     $previousDataStoreConnectionString = $env:AppSettings__DataStoreConnectionString
+    $previousNodeOptionsExists = Test-Path Env:NODE_OPTIONS
     $previousNodeOptions = $env:NODE_OPTIONS
 
     try {
@@ -427,39 +436,41 @@ function Invoke-WithE2ETestProcessContext {
         & $Action
     }
     finally {
-        if ([string]::IsNullOrWhiteSpace($previousDataStoreDatabaseName)) {
-            Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
-        }
-        else {
+        # Restore each variable to its exact prior state: re-create with the verbatim prior value
+        # (including empty/whitespace) when it existed, otherwise remove it.
+        if ($previousDataStoreDatabaseNameExists) {
             $env:AppSettings__DataStoreDatabaseName = $previousDataStoreDatabaseName
         }
-
-        if ([string]::IsNullOrWhiteSpace($previousDatabaseEngine)) {
-            Remove-Item Env:AppSettings__DatabaseEngine -ErrorAction SilentlyContinue
-        }
         else {
+            Remove-Item Env:AppSettings__DataStoreDatabaseName -ErrorAction SilentlyContinue
+        }
+
+        if ($previousDatabaseEngineExists) {
             $env:AppSettings__DatabaseEngine = $previousDatabaseEngine
         }
-
-        if ([string]::IsNullOrWhiteSpace($previousDataStoreAdminConnectionString)) {
-            Remove-Item Env:AppSettings__DataStoreAdminConnectionString -ErrorAction SilentlyContinue
-        }
         else {
+            Remove-Item Env:AppSettings__DatabaseEngine -ErrorAction SilentlyContinue
+        }
+
+        if ($previousDataStoreAdminConnectionStringExists) {
             $env:AppSettings__DataStoreAdminConnectionString = $previousDataStoreAdminConnectionString
         }
-
-        if ([string]::IsNullOrWhiteSpace($previousDataStoreConnectionString)) {
-            Remove-Item Env:AppSettings__DataStoreConnectionString -ErrorAction SilentlyContinue
-        }
         else {
+            Remove-Item Env:AppSettings__DataStoreAdminConnectionString -ErrorAction SilentlyContinue
+        }
+
+        if ($previousDataStoreConnectionStringExists) {
             $env:AppSettings__DataStoreConnectionString = $previousDataStoreConnectionString
         }
+        else {
+            Remove-Item Env:AppSettings__DataStoreConnectionString -ErrorAction SilentlyContinue
+        }
 
-        if ([string]::IsNullOrWhiteSpace($previousNodeOptions)) {
-            Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+        if ($previousNodeOptionsExists) {
+            $env:NODE_OPTIONS = $previousNodeOptions
         }
         else {
-            $env:NODE_OPTIONS = $previousNodeOptions
+            Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
         }
     }
 }
