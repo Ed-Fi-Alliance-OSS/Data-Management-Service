@@ -32,6 +32,11 @@ Normative ownership is intentionally exclusive:
 Supporting documents may state facts local to their subject and link to the owner. They
 must not create a second normative contract for a subject in this table.
 
+Epics and stories may name implementation components, dependencies, test suites, and
+delivery artifacts. Their acceptance evidence links to the applicable owner and records
+the evidence produced; it does not repeat algorithms, message fields, fixed values,
+readiness conditions, recovery rules, or other normative requirements.
+
 Older references to legacy `dms.Document` JSON columns, `EdfiDoc`, OpenSearch, a shared
 `edfi.dms.document` topic, or `deleted=true` messages are historical and are not active
 relational CDC contracts.

@@ -12,20 +12,17 @@ related:
 - [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
+- [Relational data model](../../design-docs/data-model.md)
+
+The linked design documents are the acceptance authority. This epic only partitions the
+implementation work and does not restate projection, schema, recovery, or streaming
+contracts.
 
 ## Outcome
 
-Implement the reusable optional document projection defined by the design references:
-schema and provider DDL, configuration and target selection, materialization, monotonic
-writes, reconciliation, optional read acceleration, health/telemetry, provider tests, and
-runbooks, plus an out-of-band representation-restamp utility for offline strong-validator
-repairs. The CDC epic consumes this projection for upserts and
-independently owns connector lifecycle deletes.
-The small `dms.DocumentCache` table plus `dms.DataStoreIdentity` and
-`dms.DocumentCacheState` singletons are always provisioned; optionality applies to
-projection execution and cache-backed reads. V1 delivers this schema only through
-create-only provisioning of new physical databases; upgrading an already-provisioned
-database is outside this epic.
+Deliver the optional document-projection capability and its supporting schema, runtime,
+verification, administrative utility, and operator documentation through the story set
+below.
 
 ## Stories
 
@@ -47,47 +44,13 @@ implementation inputs.
 
 ## Completion Evidence
 
-- The explicit target list selects and isolates projection, unresolved listed targets can
-  become available after startup, and read acceleration selects no additional stores.
-- SQL Server projection targets validate `READ_COMMITTED_SNAPSHOT ON` before source/cache
-  comparison and fail only projection/cache use when it is absent or unreadable. Unlisted
-  relational-only stores remain supported, DMS never changes the option at runtime, and no
-  invalid observation can set the durable cache-ahead latch.
-- Both providers pass coherent materialization with a final optimistic current-version
-  check, reconciliation, atomic monotonic-upsert, delete-fence, restart, target-scoped
-  failure backoff and database rediscovery, rebuild, health, and read-fallback integration
-  coverage.
-- In-process work uses documented implementation-tuned defaults, serialized per-target
-  loops, bounded pages, fair process-wide target concurrency, coalesced audits, and
-  observational health/readiness checks.
-- Every projected row carries a `StreamEtag` produced by the shared DMS served-ETag
-  composer for the fixed CDC representation; API reads continue to compose their own
-  request-specific validators.
-- Core DDL always emits `dms.DocumentCache` with `StreamEtag`, its supporting
-  `dms.Document(ContentVersion, DocumentId)` index, and the `dms.DataStoreIdentity` and
-  `dms.DocumentCacheState` singletons; no obsolete `DocumentCache.Etag` remains.
-- New-database provisioning is the only supported v1 delivery path. No completion evidence
-  claims an in-place schema upgrade or DocumentCache/CDC enablement for an
-  already-provisioned database.
-- `DocumentCache` retains one compact `DocumentId` primary/foreign-key index. Its
-  non-indexed `DocumentUuid` is copied from the canonical row and provider validation
-  triggers reject mismatches without adding a cache UUID index or a composite index to
-  `dms.Document`.
-- Exact source/cache differences establish repairable projection work without a durable
-  workflow. Missing and behind rows repair automatically; observing an ahead row durably
-  latches the database and disables cache reads and writes even if the source later reaches
-  the same version. The explicit full-cache recovery is available only for a projection
-  proven internal-only. Possibly published or uncertain state remains latched and publication
-  remains stopped because new-namespace recovery is deferred in v1.
-- Projection absence or failure never compromises canonical API behavior or deletion.
-- Every byte-changing implementation correction without an ordinary domain write uses the
-  dedicated out-of-band utility only while the selected data store is explicitly offline
-  and all DMS replicas and external writers have been stopped outside the utility.
-  The utility does not implement or certify that fence. It advances canonical content
-  stamps and mirrors for the explicit affected scope, is safely resumable across bounded
-  batches, and leaves ordinary reconciliation and CDC to publish corrected higher-version
-  state eventually without claiming another exact CDC baseline.
-- Runbooks describe implemented operation and link to the owning design document.
+- Every story's scoped implementation and documentation is delivered.
+- Pull requests trace tests to the applicable design sections without copying their
+  requirements into epic or story acceptance text.
+- The provider, concurrency, integration, and operational verification required by the
+  owning design documents passes in the supported test lanes.
+- Operator documentation is checked against the shipped commands and status surfaces and
+  links back to the owning design sections for behavior.
 
-Anything excluded or deferred by the design references is outside this epic unless its
-owning decision record changes that design.
+Design exclusions and deferrals remain owned by the linked design documents; changing
+them requires changing the owner rather than this epic.

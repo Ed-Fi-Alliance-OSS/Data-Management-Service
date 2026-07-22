@@ -43,7 +43,7 @@ graph TD
   E15["E15 Runtime plan compilation + caching"]
   E16["E16 Bootstrap developer environment"]
   E17["E17 MSSQL implementation and parity gap closure"]
-  E18["E18 DocumentCache reconciler + CDC guarantees"]
+  E18["E18 DocumentCache projection"]
   E19["E19 Relational CDC/Kafka streaming"]
 
   E00 --> E01 --> E02 --> E03 --> E04
@@ -92,11 +92,9 @@ graph TD
 Notes:
 - `E07` and `E09` are tightly coupled in practice (write correctness requires transactional identity maintenance + propagation + deadlock retry), but are shown as a one-way dependency to keep the graph readable.
 - `E05` is optional; `E06` can select runtime-compiled mapping sets without packs.
-- `E19` can develop connector templates and fixture tests in parallel, but complete CDC
-  upsert readiness depends on `E18` per-database projection guarantees. E19 owns durable
-  source bindings, provider/topic/connector lifecycle, combined readiness, and
-  authoritative `dms.Document` delete capture; E18 neither stores connector bindings nor
-  calls Kafka Connect.
+- `E19` connector-template and fixture work can proceed in parallel, but its integrated
+  delivery consumes the E18 projection and status outputs. Behavioral ownership is defined
+  only by the design documents linked from the two epics.
 
 ---
 
@@ -122,8 +120,8 @@ Notes:
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
 | E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
 | E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
-| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL and singleton cache-ahead latch with optional reconciliation/read behavior, optimistic materialization-coherence checks and atomic monotonic cache upserts without source-row commit-order locking, difference-derived health, target-scoped failure backoff with database rediscovery, read fallback, and the out-of-band representation-restamp utility; E19 owns authoritative delete capture and possibly-published cache-ahead containment, while its new-namespace recovery is deferred |
-| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks that consume E18's restamp utility for non-purge byte-changing corrections and own destructive sensitive-data disclosure response |
+| E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Projection schema, runtime, verification, utility, and operator work packages |
+| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Provider, connector, bootstrap, verification, E2E, and operator work packages |
 
 ---
 
