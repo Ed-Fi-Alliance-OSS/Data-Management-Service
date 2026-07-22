@@ -14,9 +14,9 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_PlanWriteBatchingConventions
 {
-    [TestCase(SqlDialect.Mssql, 1, 1000, 2100)]
-    [TestCase(SqlDialect.Mssql, 3, 700, 2100)]
-    [TestCase(SqlDialect.Mssql, 2100, 1, 2100)]
+    [TestCase(SqlDialect.Mssql, 1, 1000, 2098)]
+    [TestCase(SqlDialect.Mssql, 3, 699, 2098)]
+    [TestCase(SqlDialect.Mssql, 2098, 1, 2098)]
     [TestCase(SqlDialect.Pgsql, 1, 1000, 65535)]
     [TestCase(SqlDialect.Pgsql, 100, 655, 65535)]
     [TestCase(SqlDialect.Pgsql, 65535, 1, 65535)]
@@ -54,8 +54,8 @@ public class Given_PlanWriteBatchingConventions
 
     [TestCase(
         SqlDialect.Mssql,
-        2101,
-        "Cannot derive bulk-insert batch size for dialect 'Mssql'. Row width 2101 exceeds max parameters per command (2100)."
+        2099,
+        "Cannot derive bulk-insert batch size for dialect 'Mssql'. Row width 2099 exceeds max parameters per command (2098)."
     )]
     [TestCase(
         SqlDialect.Pgsql,
@@ -97,8 +97,8 @@ public class Given_PlanWriteBatchingConventions
         );
 
         batchingInfo.ParametersPerRow.Should().Be(columnBindings.Count);
-        batchingInfo.MaxRowsPerBatch.Should().Be(525);
-        batchingInfo.MaxParametersPerCommand.Should().Be(2100);
+        batchingInfo.MaxRowsPerBatch.Should().Be(524);
+        batchingInfo.MaxParametersPerCommand.Should().Be(2098);
     }
 
     private static IReadOnlyList<WriteColumnBinding> CreateBindings(int count)
