@@ -9,7 +9,8 @@ epic: TBD
 ## Design References
 
 - [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
-- [DDL and query support](../../../cdc-streaming.md#ddl-and-query-support)
+- [Schema and query integration](../../../cdc-streaming.md#schema-and-query-integration)
+- [Physical CDC heartbeat object](../../design-docs/data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
 ## Outcome

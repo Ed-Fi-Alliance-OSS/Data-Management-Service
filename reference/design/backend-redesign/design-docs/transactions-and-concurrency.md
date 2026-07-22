@@ -545,7 +545,7 @@ cache/domain lifecycle behavior is defined in
 
 1. Resolve `DocumentUuid` → `DocumentId`.
 2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the Change Queries tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
-3. Delete the corresponding `dms.Document` row. Remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize relational cleanup. The CDC lifecycle consequence is defined in [Relational CDC and Document Projection](../../cdc-streaming.md#cache-backed-reads-and-domain-lifecycle).
+3. Delete the corresponding `dms.Document` row. Remaining `ON DELETE CASCADE` paths to `dms.DocumentCache` and `dms.ReferentialIdentity` finalize relational cleanup. The CDC lifecycle consequence is defined in the [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
 Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.

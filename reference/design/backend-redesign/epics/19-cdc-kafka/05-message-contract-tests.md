@@ -9,7 +9,7 @@ epic: TBD
 ## Design References
 
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-- [Connector transform pipeline](../../../cdc-streaming.md#connector-transform-pipeline)
+- [Connector transformation](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation)
 - [Verification](../../../cdc-streaming.md#verification)
 
 ## Outcome

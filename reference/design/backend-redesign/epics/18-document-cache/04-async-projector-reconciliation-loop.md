@@ -10,8 +10,8 @@ related:
 
 ## Design References
 
-- [Freshness and reconciliation](../../../cdc-streaming.md#freshness-and-reconciliation)
-- [Bounded in-process execution policy](../../../cdc-streaming.md#bounded-in-process-execution-policy)
+- [Freshness and reconciliation](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
+- [Bounded in-process execution policy](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#bounded-in-process-execution-policy)
 - [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 

@@ -10,8 +10,8 @@ related:
 
 ## Design References
 
-- [Cache-backed reads and domain lifecycle](../../../cdc-streaming.md#cache-backed-reads-and-domain-lifecycle)
-- [Freshness and reconciliation](../../../cdc-streaming.md#freshness-and-reconciliation)
+- [Cache-backed reads and domain lifecycle](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle)
+- [Freshness and reconciliation](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
 
 ## Outcome
 

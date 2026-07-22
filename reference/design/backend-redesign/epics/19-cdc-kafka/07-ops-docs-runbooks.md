@@ -8,7 +8,7 @@ epic: TBD
 
 ## Design References
 
-- [Authoritative relational CDC design](../../../cdc-streaming.md)
+- [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
 ## Outcome

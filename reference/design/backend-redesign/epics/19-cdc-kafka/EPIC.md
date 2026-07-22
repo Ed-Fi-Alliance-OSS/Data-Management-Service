@@ -12,7 +12,7 @@ related:
 
 ## Design References
 
-- [Authoritative relational CDC design](../../../cdc-streaming.md)
+- [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
@@ -165,5 +165,5 @@ implementation inputs.
   or new-generation/topic/consumer-namespace cutover.
 - Possibly published cache-ahead new-generation/topic/consumer-namespace recovery.
 
-Anything excluded or deferred by the authoritative design is outside this epic unless a
-new decision record changes that design.
+Anything excluded or deferred by the design references is outside this epic unless its
+owning decision record changes that design.

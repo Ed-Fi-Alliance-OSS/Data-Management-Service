@@ -47,8 +47,12 @@ The DDL generation utility is responsible for database objects derived from the 
   - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
 - Optional CDC objects:
-  - provider-specific opt-in CDC setup and the intentionally absent projector workflow
-    tables defined by [Relational CDC and Document Projection](../../cdc-streaming.md#ddl-and-query-support)
+  - the opt-in physical `dms.CdcHeartbeat` object defined by
+    [data-model.md](data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object)
+  - provider-specific enablement and validation defined by
+    [Relational CDC and Document Projection](../../cdc-streaming.md#schema-and-query-integration)
+  - the intentionally absent projector workflow tables decided by the
+    [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
   - `auth` schema
   - `auth.EducationOrganizationIdToEducationOrganizationId` (table) and its maintenance triggers/functions

@@ -379,7 +379,7 @@ the cached state and `ContentVersion` remain valid, while per-request compositio
 `linkFlag` and therefore rotates the served `_etag`.
 
 Cache selection and freshness are defined by
-[Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation),
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation),
 not by link configuration.
 
 Cached hrefs are bound to `EffectiveSchemaHash`: any change to a `projectEndpointName` or

@@ -124,7 +124,7 @@ Soft dependency:
   type; the story must not assume a nested `AppSettings.DataManagement` object already exists in
   Core.
 - When optional cache-backed reads are enabled, this story follows the authoritative
-  [cached-document and freshness design](../../../cdc-streaming.md#freshness-and-reconciliation)
+  [cached-document and freshness design](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
   rather than defining another cache-validity rule.
 - `dms.DocumentCache` stores the fully reconstituted caller-agnostic intermediate document with
   `link` subtrees already present. The `ResourceLinks:Enabled` strip pass runs as the final

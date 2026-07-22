@@ -10,13 +10,13 @@ related:
 
 ## Design References
 
-- [Authoritative projection and CDC design](../../../cdc-streaming.md)
+- [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 
 ## Outcome
 
 Validate the completed projection feature across providers and publish operator guidance
-that links to, rather than restates, the authoritative design.
+that links to, rather than restates, the owning design document.
 
 ## Dependencies
 

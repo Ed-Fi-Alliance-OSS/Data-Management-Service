@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- [Cached document contract](../../../cdc-streaming.md#cached-document-contract)
+- [Cached document contract](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
 ## Outcome

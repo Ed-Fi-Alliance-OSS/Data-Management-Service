@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- [Connector transform pipeline](../../../cdc-streaming.md#connector-transform-pipeline)
+- [Connector transformation](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation)
 - [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
 - [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
 - [Source-history continuity](../../../cdc-streaming.md#source-history-continuity)

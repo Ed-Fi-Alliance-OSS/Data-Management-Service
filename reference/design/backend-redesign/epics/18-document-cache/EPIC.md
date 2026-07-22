@@ -9,7 +9,7 @@ related:
 
 ## Design References
 
-- [Authoritative projection and CDC design](../../../cdc-streaming.md)
+- [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
@@ -87,7 +87,7 @@ implementation inputs.
   stamps and mirrors for the explicit affected scope, is safely resumable across bounded
   batches, and leaves ordinary reconciliation and CDC to publish corrected higher-version
   state eventually without claiming another exact CDC baseline.
-- Runbooks describe implemented operation and link to the authoritative design.
+- Runbooks describe implemented operation and link to the owning design document.
 
-Anything excluded or deferred by the authoritative design is outside this epic unless a
-new decision record changes that design.
+Anything excluded or deferred by the design references is outside this epic unless its
+owning decision record changes that design.

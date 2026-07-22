@@ -202,7 +202,7 @@ document contract would require a new versioned topic and complete reprojection;
 not implement that cutover after first-write admission. See the topic/message ADR's
 [compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
 The cache projection and freshness behavior is defined in
-[Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation).
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation).
 
 ### `variantKey` encoding (normative)
 

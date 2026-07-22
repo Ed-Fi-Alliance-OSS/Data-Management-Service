@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- [Freshness and reconciliation](../../../cdc-streaming.md#freshness-and-reconciliation)
+- [Freshness and reconciliation](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
 - [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 

@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- [Connector transform pipeline](../../../cdc-streaming.md#connector-transform-pipeline)
+- [Connector transformation](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 - [Completed generic expand-JSON transform](../../design-docs/expandjsonsmt-replacement.md)
 

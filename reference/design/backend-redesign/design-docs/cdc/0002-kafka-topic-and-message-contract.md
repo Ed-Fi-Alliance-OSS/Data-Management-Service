@@ -16,8 +16,10 @@ Relational DMS CDC publishes one compacted document-state topic per DMS instance
 an upsert/delete state stream, not an immutable event log and not the Change Queries API.
 The source decision is recorded in
 [0001-relational-cdc-projector-and-sources.md](0001-relational-cdc-projector-and-sources.md);
-deployment and transform details are in
+deployment and integration details are in
 [Relational CDC and Document Projection](../../../cdc-streaming.md).
+The required connector transformation is part of this record's public contract and is
+specified below.
 
 The v1 public contract is:
 
@@ -400,6 +402,92 @@ document semantics rather than correcting their implementation.
 Because one `DocumentCache` row stores one `DocumentJson` and one `StreamEtag`, it cannot
 supply two incompatible contracts concurrently. A zero-gap overlap between contract
 versions requires separate versioned projection state and another design decision.
+
+## Connector Transformation
+
+The connector uses one Ed-Fi-owned `DocumentState` SMT as the contract boundary between
+raw Debezium records and the public document and internal progress topics. The transform
+implements the source mapping from the
+[projector/source ADR](0001-relational-cdc-projector-and-sources.md) and the serialized
+contract in this decision record. It applies the following logical order; after capture,
+steps 2–8 occur within one transform invocation:
+
+```text
+transforms=documentState
+transforms.documentState.type=org.edfi.kafka.connect.transforms.DocumentState
+transforms.documentState.provider=<postgresql|sqlserver>
+transforms.documentState.target.topic=<instance document topic>
+transforms.documentState.progress.topic=<derived CDC progress topic>
+```
+
+Those are its only contract configuration values. `progress.topic` is generated as
+`target.topic + ".cdc-progress"`; it is not operator-configurable, and template and live
+configuration validation reject another value. The `dms.DocumentCache`,
+`dms.Document`, and `dms.CdcHeartbeat` source identities, Debezium operation mapping,
+source columns, and v1 public fields are fixed transform behavior rather than a
+configurable mapping language.
+
+1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
+   internal heartbeat singleton for source-position progress.
+2. Inspect the original Debezium source table and operation before discarding the
+   envelope. Retain `dms.CdcHeartbeat` table operations and Debezium heartbeat records as
+   internal progress records; accept cache create, update, and snapshot/read records as
+   public upserts; accept canonical document deletes as authoritative public deletes; and
+   intentionally drop every other captured operation.
+3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
+   `D`-format text, and use it for both upserts and authoritative tombstones.
+4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
+   structured JSON object. No independent generic expand-JSON SMT participates in the
+   relational connector.
+5. Normalize `LastModifiedAt` to the existing DMS whole-second UTC
+   `yyyy-MM-ddTHH:mm:ssZ` representation. For SQL Server, interpret
+   `io.debezium.time.IsoTimestamp` as an ISO-8601 UTC string, deliberately truncate
+   fractional seconds without rounding into the next second, and reject an unexpected
+   provider representation, non-UTC value, or fractional/raw public value.
+6. Build the complete lower-camel public envelope, copy the opaque DMS-computed
+   `StreamEtag` to `document._etag`, remove all internal and operational fields, add
+   `contractVersion`, and verify that the public key and normalized timestamp exactly
+   match `document.id` and `document._lastModifiedDate`.
+7. For a retained canonical delete, replace the value with a record-level null tombstone.
+   Suppress Debezium's additional automatic tombstone, for example with
+   `tombstones.on.delete=false`, so one canonical delete produces exactly one public
+   tombstone and cache deletion produces none.
+8. Route a retained document result to the configured instance document topic. Route a
+   retained heartbeat record, without applying the public document contract, to the
+   configured progress topic. Returning `null` from the transform drops only an operation
+   excluded by the source mapping and never a progress record used by readiness.
+
+The transform consumes schema-backed raw Debezium records and emits only one of three
+classes of result: a final public upsert or tombstone, an internal progress record, or no
+record. Expected excluded operations are dropped; a malformed retained record, unexpected
+source shape, invalid `DocumentJson`, inconsistent embedded metadata, or unsupported
+temporal logical type fails transformation rather than publishing a partial or ambiguous
+record. Because the connector pins `errors.tolerance=none`, that failure stops the connector
+task instead of skipping the record. A failed task makes combined readiness false; offset
+or lag observations cannot reclassify it as caught up. Recovery requires correcting the
+cause and restarting or replacing the connector so the retained record is processed under
+the contract. Returning `null` for an explicitly excluded operation remains normal
+transform behavior and does not use the error-tolerance path; readiness never depends on
+such a record advancing the committed source offset.
+
+Kafka Connect does not calculate `schemaEpoch`, interpret
+`DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
+opaque connector input; the transform only copies it to `document._etag`. The connector
+does not split this contract across stock predicates, unwrap/rename/routing SMTs, or an
+independent generic JSON expander. Keeping source classification, key/value shaping,
+tombstone synthesis, consistency checks, and routing in one transform avoids
+ordering-sensitive intermediate records. Tests assert published record bytes and
+semantics, not only generated connector JSON. Version-specific properties and the
+transform class are verified against the pinned Ed-Fi image and exact Debezium 3.6 base
+selected by the deployment design.
+
+Debezium 3.6's `isostring` mode removes the 2.7-era signed-`NanoTimestamp` parsing
+workaround and preserves all seven SQL Server fractional digits in an unambiguous UTC
+string. It does not replace the transform's responsibility to emit the existing DMS
+whole-second representation and verify embedded timestamp equality. The same transform
+continues to own the rest of the document-state contract, and connector templates never
+rely on a Debezium default. See Debezium's
+[3.6 SQL Server temporal mapping](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-temporal-values).
 
 ## Delete
 

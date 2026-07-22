@@ -10,7 +10,7 @@ related:
 
 ## Design References
 
-- [Cached document contract](../../../cdc-streaming.md#cached-document-contract)
+- [Cached document contract](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
 - [Relational data model](../../design-docs/data-model.md)
 - [DDL generation](../../design-docs/ddl-generation.md)
 

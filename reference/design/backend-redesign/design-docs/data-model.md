@@ -310,17 +310,11 @@ Descriptor update semantics:
 
 ##### 4) `dms.DataStoreIdentity`
 
-Always-provisioned singleton identity for the logical database source. It gives runtime
-DMS and deployment automation one provider-neutral CDC binding value without interpreting
-connection strings, DNS aliases, server names, or provider catalogs.
-
-Provisioning inserts one random UUID only when the singleton row is absent. Ordinary
-provisioning reruns and DMS startup never update it. Provider replication and failover
-retain the value. Creation of an independent writable data store from a template, clone,
-or copied backup generates a new value before the data store becomes available. A
-rollback or restore that replaces an existing source must rotate `SourceIdentity` through
-the explicit CDC recovery workflow and, when CDC state exists, use a new binding
-generation, topic, and consumer state namespace.
+Always-provisioned singleton physical identity for the logical database source.
+Provisioning inserts one random UUID only when the singleton row is absent; ordinary
+provisioning reruns do not update it. CDC binding, replacement, and recovery semantics are
+owned by
+[`cdc-streaming.md`](../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
 
 **PostgreSQL**
 
@@ -360,9 +354,7 @@ END;
 ```
 
 The emitted SQL text remains deterministic even though the UUID is generated when the
-script is applied. The public health surface exposes only the versioned SHA-256 fingerprint
-defined in [Relational CDC and Document Projection](../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding),
-not the source UUID itself.
+script is applied.
 
 ##### 5) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
@@ -533,69 +525,13 @@ Conformance tests (required):
 
 ##### 6) `dms.DocumentCache` (always-provisioned optional projection)
 
-Always-provisioned table for an optional materialized JSON representation used for read
-acceleration, downstream integrations, and relational CDC upserts. With no explicit
-projection targets the table remains empty, and with read acceleration disabled the API
-does not read it. This section owns its relational row shape;
-the authoritative enablement, projection, lifecycle, and CDC behavior is defined in
-[Relational CDC and Document Projection](../../cdc-streaming.md), with rationale in the
-[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md).
-
-The cached `DocumentJson` is the caller-agnostic, pre-profile, full API resource body
-emitted by reconstitution. It includes top-level `id` and `_lastModifiedDate`, with
-`link` subtrees already present when link injection is compiled into the read plan. It
-does not contain a reusable `_etag`.
-`_lastModifiedDate` uses the existing DMS whole-second UTC formatter; the associated
-`LastModifiedAt` cache column retains the canonical provider-precision value.
-Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
-strip pass runs on the projected document immediately before serialization. The served `_etag` is
-then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
-participate in the request's `variantKey` (see
-[link-injection.md](link-injection.md#cache-and-etag)).
-
-`ContentVersion` and provider-precision `LastModifiedAt` are the representation metadata
-associated with `DocumentJson`; formatting `LastModifiedAt` through the existing DMS
-whole-second rule must exactly reproduce `DocumentJson._lastModifiedDate`. `StreamEtag` is
-a separate opaque value computed by the DMS
-cache-projection materializer through the shared served-ETag composer. It applies only to
-the fixed CDC representation: JSON, no readable profile, the cached document's link mode,
-and identity content coding. Ordinary resource rows use the link-bearing context even
-when API resource links are disabled; descriptor rows use the descriptor context with
-links off. Kafka Connect copies `StreamEtag` into the expanded document as
-`document._etag`; the public envelope does not duplicate it. API cache reads ignore it
-and compose their request-specific ETag from `ContentVersion` and the active request
-`variantKey`. See the authoritative cached-document contract for consistency and
-freshness rules.
-
-The row has no projection-generation column. While the cache-ahead latch is clear,
-ordinary reconciliation treats a same-`ContentVersion` row as fresh and does not rewrite
-it. A clear/rebuild may republish a byte-identical row at the same version; consumers treat
-that row as a duplicate. Every compatible materialization or opaque-ETag correction that
-changes public bytes uses the explicitly offline representation-restamp utility before
-corrected projection. Existing affected cache rows are then behind, and ordinary
-reconciliation publishes corrected higher-version rows. The exact opaque `StreamEtag`
-bytes are not independently frozen, but they must remain DMS-computed and coherent with
-the projected document.
-
-An incompatible key, field/type, delete-semantics, or document-contract change would
-require a new versioned topic and `contractVersion`. V1 does not implement that cutover
-after first-write admission. Because the table stores only one `DocumentJson` and
-`StreamEtag`, simultaneous live publication of two incompatible contracts is outside v1;
-see the topic/message ADR's
-[compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
-
-For a current canonical document, a missing cache row or a lower cached
-`ContentVersion` is repairable projection lag. A higher cached `ContentVersion` is not
-ordinary lag and is never overwritten automatically: it is an invariant violation that
-indicates corruption, an in-place/partial canonical restore or reset, or unsupported reuse
-of projected state against another canonical source. Observing one durably sets the
-database singleton `dms.DocumentCacheState.CacheAheadRecoveryRequired` bit. Later version
-equality does not clear that latch or make the existing row eligible for reads. The
-authoritative design's
-[cache-ahead recovery](../../cdc-streaming.md#cache-ahead-invariant-recovery) distinguishes
-safe internal-only full-cache rebuild from possibly published state. V1 keeps possibly
-published state latched and publication stopped; the new downstream state namespace,
-binding generation, and topic required for safe Kafka CDC recovery are deferred.
+This section is the sole owner of the table's physical row shape, column types, keys,
+constraints, indexes, and triggers. It does not define projection or streaming behavior.
+The [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
+owns cached-document semantics, freshness, reconciliation, and lifecycle. The
+[topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md) owns public stream
+mapping and compatibility. [`cdc-streaming.md`](../../cdc-streaming.md) owns configuration,
+deployment, readiness, and operations.
 
 Denormalized resource naming:
 
@@ -678,9 +614,9 @@ function name `TF_DocumentCache_ValidateDocumentUuid`:
 
 The trigger compares only fixed-width identity values and uses the existing canonical
 `DocumentId` primary-key access path. It does not parse `DocumentJson`, add work to normal
-canonical document writes, or require a `DocumentCache.DocumentUuid` index. Projector and
-direct-fill statements still derive the cache UUID from the canonical source rather than
-accepting an independent caller value; the trigger is the database backstop.
+canonical document writes, or require a `DocumentCache.DocumentUuid` index. Projector
+writer behavior is owned by the projector/source ADR; this trigger is only its physical
+database backstop.
 
 Uses:
 
@@ -690,9 +626,8 @@ Uses:
 
 ##### 7) `dms.DocumentCacheState` (singleton invariant latch)
 
-Always-provisioned singleton state used only to persist a cache-ahead invariant across
-source advancement and process restart. It is not a work queue, retry record, cursor,
-backfill epoch, or completeness watermark.
+Always-provisioned singleton physical state for the cache-ahead invariant. Its runtime
+meaning is owned by the projector/source ADR.
 
 **PostgreSQL**
 
@@ -722,13 +657,52 @@ IF NOT EXISTS (SELECT 1 FROM dms.DocumentCacheState WHERE StateId = 1)
     INSERT INTO dms.DocumentCacheState (StateId, CacheAheadRecoveryRequired) VALUES (1, 0);
 ```
 
-Provisioning creates exactly the `StateId = 1` row with the latch clear. A missing or
-malformed singleton is fail-closed for cache reads and projection readiness. Incremental
-discovery or a full audit may only set the bit. The provider-supported recovery operation
-may be invoked in v1 only for a projection proven internal-only; it stops cache writers and
-clears all `dms.DocumentCache` rows before clearing the bit in the same database transaction.
-Possibly published or uncertain state remains latched. Ordinary provisioning reruns never
-reset it.
+Provisioning creates exactly the `StateId = 1` row with the latch clear, and ordinary
+provisioning reruns never reset it. The
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery)
+owns all runtime interpretation and recovery behavior for this physical state.
+
+##### 8) `dms.CdcHeartbeat` (opt-in CDC integration object)
+
+Provider CDC setup provisions this singleton only when CDC is selected. It is not part of
+ordinary relational provisioning.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.CdcHeartbeat (
+    HeartbeatId smallint PRIMARY KEY,
+    HeartbeatSequence bigint NOT NULL,
+    HeartbeatAt timestamp with time zone NOT NULL,
+    CONSTRAINT CK_CdcHeartbeat_Singleton CHECK (HeartbeatId = 1),
+    CONSTRAINT CK_CdcHeartbeat_Sequence CHECK (HeartbeatSequence >= 0)
+);
+
+INSERT INTO dms.CdcHeartbeat (HeartbeatId, HeartbeatSequence, HeartbeatAt)
+VALUES (1, 0, now())
+ON CONFLICT (HeartbeatId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.CdcHeartbeat (
+    HeartbeatId smallint NOT NULL,
+    HeartbeatSequence bigint NOT NULL,
+    HeartbeatAt datetime2(7) NOT NULL,
+    CONSTRAINT PK_CdcHeartbeat PRIMARY KEY CLUSTERED (HeartbeatId),
+    CONSTRAINT CK_CdcHeartbeat_Singleton CHECK (HeartbeatId = 1),
+    CONSTRAINT CK_CdcHeartbeat_Sequence CHECK (HeartbeatSequence >= 0)
+);
+
+IF NOT EXISTS (SELECT 1 FROM dms.CdcHeartbeat WHERE HeartbeatId = 1)
+    INSERT INTO dms.CdcHeartbeat (HeartbeatId, HeartbeatSequence, HeartbeatAt)
+    VALUES (1, 0, sysutcdatetime());
+```
+
+The integration design owns the provider action query, capture enablement, source-position
+barrier, and operational use of this physical row; see
+[`cdc-streaming.md`](../../cdc-streaming.md#provider-source-position-barrier).
 
 ### Authorization companion objects (schema: `auth`)
 

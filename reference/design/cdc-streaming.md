@@ -14,24 +14,23 @@ related:
 
 ## Authority and Document Ownership
 
-This is the authoritative integration and deployment design for relational DMS change
-data capture (CDC) and the `dms.DocumentCache` projection that supplies its upsert
-payloads. Runtime DMS owns explicit projection targets, projection mechanics, and
-per-database projection health. Deployment automation owns CDC target selection,
-durable connector/source bindings, topics, provider CDC setup, connector lifecycle,
-initial combined CDC readiness for a new offline database, later observational CDC
-status, bootstrap, and CDC operations. Verification follows the same boundary.
+This document owns configuration, integration, deployment, readiness, and operations for
+relational DMS change data capture (CDC) and the `dms.DocumentCache` projection that
+supplies its upsert payloads. It consumes, but does not redefine, the physical schema,
+projector semantics, or public Kafka contract.
 
-Two focused decision records own the decisions and contracts they name:
+Normative ownership is intentionally exclusive:
 
-- [Relational CDC projector and sources](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
-  owns the projector/source choice, freshness rule, and cache/domain lifecycle boundary.
-- [Kafka topic and message contract](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-  owns the public topic, key, value, tombstone, and compatibility contract.
+| Owner | Normative subject |
+| --- | --- |
+| [`data-model.md`](backend-redesign/design-docs/data-model.md) | Physical tables, columns, constraints, indexes, and triggers |
+| [Relational CDC projector and sources](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md) | Projection/source choice, cached projection semantics, freshness, reconciliation, and cache/domain lifecycle |
+| [Kafka topic and message contract](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md) | Public topic, key, value, tombstone, consumer behavior, transform behavior, and compatibility contract |
+| This document | Configuration, integration, deployment, readiness, and operations |
+| Epics and stories | Implementation scope and acceptance evidence |
 
-Epics and stories are delivery plans, not additional design authorities. Supporting
-backend documents may state facts local to their subject and link here, but must not
-redefine the cross-cutting behavior in these three documents.
+Supporting documents may state facts local to their subject and link to the owner. They
+must not create a second normative contract for a subject in this table.
 
 Older references to legacy `dms.Document` JSON columns, `EdfiDoc`, OpenSearch, a shared
 `edfi.dms.document` topic, or `deleted=true` messages are historical and are not active
@@ -39,19 +38,20 @@ relational CDC contracts.
 
 ### Documentation Audit and Disposition
 
-For `dms.DocumentCache` projection and relational CDC/Kafka subjects, this document and
-the two decision records above are the normative design set. If another document conflicts
-with that set, this set prevails even when the other document remains current for its own
-subject. The classifications below apply only to each artifact's DocumentCache or CDC/Kafka
-content, not to unrelated material in the same artifact.
+For `dms.DocumentCache` projection and relational CDC/Kafka subjects, normative authority
+is distributed across `data-model.md`, the two decision records, and this integration
+design according to the table above. If another document conflicts with an owner on its
+subject, the owner prevails. The classifications below apply only to each artifact's
+DocumentCache or CDC/Kafka content, not to unrelated material in the same artifact.
 
 | Existing material | Classification | Disposition |
 | --- | --- | --- |
-| This `cdc-streaming.md` document | Current | Rewritten as the authoritative cross-cutting design for relational DocumentCache projection and CDC/Kafka. |
-| [`0001-relational-cdc-projector-and-sources.md`](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md) and [`0002-kafka-topic-and-message-contract.md`](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md) | Current | Normative only for the focused decisions they own; this document defines their integration and deployment context. |
-| [`data-model.md`](backend-redesign/design-docs/data-model.md), [`transactions-and-concurrency.md`](backend-redesign/design-docs/transactions-and-concurrency.md), [`link-injection.md`](backend-redesign/design-docs/link-injection.md), and [`update-tracking.md`](backend-redesign/design-docs/update-tracking.md) | Current | Reconciled supporting descriptions of local relational, cache, representation, lifecycle, and ETag facts. They defer to the normative design set for projection and streaming behavior. |
+| This `cdc-streaming.md` document | Current | Normative for configuration, integration, deployment, readiness, and operations only. |
+| [`0001-relational-cdc-projector-and-sources.md`](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md) and [`0002-kafka-topic-and-message-contract.md`](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md) | Current | Normative for their focused projector/source and public streaming subjects; this document supplies integration and deployment context. |
+| [`data-model.md`](backend-redesign/design-docs/data-model.md) | Current | Normative for physical relational objects only; runtime projection and streaming behavior links to its owning ADR or this document. |
+| [`transactions-and-concurrency.md`](backend-redesign/design-docs/transactions-and-concurrency.md), [`link-injection.md`](backend-redesign/design-docs/link-injection.md), and [`update-tracking.md`](backend-redesign/design-docs/update-tracking.md) | Current | Supporting descriptions of local transaction, representation, and ETag facts. They defer to the owning ADR for projection and streaming behavior. |
 | [`ddl-generation.md`](backend-redesign/design-docs/ddl-generation.md) and [`flattening-reconstitution.md`](backend-redesign/design-docs/flattening-reconstitution.md) | Current | Supporting DDL and API materialization context. JSON response streaming in reconstitution is not CDC/Kafka streaming. |
-| [`expandjsonsmt-replacement.md`](backend-redesign/design-docs/expandjsonsmt-replacement.md) | Current | Owns the implemented generic expand-JSON transform only. Legacy DMS record-shape discussion is context; the relational source, transform, topic, and message contracts are owned here and in the focused ADRs. |
+| [`expandjsonsmt-replacement.md`](backend-redesign/design-docs/expandjsonsmt-replacement.md) | Current | Owns the implemented generic expand-JSON transform only. Legacy DMS record-shape discussion is context; the relational source contract is owned by ADR 0001 and the `DocumentState` transform/topic/message contract by ADR 0002. |
 | [`multitenancy-analysis.md`](multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
 | Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
 | Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
@@ -232,450 +232,27 @@ DMS health polling does not activate or release a runtime gate.
 
 ## Cached Document Contract
 
-`dms.DocumentCache` contains one caller-agnostic, pre-profile, full API-shaped projection
-per current document. Its row contains:
-
-- `DocumentId`
-- `DocumentUuid`
-- `ProjectName`
-- `ResourceName`
-- `ResourceVersion`
-- `ContentVersion`
-- `StreamEtag`
-- `LastModifiedAt`
-- `DocumentJson`
-- `ComputedAt`
-
-`DocumentId` is the compact internal primary key and an `ON DELETE CASCADE` foreign key to
-`dms.Document`. `DocumentUuid` is a non-indexed denormalized copy of the canonical public
-identity used as the Debezium message key. Provider-specific cache insert/update triggers
-join by the existing `DocumentId` primary key and reject the statement unless the cache UUID
-equals `dms.Document.DocumentUuid` for that same row. The foreign key independently rejects
-a missing/deleted parent. Because canonical `DocumentUuid` is immutable and unique and the
-cache has one row per canonical `DocumentId`, the trigger establishes cache UUID uniqueness
-without a cache UUID index or a new composite index on `dms.Document`.
-
-`DocumentJson` is produced by the same relational read-plan and reconstitution rules as
-GET/query response assembly. It includes stable top-level `id` and
-`_lastModifiedDate`. When link injection is compiled into the read plan, it also includes
-reference `link` subtrees. It does not contain authorization arrays, EdOrg hierarchy
-JSON, API client identity, or readable-profile-specific projections.
-`_lastModifiedDate` uses the existing DMS whole-second UTC
-`yyyy-MM-ddTHH:mm:ssZ` representation. The `LastModifiedAt` cache column retains the
-provider value, but its fractional seconds are deliberately not exposed in `DocumentJson`
-or the public CDC envelope and do not participate in freshness or ordering.
-
-The cache does not store an `_etag` inside `DocumentJson` and does not store an ETag
-reusable for arbitrary API responses. It does store `StreamEtag`, the ETag for the fixed
-CDC representation of that document kind. The cache-projection materializer computes it
-by calling the same DMS served-ETag composer used by the API with the row's
-`ContentVersion`, the selected mapping set's `EffectiveSchemaHash`, JSON format, no
-readable profile, the published document's link mode, and identity content coding.
-Ordinary resource documents are link-bearing in the cache and therefore use `l` even
-when `DataManagement:ResourceLinks:Enabled` is false; descriptors use the backend's
-descriptor representation context and therefore use `n`.
-
-API serving ignores `StreamEtag` and composes `_etag` from `ContentVersion` and the
-request's active `variantKey`. Readable-profile projection and
-`DataManagement:ResourceLinks:Enabled` stripping happen after cache retrieval and do not
-create additional cache rows.
-
-A dedicated cache-projection materializer returns the row metadata and `DocumentJson` as
-one coherent result. Before a cache write it validates:
-
-```text
-DocumentCache.DocumentUuid == Document.DocumentUuid for DocumentId
-DocumentJson.id == DocumentUuid
-DocumentJson._lastModifiedDate == formatted LastModifiedAt
-StreamEtag == DMS served-etag composition for the fixed stream representation
-```
-
-An application invariant failure is a materialization failure and produces no cache write;
-the provider trigger independently rejects a mismatched denormalized UUID if a defective or
-unsupported writer reaches the database.
-`LastModifiedAt` is sourced from `dms.Document.ContentLastModifiedAt`; this payload
-invariant does not make the timestamp a freshness condition.
+The physical row shape, constraints, indexes, and validation triggers are owned by
+[data-model.md](backend-redesign/design-docs/data-model.md#6-dmsdocumentcache-always-provisioned-optional-projection).
+The cached projection semantics and materialization invariants are owned by the
+[projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract).
+The public Kafka representation derived from that projection is owned by the
+[topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value).
 
 ## Freshness and Reconciliation
 
-`ContentVersion` is the sole cache freshness and reconciliation key:
-
-```text
-DocumentCache.ContentVersion == Document.ContentVersion
-```
-
-`LastModifiedAt` is payload and diagnostic metadata. `ComputedAt` is operational
-metadata. Neither participates in cache freshness, completeness, API semantics,
-Change Queries, or `_etag` state. `StreamEtag` is derived output validated during
-materialization; comparing or recomputing it is not another reconciliation predicate.
-Row-level freshness remains version equality, but no cache row is eligible for reads or
-projection readiness while the database's durable cache-ahead recovery latch is set.
-
-The current database difference remains both the durable work inventory and the
-projection-completeness source:
-
-```text
-dms.Document
-LEFT JOIN dms.DocumentCache ON DocumentId
-WHERE DocumentCache.DocumentId IS NULL
-   OR DocumentCache.ContentVersion <> Document.ContentVersion
-```
-
-Each source/cache comparison is one database statement; an implementation must not read
-the canonical and cache versions in separate commands and classify the combined result.
-On SQL Server, incremental pages, full-audit pages, the exact finishing aggregate, and
-cache lookup execute explicitly at `READ COMMITTED` after validating RCSI on the same open
-target connection. RCSI therefore supplies one statement-level source/cache snapshot. The
-queries do not use `READCOMMITTEDLOCK` or another hint that restores locking reads. If the
-prerequisite is false or cannot be validated, the operation stops before classification and
-cannot set `CacheAheadRecoveryRequired` from its observation.
-SQL Server documents the statement-snapshot and locking distinction in
-[`SET TRANSACTION ISOLATION LEVEL`](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql).
-
-The projector classifies that difference rather than treating every unequal row as
-ordinary repair work:
-
-| Cache state | Meaning | Projector action |
-| --- | --- | --- |
-| Row missing | Repairable projection lag | Materialize and insert |
-| `DocumentCache.ContentVersion < Document.ContentVersion` | Repairable projection lag | Materialize and replace |
-| Versions equal | Fresh only when the database cache-ahead latch is clear | No action |
-| `DocumentCache.ContentVersion > Document.ContentVersion` | Invariant violation | Do not materialize, repair, or overwrite automatically |
-
-A cache-ahead row cannot arise from supported same-source projection and canonical-write
-concurrency: canonical `ContentVersion` values advance monotonically and monotonic cache
-writes never replace a higher cache version. It therefore indicates cache corruption, an
-in-place/partial canonical database restore or reset, or unsupported reuse of projected
-state against another canonical source. It remains part of the exact completeness
-difference and is not treated as ordinary repair work. When either discovery lane observes
-one, it atomically sets the singleton `dms.DocumentCacheState.CacheAheadRecoveryRequired`
-bit. After classifying the row, the setter does not reclassify or cancel the incident if the
-source advances before the state update; the observation is reported only after the latch
-commit. That durable per-database latch makes every cache row ineligible for cache-backed
-reads and makes projection readiness false. It is never cleared by a later source version,
-an equal source/cache version, a zero audit, canonical deletion, or process restart. Failure
-to read or persist the latch is fail-closed for cache use and projection readiness.
-
-Once the latch is set, reconciliation and direct fill perform no cache writes for that
-database. A later canonical state reaching exactly the previously ahead `ContentVersion`
-therefore cannot make the possibly corrupt cached row fresh. Only the explicit proven-
-internal-only recovery operation below clears the cache and latch together; possibly
-published state remains latched in v1.
-
-Candidate discovery is separate from completeness verification. For each selected data
-store, the projector has two cooperating lanes:
-
-1. A frequent incremental lane keyset-pages current `dms.Document` rows after a
-   process-local `(ContentVersion, DocumentId)` cursor, ordered by those columns. Each
-   page left-joins `dms.DocumentCache` by `DocumentId`. Missing and cache-behind rows
-   become materialization candidates; cache-ahead rows become observed invariant
-   violations. The cursor advances to the last source row examined whether the cache row
-   was behind, fresh, ahead, or failed during repair. A failed page marks the target as
-   requiring repair and requests a coalesced immediate full audit; no failed document or
-   version identity is retained after the page is drained.
-2. A periodic full-audit lane evaluates the complete source/cache anti-join above. It
-   repairs every missing or cache-behind row it finds, including rows below the
-   incremental cursor, and reports cache-ahead rows without trying to overwrite them. It
-   finishes with one exact aggregate observation of total unresolved, missing-row,
-   cache-behind-row, and cache-ahead-invariant counts plus the oldest unresolved source
-   timestamp. Startup, restart, cache rebuild, and any attempt to establish readiness
-   require a completed full audit.
-
-The logical incremental page is:
-
-```text
-dms.Document
-LEFT JOIN dms.DocumentCache ON DocumentId
-WHERE (Document.ContentVersion, Document.DocumentId) > incremental cursor
-ORDER BY Document.ContentVersion, Document.DocumentId
-LIMIT bounded source-row batch
-```
-
-The row-value cursor predicate is logical notation; each provider may render its
-equivalent scalar predicate and bounded-fetch syntax. The page returns source/cache
-version pairs even when they match so the cursor can advance across source rows another
-replica has already projected.
-
-A full repair audit may use one provider-optimized anti-join or bounded keyset pages of
-source/cache version pairs, but one audit pass must cover the complete current
-relationship. Bounded paging must carry an audit-local scan position forward even when a
-candidate repair fails, so one failed document neither prevents later source rows from
-being examined nor causes every later page to rescan an already-examined prefix. An audit
-may race with writes; monotonic upserts make its repairs safe. A nonzero finishing aggregate
-causes another backed-off repair pass for missing and cache-behind rows. A cache-ahead count
-sets the durable recovery latch, preserves unhealthy readiness, and waits for the explicit
-recovery described below. The full-audit interval is bounded so it also bounds discovery
-latency for repairable work that the incremental lane cannot see.
-
-For each candidate from either lane, the projector:
-
-1. Captures `(DocumentId, ContentVersion)` and the source metadata needed by the
-   materializer.
-2. Reconstitutes the caller-agnostic cached document without requesting an update/write
-   source-row lock or carrying a lock acquired by materialization into the later cache
-   transaction.
-3. After all materialization reads finish, re-reads the current source
-   `(DocumentId, ContentVersion)` in a new current-visibility statement. The statement
-   requests no update/write lock, and any read lock acquired by that statement is not
-   carried into the cache transaction. A missing row or version mismatch is a stale skip
-   and produces no cache write.
-4. Validates the embedded/relational metadata invariant and composes the cache result.
-5. Performs the shared monotonic cache upsert only if the durable cache-ahead latch remains
-   clear in that cache transaction.
-
-The final source-version read is an optimistic materialization-coherence check, not a
-source/cache commit-order fence. Reconstitution hydrates multiple relational result sets;
-the check prevents a source change committed during those reads from producing a mixed
-document labeled with the captured version. It must observe current committed state rather
-than reuse a repeatable/snapshot view fixed before hydration, and it does not request or
-retain an update/write lock. Ordinary provider read locking may still block briefly when
-row-versioned reads are unavailable. A source change may commit after the check and before
-the cache upsert, which is the intentional monotonic-lag race defined below. Reconciliation
-and optional direct fill use the same check.
-
-The incremental cursor is an optimization, never durable work inventory or completeness
-evidence. `ContentVersion` values come from a monotonic sequence, but sequence allocation
-is not transaction commit order: a transaction can commit a lower allocated version
-after the cursor has advanced past it. Cache-row loss or truncation can likewise create
-work below the cursor. Full audits are therefore required even when incremental scans
-are continuously successful.
-
-Before the required startup or restart audit begins, the projector observes the maximum
-current `(ContentVersion, DocumentId)` source key as that execution context's initial
-incremental boundary; an empty source uses the logical minimum key. After the audit
-finishes, the incremental cursor starts at exactly that pre-audit boundary. It must not
-be initialized from a later maximum: a source change committed after the audit's
-finishing observation but before incremental scanning begins must remain above the
-boundary and be discovered by the incremental lane. A transaction that allocated a key
-at or below the boundary but commits after the audit remains the acknowledged late-commit
-case repaired by the next full audit. Restart may repeat work but cannot advance the
-cursor over post-boundary work.
-
-V1 deliberately does not establish a source/cache commit-order fence. Optional projection
-must not acquire a PostgreSQL `FOR NO KEY UPDATE`, SQL Server `UPDLOCK`, or another
-write-conflicting lock on `dms.Document` that can make a canonical writer wait for a cache
-upsert. Cache-row transitions and consumer-applied non-null upserts are monotonic, and the
-stream is eventually convergent rather than linearizable to the canonical source at each
-cache commit. Raw Kafka delivery remains at-least-once and may contain duplicates or
-lower-version replays; the consumer ordering rule handles ordering among non-null upserts.
-A replay may also temporarily place an older upsert after a tombstone because the null
-tombstone carries no `contentVersion`; the subsequent replayed tombstone restores deleted
-state. V1 promises convergence after connector catch-up, not monotonic applied state across
-that delete boundary.
-
-Consequently, this ordinary race is allowed:
-
-1. The projector captures and coherently materializes source version 10, and its final
-   optimistic source-version check still observes version 10.
-2. A canonical writer commits source version 11.
-3. The projector commits cache version 10 because the cache row is absent or lower.
-4. Incremental discovery or a full audit subsequently projects version 11.
-
-The version-10 row is ordinary monotonic projection lag. A fresh-cache read rejects it
-because source and cache versions differ. A downstream consumer that has not yet observed
-version 11 may temporarily retain version 10; that is an explicit consequence of the v1
-eventual-consistency contract. Once version 11 has been published, neither the database
-upsert nor the consumer ordering rule permits version 10 to replace it. A downstream use
-case that requires every upsert to have been canonical-current at its database commit
-needs a stronger publication design rather than an implicit projector lock.
-
-Materialization and invariant validation finish before the cache transaction begins. V1
-then performs one candidate per short transaction. The transaction reads the singleton
-cache-ahead latch under a provider-equivalent shared row lock, compatible across ordinary
-cache writers but conflicting with setting or clearing the latch:
-
-1. If the latch is set or its singleton row is missing/malformed, perform no cache write.
-2. Serialize concurrent cache writers on the `DocumentCache(DocumentId)` row/key and
-   evaluate the version predicate atomically in the cache DML against the current cache
-   row after any conflicting cache writer. An application pre-read must not decide whether
-   a later unconditional insert or update is safe.
-3. Insert the cache row when absent or update it only when its existing `ContentVersion`
-   is lower than the captured version.
-4. Treat a same-version row as already fresh and a higher cache version as superseding the
-   candidate. Neither receives a write. A higher-than-candidate result does not by itself
-   establish that the cache is ahead of the current canonical source; that classification
-   comes only from the source/cache comparison used by reconciliation and health.
-5. Persist the complete cache row atomically. The UUID validation trigger rejects an
-   inconsistent denormalized identity, and the `DocumentCache(DocumentId)` foreign key is
-   the post-delete fence.
-6. Commit without locking `dms.Document` against concurrent version updates. If the
-   canonical version advanced, the resulting cache-behind row remains durable repair work.
-
-PostgreSQL and SQL Server implement equivalent conditional insert/update behavior without
-`FOR NO KEY UPDATE`, `UPDLOCK`, or a stronger lock on the source `dms.Document` row.
-PostgreSQL may use an atomic `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE` against the
-cache key. SQL Server uses an equivalent transactionally safe conditional update/insert
-that serializes an absent or existing cache key; a duplicate-key race is retried by
-re-evaluating the current cache version. A provider implementation must not use a
-read-then-unconditional-write pattern. A cache upsert may still encounter ordinary database
-failures and uses the projector's target-scoped backoff and database rediscovery path, but
-v1 adds no source-lock timeout, lock-wait telemetry, or deadlock policy specific to
-projection.
-The cache transaction is not lock-free with respect to `dms.Document`: foreign-key
-enforcement and the UUID-validation trigger may acquire their ordinary provider-specific
-parent-row or key locks. Those integrity locks are not an explicit write-conflicting
-content-version fence and must remain intact.
-Optional direct fill uses the same optimistic source-version check and monotonic upsert. It
-never waits for a source-row content-version fence, but ordinary cache-row, foreign-key,
-trigger, or database contention can still occur. A short direct-fill-specific database
-deadline bounds that optional request-path work end to end. The deadline is not renewed per
-statement or retry; each database operation uses only the remaining budget, and direct fill
-does not change the projector's target-scoped failure or backoff state. Timeout, contention,
-failure, or a concurrent canonical change abandons the fill without failing the relational
-response.
-
-Except for the singleton cache-ahead safety latch, there are no projection queues, enqueue
-APIs, persisted cursors, backfill epochs, per-document projector/failure rows, retry
-classifications, dead-letter transitions, or requeue APIs in v1. The process-local
-incremental and audit cursors are disposable scan positions only. Empty-cache population,
-ordinary truncation/rebuild, repairable recovery, and completeness all derive from the
-current database difference. A maximum scanned or projected version cannot prove
-completeness because a lower current version may still be missing. Cache-ahead recovery is
-the exceptional operator procedure below, not another projector workflow.
-
-Repair failures use capped in-memory exponential backoff with jitter scoped to the target
-execution context, never to a document or version. A failed incremental page marks the
-target as requiring repair, discards its candidates after draining the page, and delays the
-coalesced immediate full audit. During a full audit, candidate failures remain only in the
-current page; the audit advances through later pages, then a nonzero exact finishing
-aggregate schedules another repair pass subject to the same target backoff. The current
-database difference therefore rediscovers every failed candidate without a process-local
-document retry map. Only a later exact-zero finishing audit clears the target's
-repair-required observation and resets its failure backoff. Restart loses this process-local
-state but immediately requires a new startup audit, so readiness cannot rely on the lost
-observation. V1 has no retry budget or persisted attempt count; a persistent failure remains
-visible in database state until its underlying data, mapping, or service cause is fixed.
-
-### Bounded In-Process Execution Policy
-
-Projection is background work in the DMS application process. V1 uses one serialized
-execution loop per resolved target and a process-wide `MaxConcurrentTargets` gate. At most
-one incremental page, audit page, or candidate materialization is active for a target at a
-time, and no more than the configured number of targets perform projection database/CPU
-work concurrently. A page contains at most `PageSize` source rows and is fully drained
-before the loop fetches another page. Candidate memory is therefore bounded by active pages,
-and only constant-size scheduling, failure, and backoff state is retained for each explicit
-target; no candidate or retry queue grows with document count. Waiting targets receive
-permits fairly so one large rebuild cannot permanently exclude another target.
-
-The loop applies this schedule:
-
-1. Resolution of a configured target starts an immediate full audit. Restart and an
-   explicit cache-rebuild signal do the same.
-2. While no audit is due, incremental discovery runs no more frequently than
-   `IncrementalScanInterval`. The same interval bounds re-resolution attempts for an
-   unavailable configured target, subject to failure backoff.
-3. A steady-state full audit becomes due `FullAuditInterval` after the previous full audit
-   finishes. Only one audit may be queued or running for a target. Startup, rebuild, and
-   periodic requests coalesce into that one audit; they never create overlapping scans.
-4. A finishing aggregate with repairable differences schedules another bounded repair
-   pass through the same loop rather than tight-looping. Target-scoped failure backoff and
-   the concurrency gate remain in force. A latched target remains unhealthy, performs no
-   cache writes, and waits for either proven-internal-only recovery or, for possibly
-   published state, the deferred new-namespace workflow rather than scheduling futile repair.
-5. Health and readiness reads are observational. They do not start or wait for an audit.
-   Until the immediate startup/rebuild audit completes, or when the latest exact audit is
-   older than `MaximumAuditAge`, the target is simply not ready.
-
-Cancellation is observed between pages and candidates and while waiting for the global
-gate. Shutdown does not begin new work and allows only the current short monotonic cache
-transaction to finish or roll back within its existing command timeout. One target's
-failure or cancellation does not stop peer loops.
-
-These settings make the operational bound explicit without pretending an audit is
-instantaneous: repairable work invisible to the incremental cursor begins discovery no
-later than one configured `FullAuditInterval` after the prior audit completed, then takes
-the duration of its bounded audit/repair pass. If sustained load makes audits slower than
-their interval or older than `MaximumAuditAge`, readiness becomes false and telemetry
-shows the overdue/in-progress audit; the supervisor does not add parallel audits to catch
-up.
-
-### Cache-Ahead Invariant Recovery
-
-The projector never automatically lowers a cache row from a higher `ContentVersion` to
-the current canonical version. Doing so would make the relational cache appear fresh
-while an active or previously active CDC topic could retain the higher version; conforming
-consumers may reject the lower replacement as stale. The durable cache-ahead latch also
-prevents a later equal canonical version from silently reclassifying the existing row as
-fresh.
-
-Recovery depends on whether the projection can have entered downstream ordered state:
-
-- If the projection is internal-only, such as read acceleration, and no downstream system
-  could have observed the row, stop cache writers, clear all `dms.DocumentCache` rows and
-  the latch in one provider transaction, then let ordinary reconciliation rebuild from
-  canonical state. The global rebuild avoids retaining document identifiers or trusting
-  that the observed row was the only corrupt row.
-- If an active or historical connector or another ordered downstream consumer may have
-  observed the higher cache version, v1 stops the affected publication path, keeps the
-  cache-ahead latch set, and leaves projection and CDC not ready. Safe recovery would
-  require a new downstream state namespace. For Kafka CDC, that future workflow requires a
-  new immutable binding generation, public and progress topics, a SQL Server schema-history
-  topic when applicable, a consumer state namespace, and a fresh snapshot after rebuilding
-  the cache. V1 does not implement that baseline-replacing workflow and never publishes the
-  lower version as an in-place correction to the old namespace.
-- Treat any in-place canonical database restore/reset that produces or may expose possibly
-  published cache-ahead state as the deferred case above even when the physical database
-  name or connection metadata did not change. Guarded source replacement by itself is not
-  authority to clear this latch.
-
-The runbook requires operators to establish which case applies before deleting projected
-state. It permits the clear operation only with positive evidence that the projection was
-internal-only. If downstream observation is possible or uncertain, operators contain
-publication and retain the cache and latch for diagnosis. Clearing the latch without
-clearing the entire cache in the same transaction is not a supported operation. No recovery
-rewrites canonical `ContentVersion`, an immutable binding record, or an existing topic
-generation.
-
-E18 owns one target-scoped administrative recovery operation for the proven internal-only
-case. It takes the exclusive singleton-state lock, verifies the latch is set, clears the
-entire cache, clears the latch, and commits as one provider transaction; after commit it
-requests an immediate full audit. It exposes no latch-only reset. Deployment/runbook
-automation is responsible for proving the internal-only precondition or, when downstream
-observation is possible or uncertain, stopping the old publication path and leaving the
-latch set until the deferred new-namespace workflow is implemented.
-
-The hosted supervisor creates an isolated, non-HTTP service scope for each startup
-target and explicitly selects its data store. It does not depend on
-`ResolveDataStoreMiddleware` or reuse request-scoped `IDataStoreSelection`. One
-unavailable data store does not stop peers. Multiple DMS replicas may perform duplicate
-scans safely because candidate discovery is read-only and writes are monotonic and
-idempotent.
-Deployments avoid redundant work by placing target entries only on designated projector
-hosts. Correctness does not require a distributed lease; when more than one host is
-configured for the same target, each independently applies the bounded execution policy.
+The [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
+owns the freshness predicate, discovery and audit algorithms, monotonic cache write,
+failure policy, bounded execution model, cache-ahead handling, and recovery rules.
+This integration design consumes the resulting projection-health evidence for deployment
+readiness and operations; it does not define another reconciliation contract.
 
 ## Cache-Backed Reads and Domain Lifecycle
 
-When read acceleration is enabled, authorization and query candidate selection still
-use relational sources. A cache row may supply response-body assembly only when it is
-fresh and `dms.DocumentCacheState.CacheAheadRecoveryRequired` is false. Cache lookup reads
-that singleton state with the row/freshness query rather than relying on process memory.
-Missing, stale, or recovery-latched rows fall back to relational reconstitution;
-readable-profile projection, link stripping, and served `_etag` composition then run
-identically for both paths. The read path does not enqueue projection work, though it may
-perform the shared monotonic direct fill after fallback as an optional optimization when
-the latch is clear.
-
-Deleting a cache row is projection maintenance and never means domain deletion. A
-supported API delete continues to:
-
-1. Resolve and authorize the canonical target.
-2. Delete the concrete resource row, or descriptor row, while `dms.Document` still
-   exists so Change Queries can record its tombstone.
-3. Delete `dms.Document`, cascading relational cleanup including the cache row.
-
-The API transaction does not verify cache existence or freshness, synchronously
-materialize a pre-delete document, acquire a CDC-specific lock, wait for projector
-readiness, or fail because projection is unavailable. Create followed by delete before
-projection may therefore publish only a tombstone; state-stream consumers must tolerate
-that case.
-
-Cache truncation, eviction, cleanup, and rebuild publish no domain tombstones.
-Reconciliation recreates upserts only for canonical documents that still exist. An
-intentional compacted-topic rebuild would require the deferred new-topic cutover; it is not
-a cache-delete operation or a v1 same-topic snapshot. Schema reprovisioning must not reuse
-cache rows across incompatible effective schemas.
+The [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle)
+owns cache-read eligibility, relational fallback, direct fill, and the distinction between
+cache maintenance and canonical document deletion. Deployment procedures in this document
+treat that lifecycle contract as an input.
 
 ## Projection Health and Deployment-Owned CDC Readiness
 
@@ -782,9 +359,9 @@ source-position adapter per provider to compare a post-audit database position w
 connector's committed Debezium source offset and prove publication through that later
 boundary.
 
-Both adapters use the opt-in singleton `dms.CdcHeartbeat` table. It contains only
-`HeartbeatId = 1`, a nonnegative `HeartbeatSequence` value, and `HeartbeatAt`; it
-contains no document or tenant data. Connector setup includes this table in the
+Both adapters use the opt-in singleton `dms.CdcHeartbeat` table defined by
+[`data-model.md`](backend-redesign/design-docs/data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object).
+It contains no document or tenant data. Connector setup includes this table in the
 PostgreSQL publication or SQL Server CDC capture and configures a positive
 `heartbeat.interval.ms`. Its fixed provider `heartbeat.action.query` atomically
 increments `HeartbeatSequence` and updates `HeartbeatAt`. The default interval is 5,000
@@ -1355,123 +932,25 @@ deleting binding state.
 Provider CDC/key setup is opt-in and does not run during ordinary relational provisioning
 when CDC is not selected.
 
-## Connector Transform Pipeline
+## Connector Transform Integration
 
-The connector uses one Ed-Fi-owned `DocumentState` SMT as the contract boundary between
-raw Debezium records and the public document and internal progress topics. The transform
-implements the source mapping
-from the
-[projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
-and the serialized contract from the
-[topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-in the following logical order. After capture, steps 2–8 occur within one transform
-invocation:
+Connector templates invoke the required Ed-Fi `DocumentState` SMT defined by the
+[topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation).
+That ADR owns source and operation classification, transform configuration, public
+key/value/tombstone shaping, progress routing, malformed-record behavior, and compatibility.
+Templates and live registration use those fixed values with the pinned connector runtime;
+verification asserts final published bytes, routing, and failure behavior rather than
+treating generated connector JSON alone as evidence.
 
-```text
-transforms=documentState
-transforms.documentState.type=org.edfi.kafka.connect.transforms.DocumentState
-transforms.documentState.provider=<postgresql|sqlserver>
-transforms.documentState.target.topic=<instance document topic>
-transforms.documentState.progress.topic=<derived CDC progress topic>
-```
-
-Those are its only contract configuration values. `progress.topic` is generated as
-`target.topic + ".cdc-progress"`; it is not operator-configurable, and template and live
-configuration validation reject another value. The `dms.DocumentCache`,
-`dms.Document`, and `dms.CdcHeartbeat` source identities, Debezium operation mapping,
-source columns, and v1 public fields are fixed transform behavior rather than a
-configurable mapping language.
-
-1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
-   internal heartbeat singleton for source-position progress.
-2. Inspect the original Debezium source table and operation before discarding the
-   envelope. Retain `dms.CdcHeartbeat` table operations and Debezium heartbeat records as
-   internal progress records; accept cache create, update, and snapshot/read records as
-   public upserts; accept canonical document deletes as authoritative public deletes; and
-   intentionally drop every other captured operation.
-3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
-   `D`-format text, and use it for both upserts and authoritative tombstones.
-4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
-   structured JSON object. No independent generic expand-JSON SMT participates in the
-   relational connector.
-5. Normalize `LastModifiedAt` to the existing DMS whole-second UTC
-   `yyyy-MM-ddTHH:mm:ssZ` representation. For SQL Server, interpret
-   `io.debezium.time.IsoTimestamp` as an ISO-8601 UTC string, deliberately truncate
-   fractional seconds without rounding into the next second, and reject an unexpected
-   provider representation, non-UTC value, or fractional/raw public value.
-6. Build the complete lower-camel public envelope, copy the opaque DMS-computed
-   `StreamEtag` to `document._etag`, remove all internal and operational fields, add
-   `contractVersion`, and verify that the public key and normalized timestamp exactly
-   match `document.id` and `document._lastModifiedDate`.
-7. For a retained canonical delete, replace the value with a record-level null tombstone.
-   Suppress Debezium's additional automatic tombstone, for example with
-   `tombstones.on.delete=false`, so one canonical delete produces exactly one public
-   tombstone and cache deletion produces none.
-8. Route a retained document result to the configured instance document topic. Route a
-   retained heartbeat record, without applying the public document contract, to the
-   configured progress topic. Returning `null` from the transform drops only an operation
-   excluded by the source mapping and never a progress record used by readiness.
-
-The transform consumes schema-backed raw Debezium records and emits only one of three
-classes of result: a final public upsert or tombstone, an internal progress record, or no
-record. Expected excluded operations are dropped; a malformed retained record, unexpected
-source shape, invalid `DocumentJson`, inconsistent embedded metadata, or unsupported
-temporal logical type fails transformation rather than publishing a partial or ambiguous
-record. Because the connector pins `errors.tolerance=none`, that failure stops the connector
-task instead of skipping the record. A failed task makes combined readiness false; offset
-or lag observations cannot reclassify it as caught up. Recovery requires correcting the
-cause and restarting or replacing the connector so the retained record is processed under
-the contract. Returning `null` for an explicitly excluded operation remains normal
-transform behavior and does not use the error-tolerance path; readiness never depends on
-such a record advancing the committed source offset.
-
-Kafka Connect does not calculate `schemaEpoch`, interpret
-`DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
-opaque connector input; the transform only copies it to `document._etag`. The connector
-does not split this contract across stock predicates, unwrap/rename/routing SMTs, or an
-independent generic JSON expander. Keeping source classification, key/value shaping,
-tombstone synthesis, consistency checks, and routing in one transform avoids
-ordering-sensitive intermediate records. Tests assert published record bytes and
-semantics, not only generated connector JSON. Version-specific properties and the
-transform class are verified against the pinned Ed-Fi image built from the exact Debezium
-3.6 base above.
-
-Debezium 3.6's `isostring` mode removes the 2.7-era signed-`NanoTimestamp` parsing
-workaround and preserves all seven SQL Server fractional digits in an unambiguous UTC
-string. It does not replace the transform's responsibility to emit the existing DMS
-whole-second representation and verify embedded timestamp equality. The same transform
-continues to own the rest of the document-state contract, and connector templates never
-rely on a Debezium default. See Debezium's
-[3.6 SQL Server temporal mapping](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-temporal-values).
-
-## Stream Contract Compatibility, Repair, and Version Cutover
+## Contract Change and Repair Operations
 
 The [topic/message ADR](backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
-defines the v1 compatibility boundary and the higher-version consumer rule. V1 adds no
-projection-generation column or public ordering field. `ContentVersion` remains the sole
-cache freshness and non-null consumer ordering value. The topic partition count and
-binding's `partitionerAlgorithm` token are immutable so one key's upserts and versionless
-tombstones remain in the same ordered compaction domain for the topic's lifetime.
-
-V1 implements initial publication from a new offline database and the in-place record-size
-policy change below. The offline representation-restamp utility supports eventual
-byte-changing correction without certifying another exact CDC baseline. The new-topic
-cutover procedure remains a deferred design constraint because it requires the cross-
-replica and external-writer fence excluded by [V1 readiness scope](#v1-readiness-scope).
-
-Contract tests pin public field names, JSON types, key/tombstone behavior, document
-semantics, and metadata relationships. They prove that Kafka Connect copies the opaque
-DMS-computed `StreamEtag` exactly, but do not freeze its byte value independently of the
-current DMS composer. A refactor or bug fix may change `DocumentJson` or `StreamEtag` while
-remaining compatible with the documented v1 contract, but every affected document whose
-public representation bytes change must be restamped before corrected output is published.
-The higher `ContentVersion` gives the corrected representation a new strong `StreamEtag`
-and makes it replace prior consumer state. Publishing byte-different equal-version records
-is a producer contract violation even when the corrected opaque ETag would differ.
-
-An ordinary cache clear/rebuild may republish byte-identical equal-version records from the
-same conforming materializer. Consumers treat them as duplicates. It is not a correction
-mechanism and requires no per-document Kafka offset tie-breaker.
+owns the compatibility boundary, ordering rules, and conditions that require a new topic
+contract or binding generation. The procedures below implement those decisions for
+offline representation correction, sensitive-data containment, record-capacity changes,
+and a deferred new-topic cutover. They do not establish another message contract or an
+exact post-admission CDC baseline. The deferred cutover still requires the writer fence
+excluded by [V1 readiness scope](#v1-readiness-scope).
 
 ### Offline byte-changing representation correction
 
@@ -1724,9 +1203,9 @@ new deployment-selected CDC database and while it can prove that the database ha
 published to any writer. It does not add CDC to an already-provisioned database and does not
 implement a later baseline-replacing maintenance window.
 
-## DDL and Query Support
+## Schema and Query Integration
 
-The schema inventory below is create-only and applies to new physical databases. V1 emits
+Schema integration is create-only and applies to new physical databases. V1 emits
 no `ALTER`/migration path for an older `dms.DocumentCache`. Provisioning reruns may validate
 and preserve an already-current schema created by the same initial workflow, but encountering
 legacy `Etag`, the obsolete cache UUID constraint, or any missing required E18 object makes
@@ -1737,47 +1216,21 @@ externally created database must satisfy the same prerequisite before it is sele
 projection. Provisioning or deployment automation may enable the option while the data
 store is offline. Runtime DMS only validates it and never attempts `ALTER DATABASE`.
 
-V1 provisions no durable projection queue, cursor, retry record, or backfill workflow.
-Core DMS DDL provisions one `dms.DocumentCacheState` singleton solely to durably latch the
-cache-ahead invariant; this safety bit is neither work inventory nor completeness evidence
-and does not replace the deployment-owned CDC binding record. Supporting DDL is limited to
-that latch, the projection, measured access paths, and the opt-in internal CDC heartbeat:
+The physical projection, singleton-state, source-identity, heartbeat, trigger, constraint,
+and access-path inventory is owned by
+[`data-model.md`](backend-redesign/design-docs/data-model.md). Deployment validation checks
+that inventory rather than redefining it here. Provider CDC setup provisions and captures
+the opt-in heartbeat only when CDC is selected; ordinary relational provisioning does not.
+The generated provider action query and capture configuration implement the
+[source-position barrier](#provider-source-position-barrier).
 
-- `DocumentCache(DocumentId)` remains the primary/foreign key with cascade deletion.
-- `DocumentCache.DocumentUuid` is a non-indexed denormalized connector-key column.
-  Provider-specific insert/update triggers reject any value that differs from
-  `Document.DocumentUuid` for the same `DocumentId`; no composite parent index or cache UUID
-  unique index is provisioned.
-- `DocumentCache.StreamEtag` stores the DMS-computed opaque ETag for the fixed CDC
-  representation; it is not used by API reads.
-- Provider-specific constraints ensure `DocumentJson` is a JSON object.
-- `dms.DocumentCacheState` contains the singleton
-  `CacheAheadRecoveryRequired` bit, initialized false. Detection only sets it true; the
-  provider-supported explicit recovery transaction is the only operation that clears it and
-  may be used in v1 only for a proven internal-only projection. It is not a connector capture
-  source.
-- `dms.DataStoreIdentity` is an always-provisioned singleton containing the random
-  `SourceIdentity`, stable during ordinary operation, used by the physical-source
-  fingerprint contract.
-- Provider CDC setup creates and seeds the singleton `dms.CdcHeartbeat` table only when
-  CDC is selected. PostgreSQL uses `smallint`, `bigint`, and `timestamp with time zone` for
-  `HeartbeatId`, `HeartbeatSequence`, and `HeartbeatAt`; SQL Server uses `smallint`,
-  `bigint`, and `datetime2(7)`. Both enforce `HeartbeatId = 1` and
-  `HeartbeatSequence >= 0`. The generated
-  heartbeat action query increments that row atomically, and provider capture includes
-  it only to implement the deployment-owned source-position barrier.
-- `dms.Document(ContentVersion, DocumentId)` supports incremental discovery and bounded
-  full-audit paging and is always provisioned with `dms.DocumentCache`.
-- Add no additional projector/diagnostic index beyond the data-model-defined access
-  paths until realistic provider query-plan measurements demonstrate a need.
+The [projector/source ADR](backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
+owns the v1 decision to use the current database difference instead of durable projection
+queues, cursors, retry records, or a backfill workflow.
 
-If realistic steady-state and audit benchmarks remain unacceptable with the incremental
-lane and required index, the next design step is a small transactionally maintained
-pending-work table or flag. That durable optimization is deferred from v1 and must not
-replace full audits as completeness evidence without a separate correctness decision.
-
-PostgreSQL and SQL Server may use different plans while exposing equivalent logical
-reconciliation, health, monotonic-upsert, and delete-fence behavior.
+Provider queries and plans must implement the ADR-owned logical reconciliation,
+monotonic-upsert, and delete-fence behavior; provider-specific SQL does not create a
+second contract.
 
 ## Security, Telemetry, and Operations
 
