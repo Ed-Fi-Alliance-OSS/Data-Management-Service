@@ -344,21 +344,19 @@ Feature: Applications endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
+                    "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
-                    "validationErrors": {
-                    "VendorId": [
+                    "validationErrors": {},
+                    "errors": [
                       "Reference 'VendorId' does not exist."
                     ]
-                  },
-                  "errors": []
                   }
                   """
 
@@ -383,7 +381,7 @@ Feature: Applications endpoints
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
                     "validationErrors": {
-                    "ApplicationName": [
+                    "$.applicationName": [
                       "'Application Name' must not be empty."
                     ]
                   },
@@ -412,7 +410,7 @@ Feature: Applications endpoints
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
                     "validationErrors": {
-                    "ClaimSetName": [
+                    "$.claimSetName": [
                       "'Claim Set Name' must not be empty."
                     ]
                   },
@@ -441,7 +439,7 @@ Feature: Applications endpoints
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
                     "validationErrors": {
-                    "ClaimSetName": [
+                    "$.claimSetName": [
                       "Claim set name must not contain white spaces."
                     ]
                   },
@@ -469,7 +467,7 @@ Feature: Applications endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                      "EducationOrganizationIds[0]": [
+                      "$.educationOrganizationIds[0]": [
                       "'Education Organization Ids' must be greater than '0'."
                      ]
                     },
@@ -608,21 +606,19 @@ Feature: Applications endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
+                    "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                    "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                    "title": "Identifying Values Are Not Unique",
+                    "status": 409,
                     "correlationId": "0HNEJBSQ1BUK4:00000004",
-                    "validationErrors": {
-                    "ApplicationName": [
+                    "validationErrors": {},
+                    "errors": [
                          "Application 'Demo application 20' already exists for vendor."
                     ]
-                  },
-                    "errors": []
                   }
                   """
 
@@ -710,21 +706,19 @@ Feature: Applications endpoints
                    "profileIds": [9999]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
+                    "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
-                    "validationErrors": {
-                    "ProfileId": [
+                    "validationErrors": {},
+                    "errors": [
                       "Profile does not exist."
                     ]
-                  },
-                  "errors": []
                   }
                   """
 
@@ -749,7 +743,7 @@ Feature: Applications endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                      "ProfileIds[0]": [
+                      "$.profileIds[0]": [
                       "'Profile Ids' must be greater than '0'."
                      ]
                     },

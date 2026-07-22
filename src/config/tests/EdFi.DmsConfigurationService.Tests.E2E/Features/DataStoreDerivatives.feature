@@ -206,16 +206,18 @@ Feature: DataStoreDerivatives endpoints
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                     {
-                        "detail": "The specified DataStore does not exist.",
-                        "type": "urn:ed-fi:api:bad-request",
-                        "title": "Bad Request",
-                        "status": 400,
+                        "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "title": "Unresolved Reference",
+                        "status": 409,
                         "validationErrors": {},
-                        "errors": []
+                        "errors": [
+                            "The specified DataStore does not exist."
+                        ]
                     }
                   """
 
@@ -237,7 +239,7 @@ Feature: DataStoreDerivatives endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "DerivativeType": [
+                            "$.derivativeType": [
                                 "DerivativeType must be either 'ReadReplica' or 'Snapshot'."
                             ]
                         },
@@ -263,7 +265,7 @@ Feature: DataStoreDerivatives endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "DerivativeType": [
+                            "$.derivativeType": [
                                 "DerivativeType is required.",
                                 "DerivativeType must be either 'ReadReplica' or 'Snapshot'."
                             ]
@@ -290,7 +292,7 @@ Feature: DataStoreDerivatives endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "DataStoreId": [
+                            "$.dataStoreId": [
                                 "DataStoreId must be greater than 0."
                             ]
                         },
@@ -316,7 +318,7 @@ Feature: DataStoreDerivatives endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "ConnectionString": [
+                            "$.connectionString": [
                                 "ConnectionString must be 1000 characters or fewer."
                             ]
                         },
@@ -352,7 +354,7 @@ Feature: DataStoreDerivatives endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "Id": [
+                            "$.id": [
                                 "Request body id must match the id in the url."
                             ]
                         },

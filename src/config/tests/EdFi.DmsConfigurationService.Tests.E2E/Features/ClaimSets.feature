@@ -204,7 +204,7 @@ Feature: ClaimSets endpoints
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
-                          "Id": [
+                          "$.id": [
                               "Request body id must match the id in the url."
                           ]
                       },
@@ -278,7 +278,7 @@ Feature: ClaimSets endpoints
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
-                          "ResourceClaims": [
+                          "$.resourceClaims": [
                               "Actions can not be empty. Resource name: 'http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor'"
                           ]
                       },

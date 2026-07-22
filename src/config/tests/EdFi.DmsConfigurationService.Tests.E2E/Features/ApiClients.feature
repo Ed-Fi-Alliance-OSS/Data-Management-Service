@@ -133,20 +133,18 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "validationErrors": {
-                        "ApplicationId": [
-                            "Application with ID 99999 not found."
-                        ]
-                    },
-                    "errors": []
+                    "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
+                    "validationErrors": {},
+                    "errors": [
+                        "Application with ID 99999 not found."
+                    ]
                   }
                   """
 
@@ -169,20 +167,18 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [99999, 88888]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "validationErrors": {
-                        "DataStoreIds": [
-                            "The following DataStoreIds were not found in database: 99999, 88888"
-                        ]
-                    },
-                    "errors": []
+                    "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
+                    "validationErrors": {},
+                    "errors": [
+                        "The following DataStoreIds were not found in database: 99999, 88888"
+                    ]
                   }
                   """
 
@@ -214,7 +210,7 @@ Feature: ApiClients endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                        "DataStoreIds": [
+                        "$.dataStoreIds": [
                             "DataStoreIds cannot be empty. At least one Data Store is required."
                         ]
                     },
@@ -364,20 +360,18 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "validationErrors": {
-                        "ApplicationId": [
-                            "Application with ID 99999 not found."
-                        ]
-                    },
-                    "errors": []
+                    "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
+                    "validationErrors": {},
+                    "errors": [
+                        "Application with ID 99999 not found."
+                    ]
                   }
                   """
 
@@ -410,20 +404,18 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [99999, 88888]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "validationErrors": {
-                        "DataStoreIds": [
-                            "The following DataStoreIds were not found in database: 99999, 88888"
-                        ]
-                    },
-                    "errors": []
+                    "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "title": "Unresolved Reference",
+                    "status": 409,
+                    "validationErrors": {},
+                    "errors": [
+                        "The following DataStoreIds were not found in database: 99999, 88888"
+                    ]
                   }
                   """
 
@@ -465,7 +457,7 @@ Feature: ApiClients endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                        "DataStoreIds": [
+                        "$.dataStoreIds": [
                             "DataStoreIds cannot be empty. At least one Data Store is required."
                         ]
                     },
