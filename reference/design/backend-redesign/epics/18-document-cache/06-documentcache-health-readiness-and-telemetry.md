@@ -32,7 +32,9 @@ completed full audit and current process state.
    `dms.DataStoreIdentity.SourceIdentity` and expose only the opaque current fingerprint
    defined by the authoritative design's exact provider-token/UUID/SHA-256 algorithm.
    Retain neither the source UUID nor an expected value; deployment automation consumes
-   the reported fingerprint as an opaque current-source observation.
+   the reported fingerprint as an opaque current-source observation. Include the current
+   SQL Server RCSI prerequisite result without treating it as a requirement for PostgreSQL
+   or an unlisted relational-only SQL Server data store.
 2. Record exact unresolved/age snapshots from completed provider-equivalent full audits,
    with separate missing-row, cache-behind-row, and cache-ahead-invariant counts. Read and
    expose the durable `DocumentCacheState.CacheAheadRecoveryRequired` latch alongside their
@@ -54,8 +56,12 @@ completed full audit and current process state.
   unresolved incremental work, nonzero-audit invalidation, persistent target-scoped
   failure/backoff with database rediscovery, and mixed targets.
 - Tests prove health reads reuse the latest audit snapshot and readiness requires a
-  sufficiently recent exact-zero finishing audit, a clear durable cache-ahead latch, no
-  active unresolved work, and no target-scoped repair-required observation.
+  sufficiently recent exact-zero finishing audit, satisfied provider prerequisites, a clear
+  durable cache-ahead latch, no active unresolved work, and no target-scoped
+  repair-required observation.
+- SQL Server tests prove disabled, unreadable, and later-enabled RCSI states are reported
+  distinctly, remain target-scoped, and never masquerade as a cache-ahead latch or a
+  completed audit observation.
 - Tests prove repeated health/readiness polling starts no audit work and accurately reports
   startup, due, overdue, running, coalesced, and concurrency-gated states.
 - Tests prove a cache-ahead observation atomically sets the durable latch and remains

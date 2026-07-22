@@ -33,7 +33,11 @@ that links to, rather than restates, the authoritative design.
    establish whether CDC could have published the higher version before recovery. Require
    a full cache clear and latch reset in one provider transaction; never document a
    latch-only reset. State that v1 is delivered only through create-only provisioning of a
-   new database and provides no upgrade path for a legacy cache schema.
+   new database and provides no upgrade path for a legacy cache schema. For SQL Server,
+   document the projection-scoped RCSI prerequisite, inspection and offline enablement,
+   row-version-store capacity/health monitoring, and that runtime DMS validates but never
+   changes the database option. Do not describe RCSI as mandatory for an unlisted
+   relational-only SQL Server data store.
 4. Document the shipped implementation defaults and tuning guidance for scan/audit
    intervals, page size, concurrent targets, maximum audit age, and the direct-fill timeout,
    including how to diagnose audit overruns and API-resource contention.
@@ -49,6 +53,11 @@ that links to, rather than restates, the authoritative design.
   including `StreamEtag` consistency, metadata consistency, lower-version gaps,
   target-scoped failure backoff and database rediscovery, cache-ahead invariant handling,
   indexed incremental discovery, periodic full audits, and API independence.
+- SQL Server integration tests prove RCSI-disabled and unreadable targets perform no
+  projection, cache use, or latch mutation; enabling RCSI makes the target eligible for a
+  fresh startup audit; and a synchronized RCSI-backed comparison cannot falsely latch a
+  mixed source/cache observation. Mixed-target coverage proves canonical API and peer
+  isolation.
 - Provider integration tests prove trigger-enforced UUID denormalization for insert and
   update, cascade deletion through the compact `DocumentId` FK, absence of a cache UUID
   index, and equivalent connector-key values from cache upserts and canonical deletes.
@@ -74,6 +83,8 @@ that links to, rather than restates, the authoritative design.
 - Runbook procedures are checked against implemented configuration, health output, and
   recovery behavior. They never instruct operators to enable DocumentCache on an
   already-provisioned database or alter legacy `Etag`/UUID-constraint inventory in place.
+  They do not instruct runtime DMS to execute `ALTER DATABASE` and distinguish the scoped
+  projection prerequisite from general SQL Server DMS guidance.
 - Scheduling coverage proves bounded in-process work remains isolated across targets and
   that an overdue audit degrades readiness instead of creating overlapping catch-up work.
 

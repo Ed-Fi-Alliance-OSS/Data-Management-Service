@@ -37,8 +37,16 @@ target-resolution lifecycle.
    supplies replacement connection metadata. Make the new context observable to 18-06
    without classifying old/new source identity, comparing a CDC binding, or changing
    Kafka artifacts.
-5. Create data-store-specific execution inputs without request/JWT inference.
-6. Add supported appsettings examples that link to the authoritative semantics.
+5. For each resolved SQL Server target, read
+   `sys.databases.is_read_committed_snapshot_on` and make `READ_COMMITTED_SNAPSHOT ON` a
+   fail-closed projection/cache-use prerequisite. Supply a reusable same-open-connection
+   validation step for 18-04 and 18-05 so a new comparison operation cannot rely only on a
+   stale startup observation. A false or unreadable result leaves the target visible but
+   ineligible and unhealthy, starts no projector or cache use, and is retried on the bounded
+   supervisor lifecycle. Do not alter the database option, fail canonical relational API
+   traffic, or impose the prerequisite on unlisted SQL Server data stores or PostgreSQL.
+6. Create data-store-specific execution inputs without request/JWT inference.
+7. Add supported appsettings examples that link to the authoritative semantics.
 
 ## Acceptance Evidence
 
@@ -49,6 +57,10 @@ target-resolution lifecycle.
   removing membership requires configuration rollout.
 - Tests prove an empty per-process target list starts no projector work and duplicate
   target placement across processes remains a supported deployment choice.
+- SQL Server tests cover RCSI enabled, disabled, unreadable, enabled after retry, and a
+  replacement connection context with a different result. They prove an ineligible target
+  starts no projection or cache use while canonical API traffic and eligible peer targets
+  continue; PostgreSQL and unlisted SQL Server stores have no RCSI prerequisite.
 - Health/routing integration proves configuration errors remain data-store-specific and
   observational.
 

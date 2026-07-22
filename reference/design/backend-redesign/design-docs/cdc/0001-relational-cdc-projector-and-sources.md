@@ -53,6 +53,13 @@ The in-process projector uses one serialized loop per target, bounded pages, and
 process-wide target-concurrency gate. Incremental and audit intervals, page size,
 concurrency, and maximum ready audit age are configurable with implementation-tuned
 defaults; the authoritative design owns their scheduling and coalescing semantics.
+For a SQL Server projection target, `READ_COMMITTED_SNAPSHOT ON` is a required provider
+prerequisite. Every source/cache classification uses one `READ COMMITTED` statement after
+validating that option on the same open target connection. A failed or unreadable validation
+stops projection and cache use for that target before classification, so it cannot create a
+durable cache-ahead incident from locking `READ COMMITTED`. This does not make RCSI a
+requirement for unlisted relational-only SQL Server data stores, and runtime DMS never
+changes the database option.
 
 Missing cache rows and rows whose version is behind the canonical source are ordinary
 repair work. A cache row whose version is ahead of the canonical source is instead an
@@ -168,6 +175,10 @@ decision.
 - `dms.DocumentCache` is always provisioned. Every deployment-selected Kafka CDC target
   must also be an explicit DMS `DocumentCache:Targets` entry; non-target data stores leave
   the table empty and run no projector.
+- A SQL Server `DocumentCache:Targets` entry is projection-eligible only while RCSI is
+  validated. Failure disables projection and cache use for that target without gating its
+  canonical relational API or unrelated targets; `ALLOW_SNAPSHOT_ISOLATION` is not required
+  by the v1 projector.
 - Authorization, identity, writes, Change Queries, and correct GET/query results continue
   to use relational sources.
 - Reads may use only fresh cache rows while the durable cache-ahead latch is clear and

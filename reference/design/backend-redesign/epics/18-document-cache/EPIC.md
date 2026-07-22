@@ -49,6 +49,10 @@ implementation inputs.
 
 - The explicit target list selects and isolates projection, unresolved listed targets can
   become available after startup, and read acceleration selects no additional stores.
+- SQL Server projection targets validate `READ_COMMITTED_SNAPSHOT ON` before source/cache
+  comparison and fail only projection/cache use when it is absent or unreadable. Unlisted
+  relational-only stores remain supported, DMS never changes the option at runtime, and no
+  invalid observation can set the durable cache-ahead latch.
 - Both providers pass coherent materialization with a final optimistic current-version
   check, reconciliation, atomic monotonic-upsert, delete-fence, restart, target-scoped
   failure backoff and database rediscovery, rebuild, health, and read-fallback integration

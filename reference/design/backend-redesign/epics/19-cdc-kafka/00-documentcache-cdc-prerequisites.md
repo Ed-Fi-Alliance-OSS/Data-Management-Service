@@ -65,7 +65,8 @@ per-database projection health with E19-owned provider, topic, and connector che
    must not clear or reuse that terminal binding generation.
 5. Validate provider tables including the clear `dms.DocumentCacheState` latch, opt-in
    `dms.CdcHeartbeat` singleton, projected `StreamEtag`, keys, replica/capture setup,
-   public/progress topics, SQL Server schema-history topic when applicable, ACLs,
+   public/progress topics, the DMS-reported SQL Server projection-target RCSI prerequisite,
+   SQL Server schema-history topic when applicable, ACLs,
    `partitionerAlgorithm`, the effective `maxRecordBytes` policy, producer
    request/buffer memory, broker request/record-batch/replica-fetch compatibility, and
    installed source-operation shaping against the binding and operational policy before
@@ -137,7 +138,8 @@ per-database projection health with E19-owned provider, topic, and connector che
   previous zero audit, a fresh startup audit before first-write admission, a barrier
   captured after that audit, committed connector
   snapshot/catch-up, idle-source heartbeat advancement, second projection-health
-  observation, cache-ahead latching that remains false-ready after source equality,
+  observation, SQL Server RCSI prerequisite failure, cache-ahead latching that remains
+  false-ready after source equality,
   explicit `errors.tolerance=none`, producer request/buffer-memory and topic/broker size
   alignment with `maxRecordBytes`, failed connector task state despite otherwise acceptable
   offset/lag observations, current and quantile lag reporting, per-target isolation, and

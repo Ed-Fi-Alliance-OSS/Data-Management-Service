@@ -407,12 +407,21 @@ Recommended: bounded retry (e.g., 3 attempts) with jittered backoff. Treat these
 - PostgreSQL: `40P01` (deadlock detected)
 - SQL Server: `1205` (deadlock victim), and optionally `1222` (lock request timeout, if configured)
 
-### SQL Server isolation defaults (recommended)
+### SQL Server isolation defaults
 
-To reduce reader/writer blocking and deadlocks under concurrent write load, strongly recommend enabling MVCC reads:
+To reduce reader/writer blocking and deadlocks under concurrent write load, strongly
+recommend enabling MVCC reads for ordinary relational DMS operation:
 
-- `READ_COMMITTED_SNAPSHOT ON` (recommended)
+- `READ_COMMITTED_SNAPSHOT ON` (recommended generally; required for any data store
+  selected as a `DocumentCache` projection target)
 - optionally `ALLOW_SNAPSHOT_ISOLATION ON` (if a snapshot isolation level is ever used explicitly)
+
+The scoped projection requirement is a correctness prerequisite for coherent SQL Server
+source/cache comparison and the durable cache-ahead latch; it does not make RCSI a global
+requirement for unlisted relational-only data stores. Runtime DMS validates the option and
+fails only projection/cache use for the affected target rather than executing
+`ALTER DATABASE`. The authoritative details are in
+[`cdc-streaming.md`](../../cdc-streaming.md#configuration-and-projection-target-selection).
 
 ---
 

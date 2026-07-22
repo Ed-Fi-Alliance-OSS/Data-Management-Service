@@ -207,6 +207,20 @@ new context's current source fingerprint. DMS does not classify the old and new
 observations as the same or different physical database, compare either observation with
 a connector binding, or change Kafka artifacts.
 
+A SQL Server data store selected in `DocumentCache:Targets` must have
+`READ_COMMITTED_SNAPSHOT ON`. This is a projection and cache-use prerequisite, not a
+global SQL Server DMS requirement: an unlisted relational-only data store may continue to
+use locking `READ COMMITTED`. DMS validates the option when it resolves or replaces a
+target execution context and before a source/cache comparison on a newly opened target
+connection; it never changes the database option at runtime. A false or unreadable
+`sys.databases.is_read_committed_snapshot_on` result leaves that target resolved but
+projection-ineligible and unhealthy. DMS performs no scan, audit, direct fill, cache-backed
+read, or cache-ahead latch update for that target and continues canonical relational API
+processing with relational reads. The bounded supervisor rechecks the prerequisite so an
+operator can complete the required offline database step, enable RCSI, and restore
+eligibility without changing target membership. `ALLOW_SNAPSHOT_ISOLATION` remains optional
+because v1 does not use an explicit SQL Server `SNAPSHOT` transaction for projection.
+
 Deployment automation selects CDC targets separately and must configure every CDC target
 on at least one designated DMS projector host as a `DocumentCache:Targets` entry. Kafka
 infrastructure, `-EnableKafkaUI`, and `-EnableKafkaCdc` do not implicitly select DMS
@@ -305,6 +319,17 @@ LEFT JOIN dms.DocumentCache ON DocumentId
 WHERE DocumentCache.DocumentId IS NULL
    OR DocumentCache.ContentVersion <> Document.ContentVersion
 ```
+
+Each source/cache comparison is one database statement; an implementation must not read
+the canonical and cache versions in separate commands and classify the combined result.
+On SQL Server, incremental pages, full-audit pages, the exact finishing aggregate, and
+cache lookup execute explicitly at `READ COMMITTED` after validating RCSI on the same open
+target connection. RCSI therefore supplies one statement-level source/cache snapshot. The
+queries do not use `READCOMMITTEDLOCK` or another hint that restores locking reads. If the
+prerequisite is false or cannot be validated, the operation stops before classification and
+cannot set `CacheAheadRecoveryRequired` from its observation.
+SQL Server documents the statement-snapshot and locking distinction in
+[`SET TRANSACTION ISOLATION LEVEL`](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql).
 
 The projector classifies that difference rather than treating every unequal row as
 ordinary repair work:
@@ -648,6 +673,8 @@ Projection health is evaluated for each explicit `(tenant key, DataStoreId)` exe
 context. It reports at least:
 
 - target resolution and required-table existence,
+- provider prerequisites, including the current RCSI validation result for a SQL Server
+  projection target,
 - the current provider and the opaque physical-source fingerprint derived from the
   database-owned `dms.DataStoreIdentity.SourceIdentity`,
 - whether the in-process loop is running,
@@ -682,8 +709,9 @@ retains its original observation time and must still satisfy the audit-age thres
 A same-version timestamp comparison is not another freshness or completeness test;
 embedded metadata consistency is enforced when a row is materialized and written. DMS
 projection readiness for one target requires a resolved execution context, a sufficiently
-recent exact-zero finishing audit, a clear durable cache-ahead latch, no active unresolved
-incremental candidate, and no target-scoped repair-required observation.
+recent exact-zero finishing audit, satisfied provider prerequisites, a clear durable
+cache-ahead latch, no active unresolved incremental candidate, and no target-scoped
+repair-required observation.
 
 An exact-zero audit is exact at its finishing observation, not continuous completeness
 proof while canonical writes are admitted. In particular, a transaction may allocate a
@@ -1673,6 +1701,11 @@ and preserve an already-current schema created by the same initial workflow, but
 legacy `Etag`, the obsolete cache UUID constraint, or any missing required E18 object makes
 the database ineligible rather than triggering an in-place repair.
 
+Supported SQL Server create-database provisioning enables `READ_COMMITTED_SNAPSHOT`; an
+externally created database must satisfy the same prerequisite before it is selected for
+projection. Provisioning or deployment automation may enable the option while the data
+store is offline. Runtime DMS only validates it and never attempts `ALTER DATABASE`.
+
 V1 provisions no durable projection queue, cursor, retry record, or backfill workflow.
 Core DMS DDL provisions one `dms.DocumentCacheState` singleton solely to durably latch the
 cache-ahead invariant; this safety bit is neither work inventory nor completeness evidence
@@ -1750,7 +1783,8 @@ Structured logs and metrics cover:
 - durable cache-ahead latch set/clear state, cache hits, misses, stale or latched misses,
   and relational fallback,
 - unresolved explicit targets, retryable source-resolution failures, and the current
-  opaque projection-source fingerprint.
+  opaque projection-source fingerprint,
+- SQL Server projection-target RCSI validation failures and recovery.
 
 Deployment-owned CDC status additionally covers binding presence and match, connector
 running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, last error,
@@ -1776,6 +1810,10 @@ cache-ahead invariant diagnosis and the internal-only/downstream-state recovery 
 ordinary monotonic projection lag, source-history continuity monitoring, progress-topic
 diagnosis, SQL Server schema-history diagnosis, target migration/retirement, and provider
 artifact cleanup.
+They distinguish the projection-scoped SQL Server RCSI prerequisite from ordinary
+relational-only DMS support, show how to inspect and enable it during an offline maintenance
+step, state that DMS never changes it at runtime, and include row-version-store capacity and
+health monitoring.
 They document the seven-day public-topic tombstone-retention minimum and the 24-hour
 consumer-bootstrap deadline, how a consumer captures and completes an end-offset barrier,
 how to capacity-test the largest supported retained log rather than only its live-key count,
@@ -1799,6 +1837,15 @@ Topic, offset, ACL, slot, and capture deletion is destructive and always explici
 from configuration is not cleanup authority.
 
 ## Verification
+
+SQL Server provider tests prove a target with RCSI disabled or unreadable remains
+projection-ineligible, uses no cache rows, performs no source/cache classification, and
+cannot set the durable cache-ahead latch. A synchronized RCSI-enabled test races a canonical
+advance and its later cache projection with an incremental or audit comparison and proves
+the one-statement observation cannot fabricate a cache-ahead pair. A setting change after
+initial target resolution is detected on the next newly opened comparison connection before
+classification. Mixed-target tests prove the failure is isolated and relational API work,
+unlisted SQL Server stores, PostgreSQL targets, and eligible SQL Server peers continue.
 
 Fast contract and transform tests cover every public, progress-routed, and dropped source
 operation, serialized key/value bytes, duplicate-tombstone suppression, JSON expansion,

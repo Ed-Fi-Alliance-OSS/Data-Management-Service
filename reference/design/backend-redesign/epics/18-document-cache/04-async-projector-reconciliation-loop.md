@@ -33,14 +33,18 @@ retry map.
 1. Add supervisor lifecycle and isolated non-HTTP execution scopes for explicit targets,
    including bounded re-resolution of configured targets that are not yet available.
 2. Implement provider-equivalent bounded incremental keyset scans using a disposable
-   process-local `(ContentVersion, DocumentId)` cursor.
+   process-local `(ContentVersion, DocumentId)` cursor. Each source/cache pair comes from
+   one database statement rather than separately read source and cache commands. SQL Server
+   pages explicitly use `READ COMMITTED`, use no hint that restores locking reads, and run
+   only after 18-01 validates RCSI on the same open target connection.
 3. Before a startup or restart audit, capture the maximum current source key as the
    initial incremental boundary. After the audit, start the cursor at exactly that
    pre-audit boundary rather than a later maximum, so commits after the audit remain
    visible to incremental scanning.
 4. Implement startup, periodic, and rebuild-triggered full anti-join audits,
    including bounded audit-local paging and an exact finishing aggregate that separates
-   missing, cache-behind, and cache-ahead rows.
+   missing, cache-behind, and cache-ahead rows. Apply the same one-statement source/cache
+   observation and SQL Server RCSI validation to every audit page and finishing aggregate.
 5. Invoke the shared materializer and monotonic upsert for missing and cache-behind
    candidates. After a failed incremental page, mark the target repair-required, apply
    target-scoped capped exponential backoff with jitter, and run a coalesced immediate full
@@ -52,7 +56,9 @@ retry map.
    materialize or repair the row. Once classified, do not reclassify it if the source
    advances before the latch commit, and do not report the observation before that commit.
    Pause all projector writes for the latched target. Treat a missing, malformed, or
-   unwritable state singleton as fail-closed.
+   unwritable state singleton as fail-closed. If the SQL Server RCSI prerequisite becomes
+   false or unreadable, stop before classification, set no cache-ahead latch, discard the
+   page observation, and return the target to prerequisite retry.
 6. Implement one target-scoped administrative recovery operation that takes the exclusive
    singleton-state lock, requires a set latch, clears the entire cache and latch in one
    provider transaction, and requests an immediate full audit after commit. Expose no
@@ -87,6 +93,12 @@ retry map.
   the canonical source advances to exactly the cached version, including a synchronized advance
   between classification and latch commit, restart and zero-audit tests prove the latch
   remains set until explicit recovery.
+- SQL Server isolation tests prove every incremental page, audit page, and finishing
+  aggregate obtains its source/cache pairs from one RCSI-backed `READ COMMITTED` statement.
+  With RCSI disabled or unreadable, including after initial resolution, the next comparison
+  stops before classification and cannot set the durable latch. A synchronized
+  RCSI-enabled source advance followed by cache projection cannot produce a mixed
+  cache-ahead observation; relational API work and eligible peer targets continue.
 - Recovery tests prove the operation rejects a clear latch, waits for in-flight shared
   latch locks, clears all cache rows before resetting the latch in the same transaction,
   rolls both changes back on failure, and requests an immediate full audit only after

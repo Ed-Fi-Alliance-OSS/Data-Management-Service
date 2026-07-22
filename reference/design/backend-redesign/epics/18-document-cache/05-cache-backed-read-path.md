@@ -29,7 +29,10 @@ authorization, candidate selection, fallback, and response shaping.
    `DocumentCacheState.CacheAheadRecoveryRequired` check into one database read path.
    Treat missing/malformed state, a set latch, cache-behind, and cache-ahead rows as
    unusable; an ahead row also remains an independently reported projection invariant
-   violation.
+   violation. Obtain the source/cache version comparison from one database statement. For
+   SQL Server, run that statement at `READ COMMITTED` only after the 18-01
+   same-open-connection RCSI validation; failed validation bypasses cache lookup and direct
+   fill and uses relational fallback without setting the durable latch.
 2. Ignore the cache row's CDC-only `StreamEtag` and reuse existing profile, link, and
    request-specific `_etag` shaping after cache or relational assembly.
 3. Add relational fallback and an optional monotonic direct fill only while the durable
@@ -56,6 +59,10 @@ authorization, candidate selection, fallback, and response shaping.
   candidate selection.
 - Tests prove reads do not enqueue projector work and remain correct if direct fill
   fails.
+- SQL Server tests prove an RCSI-disabled or unreadable target performs relational fallback
+  without cache use, direct fill, or latch mutation, while an RCSI-enabled lookup compares
+  source/cache state from one statement. The failure remains target-scoped and does not
+  affect relational API correctness.
 - Tests prove direct fill requests no explicit update/write source-row lock as a
   content-version fence and carries no lock from the optimistic source check into the cache
   transaction. Synchronized source-read, cache-row conflict, concurrent delete/foreign-key,
