@@ -202,18 +202,26 @@ function Resolve-DmsConnectionValidator {
       [pscustomobject]@{ Kind = 'HostExe';     Path  = <path> }
       [pscustomobject]@{ Kind = 'DockerImage'; Image = <image>; ToolPath = <in-image dll path> }
 
-    A host executable is preferred: an explicit -RequestedPath, a prebuilt in-repo copy, or a
-    -BuildIfMissing publish when the .NET SDK is present (Resolve-DmsSchemaTool). When no host executable
-    can be resolved AND a -DmsImage is supplied, it falls back to running the SAME 'connection validate'
-    verb inside that image, which bundles the api-schema-tools CLI. This is the published-image path on a
-    clean Docker/PowerShell-only host: exact-provider parsing (Npgsql / Microsoft.Data.SqlClient) stays
-    available with no .NET SDK and no source build. The parser is never weakened or replaced.
+    A host executable is preferred, and its resolution has two distinct authorities:
+      * An explicit -RequestedPath (DMS_SCHEMA_TOOL_PATH) is AUTHORITATIVE. It must resolve to an existing
+        executable, or resolution fails hard. An explicitly configured path is never silently ignored, and
+        the container fallback below does NOT apply to it - a wrong or stale explicit path is surfaced, not
+        masked by the image.
+      * When NO explicit path is supplied, a prebuilt in-repo copy or a -BuildIfMissing publish (when the .NET
+        SDK is present) is used (Resolve-DmsSchemaTool). ONLY in this no-explicit-path case, when no
+        host executable can be resolved AND a -DmsImage is supplied, does it fall back to running the SAME
+        'connection validate' verb inside that image, which bundles the api-schema-tools CLI. This is the
+        published-image path on a clean Docker/PowerShell-only host: exact-provider parsing (Npgsql /
+        Microsoft.Data.SqlClient) stays available with no .NET SDK and no source build. The parser is never
+        weakened or replaced.
 
-    Throws only when neither a host executable nor a container image is available (so a source checkout on
-    an SDK-less host with no image still fails with the original build/configuration guidance).
+    Throws when an explicit -RequestedPath does not resolve (regardless of -DmsImage), or - with no explicit
+    path - when neither a host executable nor a container image is available (a source checkout on an
+    SDK-less host with no image still fails with the original build/configuration guidance).
     .PARAMETER RequestedPath
-    Optional explicit host path to the api-schema-tools executable (DMS_SCHEMA_TOOL_PATH). When set it must
-    exist or host resolution fails - and the container fallback then applies only if -DmsImage is supplied.
+    Optional explicit host path to the api-schema-tools executable (DMS_SCHEMA_TOOL_PATH). When set it is
+    authoritative: it must exist or resolution fails hard, and the container fallback does NOT apply. The
+    image fallback is reserved for the no-explicit-path case.
     .PARAMETER DmsImage
     The DMS container image (resolved from Docker Compose) that bundles the tool. When host resolution
     fails and this is supplied, the validator runs inside this image.
@@ -236,7 +244,10 @@ function Resolve-DmsConnectionValidator {
         return [pscustomobject]@{ Kind = "HostExe"; Path = $hostTool }
     }
     catch {
-        if ([string]::IsNullOrWhiteSpace($DmsImage)) {
+        # An explicitly configured -RequestedPath is authoritative: when one was supplied and did not
+        # resolve, that is a hard error - never silently fall back to the image. The container fallback
+        # applies ONLY when no explicit path was supplied and no host tool could be resolved or built.
+        if (-not [string]::IsNullOrWhiteSpace($RequestedPath) -or [string]::IsNullOrWhiteSpace($DmsImage)) {
             throw
         }
 

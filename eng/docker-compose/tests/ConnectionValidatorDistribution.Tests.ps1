@@ -17,31 +17,72 @@ BeforeAll {
 }
 
 Describe "Resolve-DmsConnectionValidator distribution boundary (finding 4)" {
-    BeforeAll {
-        $script:existingToolStub = Join-Path ([System.IO.Path]::GetTempPath()) ("api-schema-tools-stub-" + [guid]::NewGuid().ToString("N") + ".exe")
-        Set-Content -LiteralPath $script:existingToolStub -Value ""
-    }
-    AfterAll {
-        Remove-Item -LiteralPath $script:existingToolStub -ErrorAction SilentlyContinue
+    # An explicitly configured DMS_SCHEMA_TOOL_PATH (-RequestedPath) is AUTHORITATIVE: it must resolve or
+    # fail hard, and it is never masked by the image fallback. The image fallback exists only for the
+    # no-explicit-path case (a clean Docker/PowerShell-only published host). These two authorities are
+    # tested separately: the explicit-path cases exercise the real Resolve-DmsSchemaTool (a present/absent
+    # file is deterministic), while the no-explicit-path cases mock Resolve-DmsSchemaTool so the
+    # host-resolved / SDK-built / nothing-resolved outcomes are deterministic without a repo build or SDK.
+
+    Context "an explicit -RequestedPath is authoritative" {
+        BeforeAll {
+            $script:existingToolStub = Join-Path ([System.IO.Path]::GetTempPath()) ("api-schema-tools-stub-" + [guid]::NewGuid().ToString("N") + ".exe")
+            Set-Content -LiteralPath $script:existingToolStub -Value ""
+        }
+        AfterAll {
+            Remove-Item -LiteralPath $script:existingToolStub -ErrorAction SilentlyContinue
+        }
+
+        It "resolves a present explicit path as a host executable" {
+            $validator = Resolve-DmsConnectionValidator -RequestedPath $script:existingToolStub -DmsImage "edfialliance/ed-fi-api:test"
+            $validator.Kind | Should -Be 'HostExe'
+            $validator.Path | Should -Be $script:existingToolStub
+        }
+
+        It "fails a missing explicit path even when a DMS image is available, and never returns the image fallback" {
+            $missing = Join-Path ([System.IO.Path]::GetTempPath()) ("no-such-tool-" + [guid]::NewGuid().ToString("N") + ".exe")
+            $result = $null
+            $caught = $null
+            try {
+                $result = Resolve-DmsConnectionValidator -RequestedPath $missing -DmsImage "edfialliance/ed-fi-api:test"
+            }
+            catch {
+                $caught = $_
+            }
+
+            $caught | Should -Not -BeNullOrEmpty -Because "an explicitly configured DMS_SCHEMA_TOOL_PATH that does not exist is a hard error"
+            $caught.Exception.Message | Should -Match 'was not found' -Because "the failure names the missing configured path"
+            # Prove the image fallback was NOT selected: resolution threw rather than returning a descriptor.
+            $result | Should -BeNullOrEmpty -Because "a missing explicit path must never be masked by the '-DmsImage' fallback"
+        }
     }
 
-    It "prefers a host executable when one resolves (explicit path)" {
-        $validator = Resolve-DmsConnectionValidator -RequestedPath $script:existingToolStub -DmsImage "edfialliance/ed-fi-api:test"
-        $validator.Kind | Should -Be 'HostExe'
-        $validator.Path | Should -Be $script:existingToolStub
-    }
+    Context "no explicit path: host tool preferred, then image fallback, then guidance" {
+        It "uses a resolved/discovered host tool when Resolve-DmsSchemaTool returns one" {
+            Mock -ModuleName 'bootstrap-schema-tool' Resolve-DmsSchemaTool { "/resolved/api-schema-tools" }
+            $validator = Resolve-DmsConnectionValidator -RequestedPath "" -DmsImage "edfialliance/ed-fi-api:test"
+            $validator.Kind | Should -Be 'HostExe'
+            $validator.Path | Should -Be "/resolved/api-schema-tools"
+        }
 
-    It "falls back to the DMS image when no host tool resolves and an image is supplied" {
-        $missing = Join-Path ([System.IO.Path]::GetTempPath()) ("no-such-tool-" + [guid]::NewGuid().ToString("N") + ".exe")
-        $validator = Resolve-DmsConnectionValidator -RequestedPath $missing -DmsImage "edfialliance/ed-fi-api:test"
-        $validator.Kind | Should -Be 'DockerImage'
-        $validator.Image | Should -Be "edfialliance/ed-fi-api:test"
-        $validator.ToolPath | Should -Match 'api-schema-tools\.dll$'
-    }
+        It "requests a -BuildIfMissing publish so the SDK-build path is reachable without an explicit path" {
+            Mock -ModuleName 'bootstrap-schema-tool' Resolve-DmsSchemaTool { "/resolved/api-schema-tools" }
+            $null = Resolve-DmsConnectionValidator -RequestedPath "" -DmsImage ""
+            Should -Invoke -ModuleName 'bootstrap-schema-tool' Resolve-DmsSchemaTool -Times 1 -Exactly -ParameterFilter { $BuildIfMissing }
+        }
 
-    It "throws when neither a host tool nor a container image is available" {
-        $missing = Join-Path ([System.IO.Path]::GetTempPath()) ("no-such-tool-" + [guid]::NewGuid().ToString("N") + ".exe")
-        { Resolve-DmsConnectionValidator -RequestedPath $missing -DmsImage "" } | Should -Throw
+        It "falls back to the DMS image when no host tool resolves and an image is supplied" {
+            Mock -ModuleName 'bootstrap-schema-tool' Resolve-DmsSchemaTool { throw "In-repo api-schema-tools tool not found." }
+            $validator = Resolve-DmsConnectionValidator -RequestedPath "" -DmsImage "edfialliance/ed-fi-api:test"
+            $validator.Kind | Should -Be 'DockerImage'
+            $validator.Image | Should -Be "edfialliance/ed-fi-api:test"
+            $validator.ToolPath | Should -Match 'api-schema-tools\.dll$'
+        }
+
+        It "throws with build/configuration guidance when no host tool and no image are available" {
+            Mock -ModuleName 'bootstrap-schema-tool' Resolve-DmsSchemaTool { throw "Unable to resolve the api-schema-tools executable. Build src/dms/clis/EdFi.DataManagementService.SchemaTools or set DMS_SCHEMA_TOOL_PATH." }
+            { Resolve-DmsConnectionValidator -RequestedPath "" -DmsImage "" } | Should -Throw -ExpectedMessage '*Unable to resolve the api-schema-tools executable*'
+        }
     }
 }
 
