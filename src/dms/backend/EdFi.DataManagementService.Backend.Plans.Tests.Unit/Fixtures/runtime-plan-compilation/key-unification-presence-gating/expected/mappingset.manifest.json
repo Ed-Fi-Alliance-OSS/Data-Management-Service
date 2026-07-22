@@ -24,9 +24,9 @@
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 420,
+                  "max_rows_per_batch": 419,
                   "parameters_per_row": 5,
-                  "max_parameters_per_command": 2100
+                  "max_parameters_per_command": 2098
                 },
                 "column_bindings_in_order": [
                   {

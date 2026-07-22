@@ -70,8 +70,8 @@ public class Given_WritePlanCompiler_InsertSql : WritePlanCompilerTestBase
             );
 
         tablePlan.BulkInsertBatching.ParametersPerRow.Should().Be(3);
-        tablePlan.BulkInsertBatching.MaxRowsPerBatch.Should().Be(700);
-        tablePlan.BulkInsertBatching.MaxParametersPerCommand.Should().Be(2100);
+        tablePlan.BulkInsertBatching.MaxRowsPerBatch.Should().Be(699);
+        tablePlan.BulkInsertBatching.MaxParametersPerCommand.Should().Be(2098);
     }
 
     [TestCase(SqlDialect.Pgsql)]
