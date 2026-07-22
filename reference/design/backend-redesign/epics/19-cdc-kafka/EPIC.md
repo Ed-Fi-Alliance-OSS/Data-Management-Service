@@ -102,6 +102,14 @@ implementation inputs.
   materialized link-bearing envelope. Producer, topic, broker/replication, and consumer
   limits align to it, and a broker-backed boundary test publishes and consumes that
   maximum record without relying on compression.
+- Every public topic explicitly retains tombstones for at least seven days. Topic
+  provisioning and live validation reject a missing topic-level `delete.retention.ms`
+  override or a lower value, and conforming consumers must prove that a complete
+  earliest-offset scan through captured partition barriers becomes durable within the
+  fixed 24-hour bootstrap deadline. An over-deadline partial reconstruction is discarded
+  and never advertised as valid; each independently operated consumer owns capacity
+  evidence for the largest retained topic log it claims to support, not only its live-key
+  count.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported setup, security, observation, safe same-topic
   equal-version repair, E18's byte-changing representation-restamp operation,

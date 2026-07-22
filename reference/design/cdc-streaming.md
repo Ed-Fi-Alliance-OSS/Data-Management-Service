@@ -654,10 +654,11 @@ Deployment automation evaluates end-to-end CDC component health for each binding
 - a DMS projection-health result whose current source fingerprint matches that binding,
 - provisioned `dms.Document`, `dms.DocumentCache`, `dms.DocumentCacheState`, and opt-in
   `dms.CdcHeartbeat` tables and provider CDC/key prerequisites,
-- public topic name, compact-only cleanup policy, fixed partition count, ACL, transform,
-  partitioner algorithm, `maxRecordBytes`, broker-size compatibility, and connector
-  configuration that match the binding record, plus the derived compacted CDC progress
-  topic and its connector-only ACL,
+- public topic name, compact-only cleanup policy, explicit seven-day minimum tombstone
+  retention, fixed partition count, ACL, transform, partitioner algorithm,
+  `maxRecordBytes`, broker-size compatibility, and connector configuration that match the
+  binding record and fixed v1 contract, plus the derived compacted CDC progress topic and
+  its connector-only ACL,
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
   through the provider source-position barrier defined below, captured after DMS reported
   a sufficiently recent exact-zero audit,
@@ -902,6 +903,41 @@ derived name is not another binding field or operator input; template generation
 and bootstrap and live-configuration validation reject any different value. The progress
 topic has one partition and `cleanup.policy=compact`. It contains no public document state,
 and its retained contents are not part of the public bootstrap contract.
+
+The public topic has an explicit per-topic `delete.retention.ms` override of at least
+`604800000` milliseconds (seven days). This minimum is a fixed v1 contract value, not a
+binding field; a deployment may use a higher value without changing the binding generation.
+Provisioning and live validation reject a missing per-topic override, even when the current
+broker default is high enough, or an explicit value below the minimum. The progress topic
+is excluded because it is not a public state-bootstrap source.
+
+### Public consumer bootstrap
+
+The public compacted topic is an authoritative bootstrap source only for a conforming
+consumer. The bootstrap operation starts at the earliest available offset for every topic
+partition, captures an end-offset barrier for each partition, and durably applies every
+record through those barriers within 24 hours of beginning its first partition scan. Once
+that durable barrier is complete, it continues incrementally from the next offsets. The
+deadline applies to the complete wall-clock operation, including rebalances, stalls,
+retries, and consumer-state persistence.
+
+Kafka bounds a valid offset-zero scan by `delete.retention.ms`: a slower scan can observe
+an obsolete upsert and miss the tombstone removed while the scan is in progress. A consumer
+that cannot prove completion within 24 hours must not advertise its reconstructed state as
+valid. It discards that state and restarts from the earliest offsets; it must increase
+parallelism or throughput before production use if repeated scans cannot meet the deadline.
+The fixed 24-hour deadline leaves at least six days between the consumer SLA and the v1
+tombstone-retention minimum.
+
+Each independently operated consumer owns its conformance evidence. Before production use,
+it capacity-tests the largest retained topic log it claims to support, including
+dirty/uncompacted records, partition skew, maximum-sized records, durable consumer-state
+writes, and expected concurrent mutation traffic, and demonstrates completion within 24
+hours. Live-key count alone is not sufficient. Deployment automation validates and reports
+the public topic's configured retention but cannot measure or certify an arbitrary
+third-party consumer. A consumer that needs a longer bootstrap is outside the v1 topic-only
+reconstruction guarantee unless it uses a separately defined authoritative bootstrap
+source.
 
 For local development and CI, the deployment automation stores one JSON record per
 generation under a deployment-owned persistent state root, with the default layout:
@@ -1349,11 +1385,14 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   never placed in `.bootstrap/bootstrap-manifest.json`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
-- Public-topic provisioning requires and idempotently validates `cleanup.policy=compact`;
-  it rejects any cleanup policy that includes `delete`, and sets
-  `max.message.bytes=<binding maxRecordBytes>`. Progress-topic provisioning derives the
-  name from the binding, requires exactly one partition and `cleanup.policy=compact`, and
-  does not apply the public record-size or consumer-bootstrap contract.
+- Public-topic provisioning requires and idempotently validates `cleanup.policy=compact`,
+  an explicit per-topic `delete.retention.ms` of at least `604800000`, and
+  `max.message.bytes=<binding maxRecordBytes>`. It rejects any cleanup policy that includes
+  `delete`, a missing topic-level tombstone-retention override, or a value below seven days.
+  Progress-topic provisioning derives the name from the binding, requires exactly one
+  partition and
+  `cleanup.policy=compact`, and does not apply the public record-size or consumer-bootstrap
+  contract.
 - Before connector registration, bootstrap verifies the broker request, record-batch,
   and replica-fetch path against `maxRecordBytes`; an unverifiable or smaller limit fails
   setup rather than relying on Kafka defaults.
@@ -1480,6 +1519,11 @@ Runbooks cover connector restart, cache rebuild, same-topic compatible projectio
 cache-ahead invariant diagnosis and the internal-only/downstream-state recovery split,
 ordinary monotonic projection lag, offset reset, resnapshot, topic recreation,
 progress-topic diagnosis, target migration/retirement, and provider artifact cleanup.
+They document the seven-day public-topic tombstone-retention minimum and the 24-hour
+consumer-bootstrap deadline, how a consumer captures and completes an end-offset barrier,
+how to capacity-test the largest supported retained log rather than only its live-key count,
+how to observe cleaner health and earliest-to-end scan volume, and why an over-deadline
+reconstruction must be discarded rather than advertised as valid.
 They document the shipped projector defaults, how to tune intervals, page size, target
 concurrency, and maximum audit age, and how to identify API-resource contention or an
 audit that cannot complete within its readiness window.
@@ -1566,7 +1610,8 @@ or reopen writes as ready.
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including attempted partition-count, `partitionerAlgorithm`, or `maxRecordBytes`
 changes, rejection of a public topic configured with a cleanup policy that includes
-`delete` or conflicting `max.message.bytes`, rejection of a missing, misnamed,
+`delete`, a missing topic-level `delete.retention.ms` override, an explicit value below
+`604800000`, or conflicting `max.message.bytes`, rejection of a missing, misnamed,
 non-single-partition, or non-compacted progress topic, provider aliases that resolve to the
 same fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop
 retention, destructive-teardown removal, and new-generation source migration.

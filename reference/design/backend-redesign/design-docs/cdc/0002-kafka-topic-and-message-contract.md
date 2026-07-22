@@ -60,16 +60,46 @@ The v1 topic uses exactly:
 cleanup.policy=compact
 ```
 
-V1 does not permit adding `delete` to `cleanup.policy`. The compact-only policy must retain
-the latest live upsert for every key so a consumer can reconstruct current instance state
-from the topic. Kafka may remove a tombstone and its superseded records according to the
-compacted topic's tombstone-retention behavior; this leaves that deleted key absent from
-a fresh reconstruction.
+It also uses an explicit per-topic tombstone-retention override of at least:
 
-A deployment that requires time/delete retention must first define and implement a
-separate authoritative bootstrap source for current state and weaken the topic-only
-reconstruction guarantee in a new contract version. An operational replay window alone
-is not such a bootstrap source.
+```text
+delete.retention.ms=604800000
+```
+
+That value is seven days. It is a fixed v1 minimum rather than an immutable binding field;
+a host may retain tombstones longer, but bootstrap and live-configuration validation reject
+a missing per-topic override or a configured value below the minimum. Inheriting the broker
+default is not sufficient even when its current value is at least seven days. V1 does not
+permit adding `delete` to `cleanup.policy`. The compact-only policy retains the latest live
+upsert for every key. Kafka may eventually remove a tombstone and its superseded records,
+leaving that deleted key absent from a fresh reconstruction.
+
+[Kafka defines `delete.retention.ms`](https://kafka.apache.org/40/configuration/topic-level-configs/#topicconfigs_delete.retention.ms)
+as the bound within which an offset-zero scan must finish to guarantee a valid final-state
+snapshot. V1 therefore makes topic-only reconstruction conditional on this consumer
+bootstrap contract:
+
+1. Start from the earliest available offset of every topic partition and capture an
+   end-offset barrier for every partition in the bootstrap operation.
+2. Apply records through every captured barrier to durable consumer state within 24 hours
+   of beginning the first partition scan.
+3. Continue incrementally from the next offsets only after that bootstrap state is durable.
+4. If the consumer cannot prove completion within 24 hours, do not advertise the state as
+   valid; discard it and restart the complete scan.
+
+The 24-hour consumer deadline leaves at least six days of retention margin for cleaner
+scheduling, stalls, and recovery. A conforming consumer must capacity-test the largest
+retained topic log it claims to support, including dirty/uncompacted records, partition
+skew, maximum-sized records, consumer-state writes, and concurrent mutation traffic. It
+must scale before production use so the complete scan satisfies the deadline. Live-key
+count alone is not sufficient capacity evidence. DMS deployment automation can validate
+the topic configuration and expose the contract values, but it cannot certify the runtime
+behavior of an independently operated consumer.
+
+A deployment that requires segment time/size deletion by adding `delete` to
+`cleanup.policy` must first define and implement a separate authoritative bootstrap source
+for current state and weaken the topic-only reconstruction guarantee in a new contract
+version. An operational replay window alone is not such a bootstrap source.
 
 The topic's partition count is fixed when the topic is created. The immutable binding also
 stores `partitionerAlgorithm: "kafka-murmur2-v1"`. For non-null serialized key bytes `K`
@@ -431,9 +461,13 @@ The public topic never exposes:
 
 ## Consequences
 
-- Consumers can reconstruct current instance document state but not complete history.
-- That reconstruction guarantee depends on v1's compact-only topic; time/delete retention
-  requires a separately defined authoritative bootstrap source and a new contract.
+- Conforming consumers can reconstruct current instance document state, but not complete
+  history, by completing the offset-zero scan within the 24-hour bootstrap deadline.
+- That reconstruction guarantee depends on v1's compact-only topic, its explicit seven-day
+  minimum tombstone retention, and consumer bootstrap conformance. Segment time/size
+  deletion requires a separately defined authoritative bootstrap source and a new contract.
+- Retaining tombstones for at least seven days increases retained bytes and cleaner work;
+  operators monitor cleaner health and earliest-to-end scan volume as bootstrap capacity.
 - Raw delivery may contain duplicates or lower-version replays; the consumer ordering rule,
   not record arrival alone, keeps applied non-null upsert state monotonic.
 - At-least-once replay may temporarily place an older upsert after a tombstone; the stream
@@ -478,6 +512,7 @@ The public topic never exposes:
 | Topic per resource per instance | Rejected: it multiplies topics, ACLs, provisioning, and routing transforms while the envelope already identifies the resource. |
 | Shared topic with `instanceId` in the value | Rejected: consumer filtering is not a security boundary and tombstones have no value. |
 | `cleanup.policy=compact,delete` | Rejected for v1: time/size deletion can remove the sole latest upsert for an unchanged live document, so the topic can no longer bootstrap current state. |
+| Inherit the broker's `delete.retention.ms` | Rejected: a broker-default change can silently shorten the valid bootstrap window; every public topic carries and validates its own override. |
 | Include `DocumentId` | Rejected: it is an internal surrogate with no public contract role. |
 | Publish delete envelopes | Rejected: compacted state streams use Kafka tombstones and no deleted body is guaranteed. |
 | Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |

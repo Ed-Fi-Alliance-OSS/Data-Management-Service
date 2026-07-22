@@ -34,12 +34,15 @@ backend.
 3. Require the selected deployment target to be present in DMS
    `DocumentCache:Targets`, and reserve or exact-match its immutable binding before
    creating governed artifacts.
-4. Create or validate the topic with exactly `cleanup.policy=compact`, the binding's
-   fixed partition count, and `max.message.bytes=<binding maxRecordBytes>`. Reject any
-   cleanup policy that includes `delete` or any missing/conflicting size. Provision and
-   idempotently validate literal, binding-scoped topic ACLs for the deployment-supplied
-   connector and instance consumer principals, plus their required consumer-group ACLs;
-   do not emit shared-topic, wildcard-topic, or cross-instance consumer grants.
+4. Create or validate the topic with exactly `cleanup.policy=compact`, an explicit
+   per-topic `delete.retention.ms` of at least `604800000` (seven days), the binding's fixed
+   partition count, and `max.message.bytes=<binding maxRecordBytes>`. Reject any cleanup
+   policy that includes `delete`, a missing topic-level tombstone-retention override even
+   when the broker default is high enough, a value below the minimum, or any
+   missing/conflicting size. Provision and idempotently validate literal, binding-scoped
+   topic ACLs for the deployment-supplied connector and instance consumer principals, plus
+   their required consumer-group ACLs; do not emit shared-topic, wildcard-topic, or
+   cross-instance consumer grants.
 5. Before connector registration, validate that the effective broker request,
    record-batch, and replica-fetch limits accept `maxRecordBytes`. Configure the local
    broker accordingly; require equivalent verifiable capability from a production-like
@@ -70,7 +73,9 @@ backend.
    be explicitly aborted.
 7. Print sanitized binding-generation/connector/source/topic identity. Retain binding
    and artifacts on normal stop; remove artifacts before binding state during explicit
-   destructive volume teardown.
+   destructive volume teardown. Also print the effective public-topic tombstone retention
+   and the fixed 24-hour consumer-bootstrap deadline without claiming to certify an
+   independently operated consumer.
 8. Expose the same workflow to E2E setup before observed test traffic begins.
 
 ## Acceptance Evidence
@@ -85,10 +90,11 @@ backend.
   idle-provider case proves the generated heartbeat advances the committed source offset
   through a barrier captured after that audit before readiness passes.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
-  in-place topic partition-count or `partitionerAlgorithm` changes, time/delete retention
-  on the v1 topic, and source/topic-generation reuse. It also rejects an in-place
-  `maxRecordBytes` change or producer, topic, broker, and replica-fetch limits below the
-  binding value.
+  in-place topic partition-count or `partitionerAlgorithm` changes, segment time/size
+  deletion through a cleanup policy containing `delete`, a missing topic-level
+  `delete.retention.ms` override or a value below `604800000`, and source/topic-generation
+  reuse. It also rejects an in-place `maxRecordBytes` change or producer, topic, broker,
+  and replica-fetch limits below the binding value.
 - Registration tests reject a worker policy that disallows the required producer
   overrides and any live connector configuration with conflicting ordering settings or
   partitioner behavior, or with missing/conflicting `errors.tolerance=none`,

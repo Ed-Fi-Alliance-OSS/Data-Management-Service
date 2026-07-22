@@ -31,9 +31,18 @@ capability without redefining its architecture or contracts.
    published Ed-Fi image digest, explain why floating tags are not supported, and list
    SQL Server 2025 as the Ed-Fi known-working qualification target without presenting it
    as an upstream-tested Debezium version.
-3. Document Kafka compact-only topic/ACL/consumer operation, including why time/delete
-   retention is prohibited without a separately defined authoritative bootstrap source,
-   how immutable `maxRecordBytes` is established from the maximum fully materialized
+3. Document Kafka compact-only topic/ACL/consumer operation, including why segment
+   time/size deletion through a cleanup policy containing `delete` is prohibited without a
+   separately defined authoritative bootstrap source,
+   the explicit seven-day `delete.retention.ms` minimum, the fixed 24-hour consumer-
+   bootstrap deadline, earliest-offset and end-offset-barrier handling, invalid-state
+   discard/restart behavior, and consumer capacity qualification against its largest
+   supported retained topic log, including dirty/uncompacted records, partition skew,
+   maximum-sized records, durable state writes, and concurrent mutation traffic. Include
+   cleaner-health and earliest-to-end scan-volume observation; live-key count alone is not
+   sufficient evidence. Distinguish deployment validation of topic retention from the
+   independently operated consumer's responsibility to prove its runtime conformance.
+   Also document how immutable `maxRecordBytes` is established from the maximum materialized
    link-bearing envelope, required producer/topic/broker/replica/consumer size settings,
    DMS per-database projection-health observation, and deployment-owned combined
    readiness. Explain provider barrier capture/comparison, the internal heartbeat's idle-
@@ -92,6 +101,9 @@ capability without redefining its architecture or contracts.
   governed artifacts without binding state. It also covers a missing/stalled heartbeat,
   SQL Server capture-agent delay, malformed or ambiguous Connect source offsets, and a
   connector that is running but remains below its post-audit provider barrier.
+- Consumer-bootstrap troubleshooting covers cleaner degradation, retained-log growth,
+  partition skew, slow durable-state writes, deadline exhaustion, invalid-state discard,
+  and capacity requalification before retrying production use.
 - Procedures distinguish an automatic health failure from an explicit maintenance window,
   list every mutation source that must be gated, and require evidence that admitted
   requests and transactions drained. They allow an indefinitely extended window, retry, or
@@ -112,9 +124,11 @@ capability without redefining its architecture or contracts.
   before cache clearing/reprojection, so no rebuilt row can reach the old topic; only the
   new connector snapshots the rebuilt cache.
 - Documentation distinguishes CDC from Change Queries and from response serialization.
+- Instructions never present a consumer reconstruction that exceeded 24 hours as valid,
+  even when the topic retains tombstones longer than seven days.
 
 ## Out of Scope
 
 - Cloud-provider-specific managed Kafka instructions.
-- SLA/SLO commitments.
-- Consumer implementation guidance beyond the public contract.
+- Service availability or lag SLO commitments beyond the v1 consumer-bootstrap deadline.
+- Product-specific consumer implementation guidance beyond the public contract.
