@@ -15,7 +15,8 @@ epic: TBD
 ## Outcome
 
 Add fast serialized-record and provider integration tests that pin the v1 public contract
-without requiring an API E2E path for every source operation.
+and internal progress routing without requiring an API E2E path for every source
+operation.
 
 ## Dependencies
 
@@ -66,14 +67,18 @@ without requiring an API E2E path for every source operation.
     over-budget variant. These fixtures verify the enforced boundary and do not claim to
     identify the largest valid DMS record.
 12. Add provider heartbeat fixtures and a broker-backed idle-source scenario. Prove the
-    heartbeat table and Debezium heartbeat records emit no public document record, while
-    their committed source offsets advance only after earlier retained records complete
-    and expose the fields required by the provider barrier adapter.
+    heartbeat table and Debezium heartbeat records are produced and acknowledged in the
+    derived progress topic and emit no public document record. Prove their committed source
+    offsets advance only after the heartbeat and every earlier retained record complete,
+    and expose the fields required by the provider barrier adapter through the connector-
+    offset REST endpoint.
 
 ## Acceptance Evidence
 
-- Every retained fixture produces exactly the record required by the topic/message ADR.
-- Every dropped fixture produces no public record, including automatic extra tombstones.
+- Every public fixture produces exactly the record required by the topic/message ADR.
+- Every progress fixture produces only an internal progress record in the derived progress
+  topic. Every excluded fixture produces no record, including automatic extra tombstones;
+  neither class produces a public document record.
 - Regression tests catch wrapper, quoting, escaped-JSON, timestamp, metadata, internal
   field, missing or incorrect `document._etag`, unexpected envelope `etag`, and Kafka-null
   contract violations.
@@ -117,9 +122,10 @@ without requiring an API E2E path for every source operation.
   make no universal-maximum claim across configurable schemas or extensions.
 - The idle-source test captures a barrier after the fresh post-drain zero audit and proves
   `RUNNING` plus acceptable lag remains not ready below it, then observes the action-query
-  heartbeat and passes only when the committed PostgreSQL `lsn_proc` or SQL Server
-  commit/change/event-serial position reaches it. No heartbeat appears in the public
-  topic.
+  heartbeat acknowledged in the progress topic and passes only when the committed
+  PostgreSQL `lsn_proc` or SQL Server commit/change/event-serial position reaches it. No
+  heartbeat appears in the public topic, and returning `null` for the same heartbeat leaves
+  the committed offset below the barrier and fails the test.
 
 ## Out of Scope
 

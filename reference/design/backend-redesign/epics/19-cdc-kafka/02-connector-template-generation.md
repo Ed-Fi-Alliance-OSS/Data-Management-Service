@@ -48,12 +48,14 @@ source routing and serialized public contract using the separately published
    without rounding to the existing DMS whole-second UTC string, and fail a retained
    upsert whose required `DocumentJson` carries the unavailable marker.
 4. Configure the `DocumentState` SMT delivered by 19-03 as the complete boundary from a raw
-   Debezium record to a final public upsert, final public tombstone, or dropped record.
-   Do not add an independent generic expand-JSON SMT or split the contract across stock
-   predicate, unwrap, rename, and routing chains.
-5. Configure only the transform's `provider` and `target.topic` values. Keep the DMS
-   source table/column and v1 public-field mapping fixed in the versioned transform rather
-   than generating a mapping DSL.
+   Debezium record to a final public upsert, final public tombstone, internal progress
+   record, or dropped record. Do not add an independent generic expand-JSON SMT or split
+   the contract across stock predicate, unwrap, rename, and routing chains.
+5. Configure only the transform's `provider`, `target.topic`, and `progress.topic` values.
+   Generate `progress.topic` exactly as `target.topic + ".cdc-progress"`; do not expose it
+   as an independent operator input, and reject any different value. Keep the DMS source
+   table/column and v1 public-field mapping fixed in the versioned transform rather than
+   generating a mapping DSL.
 6. Keep `EffectiveSchemaHash`, link-option interpretation, and DMS ETag composition out
    of connector transforms.
 7. Validate all version-specific properties and transform classes against the
@@ -102,8 +104,8 @@ source routing and serialized public contract using the separately published
   `kafka-murmur2-v1` exactly. An image may change its implementation but not those results;
   changing the algorithm token or partition count requires a new binding generation/topic.
 - Template tests prove the configured class, source includes, key columns, converters,
-  tombstone suppression, transform properties, and target topic match the binding and
-  19-03 contract.
+  tombstone suppression, transform properties, public target topic, and derived progress
+  topic match the binding and 19-03 contract.
 - Provider template/smoke tests prove the non-indexed cache UUID column produces the same
   public key bytes as the canonical document-delete source.
 - SQL Server rendering tests require `time.precision.mode=isostring` and the exact
@@ -125,9 +127,11 @@ source routing and serialized public contract using the separately published
   topic.
 - Rendering tests require the emitted heartbeat table include, positive interval, exact
   provider action query, and valid SQL Server poll relationship. Pinned-image smoke tests
-  prove heartbeat table and Debezium heartbeat records are intentionally dropped from the
-  public topic while their source offsets remain available through the connector-offset
-  REST endpoint with the provider fields required by readiness.
+  prove heartbeat-table and Debezium heartbeat records are produced and acknowledged in
+  the derived progress topic, never emitted to the public topic, and make their source
+  offsets committable only after every earlier source record completes. The committed
+  offsets remain observable through the connector-offset REST endpoint with the provider
+  fields required by readiness.
 - Rendering and live-configuration tests require
   `statistics.metrics.enabled=true`; image smoke tests expose P50/P95/P99 source-lag
   attributes on the Kafka Connect 4.3.0 runtime.

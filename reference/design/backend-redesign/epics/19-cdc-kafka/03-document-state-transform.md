@@ -34,8 +34,8 @@ separate from DMS-1240's completed generic `sourceFields` expander.
 2. Consume schema-backed raw Debezium records from `dms.DocumentCache`, `dms.Document`,
    and the internal `dms.CdcHeartbeat`, plus Debezium heartbeat records, classifying source
    table and operation before discarding the envelope.
-3. Emit exactly one final public upsert, final public tombstone, or no record according to
-   the projector/source decision.
+3. For each input, emit exactly one final public upsert, final public tombstone, internal
+   progress record, or no record according to the projector/source decision.
 4. Normalize the `DocumentUuid` key, parse `DocumentJson` directly, validate SQL Server
    `io.debezium.time.IsoTimestamp` strings, convert provider timestamps to the existing
    DMS whole-second UTC representation by truncating rather than rounding fractional
@@ -43,12 +43,14 @@ separate from DMS-1240's completed generic `sourceFields` expander.
    validate embedded metadata, and route the retained record. Reject the pinned Debezium
    unavailable marker in any required retained value, including SQL Server
    `DocumentJson`.
-5. Expose only `provider` and `target.topic` as contract configuration. Keep source
-   tables, operations, source columns, and v1 public fields fixed behavior rather than a
-   mapping language.
-6. Suppress duplicate automatic Debezium tombstones, intentionally drop every heartbeat
-   record without routing it to the public topic, and fail malformed retained document
-   records rather than publishing partial state.
+5. Expose only `provider`, `target.topic`, and `progress.topic` as contract configuration.
+   Require `progress.topic` to equal `target.topic + ".cdc-progress"`. Keep source tables,
+   operations, source columns, and v1 public fields fixed behavior rather than a mapping
+   language.
+6. Suppress duplicate automatic Debezium tombstones. Route every heartbeat-table and
+   Debezium heartbeat record to `progress.topic` before public-record validation; never
+   route one to the public topic or return `null` for a heartbeat relied upon by readiness.
+   Fail malformed retained records rather than publishing partial state.
 7. Publish the transform in the Ed-Fi Kafka Connect image consumed by 19-02, rebuilt from
    the exact `quay.io/debezium/connect:3.6.0.Final` base digest in the authoritative
    design; do not remove or redefine `ExpandJson$Value`.
@@ -56,11 +58,14 @@ separate from DMS-1240's completed generic `sourceFields` expander.
 ## Acceptance Evidence
 
 - JUnit fixtures begin with realistic PostgreSQL and SQL Server Debezium records and cover
-  every retained and dropped source operation, including heartbeat-table snapshots and
-  updates and connector-generated heartbeat records.
+  every public, progress-routed, and dropped source operation, including heartbeat-table
+  snapshots and updates and connector-generated heartbeat records.
 - Serialized-record tests assert final topic, lowercase string key, exact public value,
   structured `document`, opaque ETag copying, internal-field removal, and one Kafka-null
   tombstone per authoritative delete.
+- Progress-record tests assert the derived final topic, prove heartbeats bypass the public
+  document contract, and fail if a heartbeat is returned as `null` or routed to the public
+  topic.
 - SQL Server fixtures cover `io.debezium.time.IsoTimestamp` strings with zero through
   seven fractional digits and prove every value within a second truncates to the same
   whole-second UTC string without rounding into the next second. They reject non-UTC,
