@@ -145,15 +145,6 @@
           "NUnit3TestAdapter": "4.0.0"
         }
       },
-      "Npgsql": {
-        "type": "Direct",
-        "requested": "[8.0.4, )",
-        "resolved": "8.0.4",
-        "contentHash": "vaYEUlF/pB9m8bs21wQv3Da0kMHT4A9USe47VfY/L2BO97xz5KfIxhEu22QS9d68ZrLxvtL3wQDfDLPr2OjbjA==",
-        "dependencies": {
-          "Microsoft.Extensions.Logging.Abstractions": "8.0.0"
-        }
-      },
       "NUnit": {
         "type": "Direct",
         "requested": "[4.2.2, )",

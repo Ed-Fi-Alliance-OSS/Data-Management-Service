@@ -5,19 +5,28 @@
 
 <#
 .SYNOPSIS
-    Sets up the Ed-Fi DMS local Docker environment for Instance Management E2E testing
+    Sets up the Ed-Fi DMS local Docker environment for Instance Management E2E testing.
 .DESCRIPTION
-    This script starts the Docker stack and provisions the 3 route-context test databases.
-    Tenant and instance creation is handled by the tests themselves.
+    Owns the engine-neutral setup order for the Instance Management route-context stack:
+      1. start-local-dms.ps1 -InfraOnly (Config Service, selected engine, resolved environment);
+      2. provision all three resolved route-context databases once with generated engine-correct DDL;
+      3. verify each database contains the dms.EffectiveSchema singleton and required tables using an
+         engine-dispatched helper (PostgreSQL psql/to_regclass, MSSQL sqlcmd/OBJECT_ID) - the
+         non-selected provider command is never invoked;
+      4. start-local-dms.ps1 -DmsOnly and wait for DMS health.
+    DMS is not started until all three schemas are provisioned and verified. Unhealthy infrastructure
+    or failed verification fails the setup (never skips).
 
-    Extension schema packages (Sample, Homograph) are loaded through the file-based SCHEMA_PACKAGES path.
-    The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
-    claimset fragments are loaded from the AdditionalClaimsets directory mounted at
-    /app/additional-claims. This is the non-bootstrap compatibility path; bootstrap mode
-    activates staged schema and claims automatically when a manifest is present.
-
-    The script runs:
-    ./start-local-dms.ps1 -EnableConfig -EnvironmentFile <selected env file> -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
+    Suite-owned fixture registration (tenants, vendor, data stores, route contexts, applications) and
+    the single post-registration DMS restart are performed by build-dms.ps1 InstanceE2ETest, not here.
+.PARAMETER SkipDockerBuild
+    Skip rebuilding the local images (reuse the running/built images).
+.PARAMETER DataStandardVersion
+    Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") composed into the effective environment.
+.PARAMETER DatabaseEngine
+    Database engine backing the stack. "postgresql" (default) or "mssql".
+.PARAMETER EnvironmentFile
+    Environment file, resolved against eng/docker-compose. Defaults to the route-context env file.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -26,46 +35,33 @@ param(
     [switch]
     $SkipDockerBuild,
 
-    # Optional Ed-Fi Data Standard version (e.g. "5.2", "6.1") composed into the effective environment file.
     [string]
-    $DataStandardVersion
+    $DataStandardVersion,
+
+    [ValidateSet("postgresql", "mssql")]
+    [string]
+    $DatabaseEngine = "postgresql",
+
+    [string]
+    $EnvironmentFile = "./.env.routeContext.e2e"
 )
 
-function Get-RequiredRelationRegclass {
+function Assert-PostgresRouteContextSchema {
     <#
     .SYNOPSIS
-    Returns the to_regclass value for a required relation. Throws when the query itself fails, so a
-    failed psql invocation is never read as "relation absent".
+    Verifies the dms.EffectiveSchema singleton and required relations exist in a PostgreSQL route
+    database via psql/to_regclass. Throws when the query itself fails so a failed invocation is never
+    read as "relation absent".
     #>
-    param(
-        [string]$Database,
-        [string]$QualifiedRelationName
-    )
-
-    $regclass = (
-        docker exec dms-postgresql psql -U postgres -d $Database -tAc "SELECT to_regclass('$QualifiedRelationName');" `
-            | Out-String
-    ).Trim()
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to query database '$Database' for relation '$QualifiedRelationName' (psql exit code $LASTEXITCODE)."
-    }
-
-    return $regclass
-}
-
-function Assert-RelationalSchemaProvisioned {
-    param(
-        [string]$Database
-    )
+    param([string]$Database)
 
     $effectiveSchemaRowCount = (
-        docker exec dms-postgresql psql -U postgres -d $Database -tAc 'SELECT COUNT(*) FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1;' `
-            | Out-String
+        docker exec dms-postgresql psql -U postgres -d $Database -tAc 'SELECT COUNT(*) FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1;' |
+            Out-String
     ).Trim()
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to query database '$Database' for the dms.EffectiveSchema singleton row (psql exit code $LASTEXITCODE)."
+        throw "Failed to query PostgreSQL database '$Database' for the dms.EffectiveSchema singleton row (psql exit code $LASTEXITCODE)."
     }
 
     if ($effectiveSchemaRowCount -ne "1") {
@@ -73,32 +69,96 @@ function Assert-RelationalSchemaProvisioned {
     }
 
     $requiredRelations = @(
-        @{
-            QualifiedName = '"dms"."EffectiveSchema"'
-            Description = 'dms.EffectiveSchema'
-        },
-        @{
-            QualifiedName = '"dms"."Document"'
-            Description = 'dms.Document'
-        },
-        @{
-            QualifiedName = '"edfi"."School"'
-            Description = 'edfi.School'
-        },
-        @{
-            QualifiedName = '"edfi"."Student"'
-            Description = 'edfi.Student'
-        }
+        '"dms"."EffectiveSchema"',
+        '"dms"."Document"',
+        '"edfi"."School"',
+        '"edfi"."Student"'
     )
 
     foreach ($relation in $requiredRelations) {
-        $regclass = Get-RequiredRelationRegclass `
-            -Database $Database `
-            -QualifiedRelationName $relation.QualifiedName
+        $regclass = (
+            docker exec dms-postgresql psql -U postgres -d $Database -tAc "SELECT to_regclass('$relation');" |
+                Out-String
+        ).Trim()
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to query PostgreSQL database '$Database' for relation '$relation' (psql exit code $LASTEXITCODE)."
+        }
 
         if ([string]::IsNullOrWhiteSpace($regclass)) {
-            throw "Schema verification failed: expected relational table '$($relation.Description)' in test database '$Database'."
+            throw "Schema verification failed: expected relational table '$relation' in PostgreSQL test database '$Database'."
         }
+    }
+}
+
+function Assert-MssqlRouteContextSchema {
+    <#
+    .SYNOPSIS
+    Verifies the dms.EffectiveSchema singleton and required tables exist in a SQL Server route database
+    via sqlcmd/OBJECT_ID. Throws when the query itself fails.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and must be passed to sqlcmd as plaintext; SecureString adds no protection across that boundary.')]
+    param([string]$Database, [string]$SaPassword)
+
+    $sqlcmd = @(
+        "/opt/mssql-tools18/bin/sqlcmd",
+        "-S", "localhost", "-U", "sa", "-P", $SaPassword, "-C", "-d", $Database, "-h", "-1", "-W"
+    )
+
+    $effectiveSchemaRowCount = (
+        docker exec dms-mssql @sqlcmd -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dms.EffectiveSchema WHERE EffectiveSchemaSingletonId = 1;" |
+            Out-String
+    ).Trim()
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query SQL Server database '$Database' for the dms.EffectiveSchema singleton row (sqlcmd exit code $LASTEXITCODE)."
+    }
+
+    if ($effectiveSchemaRowCount -ne "1") {
+        throw "Schema verification failed: expected one dms.EffectiveSchema singleton row in test database '$Database' but found '$effectiveSchemaRowCount'."
+    }
+
+    $requiredTables = @(
+        "[dms].[EffectiveSchema]",
+        "[dms].[Document]",
+        "[edfi].[School]",
+        "[edfi].[Student]"
+    )
+
+    foreach ($table in $requiredTables) {
+        $objectId = (
+            docker exec dms-mssql @sqlcmd -Q "SET NOCOUNT ON; SELECT OBJECT_ID('$table');" |
+                Out-String
+        ).Trim()
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to query SQL Server database '$Database' for table '$table' (sqlcmd exit code $LASTEXITCODE)."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($objectId) -or $objectId -eq "NULL") {
+            throw "Schema verification failed: expected relational table '$table' in SQL Server test database '$Database'."
+        }
+    }
+}
+
+function Assert-RouteContextSchemaProvisioned {
+    <#
+    .SYNOPSIS
+    Engine-dispatched schema verification. Only the selected provider's command is invoked.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and must be passed to sqlcmd as plaintext; SecureString adds no protection across that boundary.')]
+    param(
+        [string]$Database,
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+        [string]$SaPassword
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        Assert-MssqlRouteContextSchema -Database $Database -SaPassword $SaPassword
+    }
+    else {
+        Assert-PostgresRouteContextSchema -Database $Database
     }
 }
 
@@ -123,7 +183,8 @@ catch {
     Write-Host "Error details:" -ForegroundColor Red
     if ($dockerCheck) {
         Write-Host $dockerCheck -ForegroundColor Red
-    } else {
+    }
+    else {
         Write-Host $_.Exception.Message -ForegroundColor Red
     }
     exit 1
@@ -139,17 +200,43 @@ try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
 
-    $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "./.env.routeContext.e2e" -DockerComposeRoot $dockerComposeDir
+    # Resolve the environment once: data-standard overlay first, then the database-engine overlay.
+    $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
     $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
         -DataStandardVersion $DataStandardVersion `
         -BaseEnvironmentFile $baseEnvironmentFile `
         -DockerComposeRoot $dockerComposeDir
+    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile `
+        -DatabaseEngine $DatabaseEngine `
+        -BaseEnvironmentFile $resolvedEnvironmentFile `
+        -DockerComposeRoot $dockerComposeDir
+    $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
+
+    # Read the three route-context database names from the resolved environment: require three
+    # non-empty distinct names, and never fall back to a fixed name after resolution. Each name's
+    # safe-name and dedicated-E2E database rules are enforced by provision-e2e-database.ps1 when it
+    # provisions the database below.
+    $databases = @(
+        (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_1_NAME"),
+        (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_2_NAME"),
+        (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_3_NAME")
+    )
+
+    for ($i = 0; $i -lt $databases.Count; $i++) {
+        if ([string]::IsNullOrWhiteSpace($databases[$i])) {
+            throw "INSTANCE_E2E_DATABASE_$($i + 1)_NAME must be set in '$resolvedEnvironmentFile' for Instance Management E2E route-context provisioning."
+        }
+    }
+
+    if (@($databases | Sort-Object -Unique).Count -ne 3) {
+        throw "The three INSTANCE_E2E_DATABASE_*_NAME values must be distinct; got: $($databases -join ', ')."
+    }
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
         Write-Output "Removing stale .bootstrap workspace before file-based schema package E2E startup..."
-        # Fail fast on cleanup errors: a stale manifest left here would trigger bootstrap mode
-        # on the next start-local-dms.ps1 invocation and silently divert the E2E run.
+        # Fail fast on cleanup errors: a stale manifest left here would trigger bootstrap mode on the
+        # next start-local-dms.ps1 invocation and silently divert the E2E run.
         Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop
         if (Test-Path -LiteralPath $bootstrapDir) {
             throw "Failed to remove stale .bootstrap workspace at '$bootstrapDir'. Resolve any file locks or permissions before re-running setup."
@@ -159,13 +246,14 @@ try {
     Write-Host "Starting DMS environment with Instance Management E2E configuration..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
+    Write-Host "  - Database Engine: $DatabaseEngine" -ForegroundColor Gray
     Write-Host "  - Environment File: $resolvedEnvironmentFile" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: $(if ($SkipDockerBuild) { "No" } else { "Yes" })" -ForegroundColor Gray
     Write-Host "  - Route Qualifiers: districtId, schoolYear" -ForegroundColor Cyan
     Write-Host "  - Identity Provider: self-contained" -ForegroundColor Gray
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
-    Write-Host "NOTE: Tenant and instance records will be created by tests" -ForegroundColor Yellow
+    Write-Host "NOTE: Tenant, vendor, instance, and application records are created by the suite-owned fixture in build-dms.ps1" -ForegroundColor Yellow
     Write-Host ""
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
@@ -174,83 +262,76 @@ try {
     $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
     $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
     try {
-        # The resolved environment file carries the file-based ApiSchema package settings. Process
-        # env values win over docker compose --env-file entries, so clear stale overrides
-        # left by teardown or earlier bootstrap runs and let the env file provide
-        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
+        # The resolved environment file carries the file-based ApiSchema package settings. Process env
+        # values win over docker compose --env-file entries, so clear stale overrides left by teardown
+        # or earlier bootstrap runs and let the env file provide USE_API_SCHEMA_PATH, API_SCHEMA_PATH,
+        # and SCHEMA_PACKAGES.
         $env:USE_API_SCHEMA_PATH = $null
         $env:API_SCHEMA_PATH = $null
         $env:SCHEMA_PACKAGES = $null
 
-        # Run the start script - NO instance creation
+        # 1. Start only infrastructure and the Configuration Service. DMS starts after all three
+        #    route-context schemas are provisioned and verified.
+        Write-Host "`nStarting infrastructure and Configuration Service (DMS not yet started)..." -ForegroundColor Cyan
         if ($SkipDockerBuild) {
-            ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -IdentityProvider self-contained -AddExtensionSecurityMetadata
+            ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -IdentityProvider self-contained -AddExtensionSecurityMetadata
         }
         else {
-            ./start-local-dms.ps1 -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
+            ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
+
+        # 2. Provision the three route-context databases once with generated engine-correct DDL, then
+        #    verify each with the engine-dispatched schema check.
+        Write-Host "`nProvisioning and verifying route-context test databases..." -ForegroundColor Cyan
+        $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
+        $mssqlSaPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+
+        foreach ($db in $databases) {
+            & $provisionE2EDatabaseScript `
+                -EnvironmentFile $resolvedEnvironmentFile `
+                -DatabaseEngine $DatabaseEngine `
+                -DatabaseName $db `
+                -Configuration Release
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to provision route-context database '$db' (exit code $LASTEXITCODE)."
+            }
+
+            Assert-RouteContextSchemaProvisioned -Database $db -DatabaseEngine $DatabaseEngine -SaPassword $mssqlSaPassword
+            Write-Host "  Provisioned and verified relational schema: $db" -ForegroundColor Green
+        }
+
+        # 3. Start DMS now that all schemas exist, and wait for DMS health.
+        Write-Host "`nStarting DMS after route-context database provisioning..." -ForegroundColor Cyan
+        ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -IdentityProvider self-contained -AddExtensionSecurityMetadata
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to start DMS service after route-context database provisioning. Exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
         }
     }
     finally {
-        if ($null -eq $previousUseApiSchemaPath) {
-            $env:USE_API_SCHEMA_PATH = $null
-        } else {
-            $env:USE_API_SCHEMA_PATH = $previousUseApiSchemaPath
-        }
-
-        if ($null -eq $previousApiSchemaPath) {
-            $env:API_SCHEMA_PATH = $null
-        } else {
-            $env:API_SCHEMA_PATH = $previousApiSchemaPath
-        }
-
-        if ($null -eq $previousSchemaPackages) {
-            $env:SCHEMA_PACKAGES = $null
-        } else {
-            $env:SCHEMA_PACKAGES = $previousSchemaPackages
-        }
-
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
-
-    # Provision the three test databases.
-    Write-Host "`nProvisioning route-context test databases..." -ForegroundColor Cyan
-
-    $databases = @(
-        "edfi_datamanagementservice_d255901_sy2024",
-        "edfi_datamanagementservice_d255901_sy2025",
-        "edfi_datamanagementservice_d255902_sy2024"
-    )
-
-    $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
-
-    foreach ($db in $databases) {
-        & $provisionE2EDatabaseScript `
-            -EnvironmentFile $resolvedEnvironmentFile `
-            -DatabaseName $db `
-            -Configuration Release
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to provision route-context database '$db' (exit code $LASTEXITCODE)."
-        }
-
-        Assert-RelationalSchemaProvisioned -Database $db
-        Write-Host "  Provisioned and verified relational schema: $db" -ForegroundColor Green
+        if ($null -eq $previousUseApiSchemaPath) { $env:USE_API_SCHEMA_PATH = $null } else { $env:USE_API_SCHEMA_PATH = $previousUseApiSchemaPath }
+        if ($null -eq $previousApiSchemaPath) { $env:API_SCHEMA_PATH = $null } else { $env:API_SCHEMA_PATH = $previousApiSchemaPath }
+        if ($null -eq $previousSchemaPackages) { $env:SCHEMA_PACKAGES = $null } else { $env:SCHEMA_PACKAGES = $previousSchemaPackages }
     }
 
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host "Setup Complete!" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
-    Write-Host "The following databases are ready:" -ForegroundColor Cyan
+    Write-Host "The following route-context databases are provisioned and verified:" -ForegroundColor Cyan
     foreach ($db in $databases) {
         Write-Host "  - $db" -ForegroundColor Gray
     }
     Write-Host ""
-    Write-Host "To tear down this environment, run: ./teardown-local-dms.ps1" -ForegroundColor Cyan
+    $quotedEnvironmentFile = "'" + ($baseEnvironmentFile -replace "'", "''") + "'"
+    Write-Host "To tear down this environment, run: ./teardown-local-dms.ps1 -DatabaseEngine $DatabaseEngine -EnvironmentFile $quotedEnvironmentFile" -ForegroundColor Cyan
 }
 finally {
     Set-Location $originalLocation
