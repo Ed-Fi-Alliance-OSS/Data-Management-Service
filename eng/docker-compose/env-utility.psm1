@@ -760,6 +760,68 @@ function Convert-TemplatePackageToken {
     return "$($match.Groups['prefix'].Value).$($match.Groups['template'].Value).Template.$Engine.$($match.Groups['version'].Value)"
 }
 
+function ConvertTo-CanonicalDatabaseEngine {
+    <#
+    .SYNOPSIS
+        The single engine-token boundary for the PowerShell start/bootstrap scripts. Accepts the two
+        supported engines case-insensitively - so publicly documented variants such as 'MSSQL' and
+        'PostgreSQL' resolve to the canonical 'mssql' / 'postgresql' - and throws for anything else,
+        including surrounding-whitespace variants, which are not canonical engines. Mirrors the
+        api-schema-tools 'connection validate' CLI boundary so a case variant produces the same
+        canonical engine on both sides.
+    #>
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$Engine
+    )
+
+    if ([string]::Equals($Engine, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 'postgresql'
+    }
+    if ([string]::Equals($Engine, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 'mssql'
+    }
+    throw "Unsupported database engine '$Engine'. Use exactly 'postgresql' or 'mssql' (case-insensitive)."
+}
+
+function Get-DatabaseNameComparer {
+    <#
+    .SYNOPSIS
+        Returns the StringComparer that expresses database-name identity for an engine and is the single
+        equivalence policy every database-target comparison and collision guard routes through.
+        PostgreSQL uses Ordinal (case-sensitive: 'SchoolDb' and 'schooldb' are distinct physical
+        databases). SQL Server uses OrdinalIgnoreCase - conservative for its supported/default
+        case-insensitive identifier semantics, so case variants are treated as the same database.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Engine
+    )
+
+    $canonicalEngine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
+    if ($canonicalEngine -eq 'mssql') {
+        return [System.StringComparer]::OrdinalIgnoreCase
+    }
+    return [System.StringComparer]::Ordinal
+}
+
+function Test-DatabaseNameEquivalent {
+    <#
+    .SYNOPSIS
+        Provider-aware database-name equality: returns $true when two names refer to the same physical
+        database under the engine's identity semantics (Get-DatabaseNameComparer). PostgreSQL compares
+        ordinally (case-sensitive); SQL Server compares case-insensitively. All datastore/CMS target
+        comparisons and the separate-topology collision guard use this one policy rather than ad hoc
+        OrdinalIgnoreCase comparers.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Engine,
+        [AllowEmptyString()][AllowNull()][string]$Left,
+        [AllowEmptyString()][AllowNull()][string]$Right
+    )
+
+    $comparer = Get-DatabaseNameComparer -Engine $Engine
+    return $comparer.Equals([string]$Left, [string]$Right)
+}
+
 function Test-SqlServerConnectionString {
     <#
     .SYNOPSIS
@@ -798,6 +860,10 @@ function Invoke-ConnectionStringValidation {
         [Parameter(Mandatory)][AllowEmptyString()][string]$ConnectionString,
         [Parameter(Mandatory)][string]$SchemaToolPath
     )
+    # Canonicalize before the token crosses to the CLI: ValidateSet accepts and preserves a case
+    # variant ('MSSQL'), so route it through the single engine-token boundary to forward the canonical
+    # 'postgresql'/'mssql' the verb parses with.
+    $Engine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
     $output = $ConnectionString | & $SchemaToolPath connection validate --engine $Engine 2>$null
     if ($LASTEXITCODE -ne 0) {
         throw "The connection-string validator (api-schema-tools 'connection validate') exited $LASTEXITCODE for engine '$Engine'. Ensure the tool at '$SchemaToolPath' is built and runnable; a build that predates the 'connection validate' verb exits non-zero, so rebuild or re-publish api-schema-tools (dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools)."
@@ -1067,6 +1133,11 @@ function Resolve-EffectiveConfigRuntimeContract {
         [hashtable]$EnvValues
     )
 
+    # Canonicalize the selected engine once at entry through the single engine-token boundary, so every
+    # comparison below, the CLI forwarding, and the returned contract use the canonical 'postgresql' /
+    # 'mssql' even when a caller supplied a case variant ('MSSQL') through ValidateSet.
+    $InfrastructureEngine = ConvertTo-CanonicalDatabaseEngine -Engine $InfrastructureEngine
+
     # (STACK INVARIANT, always) SQL Server SA password, keyed on the AUTHORITATIVE engine the start script
     # selected - not on the CMS provider - so it is enforced even when no local Configuration Service
     # participates (a Keycloak run without the local config service still starts the SQL Server datastore).
@@ -1119,7 +1190,7 @@ function Resolve-EffectiveConfigRuntimeContract {
                 $fileDatastore = Resolve-EnvValueReference -Value $fileRaw -EnvValues $EnvValues
                 $containerTargets = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedDatastoreConnectionString -SchemaToolPath $SchemaToolPath)
                 $containerDatastore = if ($containerTargets.Count -gt 0) { $containerTargets[0] } else { '' }
-                if (-not [string]::Equals($containerDatastore, $fileDatastore, [System.StringComparison]::OrdinalIgnoreCase)) {
+                if (-not (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $containerDatastore -Right $fileDatastore)) {
                     throw "Configuration runtime-contract error: the DMS datastore database the containers receive resolves (via Docker Compose) to '$containerDatastore', but host-side configuration and provisioning read '$fileDatastore' from the env file for $datastoreKey. Docker Compose gives the shell environment precedence over --env-file - directly or through an indirectly referenced variable - so this split would create/provision one database while the DMS container targets another. Unset or align the conflicting shell variable."
                 }
             }
@@ -1169,14 +1240,14 @@ function Resolve-EffectiveConfigRuntimeContract {
         # resolved connection is authoritative and its single target IS the effective name.
         if (-not [string]::IsNullOrWhiteSpace($ConfigDatabaseName)) {
             foreach ($target in $targetDatabases) {
-                if (-not [string]::Equals($target, $ConfigDatabaseName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                if (-not (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $target -Right $ConfigDatabaseName)) {
                     throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$target', but the effective configuration database is '$ConfigDatabaseName'. Align the connection string (or the shell variable it routes through), or pass -SeparateConfigDatabase to select the dedicated configuration database."
                 }
             }
             $effectiveDatabaseName = $ConfigDatabaseName
         }
         else {
-            $distinctTargets = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            $distinctTargets = [System.Collections.Generic.HashSet[string]]::new((Get-DatabaseNameComparer -Engine $InfrastructureEngine))
             foreach ($target in $targetDatabases) { [void]$distinctTargets.Add($target) }
             if ($distinctTargets.Count -gt 1) {
                 throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING specifies conflicting database targets ($($targetDatabases -join ', ')). Set a single database so OpenIddict initialization and the Configuration Service agree."
@@ -1599,6 +1670,10 @@ function Resolve-ConfigDatabaseTopologyEnvironmentFile {
         $DockerComposeRoot = $PSScriptRoot
     }
 
+    # Canonicalize through the single engine-token boundary so the datastore-key selection and the
+    # provider-aware collision guard below use the canonical engine even under a case variant.
+    $DatabaseEngine = ConvertTo-CanonicalDatabaseEngine -Engine $DatabaseEngine
+
     $separateConfigDatabaseName = "edfi_configurationservice"
 
     $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
@@ -1622,6 +1697,16 @@ function Resolve-ConfigDatabaseTopologyEnvironmentFile {
     # (so a re-resolution stays separate and no-ops below), not from preserving an existing name.
     if ($SeparateConfigDatabase) {
         $effectiveName = $separateConfigDatabaseName
+
+        # Separate mode requires a configuration database physically distinct from the DMS datastore.
+        # Reject a datastore that is the same physical database as the dedicated name under the engine's
+        # identity semantics (Test-DatabaseNameEquivalent) - PostgreSQL ordinal, SQL Server
+        # case-insensitive - so the topology is not "separate" in name only. This routes through the one
+        # provider-aware equivalence policy shared with the runtime contract's target comparisons.
+        if (-not [string]::IsNullOrWhiteSpace($datastoreName) -and
+            (Test-DatabaseNameEquivalent -Engine $DatabaseEngine -Left $datastoreName -Right $separateConfigDatabaseName)) {
+            throw "Resolve-ConfigDatabaseTopologyEnvironmentFile: -SeparateConfigDatabase selects the dedicated configuration database '$separateConfigDatabaseName', but the DMS datastore database ('$datastoreKey' = '$datastoreName') is the same physical database under $DatabaseEngine identity semantics, so the topology would not be separate. Choose a different DMS datastore name, or omit -SeparateConfigDatabase to use the shared topology."
+        }
     }
     else {
         $effectiveName = $datastoreName

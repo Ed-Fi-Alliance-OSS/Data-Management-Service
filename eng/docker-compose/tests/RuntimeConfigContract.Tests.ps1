@@ -148,6 +148,33 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
         }
     }
 
+    Context "provider-aware database identity at the contract boundary (finding 2, real parser)" {
+        # The CMS-target and datastore-name comparisons route through the one provider-aware identity
+        # policy (Test-DatabaseNameEquivalent): PostgreSQL is case-sensitive (a case-only difference is a
+        # DIFFERENT physical database and must fail), SQL Server is case-insensitive (a case variant is the
+        # SAME database and must be accepted). The connection strings carry a case-variant database name;
+        # the exact provider builder preserves it, so the equality policy is what decides pass/fail.
+        It "rejects a PostgreSQL CMS target that differs from the effective name only by case" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider 'postgresql' -ResolvedCmsConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=EdFi_DataManagementService;' -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } |
+                Should -Throw "*EdFi_DataManagementService*"
+        }
+
+        It "accepts a SQL Server CMS target that differs from the effective name only by case" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider 'mssql' -ResolvedCmsConnectionString 'Server=dms-mssql,1433;Database=EdFi_DataManagementService;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -ConfigDatabaseName 'edfi_datamanagementservice'
+            $contract.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
+        }
+
+        It "rejects a PostgreSQL container datastore that differs from the env-file value only by case" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=EdFi_DataManagementService' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
+                Should -Throw "*datastore database the containers receive*"
+        }
+
+        It "accepts a SQL Server container datastore that differs from the env-file value only by case" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedDmsProvider 'mssql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -ResolvedDatastoreConnectionString 'Server=dms-mssql,1433;Database=EdFi_DataManagementService;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true' -EnvValues @{ MSSQL_DB_NAME = 'edfi_datamanagementservice' }
+            $contract.DmsProvider | Should -Be 'mssql'
+        }
+    }
+
     Context "Configuration Service participation split (Keycloak without a local config service)" {
         # Blocker regression: a supported Keycloak start that omits the local config service (external
         # CONFIG_SERVICE_URL, or none) composes no config service, so Compose exposes no provider/connection.
