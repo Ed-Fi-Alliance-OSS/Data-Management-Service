@@ -166,6 +166,39 @@ public static class FailureResponse
             errors: errors
         );
 
+    // A request referencing a resource that does not exist. Per the Ed-Fi Error Response Knowledge Base
+    // this is a 409 conflict (urn:ed-fi:api:conflict:unresolved-reference), not a 400 data-validation
+    // failure, so validationErrors stays empty and any supplementary detail goes in errors.
+    public static JsonNode ForUnresolvedReference(
+        string detail,
+        string correlationId,
+        string[]? errors = null
+    ) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:unresolved-reference",
+            title: "Unresolved Reference",
+            status: 409,
+            correlationId: correlationId,
+            errors: errors
+        );
+
+    // The requested action cannot be performed because the item is referenced by existing item(s), e.g.
+    // deleting a resource that still has dependents (urn:ed-fi:api:conflict:dependent-item-exists, 409).
+    public static JsonNode ForDependentItemExists(
+        string detail,
+        string correlationId,
+        string[]? errors = null
+    ) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:dependent-item-exists",
+            title: "Dependent Item Exists",
+            status: 409,
+            correlationId: correlationId,
+            errors: errors
+        );
+
     public static JsonNode ForBadGateway(string detail, string correlationId, string[]? errors = null) =>
         CreateBaseJsonObject(
             detail: detail,

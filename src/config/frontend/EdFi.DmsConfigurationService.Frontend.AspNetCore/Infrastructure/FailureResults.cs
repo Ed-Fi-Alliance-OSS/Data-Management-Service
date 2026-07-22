@@ -111,6 +111,38 @@ internal static class FailureResults
         );
     }
 
+    // A duplicate/non-unique identity conflict (409, urn:ed-fi:api:conflict:non-unique-identity). The
+    // caller-supplied errors are used verbatim; validationErrors stays empty.
+    public static IResult NonUniqueIdentity(string detail, string correlationId, string[]? errors = null)
+    {
+        return Results.Json(
+            FailureResponse.ForNonUniqueIdentity(detail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 409
+        );
+    }
+
+    // A reference to a resource that does not exist (409, urn:ed-fi:api:conflict:unresolved-reference).
+    public static IResult UnresolvedReference(string detail, string correlationId, string[]? errors = null)
+    {
+        return Results.Json(
+            FailureResponse.ForUnresolvedReference(detail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 409
+        );
+    }
+
+    // The item is referenced by existing item(s) and cannot be acted on (409,
+    // urn:ed-fi:api:conflict:dependent-item-exists).
+    public static IResult DependentItemExists(string detail, string correlationId, string[]? errors = null)
+    {
+        return Results.Json(
+            FailureResponse.ForDependentItemExists(detail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 409
+        );
+    }
+
     public static IResult InvalidClient(string detail, string correlationId)
     {
         var errors = GetIdentityErrorDetails(detail, "invalid_client");

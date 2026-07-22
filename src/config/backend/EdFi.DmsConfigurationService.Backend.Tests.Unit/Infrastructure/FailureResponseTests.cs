@@ -232,6 +232,49 @@ public class FailureResponseTests
     }
 
     [Test]
+    public void It_returns_the_unresolved_reference_conflict_contract()
+    {
+        // Arrange
+        string detail = "One or more referenced items could not be resolved. See 'errors' for details.";
+        string[] errors = ["Reference 'VendorId' does not exist."];
+
+        // Act
+        var result = FailureResponse.ForUnresolvedReference(detail, CorrelationId, errors);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be(detail);
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+        result["title"]?.GetValue<string>().Should().Be("Unresolved Reference");
+        result["status"]?.GetValue<int>().Should().Be(409);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
+    }
+
+    [Test]
+    public void It_returns_the_dependent_item_exists_conflict_contract()
+    {
+        // Arrange
+        string detail =
+            "The requested action cannot be performed because this item is referenced by existing item(s).";
+        string[] errors = ["Profile is assigned to one or more applications."];
+
+        // Act
+        var result = FailureResponse.ForDependentItemExists(detail, CorrelationId, errors);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be(detail);
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:dependent-item-exists");
+        result["title"]?.GetValue<string>().Should().Be("Dependent Item Exists");
+        result["status"]?.GetValue<int>().Should().Be(409);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
+    }
+
+    [Test]
     public void ForBadGateway_ShouldReturnCorrectJsonNode()
     {
         // Arrange

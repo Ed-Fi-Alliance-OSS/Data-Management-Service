@@ -232,5 +232,85 @@ public class FailureResultsTests
             contentType.Should().Be(ProblemJsonContentType);
             body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-gateway");
         }
+
+        [Test]
+        public void It_NonUniqueIdentity_returns_the_409_conflict_contract_using_errors_verbatim()
+        {
+            var (statusCode, contentType, body) = Inspect(
+                FailureResults.NonUniqueIdentity(
+                    "A vendor with this name already exists.",
+                    CorrelationId,
+                    ["A vendor with this name already exists."]
+                )
+            );
+
+            statusCode.Should().Be(409);
+            contentType.Should().Be(ProblemJsonContentType);
+            body["detail"]?.GetValue<string>().Should().Be("A vendor with this name already exists.");
+            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+            body["title"]?.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
+            body["status"]?.GetValue<int>().Should().Be(409);
+            body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+            body["validationErrors"]?.AsObject().Count.Should().Be(0);
+            var errors = body["errors"]!.AsArray();
+            errors.Count.Should().Be(1);
+            errors[0]!.GetValue<string>().Should().Be("A vendor with this name already exists.");
+        }
+
+        [Test]
+        public void It_UnresolvedReference_returns_the_409_conflict_contract_using_errors_verbatim()
+        {
+            var (statusCode, contentType, body) = Inspect(
+                FailureResults.UnresolvedReference(
+                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                    CorrelationId,
+                    ["Reference 'VendorId' does not exist."]
+                )
+            );
+
+            statusCode.Should().Be(409);
+            contentType.Should().Be(ProblemJsonContentType);
+            body["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("One or more referenced items could not be resolved. See 'errors' for details.");
+            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+            body["title"]?.GetValue<string>().Should().Be("Unresolved Reference");
+            body["status"]?.GetValue<int>().Should().Be(409);
+            body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+            body["validationErrors"]?.AsObject().Count.Should().Be(0);
+            var errors = body["errors"]!.AsArray();
+            errors.Count.Should().Be(1);
+            errors[0]!.GetValue<string>().Should().Be("Reference 'VendorId' does not exist.");
+        }
+
+        [Test]
+        public void It_DependentItemExists_returns_the_409_conflict_contract_using_errors_verbatim()
+        {
+            var (statusCode, contentType, body) = Inspect(
+                FailureResults.DependentItemExists(
+                    "The requested action cannot be performed because this item is referenced by existing item(s).",
+                    CorrelationId,
+                    ["Profile is assigned to one or more applications."]
+                )
+            );
+
+            statusCode.Should().Be(409);
+            contentType.Should().Be(ProblemJsonContentType);
+            body["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(
+                    "The requested action cannot be performed because this item is referenced by existing item(s)."
+                );
+            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:dependent-item-exists");
+            body["title"]?.GetValue<string>().Should().Be("Dependent Item Exists");
+            body["status"]?.GetValue<int>().Should().Be(409);
+            body["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+            body["validationErrors"]?.AsObject().Count.Should().Be(0);
+            var errors = body["errors"]!.AsArray();
+            errors.Count.Should().Be(1);
+            errors[0]!.GetValue<string>().Should().Be("Profile is assigned to one or more applications.");
+        }
     }
 }
