@@ -5,10 +5,11 @@
 
 # DMS-1284: the DMS E2E and Instance Management E2E suites tear down through one shared,
 # engine-aware primitive. Teardown must delegate to the project-scoped
-# `start-local-dms.ps1 -d -v -DatabaseEngine <postgresql|mssql>` down and must never reach for
-# machine-wide cleanup (dangling-volume prune, container-name regex removal, unprefixed volume
-# removal, or deletion of the shared external `dms` network). These tests invoke the module with
-# the primitive and Docker mocked and assert on the behavior, not on script text.
+# `start-local-dms.ps1 -d -v -DatabaseEngine <postgresql|mssql>` down (with parameters bound BY
+# NAME, not positional array splatting) and must never reach for machine-wide cleanup
+# (dangling-volume prune, container-name regex removal, unprefixed volume removal, or deletion of
+# the shared external `dms` network). These tests invoke the module against a fake primitive and a
+# mocked Docker and assert on the actually bound parameters and behavior, not on script text.
 
 param()
 
@@ -22,30 +23,27 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
         Remove-Module e2e-teardown -Force -ErrorAction SilentlyContinue
     }
 
-    Context "Get-E2ETeardownPlan builds project-scoped primitive arguments" {
+    Context "Get-E2ETeardownPlan builds project-scoped primitive parameters" {
         BeforeAll {
             $script:composeRoot = Join-Path $TestDrive "docker-compose"
             New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.e2e") -Value "E2E_DATABASE_NAME=edfi_e2e"
-            Set-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "E2E_DATABASE_NAME=edfi_default"
         }
 
-        It "forwards the postgresql engine with -d -v -RemoveBootstrap to the primitive" {
+        It "forwards the postgresql engine with -d -v -RemoveBootstrap as named switches" {
             $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
 
-            $plan.StartArguments | Should -Contain "-d"
-            $plan.StartArguments | Should -Contain "-v"
-            $plan.StartArguments | Should -Contain "-RemoveBootstrap"
-            $plan.StartArguments | Should -Contain "-DatabaseEngine"
-            $plan.StartArguments | Should -Contain "postgresql"
+            $plan.StartParameters.d | Should -BeTrue
+            $plan.StartParameters.v | Should -BeTrue
+            $plan.StartParameters.RemoveBootstrap | Should -BeTrue
+            $plan.StartParameters.DatabaseEngine | Should -Be "postgresql"
         }
 
         It "forwards the mssql engine" {
             $plan = Get-E2ETeardownPlan -DatabaseEngine mssql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot
 
             $plan.DatabaseEngine | Should -Be "mssql"
-            $plan.StartArguments | Should -Contain "mssql"
-            $plan.StartArguments | Should -Not -Contain "postgresql"
+            $plan.StartParameters.DatabaseEngine | Should -Be "mssql"
         }
 
         It "points at the start-local-dms.ps1 primitive in the compose root" {
@@ -60,13 +58,12 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
 
             [System.IO.Path]::IsPathRooted($plan.EnvironmentFilePath) | Should -BeTrue
             $plan.EnvironmentFilePath | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot ".env.e2e")))
-            $plan.StartArguments | Should -Contain $plan.EnvironmentFilePath
+            $plan.StartParameters.EnvironmentFile | Should -Be $plan.EnvironmentFilePath
         }
 
-        It "falls back to .env when the requested environment file is absent" {
-            $plan = Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.routeContext.e2e" -ComposeRoot $script:composeRoot
-
-            $plan.EnvironmentFilePath | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot ".env")))
+        It "fails fast when the selected environment file is absent (no silent fallback)" {
+            { Get-E2ETeardownPlan -DatabaseEngine postgresql -EnvironmentFile ".env.routeContext.e2e" -ComposeRoot $script:composeRoot } |
+                Should -Throw -ExpectedMessage "*environment file not found*"
         }
 
         It "targets exactly the two known locally-built images and no others" {
@@ -76,7 +73,64 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
         }
     }
 
-    Context "Invoke-E2EEngineAwareTeardown delegates safely and never selects unrelated resources" {
+    Context "Invoke-E2EEngineAwareTeardown binds named parameters to the primitive" {
+        BeforeAll {
+            # A fake start-local-dms.ps1 with the same parameter names as the real primitive.
+            # It records the values it actually binds so the test proves named binding, not
+            # positional array splatting. ValidateSet on -DatabaseEngine would fail if a switch
+            # such as -d were bound positionally into it.
+            $script:composeRoot = Join-Path $TestDrive "docker-compose-bind"
+            New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.e2e") -Value "E2E_DATABASE_NAME=edfi_e2e"
+
+            $fakePrimitive = @'
+param(
+    [switch] $d,
+    [switch] $v,
+    [ValidateSet("postgresql", "mssql")]
+    [string] $DatabaseEngine = "postgresql",
+    [string] $EnvironmentFile,
+    [switch] $RemoveBootstrap
+)
+[pscustomobject]@{
+    d               = [bool]$d
+    v               = [bool]$v
+    DatabaseEngine  = $DatabaseEngine
+    EnvironmentFile = $EnvironmentFile
+    RemoveBootstrap = [bool]$RemoveBootstrap
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PSScriptRoot "bound-parameters.json")
+exit 0
+'@
+            Set-Content -LiteralPath (Join-Path $script:composeRoot "start-local-dms.ps1") -Value $fakePrimitive
+            $script:boundParametersPath = Join-Path $script:composeRoot "bound-parameters.json"
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:boundParametersPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It "binds -d and -v as switches and forwards the mssql engine, environment file, and -RemoveBootstrap" {
+            Invoke-E2EEngineAwareTeardown -DatabaseEngine mssql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot -SkipLocalImageRemoval | Out-Null
+
+            $bound = Get-Content -LiteralPath $script:boundParametersPath -Raw | ConvertFrom-Json
+            $bound.d | Should -BeTrue
+            $bound.v | Should -BeTrue
+            $bound.RemoveBootstrap | Should -BeTrue
+            $bound.DatabaseEngine | Should -Be "mssql"
+            $bound.EnvironmentFile | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot ".env.e2e")))
+        }
+
+        It "binds the postgresql engine by name" {
+            Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot -SkipLocalImageRemoval | Out-Null
+
+            $bound = Get-Content -LiteralPath $script:boundParametersPath -Raw | ConvertFrom-Json
+            $bound.DatabaseEngine | Should -Be "postgresql"
+            $bound.d | Should -BeTrue
+            $bound.v | Should -BeTrue
+        }
+    }
+
+    Context "Invoke-E2EEngineAwareTeardown never selects unrelated resources" {
         BeforeAll {
             $script:composeRoot = Join-Path $TestDrive "docker-compose-run"
             New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
@@ -84,7 +138,7 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
         }
 
         BeforeEach {
-            # Mock the primitive so no real stack is torn down; capture the forwarded arguments.
+            # Mock the primitive so no real stack is torn down; capture the forwarded parameters.
             Mock -ModuleName e2e-teardown Invoke-StartLocalDmsTeardown { }
 
             # Seed Docker discovery with UNRELATED resources so the assertions prove the wrapper
@@ -105,17 +159,16 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
             }
         }
 
-        It "delegates teardown to the project-scoped start-local-dms.ps1 primitive with the selected engine and environment" {
+        It "delegates teardown to the project-scoped primitive with the selected engine and environment" {
             Invoke-E2EEngineAwareTeardown -DatabaseEngine mssql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot | Out-Null
 
             Should -Invoke -ModuleName e2e-teardown Invoke-StartLocalDmsTeardown -Times 1 -Exactly -ParameterFilter {
                 ($StartScript -match "start-local-dms\.ps1$") -and
-                ($StartArguments -contains "-d") -and
-                ($StartArguments -contains "-v") -and
-                ($StartArguments -contains "-RemoveBootstrap") -and
-                ($StartArguments -contains "-DatabaseEngine") -and
-                ($StartArguments -contains "mssql") -and
-                (($StartArguments -join "`n") -match "\.env\.e2e")
+                ($StartParameters.d -eq $true) -and
+                ($StartParameters.v -eq $true) -and
+                ($StartParameters.RemoveBootstrap -eq $true) -and
+                ($StartParameters.DatabaseEngine -eq "mssql") -and
+                ($StartParameters.EnvironmentFile -match "\.env\.e2e$")
             }
         }
 
@@ -161,6 +214,18 @@ Describe "E2E engine-aware teardown (DMS-1284)" {
             Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot -SkipLocalImageRemoval | Out-Null
 
             Should -Not -Invoke -ModuleName e2e-teardown docker -ParameterFilter { $args[0] -eq "rmi" }
+        }
+
+        It "throws naming the exact image when its removal fails" {
+            Mock -ModuleName e2e-teardown docker {
+                if ($args[0] -eq "images" -and ($args -contains "-q")) { return "sha256:knownlocalimage" }
+                if ($args[0] -eq "rmi") { $global:LASTEXITCODE = 1; return "Error: image is referenced in multiple repositories" }
+                $global:LASTEXITCODE = 0
+                return $null
+            }
+
+            { Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot } |
+                Should -Throw -ExpectedMessage "*ed-fi-api-local*"
         }
     }
 }

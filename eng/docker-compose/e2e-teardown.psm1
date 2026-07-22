@@ -16,6 +16,9 @@
     container-name pattern, by unprefixed volume name, or by removing the shared external `dms`
     network. The only removals outside the compose project are the two known locally-built images,
     matched by their exact repository names so published and unrelated images are never touched.
+
+    Parameters are forwarded to the primitive by name (hashtable splatting), so switches such as
+    -d and -v bind as switches rather than positional argument strings.
 #>
 
 Set-StrictMode -Version Latest
@@ -28,8 +31,9 @@ $script:KnownLocalImageNames = @('ed-fi-api-local', 'ed-fi-api-config-local')
 function Get-E2ETeardownPlan {
     <#
     .SYNOPSIS
-        Builds the teardown plan (primitive path, forwarded arguments, and known local images)
-        for the selected engine and environment file. Pure: no Docker or filesystem mutation.
+        Builds the teardown plan (primitive path, named parameters, and known local images) for
+        the selected engine and environment file. Pure except that it fails fast when the selected
+        environment file does not exist. No Docker or filesystem mutation.
     #>
     [CmdletBinding()]
     param(
@@ -45,9 +49,7 @@ function Get-E2ETeardownPlan {
     $resolvedComposeRoot = [System.IO.Path]::GetFullPath($ComposeRoot)
 
     # Resolve the environment file the suite setup used. A caller may pass an absolute path or a
-    # name/relative path resolved against the compose root. If the requested file is absent, fall
-    # back to the shared .env so a clean checkout still tears down, matching the primitive's own
-    # local-settings default.
+    # name/relative path resolved against the compose root.
     $environmentFilePath =
         if ([System.IO.Path]::IsPathRooted($EnvironmentFile)) {
             $EnvironmentFile
@@ -56,37 +58,38 @@ function Get-E2ETeardownPlan {
             [System.IO.Path]::GetFullPath((Join-Path $resolvedComposeRoot $EnvironmentFile))
         }
 
-    if (-not (Test-Path -LiteralPath $environmentFilePath)) {
-        $fallbackEnvironmentFile = Join-Path $resolvedComposeRoot '.env'
-        if (Test-Path -LiteralPath $fallbackEnvironmentFile) {
-            $environmentFilePath = [System.IO.Path]::GetFullPath($fallbackEnvironmentFile)
-        }
+    # Fail fast on a missing environment file (matching the Resolve-LocalSettingsEnvironmentFile
+    # fail-fast-on-typo contract). Tearing down with a different compose/identity/engine file than
+    # setup used would leave resources behind, so a typo must not silently fall back to another file.
+    if (-not (Test-Path -LiteralPath $environmentFilePath -PathType Leaf)) {
+        throw "E2E teardown environment file not found: '$environmentFilePath'. Pass -EnvironmentFile with the file the suite setup used (resolved against '$resolvedComposeRoot')."
     }
 
     [pscustomobject]@{
-        DatabaseEngine        = $DatabaseEngine
-        ComposeRoot           = $resolvedComposeRoot
-        EnvironmentFilePath   = $environmentFilePath
-        StartScript           = Join-Path $resolvedComposeRoot 'start-local-dms.ps1'
-        # Project-scoped teardown via the existing primitive. -RemoveBootstrap clears the
-        # .bootstrap workspace only after a successful down (the primitive gates it), so a
-        # subsequent setup does not trip fingerprint-mismatch fail-fast.
-        StartArguments        = @(
-            '-d'
-            '-v'
-            '-DatabaseEngine', $DatabaseEngine
-            '-EnvironmentFile', $environmentFilePath
-            '-RemoveBootstrap'
-        )
-        KnownLocalImageNames  = $script:KnownLocalImageNames
+        DatabaseEngine       = $DatabaseEngine
+        ComposeRoot          = $resolvedComposeRoot
+        EnvironmentFilePath  = $environmentFilePath
+        StartScript          = Join-Path $resolvedComposeRoot 'start-local-dms.ps1'
+        # Named parameters for the project-scoped teardown primitive. Splatted as a hashtable so
+        # -d / -v / -RemoveBootstrap bind as switches. -RemoveBootstrap clears the .bootstrap
+        # workspace only after a successful down (the primitive gates it), so a subsequent setup
+        # does not trip fingerprint-mismatch fail-fast.
+        StartParameters      = @{
+            d               = $true
+            v               = $true
+            DatabaseEngine  = $DatabaseEngine
+            EnvironmentFile = $environmentFilePath
+            RemoveBootstrap = $true
+        }
+        KnownLocalImageNames = $script:KnownLocalImageNames
     }
 }
 
 function Invoke-StartLocalDmsTeardown {
     <#
     .SYNOPSIS
-        Invokes the project-scoped start-local-dms.ps1 teardown primitive. Isolated so tests can
-        mock the primitive invocation without running the full stack.
+        Invokes the project-scoped start-local-dms.ps1 teardown primitive with named parameters.
+        Isolated so tests can exercise the parameter binding against a fake primitive.
     #>
     [CmdletBinding()]
     param(
@@ -94,10 +97,10 @@ function Invoke-StartLocalDmsTeardown {
         [string] $StartScript,
 
         [Parameter(Mandatory)]
-        [string[]] $StartArguments
+        [hashtable] $StartParameters
     )
 
-    & $StartScript @StartArguments
+    & $StartScript @StartParameters
 
     if ($LASTEXITCODE -ne 0) {
         throw "Engine-aware teardown failed: start-local-dms.ps1 exited with code $LASTEXITCODE."
@@ -108,7 +111,7 @@ function Remove-KnownLocalImage {
     <#
     .SYNOPSIS
         Removes a single locally-built image by its exact repository name, if present. Never
-        touches published or unrelated images.
+        touches published or unrelated images. Throws (naming the image) if removal fails.
     #>
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
@@ -119,6 +122,9 @@ function Remove-KnownLocalImage {
     $imageId = docker images -q $ImageName 2>$null
     if ($imageId -and $PSCmdlet.ShouldProcess($ImageName, "Remove locally-built image")) {
         docker rmi $ImageName -f 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to remove locally-built image '$ImageName' (docker rmi exit code $LASTEXITCODE)."
+        }
     }
 }
 
@@ -144,7 +150,7 @@ function Invoke-E2EEngineAwareTeardown {
 
     $plan = Get-E2ETeardownPlan -DatabaseEngine $DatabaseEngine -EnvironmentFile $EnvironmentFile -ComposeRoot $ComposeRoot
 
-    Invoke-StartLocalDmsTeardown -StartScript $plan.StartScript -StartArguments $plan.StartArguments
+    Invoke-StartLocalDmsTeardown -StartScript $plan.StartScript -StartParameters $plan.StartParameters
 
     if (-not $SkipLocalImageRemoval) {
         foreach ($imageName in $plan.KnownLocalImageNames) {
