@@ -137,7 +137,10 @@ implementation inputs.
   security, observation, restart/recovery, and explicit destructive cleanup. It identifies
   exact baseline replacement and incompatible-contract cutover as deferred rather than
   presenting an unimplemented write gate as an operator procedure, and identifies provider
-  source-history loss as terminal and unrecoverable in v1.
+  source-history loss as terminal and unrecoverable in v1. Sensitive-data disclosure
+  response fences publication, revokes consumer access, and requires recorded platform
+  purge evidence for destructive retirement of the affected topic generation; it never
+  treats compaction or corrective republication as purge and leaves CDC unavailable.
 
 ## Out of Scope
 

@@ -22,7 +22,11 @@ API or CDC representation bytes would otherwise reuse a strong ETag. The utility
 outside ordinary DMS request processing while the selected data store is explicitly
 offline, advances the existing canonical content stamps for an explicit document scope,
 and lets ordinary projection and streaming publish corrected higher-version state
-eventually. The utility does not implement or certify a cross-replica/external-writer gate.
+eventually when prior Kafka records do not require purging. When a correction removes
+sensitive bytes that should never have been published, the utility is only the database/API
+correction step in E19's destructive disclosure-response workflow; same-topic republication
+is prohibited. The utility does not implement or certify a cross-replica/external-writer
+gate or Kafka purge.
 
 This is a separate implementation story. General DocumentCache and CDC runbooks invoke
 the utility but must not approximate it with hand-written database updates.
@@ -50,7 +54,9 @@ The utility is necessary when corrected bytes would retain the old ETag, includi
    remain unchanged.
 4. A security or privacy correction removes or masks bytes that should not have appeared
    in an API or stream representation, but no ordinary domain write exists to advance the
-   affected documents' stamps.
+   affected documents' stamps. If those bytes were published to Kafka and require purging,
+   the connector must be fenced and the affected binding generation destructively retired
+   through the E19 runbook; restamping and same-topic republication alone are insufficient.
 5. A DMS upgrade fixes a materializer/composer interaction so `DocumentJson` changes while
    the composed `StreamEtag` would remain the same for the fixed stream context.
 
@@ -113,7 +119,9 @@ The utility is not necessary for:
 10. Add operator documentation showing preview, execute, resume, abort-while-offline,
     and verification workflows. Include all example scenarios above, distinguish this
     offline utility from ordinary eventual recovery, and identify equal-version baseline
-    replacement and incompatible-contract cutover as deferred.
+    replacement and incompatible-contract cutover as deferred. Cross-link E19's
+    sensitive-data disclosure response and state that the ordinary same-topic workflow must
+    not be used when previously published bytes require purging.
 
 ## Acceptance Evidence
 
@@ -140,9 +148,12 @@ The utility is not necessary for:
   retained the original ETag. After restamp and corrected materialization, both the API
   ETag and `StreamEtag` differ because `ContentVersion` differs; a conditional GET using
   the old ETag does not return `304` for the corrected representation.
-- CDC integration tests retain the binding, topic, partitioning, and connector offsets,
-  publish affected documents at higher `contentVersion` values, and prove conforming
-  consumers replace the prior state. The operation emits no cache-maintenance tombstones.
+- CDC integration tests for corrections that do not require prior-record purging retain the
+  binding, topic, partitioning, and connector offsets, publish affected documents at higher
+  `contentVersion` values, and prove conforming consumers replace the prior state. The
+  operation emits no cache-maintenance tombstones. Sensitive-data disclosure guidance
+  prohibits this same-topic path and instead requires connector fencing, consumer ACL
+  revocation, verified destructive retirement, and continued not-ready status.
 - Audit output identifies the operation and outcome without credentials, sensitive tenant
   labels, or raw connection metadata.
 
@@ -153,6 +164,8 @@ The utility is not necessary for:
 - Ad hoc SQL instructions for direct stamp manipulation.
 - A new representation epoch, Kafka ordering field, topic generation, or connector-offset
   reset.
+- Kafka containment, topic destruction, or replacement-namespace bootstrap. E19 owns the
+  destructive disclosure-response runbook; the replacement workflow remains deferred.
 - A production cross-replica/external-writer admission gate or transaction drain.
 - Certification of an exact CDC baseline after first-write admission.
 - Ownership of incompatible stream-contract migration; a future cutover may still invoke

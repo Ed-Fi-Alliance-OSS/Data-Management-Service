@@ -123,7 +123,7 @@ Notes:
 | E16 | [Bootstrap DMS Developer Environment Initialization](16-bootstrap/EPIC.md) | E03 | Local/bootstrap scripts and selected data-store context consumed by CDC connector registration |
 | E17 | [Close MSSQL Implementation and Parity Gaps](17-mssql-gap-closure/EPIC.md) | — | SQL Server deployment, runtime-validation, persistence-correctness, and operational-workflow parity |
 | E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Always-provisioned cache/identity DDL and singleton cache-ahead latch with optional reconciliation/read behavior, optimistic materialization-coherence checks and atomic monotonic cache upserts without source-row commit-order locking, difference-derived health, target-scoped failure backoff with database rediscovery, read fallback, and the out-of-band representation-restamp utility; E19 owns authoritative delete capture and published-ahead recovery |
-| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks that consume E18's restamp utility for byte-changing corrections |
+| E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Debezium/Kafka connector setup, topic/message contract, E2E Kafka scenarios, and CDC runbooks that consume E18's restamp utility for non-purge byte-changing corrections and own destructive sensitive-data disclosure response |
 
 ---
 

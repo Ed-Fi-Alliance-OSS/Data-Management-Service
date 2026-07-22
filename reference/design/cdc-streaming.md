@@ -1496,7 +1496,7 @@ The offline operation follows this sequence:
    offline confirmation but does not implement or certify this fence.
 2. Deploy the corrected API materializer/composer while the data store remains offline.
    The existing connector may remain registered against the same binding and topic when the
-   stream contract remains compatible.
+   stream contract remains compatible and no previously published bytes require purging.
 3. Run the out-of-band utility with an explicit affected-document scope and a persisted
    operation manifest. For each current affected document, allocate a fresh unique value
    from the normal change-version sequence, update `dms.Document.ContentVersion` and
@@ -1514,12 +1514,45 @@ The offline operation follows this sequence:
 
 The utility is provider-aware and supports both PostgreSQL and SQL Server. It records the
 physical-source fingerprint, scope, reason, pre-restamp boundary, counts, and completion
-status for audit and safe resume. The higher versions deliberately make affected documents
-visible as representation updates to Change Queries and cause conforming Kafka consumers
-to replace prior state without a new topic, binding generation, or offset reset. The
-dedicated implementation story owns the utility, provider behavior, tests, and operator
-examples; general cache and CDC runbooks describe only its offline scope and do not
-recreate it with manual SQL.
+status for audit and safe resume. For corrections that do not require prior-record purging,
+the higher versions deliberately make affected documents visible as representation updates
+to Change Queries and cause conforming Kafka consumers to replace prior state without a new
+topic, binding generation, or offset reset. The dedicated implementation story owns the
+utility, provider behavior, tests, and operator examples; general cache and CDC runbooks
+describe only its offline scope and do not recreate it with manual SQL.
+
+### Sensitive-data disclosure correction
+
+When corrected representation bytes remove or mask sensitive data that should never have
+been published and the old Kafka values must be purged, the same-topic restamp path above is
+prohibited. A higher-version upsert, tombstone, or compaction establishes eventual current
+state but is not evidence that Kafka has destroyed superseded bytes.
+
+The v1 response is deliberately destructive and favors containment over continued CDC
+availability:
+
+1. Mark the target not ready, stop and verify every task of the affected connector is
+   fenced, and revoke consumer access to the public topic before restamping or rebuilding
+   can publish corrected state.
+2. Correct the materializer and use the restamp utility as needed while the data store
+   remains offline.
+3. Explicitly retire the affected binding generation using the governed cleanup order.
+   Delete the public topic and remove its connector, offsets, ACLs, progress topic, and SQL
+   Server schema-history artifacts when applicable before removing binding state.
+4. Record the operation/restamp identifier, binding generation, topic name, containment
+   time, deletion request, and broker or managed-platform purge confirmation. Completion
+   requires platform evidence that the public topic and any platform-governed remote or
+   tiered copies covered by its deletion guarantee no longer retain the topic. A successful
+   delete request, configuration removal, corrective record, tombstone, compaction request,
+   or temporary metadata lookup failure alone is not purge evidence. If the deployment
+   cannot obtain its platform's required evidence, the incident remains open.
+5. Do not recreate or restart the old binding or topic. CDC remains unavailable for the
+   target. Re-enablement requires the deferred new-generation topic, consumer namespace,
+   fresh snapshot, and publication-barrier workflow.
+
+Independently operated consumer stores and exports are outside the broker cleanup boundary
+and remain part of the deployment's disclosure-response scope; DMS documentation must not
+claim that deleting the Kafka topic purges those downstream copies.
 
 ### In-place record-size increase
 
@@ -1809,7 +1842,9 @@ Runbooks cover connector restart, cache rebuild, same-topic compatible projectio
 cache-ahead invariant diagnosis and the internal-only/downstream-state recovery split,
 ordinary monotonic projection lag, source-history continuity monitoring, progress-topic
 diagnosis, SQL Server schema-history diagnosis, target migration/retirement, and provider
-artifact cleanup.
+artifact cleanup. They also cover sensitive-data disclosure containment and destructive
+binding-generation retirement, require recorded platform purge evidence, and leave CDC
+unavailable rather than republishing into or recreating the affected topic.
 They distinguish the projection-scoped SQL Server RCSI prerequisite from ordinary
 relational-only DMS support, show how to inspect and enable it during an offline maintenance
 step, state that DMS never changes it at runtime, and include row-version-store capacity and

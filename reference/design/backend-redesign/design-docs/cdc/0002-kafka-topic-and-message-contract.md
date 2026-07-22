@@ -379,7 +379,13 @@ For a byte-changing case that would otherwise reuse a strong ETag, the out-of-ba
 representation-restamp utility may run only while the selected data store is explicitly
 offline and all DMS replicas and external writers have been stopped outside the utility.
 It assigns fresh `ContentVersion` values so ordinary projection and streaming can publish
-higher-version state eventually. It does not certify another exact CDC baseline. Its
+higher-version state eventually when prior Kafka records do not require purging. It does
+not certify another exact CDC baseline. If corrected bytes remove or mask sensitive data
+that should never have been published and old records must be purged, same-topic
+republication is prohibited: the connector is fenced, consumer access is revoked, and the
+affected binding generation is destructively retired with recorded broker or platform purge
+evidence. Compaction, tombstones, and corrective upserts are not purge evidence, and CDC
+remains unavailable until the deferred new-generation bootstrap is implemented. The full
 requirements are defined in
 [Relational CDC and Document Projection](../../../cdc-streaming.md#offline-byte-changing-representation-correction).
 
@@ -491,7 +497,9 @@ The public topic never exposes:
 - Consumers replace an equal-`contentVersion` record at the later Kafka offset. Producing a
   baseline-replacing correction or incompatible-contract cutover after first-write
   admission is deferred. An offline byte-changing repair may use the restamp utility and
-  publish higher versions eventually without claiming another exact baseline.
+  publish higher versions eventually only when old Kafka records do not require purging;
+  this does not claim another exact baseline. A sensitive-data disclosure instead requires
+  verified destructive retirement of the affected topic generation.
 - DMS-1232 KafkaMessaging coverage must replace the shared-topic,
   `deleted=false`/`deleted=true`, and `EdFiDoc` expectations.
 
@@ -514,6 +522,6 @@ The public topic never exposes:
 | Rotate the topic when only `maxRecordBytes` increases | Rejected: record capacity does not change keying, partitioning, ordering, topic identity, or the public message contract. |
 | Require strictly newer `contentVersion` for every replacement | Rejected as a universal rule: Kafka already orders equal-version records whose changed bytes have a different corrected strong ETag. A newer version is required when corrected bytes would otherwise reuse the ETag. |
 | Republish a corrected ETag at the same `contentVersion` in `documents.v1` | The consumer ordering rule is accepted, but a production baseline-replacing producer workflow is deferred until deployment owns the required writer fence and drain. |
-| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store; it advances existing content stamps and publishes higher versions eventually without certifying another exact CDC baseline. |
+| Add an out-of-band representation-restamp utility | Accepted only for an explicitly offline data store; it advances existing content stamps and publishes higher versions eventually without certifying another exact CDC baseline. It is not a Kafka purge mechanism; sensitive-data disclosure correction requires verified destructive retirement. |
 | Rely on Debezium's default SQL Server temporal serialization | Rejected: `datetime2(7)` is an `INT64` `NanoTimestamp` in `adaptive` mode, which violates the string contract. |
 | Require SQL Server `time.precision.mode=isostring` in the pinned Debezium 3.6 image | Accepted for v1: it preserves the source precision in an unambiguous UTC `IsoTimestamp` and removes signed-nanosecond parsing; the required Ed-Fi `DocumentState` SMT still validates and truncates it to the existing DMS whole-second representation. |

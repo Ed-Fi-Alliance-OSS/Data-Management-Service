@@ -86,7 +86,17 @@ relational CDC capability without redefining its architecture or contracts.
    stop the connector, and make that binding unrecoverable in v1. Never advise resetting
    offsets, recreating a slot/capture/history topic, or resnapshotting the existing public
    topic. Destructive retirement may remove those artifacts but does not recover the
-   binding.
+   binding. Add a sensitive-data disclosure procedure for bytes that should never have
+   appeared in the public topic: mark the target not ready, fence and verify connector
+   tasks, revoke consumer ACLs, perform any offline restamp, and destructively retire the
+   affected binding generation. Record the restamp/operation identifier, binding
+   generation, topic, containment time, deletion request, and broker or managed-platform
+   purge confirmation. A corrective upsert, tombstone, compaction request, configuration
+   removal, or unverified metadata lookup failure is not purge evidence. If platform purge
+   evidence is unavailable, keep the incident open. Never restart or recreate the old
+   binding/topic; leave CDC unavailable until the deferred replacement-namespace workflow
+   is implemented. Identify independently operated consumer copies as deployment incident
+   scope rather than claiming that topic deletion purges them.
 5. Document binding-state location, backup, normal-stop retention, fail-closed missing
    state, explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
    new-generation migration. Explain that a new independent target created from a
@@ -138,6 +148,11 @@ relational CDC capability without redefining its architecture or contracts.
   that timeout or setup-controller loss completed readiness.
 - Destructive or replay-producing operations are clearly marked and never inferred from
   configuration removal.
+- Sensitive-data disclosure instructions prove containment precedes restamping, record
+  broker or managed-platform evidence that the public topic and platform-governed retained
+  copies covered by its deletion guarantee are purged, and keep both the incident and CDC
+  target open/not-ready when that evidence is unavailable. They never offer compaction,
+  tombstones, corrective republication, or recreation of the old topic as purge.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal
   and remove connector offsets plus the SQL Server schema-history topic and ACLs with the
   other governed artifacts, then remove terminal incident state immediately before/with
