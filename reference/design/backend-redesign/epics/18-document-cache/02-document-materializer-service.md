@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1312
 source_spike: DMS-1246
-epic: TBD
+epic: DMS-1308
 related:
   - DMS-1245
 ---
@@ -10,11 +10,11 @@ related:
 
 ## Design References
 
-- [Cached document contract](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
-- [Freshness and reconciliation](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
-- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
+- **Cached document contract**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract
+- **Freshness and reconciliation**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation
+- **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
 
-The linked design sections define the materialized representation and coherence rules.
+The referenced design sections define the materialized representation and coherence rules.
 This story is only the work package for implementing them.
 
 ## Outcome

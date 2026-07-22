@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1311
 source_spike: DMS-1246
-epic: TBD
+epic: DMS-1308
 related:
   - DMS-1245
 ---
@@ -10,10 +10,10 @@ related:
 
 ## Design References
 
-- [Configuration and projection target selection](../../../cdc-streaming.md#configuration-and-projection-target-selection)
-- [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
+- **Configuration and projection target selection**: reference/design/cdc-streaming.md#configuration-and-projection-target-selection
+- **Projection health and deployment-owned CDC readiness**: reference/design/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
 
-The linked design sections define target selection, validation, and lifecycle behavior.
+The referenced design sections define target selection, validation, and lifecycle behavior.
 This story is only the work package for implementing them.
 
 ## Outcome

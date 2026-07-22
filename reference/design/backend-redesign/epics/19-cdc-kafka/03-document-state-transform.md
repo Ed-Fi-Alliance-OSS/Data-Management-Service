@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1322
 source_spike: DMS-1245
-epic: TBD
+epic: DMS-1309
 related:
   - DMS-1240
 ---
@@ -10,12 +10,12 @@ related:
 
 ## Design References
 
-- [Connector transformation](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation)
-- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-- [Pinned connector runtime](../../../cdc-streaming.md#pinned-connector-runtime)
-- [Completed generic expand-JSON transform](../../design-docs/expandjsonsmt-replacement.md)
+- **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
+- **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
+- **Pinned connector runtime**: reference/design/cdc-streaming.md#pinned-connector-runtime
+- **Completed generic expand-JSON transform**: reference/design/backend-redesign/design-docs/expandjsonsmt-replacement.md
 
-The linked design sections define source classification, record transformation, public
+The referenced design sections define source classification, record transformation, public
 records, progress routing, and runtime compatibility. This story is only the work package
 for implementing them.
 

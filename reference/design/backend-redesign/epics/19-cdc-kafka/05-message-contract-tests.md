@@ -1,18 +1,18 @@
 ---
-jira: TBD
+jira: DMS-1324
 source_spike: DMS-1245
-epic: TBD
+epic: DMS-1309
 ---
 
 # Story: Add Kafka Message and Source-Routing Contract Tests
 
 ## Design References
 
-- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-- [Connector transformation](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation)
-- [Contract-to-evidence traceability](../../../cdc-streaming.md#contract-to-evidence-traceability)
+- **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
+- **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
+- **Contract-to-evidence traceability**: reference/design/cdc-streaming.md#contract-to-evidence-traceability
 
-The linked design sections own the normative contracts. This story owns the executable
+The referenced design sections own the normative contracts. This story owns the executable
 conformance scenarios and pass evidence without duplicating the contract text.
 
 ## Outcome

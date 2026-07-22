@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1317
 source_spike: DMS-1246
-epic: TBD
+epic: DMS-1308
 related:
   - DMS-1245
 ---
@@ -10,10 +10,10 @@ related:
 
 ## Design References
 
-- [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
-- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
+- **Configuration, integration, readiness, and operations**: reference/design/cdc-streaming.md
+- **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
-The linked design documents define behavior and operator constraints. This story adds
+The referenced design documents define behavior and operator constraints. This story adds
 cross-feature evidence and implementation-specific guidance without restating them.
 
 ## Outcome

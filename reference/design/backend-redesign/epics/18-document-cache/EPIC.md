@@ -1,5 +1,5 @@
 ---
-jira: TBD
+jira: DMS-1308
 source_spike: DMS-1246
 related:
   - DMS-1245
@@ -26,15 +26,15 @@ below.
 
 ## Stories
 
-- `TBD` — `00-documentcache-schema-and-provider-ddl.md` — Finalize schema and provider DDL
-- `TBD` — `01-documentcache-configuration-and-target-selection.md` — Add configuration and target selection
-- `TBD` — `02-document-materializer-service.md` — Add reusable caller-agnostic document materialization
-- `TBD` — `03-monotonic-cache-upsert-and-delete-fencing.md` — Implement monotonic cache upsert and post-delete fencing
-- `TBD` — `04-async-projector-reconciliation-loop.md` — Add the asynchronous reconciliation loop
-- `TBD` — `05-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
-- `TBD` — `06-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
-- `TBD` — `07-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
-- `TBD` — `08-representation-restamp-utility.md` — Add the out-of-band representation-restamp utility
+- `DMS-1310` — `00-documentcache-schema-and-provider-ddl.md` — Finalize schema and provider DDL
+- `DMS-1311` — `01-documentcache-configuration-and-target-selection.md` — Add configuration and target selection
+- `DMS-1312` — `02-document-materializer-service.md` — Add reusable caller-agnostic document materialization
+- `DMS-1313` — `03-monotonic-cache-upsert-and-delete-fencing.md` — Implement monotonic cache upsert and post-delete fencing
+- `DMS-1314` — `04-async-projector-reconciliation-loop.md` — Add the asynchronous reconciliation loop
+- `DMS-1315` — `05-cache-backed-read-path.md` — Add fresh-cache reads with relational fallback
+- `DMS-1316` — `06-documentcache-health-readiness-and-telemetry.md` — Add projection health and telemetry
+- `DMS-1317` — `07-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
+- `DMS-1318` — `08-representation-restamp-utility.md` — Add the out-of-band representation-restamp utility
 
 ## Delivery Dependencies
 

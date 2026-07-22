@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1316
 source_spike: DMS-1246
-epic: TBD
+epic: DMS-1308
 related:
   - DMS-1245
 ---
@@ -10,10 +10,10 @@ related:
 
 ## Design References
 
-- [Projection health and deployment-owned CDC readiness](../../../cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
-- [Security, telemetry, and operations](../../../cdc-streaming.md#security-telemetry-and-operations)
+- **Projection health and deployment-owned CDC readiness**: reference/design/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
+- **Security, telemetry, and operations**: reference/design/cdc-streaming.md#security-telemetry-and-operations
 
-The linked design sections define the projection status model, observations, and privacy
+The referenced design sections define the projection status model, observations, and privacy
 rules. This story is only the work package for implementing them.
 
 ## Outcome

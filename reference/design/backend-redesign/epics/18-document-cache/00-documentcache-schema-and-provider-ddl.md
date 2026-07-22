@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1310
 source_spike: DMS-1246
-epic: TBD
+epic: DMS-1308
 related:
   - DMS-1245
 ---
@@ -10,12 +10,12 @@ related:
 
 ## Design References
 
-- [Cached document contract](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
-- [Relational data model](../../design-docs/data-model.md)
-- [DDL generation](../../design-docs/ddl-generation.md)
-- [Schema and query integration](../../../cdc-streaming.md#schema-and-query-integration)
+- **Cached document contract**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract
+- **Relational data model**: reference/design/backend-redesign/design-docs/data-model.md
+- **DDL generation**: reference/design/backend-redesign/design-docs/ddl-generation.md
+- **Schema and query integration**: reference/design/cdc-streaming.md#schema-and-query-integration
 
-The linked design sections define the physical contract and provisioning behavior. This
+The referenced design sections define the physical contract and provisioning behavior. This
 story is only the work package for implementing them.
 
 ## Outcome

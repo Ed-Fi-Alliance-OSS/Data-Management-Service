@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1318
 source_spike: DMS-1246
-epic: TBD
+epic: DMS-1308
 related:
   - DMS-1245
 ---
@@ -10,12 +10,12 @@ related:
 
 ## Design References
 
-- [Offline byte-changing representation correction](../../../cdc-streaming.md#offline-byte-changing-representation-correction)
-- [ETag strong-validator decision](../../../../adr-etag-from-content-version.md#etag-format-and-http-validator-semantics-rfc-9110)
-- [Topic and message compatibility](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
-- [Change Query stamping and mirrors](../../design-docs/change-queries.md#concrete-resource-contentversion--contentlastmodifiedat-mirror)
+- **Offline byte-changing representation correction**: reference/design/cdc-streaming.md#offline-byte-changing-representation-correction
+- **ETag strong-validator decision**: reference/adr-etag-from-content-version.md#etag-format-and-http-validator-semantics-rfc-9110
+- **Topic and message compatibility**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes
+- **Change Query stamping and mirrors**: reference/design/backend-redesign/design-docs/change-queries.md#concrete-resource-contentversion--contentlastmodifiedat-mirror
 
-The linked design sections define when and how representation restamping is safe. This
+The referenced design sections define when and how representation restamping is safe. This
 story is only the work package for implementing that utility.
 
 ## Outcome

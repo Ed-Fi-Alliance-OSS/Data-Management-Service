@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1315
 source_spike: DMS-1246
-epic: TBD
+epic: DMS-1308
 related:
   - DMS-1245
 ---
@@ -10,11 +10,11 @@ related:
 
 ## Design References
 
-- [Cache-backed reads and domain lifecycle](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle)
-- [Freshness and reconciliation](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation)
-- [Configuration and projection target selection](../../../cdc-streaming.md#configuration-and-projection-target-selection)
+- **Cache-backed reads and domain lifecycle**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle
+- **Freshness and reconciliation**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation
+- **Configuration and projection target selection**: reference/design/cdc-streaming.md#configuration-and-projection-target-selection
 
-The linked design sections define cache usability, fallback, response shaping, and direct
+The referenced design sections define cache usability, fallback, response shaping, and direct
 fill. This story is only the work package for implementing them.
 
 ## Outcome

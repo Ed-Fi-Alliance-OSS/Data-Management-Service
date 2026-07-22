@@ -1,5 +1,5 @@
 ---
-jira: TBD
+jira: DMS-1309
 source_spike: DMS-1245
 related:
   - DMS-1246
@@ -27,14 +27,14 @@ verification, local/E2E setup, and operator documentation through the story set 
 
 ## Stories
 
-- `TBD` — `00-documentcache-cdc-prerequisites.md` — Add deployment-owned CDC binding and readiness
-- `TBD` — `01-cdc-ddl-support.md` — Emit/provision provider CDC key and database support
-- `TBD` — `02-connector-template-generation.md` — Generate PostgreSQL and SQL Server connector templates
-- `TBD` — `03-document-state-transform.md` — Add the DMS-specific relational record transform
-- `TBD` — `04-bootstrap-enable-kafka-cdc.md` — Add explicit local/bootstrap connector registration
-- `TBD` — `05-message-contract-tests.md` — Add message and source-routing contract tests
-- `TBD` — `06-e2e-kafka-scenarios.md` — Replace legacy Kafka E2E expectations
-- `TBD` — `07-ops-docs-runbooks.md` — Add setup, monitoring, recovery, and security runbooks
+- `DMS-1319` — `00-documentcache-cdc-prerequisites.md` — Add deployment-owned CDC binding and readiness
+- `DMS-1320` — `01-cdc-ddl-support.md` — Emit/provision provider CDC key and database support
+- `DMS-1321` — `02-connector-template-generation.md` — Generate PostgreSQL and SQL Server connector templates
+- `DMS-1322` — `03-document-state-transform.md` — Add the DMS-specific relational record transform
+- `DMS-1323` — `04-bootstrap-enable-kafka-cdc.md` — Add explicit local/bootstrap connector registration
+- `DMS-1324` — `05-message-contract-tests.md` — Add message and source-routing contract tests
+- `DMS-1325` — `06-e2e-kafka-scenarios.md` — Replace legacy Kafka E2E expectations
+- `DMS-1326` — `07-ops-docs-runbooks.md` — Add setup, monitoring, recovery, and security runbooks
 
 ## Delivery Dependencies
 

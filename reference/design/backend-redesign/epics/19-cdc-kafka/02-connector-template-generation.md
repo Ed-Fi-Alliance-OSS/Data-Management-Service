@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1321
 source_spike: DMS-1245
-epic: TBD
+epic: DMS-1309
 related:
   - DMS-1232
 ---
@@ -10,13 +10,13 @@ related:
 
 ## Design References
 
-- [Connector transformation](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation)
-- [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
-- [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
-- [Source-history continuity](../../../cdc-streaming.md#source-history-continuity)
-- [Pinned connector runtime](../../../cdc-streaming.md#pinned-connector-runtime)
+- **Connector transformation**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation
+- **Connector topology and provider setup**: reference/design/cdc-streaming.md#connector-topology-and-provider-setup
+- **Provider source-position barrier**: reference/design/cdc-streaming.md#provider-source-position-barrier
+- **Source-history continuity**: reference/design/cdc-streaming.md#source-history-continuity
+- **Pinned connector runtime**: reference/design/cdc-streaming.md#pinned-connector-runtime
 
-The linked design sections define connector inputs, generated configuration, image
+The referenced design sections define connector inputs, generated configuration, image
 qualification, and lifecycle constraints. This story is only the work package for
 implementing them.
 

@@ -1,18 +1,18 @@
 ---
-jira: TBD
+jira: DMS-1326
 source_spike: DMS-1245
-epic: TBD
+epic: DMS-1309
 ---
 
 # Story: Add CDC Setup, Monitoring, Recovery, and Security Runbooks
 
 ## Design References
 
-- [Configuration, integration, readiness, and operations](../../../cdc-streaming.md)
-- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
+- **Configuration, integration, readiness, and operations**: reference/design/cdc-streaming.md
+- **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
+- **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
-The linked documents own the architecture, contracts, constraints, and deferrals. This
+The referenced documents own the architecture, contracts, constraints, and deferrals. This
 story documents the shipped implementation and must link to those owners rather than
 restate them.
 

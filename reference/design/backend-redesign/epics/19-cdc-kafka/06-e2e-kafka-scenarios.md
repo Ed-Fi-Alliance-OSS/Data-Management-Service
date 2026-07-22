@@ -1,7 +1,7 @@
 ---
-jira: TBD
+jira: DMS-1325
 source_spike: DMS-1245
-epic: TBD
+epic: DMS-1309
 related:
   - DMS-1232
 ---
@@ -10,12 +10,12 @@ related:
 
 ## Design References
 
-- [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
-- [Local bootstrap and CI](../../../cdc-streaming.md#local-bootstrap-and-ci)
-- [Contract-to-evidence traceability](../../../cdc-streaming.md#contract-to-evidence-traceability)
-- [Source-history continuity](../../../cdc-streaming.md#source-history-continuity)
+- **Topic and message contract**: reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md
+- **Local bootstrap and CI**: reference/design/cdc-streaming.md#local-bootstrap-and-ci
+- **Contract-to-evidence traceability**: reference/design/cdc-streaming.md#contract-to-evidence-traceability
+- **Source-history continuity**: reference/design/cdc-streaming.md#source-history-continuity
 
-The linked design sections define the supported E2E workflow and observable stream. This
+The referenced design sections define the supported E2E workflow and observable stream. This
 story is only the work package for implementing the scenarios.
 
 ## Outcome

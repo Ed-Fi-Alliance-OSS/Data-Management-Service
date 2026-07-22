@@ -1,19 +1,19 @@
 ---
-jira: TBD
+jira: DMS-1320
 source_spike: DMS-1245
-epic: TBD
+epic: DMS-1309
 ---
 
 # Story: Emit/Provision Provider CDC Key and Database Support
 
 ## Design References
 
-- [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
-- [Schema and query integration](../../../cdc-streaming.md#schema-and-query-integration)
-- [Physical CDC heartbeat object](../../design-docs/data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object)
-- [Projector and source decision](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md)
+- **Connector topology and provider setup**: reference/design/cdc-streaming.md#connector-topology-and-provider-setup
+- **Schema and query integration**: reference/design/cdc-streaming.md#schema-and-query-integration
+- **Physical CDC heartbeat object**: reference/design/backend-redesign/design-docs/data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object
+- **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
-The linked design sections define the opt-in provider objects and access requirements.
+The referenced design sections define the opt-in provider objects and access requirements.
 This story is only the work package for implementing them.
 
 ## Outcome
