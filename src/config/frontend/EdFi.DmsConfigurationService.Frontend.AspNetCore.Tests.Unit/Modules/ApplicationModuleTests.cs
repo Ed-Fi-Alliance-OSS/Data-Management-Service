@@ -839,6 +839,46 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
+    public class FailureVendorLookupOnInsertTests : ApplicationModuleTests
+    {
+        [Test]
+        public async Task Should_return_500_when_vendor_lookup_fails_on_insert()
+        {
+            // An infrastructure failure resolving the vendor is a 500, not a 409 unresolved-reference,
+            // and the provider message must not leak.
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureUnknown("vendor db connection failed"));
+
+            using var client = SetUpClient();
+
+            var addResponse = await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    """
+                    {
+                        "ApplicationName": "Application 102",
+                        "ClaimSetName": "Test",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            var body = await addResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            body.ToJsonString().Should().NotContain("vendor db connection failed");
+        }
+    }
+
+    [TestFixture]
     public class FailureReferenceValidationTests : ApplicationModuleTests
     {
         [SetUp]
@@ -858,6 +898,22 @@ public class ApplicationModuleTests
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            // Force the vendor precheck to succeed so the repository-race FailureVendorNotFound branch
+            // (after the client is created) is reliably reached. The data-store and profile prechecks
+            // already pass via the base fixture arrangements.
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "Test Prefix",
+                        }
+                    )
+                );
 
             A.CallTo(() =>
                     _applicationRepository.InsertApplication(
@@ -895,7 +951,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_due_to_invalid_vendor_id_on_insert()
+        public async Task Should_return_conflict_due_to_invalid_vendor_id_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -918,31 +974,47 @@ public class ApplicationModuleTests
                 )
             );
 
-            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await addResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "VendorId": [
-                      "Reference 'VendorId' does not exist."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Reference 'VendorId' does not exist."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+
+            // The IdP client was created, then rolled back when the repository reported the missing
+            // reference, proving the repository-race branch (not the precheck) produced the 409.
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [Test]
-        public async Task Should_return_bad_request_due_to_invalid_vendor_id_on_update()
+        public async Task Should_return_conflict_due_to_invalid_vendor_id_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -967,27 +1039,40 @@ public class ApplicationModuleTests
             );
 
             //Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "VendorId": [
-                      "Reference 'VendorId' does not exist."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Reference 'VendorId' does not exist."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+
+            // The IdP client update ran (precheck passed), proving the repository-race branch produced
+            // the 409 rather than the vendor precheck.
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -1019,7 +1104,7 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
                         A<string>.Ignored,
@@ -1035,6 +1120,57 @@ public class ApplicationModuleTests
             A.CallTo(() =>
                     _applicationRepository.UpdateApplication(
                         A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task Should_not_create_identity_provider_client_when_insert_vendor_id_is_invalid()
+        {
+            // A vendor missing at the insert precheck is rejected before any identity-provider or
+            // repository mutation.
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+
+            using var client = SetUpClient();
+
+            var addResponse = await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    """
+                    {
+                        "ApplicationName": "Application 102",
+                        "ClaimSetName": "Test",
+                        "VendorId": 999,
+                        "EducationOrganizationIds": [1],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
                         A<ApiClientCommand>.Ignored
                     )
                 )
@@ -1298,7 +1434,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_invalid_data_store_id_on_insert()
+        public async Task Should_return_conflict_for_invalid_data_store_id_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1322,23 +1458,21 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await insertResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "DataStoreId": [
-                      "Data store does not exist."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Data store does not exist."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -1346,7 +1480,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_invalid_data_store_id_on_update()
+        public async Task Should_return_conflict_for_invalid_data_store_id_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1371,23 +1505,21 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "DataStoreId": [
-                      "Data store does not exist."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Data store does not exist."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -1426,7 +1558,7 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             A.CallTo(() =>
                     _clientRepository.CreateClientAsync(
                         A<string>.Ignored,
@@ -1483,7 +1615,7 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
                         A<string>.Ignored,
@@ -1561,10 +1693,21 @@ public class ApplicationModuleTests
                     new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
                 );
 
-            // The update path pre-validates profile references at the module layer, so a
-            // missing profile is reported before the identity provider client is touched.
+            // Reset the profile precheck to succeed before each test so the update reaches the
+            // repository-race FailureProfileNotFound branch. (A per-test reset is required because the
+            // precheck-rejection test below stubs FailureNotFound on the shared fake.) The
+            // precheck-rejection case is covered separately by that local stub.
             A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
-                .Returns(new ProfileGetResult.FailureNotFound());
+                .Returns(
+                    new ProfileGetResult.Success(
+                        new EdFi.DmsConfigurationService.DataModel.Model.Profile.ProfileResponse
+                        {
+                            Id = 1,
+                            Name = "Test Profile",
+                            Definition = "<Profile/>",
+                        }
+                    )
+                );
 
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
@@ -1581,7 +1724,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_invalid_profile_id_on_insert()
+        public async Task Should_return_conflict_for_invalid_profile_id_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1606,31 +1749,47 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await insertResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "ProfileId": [
-                      "Profile does not exist."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Profile does not exist."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+
+            // Insert has no profile precheck: the client is created, then rolled back when the
+            // repository reports the missing profile, producing the 409.
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_invalid_profile_id_on_update()
+        public async Task Should_return_conflict_for_invalid_profile_id_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1656,33 +1815,50 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "ProfileId": [
-                      "Profile does not exist."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Profile does not exist."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+
+            // The profile precheck passed and the IdP client update ran, proving the repository-race
+            // branch produced the 409.
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
         public async Task Should_not_update_identity_provider_when_update_profile_id_is_invalid()
         {
-            // Arrange
+            // Arrange - a profile missing at the update precheck is rejected before the IdP client is
+            // touched. Stubbed locally now that the fixture default lets the precheck pass.
+            A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+                .Returns(new ProfileGetResult.FailureNotFound());
+
             using var client = SetUpClient();
 
             // Act
@@ -1706,7 +1882,7 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
             // Assert - the identity provider client was never mutated for an invalid
             // profile reference, so a rejected update cannot leave the client out of sync

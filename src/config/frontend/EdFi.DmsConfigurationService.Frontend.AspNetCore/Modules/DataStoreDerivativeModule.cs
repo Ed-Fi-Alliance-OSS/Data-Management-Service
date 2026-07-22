@@ -48,13 +48,10 @@ public class DataStoreDerivativeModule : IEndpointModule
                     Title = $"New DataStoreDerivative of type {entity.DerivativeType} has been created successfully.",
                 }
             ),
-            DataStoreDerivativeInsertResult.FailureForeignKeyViolation => Results.Json(
-                FailureResponse.ForBadRequest(
-                    "The specified DataStore does not exist.",
-                    httpContext.TraceIdentifier
-                ),
-                contentType: "application/problem+json",
-                statusCode: (int)HttpStatusCode.BadRequest
+            DataStoreDerivativeInsertResult.FailureForeignKeyViolation => FailureResults.UnresolvedReference(
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                httpContext.TraceIdentifier,
+                ["The specified DataStore does not exist."]
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -130,13 +127,10 @@ public class DataStoreDerivativeModule : IEndpointModule
                 contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
-            DataStoreDerivativeUpdateResult.FailureForeignKeyViolation => Results.Json(
-                FailureResponse.ForBadRequest(
-                    "The specified DataStore does not exist.",
-                    httpContext.TraceIdentifier
-                ),
-                contentType: "application/problem+json",
-                statusCode: (int)HttpStatusCode.BadRequest
+            DataStoreDerivativeUpdateResult.FailureForeignKeyViolation => FailureResults.UnresolvedReference(
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                httpContext.TraceIdentifier,
+                ["The specified DataStore does not exist."]
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

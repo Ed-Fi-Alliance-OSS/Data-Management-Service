@@ -217,7 +217,7 @@ public class DataStoreDerivativeModuleTests
                 .Returns(new DataStoreDerivativeInsertResult.FailureForeignKeyViolation());
 
         [Test]
-        public async Task It_returns_the_problem_details_bad_request_contract()
+        public async Task It_returns_the_unresolved_reference_conflict_contract()
         {
             using var client = SetUpClient();
 
@@ -238,13 +238,14 @@ public class DataStoreDerivativeModuleTests
             );
 
             JsonNode body = await response.ShouldBeProblemDetailAsync(
-                HttpStatusCode.BadRequest,
-                "urn:ed-fi:api:bad-request",
-                "Bad Request",
-                "The specified DataStore does not exist."
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["The specified DataStore does not exist."]
             );
             body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            body["errors"]!.AsArray().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(1);
         }
     }
 
@@ -258,7 +259,7 @@ public class DataStoreDerivativeModuleTests
                 .Returns(new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation());
 
         [Test]
-        public async Task It_returns_the_problem_details_bad_request_contract()
+        public async Task It_returns_the_unresolved_reference_conflict_contract()
         {
             using var client = SetUpClient();
 
@@ -280,13 +281,14 @@ public class DataStoreDerivativeModuleTests
             );
 
             JsonNode body = await response.ShouldBeProblemDetailAsync(
-                HttpStatusCode.BadRequest,
-                "urn:ed-fi:api:bad-request",
-                "Bad Request",
-                "The specified DataStore does not exist."
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["The specified DataStore does not exist."]
             );
             body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            body["errors"]!.AsArray().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(1);
         }
     }
 }

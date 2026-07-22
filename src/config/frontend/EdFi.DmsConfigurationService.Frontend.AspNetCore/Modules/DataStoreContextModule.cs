@@ -44,8 +44,10 @@ public class DataStoreContextModule : IEndpointModule
                 $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}{httpContext.Request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 new { Id = success.Id }
             ),
-            DataStoreContextInsertResult.FailureDataStoreNotFound => throw new ValidationException(
-                new[] { new ValidationFailure("DataStoreId", "Reference 'DataStoreId' does not exist.") }
+            DataStoreContextInsertResult.FailureDataStoreNotFound => FailureResults.UnresolvedReference(
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                httpContext.TraceIdentifier,
+                ["Reference 'DataStoreId' does not exist."]
             ),
             DataStoreContextInsertResult.FailureDuplicateDataStoreContext duplicate =>
                 FailureResults.NonUniqueIdentity(
@@ -126,8 +128,10 @@ public class DataStoreContextModule : IEndpointModule
                 "Data store context not found",
                 httpContext.TraceIdentifier
             ),
-            DataStoreContextUpdateResult.FailureDataStoreNotFound => throw new ValidationException(
-                new[] { new ValidationFailure("DataStoreId", "Reference 'DataStoreId' does not exist.") }
+            DataStoreContextUpdateResult.FailureDataStoreNotFound => FailureResults.UnresolvedReference(
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                httpContext.TraceIdentifier,
+                ["Reference 'DataStoreId' does not exist."]
             ),
             DataStoreContextUpdateResult.FailureDuplicateDataStoreContext duplicate =>
                 FailureResults.NonUniqueIdentity(

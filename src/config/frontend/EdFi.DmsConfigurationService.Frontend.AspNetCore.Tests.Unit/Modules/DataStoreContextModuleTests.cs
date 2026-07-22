@@ -208,4 +208,85 @@ public class DataStoreContextModuleTests
             );
         }
     }
+
+    [TestFixture]
+    public class Given_A_DataStoreContext_Referencing_A_Missing_DataStore : DataStoreContextModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.InsertDataStoreContext(A<DataStoreContextInsertCommand>.Ignored))
+                .Returns(new DataStoreContextInsertResult.FailureDataStoreNotFound());
+        }
+
+        [Test]
+        public async Task It_returns_the_unresolved_reference_conflict()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/dataStoreContexts",
+                new StringContent(
+                    """
+                    {
+                      "dataStoreId": 999,
+                      "contextKey": "grade-level",
+                      "contextValue": "5"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["Reference 'DataStoreId' does not exist."]
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_DataStoreContext_Update_Referencing_A_Missing_DataStore : DataStoreContextModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.UpdateDataStoreContext(A<DataStoreContextUpdateCommand>.Ignored))
+                .Returns(new DataStoreContextUpdateResult.FailureDataStoreNotFound());
+        }
+
+        [Test]
+        public async Task It_returns_the_unresolved_reference_conflict()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreContexts/1",
+                new StringContent(
+                    """
+                    {
+                      "id": 1,
+                      "dataStoreId": 999,
+                      "contextKey": "grade-level",
+                      "contextValue": "5"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["Reference 'DataStoreId' does not exist."]
+            );
+        }
+    }
 }
