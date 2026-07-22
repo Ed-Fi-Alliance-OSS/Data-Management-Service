@@ -184,7 +184,15 @@ param (
     # dedicated edfi_configurationservice database, without changing the DMS datastore selection.
     # Orthogonal to the database engine - the topology is never inferred from the engine.
     [Switch]
-    $SeparateConfigDatabase
+    $SeparateConfigDatabase,
+
+    # Resolve and validate the effective Configuration Service runtime contract, then return WITHOUT any
+    # external action (no network create, image build, container start, or Keycloak/OpenIddict). This is
+    # the preflight the full startup path runs, exposed as a stop point so an outer orchestrator
+    # (build-dms.ps1 StartEnvironment) can invoke the exact same validation semantics before it builds
+    # images or tears down volumes. Not valid with teardown (-d).
+    [Switch]
+    $PreflightOnly
 )
 
 # Early fail-fast parameter validation — runs before any module import or Docker activity.
@@ -202,6 +210,10 @@ if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhi
 
 if ($DbOnly -and $r) {
     throw "Parameter -r/-Rebuild is not valid with -DbOnly. Database-only mode starts and waits for the database without building application images."
+}
+
+if ($PreflightOnly -and $d) {
+    throw "Parameter -PreflightOnly is not valid with -d (teardown). Preflight validates the startup contract; it does not stop services."
 }
 
 $databaseOnlyStartup = $DbOnly -and -not $d
@@ -249,12 +261,16 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
 $EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
-# Resolve the local database topology: DMS_CONFIG_DATABASE_NAME is materialized to a concrete name
-# (the DMS datastore database by default, or the dedicated edfi_configurationservice database with
-# -SeparateConfigDatabase) so docker-compose interpolation and every host-side consumer - including
-# setup-openiddict.ps1 - target the same Configuration Service database. The connection-string
-# agreement check is skipped only for the database-only diagnostic startup and teardown.
-$EnvironmentFile = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase
+# Resolve the local database topology ONLY when the application (Configuration Service) topology
+# participates in this lifecycle mode. Full startup (default / -InfraOnly / -DmsOnly) materializes
+# DMS_CONFIG_DATABASE_NAME to a concrete name so docker-compose interpolation and every host-side
+# consumer - including setup-openiddict.ps1 - target the same Configuration Service database. The
+# database-only diagnostic slice and teardown do not participate in CMS topology: they must not require
+# its materialization (which would otherwise throw on a minimal environment that omits POSTGRES_DB_NAME)
+# and instead honor the Compose database default (${POSTGRES_DB_NAME:-edfi_datamanagementservice}).
+if (-not $d -and -not $DbOnly) {
+    $EnvironmentFile = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase
+}
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
@@ -435,6 +451,14 @@ else {
             -ResolvedDatastoreConnectionString $resolvedCompose.DatastoreConnectionString `
             -ConfigDatabaseName $envValues["DMS_CONFIG_DATABASE_NAME"] `
             -EnvValues $envValues
+    }
+
+    if ($PreflightOnly) {
+        # The runtime contract (and, in DbOnly, nothing) resolved and validated above without touching
+        # Docker. Return before the first external action so an outer orchestrator can gate image build,
+        # teardown, and volume deletion on this exact preflight.
+        Write-Output "Preflight validation complete. No Docker action was taken."
+        return
     }
 
     $existingNetwork = docker network ls --filter name="dms" -q
