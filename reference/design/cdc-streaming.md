@@ -89,9 +89,10 @@ left that workflow. Enabling projection or CDC later on an existing database, or
 from such an ineligible database into a replacement solely to obtain first-time enablement,
 requires separately designed migration support. A database successfully enabled through
 this new-database path may later exact-match its binding, validate artifacts, restart, and
-use the guarded source-replacement recovery defined below; those operations are not another
+use the guarded source-replacement recovery defined below. Those operations are not another
 initial enablement, never modify the core E18 schema, and expose only eventual status after
-first-write admission.
+first-write admission. Guarded source replacement does not provide an exact baseline or
+clear a possibly published cache-ahead latch.
 
 Change Queries remain a separate polling API compatibility surface, including
 `/deletes`, `/keyChanges`, and live-resource version filters based on `ContentVersion`,
@@ -357,8 +358,9 @@ to read or persist the latch is fail-closed for cache use and projection readine
 
 Once the latch is set, reconciliation and direct fill perform no cache writes for that
 database. A later canonical state reaching exactly the previously ahead `ContentVersion`
-therefore cannot make the possibly corrupt cached row fresh. Only the explicit recovery
-operation below clears the cache and latch together.
+therefore cannot make the possibly corrupt cached row fresh. Only the explicit proven-
+internal-only recovery operation below clears the cache and latch together; possibly
+published state remains latched in v1.
 
 Candidate discovery is separate from completeness verification. For each selected data
 store, the projector has two cooperating lanes:
@@ -569,7 +571,8 @@ The loop applies this schedule:
 4. A finishing aggregate with repairable differences schedules another bounded repair
    pass through the same loop rather than tight-looping. Target-scoped failure backoff and
    the concurrency gate remain in force. A latched target remains unhealthy, performs no
-   cache writes, and waits for explicit recovery rather than scheduling futile repair.
+   cache writes, and waits for either proven-internal-only recovery or, for possibly
+   published state, the deferred new-namespace workflow rather than scheduling futile repair.
 5. Health and readiness reads are observational. They do not start or wait for an audit.
    Until the immediate startup/rebuild audit completes, or when the latest exact audit is
    older than `MaximumAuditAge`, the target is simply not ready.
@@ -604,26 +607,33 @@ Recovery depends on whether the projection can have entered downstream ordered s
   canonical state. The global rebuild avoids retaining document identifiers or trusting
   that the observed row was the only corrupt row.
 - If an active or historical connector or another ordered downstream consumer may have
-  observed the higher cache version, stop the affected publication path and create a new
-  downstream state namespace. For Kafka CDC, this means a new immutable binding
-  generation, public and progress topics, a SQL Server schema-history topic when
-  applicable, and consumer state namespace. With old cache writers and the old connector
-  stopped, clear all cache rows and the latch in one provider transaction, complete
-  ordinary reconciliation, and snapshot the rebuilt cache into that new namespace. Do not
-  publish the lower version as an in-place correction to the old one.
-- Treat any in-place canonical database restore/reset as the CDC case above even when the
-  physical database name or connection metadata did not change.
+  observed the higher cache version, v1 stops the affected publication path, keeps the
+  cache-ahead latch set, and leaves projection and CDC not ready. Safe recovery would
+  require a new downstream state namespace. For Kafka CDC, that future workflow requires a
+  new immutable binding generation, public and progress topics, a SQL Server schema-history
+  topic when applicable, a consumer state namespace, and a fresh snapshot after rebuilding
+  the cache. V1 does not implement that baseline-replacing workflow and never publishes the
+  lower version as an in-place correction to the old namespace.
+- Treat any in-place canonical database restore/reset that produces or may expose possibly
+  published cache-ahead state as the deferred case above even when the physical database
+  name or connection metadata did not change. Guarded source replacement by itself is not
+  authority to clear this latch.
 
 The runbook requires operators to establish which case applies before deleting projected
-state. Clearing the latch without clearing the entire cache in the same transaction is not
-a supported operation. No recovery rewrites canonical `ContentVersion`, an immutable
-binding record, or an existing topic generation.
+state. It permits the clear operation only with positive evidence that the projection was
+internal-only. If downstream observation is possible or uncertain, operators contain
+publication and retain the cache and latch for diagnosis. Clearing the latch without
+clearing the entire cache in the same transaction is not a supported operation. No recovery
+rewrites canonical `ContentVersion`, an immutable binding record, or an existing topic
+generation.
 
-E18 owns one target-scoped administrative recovery operation. It takes the exclusive
-singleton-state lock, verifies the latch is set, clears the entire cache, clears the latch,
-and commits as one provider transaction; after commit it requests an immediate full audit.
-It exposes no latch-only reset. Deployment/runbook automation remains responsible for
-stopping an old publication path and allocating a new downstream namespace when required.
+E18 owns one target-scoped administrative recovery operation for the proven internal-only
+case. It takes the exclusive singleton-state lock, verifies the latch is set, clears the
+entire cache, clears the latch, and commits as one provider transaction; after commit it
+requests an immediate full audit. It exposes no latch-only reset. Deployment/runbook
+automation is responsible for proving the internal-only precondition or, when downstream
+observation is possible or uncertain, stopping the old publication path and leaving the
+latch set until the deferred new-namespace workflow is implemented.
 
 The hosted supervisor creates an isolated, non-HTTP service scope for each startup
 target and explicitly selects its data store. It does not depend on
@@ -952,9 +962,9 @@ identity. Tenant identity remains deployment/administrative state and is not pub
 in the topic or message. Route-qualifier-only changes do not affect connector or topic
 identity.
 
-Every provisioned database contains one immutable UUID in the singleton
-`dms.DataStoreIdentity` row. DMS reads that UUID through the active target connection and
-computes the physical-source fingerprint as follows:
+Every provisioned database contains one UUID, stable during ordinary operation, in the
+singleton `dms.DataStoreIdentity` row. DMS reads that UUID through the active target
+connection and computes the physical-source fingerprint as follows:
 
 ```text
 providerToken = "postgresql" | "sqlserver"
@@ -1147,11 +1157,16 @@ Binding creation and cleanup follow a fail-closed order:
    record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
    binding from existing topic names or connector configuration. Explicit adoption
    requires an operator-supplied complete record plus live verification of the physical
-   source and every retained artifact.
+   source and every retained artifact. E19's binding-state operation owns guarded atomic
+   record creation, and bootstrap owns the live provider, connector, topic, offset, ACL, and
+   configuration verification. Adoption repairs missing deployment state around an already
+   complete governed-artifact set; it is not a first-time enablement path. A failed or
+   incomplete adoption changes nothing.
 4. On retirement, either retain the binding record with every retained governed
-   artifact, or delete every governed topic, offset, ACL, PostgreSQL slot/publication,
-   and SQL Server capture artifact before deleting the terminal incident state and binding
-   record. A normal process restart or stack stop deletes neither.
+   artifact, or delete the connector, every governed topic, offset, ACL, PostgreSQL
+   slot/publication, SQL Server capture artifact, and other governed artifact before
+   deleting the terminal incident state and binding record. A normal process restart or
+   stack stop deletes neither.
 
 The binding record lives at least as long as any governed artifact. Local teardown may
 remove it only in the same destructive volume-removal workflow that removes all of those
@@ -1159,10 +1174,16 @@ artifacts. A crash may leave an unused record, which safely supports an idempote
 it must never leave surviving artifacts reusable after automatic record deletion.
 
 V1 never reassigns an existing topic or connector generation to a different physical
-database. Moving a `DataStoreId` to another physical document set creates a new binding
-generation, connector, public topic, progress topic, SQL Server schema-history topic when
-applicable, and consumer state namespace. Removing a target requires explicit
+database. Guarded source replacement is supported only for a database previously enabled
+through the v1 new-database path. It fences the old connector, rotates `SourceIdentity`
+through the binding-state operation, and creates a new binding generation, connector,
+public topic, progress topic, SQL Server schema-history topic when applicable, consumer
+state namespace, and snapshot. The old generation is retained or explicitly retired; none
+of its governed artifacts is reused. The new generation reports eventual operational status
+rather than another exact baseline. It cannot clear a published cache-ahead latch or recover
+a binding whose source-history loss is terminal. Removing a target requires explicit
 retain-or-delete decisions for every generation.
+
 In-place source reset and topic reuse are deferred. The same-source provisioning workflow
 remains idempotent for an exact binding match, and deployment automation rejects separately
 authorized bindings for multiple CMS aliases of the same physical document set.
@@ -1692,10 +1713,11 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   opens writes as ready.
 - E2E setup creates a fresh database, provisions its current schema, and registers capture
   against that same database before issuing writes it expects to consume.
-- A normal local stop retains binding, connector, Kafka offsets, and every governed topic.
-  Destructive local volume teardown removes the SQL Server history topic and ACLs with the
-  connector and offsets, then removes the remaining governed artifacts, and deletes any
-  terminal incident state and the binding record last.
+- A normal local stop retains the binding, connector, Kafka offsets, ACLs, provider capture
+  artifacts, and every governed topic. Destructive local volume teardown removes the
+  connector; its offsets; public, progress, and SQL Server schema-history topics and ACLs;
+  the PostgreSQL slot/publication or SQL Server capture instances/jobs; and any other
+  governed artifact before deleting terminal incident state and the binding record last.
 
 Production-like automation may repeat this workflow only while initially provisioning each
 new deployment-selected CDC database and while it can prove that the database has not been
@@ -1731,8 +1753,9 @@ that latch, the projection, measured access paths, and the opt-in internal CDC h
 - Provider-specific constraints ensure `DocumentJson` is a JSON object.
 - `dms.DocumentCacheState` contains the singleton
   `CacheAheadRecoveryRequired` bit, initialized false. Detection only sets it true; the
-  provider-supported explicit recovery transaction is the only operation that clears it.
-  It is not a connector capture source.
+  provider-supported explicit recovery transaction is the only operation that clears it and
+  may be used in v1 only for a proven internal-only projection. It is not a connector capture
+  source.
 - `dms.DataStoreIdentity` is an always-provisioned singleton containing the random
   `SourceIdentity`, stable during ordinary operation, used by the physical-source
   fingerprint contract.
@@ -1800,7 +1823,7 @@ running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, l
 snapshot completion, heartbeat/capture progress, the provider barrier and committed
 Connect source offset in sanitized form, existing artifacts without binding state, source
 mismatch, source-history continuity outcome and remaining provider-retention margin, the
-durable terminal loss latch, and generation migration state.
+durable terminal loss latch, and guarded source-replacement state.
 
 Use provider, safe project/resource identity, failure category, target-resolution state,
 and opaque data-store identity only where cardinality policy permits. Never log
@@ -1815,7 +1838,8 @@ latch, and last error. A failure for one target does not conceal peer status or 
 unrelated DMS API instances.
 
 Runbooks cover connector restart, cache rebuild, same-topic compatible projection repair,
-cache-ahead invariant diagnosis and the internal-only/downstream-state recovery split,
+cache-ahead invariant diagnosis, supported internal-only recovery, and containment of
+possibly published state pending the deferred downstream-state reset,
 ordinary monotonic projection lag, source-history continuity monitoring, progress-topic
 diagnosis, SQL Server schema-history diagnosis, target migration/retirement, and provider
 artifact cleanup. They also cover sensitive-data disclosure containment and destructive
@@ -1834,18 +1858,18 @@ advertised as valid.
 They document the shipped projector defaults, how to tune intervals, page size, target
 concurrency, and maximum audit age, and how to identify API-resource contention or an
 audit that cannot complete within its readiness window.
-They cover binding-state backup, fail-closed missing-state recovery, explicit adoption,
-cleanup ordering, and new-generation source migration; they never repair a mismatch by
-rewriting an immutable binding record. They state that same-topic baseline replacement and
-incompatible-contract cutover are deferred until an owned cross-replica/external-writer
-fence exists. The representation-restamp utility is documented only for an explicitly
-offline data store and does not certify another exact CDC baseline. They state that source-
-history `unknown` is fail-closed, source-history `lost` durably terminates the v1 binding,
-and offset reset, provider-artifact recreation, or resnapshot into the existing topic is not
-a recovery path. A replacement generation/topic/consumer namespace is a deferred future
-workflow, not a v1 runbook.
-Topic, offset, ACL, slot, and capture deletion is destructive and always explicit; removal
-from configuration is not cleanup authority.
+They cover binding-state backup, fail-closed missing-state recovery, guarded explicit
+adoption, cleanup ordering, and guarded new-generation source replacement; they never infer
+or repair a binding by rewriting an immutable record. They state that same-topic baseline
+replacement and incompatible-contract cutover are deferred until an owned cross-replica/
+external-writer fence exists. The representation-restamp utility is documented only for an
+explicitly offline data store and does not certify another exact CDC baseline. They state
+that source-history `unknown` is fail-closed, source-history `lost` durably terminates the v1
+binding, and offset reset, provider-artifact recreation, or resnapshot into the existing
+topic is not a recovery path. A replacement generation/topic/consumer namespace is a
+deferred future workflow, not a v1 runbook.
+Connector, topic, offset, ACL, slot, and capture deletion is destructive and always
+explicit; removal from configuration is not cleanup authority.
 
 ## Verification
 
@@ -1935,7 +1959,15 @@ of a public topic configured with a cleanup policy that includes
 `604800000`, or conflicting `max.message.bytes`, rejection of a missing, misnamed,
 non-single-partition, or non-compacted progress topic, provider aliases that resolve to the
 same fingerprint, existing artifacts with missing state, cleanup ordering, normal-stop
-retention, destructive-teardown removal, and new-generation source migration.
+retention, destructive-teardown removal, guarded adoption, and guarded new-generation
+source replacement.
+Adoption tests require a complete operator-supplied record and exact live verification of
+every governed artifact and prove failed or concurrent adoption changes nothing. Source-
+replacement tests fence the old connector, reserve the new binding before creating its
+artifacts, never reuse the old generation, and reject terminal source-history loss or a
+possibly published cache-ahead latch. Destructive-teardown tests preserve incident and
+binding state until every connector, offset, topic, ACL, and provider capture artifact is
+absent.
 Multi-controller state backends additionally prove compare-and-set behavior. No test
 repairs a mismatch by rewriting a binding, changes a topic's partition count or
 `partitionerAlgorithm` in place, or reuses a topic generation for a different source.
@@ -2020,11 +2052,12 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   or ordinary repair, disables cache reads and writes, keeps projection readiness false
   across restart, and cannot be overwritten with the lower canonical version,
 - after a latched ahead row's source advances to exactly the cached `ContentVersion`, the
-  row remains ineligible and readiness remains false until explicit recovery,
+  row remains ineligible and readiness remains false; only a proven internal-only case can
+  invoke the v1 recovery operation,
 - internal-only cache-ahead recovery clears the entire cache and latch in one transaction
-  before rebuilding from canonical state, while a possibly published higher version
-  requires a new downstream state namespace; Kafka CDC uses a new binding generation/topic
-  and fresh snapshot,
+  before rebuilding from canonical state, while a possibly published higher version keeps
+  the latch set and publication stopped because the required new binding generation/topic,
+  consumer namespace, and fresh-snapshot workflow is deferred from v1,
 - projection or connector failure never blocks normal API deletion.
 
 Projector scheduling tests prove one serialized loop per target, process-wide target

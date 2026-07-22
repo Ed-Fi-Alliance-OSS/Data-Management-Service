@@ -96,9 +96,11 @@ The utility is not necessary for:
    writer, bulk/seed loader, administrative mutation path, and external writer. Refuse to
    run without that confirmation and record it in the manifest, while stating that the
    flag is not a fence or proof. Require the durable cache-ahead latch to be clear; a
-   latched target uses its existing explicit recovery procedure first, and the utility must
-   not clear or bypass the latch. The operator remains responsible for keeping the data
-   store offline through corrected deployment and verification.
+   latched target may use the explicit recovery procedure first only when the projection is
+   proven internal-only. Possibly published or uncertain state remains latched because its
+   new-namespace recovery is deferred, and the utility must not clear or bypass the latch.
+   The operator remains responsible for keeping the data store offline through corrected
+   deployment and verification.
 6. In bounded provider transactions, allocate one fresh unique `ContentVersion` per
    selected current document from the normal change-version sequence. Advance
    `dms.Document.ContentVersion` and `ContentLastModifiedAt`, and atomically write the same

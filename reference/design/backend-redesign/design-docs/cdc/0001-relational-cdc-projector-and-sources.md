@@ -71,10 +71,11 @@ cache corruption, an in-place source restore/reset, or unsupported reuse of proj
 state against another canonical source. A later equal source/cache version never clears
 the latch. Internal-only recovery clears the full cache and latch in one transaction and
 rebuilds it. If a connector or another ordered downstream consumer may have observed the
-higher version, recovery first stops the old publication path and uses a new downstream
-state namespace; Kafka CDC uses a new binding generation, topic, consumer state namespace,
-and snapshot. The lower canonical version is never published as an in-place correction to
-the old namespace.
+higher version, v1 stops the old publication path, retains the latch, and remains not ready.
+Safe recovery would require a new downstream state namespace; for Kafka CDC that future
+workflow requires a new binding generation, topic, consumer state namespace, and snapshot.
+That baseline-replacing workflow is deferred from v1, and the lower canonical version is
+never published as an in-place correction to the old namespace.
 
 Cache writes deliberately do not use a source-row commit-order fence. After materialization,
 an optimistic current-visibility statement rejects the result if the current source row is
@@ -151,7 +152,8 @@ A monotonic idempotent upsert makes duplicate projectors and restart rediscovery
 refusing to lower an ahead cache row preserves the stream's non-null upsert ordering
 contract. Because version equality cannot prove that a formerly ahead row now contains the
 same canonical state, the singleton latch durably preserves that invariant observation
-until explicit recovery.
+until proven-internal-only recovery or, for possibly published state, the deferred
+new-namespace workflow.
 
 This choice is conscious: cache-row transitions and consumer-applied non-null upserts are
 monotonic, and the stream is eventually convergent, but raw at-least-once Kafka delivery
@@ -202,7 +204,9 @@ decision.
   turnover, and full audits rediscover failures from the current database difference.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows durably latch the
   database, disable cache reads and writes, and keep readiness false across version
-  equality and restart until explicit CDC-aware recovery completes.
+  equality and restart. V1 clears the latch only through the full-cache transaction after
+  proving the projection was internal-only; possibly published state remains latched until
+  the deferred CDC-aware new-namespace recovery exists.
 - Cache clear/rebuild emits no domain tombstones. Equal-version rows are duplicate
   projections and do not replace consumer state; every byte-changing correction uses the
   explicitly offline representation-restamp utility and eventually publishes higher
@@ -249,8 +253,8 @@ decision.
 | Require every cache upsert to be canonical-current at commit | Rejected for v1: a lower captured version may commit after a newer canonical version as ordinary monotonic projection lag. A consumer that has not yet observed the newer version may temporarily retain the lower state until reconciliation publishes the newer projection. |
 | Use the incremental cursor, a high-watermark, `ComputedAt`, or `LastModifiedAt` as completeness evidence | Rejected: none proves that every current document is projected at its current representation version. |
 | Store retry state on the cache row | Rejected: missing rows have nowhere to store it and operational fields would enter the captured row contract. |
-| Automatically overwrite a cache-ahead row with the lower canonical version | Rejected: the state cannot result from supported same-source concurrency and the lower record may be ignored by consumers that retained the higher published version. Explicit recovery distinguishes internal-only cache repair from downstream state reset. |
-| Clear a cache-ahead observation when source/cache versions later become equal | Rejected: equality does not prove payload identity and could make corrupt possibly published state appear fresh. The durable latch clears only with the full-cache recovery transaction. |
+| Automatically overwrite a cache-ahead row with the lower canonical version | Rejected: the state cannot result from supported same-source concurrency and the lower record may be ignored by consumers that retained the higher published version. V1 supports only proven internal-only cache repair; the required downstream state reset for possibly published state is deferred. |
+| Clear a cache-ahead observation when source/cache versions later become equal | Rejected: equality does not prove payload identity and could make corrupt possibly published state appear fresh. V1 permits the full-cache recovery transaction only for a proven internal-only projection. |
 | Fail normal reads when projection is unhealthy | Rejected: relational fallback preserves API correctness. |
 | Treat connector status alone as CDC readiness | Rejected: a running connector cannot supply current documents that remain unprojected. |
 | Establish an initial complete baseline under live writes with correlated canonical, audit, and publication boundaries | Deferred for v1: exact initial readiness is limited to a new offline database before first-write admission. |

@@ -84,7 +84,19 @@ implementation inputs.
   already-provisioned database before creating governed CDC artifacts; later exact-match
   validation and restart of a successfully enabled binding remain supported.
 - Binding state survives DMS and connector restarts, fails closed around missing or
-  mismatched state, and prevents a topic generation from changing physical source.
+  mismatched state, and prevents a topic generation from changing physical source. A
+  guarded adoption operation accepts only an operator-supplied complete record after live
+  verification of the physical source and every governed artifact; it never infers binding
+  fields, is not a first-time enablement path, and changes nothing on failure. Destructive
+  retirement removes the connector,
+  offsets, topics, ACLs, provider capture artifacts, and every other governed artifact
+  before terminal incident and binding state.
+- Guarded source replacement of a database previously enabled through the v1 new-database
+  path fences the old connector, rotates source identity through 19-00, and creates a new
+  binding generation, connector, topics, provider artifacts, consumer namespace, and fresh
+  snapshot. It never reuses old-generation artifacts, reports eventual status rather than
+  another exact baseline, and cannot recover terminal source-history loss or a possibly
+  published cache-ahead latch.
 - DMS exposes only per-database projection health; deployment automation combines it
   with binding, new-database/offline eligibility for first-time enablement, provider
   source-position catch-up, and lag status. Initial readiness rejects prior audit evidence
@@ -93,8 +105,9 @@ implementation inputs.
   that zero audit with the connector's committed Debezium offset, and an internal captured
   heartbeat advances idle sources. After admission opens, the same inputs produce eventual
   operational status rather than another exact baseline. A durable cache-ahead latch keeps
-  combined readiness false across later source equality and process restart until explicit
-  recovery.
+  combined readiness false across later source equality and process restart. V1 clears it
+  only for a proven internal-only projection; possibly published state remains latched and
+  publication remains stopped because new-namespace recovery is deferred.
 - Deployment status proves source-history continuity before connector start/resume and on
   every status interval. PostgreSQL checks the binding-derived slot/publication and retained
   WAL range; SQL Server checks every capture instance/job, retained LSN range, and remaining
@@ -135,7 +148,8 @@ implementation inputs.
   state and requires another complete bounded bootstrap.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported initial offline setup, later eventual status,
-  security, observation, restart/recovery, and explicit destructive cleanup. It identifies
+  security, observation, exact-match restart, guarded adoption and source replacement,
+  cache-ahead containment, and explicit destructive cleanup. It identifies
   exact baseline replacement and incompatible-contract cutover as deferred rather than
   presenting an unimplemented write gate as an operator procedure, and identifies provider
   source-history loss as terminal and unrecoverable in v1. Sensitive-data disclosure
@@ -149,6 +163,7 @@ implementation inputs.
 - Exact baseline-replacing repair or contract cutover after first-write admission.
 - Recovery from provider source-history loss, including offset reset, same-topic resnapshot,
   or new-generation/topic/consumer-namespace cutover.
+- Possibly published cache-ahead new-generation/topic/consumer-namespace recovery.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a
 new decision record changes that design.

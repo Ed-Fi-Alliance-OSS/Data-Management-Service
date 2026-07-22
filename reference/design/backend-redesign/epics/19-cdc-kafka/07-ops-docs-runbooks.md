@@ -75,11 +75,14 @@ relational CDC capability without redefining its architecture or contracts.
    consistent; it neither gates normal traffic nor certifies another exact baseline. State
    that v1 provides no production cross-replica/external-writer gate or transaction drain.
    Warn that the HTTP request-body limit alone is not the record-size bound.
-4. Document connector restart, cache rebuild, target migration/retirement, cache-ahead
-   invariant recovery, source-history diagnosis, and explicit destructive cleanup. A
+4. Document connector restart, cache rebuild, guarded source replacement, explicit target
+   retirement, cache-ahead invariant recovery, source-history diagnosis, and explicit
+   destructive cleanup. A
    possibly published higher cache version requires the deferred new-namespace workflow
-   rather than an in-place lower-version correction. Treat SQL Server schema history and
-   Connect offsets as one retained lifecycle unit on ordinary stop. Before every post-
+   rather than an in-place lower-version correction; stop publication and retain the cache
+   and latch for diagnosis. Permit E18's full-cache clear/latch-reset operation only with
+   positive evidence that the projection was internal-only. Treat SQL Server schema history
+   and Connect offsets as one retained lifecycle unit on ordinary stop. Before every post-
    enablement start/resume, require source-history status `healthy`; `unknown` remains
    stopped and fail-closed. Missing or re-created provider artifacts, expired retained
    history, or inconsistent history/offsets durably latch `SourceHistoryContinuityLost`,
@@ -98,14 +101,23 @@ relational CDC capability without redefining its architecture or contracts.
    is implemented. Identify independently operated consumer copies as deployment incident
    scope rather than claiming that topic deletion purges them.
 5. Document binding-state location, backup, normal-stop retention, fail-closed missing
-   state, explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
-   new-generation migration. Explain that a new independent target created from a
-   template, clone, or copied backup receives a new `dms.DataStoreIdentity.SourceIdentity`
+   state, guarded explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
+   guarded new-generation source replacement. Adoption requires an operator-supplied
+   complete binding record and live verification of the physical source and every retained
+   provider, connector, offset, topic, ACL, configuration, durability, partitioner, and
+   record-size artifact; instructions never infer fields, and any incomplete or mismatched
+   case remains unchanged and fail-closed. State that adoption is missing-state recovery
+   around an already complete governed-artifact set, not a first-time enablement path.
+   Explain that a new independent target created from a template, clone, or copied backup
+   receives a new
+   `dms.DataStoreIdentity.SourceIdentity`
    before binding, while a rollback or restore that replaces an existing source uses the
-   guarded identity-rotation and new-binding/topic recovery workflow. Never instruct
-   operators to rewrite a binding in place or rotate identity during an ordinary setup
-   retry. Do not present planned source replacement as a way to clear or reuse a binding
-   whose source-history loss is already latched.
+   guarded identity-rotation and new-binding/topic recovery workflow from 19-00 and 19-04.
+   It fences the old connector, creates every artifact under the new generation, retains or
+   explicitly retires the old generation, and reports eventual status rather than another
+   exact baseline. Never instruct operators to rewrite a binding in place or rotate identity
+   during an ordinary setup retry. Do not present guarded source replacement as a way to
+   clear or reuse a binding whose source-history loss is already latched.
 6. State explicitly that exact same-topic baseline replacement and incompatible-contract
    cutover are deferred until a separately owned deployment capability can fence every DMS
    replica and external writer and drain admitted work. Cross-link the design-only safety
@@ -155,9 +167,16 @@ relational CDC capability without redefining its architecture or contracts.
   target open/not-ready when that evidence is unavailable. They never offer compaction,
   tombstones, corrective republication, or recreation of the old topic as purge.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal
-  and remove connector offsets plus the SQL Server schema-history topic and ACLs with the
-  other governed artifacts, then remove terminal incident state immediately before/with
-  their JSON binding records.
+  and remove the connector, offsets, public/progress/schema-history topics and ACLs,
+  PostgreSQL slot/publication or SQL Server capture instances/jobs, and every other governed
+  artifact, then remove terminal incident state immediately before/with the JSON binding
+  record. They retain that complete set on ordinary stop and fail closed if any destructive
+  removal is incomplete.
+- Adoption documentation is verified against the 19-00 state operation and 19-04 live
+  validation, never offers inferred state reconstruction, and leaves failed adoption
+  unchanged. Guarded source-replacement documentation is verified against the implemented
+  new-generation workflow and rejects terminal source-history loss and possibly published
+  cache-ahead state as recovery inputs.
 - Documentation identifies exact same-topic baseline replacement and incompatible-contract
   cutover as deferred and provides no v1 command sequence that could be mistaken for an
   implemented production write gate. Offline restamp guidance requires higher versions for
@@ -175,5 +194,6 @@ relational CDC capability without redefining its architecture or contracts.
 - A production cross-replica/external-writer admission gate or transaction drain.
 - Exact baseline-replacing repair or contract cutover after first-write admission.
 - Recovery from provider source-history loss or replacement-namespace cutover.
+- Possibly published cache-ahead replacement-namespace recovery.
 - Service availability or lag SLO commitments beyond the v1 consumer-bootstrap deadline.
 - Product-specific consumer implementation guidance beyond the public contract.

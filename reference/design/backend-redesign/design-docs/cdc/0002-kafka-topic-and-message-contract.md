@@ -337,10 +337,11 @@ write-conflicting source-row lock that can delay canonical writers.
 Consequently, a lower `contentVersion` is never an in-place correction for a higher value
 already observed on the topic. If projection health detects
 `DocumentCache.ContentVersion > Document.ContentVersion` and that higher cache value may
-have been published, recovery requires a new binding generation, topic, consumer state
-namespace, and snapshot. Internal-only projections whose rows cannot have been observed
-downstream may instead delete the incompatible cache row and rebuild it from canonical
-state.
+have been published, v1 fences publication and keeps the cache-ahead latch set. Safe
+recovery would require a new binding generation, topic, consumer state namespace, and
+snapshot, but that baseline-replacing workflow is deferred from v1. Internal-only
+projections whose rows cannot have been observed downstream may instead clear the full cache
+and latch in one transaction and rebuild from canonical state.
 
 ## V1 Compatibility and Corrective Republishes
 
@@ -467,7 +468,9 @@ The public topic never exposes:
   newer canonical source version but before that newer version was projected.
 - A published cache-ahead invariant durably latches cache use/readiness and cannot be
   repaired by later source equality or by sending the lower canonical version to the same
-  topic; source rollback/reset recovery uses a new topic generation.
+  topic; v1 fences publication and leaves the latch set because the required new-namespace
+  reset is deferred. Guarded source rollback/reset replacement independently uses a new
+  topic generation and does not clear a published cache-ahead latch.
 - One ACL protects one instance while resource metadata supports downstream routing.
 - Each binding records the stable `kafka-murmur2-v1` behavior token rather than a Java
   class/version; its fixed key-to-partition mapping and partition count preserve the

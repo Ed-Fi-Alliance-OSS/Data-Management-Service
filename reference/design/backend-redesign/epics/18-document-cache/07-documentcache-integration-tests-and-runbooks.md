@@ -30,10 +30,13 @@ that links to, rather than restates, the authoritative design.
 2. Exercise CDC projection-completeness transitions without requiring a Kafka connector.
 3. Publish DocumentCache operation/troubleshooting guidance and cross-link CDC connector
    operations separately. Include cache-ahead diagnosis and require operators to
-   establish whether CDC could have published the higher version before recovery. Require
-   a full cache clear and latch reset in one provider transaction; never document a
-   latch-only reset. State that v1 is delivered only through create-only provisioning of a
-   new database and provides no upgrade path for a legacy cache schema. For SQL Server,
+   establish whether CDC could have published the higher version before recovery. Permit a
+   full cache clear and latch reset in one provider transaction only with positive evidence
+   that projection was internal-only; never document a latch-only reset. If publication is
+   possible or uncertain, require containment and retain the cache and latch for diagnosis
+   because the downstream-state reset is deferred from v1. State that v1 is delivered only
+   through create-only provisioning of a new database and provides no upgrade path for a
+   legacy cache schema. For SQL Server,
    document the projection-scoped RCSI prerequisite, inspection and offline enablement,
    row-version-store capacity/health monitoring, and that runtime DMS validates but never
    changes the database option. Do not describe RCSI as mandatory for an unlisted
@@ -76,11 +79,12 @@ that links to, rather than restates, the authoritative design.
   treat those records as duplicates. These mechanics do not constitute a correction,
   supported production baseline-replacement workflow, or another exact readiness guarantee.
 - Runbook tests cover internal-only full-cache clear/latch-reset/rebuild and hand off
-  possibly observed cache-ahead state to a new downstream state namespace, including E19's
-  new-generation topic/snapshot recovery. Provider tests prove source equality and restart
-  do not clear the latch, that a set latch disables cache reads and writes, and that the
-  explicit recovery clears the full cache before resetting the latch in the same
-  transaction; instructions never lower a cache version or reset only the latch.
+  possibly observed cache-ahead state to E19 containment while keeping the latch set and
+  identifying new-generation topic/snapshot recovery as deferred. Provider tests prove
+  source equality and restart do not clear the latch, that a set latch disables cache reads
+  and writes, and that proven-internal-only recovery clears the full cache before resetting
+  the latch in the same transaction; instructions never lower a cache version or reset only
+  the latch.
 - Runbook procedures are checked against implemented configuration, health output, and
   recovery behavior. They never instruct operators to enable DocumentCache on an
   already-provisioned database or alter legacy `Etag`/UUID-constraint inventory in place.

@@ -592,9 +592,9 @@ database singleton `dms.DocumentCacheState.CacheAheadRecoveryRequired` bit. Late
 equality does not clear that latch or make the existing row eligible for reads. The
 authoritative design's
 [cache-ahead recovery](../../cdc-streaming.md#cache-ahead-invariant-recovery) distinguishes
-safe internal-only full-cache rebuild from the new downstream state namespace required
-when the higher version may already have been observed; Kafka CDC uses a new binding
-generation and topic.
+safe internal-only full-cache rebuild from possibly published state. V1 keeps possibly
+published state latched and publication stopped; the new downstream state namespace,
+binding generation, and topic required for safe Kafka CDC recovery are deferred.
 
 Denormalized resource naming:
 
@@ -724,8 +724,10 @@ IF NOT EXISTS (SELECT 1 FROM dms.DocumentCacheState WHERE StateId = 1)
 Provisioning creates exactly the `StateId = 1` row with the latch clear. A missing or
 malformed singleton is fail-closed for cache reads and projection readiness. Incremental
 discovery or a full audit may only set the bit. The provider-supported recovery operation
-stops cache writers and clears all `dms.DocumentCache` rows before clearing the bit in the
-same database transaction. Ordinary provisioning reruns never reset it.
+may be invoked in v1 only for a projection proven internal-only; it stops cache writers and
+clears all `dms.DocumentCache` rows before clearing the bit in the same database transaction.
+Possibly published or uncertain state remains latched. Ordinary provisioning reruns never
+reset it.
 
 ### Authorization companion objects (schema: `auth`)
 

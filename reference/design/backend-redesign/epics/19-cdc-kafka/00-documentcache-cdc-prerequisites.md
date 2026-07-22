@@ -51,18 +51,26 @@ per-database projection health with E19-owned provider, topic, and connector che
    `.cdc-state/incidents`, their Git ignore rule, and optional `-CdcBindingStatePath`; do
    not write binding or incident state into the bootstrap manifest.
 4. Enforce fail-closed creation, exact-match retry, artifact-without-state rejection,
-   immutable lifetime, cleanup ordering, and new-generation source migration. Treat the
-   derived SQL Server schema-history topic and ACLs as binding-governed artifacts retained
-   with connector offsets on ordinary stop and removed before binding state during explicit
-   destructive cleanup. Remove a terminal incident file only after every governed artifact
-   is retired and immediately before/with its binding record. Define the
-   explicit guarded rotation operation for a rollback or restore that replaces an
-   existing source; it changes `dms.DataStoreIdentity.SourceIdentity` only as part of
-   reserving a new binding generation/topic and is never an ordinary setup retry. A newly
-   created independent target restored from a template, clone, or copied backup receives a
-   new UUID before binding creation under the provisioning/restore contract. This planned
-   source-replacement operation is not a recovery from a latched source-history loss and
-   must not clear or reuse that terminal binding generation.
+   immutable lifetime, guarded explicit adoption, cleanup ordering, and new-generation
+   source replacement. The adoption operation requires an operator-supplied complete
+   binding record and a successful 19-04 live-verification result for the physical source
+   and every governed artifact; it never derives fields from existing artifacts. Atomically
+   create the immutable record only after that exact verification, and leave state unchanged
+   on incomplete input, mismatch, verification failure, or a concurrent record creation.
+   Treat the derived SQL Server schema-history topic and ACLs as binding-governed artifacts
+   retained with connector offsets on ordinary stop and removed before binding state during
+   explicit destructive cleanup. Reject binding deletion until the connector, offsets,
+   public/progress/schema-history topics and ACLs, PostgreSQL slot/publication or SQL Server
+   capture artifacts, and every other governed artifact are absent. Remove a terminal
+   incident file only after every governed artifact is retired and immediately before/with
+   its binding record. Define the explicit guarded rotation operation for a rollback or
+   restore that replaces an existing source; it changes
+   `dms.DataStoreIdentity.SourceIdentity` only as part of reserving a new binding
+   generation/topic and is never an ordinary setup retry. A newly created independent target
+   restored from a template, clone, or copied backup receives a new UUID before binding
+   creation under the provisioning/restore contract. This guarded source-replacement
+   operation is not a recovery from a latched source-history loss or a possibly published
+   cache-ahead latch and must not clear the latch or reuse an affected binding generation.
 5. Validate provider tables including the clear `dms.DocumentCacheState` latch, opt-in
    `dms.CdcHeartbeat` singleton, projected `StreamEtag`, keys, replica/capture setup,
    public/progress topics, the DMS-reported SQL Server projection-target RCSI prerequisite,
@@ -124,15 +132,21 @@ per-database projection health with E19-owned provider, topic, and connector che
 
 - State tests cover atomic first creation, exact-match retry, immutable mismatch including
   attempted partition-count or `partitionerAlgorithm` changes, rejection of a missing or
-  unknown partitioner token, artifacts without state, normal-stop retention, destructive
-  cleanup ordering including SQL Server history/offset coupling and incident-before-binding
-  cleanup, and generation migration. They prove the history topic is derived rather than a
-  binding field, `SourceHistoryContinuityLost` is separate set-only incident state, and
+  unknown partitioner token, artifacts without state, and guarded adoption. Adoption tests
+  reject inferred or incomplete records, failed or mismatched live-verification evidence,
+  and concurrent creation without mutating state; an exact operator-supplied record plus
+  complete current evidence creates the immutable record once. Tests also cover normal-stop
+  retention, destructive cleanup ordering and refusal to delete state while any connector,
+  offset, topic, ACL, provider capture artifact, or other governed artifact remains,
+  including SQL Server history/offset coupling and incident-before-binding cleanup, and
+  guarded source replacement. They prove the history topic is derived rather than a binding
+  field, `SourceHistoryContinuityLost` is separate set-only incident state, and
   `maxRecordBytes` is not binding identity.
 - Provider tests cover equivalent physical aliases, conflicting targets, missing or
   malformed `dms.DataStoreIdentity`, transient identity-resolution failure, missing
-  targets, guarded identity rotation/new-generation recovery, and confirmed binding
-  mismatch without a DMS-owned drift latch.
+  targets, guarded identity rotation/new-generation recovery, refusal to use source
+  replacement for a published cache-ahead or terminal source-history incident, and confirmed
+  binding mismatch without a DMS-owned drift latch.
 - Readiness tests cover binding, new-database/offline eligibility, projection, exact
   provider position parsing and ordering, rejection of an unbound existing database and a
   previous zero audit, a fresh startup audit before first-write admission, a barrier

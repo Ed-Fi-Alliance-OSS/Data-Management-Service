@@ -59,10 +59,12 @@ retry map.
    unwritable state singleton as fail-closed. If the SQL Server RCSI prerequisite becomes
    false or unreadable, stop before classification, set no cache-ahead latch, discard the
    page observation, and return the target to prerequisite retry.
-6. Implement one target-scoped administrative recovery operation that takes the exclusive
-   singleton-state lock, requires a set latch, clears the entire cache and latch in one
-   provider transaction, and requests an immediate full audit after commit. Expose no
-   latch-only reset; downstream publication-path recovery remains E19-owned.
+6. Implement one target-scoped administrative recovery operation for a projection proven
+   internal-only. Require explicit caller confirmation of that deployment-owned proof, take
+   the exclusive singleton-state lock, require a set latch, clear the entire cache and latch
+   in one provider transaction, and request an immediate full audit after commit. Expose no
+   latch-only reset. E19 owns containment when downstream observation is possible or
+   uncertain; its downstream-state reset is deferred from v1.
 7. Add graceful cancellation and sanitized incremental-scan, audit, target-backoff, and
    failure telemetry, and measure realistic plans for both providers.
 8. Bind the configurable incremental interval, full-audit interval, page size,
@@ -92,17 +94,19 @@ retry map.
   exact audit result, atomically latches the target, and pauses further cache writes. After
   the canonical source advances to exactly the cached version, including a synchronized advance
   between classification and latch commit, restart and zero-audit tests prove the latch
-  remains set until explicit recovery.
+  remains set until proven-internal-only recovery; no test clears possibly published or
+  uncertain state.
 - SQL Server isolation tests prove every incremental page, audit page, and finishing
   aggregate obtains its source/cache pairs from one RCSI-backed `READ COMMITTED` statement.
   With RCSI disabled or unreadable, including after initial resolution, the next comparison
   stops before classification and cannot set the durable latch. A synchronized
   RCSI-enabled source advance followed by cache projection cannot produce a mixed
   cache-ahead observation; relational API work and eligible peer targets continue.
-- Recovery tests prove the operation rejects a clear latch, waits for in-flight shared
-  latch locks, clears all cache rows before resetting the latch in the same transaction,
-  rolls both changes back on failure, and requests an immediate full audit only after
-  commit.
+- Recovery tests prove the operation rejects a clear latch or missing internal-only
+  confirmation, waits for in-flight shared latch locks, clears all cache rows before
+  resetting the latch in the same transaction, rolls both changes back on failure, and
+  requests an immediate full audit only after commit. No E18 test clears possibly published
+  or uncertain state.
 - A synchronized startup test commits a higher-key source update after the finishing
   audit observation but before incremental scanning begins and proves the update remains
   above the pre-audit boundary and is projected without waiting for the next full audit.

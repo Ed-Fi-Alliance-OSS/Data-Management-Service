@@ -35,14 +35,26 @@ controller can prove that the new database has not been published to any writer.
    database and initial write admission has not opened; reject an unbound path that selects
    or reuses an already-provisioned data store before creating binding state or external
    artifacts. Permit later exact-match validation/restart only when the immutable binding
-   proves the database was already enabled through this supported path.
+   proves the database was already enabled through this supported path. The only missing-
+   binding exception is the explicit guarded adoption in item 4; it reconstructs state only
+   around a complete matching governed-artifact set and is not first-time enablement.
 2. Reuse bootstrap new-data-store creation and generated provider connector templates.
    Provision and validate the complete current E18 schema before binding/provider setup;
    do not attempt to upgrade a legacy cache schema.
 3. Require the selected deployment target to be present in DMS
-   `DocumentCache:Targets`, and reserve or exact-match its immutable binding before
-   creating governed artifacts.
-4. Create or validate the public topic with exactly `cleanup.policy=compact`, an explicit
+   `DocumentCache:Targets`. During ordinary provisioning, reserve or exact-match its
+   immutable binding before creating governed artifacts; the guarded adoption exception is
+   defined separately in item 4.
+4. Implement the guarded adoption path defined by 19-00 for governed artifacts that exist
+   without binding state. Require an operator-supplied complete binding record; never infer
+   its fields from topic names, connector configuration, or the current source. Before
+   atomically creating the record, live-verify the DMS-reported physical-source fingerprint,
+   provider capture artifacts, connector configuration and offsets, public/progress topics,
+   the SQL Server schema-history topic when applicable, ACLs, topic configuration and
+   durability, partitioner contract, and record-size policy against that exact record.
+   Missing, unverifiable, extra, or conflicting governed artifacts fail without modifying
+   binding state or infrastructure. An exact-match retry after adoption is idempotent.
+5. Create or validate the public topic with exactly `cleanup.policy=compact`, an explicit
    per-topic `delete.retention.ms` of at least `604800000` (seven days), the binding's fixed
    partition count, and `max.message.bytes=<maxRecordBytes>` from the current operational
    policy. Reject any cleanup policy that includes `delete`, a missing topic-level
@@ -62,7 +74,7 @@ controller can prove that the new database has not been published to any writer.
    assignments and the topic-level override when validating them, and fail closed before
    connector registration when either topic is below the profile. Do not accept an
    inherited broker default or automatically reassign replicas for an existing topic.
-5. For SQL Server, create or validate the binding-derived
+6. For SQL Server, create or validate the binding-derived
    `<public-topic>.schema-history` topic before connector registration with exactly one
    partition, `cleanup.policy=delete`, `retention.ms=-1`, `retention.bytes=-1`, and the
    same active durability profile, including actual replica assignments and an explicit
@@ -73,13 +85,13 @@ controller can prove that the new database has not been published to any writer.
    `DESCRIBE`, and `DESCRIBE_CONFIGS` permissions required by the history producer,
    consumer, and validation client. The deployment principal owns topic creation/deletion;
    grant no instance-consumer access. PostgreSQL creates no schema-history topic.
-6. Before connector registration, validate that the effective broker request,
+7. Before connector registration, validate that the effective broker request,
    record-batch, and replica-fetch limits accept `maxRecordBytes`. Configure the local
    broker accordingly; require equivalent verifiable capability from a production-like
    broker and fail closed when it is smaller or cannot be verified. Document that each
    consumer must set `max.partition.fetch.bytes` and `fetch.max.bytes` to at least the
    operational ceiling and provision memory for one record.
-7. Implement idempotent Kafka Connect create/update, external combined-status polling,
+8. Implement idempotent Kafka Connect create/update, external combined-status polling,
    timeout, and condition-specific diagnostics. Require the setup controller's positive
    evidence that it created the selected database and has not published it to any DMS
    replica or other writer. Establish capture and start or roll out the selected DMS
@@ -115,34 +127,56 @@ controller can prove that the new database has not been published to any writer.
    database offline. Setup may retry or explicitly abandon CDC and open first-write
    admission with the target not ready; that database then becomes ineligible for later v1
    first-time enablement.
-8. Implement a coordinated in-place `maxRecordBytes` increase without reserving a new
+9. Implement a coordinated in-place `maxRecordBytes` increase without reserving a new
    binding generation or topic: mark the target not ready, confirm consumer fetch and
    deserialization capacity, raise broker/replica and topic limits, then raise producer
    `buffer.memory` to at least the new ceiling and `max.request.size` last and restart or
    resume the connector. Validate every effective value before restoring readiness; a
    partial or unverifiable rollout remains not ready.
-9. Print sanitized binding-generation/connector/source/topic identity, including the
-   derived SQL Server schema-history topic. Retain binding, connector offsets, ACLs, and
-   every governed topic on normal stop. During explicit destructive volume teardown, stop
-   the connector; remove its SQL Server history topic, ACLs, and offsets as one lifecycle
-   unit; remove the public and progress topics and their ACLs; and delete any terminal
-   incident state immediately before/with the binding record last. Deleting each topic also
-   removes its topic-level durability configuration. Never delete or recreate an empty
-   history topic automatically while retained offsets exist.
+10. Implement guarded source replacement for a database previously enabled through the v1
+   new-database path. Fence the old connector, invoke 19-00's guarded identity-rotation and
+   new-binding reservation operation, and provision a new connector, public and progress
+   topics, applicable SQL Server schema-history topic, ACLs, provider capture artifacts,
+   consumer state namespace, and fresh snapshot under the new generation. Retain the old
+   generation or retire it through the explicit destructive workflow; never reuse or
+   rewrite its artifacts. Report eventual operational status rather than another exact
+   baseline. Refuse this operation when the old binding has terminal source-history loss or
+   the database has a possibly published cache-ahead latch; it is not either recovery path.
+11. Print sanitized binding-generation/connector/source/topic identity, including the
+   derived SQL Server schema-history topic. Retain the binding, connector, offsets, ACLs,
+   provider capture artifacts, and every governed topic on normal stop. During explicit
+   destructive volume teardown, stop and delete the connector; remove its offsets; remove
+   the public, progress, and SQL Server schema-history topics when applicable and all of
+   their ACLs; remove the PostgreSQL slot/publication or SQL Server capture instances/jobs;
+   and remove every other governed artifact. Delete terminal incident state immediately
+   before/with the binding record last. Treat SQL Server history and offsets as one retained
+   or removed lifecycle unit. Deleting each topic also removes its topic-level durability
+   configuration. Never delete or recreate an empty history topic automatically while
+   retained offsets exist.
    Also print the effective public-topic tombstone retention and the fixed 24-hour
    consumer-bootstrap deadline without claiming to certify an independently operated
    consumer.
-10. Expose the same workflow to E2E setup before observed test traffic begins.
+12. Expose the same workflow to E2E setup before observed test traffic begins.
 
 ## Acceptance Evidence
 
 - Script/integration tests cover disabled, UI-only, invalid or unprojected target,
   successful fresh-database setup, repeated exact-binding retry, rejection of an unbound
   already-provisioned or legacy-schema database, timeout, normal-stop retention, missing
-  binding around existing artifacts, missing offline-provisioning evidence, and destructive
-  teardown flows including incident-before-binding cleanup. Initial rejection occurs before
-  binding, provider, topic, ACL, or connector creation; a successfully enabled database
-  remains restartable.
+  binding around existing artifacts, guarded adoption, missing offline-provisioning
+  evidence, guarded source replacement, and destructive teardown flows including
+  incident-before-binding cleanup. Initial rejection occurs before binding, provider, topic,
+  ACL, or connector creation; a successfully enabled database remains restartable.
+- Adoption tests reject inferred or incomplete binding input and every physical-source,
+  provider-artifact, connector, offset, topic, ACL, configuration, durability, partitioner,
+  and size-policy mismatch without changing state or infrastructure. Exact operator input
+  plus complete live evidence creates the immutable binding once, and its retry exact-matches.
+- Source-replacement tests fence the old connector before rotating identity, reserve the new
+  binding before creating new artifacts, allocate every governed artifact under the new
+  generation, and start with a fresh snapshot and consumer namespace. They prove the old
+  generation is retained or explicitly destroyed rather than reused, status remains
+  eventual, and terminal source-history loss or a possibly published cache-ahead latch
+  rejects replacement without clearing either incident.
 - Sequence tests prove binding reservation precedes artifact creation and that external
   initial combined readiness follows the authoritative new/offline-database algorithm
   without a backfill epoch. They reject a previous zero audit, keep first-write admission
@@ -157,6 +191,10 @@ controller can prove that the new database has not been published to any writer.
   post-registration drift makes combined readiness false with topic-specific diagnostics,
   normal stop retains every topic, and destructive teardown removes every topic and its
   configuration.
+- Destructive-teardown tests prove the connector, offsets, every topic and ACL, PostgreSQL
+  slot/publication or SQL Server capture instances/jobs, and every other governed artifact
+  are absent before terminal incident and binding state are deleted. An omitted artifact
+  fails closed and preserves the incident and binding; normal stop retains the complete set.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
   in-place topic partition-count or `partitionerAlgorithm` changes, segment time/size
   deletion through a cleanup policy containing `delete`, a missing topic-level
@@ -206,7 +244,8 @@ controller can prove that the new database has not been published to any writer.
   or replacement-namespace cutover.
 - Migration, upgrade, data movement, or initial CDC enablement for an already-provisioned
   database.
-- Runtime target discovery, retirement, or source replacement.
+- Runtime target discovery or retirement outside the explicit guarded lifecycle operations.
 - Projector health semantics.
 - In-place source rebinding or topic-generation reuse.
+- Published cache-ahead new-namespace recovery.
 - Automatic replica reassignment or durability repair for an existing Kafka topic.
