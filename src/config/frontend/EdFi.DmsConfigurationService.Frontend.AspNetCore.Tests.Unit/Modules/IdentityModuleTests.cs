@@ -616,6 +616,137 @@ public class Given_Registration_Is_Disabled_And_The_Form_Cannot_Be_Read
     }
 }
 
+[TestFixture]
+public class Given_Client_Creation_Fails_At_The_Identity_Provider
+{
+    private static readonly ClientSecretValidationOptions ValidationOptions = new()
+    {
+        MinimumLength = 8,
+        MaximumLength = 12,
+    };
+
+    // A provider failure message that embeds sensitive detail (an internal URL and a secret) that must
+    // never reach the caller.
+    private const string SensitiveProviderMessage =
+        "Keycloak admin API call to https://idp.internal:8443/admin/realms/edfi/clients failed: 500; client_secret=s3cr3t-DO-NOT-LEAK";
+
+    private IIdentityProviderRepository _clientRepository = null!;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private HttpResponseMessage _response = null!;
+    private string _content = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _clientRepository = A.Fake<IIdentityProviderRepository>();
+
+        // The client id is unique (the list is empty), so registration passes the uniqueness check and
+        // reaches CreateClientAsync — the branch under test.
+        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(new ClientClientsResult.Success([]));
+
+        // CreateClientAsync fails at the identity provider with a message carrying sensitive detail.
+        A.CallTo(() =>
+                _clientRepository.CreateClientAsync(
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<long[]?>._
+                )
+            )
+            .Returns(
+                new ClientCreateResult.FailureIdentityProvider(
+                    new IdentityProviderError.Unauthorized(SensitiveProviderMessage)
+                )
+            );
+
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                collection.AddTransient(_ => new RegisterRequest.Validator(
+                    Options.Create(ValidationOptions)
+                ));
+                collection.AddTransient(_ => _clientRepository);
+            });
+        });
+        _client = _factory.CreateClient();
+
+        _response = await _client.PostAsync(
+            "/connect/register",
+            new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("clientid", "CSClientNew"),
+                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+                new KeyValuePair<string, string>("displayname", "CSClientNew"),
+            ])
+        );
+        _content = await _response.Content.ReadAsStringAsync();
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_returns_the_bad_gateway_problem_details_contract()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var actualResponse = JsonNode.Parse(_content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The request could not be processed. See 'errors' for details.",
+              "type": "urn:ed-fi:api:bad-gateway",
+              "title": "Bad Gateway",
+              "status": 502,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+                "Identity provider error during client registration"
+              ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+    }
+
+    [Test]
+    public void It_does_not_leak_the_provider_message()
+    {
+        _content.Should().NotContain("idp.internal");
+        _content.Should().NotContain("s3cr3t-DO-NOT-LEAK");
+        _content.Should().NotContain(SensitiveProviderMessage);
+    }
+
+    [Test]
+    public void It_reaches_client_creation() =>
+        A.CallTo(() =>
+                _clientRepository.CreateClientAsync(
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<string>._,
+                    A<long[]?>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+}
+
 /// <summary>
 /// Shared harness for /connect/token tests. Every failure returns the OAuth 2.0 protocol contract
 /// (application/json { error, error_description }, RFC 6749 section 5.2) rather than the Ed-Fi Problem
