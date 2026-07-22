@@ -218,7 +218,7 @@ re-runnable without hidden disk artifacts.
 | **Inputs** | `-EnvironmentFile <path>` (select local settings for CMS URL, auth, tenant scope, and database connection defaults); `-DataStoreId <long[]>` (explicit numeric DMS data store ID selector; omit when exactly one instance exists); `-SchoolYear <int[]>` (school-year filter; omit when exactly one instance exists); staged schema paths (read from `eng/docker-compose/.bootstrap/ApiSchema/`) |
 | **Outputs** | Provisioned or validated databases for each target instance; printed IDE next-step guidance (staged schema path, `appsettings` values, `CMSReadOnlyAccess` credentials) after infra-only shape completes |
 | **Side effects** | Invokes authoritative SchemaTools/runtime provisioning path; exits non-zero if provisioning or validation fails |
-| **Failure conditions** | Zero matching instances found; multiple matching instances found without an explicit `-DataStoreId` or `-SchoolYear` selector; SchemaTools/runtime provisioning exits non-zero, including when target stored schema state is incompatible with the staged schema set; connection to target database fails; CMS data store connection string matches neither engine's dialect markers; a target's resolved dialect contradicts the effective environment's `DMS_DATASTORE` |
+| **Failure conditions** | Zero matching instances found; multiple matching instances found without an explicit `-DataStoreId` or `-SchoolYear` selector; SchemaTools/runtime provisioning exits non-zero, including when target stored schema state is incompatible with the staged schema set; connection to target database fails; a target's CMS-stored connection string cannot be parsed under the effective environment's `DMS_DATASTORE` provider (the provisioning dialect is the explicit `DMS_DATASTORE`, never inferred from the connection string, so a connection for the other engine is rejected as a stale data store) |
 | **Must NOT do** | Accept user-facing schema-selection parameters; repair or work around a failed SchemaTools path; run inside DMS startup via `AppSettings__DeployDatabaseOnStartup`, `NEED_DATABASE_SETUP`, `EdFi.DataManagementService.Backend.Installer.dll`, or any container entrypoint/pre-launch hook; silently reuse a database provisioned for a different schema selection; resolve schema files; create or mutate instance records in CMS |
 
 **Boundary note:** `AppSettings__DeployDatabaseOnStartup=false` is always set, and the legacy
@@ -228,14 +228,15 @@ never performs it. Selector resolution rule: when exactly one DMS instance exist
 supplied, auto-select it; when multiple instances exist and no explicit `-DataStoreId` or `-SchoolYear` is
 provided, fail fast with guidance to supply an explicit selector. CMS lookup and database target resolution
 use the shared `-EnvironmentFile` local-settings resolver, so direct phase invocation and wrapper
-orchestration target the same local environment. Dialect: `pgsql`|`mssql`, auto-detected per target
-from the shape of the CMS data-store connection string. Definitive PostgreSQL markers (`host`,
-`username`, `port`, `sslmode`) are checked first, then SQL Server markers; a connection string
-carrying neither is rejected with an actionable error at `Resolve-TargetDialect`. The
-Docker-internal database host is translated to the host-side mapped port for both engines.
-`Resolve-ExpectedProvisioningDialect` derives the dialect the effective environment expects from
-`DMS_DATASTORE`, and `New-ProvisionTarget` fails fast with remediation guidance before any
-SchemaTools invocation when a target's resolved dialect contradicts it.
+orchestration target the same local environment. Dialect: `pgsql`|`mssql`, derived from the explicit
+`DMS_DATASTORE` (canonicalized through the single engine-token boundary, so a case variant resolves and
+an unsupported token fails fast) and NEVER inferred from the connection string.
+`Resolve-ExpectedProvisioningDialect` selects it, and `Convert-CmsConnectionStringToHostSideTarget` parses
+each CMS-stored connection under that provider's required keys (PostgreSQL: `host`/`database`/`username`;
+SQL Server: `Server`/`Database`/`User Id`); a stored connection for the other engine lacks the selected
+engine's keys, so the conversion throws and `New-ProvisionTarget` fails fast with remediation guidance
+(a stale data store) before any SchemaTools invocation. The Docker-internal database host is translated to
+the host-side mapped port for both engines.
 
 ---
 
