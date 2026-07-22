@@ -451,6 +451,34 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         $contractIndex | Should -BeLessThan $networkIndex -Because "$Script must validate before 'docker network create' - the first external action - which precedes image build, container up, and Keycloak/OpenIddict"
     }
 
+    It "build-dms.ps1 StartEnvironment runs the runtime-contract preflight before image build and teardown (finding 1)" {
+        # The inner start scripts validate before THEIR first mutation (above), but the outer StartEnvironment
+        # orchestration builds images and tears down volumes BEFORE it ever reaches a start script. It must run
+        # the SAME preflight (the start script's -PreflightOnly stop point) before either mutation, so an
+        # invalid provider/connection string is reported before existing databases are deleted.
+        $buildScript = [System.IO.Path]::GetFullPath((Join-Path $script:composeRoot "../../build-dms.ps1"))
+        Test-Path -LiteralPath $buildScript | Should -BeTrue -Because "build-dms.ps1 lives at the repository root"
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($buildScript, [ref]$null, [ref]$null)
+        $orchestrator = $ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Start-BootstrapDockerEnvironment'
+            }, $true) | Select-Object -First 1
+        $orchestrator | Should -Not -BeNullOrEmpty -Because "StartEnvironment dispatches to Start-BootstrapDockerEnvironment"
+
+        $body = $orchestrator.Body.Extent.Text
+        $preflightIndex = $body.IndexOf('-PreflightOnly')
+        $dockerBuildIndex = $body.IndexOf('Invoke-Step { DockerBuild }')
+        $stopIndex = $body.IndexOf('Stop-DockerEnvironment ')
+
+        $preflightIndex | Should -BeGreaterThan -1 -Because "the orchestration must run the -PreflightOnly contract validation"
+        $stopIndex | Should -BeGreaterThan -1 -Because "the orchestration tears down (compose down -v / volume deletion)"
+        $dockerBuildIndex | Should -BeGreaterThan -1 -Because "the orchestration builds images"
+        $preflightIndex | Should -BeLessThan $dockerBuildIndex -Because "the preflight must precede image build"
+        $preflightIndex | Should -BeLessThan $stopIndex -Because "the preflight must precede teardown and volume deletion"
+    }
+
     It "bootstrap-schema-tool imports bootstrap-manifest WITHOUT -Force (so importing it cannot re-home a caller's manifest)" {
         # A -Force reload of bootstrap-manifest from within bootstrap-schema-tool removes and re-imports it,
         # re-homing it out of a start script's session scope and breaking that script's env-snapshot restore
