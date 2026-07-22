@@ -815,6 +815,96 @@ function New-DataStoreConnectionString {
 
 <#
 .SYNOPSIS
+    Builds the two distinct engine-aware connection strings the E2E test process consumes.
+
+.DESCRIPTION
+    Produces two opaque connection strings from the resolved environment values for a single
+    engine and E2E database:
+
+    - AdminConnectionString: host-side administrative/reset access, reachable from the test
+      host at localhost/127.0.0.1 on the published database port. The PostgreSQL form appends
+      NoResetOnClose=true to match the reset connection the standard E2E harness uses.
+    - RegistrationConnectionString: the Docker-network connection string registered with the
+      Configuration Service, reachable from inside the compose network at the database
+      container host on its internal port (dms-postgresql:5432 or dms-mssql,1433).
+
+    Custom credentials, ports, and database name from the resolved environment are honored; the
+    documented dev defaults are used only when the environment omits a value. The returned
+    strings contain secrets and must never be logged.
+
+.PARAMETER DatabaseEngine
+    The database engine ("postgresql" default, or "mssql").
+
+.PARAMETER EnvironmentValues
+    The resolved environment values (as returned by ReadValuesFromEnvFile) for the selected
+    engine and data standard.
+
+.PARAMETER DatabaseName
+    The E2E database name (E2E_DATABASE_NAME) both connection strings target.
+
+.OUTPUTS
+    [pscustomobject] with AdminConnectionString and RegistrationConnectionString.
+#>
+function New-E2EDataStoreConnectionStrings {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure connection-string factory despite the New- verb; it creates no system state, so -WhatIf/-Confirm semantics add no value.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the pair of connection strings the E2E test process consumes; the plural noun names that set.')]
+    param(
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [Parameter(Mandatory)]
+        [hashtable]$EnvironmentValues,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$DatabaseName
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        $username = "sa"
+        $password = [string]$EnvironmentValues["MSSQL_SA_PASSWORD"]
+        if ([string]::IsNullOrWhiteSpace($password)) { $password = "abcdefgh1!" }
+        $publishedPortValue = [string]$EnvironmentValues["MSSQL_PORT"]
+        if ([string]::IsNullOrWhiteSpace($publishedPortValue)) { $publishedPortValue = "1435" }
+        $publishedPort = [int]$publishedPortValue
+
+        $adminConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine mssql -DbHost "127.0.0.1" -Port $publishedPort `
+            -Username $username -Password $password -DatabaseName $DatabaseName
+        $registrationConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine mssql -DbHost "dms-mssql" -Port 1433 `
+            -Username $username -Password $password -DatabaseName $DatabaseName
+    }
+    else {
+        $username = [string]$EnvironmentValues["POSTGRES_USER"]
+        if ([string]::IsNullOrWhiteSpace($username)) { $username = "postgres" }
+        $password = [string]$EnvironmentValues["POSTGRES_PASSWORD"]
+        if ([string]::IsNullOrWhiteSpace($password)) { $password = "abcdefgh1!" }
+        $publishedPortValue = [string]$EnvironmentValues["POSTGRES_PORT"]
+        if ([string]::IsNullOrWhiteSpace($publishedPortValue)) { $publishedPortValue = "5435" }
+        $publishedPort = [int]$publishedPortValue
+
+        # Host-side reset parity: the standard E2E harness resets over a pooled Npgsql connection
+        # with NoResetOnClose=true (see ContainerSetupBase). New-DataStoreConnectionString does not
+        # emit it, so append it here for the PostgreSQL admin/reset string only.
+        $adminConnectionString = (New-DataStoreConnectionString `
+                -DatabaseEngine postgresql -DbHost "localhost" -Port $publishedPort `
+                -Username $username -Password $password -DatabaseName $DatabaseName) + "NoResetOnClose=true;"
+        $registrationConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine postgresql -DbHost "dms-postgresql" -Port 5432 `
+            -Username $username -Password $password -DatabaseName $DatabaseName
+    }
+
+    return [pscustomobject]@{
+        AdminConnectionString        = $adminConnectionString
+        RegistrationConnectionString = $registrationConnectionString
+    }
+}
+
+<#
+.SYNOPSIS
     Creates a new DMS Instance by sending a POST request to the Configuration Service.
 
 .DESCRIPTION
@@ -1663,4 +1753,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential

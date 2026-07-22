@@ -54,6 +54,88 @@ Describe "New-DataStoreConnectionString (DMS-1238)" {
     }
 }
 
+Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
+    BeforeAll {
+        $script:dmsManagementModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../Dms-Management.psm1"))
+        Import-Module $script:dmsManagementModule -Force
+    }
+
+    AfterAll {
+        Remove-Module Dms-Management -Force -ErrorAction SilentlyContinue
+    }
+
+    It "builds host-side reset and Docker-network registration strings for postgresql (default engine)" {
+        $envValues = @{ POSTGRES_PASSWORD = "abcdefgh1!"; POSTGRES_PORT = "5435" }
+
+        $result = New-E2EDataStoreConnectionStrings -EnvironmentValues $envValues -DatabaseName "edfi_e2e"
+
+        $result.AdminConnectionString |
+            Should -Be "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_e2e;NoResetOnClose=true;"
+        $result.RegistrationConnectionString |
+            Should -Be "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_e2e;"
+    }
+
+    It "builds host-side reset and Docker-network registration strings for mssql" {
+        $envValues = @{ MSSQL_SA_PASSWORD = "Abcdefgh1!"; MSSQL_PORT = "1435" }
+
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "edfi_e2e"
+
+        $result.AdminConnectionString |
+            Should -Be "Server=127.0.0.1,1435;Database=edfi_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true;"
+        $result.RegistrationConnectionString |
+            Should -Be "Server=dms-mssql,1433;Database=edfi_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true;"
+    }
+
+    It "separates the host-side reset host/port from the Docker-network registration host/port" {
+        $pg = New-E2EDataStoreConnectionStrings -DatabaseEngine postgresql -EnvironmentValues @{ POSTGRES_PORT = "5435" } -DatabaseName "db"
+        $pg.AdminConnectionString | Should -Match "host=localhost;port=5435;"
+        $pg.RegistrationConnectionString | Should -Match "host=dms-postgresql;port=5432;"
+
+        $mssql = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues @{ MSSQL_PORT = "1435" } -DatabaseName "db"
+        $mssql.AdminConnectionString | Should -Match "Server=127\.0\.0\.1,1435;"
+        $mssql.RegistrationConnectionString | Should -Match "Server=dms-mssql,1433;"
+    }
+
+    It "honors custom postgresql user, password, port, and database name from the resolved environment" {
+        $envValues = @{ POSTGRES_USER = "customuser"; POSTGRES_PASSWORD = "custompass"; POSTGRES_PORT = "6543" }
+
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine postgresql -EnvironmentValues $envValues -DatabaseName "custom_db"
+
+        $result.AdminConnectionString |
+            Should -Be "host=localhost;port=6543;username=customuser;password=custompass;database=custom_db;NoResetOnClose=true;"
+        $result.RegistrationConnectionString |
+            Should -Be "host=dms-postgresql;port=5432;username=customuser;password=custompass;database=custom_db;"
+    }
+
+    It "honors custom mssql password and port from the resolved environment" {
+        $envValues = @{ MSSQL_SA_PASSWORD = "Custom!Pass9"; MSSQL_PORT = "14333" }
+
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "custom_db"
+
+        $result.AdminConnectionString |
+            Should -Be "Server=127.0.0.1,14333;Database=custom_db;User Id=sa;Password=Custom!Pass9;TrustServerCertificate=true;"
+        $result.RegistrationConnectionString |
+            Should -Be "Server=dms-mssql,1433;Database=custom_db;User Id=sa;Password=Custom!Pass9;TrustServerCertificate=true;"
+    }
+
+    It "appends NoResetOnClose only to the postgresql host-side reset string" {
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine postgresql -EnvironmentValues @{} -DatabaseName "db"
+
+        $result.AdminConnectionString | Should -Match "NoResetOnClose=true;$"
+        $result.RegistrationConnectionString | Should -Not -Match "NoResetOnClose"
+    }
+
+    It "falls back to documented dev defaults when the environment omits credentials and ports" {
+        $pg = New-E2EDataStoreConnectionStrings -DatabaseEngine postgresql -EnvironmentValues @{} -DatabaseName "db"
+        $pg.AdminConnectionString |
+            Should -Be "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=db;NoResetOnClose=true;"
+
+        $mssql = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues @{} -DatabaseName "db"
+        $mssql.AdminConnectionString |
+            Should -Be "Server=127.0.0.1,1435;Database=db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+    }
+}
+
 Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
     BeforeAll {
         $script:configureScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../configure-local-data-store.ps1"))

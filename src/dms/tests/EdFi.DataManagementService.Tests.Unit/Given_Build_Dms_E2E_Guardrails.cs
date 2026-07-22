@@ -68,7 +68,9 @@ public class Given_Build_Dms_E2E_Guardrails
         initializeFunctionContents
             .Should()
             .Contain("Restart-DmsContainer")
-            .And.Contain("-Reason \"discard cached PostgreSQL pools after E2E database reprovisioning\"");
+            .And.Contain(
+                "-Reason \"discard cached datastore connection pools after E2E database reprovisioning\""
+            );
     }
 
     [Test]
@@ -116,6 +118,111 @@ public class Given_Build_Dms_E2E_Guardrails
             .And.Contain("-DataStoreDatabaseName $DataStoreDatabaseName");
 
         e2eTestDefinition.Should().Contain("-DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName");
+    }
+
+    [Test]
+    public void It_propagates_the_selected_database_engine_through_the_standard_e2e_chain()
+    {
+        // The top-level dispatch and each E2E orchestration function must forward -DatabaseEngine so
+        // the engine selection reaches the engine-aware start/configure/provision leaf scripts.
+        _buildScriptContents
+            .Should()
+            .Contain(
+                "E2ETest { Invoke-TestExecution E2ETests"
+                    + " -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild"
+                    + " -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider"
+                    + " -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine }"
+            );
+
+        ExtractFunctionBody("Invoke-TestExecution")
+            .Should()
+            .Contain("E2ETests -UsePublishedImage:$UsePublishedImage")
+            .And.Contain("-DatabaseEngine $DatabaseEngine");
+
+        ExtractFunctionBody("E2ETests")
+            .Should()
+            .Contain(
+                "Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine"
+            )
+            .And.Contain("-DatabaseEngine $e2eTestSettings.DatabaseEngine");
+
+        ExtractFunctionBody("Start-DockerEnvironment")
+            .Should()
+            .Contain("-DatabaseEngine $resolvedDatabaseEngine");
+
+        ExtractFunctionBody("Invoke-E2EDatabaseProvisioning")
+            .Should()
+            .Contain("-DatabaseEngine $E2ETestSettings.DatabaseEngine");
+    }
+
+    [Test]
+    public void It_resolves_the_engine_overlay_after_the_data_standard_overlay_before_reading_the_database_name()
+    {
+        var environmentContext = ExtractFunctionBody("Get-E2ETestEnvironmentContext");
+
+        int dataStandardIndex = environmentContext.IndexOf(
+            "Resolve-DataStandardEnvironmentFile",
+            StringComparison.Ordinal
+        );
+        int engineIndex = environmentContext.IndexOf(
+            "Resolve-DatabaseEngineEnvironmentFile",
+            StringComparison.Ordinal
+        );
+        int databaseNameIndex = environmentContext.IndexOf(
+            "$environmentValues[\"E2E_DATABASE_NAME\"]",
+            StringComparison.Ordinal
+        );
+
+        dataStandardIndex.Should().BeGreaterThan(-1);
+        engineIndex.Should().BeGreaterThan(dataStandardIndex);
+        databaseNameIndex.Should().BeGreaterThan(engineIndex);
+
+        environmentContext.Should().Contain("New-E2EDataStoreConnectionStrings");
+    }
+
+    [Test]
+    public void It_saves_sets_and_restores_the_engine_and_connection_strings_for_the_test_process()
+    {
+        var processContext = ExtractFunctionBody("Invoke-WithE2ETestProcessContext");
+        var beforeAction = processContext.Split("& $Action", StringSplitOptions.None)[0];
+        var afterAction = processContext.Split("& $Action", StringSplitOptions.None)[1];
+
+        foreach (
+            var variableName in new[]
+            {
+                "AppSettings__DatabaseEngine",
+                "AppSettings__DataStoreAdminConnectionString",
+                "AppSettings__DataStoreConnectionString",
+            }
+        )
+        {
+            // Saved before the action (env read into a $previous... variable), set before the action,
+            // and restored-or-removed after it.
+            beforeAction
+                .Should()
+                .Contain($"= $env:{variableName}")
+                .And.Contain($"$env:{variableName} = $E2ETestSettings.");
+            afterAction
+                .Should()
+                .Contain($"Remove-Item Env:{variableName} -ErrorAction SilentlyContinue")
+                .And.Contain($"$env:{variableName} = $previous");
+        }
+    }
+
+    [Test]
+    public void It_does_not_emit_connection_strings_or_secrets_to_host_output()
+    {
+        // The two opaque connection strings and passwords must never be written to any output stream.
+        foreach (
+            var functionName in new[] { "Get-E2ETestEnvironmentContext", "Invoke-WithE2ETestProcessContext" }
+        )
+        {
+            ExtractFunctionBody(functionName)
+                .Should()
+                .NotMatchRegex(
+                    @"Write-(Host|Output|Information|Verbose|Debug|Warning)[^\r\n]*(ConnectionString|[Pp]assword)"
+                );
+        }
     }
 
     private string ExtractFunctionBody(string functionName)

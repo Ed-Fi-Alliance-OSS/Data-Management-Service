@@ -118,8 +118,10 @@ param(
     [switch]
     $LoadSeedData,
 
-    # For StartEnvironment only: database engine backing the stack. Forwarded to the bootstrap
-    # wrapper, whose own default governs when this is omitted.
+    # Database engine backing the stack. Used by StartEnvironment (forwarded to the bootstrap
+    # wrapper) and by E2ETest (forwarded through the E2E orchestration to the engine-aware
+    # start/configure/provision leaf scripts). When omitted it is normalized to postgresql, which is
+    # behavior-compatible with the prior PostgreSQL-only flow.
     [string]
     [ValidateSet("postgresql", "mssql")]
     $DatabaseEngine,
@@ -335,21 +337,34 @@ function Get-E2ETestEnvironmentContext {
         $EnvironmentFile,
 
         [string]
-        $TestFilter
+        $TestFilter,
+
+        # Database engine backing the E2E stack. "postgresql" (default) or "mssql". An empty value
+        # is normalized to postgresql so an omitted top-level -DatabaseEngine is behavior-compatible.
+        [string]
+        $DatabaseEngine = "postgresql"
     )
+
+    $resolvedDatabaseEngine =
+        if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) { "postgresql" } else { $DatabaseEngine }
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
 
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+    Import-Module -Name "$PSScriptRoot/eng/Dms-Management.psm1" -Force
 
-    # Compose the requested data-standard overlay (.env.ds<NN>) onto the base env file once, here, so
-    # every downstream consumer - relational provisioning, seed loading, configure, and DMS startup -
-    # reads the same data-standard values. Without this single composition point, startup composed the
-    # overlay (via start-local-dms.ps1 -DataStandardVersion) while provisioning/seed/configure read the
-    # raw base file, mixing e.g. DS 6.1 runtime schema with a DS 5.2 template/seed. With no
-    # -DataStandardVersion this returns the base file unchanged (DS 5.2 default).
+    # Single resolution point for the standard suite: compose the data-standard overlay (.env.ds<NN>)
+    # first, then the database-engine overlay (.env.mssql), so every downstream consumer - relational
+    # provisioning, configure, DMS startup, the test process, and teardown - reads the one resolved
+    # file. The order (data standard then engine) matches start-local-dms.ps1 and must not be
+    # reversed. With no -DataStandardVersion the data-standard step returns the file unchanged (DS 5.2
+    # default), and for postgresql the engine step is a no-op.
     $environmentFilePath = Resolve-DataStandardEnvironmentFile `
         -DataStandardVersion $DataStandardVersion `
+        -BaseEnvironmentFile $environmentFilePath `
+        -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
+    $environmentFilePath = Resolve-DatabaseEngineEnvironmentFile `
+        -DatabaseEngine $resolvedDatabaseEngine `
         -BaseEnvironmentFile $environmentFilePath `
         -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
 
@@ -360,10 +375,22 @@ function Get-E2ETestEnvironmentContext {
         throw "E2E_DATABASE_NAME must be set in '$environmentFilePath' so the DMS E2E database can be reset and provisioned before tests run."
     }
 
+    # Build the two opaque connection strings once from the resolved environment: host-side
+    # admin/reset access and the Docker-network Configuration Service registration string. Both carry
+    # the same custom credentials/ports/database from the resolved env. They contain secrets and are
+    # never written to host output; they flow to the test process via Invoke-WithE2ETestProcessContext.
+    $connectionStrings = New-E2EDataStoreConnectionStrings `
+        -DatabaseEngine $resolvedDatabaseEngine `
+        -EnvironmentValues $environmentValues `
+        -DatabaseName $e2eDatabaseName
+
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
         ShouldProvisionE2EDatabase = $true
         DataStoreDatabaseName = $e2eDatabaseName
+        DatabaseEngine = $resolvedDatabaseEngine
+        DataStoreAdminConnectionString = $connectionStrings.AdminConnectionString
+        DataStoreConnectionString = $connectionStrings.RegistrationConnectionString
         TestResultSuffix = Get-E2ETestResultSuffix -TestFilter $TestFilter
     }
 }
@@ -378,6 +405,9 @@ function Invoke-WithE2ETestProcessContext {
     )
 
     $previousDataStoreDatabaseName = $env:AppSettings__DataStoreDatabaseName
+    $previousDatabaseEngine = $env:AppSettings__DatabaseEngine
+    $previousDataStoreAdminConnectionString = $env:AppSettings__DataStoreAdminConnectionString
+    $previousDataStoreConnectionString = $env:AppSettings__DataStoreConnectionString
     $previousNodeOptions = $env:NODE_OPTIONS
 
     try {
@@ -386,6 +416,13 @@ function Invoke-WithE2ETestProcessContext {
         }
 
         $env:AppSettings__DataStoreDatabaseName = $E2ETestSettings.DataStoreDatabaseName
+        # Engine and the two opaque connection strings for the C# harness (host-side admin/reset
+        # access and the Docker-network registration string). The values contain secrets and are set
+        # into the environment only; they are never written to host output. Unit 3 makes the C#
+        # consumers read them.
+        $env:AppSettings__DatabaseEngine = $E2ETestSettings.DatabaseEngine
+        $env:AppSettings__DataStoreAdminConnectionString = $E2ETestSettings.DataStoreAdminConnectionString
+        $env:AppSettings__DataStoreConnectionString = $E2ETestSettings.DataStoreConnectionString
         Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
         & $Action
     }
@@ -395,6 +432,27 @@ function Invoke-WithE2ETestProcessContext {
         }
         else {
             $env:AppSettings__DataStoreDatabaseName = $previousDataStoreDatabaseName
+        }
+
+        if ([string]::IsNullOrWhiteSpace($previousDatabaseEngine)) {
+            Remove-Item Env:AppSettings__DatabaseEngine -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:AppSettings__DatabaseEngine = $previousDatabaseEngine
+        }
+
+        if ([string]::IsNullOrWhiteSpace($previousDataStoreAdminConnectionString)) {
+            Remove-Item Env:AppSettings__DataStoreAdminConnectionString -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:AppSettings__DataStoreAdminConnectionString = $previousDataStoreAdminConnectionString
+        }
+
+        if ([string]::IsNullOrWhiteSpace($previousDataStoreConnectionString)) {
+            Remove-Item Env:AppSettings__DataStoreConnectionString -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:AppSettings__DataStoreConnectionString = $previousDataStoreConnectionString
         }
 
         if ([string]::IsNullOrWhiteSpace($previousNodeOptions)) {
@@ -641,6 +699,7 @@ function Invoke-E2EDatabaseProvisioning {
         $provisionOutput = @()
         ./provision-e2e-database.ps1 `
             -EnvironmentFile $E2ETestSettings.EnvironmentFile `
+            -DatabaseEngine $E2ETestSettings.DatabaseEngine `
             -Configuration $Configuration 6>&1 |
             Tee-Object -Variable provisionOutput |
             ForEach-Object { Write-Host ([string]$_) }
@@ -789,20 +848,33 @@ function Start-DockerEnvironment {
         [string]
         $DataStoreDatabaseName = "",
 
+        # Database engine backing the stack. "postgresql" (default) or "mssql". Forwarded to the
+        # engine-aware start/configure leaf scripts and to teardown/failure cleanup.
+        [string]
+        $DatabaseEngine = "postgresql",
+
         [switch]
         $UseEnvironmentFileSchemaSettings
     )
 
+    $resolvedDatabaseEngine =
+        if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) { "postgresql" } else { $DatabaseEngine }
+
     $environmentFilePath =
         if ([string]::IsNullOrWhiteSpace($ResolvedEnvironmentFile)) {
-            # Standalone entry points (e.g. StartEnvironment) bypass Get-E2ETestEnvironmentContext, so
-            # compose the data-standard overlay here too; otherwise the seed/configure steps below would
-            # read the raw base env file while DMS started on the selected data standard version.
+            # Standalone entry points that bypass Get-E2ETestEnvironmentContext compose the overlays
+            # here too, in the same order (data standard then engine); otherwise the configure step
+            # below would read the raw base env file while DMS started on the selected data standard /
+            # engine. The engine-aware leaf scripts re-compose idempotently.
             Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
             $baseEnvironmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
-            Resolve-DataStandardEnvironmentFile `
+            $dataStandardResolvedPath = Resolve-DataStandardEnvironmentFile `
                 -DataStandardVersion $DataStandardVersion `
                 -BaseEnvironmentFile $baseEnvironmentFilePath `
+                -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
+            Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine $resolvedDatabaseEngine `
+                -BaseEnvironmentFile $dataStandardResolvedPath `
                 -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
         }
         else {
@@ -817,6 +889,7 @@ function Start-DockerEnvironment {
     Stop-DockerEnvironment `
         -EnvironmentFilePath $environmentFilePath `
         -IdentityProvider $IdentityProvider `
+        -DatabaseEngine $resolvedDatabaseEngine `
         -RemoveBootstrap `
         -UseEnvironmentFileSchemaSettings:$UseEnvironmentFileSchemaSettings
 
@@ -825,7 +898,7 @@ function Start-DockerEnvironment {
             Push-Location "$PSScriptRoot/eng/docker-compose"
             if ($UsePublishedImage) {
                 Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
+                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
                 }
             }
             else {
@@ -837,12 +910,12 @@ function Start-DockerEnvironment {
                 # claims-ready gate is skipped. The DMS container restarts until the configure
                 # step below lands the data store (restart: unless-stopped).
                 Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -AddExtensionSecurityMetadata
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
                 }
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
                 # create it explicitly so DMS startup finds an instance in CMS.
-                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath -DataStoreDatabaseName $DataStoreDatabaseName
+                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath -DataStoreDatabaseName $DataStoreDatabaseName -DatabaseEngine $resolvedDatabaseEngine
             }
         }
         finally {
@@ -960,7 +1033,7 @@ function Initialize-E2EDatabase {
     $dmsRestartStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
     Restart-DmsContainer `
         -ContainerName $dmsContainerName `
-        -Reason "discard cached PostgreSQL pools after E2E database reprovisioning"
+        -Reason "discard cached datastore connection pools after E2E database reprovisioning"
     Assert-DmsRuntimeSchemaMatchesProvisionedDatabase `
         -ProvisionedEffectiveSchemaHash $provisionedEffectiveSchemaHash `
         -ContainerName $dmsContainerName `
@@ -982,14 +1055,20 @@ function E2ETests {
         $IdentityProvider="self-contained",
 
         [string]
-        $TestFilter
+        $TestFilter,
+
+        # Database engine backing the E2E stack. "postgresql" (default) or "mssql". Resolved once in
+        # Get-E2ETestEnvironmentContext (empty is normalized to postgresql) and reused from the
+        # returned context for every downstream step.
+        [string]
+        $DatabaseEngine = "postgresql"
     )
 
     if ($LoadSeedData) {
         throw "E2ETest -LoadSeedData is not supported after legacy backend removal. E2ETest resets and provisions E2E_DATABASE_NAME with provision-e2e-database.ps1 before tests run; use StartEnvironment -LoadSeedData or add a relational/API seed path instead."
     }
 
-    $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter
+    $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine
 
     Invoke-Step {
         Start-DockerEnvironment `
@@ -998,6 +1077,7 @@ function E2ETests {
             -IdentityProvider $IdentityProvider `
             -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
             -DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName `
+            -DatabaseEngine $e2eTestSettings.DatabaseEngine `
             -UseEnvironmentFileSchemaSettings:$e2eTestSettings.ShouldProvisionE2EDatabase
     }
 
@@ -1350,10 +1430,13 @@ function Invoke-TestExecution {
         $IdentityProvider="self-contained",
 
         [string]
-        $TestFilter
+        $TestFilter,
+
+        [string]
+        $DatabaseEngine = "postgresql"
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter } }
+        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -1451,7 +1534,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter }
+        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine }
         InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild -TestFilter $TestFilter -DataStandardVersion $DataStandardVersion } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
