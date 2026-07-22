@@ -174,7 +174,9 @@ try {
         exit $LASTEXITCODE
     }
 
-    $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $baseEnvironmentFile
+    # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the
+    # same effective environment the setup composed, not the pre-overlay base.
+    $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $resolvedEnvironmentFile
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
     Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
 }

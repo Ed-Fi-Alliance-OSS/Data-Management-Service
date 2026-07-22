@@ -168,3 +168,20 @@ Describe "Get-DirectSetupTeardownCommand carries the engine and resolved environ
         $command | Should -Be "./teardown-local-dms.ps1 -DatabaseEngine postgresql -EnvironmentFile 'C:\my env\o''brien.env'"
     }
 }
+
+Describe "setup-local-dms.ps1 wires the resolved environment file into teardown guidance (DMS-1284)" {
+    BeforeAll {
+        $setupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+        $script:setupSource = Get-Content -LiteralPath $setupScript -Raw
+    }
+
+    # The teardown-guidance call is a non-executed display line, so a source assertion is the
+    # appropriate check that production wires the single-resolution output (data-standard then engine
+    # overlay) into teardown rather than the pre-overlay base file.
+    It "passes the resolved environment file, not the base, to Get-DirectSetupTeardownCommand" {
+        $script:setupSource |
+            Should -Match 'Get-DirectSetupTeardownCommand -DatabaseEngine \$DatabaseEngine -EnvironmentFile \$resolvedEnvironmentFile'
+        $script:setupSource |
+            Should -Not -Match 'Get-DirectSetupTeardownCommand[^\r\n]*-EnvironmentFile \$baseEnvironmentFile'
+    }
+}
