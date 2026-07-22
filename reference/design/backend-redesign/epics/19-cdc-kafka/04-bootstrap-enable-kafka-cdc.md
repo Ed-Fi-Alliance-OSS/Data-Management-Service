@@ -51,12 +51,24 @@ controller can prove that the new database has not been published to any writer.
    missing/conflicting size. Provision and idempotently validate literal, binding-scoped
    topic ACLs for the deployment-supplied connector and instance consumer principals, plus
    their required consumer-group ACLs; do not emit shared-topic, wildcard-topic, or
-   cross-instance consumer grants.
+   cross-instance consumer grants. Create or validate the binding-derived
+   `<public-topic>.cdc-progress` topic with exactly one partition,
+   `cleanup.policy=compact`, literal connector-only ACLs, and no instance-consumer access.
+   Apply one active durability profile to both topics: local development and CI require
+   one assigned replica for every partition and an explicit per-topic
+   `min.insync.replicas=1`; production-like deployments require at least three assigned
+   replicas for every partition and an explicit per-topic `min.insync.replicas` of at
+   least two. Provision new topics with the selected profile, inspect actual replica
+   assignments and the topic-level override when validating them, and fail closed before
+   connector registration when either topic is below the profile. Do not accept an
+   inherited broker default or automatically reassign replicas for an existing topic.
 5. For SQL Server, create or validate the binding-derived
    `<public-topic>.schema-history` topic before connector registration with exactly one
    partition, `cleanup.policy=delete`, `retention.ms=-1`, `retention.bytes=-1`, and the
-   active local or production replication-factor/`min.insync.replicas` profile. Reject
-   compaction, finite time/size retention, another name, or another partition count.
+   same active durability profile, including actual replica assignments and an explicit
+   topic-level `min.insync.replicas` override. Reject compaction, finite time/size
+   retention, another name, another partition count, an inherited broker default, or a
+   durability value below the profile.
    Provision literal ACLs granting only the connector principal the `READ`, `WRITE`,
    `DESCRIBE`, and `DESCRIBE_CONFIGS` permissions required by the history producer,
    consumer, and validation client. The deployment principal owns topic creation/deletion;
@@ -89,6 +101,11 @@ controller can prove that the new database has not been published to any writer.
    implement `kafka-murmur2-v1`. Use the 19-00 provider adapter and connector-offset
    REST response for the post-audit barrier; do not infer catch-up from task status or lag.
    Treat a failed connector task as not ready regardless of offset or lag observations.
+   Before connector registration and on every combined-status poll, revalidate the public,
+   progress, and applicable schema-history topics against the active durability profile.
+   Missing or below-profile replica assignments or topic-level
+   `min.insync.replicas` overrides keep combined readiness false and produce topic-specific
+   diagnostics.
    After initial enablement establishes continuity, stop or keep the connector stopped until
    19-00 proves retained offsets and `healthy` provider source history before every start or
    resume. Missing offsets, a terminal continuity latch, or `unknown` evidence never
@@ -108,8 +125,9 @@ controller can prove that the new database has not been published to any writer.
    derived SQL Server schema-history topic. Retain binding, connector offsets, ACLs, and
    every governed topic on normal stop. During explicit destructive volume teardown, stop
    the connector; remove its SQL Server history topic, ACLs, and offsets as one lifecycle
-   unit; remove the remaining governed artifacts; and delete any terminal incident state
-   immediately before/with the binding record last. Never delete or recreate an empty
+   unit; remove the public and progress topics and their ACLs; and delete any terminal
+   incident state immediately before/with the binding record last. Deleting each topic also
+   removes its topic-level durability configuration. Never delete or recreate an empty
    history topic automatically while retained offsets exist.
    Also print the effective public-topic tombstone retention and the fixed 24-hour
    consumer-bootstrap deadline without claiming to certify an independently operated
@@ -131,6 +149,14 @@ controller can prove that the new database has not been published to any writer.
   closed through a fresh startup audit, and open it only after readiness passes. An
   idle-provider case proves the generated heartbeat advances the committed source offset
   through a barrier captured after that audit before readiness passes.
+- Topic-provisioning tests apply the local/CI and production-like durability profiles to
+  the public and progress topics and to the SQL Server schema-history topic. For every
+  applicable topic they reject insufficient assigned replicas, a missing explicit
+  topic-level `min.insync.replicas` override even when the broker default is sufficient,
+  and a value below the active profile. They prove exact-match retries remain idempotent,
+  post-registration drift makes combined readiness false with topic-specific diagnostics,
+  normal stop retains every topic, and destructive teardown removes every topic and its
+  configuration.
 - Production-like validation rejects unsafe topic-prefix use, immutable binding rewrite,
   in-place topic partition-count or `partitionerAlgorithm` changes, segment time/size
   deletion through a cleanup policy containing `delete`, a missing topic-level
@@ -183,3 +209,4 @@ controller can prove that the new database has not been published to any writer.
 - Runtime target discovery, retirement, or source replacement.
 - Projector health semantics.
 - In-place source rebinding or topic-generation reuse.
+- Automatic replica reassignment or durability repair for an existing Kafka topic.
