@@ -435,7 +435,7 @@ else {
         # -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the SDK is present.
         Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
         $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
-        $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local"
+        $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local" -InfrastructureEngine $DatabaseEngine
         # The local stack always includes local-dms.yml and local-config.yml (outside the DbOnly diagnostic
         # phase), so both the DMS service and the Configuration Service participate and their runtime
         # providers are both validated against the selected engine.
@@ -443,14 +443,13 @@ else {
             -InfrastructureEngine $DatabaseEngine `
             -ConfigServiceIncluded $true `
             -DmsServiceIncluded $true `
+            -SeparateConfigDatabase:$SeparateConfigDatabase `
             -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
             -ResolvedDmsProvider $resolvedCompose.DmsProvider `
             -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
             -SchemaToolPath $schemaToolPath `
             -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
-            -ResolvedDatastoreConnectionString $resolvedCompose.DatastoreConnectionString `
-            -ConfigDatabaseName $envValues["DMS_CONFIG_DATABASE_NAME"] `
-            -EnvValues $envValues
+            -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName
     }
 
     if ($PreflightOnly) {

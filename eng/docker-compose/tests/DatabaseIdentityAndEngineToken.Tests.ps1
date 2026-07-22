@@ -77,36 +77,31 @@ Describe "Provider-aware database identity policy (Test-DatabaseNameEquivalent /
     }
 }
 
-Describe "Resolve-ConfigDatabaseTopologyEnvironmentFile separate-mode collision guard (finding 3)" {
-    It "rejects an exact edfi_configurationservice datastore collision on <Engine>" -ForEach @(
+Describe "Resolve-ConfigDatabaseTopologyEnvironmentFile no longer performs separate-mode collision validation (single policy)" {
+    # The separate-mode datastore-vs-configuration distinctness moved to the runtime contract, which enforces
+    # it against Docker Compose's own resolution of the topology datastore anchor (RuntimeConfigContract's
+    # "topology relationship" context) using the same provider-aware identity policy. The resolver now only
+    # materializes the effective configuration-database name; it does not read an env-file projection of the
+    # datastore or throw a collision - so a shell override could no longer bypass the check and a blank
+    # datastore no longer silently skips it.
+    It "materializes the dedicated configuration database in separate mode even when the datastore name collides (<Engine>)" -ForEach @(
         @{ Engine = 'postgresql'; Key = 'POSTGRES_DB_NAME' }
         @{ Engine = 'mssql';      Key = 'MSSQL_DB_NAME' }
     ) {
         $fixture = Get-TopologyEnvFixture -DatastoreKey $Key -DatastoreName "edfi_configurationservice"
         try {
-            { Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $fixture.EnvFile -DockerComposeRoot $fixture.Dir -DatabaseEngine $Engine -SeparateConfigDatabase } |
-                Should -Throw -ExpectedMessage "*same physical database*"
+            $resolvedEnv = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $fixture.EnvFile -DockerComposeRoot $fixture.Dir -DatabaseEngine $Engine -SeparateConfigDatabase
+            (ReadValuesFromEnvFile $resolvedEnv)['DMS_CONFIG_DATABASE_NAME'] | Should -Be 'edfi_configurationservice' -Because "the resolver materializes the effective name; the contract owns the collision check"
         }
         finally {
             Remove-Item -Recurse -Force $fixture.Dir -ErrorAction SilentlyContinue
         }
     }
 
-    It "rejects a SQL Server provider-equivalent case variant of the dedicated name" {
+    It "does not inspect the datastore or throw in separate mode for a SQL Server case variant of the dedicated name" {
         $fixture = Get-TopologyEnvFixture -DatastoreKey "MSSQL_DB_NAME" -DatastoreName "EdFi_ConfigurationService"
         try {
             { Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $fixture.EnvFile -DockerComposeRoot $fixture.Dir -DatabaseEngine mssql -SeparateConfigDatabase } |
-                Should -Throw -ExpectedMessage "*same physical database*"
-        }
-        finally {
-            Remove-Item -Recurse -Force $fixture.Dir -ErrorAction SilentlyContinue
-        }
-    }
-
-    It "does NOT reject a genuinely distinct PostgreSQL case variant of the dedicated name" {
-        $fixture = Get-TopologyEnvFixture -DatastoreKey "POSTGRES_DB_NAME" -DatastoreName "EdFi_ConfigurationService"
-        try {
-            { Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $fixture.EnvFile -DockerComposeRoot $fixture.Dir -DatabaseEngine postgresql -SeparateConfigDatabase } |
                 Should -Not -Throw
         }
         finally {
@@ -114,7 +109,7 @@ Describe "Resolve-ConfigDatabaseTopologyEnvironmentFile separate-mode collision 
         }
     }
 
-    It "does not fire the collision guard in shared mode (datastore is intentionally the CMS database)" {
+    It "materializes the shared-topology datastore name unchanged (no collision inspection)" {
         $fixture = Get-TopologyEnvFixture -DatastoreKey "POSTGRES_DB_NAME" -DatastoreName "edfi_configurationservice"
         try {
             { Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $fixture.EnvFile -DockerComposeRoot $fixture.Dir -DatabaseEngine postgresql } |

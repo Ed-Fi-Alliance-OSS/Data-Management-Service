@@ -19,6 +19,13 @@ services:
       MSSQL_PID: ${MSSQL_PID:-Developer}
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-abcdefgh1!}
       MSSQL_MEMORY_LIMIT_MB: ${MSSQL_MEMORY_LIMIT_MB:-4096}
+      # Compose-resolved orchestration metadata only. The SQL Server image neither creates nor selects a
+      # database from MSSQL_DB_NAME; it is published here solely so `docker compose config` renders the
+      # resolved topology datastore database name (with the same default and shell-over-env-file precedence
+      # as postgresql.yml's POSTGRES_DB_NAME), giving the startup runtime contract one uniform, authoritative
+      # datastore-name source across both engines. The datastore is provisioned host-side (configure /
+      # provision), not by this container.
+      MSSQL_DB_NAME: ${MSSQL_DB_NAME:-edfi_datamanagementservice}
     ports:
       - '127.0.0.1:${MSSQL_PORT:-1435}:1433'
     volumes:

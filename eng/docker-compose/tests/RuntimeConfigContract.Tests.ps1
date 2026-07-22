@@ -41,14 +41,16 @@ BeforeAll {
     }
 
     function Invoke-ComposeConfigResolution {
-        param([string[]]$ComposeFiles, [string]$EnvironmentFile, [hashtable]$ShellOverrides = @{})
+        param([string[]]$ComposeFiles, [string]$EnvironmentFile, [hashtable]$ShellOverrides = @{}, [string]$InfrastructureEngine)
         $saved = @{}
         foreach ($k in $ShellOverrides.Keys) {
             $saved[$k] = [Environment]::GetEnvironmentVariable($k)
             Set-Item "Env:$k" -Value $ShellOverrides[$k]
         }
         try {
-            return Get-ComposeResolvedConfiguration -ComposeFiles $ComposeFiles -EnvironmentFile $EnvironmentFile -ProjectName "dms-contract-oracle"
+            $composeArgs = @{ ComposeFiles = $ComposeFiles; EnvironmentFile = $EnvironmentFile; ProjectName = "dms-contract-oracle" }
+            if (-not [string]::IsNullOrWhiteSpace($InfrastructureEngine)) { $composeArgs.InfrastructureEngine = $InfrastructureEngine }
+            return Get-ComposeResolvedConfiguration @composeArgs
         }
         finally {
             foreach ($k in $ShellOverrides.Keys) {
@@ -92,24 +94,27 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
         $script:pgConn = 'host=dms-postgresql;port=5432;username=postgres;password=p;database=edfi_datamanagementservice;'
         $script:pgShared = 'Server=dms-postgresql;User Id=postgres;Database=edfi_datamanagementservice;Password=p'
         $script:mssqlConn = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+        $script:pgConfigConn = 'host=dms-postgresql;port=5432;username=postgres;password=p;database=edfi_configurationservice;'
+        $script:mssqlConfigConn = 'Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
     }
 
     It "<Category>: <Case>" -ForEach @(
-        @{ Category = "finding-4 unsupported provider"; Case = "mysql rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'mysql'; ResolvedCmsConnectionString = 'host=h;database=edfi_datamanagementservice'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "finding-4 unsupported provider"; Case = "blank provider rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = ''; ResolvedCmsConnectionString = 'host=h;database=edfi_datamanagementservice'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "provider-vs-engine split"; Case = "shell mssql provider on a postgresql run"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=p'; ResolvedMssqlSaPassword = 'p'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "finding-2 shared-alias PostgreSQL"; Case = "Server=/User Id= accepted on postgresql"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'PLACEHOLDER_pgShared'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $false }
-        @{ Category = "finding-1 opaque shell terminal"; Case = "unexpanded reference target rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'host=dms-postgresql;database=${OTHER_DB};'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "wrong-engine connection"; Case = "PostgreSQL Host= on a SQL Server stack rejected"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'host=dms-postgresql;database=edfi_datamanagementservice'; ResolvedMssqlSaPassword = 'p'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "empty-connection fail-fast"; Case = "empty connection on a SQL Server stack rejected"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = ''; ResolvedMssqlSaPassword = 'p'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "no-database connection"; Case = "connection targeting no database rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'host=dms-postgresql;username=postgres;password=p'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "wrong-target-db"; Case = "connection to a different database rejected"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'Server=dms-mssql,1433;Database=wrong_db;User Id=sa;Password=p;TrustServerCertificate=true'; ResolvedMssqlSaPassword = 'p'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "SA password presence"; Case = "blank SA password on a SQL Server stack rejected"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'PLACEHOLDER_mssqlConn'; ResolvedMssqlSaPassword = ''; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $true }
-        @{ Category = "happy path PostgreSQL"; Case = "valid full-stack contract resolves"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'PLACEHOLDER_pgConn'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $false }
-        @{ Category = "happy path SQL Server"; Case = "valid full-stack contract resolves"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'PLACEHOLDER_mssqlConn'; ResolvedMssqlSaPassword = 'abcdefgh1!'; ConfigDatabaseName = 'edfi_datamanagementservice' }; ShouldThrow = $false }
+        @{ Category = "finding-4 unsupported provider"; Case = "mysql rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'mysql'; ResolvedCmsConnectionString = 'host=h;database=edfi_datamanagementservice' }; ShouldThrow = $true }
+        @{ Category = "finding-4 unsupported provider"; Case = "blank provider rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = ''; ResolvedCmsConnectionString = 'host=h;database=edfi_datamanagementservice' }; ShouldThrow = $true }
+        @{ Category = "provider-vs-engine split"; Case = "shell mssql provider on a postgresql run"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=p'; ResolvedMssqlSaPassword = 'p' }; ShouldThrow = $true }
+        @{ Category = "finding-2 shared-alias PostgreSQL"; Case = "Server=/User Id= accepted on postgresql"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'PLACEHOLDER_pgShared' }; ShouldThrow = $false }
+        @{ Category = "finding-1 opaque shell terminal"; Case = "unexpanded reference target rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'host=dms-postgresql;database=${OTHER_DB};' }; ShouldThrow = $true }
+        @{ Category = "wrong-engine connection"; Case = "PostgreSQL Host= on a SQL Server stack rejected"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'host=dms-postgresql;database=edfi_datamanagementservice'; ResolvedMssqlSaPassword = 'p' }; ShouldThrow = $true }
+        @{ Category = "empty-connection fail-fast"; Case = "empty connection on a SQL Server stack rejected"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = ''; ResolvedMssqlSaPassword = 'p' }; ShouldThrow = $true }
+        @{ Category = "no-database connection"; Case = "connection targeting no database rejected"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'host=dms-postgresql;username=postgres;password=p' }; ShouldThrow = $true }
+        @{ Category = "SA password presence"; Case = "blank SA password on a SQL Server stack rejected"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'PLACEHOLDER_mssqlConn'; ResolvedMssqlSaPassword = '' }; ShouldThrow = $true }
+        @{ Category = "happy path PostgreSQL"; Case = "valid standalone contract resolves"; ContractArgs = @{ InfrastructureEngine = 'postgresql'; ResolvedConfigProvider = 'postgresql'; ResolvedCmsConnectionString = 'PLACEHOLDER_pgConn' }; ShouldThrow = $false }
+        @{ Category = "happy path SQL Server"; Case = "valid standalone contract resolves"; ContractArgs = @{ InfrastructureEngine = 'mssql'; ResolvedConfigProvider = 'mssql'; ResolvedCmsConnectionString = 'PLACEHOLDER_mssqlConn'; ResolvedMssqlSaPassword = 'abcdefgh1!' }; ShouldThrow = $false }
     ) {
-        # This matrix exercises the CMS invariants in isolation, so DMS participation is off; the DMS
-        # provider and datastore-name agreement have their own dedicated contexts below.
+        # This matrix exercises the CMS invariants in isolation, so DMS participation is off (standalone
+        # lane): the resolved connection is authoritative and its single target IS the effective name. The
+        # topology relationship (full-stack, expected against the datastore anchor) and the DMS provider have
+        # their own dedicated contexts below.
         $resolvedArgs = @{ SchemaToolPath = $script:schemaTool; ConfigServiceIncluded = $true; DmsServiceIncluded = $false }
         foreach ($k in $ContractArgs.Keys) {
             $v = $ContractArgs[$k]
@@ -136,42 +141,67 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
         $contract.OpenIddict.DbName | Should -Be 'edfi_datamanagementservice'
     }
 
-    Context "datastore-name agreement (container Compose-resolved vs host env-file)" {
-        It "rejects a datastore database the containers receive that differs from the env-file value (direct or indirect override)" {
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=rogue_database' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
-                Should -Throw "*datastore database the containers receive*rogue_database*"
+    Context "topology relationship (full-stack: DMS + CMS participate, expected computed from the anchor)" {
+        # The expected configuration database is computed INDEPENDENTLY of the connection - shared topology
+        # uses the DMS topology datastore anchor, -SeparateConfigDatabase the dedicated
+        # 'edfi_configurationservice'. A caller-authored connection can never redefine the topology; it must
+        # agree with the anchor/literal.
+        It "shared: accepts a CMS connection targeting the datastore anchor" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice'
+            $contract.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
+            $contract.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice'
         }
 
-        It "accepts when the container datastore database matches the env-file value" {
-            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=edfi_datamanagementservice' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' }
-            $contract.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
+        It "shared: rejects a CMS connection targeting a database other than the anchor (wrong target)" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'mssql' -ResolvedDmsProvider 'mssql' -ResolvedCmsConnectionString 'Server=dms-mssql,1433;Database=wrong_db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true' -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice' } |
+                Should -Throw "*wrong_db*effective configuration database is 'edfi_datamanagementservice'*"
+        }
+
+        It "separate: accepts a CMS connection targeting edfi_configurationservice, distinct from the anchor" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -SeparateConfigDatabase -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConfigConn -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice'
+            $contract.CmsDatabaseName | Should -Be 'edfi_configurationservice'
+        }
+
+        It "separate: rejects a CMS connection targeting the datastore anchor instead of edfi_configurationservice" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -SeparateConfigDatabase -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice' } |
+                Should -Throw "*effective configuration database is 'edfi_configurationservice'*"
+        }
+
+        It "separate: rejects a datastore anchor that collides with edfi_configurationservice (not separate in name only)" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -SeparateConfigDatabase -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConfigConn -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName 'edfi_configurationservice' } |
+                Should -Throw "*same physical database*topology would not be separate*"
+        }
+
+        It "rejects a blank topology datastore anchor when the DMS service participates" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName '' } |
+                Should -Throw "*topology datastore database is blank*"
+        }
+
+        It "rejects an unexpanded (opaque) topology datastore anchor" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName '${OTHER_DB}' } |
+                Should -Throw "*unexpanded variable reference*"
         }
     }
 
     Context "provider-aware database identity at the contract boundary (finding 2, real parser)" {
-        # The CMS-target and datastore-name comparisons route through the one provider-aware identity
-        # policy (Test-DatabaseNameEquivalent): PostgreSQL is case-sensitive (a case-only difference is a
-        # DIFFERENT physical database and must fail), SQL Server is case-insensitive (a case variant is the
-        # SAME database and must be accepted). The connection strings carry a case-variant database name;
-        # the exact provider builder preserves it, so the equality policy is what decides pass/fail.
-        It "rejects a PostgreSQL CMS target that differs from the effective name only by case" {
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider 'postgresql' -ResolvedCmsConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=EdFi_DataManagementService;' -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } |
+        # The anchor-vs-CMS-target comparison routes through the one provider-aware identity policy
+        # (Test-DatabaseNameEquivalent): PostgreSQL case-sensitive (a case-only difference is a DIFFERENT
+        # physical database and must fail), SQL Server case-insensitive (a case variant is the SAME database).
+        # The connection carries a case-variant database name; the exact provider builder preserves it, so the
+        # equality policy decides pass/fail.
+        It "shared: rejects a PostgreSQL CMS target that differs from the anchor only by case" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=EdFi_DataManagementService;' -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice' } |
                 Should -Throw "*EdFi_DataManagementService*"
         }
 
-        It "accepts a SQL Server CMS target that differs from the effective name only by case" {
-            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider 'mssql' -ResolvedCmsConnectionString 'Server=dms-mssql,1433;Database=EdFi_DataManagementService;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -ConfigDatabaseName 'edfi_datamanagementservice'
+        It "shared: accepts a SQL Server CMS target that differs from the anchor only by case" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'mssql' -ResolvedDmsProvider 'mssql' -ResolvedCmsConnectionString 'Server=dms-mssql,1433;Database=EdFi_DataManagementService;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice'
             $contract.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
         }
 
-        It "rejects a PostgreSQL container datastore that differs from the env-file value only by case" {
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=EdFi_DataManagementService' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
-                Should -Throw "*datastore database the containers receive*"
-        }
-
-        It "accepts a SQL Server container datastore that differs from the env-file value only by case" {
-            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedDmsProvider 'mssql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -ResolvedDatastoreConnectionString 'Server=dms-mssql,1433;Database=EdFi_DataManagementService;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true' -EnvValues @{ MSSQL_DB_NAME = 'edfi_datamanagementservice' }
-            $contract.DmsProvider | Should -Be 'mssql'
+        It "separate: a SQL Server anchor colliding with edfi_configurationservice only by case is rejected (case-insensitive identity)" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -SeparateConfigDatabase -ResolvedConfigProvider 'mssql' -ResolvedDmsProvider 'mssql' -ResolvedCmsConnectionString $script:mssqlConfigConn -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -ResolvedTopologyDatastoreDatabaseName 'EDFI_ConfigurationService' } |
+                Should -Throw "*same physical database*"
         }
     }
 
@@ -194,9 +224,9 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
                 Should -Not -Throw
         }
 
-        It "still rejects a datastore-name mismatch when config is absent but the DMS service participates (published Keycloak)" {
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedConfigProvider $null -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString 'host=dms-postgresql;username=postgres;database=rogue_database' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
-                Should -Throw "*datastore database the containers receive*rogue_database*"
+        It "still validates the DMS topology datastore anchor (blank rejected) when config is absent but the DMS service participates (published Keycloak)" {
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedConfigProvider $null -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName '' } |
+                Should -Throw "*topology datastore database is blank*"
         }
 
         It "still rejects a blank SQL Server SA password when neither the config nor the DMS service participates" {
@@ -235,7 +265,7 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
         }
 
         It "accepts a DMS provider that matches the selected engine" {
-            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedDmsProvider 'postgresql' -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice'
             $contract.DmsProvider | Should -Be 'postgresql'
         }
 
@@ -248,7 +278,7 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
         It "validates the DMS provider independently of the CMS provider: matching CMS + mismatched DMS is rejected" {
             # CMS provider matches the PostgreSQL engine, but the DMS provider is MSSQL - the reverse-mismatch
             # class the CMS-only check missed. The DMS invariant rejects it even though the CMS invariant passes.
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'mssql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } |
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider 'postgresql' -ResolvedDmsProvider 'mssql' -ResolvedCmsConnectionString $script:pgConn -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName 'edfi_datamanagementservice' } |
                 Should -Throw "*DMS runtime provider*Unset the conflicting DMS_DATASTORE*"
         }
     }
@@ -272,50 +302,73 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
     It "keeps a shell-substituted terminal OPAQUE (finding 1): the container receives the literal reference, which the contract rejects" {
         $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgFiles -EnvironmentFile $script:baseEnvFile -ShellOverrides @{ DMS_CONFIG_DATABASE_NAME = '${OTHER_DB}' }
         $r.CmsConnectionString | Should -Match 'database=\$\{OTHER_DB\}'
-        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider $r.ConfigProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } | Should -Throw
+        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider $r.ConfigProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool } | Should -Throw
     }
 
     It "passes an unsupported provider through unchanged (finding 4), which the contract rejects" {
         $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgFiles -EnvironmentFile $script:baseEnvFile -ShellOverrides @{ DMS_CONFIG_DATASTORE = 'mysql' }
         $r.ConfigProvider | Should -Be 'mysql'
-        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider $r.ConfigProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ConfigDatabaseName 'edfi_datamanagementservice' } | Should -Throw "*not a supported engine*"
+        { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $false -ResolvedConfigProvider $r.ConfigProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool } | Should -Throw "*not a supported engine*"
     }
 
-    Context "datastore-name split through Compose (full-stack, real dms service)" {
+    Context "topology datastore anchor is sourced from the db service by the explicit engine, not the admin connection (finding 1)" {
         BeforeAll {
             $script:fullFiles = @("-f", (Join-Path $script:composeRoot "postgresql.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot "local-config.yml"))
+            $script:mssqlFullFiles = @("-f", (Join-Path $script:composeRoot "mssql.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot "local-config.yml"))
+            $script:mssqlAnchorWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-anchor-mssql-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $script:mssqlAnchorWork -Force | Out-Null
+            $script:mssqlAnchorEnv = Join-Path $script:mssqlAnchorWork ".env.mssql.merged"
+            ((Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.example') -Raw) + "`n" + (Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.mssql') -Raw)) | Set-Content -LiteralPath $script:mssqlAnchorEnv -NoNewline
+        }
+        AfterAll {
+            Remove-Item -LiteralPath $script:mssqlAnchorWork -Recurse -Force -ErrorAction SilentlyContinue
         }
 
-        It "an INDIRECT shell override of a referenced datastore variable splits the container datastore from the env file (finding 2)" {
-            # Env file: POSTGRES_DB_NAME=${DATASTORE_NAME}; DATASTORE_NAME=edfi...; the shell overrides only
-            # DATASTORE_NAME (never POSTGRES_DB_NAME directly). SEPARATE topology makes the CMS database
-            # independent (edfi_configurationservice), so this is caught ONLY by the datastore-name check
-            # reading Compose's resolution of the DMS datastore admin connection - the exact class the old
-            # direct-key guard missed. (In shared topology the same override is caught by the CMS-connection
-            # check, since the config database routes through the same variable.)
-            $work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-ind-$([Guid]::NewGuid().ToString('N'))"
+        It "PostgreSQL: a shell override of POSTGRES_DB_NAME moves the topology anchor" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:fullFiles -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql' -ShellOverrides @{ POSTGRES_DB_NAME = 'shell_datastore' }
+            $resolved.TopologyDatastoreDatabaseName | Should -Be 'shell_datastore' -Because "the anchor reads the Compose-resolved db-service datastore key at shell-over-env-file precedence"
+        }
+
+        It "PostgreSQL: a change to DATABASE_CONNECTION_STRING_ADMIN.database does NOT move the topology anchor" {
+            # DATABASE_CONNECTION_STRING_ADMIN is a readiness/admin connection (run.sh uses only host/port/user);
+            # its database is deliberately NOT the datastore-name oracle. Overriding it to the documented admin
+            # 'postgres' database must leave the anchor on the datastore key - guarding the finding-27 regression.
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:fullFiles -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql' -ShellOverrides @{ DATABASE_CONNECTION_STRING_ADMIN = 'host=dms-postgresql;port=5432;username=postgres;password=p;database=postgres;' }
+            $resolved.DatastoreConnectionString | Should -Match 'database=postgres'
+            $resolved.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice' -Because "the anchor is the db-service datastore key, never the admin connection's database"
+        }
+
+        It "PostgreSQL: the anchor carries the compose-file default when POSTGRES_DB_NAME is unset in the env file" {
+            $work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-anchor-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $work -Force | Out-Null
             try {
-                $envFile = Join-Path $work ".env.indirect"
-                $baseEnv = Get-Content -LiteralPath $script:baseEnvFile -Raw
-                # Route POSTGRES_DB_NAME through an indirect variable defined in the same file.
-                $baseEnv = $baseEnv -replace '(?m)^POSTGRES_DB_NAME=.*$', "DATASTORE_NAME=edfi_datamanagementservice`nPOSTGRES_DB_NAME=`${DATASTORE_NAME}"
+                $envFile = Join-Path $work ".env.nodatastore"
+                $baseEnv = (Get-Content -LiteralPath $script:baseEnvFile -Raw) -replace '(?m)^POSTGRES_DB_NAME=.*$', ''
                 Set-Content -LiteralPath $envFile -Value $baseEnv -NoNewline
-
-                # Materialize the separate-topology config database (as the start scripts do).
-                $resolvedEnv = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $envFile -DockerComposeRoot $work -DatabaseEngine "postgresql" -SeparateConfigDatabase
-                $envValues = ReadValuesFromEnvFile $resolvedEnv
-                $envValues['DMS_CONFIG_DATABASE_NAME'] | Should -Be 'edfi_configurationservice'
-
-                $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:fullFiles -EnvironmentFile $resolvedEnv -ShellOverrides @{ DATASTORE_NAME = 'rogue_database' }
-                $resolved.DatastoreConnectionString | Should -Match 'database=rogue_database'
-
-                { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $resolved.ConfigProvider -ResolvedDmsProvider $resolved.DmsProvider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString $resolved.DatastoreConnectionString -ConfigDatabaseName $envValues['DMS_CONFIG_DATABASE_NAME'] -EnvValues $envValues } |
-                    Should -Throw "*datastore database the containers receive*rogue_database*"
+                $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:fullFiles -EnvironmentFile $envFile -InfrastructureEngine 'postgresql'
+                $resolved.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice' -Because "postgresql.yml supplies the datastore default, so the anchor is never blank"
             }
             finally {
                 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
             }
+        }
+
+        It "SQL Server: the default anchor resolves from the mssql db service and validates through the contract" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:mssqlFullFiles -EnvironmentFile $script:mssqlAnchorEnv -InfrastructureEngine 'mssql'
+            $resolved.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice'
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $resolved.ConfigProvider -ResolvedDmsProvider $resolved.DmsProvider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword $resolved.MssqlSaPassword -ResolvedTopologyDatastoreDatabaseName $resolved.TopologyDatastoreDatabaseName
+            $contract.CmsDatabaseName | Should -Be 'edfi_datamanagementservice'
+            $contract.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice'
+        }
+
+        It "SQL Server: a shell override of MSSQL_DB_NAME moves the topology anchor" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:mssqlFullFiles -EnvironmentFile $script:mssqlAnchorEnv -InfrastructureEngine 'mssql' -ShellOverrides @{ MSSQL_DB_NAME = 'shell_mssql_datastore' }
+            $resolved.TopologyDatastoreDatabaseName | Should -Be 'shell_mssql_datastore'
+        }
+
+        It "SQL Server: an unrelated POSTGRES_DB_NAME shell override cannot become the anchor (engine-keyed selection)" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:mssqlFullFiles -EnvironmentFile $script:mssqlAnchorEnv -InfrastructureEngine 'mssql' -ShellOverrides @{ POSTGRES_DB_NAME = 'pg_rogue' }
+            $resolved.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice' -Because "the anchor is selected by the explicit engine (MSSQL_DB_NAME), never positionally, so a PostgreSQL key cannot win on an MSSQL invocation"
         }
     }
 
@@ -337,7 +390,7 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
 
         It "rejects a shell DMS_DATASTORE=mssql on a PostgreSQL invocation even though the CMS provider matches" {
             $r = Invoke-ComposeConfigResolution -ComposeFiles $script:localFullFiles -EnvironmentFile $script:baseEnvFile -ShellOverrides @{ DMS_DATASTORE = 'mssql' }
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString $r.DatastoreConnectionString -ConfigDatabaseName 'edfi_datamanagementservice' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName $r.TopologyDatastoreDatabaseName } |
                 Should -Throw "*DMS runtime provider*Unset the conflicting DMS_DATASTORE*"
         }
 
@@ -345,7 +398,7 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
             $r = Invoke-ComposeConfigResolution -ComposeFiles $script:publishedNoConfigFiles -EnvironmentFile $script:baseEnvFile -ShellOverrides @{ DMS_DATASTORE = 'mssql' }
             $r.ConfigProvider | Should -BeNullOrEmpty
             $r.DmsProvider | Should -Be 'mssql'
-            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString $r.DatastoreConnectionString -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' } } |
+            { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $false -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName $r.TopologyDatastoreDatabaseName } |
                 Should -Throw "*DMS runtime provider*Unset the conflicting DMS_DATASTORE*"
         }
 
@@ -358,7 +411,7 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
                 $files = @("-f", (Join-Path $script:composeRoot "mssql.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot "local-config.yml"))
                 $r = Invoke-ComposeConfigResolution -ComposeFiles $files -EnvironmentFile $merged -ShellOverrides @{ DMS_DATASTORE = 'postgresql' }
                 $r.DmsProvider | Should -Be 'postgresql'
-                { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword $r.MssqlSaPassword -ResolvedDatastoreConnectionString $r.DatastoreConnectionString -ConfigDatabaseName 'edfi_datamanagementservice' -EnvValues @{ MSSQL_DB_NAME = 'edfi_datamanagementservice' } } |
+                { Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword $r.MssqlSaPassword -ResolvedTopologyDatastoreDatabaseName $r.TopologyDatastoreDatabaseName } |
                     Should -Throw "*DMS runtime provider*Unset the conflicting DMS_DATASTORE*"
             }
             finally {
@@ -367,10 +420,10 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
         }
 
         It "accepts when the DMS and CMS providers both match the selected engine" {
-            $r = Invoke-ComposeConfigResolution -ComposeFiles $script:localFullFiles -EnvironmentFile $script:baseEnvFile
+            $r = Invoke-ComposeConfigResolution -ComposeFiles $script:localFullFiles -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql'
             $r.DmsProvider | Should -Be 'postgresql'
             $r.ConfigProvider | Should -Be 'postgresql'
-            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedDatastoreConnectionString $r.DatastoreConnectionString -ConfigDatabaseName 'edfi_datamanagementservice' -EnvValues @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice' }
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $r.ConfigProvider -ResolvedDmsProvider $r.DmsProvider -ResolvedCmsConnectionString $r.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName $r.TopologyDatastoreDatabaseName
             $contract.DmsProvider | Should -Be 'postgresql'
             $contract.ConfigProvider | Should -Be 'postgresql'
         }
@@ -393,11 +446,19 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
             else { Join-Path $script:composeRoot '.env.example' }
 
             $resolvedEnv = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $baseEnv -DockerComposeRoot $work -DatabaseEngine $Engine -SeparateConfigDatabase:$Separate
-            $files = @("-f", (Join-Path $script:composeRoot "local-config.yml"), "-f", (Join-Path $script:composeRoot $DbFile))
-            $resolved = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $resolvedEnv -ProjectName "dms-cell-oracle"
+            $files = @("-f", (Join-Path $script:composeRoot "local-config.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot $DbFile))
+            $resolved = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $resolvedEnv -ProjectName "dms-cell-oracle" -InfrastructureEngine $Engine
 
             $resolved.ConfigProvider | Should -Be $Engine
+            $resolved.DmsProvider | Should -Be $Engine
+            $resolved.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice' -Because "the datastore anchor is the datastore database in both topologies"
             @(Get-CmsConnectionStringDatabaseName -Engine $Engine -ConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool) | Should -Contain $ExpectedConfigDb
+
+            # End-to-end: the full-stack contract accepts the cell and resolves the expected configuration db,
+            # exercising the anchor (both engines) through the same policy the start scripts run.
+            $saArgs = if ($Engine -eq 'mssql') { @{ ResolvedMssqlSaPassword = $resolved.MssqlSaPassword } } else { @{} }
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine $Engine -ConfigServiceIncluded $true -DmsServiceIncluded $true -SeparateConfigDatabase:$Separate -ResolvedConfigProvider $resolved.ConfigProvider -ResolvedDmsProvider $resolved.DmsProvider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName $resolved.TopologyDatastoreDatabaseName @saArgs
+            $contract.CmsDatabaseName | Should -Be $ExpectedConfigDb
         }
         finally {
             Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
