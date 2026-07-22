@@ -186,11 +186,14 @@ param (
     [Switch]
     $SeparateConfigDatabase,
 
-    # Resolve and validate the effective Configuration Service runtime contract, then return WITHOUT any
-    # external action (no network create, image build, container start, or Keycloak/OpenIddict). This is
-    # the preflight the full startup path runs, exposed as a stop point so an outer orchestrator
-    # (build-dms.ps1 StartEnvironment) can invoke the exact same validation semantics before it builds
-    # images or tears down volumes. Not valid with teardown (-d).
+    # Resolve and validate the effective Configuration Service runtime contract, then stop before starting
+    # the stack. Preflight may resolve Compose configuration (`docker compose config`) and resolve, reuse, or
+    # build the host validator tool (the host schema tool, published from source via the .NET SDK when
+    # missing). It completes before any stack lifecycle mutation: no DMS/config Docker-image build, Compose
+    # up/down, volume deletion, network creation, stack-service startup, or identity/CMS initialization. Same
+    # preflight the full startup path runs, exposed as a stop point so an outer orchestrator (build-dms.ps1
+    # StartEnvironment) gets identical validation before it builds images or tears down volumes. Not valid
+    # with teardown (-d).
     [Switch]
     $PreflightOnly
 )
@@ -419,13 +422,15 @@ if ($d) {
     }
 }
 else {
-    # Resolve and validate the effective Configuration Service runtime contract ONCE, BEFORE any external
-    # action (network creation, image build, container start, Keycloak/OpenIddict). `docker compose config`
-    # is read-only and needs no network, images, or containers, and it resolves the same files, env file,
-    # and shell the `up` calls below use - so what is validated here is exactly what the containers receive.
-    # Connection strings are parsed by the exact runtime providers via the api-schema-tools validator. This
-    # fails fast before Docker is touched; the DbOnly diagnostic slice initializes no CMS, so it resolves
-    # only the SA-password credential it needs (below), not the full contract.
+    # Resolve and validate the effective Configuration Service runtime contract ONCE, before starting the
+    # stack. Preflight may resolve Compose configuration (`docker compose config`) and resolve, reuse, or
+    # build the host validator tool; it completes before any stack lifecycle mutation (no DMS/config
+    # Docker-image build, Compose up/down, volume deletion, network creation, stack-service startup, or
+    # identity/CMS initialization). `docker compose config` resolves the same files, env file, and shell the `up` calls
+    # below use - so what is validated here is exactly what the containers receive. Connection strings are
+    # parsed by the exact runtime providers via the api-schema-tools validator. The DbOnly diagnostic slice
+    # initializes no CMS, so it resolves only the SA-password credential it needs (below), not the full
+    # contract.
     if (-not $DbOnly) {
         # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool).
         # Imported here in the startup path only (never on teardown or -DbOnly), and with -Force so a
@@ -453,10 +458,11 @@ else {
     }
 
     if ($PreflightOnly) {
-        # The runtime contract (and, in DbOnly, nothing) resolved and validated above without touching
-        # Docker. Return before the first external action so an outer orchestrator can gate image build,
+        # The runtime contract resolved and validated above. Preflight may have resolved Compose configuration
+        # and resolved, reused, or built the host validator tool; it completes before any stack lifecycle
+        # mutation. Return before the first such mutation so an outer orchestrator can gate image build,
         # teardown, and volume deletion on this exact preflight.
-        Write-Output "Preflight validation complete. No Docker action was taken."
+        Write-Output "Preflight validation complete. Preflight may resolve Compose configuration and resolve, reuse, or build a host validator tool. It completes before any stack lifecycle mutation: no DMS/config Docker-image build, Compose up/down, volume deletion, network creation, stack-service startup, or identity/CMS initialization."
         return
     }
 

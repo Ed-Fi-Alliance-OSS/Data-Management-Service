@@ -255,11 +255,14 @@ both engines; the choice is never inferred from the engine:
 `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, the shared bootstrap wrapper, and
 `build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase.
 
-Before any external action - network creation, image build, container start, or Keycloak/OpenIddict -
-the start scripts resolve the effective runtime settings by asking Docker Compose itself
+As a preflight, the start scripts resolve the effective runtime settings by asking Docker Compose itself
 (`docker compose config`, which applies your shell environment over the env file exactly as `up`
-will) and validate them once. Each service has its own independently interpolated runtime provider,
-so each is checked against the selected engine separately:
+will) and validate them once. This preflight may resolve Compose configuration and resolve, reuse, or
+build the host validator tool; where no host tool is available, the published start instead pulls the
+selected published image and runs an isolated `--network none` validator container. It completes before
+any stack lifecycle mutation - no DMS/config Docker-image build, Compose up/down, volume deletion,
+network creation, stack-service startup, or identity/CMS initialization. Each service has its own
+independently interpolated runtime provider, so each is checked against the selected engine separately:
 
 * **DMS service** (when its compose file is in the set): its runtime provider (`DMS_DATASTORE`, the
   `dms` service's `AppSettings__Datastore`) must be exactly `postgresql` or `mssql` and match the
@@ -278,8 +281,8 @@ Because `DMS_DATASTORE` and `DMS_CONFIG_DATASTORE` are separate variables, a she
 cannot silently point its container at a different engine than the one that starts. Each service is
 validated only when its compose file is actually selected (a published Keycloak start without
 `-EnableConfig` composes no local Configuration Service and skips only the CMS checks - the DMS and
-stack checks still run). Anything else fails fast with a clear diagnostic before Docker or Keycloak is
-touched.
+stack checks still run). Anything else fails fast with a clear diagnostic before any stack lifecycle
+mutation.
 
 > Because connection strings are parsed with the exact runtime providers, the start scripts need the
 > `api-schema-tools` executable (the same tool the provisioning phase uses). They call
