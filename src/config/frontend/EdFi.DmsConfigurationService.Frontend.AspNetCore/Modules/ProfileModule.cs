@@ -91,13 +91,10 @@ public class ProfileModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
-            ProfileInsertResult.FailureDuplicateName duplicate => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [new ValidationFailure("Name", $"Profile '{duplicate.Name}' already exists.")],
-                    httpContext.TraceIdentifier
-                ),
-                contentType: "application/problem+json",
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileInsertResult.FailureDuplicateName duplicate => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                [$"Profile '{duplicate.Name}' already exists."]
             ),
             ProfileInsertResult.FailureUnknown _ => FailureResults.Unknown(httpContext.TraceIdentifier),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -153,13 +150,10 @@ public class ProfileModule : IEndpointModule
         return result switch
         {
             ProfileUpdateResult.Success => Results.NoContent(),
-            ProfileUpdateResult.FailureDuplicateName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [new ValidationFailure("Name", "A profile with this name already exists.")],
-                    httpContext.TraceIdentifier
-                ),
-                contentType: "application/problem+json",
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileUpdateResult.FailureDuplicateName => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                ["A profile with this name already exists."]
             ),
             ProfileUpdateResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),

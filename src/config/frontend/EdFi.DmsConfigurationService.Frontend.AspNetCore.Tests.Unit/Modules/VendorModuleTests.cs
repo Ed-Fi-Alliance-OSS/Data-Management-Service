@@ -223,7 +223,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_with_Name_field_key()
+        public async Task It_returns_the_non_unique_identity_conflict()
         {
             using var client = SetUpClient();
 
@@ -243,12 +243,11 @@ public class VendorModuleTests
                 )
             );
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             var doc = JsonNode.Parse(await response.Content.ReadAsStringAsync());
-            doc!["validationErrors"]!
-                ["Name"]
-                .Should()
-                .NotBeNull("field key must be 'Name' per existing contract");
+            doc!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+            doc["title"]!.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
+            doc["validationErrors"]!.AsObject().Count.Should().Be(0);
         }
     }
 
@@ -871,16 +870,11 @@ public class VendorModuleTests
                 )
             );
             _body = await _response.ShouldBeProblemDetailAsync(
-                HttpStatusCode.BadRequest,
-                "urn:ed-fi:api:bad-request:data",
-                "Data Validation Failed",
-                "Data validation failed. See 'validationErrors' for details.",
-                validationErrors: new JsonObject
-                {
-                    ["Name"] = new JsonArray(
-                        "A vendor name already exists in the database. Please enter a unique name."
-                    ),
-                }
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A vendor name already exists in the database. Please enter a unique name."]
             );
         }
 
@@ -888,8 +882,8 @@ public class VendorModuleTests
         public void TearDown() => _response?.Dispose();
 
         [Test]
-        public void It_reports_the_duplicate_name_under_the_Name_field() =>
-            _body["validationErrors"]!["Name"]!
+        public void It_reports_the_duplicate_name_in_errors() =>
+            _body["errors"]!
                 .ToJsonString()
                 .Should()
                 .Contain("A vendor name already exists in the database. Please enter a unique name.");

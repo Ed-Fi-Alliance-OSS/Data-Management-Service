@@ -151,12 +151,11 @@ public class ApplicationModule : IEndpointModule
                         ]);
                     case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure(
-                                "ApplicationName",
-                                $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
-                            ),
-                        ]);
+                        return FailureResults.NonUniqueIdentity(
+                            "The identifying value(s) of the item are the same as another item that already exists.",
+                            httpContext.TraceIdentifier,
+                            [$"Application '{duplicateApp.ApplicationName}' already exists for vendor."]
+                        );
                     case ApplicationInsertResult.FailureUnknown failure:
                         logger.LogError("Failure creating client {Failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -406,12 +405,13 @@ public class ApplicationModule : IEndpointModule
                                 is ApplicationUpdateResult.FailureDuplicateApplication duplicateApp
                             )
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure(
-                                        "ApplicationName",
-                                        $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
-                                    ),
-                                ]);
+                                return FailureResults.NonUniqueIdentity(
+                                    "The identifying value(s) of the item are the same as another item that already exists.",
+                                    httpContext.TraceIdentifier,
+                                    [
+                                        $"Application '{duplicateApp.ApplicationName}' already exists for vendor.",
+                                    ]
+                                );
                             }
 
                             return applicationUpdateResult switch

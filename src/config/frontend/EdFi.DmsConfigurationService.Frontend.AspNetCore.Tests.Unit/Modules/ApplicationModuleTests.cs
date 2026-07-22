@@ -1112,7 +1112,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_duplicate_application_name_on_insert()
+        public async Task Should_return_conflict_for_duplicate_application_name_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1136,23 +1136,21 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await insertResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "title": "Identifying Values Are Not Unique",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "ApplicationName": [
-                      "Application 'Test Application' already exists for vendor."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Application 'Test Application' already exists for vendor."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -1160,7 +1158,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_for_duplicate_application_name_on_update()
+        public async Task Should_return_conflict_for_duplicate_application_name_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1185,23 +1183,21 @@ public class ApplicationModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                  "title": "Identifying Values Are Not Unique",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "ApplicationName": [
-                      "Application 'Test Application' already exists for vendor."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Application 'Test Application' already exists for vendor."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );

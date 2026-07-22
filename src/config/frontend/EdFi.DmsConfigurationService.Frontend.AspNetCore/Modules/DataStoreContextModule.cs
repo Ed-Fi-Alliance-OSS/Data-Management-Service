@@ -48,14 +48,12 @@ public class DataStoreContextModule : IEndpointModule
                 new[] { new ValidationFailure("DataStoreId", "Reference 'DataStoreId' does not exist.") }
             ),
             DataStoreContextInsertResult.FailureDuplicateDataStoreContext duplicate =>
-                throw new ValidationException(
-                    new[]
-                    {
-                        new ValidationFailure(
-                            "ContextKey",
-                            $"Data store context with DataStoreId '{duplicate.DataStoreId}' and ContextKey '{duplicate.ContextKey}' already exists."
-                        ),
-                    }
+                FailureResults.NonUniqueIdentity(
+                    "The identifying value(s) of the item are the same as another item that already exists.",
+                    httpContext.TraceIdentifier,
+                    [
+                        $"Data store context with DataStoreId '{duplicate.DataStoreId}' and ContextKey '{duplicate.ContextKey}' already exists.",
+                    ]
                 ),
             DataStoreContextInsertResult.FailureUnknown => FailureResults.Unknown(
                 httpContext.TraceIdentifier
@@ -132,14 +130,12 @@ public class DataStoreContextModule : IEndpointModule
                 new[] { new ValidationFailure("DataStoreId", "Reference 'DataStoreId' does not exist.") }
             ),
             DataStoreContextUpdateResult.FailureDuplicateDataStoreContext duplicate =>
-                throw new ValidationException(
-                    new[]
-                    {
-                        new ValidationFailure(
-                            "ContextKey",
-                            $"Data store context with DataStoreId '{duplicate.DataStoreId}' and ContextKey '{duplicate.ContextKey}' already exists."
-                        ),
-                    }
+                FailureResults.NonUniqueIdentity(
+                    "The identifying value(s) of the item are the same as another item that already exists.",
+                    httpContext.TraceIdentifier,
+                    [
+                        $"Data store context with DataStoreId '{duplicate.DataStoreId}' and ContextKey '{duplicate.ContextKey}' already exists.",
+                    ]
                 ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

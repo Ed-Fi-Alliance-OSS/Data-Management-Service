@@ -128,7 +128,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task CreateProfile_DuplicateName_ShouldReturnBadRequest()
+    public async Task CreateProfile_DuplicateName_ShouldReturnConflict()
     {
         var duplicateProfile = new
         {
@@ -147,8 +147,10 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        actualResponse!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile 'TestProfile' already exists");
@@ -418,7 +420,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task UpdateProfile_DuplicateName_ShouldReturnBadRequest()
+    public async Task UpdateProfile_DuplicateName_ShouldReturnConflict()
     {
         var updateProfile = new
         {
@@ -438,8 +440,10 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        actualResponse!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("A profile with this name already exists");
@@ -866,17 +870,14 @@ public class Given_A_Profile_Insert_With_A_Duplicate_Name : ProfileProblemDetail
     public void TearDown() => _response.Dispose();
 
     [Test]
-    public async Task It_returns_the_data_validation_contract()
+    public async Task It_returns_the_non_unique_identity_conflict_contract()
     {
         await _response.ShouldBeProblemDetailAsync(
-            HttpStatusCode.BadRequest,
-            "urn:ed-fi:api:bad-request:data",
-            "Data Validation Failed",
-            "Data validation failed. See 'validationErrors' for details.",
-            validationErrors: new JsonObject
-            {
-                ["Name"] = new JsonArray("Profile 'TestProfile' already exists."),
-            }
+            HttpStatusCode.Conflict,
+            "urn:ed-fi:api:conflict:non-unique-identity",
+            "Identifying Values Are Not Unique",
+            "The identifying value(s) of the item are the same as another item that already exists.",
+            errors: ["Profile 'TestProfile' already exists."]
         );
     }
 }
@@ -959,17 +960,14 @@ public class Given_A_Profile_Update_With_A_Duplicate_Name : ProfileProblemDetail
     public void TearDown() => _response.Dispose();
 
     [Test]
-    public async Task It_returns_the_data_validation_contract()
+    public async Task It_returns_the_non_unique_identity_conflict_contract()
     {
         await _response.ShouldBeProblemDetailAsync(
-            HttpStatusCode.BadRequest,
-            "urn:ed-fi:api:bad-request:data",
-            "Data Validation Failed",
-            "Data validation failed. See 'validationErrors' for details.",
-            validationErrors: new JsonObject
-            {
-                ["Name"] = new JsonArray("A profile with this name already exists."),
-            }
+            HttpStatusCode.Conflict,
+            "urn:ed-fi:api:conflict:non-unique-identity",
+            "Identifying Values Are Not Unique",
+            "The identifying value(s) of the item are the same as another item that already exists.",
+            errors: ["A profile with this name already exists."]
         );
     }
 }

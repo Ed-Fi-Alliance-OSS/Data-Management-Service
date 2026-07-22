@@ -109,54 +109,43 @@ public class IdentityModule : IEndpointModule
                     httpContext.TraceIdentifier
                 );
             case ClientClientsResult.Success clientSuccess:
-                if (IsUnique(clientSuccess))
+                if (!IsUnique(clientSuccess))
                 {
-                    var result = await clientRepository.CreateClientAsync(
-                        model.ClientId!,
-                        model.ClientSecret!,
-                        identitySettings.Value.ConfigServiceRole,
-                        model.DisplayName!,
-                        AuthorizationScopes.AdminScope.Name,
-                        string.Empty,
-                        string.Empty
+                    return FailureResults.NonUniqueIdentity(
+                        "The identifying value(s) of the item are the same as another item that already exists.",
+                        httpContext.TraceIdentifier,
+                        ["Client with the same Client Id already exists. Please provide different Client Id."]
                     );
-                    return result switch
-                    {
-                        ClientCreateResult.Success => Results.Json(
-                            new { Title = $"Registered client {model.ClientId} successfully.", Status = 200 }
-                        ),
-                        ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
-                            UpstreamRegistrationError(
-                                logger,
-                                failureIdentityProvider.IdentityProviderError.FailureMessage,
-                                httpContext.TraceIdentifier
-                            ),
-                        _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-                    };
                 }
-                break;
+
+                var result = await clientRepository.CreateClientAsync(
+                    model.ClientId!,
+                    model.ClientSecret!,
+                    identitySettings.Value.ConfigServiceRole,
+                    model.DisplayName!,
+                    AuthorizationScopes.AdminScope.Name,
+                    string.Empty,
+                    string.Empty
+                );
+                return result switch
+                {
+                    ClientCreateResult.Success => Results.Json(
+                        new { Title = $"Registered client {model.ClientId} successfully.", Status = 200 }
+                    ),
+                    ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
+                        UpstreamRegistrationError(
+                            logger,
+                            failureIdentityProvider.IdentityProviderError.FailureMessage,
+                            httpContext.TraceIdentifier
+                        ),
+                    _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+                };
         }
 
-        bool IsUnique(ClientClientsResult.Success clientSuccess)
-        {
-            bool clientExists = clientSuccess.ClientList.Any(c =>
+        bool IsUnique(ClientClientsResult.Success clientSuccess) =>
+            !clientSuccess.ClientList.Any(c =>
                 c.Equals(model.ClientId!, StringComparison.InvariantCultureIgnoreCase)
             );
-            if (clientExists)
-            {
-                var validationFailures = new List<ValidationFailure>
-                {
-                    new()
-                    {
-                        PropertyName = "ClientId",
-                        ErrorMessage =
-                            "Client with the same Client Id already exists. Please provide different Client Id.",
-                    },
-                };
-                throw new ValidationException(validationFailures);
-            }
-            return true;
-        }
 
         return FailureResults.Unknown(httpContext.TraceIdentifier);
     }

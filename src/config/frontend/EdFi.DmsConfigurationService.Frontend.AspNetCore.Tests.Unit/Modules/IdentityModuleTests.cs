@@ -338,10 +338,26 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        content
-            .Should()
-            .Contain("Client with the same Client Id already exists. Please provide different Client Id.");
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var actualResponse = JsonNode.Parse(content);
+        actualResponse!["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+              "type": "urn:ed-fi:api:conflict:non-unique-identity",
+              "title": "Identifying Values Are Not Unique",
+              "status": 409,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+                "Client with the same Client Id already exists. Please provide different Client Id."
+              ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [Test]

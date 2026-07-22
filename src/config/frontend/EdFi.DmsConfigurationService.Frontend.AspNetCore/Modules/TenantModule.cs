@@ -10,7 +10,6 @@ using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -45,18 +44,10 @@ public class TenantModule : IEndpointModule
                     Title = $"New Tenant {SanitizeForLog(entity.Name)} has been created successfully.",
                 }
             ),
-            TenantInsertResult.FailureDuplicateName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [
-                        new ValidationFailure(
-                            "Name",
-                            "A tenant name already exists in the database. Please enter a unique name."
-                        ),
-                    ],
-                    httpContext.TraceIdentifier
-                ),
-                contentType: "application/problem+json",
-                statusCode: (int)HttpStatusCode.BadRequest
+            TenantInsertResult.FailureDuplicateName => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                ["A tenant name already exists in the database. Please enter a unique name."]
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

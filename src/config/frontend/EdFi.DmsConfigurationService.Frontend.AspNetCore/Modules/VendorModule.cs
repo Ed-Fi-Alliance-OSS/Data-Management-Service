@@ -91,18 +91,10 @@ public class VendorModule : IEndpointModule
 
         return insertResult switch
         {
-            VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [
-                        new ValidationFailure(
-                            "Name",
-                            "A vendor name already exists in the database. Please enter a unique name."
-                        ),
-                    ],
-                    httpContext.TraceIdentifier
-                ),
-                contentType: "application/problem+json",
-                statusCode: (int)HttpStatusCode.BadRequest
+            VendorInsertResult.FailureDuplicateCompanyName => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                ["A vendor name already exists in the database. Please enter a unique name."]
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

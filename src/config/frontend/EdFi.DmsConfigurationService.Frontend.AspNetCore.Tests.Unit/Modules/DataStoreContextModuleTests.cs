@@ -4,10 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreContext;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -117,6 +119,93 @@ public class DataStoreContextModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/dataStoreContexts?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Duplicate_DataStoreContext : DataStoreContextModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.InsertDataStoreContext(A<DataStoreContextInsertCommand>.Ignored))
+                .Returns(new DataStoreContextInsertResult.FailureDuplicateDataStoreContext(1, "grade-level"));
+        }
+
+        [Test]
+        public async Task It_returns_the_non_unique_identity_conflict()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/dataStoreContexts",
+                new StringContent(
+                    """
+                    {
+                      "dataStoreId": 1,
+                      "contextKey": "grade-level",
+                      "contextValue": "5"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors:
+                [
+                    "Data store context with DataStoreId '1' and ContextKey 'grade-level' already exists.",
+                ]
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Duplicate_DataStoreContext_On_Update : DataStoreContextModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.UpdateDataStoreContext(A<DataStoreContextUpdateCommand>.Ignored))
+                .Returns(new DataStoreContextUpdateResult.FailureDuplicateDataStoreContext(1, "grade-level"));
+        }
+
+        [Test]
+        public async Task It_returns_the_non_unique_identity_conflict()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreContexts/1",
+                new StringContent(
+                    """
+                    {
+                      "id": 1,
+                      "dataStoreId": 1,
+                      "contextKey": "grade-level",
+                      "contextValue": "5"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors:
+                [
+                    "Data store context with DataStoreId '1' and ContextKey 'grade-level' already exists.",
+                ]
+            );
         }
     }
 }

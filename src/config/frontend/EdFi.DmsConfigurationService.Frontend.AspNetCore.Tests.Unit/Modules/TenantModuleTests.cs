@@ -250,7 +250,7 @@ public class TenantModuleTests
             }
 
             [Test]
-            public async Task It_returns_bad_request_for_duplicate_name()
+            public async Task It_returns_conflict_for_duplicate_name()
             {
                 // Arrange
                 using var client = SetUpClient(multiTenancyEnabled: true);
@@ -270,7 +270,7 @@ public class TenantModuleTests
                 );
 
                 //Assert
-                addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
                 var responseContent = await addResponse.Content.ReadAsStringAsync();
                 responseContent
                     .Should()
@@ -432,16 +432,11 @@ public class TenantModuleTests
                     )
                 );
                 _body = await _response.ShouldBeProblemDetailAsync(
-                    HttpStatusCode.BadRequest,
-                    "urn:ed-fi:api:bad-request:data",
-                    "Data Validation Failed",
-                    "Data validation failed. See 'validationErrors' for details.",
-                    validationErrors: new JsonObject
-                    {
-                        ["Name"] = new JsonArray(
-                            "A tenant name already exists in the database. Please enter a unique name."
-                        ),
-                    }
+                    HttpStatusCode.Conflict,
+                    "urn:ed-fi:api:conflict:non-unique-identity",
+                    "Identifying Values Are Not Unique",
+                    "The identifying value(s) of the item are the same as another item that already exists.",
+                    errors: ["A tenant name already exists in the database. Please enter a unique name."]
                 );
             }
 
@@ -449,8 +444,8 @@ public class TenantModuleTests
             public void TearDown() => _response?.Dispose();
 
             [Test]
-            public void It_reports_the_duplicate_name_under_the_Name_field() =>
-                _body["validationErrors"]!["Name"]!
+            public void It_reports_the_duplicate_name_in_errors() =>
+                _body["errors"]!
                     .ToJsonString()
                     .Should()
                     .Contain("A tenant name already exists in the database. Please enter a unique name.");
