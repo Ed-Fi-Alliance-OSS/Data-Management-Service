@@ -58,7 +58,7 @@ Missing cache rows and rows whose version is behind the canonical source are ord
 repair work. A cache row whose version is ahead of the canonical source is instead an
 invariant violation: the projector atomically sets the durable per-database recovery
 latch, makes all cache rows ineligible for reads and further projection writes, makes
-readiness false, and neither retries nor overwrites the row automatically. Supported
+readiness false, and neither repairs nor overwrites the row automatically. Supported
 same-source writes and monotonic projection cannot produce that state, so it indicates
 cache corruption, an in-place source restore/reset, or unsupported reuse of projected
 state against another canonical source. A later equal source/cache version never clears
@@ -180,6 +180,9 @@ decision.
   semantics, especially during deletion.
 - Ordinary updates use indexed incremental discovery; full relationship scans are
   reserved for startup, rebuild, periodic audit, and readiness verification.
+- Repair failures retain only capped target-scoped backoff and repair-required state. The
+  active page bounds candidate memory, no failed document/version retry map survives page
+  turnover, and full audits rediscover failures from the current database difference.
 - Full audits repair missing and cache-behind rows. Cache-ahead rows durably latch the
   database, disable cache reads and writes, and keep readiness false across version
   equality and restart until explicit CDC-aware recovery completes.
@@ -214,6 +217,7 @@ decision.
 | Make cache population/use mandatory or describe it only as a read cache | Rejected: the table is always provisioned, while its optional multi-consumer projection role remains configuration-selected. |
 | Configure a projector mode or separate Kafka boolean | Rejected: consuming capabilities already determine the exact target set and avoid invalid flag combinations. |
 | Persist queues, epochs, progress, retry, or per-document failure rows | Rejected for v1: the current source/cache difference preserves repairable work. The singleton cache-ahead safety latch is the only durable incident state; add pending-work state only if indexed incremental-discovery and full-audit benchmarks require it. |
+| Retain process-local retry entries keyed by document/version | Rejected: entry count would grow with persistent failures. Target-scoped backoff limits failure state, and full audits rediscover repairable work from the database. |
 | Use the full mismatch anti-join for every steady-state poll | Rejected: it makes ordinary high-version update discovery scale with the complete document set. |
 | Build JSON in database triggers | Rejected: it duplicates application reconstitution and increases provider-specific logic. |
 | Add `(DocumentId, DocumentUuid)` as a canonical unique key and composite cache foreign key | Rejected: it adds a redundant wide index to the canonical `dms.Document` table for an optional projection. |

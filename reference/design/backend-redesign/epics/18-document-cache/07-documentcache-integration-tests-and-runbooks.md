@@ -46,9 +46,9 @@ that links to, rather than restates, the authoritative design.
 ## Acceptance Evidence
 
 - PostgreSQL and SQL Server integration tests cover all completed E18 story outcomes,
-  including `StreamEtag` consistency, metadata consistency, lower-version gaps, fair
-  retry, cache-ahead invariant handling, indexed incremental discovery, periodic full
-  audits, and API independence.
+  including `StreamEtag` consistency, metadata consistency, lower-version gaps,
+  target-scoped failure backoff and database rediscovery, cache-ahead invariant handling,
+  indexed incremental discovery, periodic full audits, and API independence.
 - Provider integration tests prove trigger-enforced UUID denormalization for insert and
   update, cascade deletion through the compact `DocumentId` FK, absence of a cache UUID
   index, and equivalent connector-key values from cache upserts and canonical deletes.

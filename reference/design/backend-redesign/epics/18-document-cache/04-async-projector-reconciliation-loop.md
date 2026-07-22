@@ -18,7 +18,8 @@ related:
 ## Outcome
 
 Implement the hosted, per-data-store incremental discovery and full-audit reconciler,
-including the bounded in-memory retry behavior defined by the authoritative design.
+including target-scoped failure backoff and database rediscovery without a document-scoped
+retry map.
 
 ## Dependencies
 
@@ -40,19 +41,24 @@ including the bounded in-memory retry behavior defined by the authoritative desi
 4. Implement startup, periodic, and rebuild-triggered full anti-join audits,
    including bounded audit-local paging and an exact finishing aggregate that separates
    missing, cache-behind, and cache-ahead rows.
-5. Invoke the shared materializer and monotonic upsert with fair retry and idle polling for
-   missing and cache-behind candidates. When either lane observes a cache-ahead row,
-   atomically set `DocumentCacheState.CacheAheadRecoveryRequired`; do not materialize or
-   retry the row. Once classified, do not reclassify it if the source advances before the
-   latch commit, and do not report the observation before that commit. Pause all projector
-   writes for the latched target. Treat a missing, malformed, or unwritable state singleton
-   as fail-closed.
+5. Invoke the shared materializer and monotonic upsert for missing and cache-behind
+   candidates. After a failed incremental page, mark the target repair-required, apply
+   target-scoped capped exponential backoff with jitter, and run a coalesced immediate full
+   audit to rediscover the database difference. During an audit, advance beyond failed
+   candidates and apply the backoff before the next repair pass. Retain no failed document
+   or version identity after its bounded page is drained, and clear the repair-required
+   observation only after an exact-zero finishing audit. When either lane observes a
+   cache-ahead row, atomically set `DocumentCacheState.CacheAheadRecoveryRequired`; do not
+   materialize or repair the row. Once classified, do not reclassify it if the source
+   advances before the latch commit, and do not report the observation before that commit.
+   Pause all projector writes for the latched target. Treat a missing, malformed, or
+   unwritable state singleton as fail-closed.
 6. Implement one target-scoped administrative recovery operation that takes the exclusive
    singleton-state lock, requires a set latch, clears the entire cache and latch in one
    provider transaction, and requests an immediate full audit after commit. Expose no
    latch-only reset; downstream publication-path recovery remains E19-owned.
-7. Add graceful cancellation and sanitized incremental-scan, audit, retry, and failure
-   telemetry, and measure realistic plans for both providers.
+7. Add graceful cancellation and sanitized incremental-scan, audit, target-backoff, and
+   failure telemetry, and measure realistic plans for both providers.
 8. Bind the configurable incremental interval, full-audit interval, page size,
    process-wide concurrent-target limit, and maximum audit age. Supply conservative,
    implementation-tuned defaults in supported appsettings and documentation.
@@ -72,13 +78,13 @@ including the bounded in-memory retry behavior defined by the authoritative desi
   without a full relationship scan and that a full audit covers the relationship once
   rather than rescanning each repaired prefix.
 - Completeness tests prove late lower-version commits and cache-row loss below the cursor
-  are repaired by full audit, advancing past failures retains bounded retry, and no
-  timestamp, epoch, `StreamEtag` comparison, or cursor/high-watermark becomes a second
-  completeness predicate.
+  are repaired by full audit, advancing past failures retains no document-scoped retry
+  state and relies on full-audit database rediscovery, and no timestamp, epoch, `StreamEtag`
+  comparison, or cursor/high-watermark becomes a second completeness predicate.
 - Classification tests prove missing and cache-behind rows are repaired, while a
-  cache-ahead row is not materialized, does not enter the retry set, remains in the exact
-  audit result, atomically latches the target, and pauses further cache writes. After the
-  canonical source advances to exactly the cached version, including a synchronized advance
+  cache-ahead row is not materialized, is not treated as repairable work, remains in the
+  exact audit result, atomically latches the target, and pauses further cache writes. After
+  the canonical source advances to exactly the cached version, including a synchronized advance
   between classification and latch commit, restart and zero-audit tests prove the latch
   remains set until explicit recovery.
 - Recovery tests prove the operation rejects a clear latch, waits for in-flight shared
@@ -90,12 +96,17 @@ including the bounded in-memory retry behavior defined by the authoritative desi
   above the pre-audit boundary and is projected without waiting for the next full audit.
 - Scheduling tests cover immediate startup/rebuild audits, interval eligibility,
   serialized per-target work, coalescing, bounded pages, fair process-wide concurrency,
-  no unbounded candidate queue, stale-audit readiness, and graceful cancellation.
+  no document-scoped retry queue, capped target backoff, stale-audit readiness, and graceful
+  cancellation. A systemic persistent failure affecting more documents than `PageSize`
+  proves candidate memory remains bounded by active pages, page scans continue, database
+  rediscovery finds every failed candidate, and readiness remains false until an exact-zero
+  audit.
 - Configuration tests reject invalid values, require maximum audit age to exceed the full
   audit interval, and pin the documented implementation defaults.
 
 ## Out of Scope
 
-- Durable workflow/retry state beyond the singleton cache-ahead safety latch.
+- Durable workflow state or per-document retry state. The singleton cache-ahead safety latch
+  remains the only durable projector incident state.
 - Connector status/source-position readiness.
 - Discovery of unlisted CMS targets.

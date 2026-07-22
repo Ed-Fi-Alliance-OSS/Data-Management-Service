@@ -38,11 +38,11 @@ authorization, candidate selection, fallback, and response shaping.
    or retaining an update/write source-row lock as a content-version fence. Apply one short
    end-to-end `ReadAcceleration:DirectFillTimeout` deadline across all source-read,
    cache-row, foreign-key, trigger, and ordinary database contention. Do not renew the
-   deadline per statement or enter the projector retry loop; cap each database operation by
-   the remaining budget. Timeout, failure, or a concurrent canonical change abandons the
-   fill without failing the response or delaying it beyond that small budget. Validate the
-   positive duration and supply a conservative implementation-tuned default in supported
-   appsettings and operator documentation.
+   deadline per statement or change projector target-backoff state; cap each database
+   operation by the remaining budget. Timeout, failure, or a concurrent canonical change
+   abandons the fill without failing the response or delaying it beyond that small budget.
+   Validate the positive duration and supply a conservative implementation-tuned default
+   in supported appsettings and operator documentation.
 4. Emit cache hit, miss, stale miss, fallback, direct-fill success, abandonment, and timeout
    telemetry.
 
@@ -63,7 +63,7 @@ authorization, candidate selection, fallback, and response shaping.
   budget and never fails the relational response. Tests preserve ordinary integrity locks
   acquired by foreign-key enforcement and the UUID-validation trigger.
 - Deadline tests span multiple statements and prove each operation receives only the
-  remaining direct-fill budget, with no per-statement reset or projector retry.
+  remaining direct-fill budget, with no per-statement reset or projector backoff effect.
 - Configuration tests reject a nonpositive `DirectFillTimeout`, pin its shipped default,
   and prove it remains below the ordinary database command timeout.
 

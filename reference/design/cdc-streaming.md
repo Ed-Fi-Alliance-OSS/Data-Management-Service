@@ -71,7 +71,7 @@ V1 assumes that a deployment can place one selected physical data store in a mai
 window when initial combined CDC readiness is established and when an explicit projection
 repair or contract cutover replaces that complete baseline. The window has no design-level
 maximum duration. It may remain open for connector registration or restart, a complete
-projection audit and repair pass, transient retries, connector snapshot/catch-up, and the
+projection audit and backed-off repair passes, connector snapshot/catch-up, and the
 post-audit provider barrier. An operator-configured automation timeout is diagnostic and
 fail-closed; elapsed time never substitutes for completing the sequence below.
 
@@ -277,14 +277,14 @@ ordinary repair work:
 | Row missing | Repairable projection lag | Materialize and insert |
 | `DocumentCache.ContentVersion < Document.ContentVersion` | Repairable projection lag | Materialize and replace |
 | Versions equal | Fresh only when the database cache-ahead latch is clear | No action |
-| `DocumentCache.ContentVersion > Document.ContentVersion` | Invariant violation | Do not materialize, retry, or overwrite automatically |
+| `DocumentCache.ContentVersion > Document.ContentVersion` | Invariant violation | Do not materialize, repair, or overwrite automatically |
 
 A cache-ahead row cannot arise from supported same-source projection and canonical-write
 concurrency: canonical `ContentVersion` values advance monotonically and monotonic cache
 writes never replace a higher cache version. It therefore indicates cache corruption, an
 in-place/partial canonical database restore or reset, or unsupported reuse of projected
 state against another canonical source. It remains part of the exact completeness
-difference and is not placed in the normal retry set. When either discovery lane observes
+difference and is not treated as ordinary repair work. When either discovery lane observes
 one, it atomically sets the singleton `dms.DocumentCacheState.CacheAheadRecoveryRequired`
 bit. After classifying the row, the setter does not reclassify or cancel the incident if the
 source advances before the state update; the observation is reported only after the latch
@@ -306,8 +306,9 @@ store, the projector has two cooperating lanes:
    page left-joins `dms.DocumentCache` by `DocumentId`. Missing and cache-behind rows
    become materialization candidates; cache-ahead rows become observed invariant
    violations. The cursor advances to the last source row examined whether the cache row
-   was behind, fresh, or ahead; failed repairable candidates remain in the in-memory retry
-   set described below.
+   was behind, fresh, ahead, or failed during repair. A failed page marks the target as
+   requiring repair and requests a coalesced immediate full audit; no failed document or
+   version identity is retained after the page is drained.
 2. A periodic full-audit lane evaluates the complete source/cache anti-join above. It
    repairs every missing or cache-behind row it finds, including rows below the
    incremental cursor, and reports cache-ahead rows without trying to overwrite them. It
@@ -333,13 +334,14 @@ replica has already projected.
 
 A full repair audit may use one provider-optimized anti-join or bounded keyset pages of
 source/cache version pairs, but one audit pass must cover the complete current
-relationship. Bounded paging must carry an audit-local scan position forward so that
-repairing an early page does not cause every later page to rescan the already-fresh
-prefix. An audit may race with writes; monotonic upserts make its repairs safe. A nonzero
-finishing aggregate causes repair to continue for missing and cache-behind rows. A
-cache-ahead count sets the durable recovery latch, preserves unhealthy readiness, and
-waits for the explicit recovery described below. The full-audit interval is bounded so it
-also bounds discovery latency for repairable work that the incremental lane cannot see.
+relationship. Bounded paging must carry an audit-local scan position forward even when a
+candidate repair fails, so one failed document neither prevents later source rows from
+being examined nor causes every later page to rescan an already-examined prefix. An audit
+may race with writes; monotonic upserts make its repairs safe. A nonzero finishing aggregate
+causes another backed-off repair pass for missing and cache-behind rows. A cache-ahead count
+sets the durable recovery latch, preserves unhealthy readiness, and waits for the explicit
+recovery described below. The full-audit interval is bounded so it also bounds discovery
+latency for repairable work that the incremental lane cannot see.
 
 For each candidate from either lane, the projector:
 
@@ -403,7 +405,7 @@ Consequently, this ordinary race is allowed:
    optimistic source-version check still observes version 10.
 2. A canonical writer commits source version 11.
 3. The projector commits cache version 10 because the cache row is absent or lower.
-4. Incremental discovery, retry, or full audit subsequently projects version 11.
+4. Incremental discovery or a full audit subsequently projects version 11.
 
 The version-10 row is ordinary monotonic projection lag. A fresh-cache read rejects it
 because source and cache versions differ. A downstream consumer that has not yet observed
@@ -442,8 +444,9 @@ cache key. SQL Server uses an equivalent transactionally safe conditional update
 that serializes an absent or existing cache key; a duplicate-key race is retried by
 re-evaluating the current cache version. A provider implementation must not use a
 read-then-unconditional-write pattern. A cache upsert may still encounter ordinary database
-failures and uses the projector's bounded retry path, but v1 adds no source-lock timeout,
-lock-wait telemetry, or deadlock policy specific to projection.
+failures and uses the projector's target-scoped backoff and database rediscovery path, but
+v1 adds no source-lock timeout, lock-wait telemetry, or deadlock policy specific to
+projection.
 The cache transaction is not lock-free with respect to `dms.Document`: foreign-key
 enforcement and the UUID-validation trigger may acquire their ordinary provider-specific
 parent-row or key locks. Those integrity locks are not an explicit write-conflicting
@@ -453,8 +456,9 @@ never waits for a source-row content-version fence, but ordinary cache-row, fore
 trigger, or database contention can still occur. A short direct-fill-specific database
 deadline bounds that optional request-path work end to end. The deadline is not renewed per
 statement or retry; each database operation uses only the remaining budget, and direct fill
-does not enter the projector retry loop. Timeout, contention, failure, or a concurrent
-canonical change abandons the fill without failing the relational response.
+does not change the projector's target-scoped failure or backoff state. Timeout, contention,
+failure, or a concurrent canonical change abandons the fill without failing the relational
+response.
 
 Except for the singleton cache-ahead safety latch, there are no projection queues, enqueue
 APIs, persisted cursors, backfill epochs, per-document projector/failure rows, retry
@@ -465,12 +469,18 @@ current database difference. A maximum scanned or projected version cannot prove
 completeness because a lower current version may still be missing. Cache-ahead recovery is
 the exceptional operator procedure below, not another projector workflow.
 
-Failures use bounded in-memory exponential backoff with jitter keyed by opaque data-store
-identity, `DocumentId`, and current `ContentVersion`. A deferred candidate does not
-starve other work. Its entry is removed when the version changes, the document is
-deleted, or the cache becomes fresh. Restart loses only the delay and rediscovers work
-from database state. V1 has no retry budget or persisted attempt count; a persistent
-failure remains visible until its underlying data, mapping, or service cause is fixed.
+Repair failures use capped in-memory exponential backoff with jitter scoped to the target
+execution context, never to a document or version. A failed incremental page marks the
+target as requiring repair, discards its candidates after draining the page, and delays the
+coalesced immediate full audit. During a full audit, candidate failures remain only in the
+current page; the audit advances through later pages, then a nonzero exact finishing
+aggregate schedules another repair pass subject to the same target backoff. The current
+database difference therefore rediscovers every failed candidate without a process-local
+document retry map. Only a later exact-zero finishing audit clears the target's
+repair-required observation and resets its failure backoff. Restart loses this process-local
+state but immediately requires a new startup audit, so readiness cannot rely on the lost
+observation. V1 has no retry budget or persisted attempt count; a persistent failure remains
+visible in database state until its underlying data, mapping, or service cause is fixed.
 
 ### Bounded In-Process Execution Policy
 
@@ -479,9 +489,10 @@ execution loop per resolved target and a process-wide `MaxConcurrentTargets` gat
 one incremental page, audit page, or candidate materialization is active for a target at a
 time, and no more than the configured number of targets perform projection database/CPU
 work concurrently. A page contains at most `PageSize` source rows and is fully drained
-before the loop fetches another page; the process does not build an unbounded candidate
-queue. Waiting targets receive permits fairly so one large rebuild cannot permanently
-exclude another target.
+before the loop fetches another page. Candidate memory is therefore bounded by active pages,
+and only constant-size scheduling, failure, and backoff state is retained for each explicit
+target; no candidate or retry queue grows with document count. Waiting targets receive
+permits fairly so one large rebuild cannot permanently exclude another target.
 
 The loop applies this schedule:
 
@@ -494,9 +505,9 @@ The loop applies this schedule:
    finishes. Only one audit may be queued or running for a target. Startup, rebuild, and
    periodic requests coalesce into that one audit; they never create overlapping scans.
 4. A finishing aggregate with repairable differences schedules another bounded repair
-   pass through the same loop rather than tight-looping. Retry backoff and the concurrency
-   gate remain in force. A latched target remains unhealthy, performs no cache writes, and
-   waits for explicit recovery rather than scheduling futile repair.
+   pass through the same loop rather than tight-looping. Target-scoped failure backoff and
+   the concurrency gate remain in force. A latched target remains unhealthy, performs no
+   cache writes, and waits for explicit recovery rather than scheduling futile repair.
 5. Health and readiness reads are observational. They do not start or wait for an audit.
    Until the immediate startup/rebuild audit completes, or when the latest exact audit is
    older than `MaximumAuditAge`, the target is simply not ready.
@@ -612,8 +623,9 @@ context. It reports at least:
 - the durable `CacheAheadRecoveryRequired` latch,
 - its oldest unresolved source timestamp and age, derived from
   `dms.Document.ContentLastModifiedAt`,
-- currently known unresolved incremental candidates and retry deferrals, identified as
-  process-local observations rather than exact database counts.
+- currently active unresolved incremental candidates plus the target-scoped
+  repair-required observation, failure backoff, and next eligibility time, identified as
+  process-local state rather than exact database counts.
 
 Optional counts by project/resource may be exposed when operationally safe. Process-local
 incremental cursor, last scan, successful upsert, and last error are diagnostic only.
@@ -624,15 +636,17 @@ Health reads return the durable latch plus the latest audit snapshot; they do no
 synchronously execute, enqueue, or wait for a full anti-join. Configurable audit-age,
 unresolved-count, and oldest-unresolved-age thresholds distinguish a fresh zero observation
 or brief asynchronous lag from a stale audit or sustained degradation. A nonzero finishing
-audit invalidates completeness until a later exact finishing aggregate returns zero.
-Incremental discovery makes readiness false while that known candidate or retry remains
-unresolved, but successful repair does not force another full scan; the last exact-zero
-audit retains its original observation time and must still satisfy the audit-age threshold.
+audit invalidates completeness until a later exact finishing aggregate returns zero. An
+active incremental candidate makes readiness false until it succeeds or fails. A failed
+incremental repair sets the target-scoped repair-required observation and keeps readiness
+false until a later exact-zero finishing audit clears it; successful incremental repair
+when that observation is clear does not force another full scan. The last exact-zero audit
+retains its original observation time and must still satisfy the audit-age threshold.
 A same-version timestamp comparison is not another freshness or completeness test;
 embedded metadata consistency is enforced when a row is materialized and written. DMS
 projection readiness for one target requires a resolved execution context, a sufficiently
-recent exact-zero finishing audit, a clear durable cache-ahead latch, and no currently
-known unresolved incremental candidate or retry deferral.
+recent exact-zero finishing audit, a clear durable cache-ahead latch, no active unresolved
+incremental candidate, and no target-scoped repair-required observation.
 
 An exact-zero audit is exact at its finishing observation, not continuous completeness
 proof while canonical writes are admitted. In particular, a transaction may allocate a
@@ -1415,7 +1429,7 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
 
 Production-like automation repeats this workflow for each deployment-selected CDC target
 using its durable state backend and deployment-specific mutation-admission/drain mechanism.
-The maintenance window is allowed to span the complete audit, retry, snapshot, and catch-up
+The maintenance window is allowed to span the complete audit, repair, snapshot, and catch-up
 duration.
 
 ## DDL and Query Support
@@ -1490,7 +1504,7 @@ Structured logs and metrics cover:
 - effective projector settings, due/overdue audits, coalesced audit requests, active and
   concurrency-gated targets, and bounded page sizes,
 - projection attempts, successes, and failures,
-- retry deferrals and backoff duration,
+- target-scoped repair-required state, failed-page counts, and backoff duration,
 - monotonic already-fresh and superseded-candidate no-op counts,
 - unresolved, missing, cache-behind, and cache-ahead-invariant counts plus oldest
   unresolved age,
@@ -1671,7 +1685,7 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   the UUID-validation trigger remain intact and are distinguished from that fence,
 - the cache foreign key prevents a delayed candidate from recreating cache state after
   canonical deletion,
-- projection selection, empty-cache population, update, restart, retry, rebuild,
+- projection selection, empty-cache population, update, restart, backed-off repair, rebuild,
   monotonic upsert, delete fencing, health, cache fallback, and mixed-target isolation,
 - ordinary high-version updates are discovered through the incremental lane without a
   full relationship scan,
@@ -1684,11 +1698,12 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
   zero audit, forces a fresh startup/restart audit, waits through the post-audit publication
   barrier, and reopens mutation admission only after readiness passes,
 - cache-row loss below the incremental cursor is repaired by the next full audit,
-- advancing the cursor past a failed candidate retains that candidate for bounded
-  in-memory retry,
+- advancing the cursor past a failed candidate retains no document-scoped retry state,
+  marks the target repair-required, and lets the next full audit rediscover the database
+  difference,
 - a cache-ahead row atomically sets the durable database latch, receives no materialization
-  or retry loop, disables cache reads and writes, keeps projection readiness false across
-  restart, and cannot be overwritten with the lower canonical version,
+  or ordinary repair, disables cache reads and writes, keeps projection readiness false
+  across restart, and cannot be overwritten with the lower canonical version,
 - after a latched ahead row's source advances to exactly the cached `ContentVersion`, the
   row remains ineligible and readiness remains false until explicit recovery,
 - internal-only cache-ahead recovery clears the entire cache and latch in one transaction
@@ -1698,12 +1713,14 @@ PostgreSQL and SQL Server integration/E2E coverage proves:
 - projection or connector failure never blocks normal API deletion.
 
 Projector scheduling tests prove one serialized loop per target, process-wide target
-concurrency, bounded pages with no unbounded candidate queue, fair progress across a large
+concurrency, bounded pages with no document-scoped retry queue, fair progress across a large
 and small target, audit-request coalescing, startup/rebuild immediate audits, observational
 health reads, interval-based incremental and full-audit eligibility, stale-audit readiness,
-and graceful cancellation. Configuration tests validate all execution settings and pin the
-implementation-tuned defaults as documented release behavior rather than stream-contract
-constants.
+and graceful cancellation. A systemic failure across more documents than `PageSize` proves
+candidate memory remains bounded by active pages, paging continues, every failed document is
+rediscovered from database state, and readiness remains false until an exact-zero audit.
+Configuration tests validate all execution settings and pin the implementation-tuned
+defaults as documented release behavior rather than stream-contract constants.
 
 Performance qualification compares projector-disabled and projector-enabled source-write
 throughput and p95/p99 latency for uniformly distributed writes, a deliberately hot

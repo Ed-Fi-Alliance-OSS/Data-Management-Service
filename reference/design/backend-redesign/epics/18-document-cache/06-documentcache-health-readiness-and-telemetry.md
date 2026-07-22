@@ -38,9 +38,10 @@ completed full audit and current process state.
    expose the durable `DocumentCacheState.CacheAheadRecoveryRequired` latch alongside their
    observation time and age, and add configurable health thresholds without running a full
    anti-join synchronously on health reads. Missing/malformed latch state is unhealthy.
-3. Expose effective projector settings, next/due/overdue scheduling state, active work, and
-   process-wide concurrency-gate waits. Keep health and readiness reads observational:
-   they neither enqueue nor wait for audits.
+3. Expose effective projector settings, next/due/overdue scheduling state, active work,
+   target-scoped repair-required/backoff state and next eligibility time, and process-wide
+   concurrency-gate waits. Retain no failed document/version identities for health. Keep
+   health and readiness reads observational: they neither enqueue nor wait for audits.
 4. Add the canonical structured logs and metrics without retaining an expected source
    binding, source-drift latch, connector state, or deployment aggregate. The database
    cache-ahead safety latch is the only durable incident state in this story.
@@ -50,11 +51,11 @@ completed full audit and current process state.
 - Tests cover unresolved/resolved targets, a new fingerprint observation and health reset
   after connection-context replacement, missing tables, zero/nonzero differences,
   missing and cache-behind gaps, cache-ahead invariants, oldest age, stale audits, known
-  unresolved incremental work, nonzero-audit invalidation, persistent bounded failure,
-  and mixed targets.
+  unresolved incremental work, nonzero-audit invalidation, persistent target-scoped
+  failure/backoff with database rediscovery, and mixed targets.
 - Tests prove health reads reuse the latest audit snapshot and readiness requires a
-  sufficiently recent exact-zero finishing audit, a clear durable cache-ahead latch, and no
-  known unresolved work.
+  sufficiently recent exact-zero finishing audit, a clear durable cache-ahead latch, no
+  active unresolved work, and no target-scoped repair-required observation.
 - Tests prove repeated health/readiness polling starts no audit work and accurately reports
   startup, due, overdue, running, coalesced, and concurrency-gated states.
 - Tests prove a cache-ahead observation atomically sets the durable latch and remains

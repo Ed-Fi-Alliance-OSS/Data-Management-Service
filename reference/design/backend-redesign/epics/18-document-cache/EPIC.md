@@ -48,8 +48,9 @@ implementation inputs.
 - The explicit target list selects and isolates projection, unresolved listed targets can
   become available after startup, and read acceleration selects no additional stores.
 - Both providers pass coherent materialization with a final optimistic current-version
-  check, reconciliation, atomic monotonic-upsert, delete-fence, restart, retry, rebuild,
-  health, and read-fallback integration coverage.
+  check, reconciliation, atomic monotonic-upsert, delete-fence, restart, target-scoped
+  failure backoff and database rediscovery, rebuild, health, and read-fallback integration
+  coverage.
 - In-process work uses documented implementation-tuned defaults, serialized per-target
   loops, bounded pages, fair process-wide target concurrency, coalesced audits, and
   observational health/readiness checks.

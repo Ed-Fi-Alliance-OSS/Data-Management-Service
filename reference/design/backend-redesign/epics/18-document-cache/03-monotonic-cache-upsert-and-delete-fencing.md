@@ -55,7 +55,7 @@ was canonical-current at commit.
    candidate per short cache transaction in v1.
 7. Treat a coherent lower candidate that reaches the upsert before a newer canonical
    commit as ordinary monotonic projection lag when its cache write later wins. Leave the
-   resulting cache-behind difference for incremental discovery, retry, or full audit. Do
+   resulting cache-behind difference for incremental discovery or full audit. Do
    not deliberately serialize ordinary canonical version updates behind an explicit
    projection-held source-row lock; ordinary cache-row, trigger, and foreign-key
    concurrency remains provider-defined.
