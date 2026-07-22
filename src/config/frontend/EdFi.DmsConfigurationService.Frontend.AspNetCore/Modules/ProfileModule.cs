@@ -177,13 +177,10 @@ public class ProfileModule : IEndpointModule
         return result switch
         {
             ProfileDeleteResult.Success => Results.NoContent(),
-            ProfileDeleteResult.FailureInUse => Results.Json(
-                FailureResponse.ForBadRequest(
-                    "Profile is assigned to applications and cannot be deleted.",
-                    httpContext.TraceIdentifier
-                ),
-                contentType: "application/problem+json",
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileDeleteResult.FailureInUse => FailureResults.DependentItemExists(
+                "The requested action cannot be performed because this item is referenced by existing item(s).",
+                httpContext.TraceIdentifier,
+                ["Profile is assigned to applications and cannot be deleted."]
             ),
             ProfileDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),

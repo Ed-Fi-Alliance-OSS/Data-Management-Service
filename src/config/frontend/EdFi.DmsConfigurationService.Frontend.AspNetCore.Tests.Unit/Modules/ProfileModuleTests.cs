@@ -377,7 +377,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task DeleteProfile_InUse_ShouldReturnBadRequest()
+    public async Task DeleteProfile_InUse_ShouldReturnConflict()
     {
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.FailureInUse(1));
@@ -386,8 +386,13 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["detail"]!
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        actualResponse!["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:conflict:dependent-item-exists");
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile is assigned to applications and cannot be deleted");
@@ -1026,12 +1031,13 @@ public class Given_A_Profile_Delete_That_Is_In_Use : ProfileProblemDetailsTestBa
     public void TearDown() => _response.Dispose();
 
     [Test]
-    public async Task It_returns_the_bad_request_contract() =>
+    public async Task It_returns_the_dependent_item_exists_contract() =>
         await _response.ShouldBeProblemDetailAsync(
-            HttpStatusCode.BadRequest,
-            "urn:ed-fi:api:bad-request",
-            "Bad Request",
-            "Profile is assigned to applications and cannot be deleted."
+            HttpStatusCode.Conflict,
+            "urn:ed-fi:api:conflict:dependent-item-exists",
+            "Dependent Item Exists",
+            "The requested action cannot be performed because this item is referenced by existing item(s).",
+            errors: ["Profile is assigned to applications and cannot be deleted."]
         );
 }
 
