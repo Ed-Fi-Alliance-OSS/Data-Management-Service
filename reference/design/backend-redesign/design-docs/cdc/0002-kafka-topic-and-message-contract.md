@@ -87,6 +87,16 @@ bootstrap contract:
 4. If the consumer cannot prove completion within 24 hours, do not advertise the state as
    valid; discard it and restart the complete scan.
 
+Successful bootstrap is not permanent continuity evidence. After entering incremental
+consumption, a conforming consumer must durably renew its proof at least once in every
+24-hour wall-clock interval by capturing a new end-offset barrier for every partition and
+applying through every captured barrier. The proof may record unchanged end offsets for an
+idle topic. A consumer that cannot renew the proof, loses or corrupts its checkpoint, finds
+an unexpected partition assignment, or otherwise cannot prove continuous progress must
+immediately stop advertising its local state as valid, discard all of that state, and repeat
+the complete bounded bootstrap from the earliest available offsets. It must never resume
+incrementally from an uncertain checkpoint.
+
 The 24-hour consumer deadline leaves at least six days of retention margin for cleaner
 scheduling, stalls, and recovery. A conforming consumer must capacity-test the largest
 retained topic log it claims to support, including dirty/uncompacted records, partition
@@ -94,7 +104,7 @@ skew, maximum-sized records, consumer-state writes, and concurrent mutation traf
 must scale before production use so the complete scan satisfies the deadline. Live-key
 count alone is not sufficient capacity evidence. DMS deployment automation can validate
 the topic configuration and expose the contract values, but it cannot certify the runtime
-behavior of an independently operated consumer.
+behavior or continuity evidence of an independently operated consumer.
 
 A deployment that requires segment time/size deletion by adding `delete` to
 `cleanup.policy` must first define and implement a separate authoritative bootstrap source
@@ -443,6 +453,9 @@ The public topic never exposes:
 
 - Conforming consumers can reconstruct current instance document state, but not complete
   history, by completing the offset-zero scan within the 24-hour bootstrap deadline.
+- A consumer retains that guarantee only while it renews durable per-partition continuity
+  evidence at least every 24 hours. Missing or uncertain evidence invalidates all local
+  state and requires another complete bounded bootstrap.
 - That reconstruction guarantee depends on v1's compact-only topic, its explicit seven-day
   minimum tombstone retention, and consumer bootstrap conformance. Segment time/size
   deletion requires a separately defined authoritative bootstrap source and a new contract.
@@ -491,6 +504,7 @@ The public topic never exposes:
 | Shared topic with `instanceId` in the value | Rejected: consumer filtering is not a security boundary and tombstones have no value. |
 | `cleanup.policy=compact,delete` | Rejected for v1: time/size deletion can remove the sole latest upsert for an unchanged live document, so the topic can no longer bootstrap current state. |
 | Inherit the broker's `delete.retention.ms` | Rejected: a broker-default change can silently shorten the valid bootstrap window; every public topic carries and validates its own override. |
+| Resume incremental consumption from a stale or uncertain checkpoint | Rejected: a compacted-away tombstone can leave stale local state without producing an offset error; the consumer discards its state and repeats bounded bootstrap. |
 | Include `DocumentId` | Rejected: it is an internal surrogate with no public contract role. |
 | Publish delete envelopes | Rejected: compacted state streams use Kafka tombstones and no deleted body is guaranteed. |
 | Require consumers to compose `_etag` from `contentVersion` | Rejected: the public record does not otherwise carry the in-force `EffectiveSchemaHash`, and duplicating DMS representation rules would not guarantee the same validator. |

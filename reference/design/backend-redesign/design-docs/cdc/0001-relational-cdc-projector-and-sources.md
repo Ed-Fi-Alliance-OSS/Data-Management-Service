@@ -197,7 +197,9 @@ decision.
   cutover after first-write admission is deferred until deployment owns the required writer
   fence and drain. An explicitly offline byte-changing repair may use the out-of-band
   representation-restamp utility and publish higher canonical versions eventually without
-  certifying another exact CDC baseline.
+  certifying another exact CDC baseline. Loss of PostgreSQL WAL/slot or SQL Server CDC
+  source-history continuity is never repaired by resnapshotting the existing topic and is
+  an unrecoverable terminal condition for that binding in v1.
 - Both document source tables use `DocumentUuid` as the connector key and share one
   connector task so a committed upsert preceding canonical deletion retains per-key
   order. The cache key column is non-indexed; its equality and logical uniqueness are

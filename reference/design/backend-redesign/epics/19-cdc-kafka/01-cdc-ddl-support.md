@@ -49,6 +49,12 @@ workflow.
 8. Grant the connector principal only the provider replication/CDC reads and heartbeat
    singleton read/update access needed by the generated query; grant no document-table
    write through this setup.
+9. Provide the 19-00 provider adapter with qualified, least-privilege metadata queries for
+   source-history monitoring. PostgreSQL exposes the expected logical slot/publication,
+   retained WAL range, and invalidation/loss state. SQL Server exposes every expected
+   capture instance and job, retained minimum/maximum LSN range, configured cleanup
+   retention, and current capture/cleanup status. These queries observe artifacts only;
+   they never recreate or advance them.
 
 ## Acceptance Evidence
 
@@ -72,6 +78,9 @@ workflow.
 - Eligibility tests prove first-time provider setup runs only for a new database with the
   complete current E18 inventory, later exact-match validation remains idempotent, and
   neither path serves as an upgrade for a legacy cache schema.
+- Provider metadata tests prove the continuity queries distinguish healthy retained history
+  from missing/re-created artifacts, invalidated/lost PostgreSQL slots, expired SQL Server
+  LSN positions, and unavailable evidence without mutating provider state.
 
 ## Out of Scope
 

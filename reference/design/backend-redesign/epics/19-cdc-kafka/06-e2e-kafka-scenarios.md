@@ -45,6 +45,11 @@ coverage against the actual provisioned data store and routed public topic.
 7. Exercise combined readiness from an otherwise idle database and retain diagnostics for
    the captured provider barrier, heartbeat/capture progress, and committed connector
    source offset without exposing raw physical identifiers.
+8. Add focused post-enablement source-history failure scenarios. For PostgreSQL, stop the
+   connector and make the binding-derived slot unable to resume from its committed offset.
+   For SQL Server, stop the connector and advance or replace a capture range so the
+   committed position is no longer retained. Prove status durably latches loss, keeps the
+   old connector stopped, and emits no recovery snapshot or new topic generation.
 
 ## Acceptance Evidence
 
@@ -70,6 +75,10 @@ coverage against the actual provisioned data store and routed public topic.
 - A negative setup case proves an unbound already-provisioned database is rejected before
   any CDC binding or external artifact is created; E2E setup never exercises an implicit
   schema upgrade.
+- Source-history failure cases prove `RUNNING`/lag cannot mask a provider-history gap,
+  `SourceHistoryContinuityLost` survives controller restart, and neither provider recreates
+  artifacts, resets offsets, or resnapshots the existing public topic. The scenario reports
+  the binding as terminal and unrecoverable in v1.
 
 ## Out of Scope
 

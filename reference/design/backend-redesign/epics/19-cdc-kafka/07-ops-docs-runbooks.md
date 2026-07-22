@@ -40,7 +40,11 @@ relational CDC capability without redefining its architecture or contracts.
    consumer security settings, durable history producer, single-partition infinite-retention
    topic profile, connector-only ACLs, and `include.schema.changes=false`. Explain that the
    internal history is required even though optional public schema-change events are
-   disabled; PostgreSQL has no corresponding history topic.
+   disabled; PostgreSQL has no corresponding history topic. Document the provider source-
+   history monitor: PostgreSQL slot/publication identity, status, and retained WAL range;
+   SQL Server capture instances/jobs, retained LSN ranges, configured cleanup retention,
+   and remaining margin. Explain that SQL Server's default cleanup retention is 4,320
+   minutes (72 hours), not an indefinite recovery window.
 3. Document public Kafka compact-only topic/ACL/consumer operation, including why segment
    time/size deletion through a cleanup policy containing `delete` is prohibited without a
    separately defined authoritative bootstrap source,
@@ -52,6 +56,10 @@ relational CDC capability without redefining its architecture or contracts.
    cleaner-health and earliest-to-end scan-volume observation; live-key count alone is not
    sufficient evidence. Distinguish deployment validation of topic retention from the
    independently operated consumer's responsibility to prove its runtime conformance.
+   Require incremental consumers to renew durable per-partition end-offset-barrier evidence
+   at least every 24 hours. A stale, missing, corrupt, partition-mismatched, or otherwise
+   uncertain checkpoint invalidates all local state and requires another complete bounded
+   bootstrap; never instruct a consumer to resume incrementally from it.
    Also document `maxRecordBytes` as a mutable operational ceiling rather than a universal
    schema maximum or immutable binding field; its pre-publication producer enforcement;
    explicit `buffer.memory` and worker-heap requirements; required
@@ -67,16 +75,18 @@ relational CDC capability without redefining its architecture or contracts.
    consistent; it neither gates normal traffic nor certifies another exact baseline. State
    that v1 provides no production cross-replica/external-writer gate or transaction drain.
    Warn that the HTTP request-body limit alone is not the record-size bound.
-4. Document connector restart, offset reset, resnapshot, topic recreation, cache rebuild,
-   target migration/retirement, cache-ahead invariant recovery, and explicit destructive
-   cleanup. A possibly published higher cache version requires a new binding generation,
-   topic, consumer state namespace, and snapshot rather than an in-place lower-version
-   correction. The old connector and cache writers are stopped before the full cache and
-   durable latch are cleared together. Treat SQL Server schema history and Connect offsets
-   as one recovery unit: ordinary stop retains both; missing or unreadable history with
-   retained offsets fails closed; and an explicit destructive resnapshot stops the
-   connector before resetting/removing both. Never advise recreating an empty history topic
-   around retained offsets.
+4. Document connector restart, cache rebuild, target migration/retirement, cache-ahead
+   invariant recovery, source-history diagnosis, and explicit destructive cleanup. A
+   possibly published higher cache version requires the deferred new-namespace workflow
+   rather than an in-place lower-version correction. Treat SQL Server schema history and
+   Connect offsets as one retained lifecycle unit on ordinary stop. Before every post-
+   enablement start/resume, require source-history status `healthy`; `unknown` remains
+   stopped and fail-closed. Missing or re-created provider artifacts, expired retained
+   history, or inconsistent history/offsets durably latch `SourceHistoryContinuityLost`,
+   stop the connector, and make that binding unrecoverable in v1. Never advise resetting
+   offsets, recreating a slot/capture/history topic, or resnapshotting the existing public
+   topic. Destructive retirement may remove those artifacts but does not recover the
+   binding.
 5. Document binding-state location, backup, normal-stop retention, fail-closed missing
    state, explicit adoption, cleanup ordering, target/source mismatch diagnosis, and
    new-generation migration. Explain that a new independent target created from a
@@ -84,13 +94,17 @@ relational CDC capability without redefining its architecture or contracts.
    before binding, while a rollback or restore that replaces an existing source uses the
    guarded identity-rotation and new-binding/topic recovery workflow. Never instruct
    operators to rewrite a binding in place or rotate identity during an ordinary setup
-   retry.
+   retry. Do not present planned source replacement as a way to clear or reuse a binding
+   whose source-history loss is already latched.
 6. State explicitly that same-topic baseline-replacing correction and incompatible-contract
    cutover are deferred until a separately owned deployment capability can fence every DMS
    replica and external writer and drain admitted work. Cross-link the design-only safety
    constraints without presenting them as executable v1 runbooks. Link E18's
    representation-restamp utility only as an explicitly offline API/cache repair; do not
-   claim that it restores an exact CDC baseline after first-write admission.
+   claim that it restores an exact CDC baseline after first-write admission. State that a
+   safe recovery from source-history loss would also require a new binding generation,
+   topics, consumer state namespace, and snapshot, and that this is a deferred future
+   workflow rather than a v1 procedure.
 7. Cross-link the canonical design and both ADRs instead of repeating their normative
    tables or algorithms.
 8. Document Debezium 3.6 P50/P95/P99 `MilliSecondsBehindSource` telemetry, the explicit
@@ -111,10 +125,13 @@ relational CDC capability without redefining its architecture or contracts.
   governed artifacts without binding state. It also covers a missing/stalled heartbeat,
   SQL Server capture-agent delay, missing/misconfigured/unreadable SQL Server schema
   history, malformed or ambiguous Connect source offsets, and a connector that is running
-  but remains below its post-audit provider barrier.
+  but remains below its post-audit provider barrier. It distinguishes temporary continuity
+  `unknown` from terminal `lost`, shows the last successful proof and remaining retention
+  margin, and never clears a loss latch through artifact recreation or offset changes.
 - Consumer-bootstrap troubleshooting covers cleaner degradation, retained-log growth,
   partition skew, slow durable-state writes, deadline exhaustion, invalid-state discard,
-  and capacity requalification before retrying production use.
+  expired or uncertain incremental-continuity evidence, and capacity requalification before
+  retrying production use.
 - Procedures distinguish initial offline readiness from later observational health. They
   require positive setup-controller evidence that a new database has not been published to
   writers, keep first-write admission closed through the initial barrier, and never claim
@@ -123,19 +140,23 @@ relational CDC capability without redefining its architecture or contracts.
   configuration removal.
 - Local teardown instructions distinguish ordinary stop from destructive volume removal
   and remove connector offsets plus the SQL Server schema-history topic and ACLs with the
-  other governed artifacts before their JSON binding records.
+  other governed artifacts, then remove terminal incident state immediately before/with
+  their JSON binding records.
 - Documentation identifies same-topic baseline replacement and incompatible-contract
   cutover as deferred and provides no v1 command sequence that could be mistaken for an
   implemented production write gate. Offline restamp guidance does not claim exact CDC
-  readiness.
+  readiness. It identifies source-history loss as terminal for the v1 binding and contains
+  no same-topic offset-reset, provider-artifact recreation, or resnapshot recovery steps.
 - Documentation distinguishes CDC from Change Queries and from response serialization.
 - Instructions never present a consumer reconstruction that exceeded 24 hours as valid,
-  even when the topic retains tombstones longer than seven days.
+  even when the topic retains tombstones longer than seven days, and never retain
+  incremental state whose 24-hour continuity proof is stale or uncertain.
 
 ## Out of Scope
 
 - Cloud-provider-specific managed Kafka instructions.
 - A production cross-replica/external-writer admission gate or transaction drain.
 - Exact baseline-replacing repair or contract cutover after first-write admission.
+- Recovery from provider source-history loss or replacement-namespace cutover.
 - Service availability or lag SLO commitments beyond the v1 consumer-bootstrap deadline.
 - Product-specific consumer implementation guidance beyond the public contract.

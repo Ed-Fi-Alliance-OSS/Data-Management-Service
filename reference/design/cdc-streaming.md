@@ -638,9 +638,9 @@ that case.
 
 Cache truncation, eviction, cleanup, and rebuild publish no domain tombstones.
 Reconciliation recreates upserts only for canonical documents that still exist. An
-intentional compacted-topic rebuild is a connector snapshot/topic recovery operation,
-not a cache-delete operation. Schema reprovisioning must not reuse cache rows across
-incompatible effective schemas.
+intentional compacted-topic rebuild would require the deferred new-topic cutover; it is not
+a cache-delete operation or a v1 same-topic snapshot. Schema reprovisioning must not reuse
+cache rows across incompatible effective schemas.
 
 ## Projection Health and Deployment-Owned CDC Readiness
 
@@ -717,6 +717,8 @@ Deployment automation evaluates end-to-end CDC component health for each binding
 - a running connector whose sole task is `RUNNING`, with completed snapshot/catch-up
   through the provider source-position barrier defined below, captured after DMS reported
   a sufficiently recent exact-zero audit,
+- deployment-owned source-history continuity status that is currently proven `healthy` and
+  has no terminal loss latch for the binding generation,
 - a second DMS projection-health observation that remains ready for the same source, and
 - connector lag within its configured threshold.
 
@@ -848,6 +850,67 @@ and its SQL Server
 and
 [heartbeat guidance](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-property-heartbeat-action-query).
 
+### Source-History Continuity
+
+The provider source-position barrier proves catch-up only while the source history needed
+to resume from the committed connector offset still exists. Connector `RUNNING` state,
+current or quantile lag, a recreated provider artifact with the expected name, and a new
+snapshot do not prove that no source changes were skipped. Deployment automation therefore
+checks source-history continuity before every connector start or resume after initial
+enablement and on every combined-status polling interval.
+
+The PostgreSQL check requires the binding-derived logical replication slot and publication
+to exist with their exact expected database, plug-in, and captured-table configuration. It
+compares the committed Debezium offset with the retained range of that same slot and rejects
+a missing, recreated, invalidated, or lost slot, a retained-WAL gap, or any state from which
+exact resume at the committed position cannot be proved. The monitor reads the provider's
+replication-slot status rather than assuming that automatic slot creation preserves
+history. Debezium documents that a newly created slot cannot supply the historical position
+of the prior slot and can therefore skip changes without reconstructing them.
+
+The SQL Server check requires every binding-derived capture instance and its capture and
+cleanup jobs to exist with the expected captured columns. For each capture instance it
+compares the committed Debezium position with the provider's retained minimum and maximum
+LSN range and rejects an expired position, missing or re-created capture instance, or any
+other unprovable gap. A stopped or failed capture/cleanup job is independently not ready but
+does not latch history loss while the exact retained range still covers the committed
+position. The monitor also reports the configured cleanup retention and remaining position
+margin; SQL Server's default cleanup retention is only 4,320 minutes (72 hours). SQL Server
+schema-history and Connect offset integrity remain additional required checks rather than
+substitutes for retained CDC rows. See
+[`sys.sp_cdc_add_job`](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-add-job-transact-sql?view=sql-server-ver17)
+and the Debezium
+[PostgreSQL connector history-loss guidance](https://debezium.io/documentation/reference/3.6/connectors/postgresql.html).
+
+The deployment-owned status has three continuity outcomes:
+
+- `healthy`: the exact resume position is currently proved for every required provider
+  source artifact;
+- `unknown`: a provider or Connect query is temporarily unavailable, times out, or returns
+  no authoritative result without disproving continuity. Combined readiness is false,
+  automation does not start or resume the connector, and an already failed/stopped connector
+  is not automatically restarted. A later check may return to `healthy` only with complete
+  affirmative evidence; and
+- `lost`: a required artifact was removed or re-created, the committed position fell
+  outside retained history, or a successful Connect query proves the established binding's
+  expected offset missing, malformed, or source-mismatched. Deployment state durably
+  latches `SourceHistoryContinuityLost` for that binding generation, stops the old connector,
+  and keeps combined readiness false. The latch cannot be cleared by later artifact
+  recreation, offset mutation, a healthy-looking lag value, or a snapshot.
+
+This latch affects CDC publication readiness only and does not change DMS request routing.
+A failure for one binding does not stop unrelated bindings.
+
+Source-history loss is unrecoverable in v1. Resetting or removing Connect offsets,
+re-creating a PostgreSQL slot or SQL Server capture instance, or snapshotting current rows
+into the existing public topic is prohibited: a current-state snapshot cannot emit
+tombstones for documents deleted before the snapshot and can therefore preserve stale
+state in that topic's consumers. Safe recovery would require a new binding generation,
+public and progress topics, SQL Server schema-history topic when applicable, fresh consumer
+state namespace, and snapshot. That baseline-replacing cutover is deferred from v1. The old
+binding remains terminal; provisioning or migrating to a replacement database and namespace
+requires a separately designed workflow.
+
 ## Deployment-Owned CDC Target and Physical Source Binding
 
 Each logical public instance topic maps to exactly one physical database containing the
@@ -942,6 +1005,13 @@ fixed serialized-key/partition fixtures so an image or implementation change can
 silently change the mapping. A different algorithm requires a new token and binding
 generation; an implementation change that preserves every token-defined result does not.
 
+`SourceHistoryContinuityLost` is deliberately not an immutable binding field and is not
+stored by DMS. It is mutable deployment-owned incident state keyed by the complete binding
+identity and generation in the same durable backend. The state supports only idempotent
+false-to-true latching during the binding's lifetime; no ordinary validation, setup retry,
+artifact recreation, or status poll clears it. Explicit binding retirement removes it only
+after the connector and every governed artifact are retired in the required cleanup order.
+
 `maxRecordBytes` is intentionally absent from the binding record. It is a positive signed
 32-bit per-target operational ceiling for the pinned Kafka serialization and one-record
 produce-request framing, not a claim about the largest valid document across configurable
@@ -993,6 +1063,16 @@ parallelism or throughput before production use if repeated scans cannot meet th
 The fixed 24-hour deadline leaves at least six days between the consumer SLA and the v1
 tombstone-retention minimum.
 
+After bootstrap, the consumer renews durable continuity evidence at least once every 24
+hours by capturing a new end-offset barrier for every partition and durably applying through
+it. An idle partition may renew evidence with an unchanged end offset. Failure to renew,
+loss or corruption of the checkpoint, an unexpected partition assignment, or any other
+uncertainty immediately invalidates the consumer's entire local state. It stops advertising
+that state, discards it, and repeats the complete earliest-offset bootstrap within the same
+24-hour deadline; it never resumes incrementally from the uncertain checkpoint. This rule
+prevents an incremental consumer that was absent beyond tombstone retention from retaining
+a document whose tombstone Kafka has already compacted away.
+
 Each independently operated consumer owns its conformance evidence. Before production use,
 it capacity-tests the largest retained topic log it claims to support, including
 dirty/uncompacted records, partition skew, maximum-sized records, durable consumer-state
@@ -1009,6 +1089,8 @@ generation under a deployment-owned persistent state root, with the default layo
 ```text
 eng/docker-compose/.cdc-state/bindings/
   {filesystemSafeDeploymentKey}/{instanceKey}/{generation}.json
+eng/docker-compose/.cdc-state/incidents/
+  {filesystemSafeDeploymentKey}/{instanceKey}/{generation}.json
 ```
 
 `instanceKey` is the deployment-controlled Kafka-safe opaque identifier from the topic
@@ -1016,8 +1098,10 @@ contract; it does not contain a tenant or other display name. Path components ar
 filesystem-safe encodings rather than unsanitized administrative values. `.cdc-state`
 must be ignored by Git and is separate from
 `.bootstrap/bootstrap-manifest.json`; the bootstrap manifest remains prepared-input
-handoff, not mutable CDC control-plane state. JSON files use owner-only permissions where
-the platform supports them. The local implementation is supported only when one
+handoff, not mutable CDC control-plane state. The incident file is absent until terminal
+source-history loss is latched and contains only binding identity, latch time, provider-safe
+failure category, and sanitized position metadata. JSON files use owner-only permissions
+where the platform supports them. The local implementation is supported only when one
 deployment controller owns a persistent filesystem. Production or
 multi-controller automation stores the same logical record in its existing durable state
 backend, such as remote infrastructure state or operator state, with atomic create or
@@ -1037,8 +1121,8 @@ Binding creation and cleanup follow a fail-closed order:
    source and every retained artifact.
 4. On retirement, either retain the binding record with every retained governed
    artifact, or delete every governed topic, offset, ACL, PostgreSQL slot/publication,
-   and SQL Server capture artifact before deleting the binding record. A normal process
-   restart or stack stop deletes neither.
+   and SQL Server capture artifact before deleting the terminal incident state and binding
+   record. A normal process restart or stack stop deletes neither.
 
 The binding record lives at least as long as any governed artifact. Local teardown may
 remove it only in the same destructive volume-removal workflow that removes all of those
@@ -1211,10 +1295,12 @@ contract and is not an operator-configurable v1 exception.
 distinguishes the required internal history store from optional public schema-change
 events. Normal connector stop or restart retains the history topic and Connect source
 offsets. Missing, unreadable, empty-when-offsets-exist, or misconfigured history makes the
-connector not ready; automation never recreates it silently around retained offsets. An
-explicit destructive recovery stops the connector and resets or removes its offsets and
-history together before a controlled initial snapshot. Binding retirement removes the
-history topic and its ACLs with the connector and offsets before deleting binding state.
+connector not ready; automation never recreates it silently around retained offsets. After
+initial enablement, missing or inconsistent history or offsets participates in the
+source-history continuity check and may terminally latch the binding. V1 provides no
+destructive same-binding recovery or controlled resnapshot for that condition. Binding
+retirement removes the history topic and its ACLs with the connector and offsets before
+deleting binding state.
 
 Provider CDC/key setup is opt-in and does not run during ordinary relational provisioning
 when CDC is not selected.
@@ -1524,6 +1610,11 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   never placed in `.bootstrap/bootstrap-manifest.json`.
 - Binding reservation and registration are idempotent for an exact binding match and
   fail closed for missing or mismatched state around existing artifacts.
+- After initial enablement, bootstrap/status automation checks provider source-history
+  continuity before every connector start/resume and on each status interval. It leaves an
+  `unknown` connector stopped until affirmative evidence returns and durably terminates a
+  binding whose continuity is `lost`; it never resets offsets or resnapshots the existing
+  public topic.
 - Topic provisioning applies the explicit durability profile above to the public and
   progress topics and to the SQL Server schema-history topic when applicable. The local
   single-broker default is replication factor one with `min.insync.replicas=1`;
@@ -1566,8 +1657,8 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   against that same database before issuing writes it expects to consume.
 - A normal local stop retains binding, connector, Kafka offsets, and every governed topic.
   Destructive local volume teardown removes the SQL Server history topic and ACLs with the
-  connector and offsets, then removes the remaining governed artifacts, and deletes the
-  binding record last.
+  connector and offsets, then removes the remaining governed artifacts, and deletes any
+  terminal incident state and the binding record last.
 
 Production-like automation may repeat this workflow only while initially provisioning each
 new deployment-selected CDC database and while it can prove that the database has not been
@@ -1665,7 +1756,8 @@ Deployment-owned CDC status additionally covers binding presence and match, conn
 running state, current lag plus Debezium 3.6 P50/P95/P99 source-lag telemetry, last error,
 snapshot completion, heartbeat/capture progress, the provider barrier and committed
 Connect source offset in sanitized form, existing artifacts without binding state, source
-mismatch, and generation migration state.
+mismatch, source-history continuity outcome and remaining provider-retention margin, the
+durable terminal loss latch, and generation migration state.
 
 Use provider, safe project/resource identity, failure category, target-resolution state,
 and opaque data-store identity only where cardinality policy permits. Never log
@@ -1675,19 +1767,21 @@ names, or unsanitized physical identifiers.
 The deployment status operation identifies binding generation, connector,
 provider/source, public and progress topics, the SQL Server schema-history topic when
 applicable, PostgreSQL slot or SQL Server capture instance, DMS projection health, snapshot
-state, lag, and last error. A failure for one target does not conceal peer status or stop
+state, lag, source-history continuity outcome and last successful proof time, terminal loss
+latch, and last error. A failure for one target does not conceal peer status or stop
 unrelated DMS API instances.
 
 Runbooks cover connector restart, cache rebuild, same-topic compatible projection repair,
 cache-ahead invariant diagnosis and the internal-only/downstream-state recovery split,
-ordinary monotonic projection lag, offset reset, resnapshot, topic recreation,
-progress-topic diagnosis, SQL Server schema-history recovery, target migration/retirement,
-and provider artifact cleanup.
+ordinary monotonic projection lag, source-history continuity monitoring, progress-topic
+diagnosis, SQL Server schema-history diagnosis, target migration/retirement, and provider
+artifact cleanup.
 They document the seven-day public-topic tombstone-retention minimum and the 24-hour
 consumer-bootstrap deadline, how a consumer captures and completes an end-offset barrier,
 how to capacity-test the largest supported retained log rather than only its live-key count,
 how to observe cleaner health and earliest-to-end scan volume, and why an over-deadline
-reconstruction must be discarded rather than advertised as valid.
+reconstruction or stale incremental-continuity proof must be discarded rather than
+advertised as valid.
 They document the shipped projector defaults, how to tune intervals, page size, target
 concurrency, and maximum audit age, and how to identify API-resource contention or an
 audit that cannot complete within its readiness window.
@@ -1696,9 +1790,11 @@ cleanup ordering, and new-generation source migration; they never repair a misma
 rewriting an immutable binding record. They state that same-topic baseline replacement and
 incompatible-contract cutover are deferred until an owned cross-replica/external-writer
 fence exists. The representation-restamp utility is documented only for an explicitly
-offline data store and does not certify another exact CDC baseline. Offset reset and
-resnapshot can replay current document state but remain eventual recovery after first-write
-admission.
+offline data store and does not certify another exact CDC baseline. They state that source-
+history `unknown` is fail-closed, source-history `lost` durably terminates the v1 binding,
+and offset reset, provider-artifact recreation, or resnapshot into the existing topic is not
+a recovery path. A replacement generation/topic/consumer namespace is a deferred future
+workflow, not a v1 runbook.
 Topic, offset, ACL, slot, and capture deletion is destructive and always explicit; removal
 from configuration is not cleanup authority.
 
@@ -1762,6 +1858,18 @@ and setup-controller restart cannot bypass the sequence or publish the database 
 CDC-ready. Tests after first-write admission treat a later ready result as eventual health
 and never as another exact baseline.
 
+Source-history continuity tests prove a transiently unavailable provider reports `unknown`,
+keeps combined readiness false, and cannot start or resume the connector until complete
+evidence returns. PostgreSQL tests cover a missing, re-created, invalidated, or lost slot and
+a committed offset outside retained WAL. SQL Server tests cover a missing or re-created
+capture instance, a committed position below retained CDC history, and missing or
+inconsistent schema history and offsets. A stopped/failed capture or cleanup job remains a
+nonterminal fail-closed health condition while retained history is affirmatively proved.
+Proven loss durably latches
+`SourceHistoryContinuityLost`, stops the connector, survives controller restart, and cannot
+be cleared by recreating artifacts, changing offsets, or requesting a snapshot. No test
+publishes a recovery snapshot into the old public topic or reuses its consumer namespace.
+
 Deployment-state tests cover atomic first creation, exact-match retry, immutable-field
 mismatch including attempted partition-count or `partitionerAlgorithm` changes, rejection
 of a public topic configured with a cleanup policy that includes
@@ -1776,6 +1884,12 @@ repairs a mismatch by rewriting a binding, changes a topic's partition count or
 Operational-policy tests prove a downstream-first `maxRecordBytes` increase retains the
 binding and topics, validates consumer/broker/replica/topic capacity before producer
 request/buffer-memory changes, and remains not ready after any partial rollout.
+
+Consumer-conformance tests use a controllable clock and partition barriers to prove an
+incremental consumer renews durable continuity evidence at least every 24 hours. A stale,
+missing, corrupt, or partition-mismatched checkpoint invalidates and discards all local
+state, then requires the complete bounded earliest-offset bootstrap before state is
+advertised again.
 
 Initial-enable tests prove a freshly created database with the complete current E18 schema
 can proceed, a reserved exact binding can retry idempotently, and any unbound

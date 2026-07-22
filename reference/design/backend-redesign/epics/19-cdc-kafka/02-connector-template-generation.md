@@ -13,6 +13,7 @@ related:
 - [Connector transform pipeline](../../../cdc-streaming.md#connector-transform-pipeline)
 - [Connector topology and provider setup](../../../cdc-streaming.md#connector-topology-and-provider-setup)
 - [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
+- [Source-history continuity](../../../cdc-streaming.md#source-history-continuity)
 - [Topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
 ## Outcome
@@ -34,7 +35,8 @@ source routing and serialized public contract using the separately published
    `partitionerAlgorithm`, and `contractVersion`. Accept the positive signed 32-bit
    `maxRecordBytes` ceiling and optional larger `producerBufferBytes` from mutable
    deployment-owned operational policy alongside database and Kafka credentials, Kafka
-   bootstrap/security settings, replication/capture identity, and snapshot behavior.
+   bootstrap/security settings and replication/capture identity. Snapshot behavior is not
+   free-form operator input.
 2. Generate one PostgreSQL or SQL Server connector configuration per DMS instance and
    immutable binding, without hard-coded instance values. Scope each connector to exactly
    one instance database and reject SQL Server configurations that select multiple
@@ -107,6 +109,13 @@ source routing and serialized public contract using the separately published
     or conflicting heartbeat properties.
 14. Emit and live-validate `statistics.metrics.enabled=true` for both providers so the
     Debezium 3.6 P50/P95/P99 `MilliSecondsBehindSource` telemetry remains available.
+15. Emit fixed `snapshot.mode=initial`, used only by 19-04 while the new database is offline
+    and source-history continuity has not yet been established. Reject `always`,
+    `when_needed`, ad hoc snapshot controls, or any other configuration that can silently
+    resnapshot an established binding. After initial enablement, the 19-00/19-04 lifecycle
+    gate must prove retained Connect offsets and `healthy` source-history continuity before
+    start or resume; missing offsets never authorize the connector to snapshot the existing
+    public topic.
 
 ## Acceptance Evidence
 
@@ -158,6 +167,11 @@ source routing and serialized public contract using the separately published
 - Rendering and live-configuration tests require
   `statistics.metrics.enabled=true`; image smoke tests expose P50/P95/P99 source-lag
   attributes on the Kafka Connect 4.3.0 runtime.
+- Rendering tests pin `snapshot.mode=initial` and reject
+  `always`, `when_needed`, ad hoc snapshot controls, or another automatic recovery mode.
+  Restart smoke tests prove an established binding cannot start with missing offsets or
+  non-`healthy` source-history continuity and does not emit a replacement snapshot into the
+  existing public topic.
 - A pinned-image smoke test proves the configured transform class loads; detailed
   transform behavior remains owned by 19-03 and the shared contract suite in 19-05.
 
@@ -167,3 +181,4 @@ source routing and serialized public contract using the separately published
 - Full API-driven E2E scenarios.
 - Production credential provisioning.
 - Multi-database SQL Server connectors and source-aware topic routing.
+- Recovery snapshots or replacement-namespace cutover after source-history loss.

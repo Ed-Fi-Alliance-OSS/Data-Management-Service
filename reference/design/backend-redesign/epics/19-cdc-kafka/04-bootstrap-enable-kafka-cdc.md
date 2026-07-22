@@ -12,6 +12,7 @@ epic: TBD
 - [V1 readiness scope](../../../cdc-streaming.md#v1-readiness-scope)
 - [Local bootstrap and CI](../../../cdc-streaming.md#local-bootstrap-and-ci)
 - [Provider source-position barrier](../../../cdc-streaming.md#provider-source-position-barrier)
+- [Source-history continuity](../../../cdc-streaming.md#source-history-continuity)
 - [Deployment-owned physical source binding](../../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
 
 ## Outcome
@@ -87,12 +88,16 @@ controller can prove that the new database has not been published to any writer.
    missing/unknown algorithm token or live partitioner configuration that does not
    implement `kafka-murmur2-v1`. Use the 19-00 provider adapter and connector-offset
    REST response for the post-audit barrier; do not infer catch-up from task status or lag.
-   Treat a failed connector task as not ready regardless of offset or lag observations. ACL
-   and record-size verification must complete before connector registration and before
-   combined readiness can pass. A timeout leaves the target not ready and the database
-   offline. Setup may retry or explicitly abandon CDC and open first-write admission with
-   the target not ready; that database then becomes ineligible for later v1 first-time
-   enablement.
+   Treat a failed connector task as not ready regardless of offset or lag observations.
+   After initial enablement establishes continuity, stop or keep the connector stopped until
+   19-00 proves retained offsets and `healthy` provider source history before every start or
+   resume. Missing offsets, a terminal continuity latch, or `unknown` evidence never
+   authorizes the fixed `snapshot.mode=initial` connector to resnapshot the existing public
+   topic. ACL and record-size verification must complete before connector registration and
+   before combined readiness can pass. A timeout leaves the target not ready and the
+   database offline. Setup may retry or explicitly abandon CDC and open first-write
+   admission with the target not ready; that database then becomes ineligible for later v1
+   first-time enablement.
 8. Implement a coordinated in-place `maxRecordBytes` increase without reserving a new
    binding generation or topic: mark the target not ready, confirm consumer fetch and
    deserialization capacity, raise broker/replica and topic limits, then raise producer
@@ -103,8 +108,9 @@ controller can prove that the new database has not been published to any writer.
    derived SQL Server schema-history topic. Retain binding, connector offsets, ACLs, and
    every governed topic on normal stop. During explicit destructive volume teardown, stop
    the connector; remove its SQL Server history topic, ACLs, and offsets as one lifecycle
-   unit; remove the remaining governed artifacts; and delete binding state last. Never
-   delete or recreate an empty history topic automatically while retained offsets exist.
+   unit; remove the remaining governed artifacts; and delete any terminal incident state
+   immediately before/with the binding record last. Never delete or recreate an empty
+   history topic automatically while retained offsets exist.
    Also print the effective public-topic tombstone retention and the fixed 24-hour
    consumer-bootstrap deadline without claiming to certify an independently operated
    consumer.
@@ -116,8 +122,9 @@ controller can prove that the new database has not been published to any writer.
   successful fresh-database setup, repeated exact-binding retry, rejection of an unbound
   already-provisioned or legacy-schema database, timeout, normal-stop retention, missing
   binding around existing artifacts, missing offline-provisioning evidence, and destructive
-  teardown flows. Initial rejection occurs before binding, provider, topic, ACL, or
-  connector creation; a successfully enabled database remains restartable.
+  teardown flows including incident-before-binding cleanup. Initial rejection occurs before
+  binding, provider, topic, ACL, or connector creation; a successfully enabled database
+  remains restartable.
 - Sequence tests prove binding reservation precedes artifact creation and that external
   initial combined readiness follows the authoritative new/offline-database algorithm
   without a backfill epoch. They reject a previous zero audit, keep first-write admission
@@ -140,6 +147,10 @@ controller can prove that the new database has not been published to any writer.
   and malformed, snapshot, wrong-source, or ambiguous provider offsets. They also reject a
   floating or unexpected connector image and missing/conflicting
   `statistics.metrics.enabled=true`.
+- Restart tests prove an established connector remains stopped while source-history status
+  is `unknown`, starts only after affirmative `healthy` evidence, and remains permanently
+  stopped for a binding latched `SourceHistoryContinuityLost`. Missing offsets or recreated
+  provider artifacts never trigger an initial snapshot into the existing topic.
 - SQL Server provisioning tests require the exact derived history topic, one partition,
   infinite time/size retention without compaction, the active durability profile, and
   connector-only ACLs. Registration tests reject wrong-cluster bootstrap servers,
@@ -157,14 +168,16 @@ controller can prove that the new database has not been published to any writer.
   schema-history topic. They prove the SQL Server connector principal can write and recover
   its own history but not another binding's history.
 - Diagnostics identify infrastructure, REST, provider setup, projector completeness,
-  connector catch-up, target/source binding, ACL authorization, and mismatch failures
-  without secrets.
+  connector catch-up, source-history `unknown`/`lost`, terminal latch, target/source binding,
+  ACL authorization, and mismatch failures without secrets.
 
 ## Out of Scope
 
 - Managed-Kafka-provider deployment automation.
 - A production cross-replica/external-writer admission gate or transaction drain.
 - Exact baseline-replacing repair or contract cutover after first-write admission.
+- Recovery from provider source-history loss, including offset reset, same-topic resnapshot,
+  or replacement-namespace cutover.
 - Migration, upgrade, data movement, or initial CDC enablement for an already-provisioned
   database.
 - Runtime target discovery, retirement, or source replacement.

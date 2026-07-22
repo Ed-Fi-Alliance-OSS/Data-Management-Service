@@ -72,6 +72,12 @@ operation.
     offsets advance only after the heartbeat and every earlier retained record complete,
     and expose the fields required by the provider barrier adapter through the connector-
     offset REST endpoint.
+13. Add a consumer-conformance fixture with a controllable clock and durable per-partition
+    checkpoints. Prove incremental state renews its end-offset-barrier evidence at least
+    every 24 hours, including an idle topic with unchanged end offsets. A stale, missing,
+    corrupt, or partition-mismatched checkpoint must invalidate and discard all local state
+    and require the complete earliest-offset bootstrap before the fixture advertises valid
+    state again.
 
 ## Acceptance Evidence
 
@@ -124,6 +130,9 @@ operation.
   PostgreSQL `lsn_proc` or SQL Server commit/change/event-serial position reaches it. No
   heartbeat appears in the public topic, and returning `null` for the same heartbeat leaves
   the committed offset below the barrier and fails the test.
+- Consumer-continuity tests prove initial bootstrap is not permanent evidence, uncertain
+  state is never resumed incrementally, and a successful repeated bootstrap must satisfy the
+  same 24-hour barrier deadline before becoming valid.
 
 ## Out of Scope
 

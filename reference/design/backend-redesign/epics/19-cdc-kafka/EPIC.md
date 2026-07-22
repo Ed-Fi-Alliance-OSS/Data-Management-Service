@@ -28,7 +28,9 @@ completed E18 schema before DMS writes are admitted; retrofitting an existing da
 outside the epic. Exact combined readiness exists only in that initial offline workflow.
 After first-write admission, status is observational and eventually consistent. This epic
 does not implement a production cross-replica/external-writer gate or an exact
-baseline-replacing repair/cutover.
+baseline-replacing repair/cutover. It monitors provider source-history continuity and fails
+closed when continuity is unknown; proven loss durably terminates that v1 binding and has no
+v1 recovery workflow.
 
 ## Stories
 
@@ -92,6 +94,14 @@ implementation inputs.
   operational status rather than another exact baseline. A durable cache-ahead latch keeps
   combined readiness false across later source equality and process restart until explicit
   recovery.
+- Deployment status proves source-history continuity before connector start/resume and on
+  every status interval. PostgreSQL checks the binding-derived slot/publication and retained
+  WAL range; SQL Server checks every capture instance/job, retained LSN range, and remaining
+  cleanup margin. Unavailable evidence reports `unknown` and prevents start/resume. Proven
+  loss durably latches `SourceHistoryContinuityLost`, stops the connector, survives restart,
+  and cannot be cleared by artifact recreation, offset mutation, or resnapshot. V1 never
+  resnapshots the existing public topic after history loss and implements no replacement-
+  namespace cutover.
 - Connector templates and live registration pin `errors.tolerance=none`; a malformed
   retained record fails the task and combined readiness instead of being skipped as
   caught-up progress.
@@ -119,17 +129,22 @@ implementation inputs.
   fixed 24-hour bootstrap deadline. An over-deadline partial reconstruction is discarded
   and never advertised as valid; each independently operated consumer owns capacity
   evidence for the largest retained topic log it claims to support, not only its live-key
-  count.
+  count. Incremental consumers renew durable per-partition end-offset-barrier evidence at
+  least every 24 hours; stale, missing, corrupt, or uncertain evidence invalidates all local
+  state and requires another complete bounded bootstrap.
 - API deletion remains correct when projection is absent or failing.
 - Operator documentation covers supported initial offline setup, later eventual status,
   security, observation, restart/recovery, and explicit destructive cleanup. It identifies
   exact baseline replacement and incompatible-contract cutover as deferred rather than
-  presenting an unimplemented write gate as an operator procedure.
+  presenting an unimplemented write gate as an operator procedure, and identifies provider
+  source-history loss as terminal and unrecoverable in v1.
 
 ## Out of Scope
 
 - A production cross-replica/external-writer admission gate or transaction drain.
 - Exact baseline-replacing repair or contract cutover after first-write admission.
+- Recovery from provider source-history loss, including offset reset, same-topic resnapshot,
+  or new-generation/topic/consumer-namespace cutover.
 
 Anything excluded or deferred by the authoritative design is outside this epic unless a
 new decision record changes that design.
