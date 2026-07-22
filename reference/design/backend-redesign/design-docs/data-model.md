@@ -577,10 +577,11 @@ reconciliation publishes corrected higher-version rows. The exact opaque `Stream
 bytes are not independently frozen, but they must remain DMS-computed and coherent with
 the projected document.
 
-An incompatible key, field/type, delete-semantics, or document-contract change still uses
-a new versioned topic and `contractVersion`. Because the table stores only one
-`DocumentJson` and `StreamEtag`, simultaneous live publication of two incompatible
-contracts is outside v1; see the topic/message ADR's
+An incompatible key, field/type, delete-semantics, or document-contract change would
+require a new versioned topic and `contractVersion`. V1 does not implement that cutover
+after first-write admission. Because the table stores only one `DocumentJson` and
+`StreamEtag`, simultaneous live publication of two incompatible contracts is outside v1;
+see the topic/message ADR's
 [compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
 
 For a current canonical document, a missing cache row or a lower cached

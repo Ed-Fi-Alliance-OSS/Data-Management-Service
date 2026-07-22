@@ -198,8 +198,8 @@ public bytes uses the explicitly offline representation-restamp utility to advan
 `ContentVersion`; ordinary projection then publishes a higher-version record in the existing
 topic. Equal-version records are byte-identical duplicates and do not replace consumer
 state. A change to the public key, required field names or types, delete semantics, or
-document contract uses a new versioned topic after complete reprojection. See the
-topic/message ADR's
+document contract would require a new versioned topic and complete reprojection; v1 does
+not implement that cutover after first-write admission. See the topic/message ADR's
 [compatibility rule](cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
 The cache projection and freshness behavior is defined in
 [Relational CDC and Document Projection](../../cdc-streaming.md#freshness-and-reconciliation).

@@ -75,8 +75,10 @@ implementation inputs.
   `dms.Document`.
 - Exact source/cache differences establish repairable projection work without a durable
   workflow. Missing and behind rows repair automatically; observing an ahead row durably
-  latches the database, disables cache reads and writes, and requires explicit CDC-aware
-  full-cache recovery even if the source later reaches the same version.
+  latches the database and disables cache reads and writes even if the source later reaches
+  the same version. The explicit full-cache recovery is available only for a projection
+  proven internal-only. Possibly published or uncertain state remains latched and publication
+  remains stopped because new-namespace recovery is deferred in v1.
 - Projection absence or failure never compromises canonical API behavior or deletion.
 - Every byte-changing implementation correction without an ordinary domain write uses the
   dedicated out-of-band utility only while the selected data store is explicitly offline
