@@ -70,6 +70,8 @@ Describe "Get-CmsConnectionStringDatabaseName (exact-provider oracle via api-sch
         @{ Case = "PG Database/DB duplicate synonym is last-wins canonical";       Engine = "postgresql"; Conn = "Host=h;Database=first;DB=second";                                        Expect = "second" }
         @{ Case = "MSSQL Initial Catalog returns its database";                   Engine = "mssql";      Conn = "Server=dms-mssql,1433;Initial Catalog=edfi;User Id=sa;Password=p;TrustServerCertificate=true"; Expect = "edfi" }
         @{ Case = "MSSQL Database/Initial Catalog duplicate synonym is last-wins"; Engine = "mssql";      Conn = "Server=x;Database=first;Initial Catalog=second";                        Expect = "second" }
+        @{ Case = "PG trims leading whitespace around the Database value (motivates the registered-target trim guard)";   Engine = "postgresql"; Conn = "host=h;username=u;password=p;database= edfi_configurationservice";                       Expect = "edfi_configurationservice" }
+        @{ Case = "MSSQL trims trailing whitespace around the Database value (motivates the registered-target trim guard)"; Engine = "mssql";      Conn = "Server=x;Database=edfi_configurationservice ;User Id=sa;Password=p;TrustServerCertificate=true";       Expect = "edfi_configurationservice" }
     ) {
         @(Get-CmsConnectionStringDatabaseName -Engine $Engine -ConnectionString $Conn -SchemaToolPath $script:schemaTool) | Should -Be @($Expect)
     }
@@ -234,10 +236,9 @@ Describe "Resolve-EffectiveConfigRuntimeContract (historical regression matrix, 
                 Should -Throw "*MSSQL_SA_PASSWORD resolves to a blank value*"
         }
 
-        It "still returns the SA password and SQL Server datastore registration connection when the config service does not participate" {
-            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $false -DmsServiceIncluded $false -ResolvedConfigProvider $null -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!' -DatastoreDatabaseName 'edfi_datamanagementservice'
+        It "still returns the SA password when neither the config nor the DMS service participates" {
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $false -DmsServiceIncluded $false -ResolvedConfigProvider $null -ResolvedCmsConnectionString $null -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword 'abcdefgh1!'
             $contract.MssqlSaPassword | Should -Be 'abcdefgh1!'
-            $contract.DatastoreConnectionString | Should -Match 'edfi_datamanagementservice'
             $contract.OpenIddict | Should -BeNullOrEmpty
         }
     }
@@ -334,7 +335,7 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
             # its database is deliberately NOT the datastore-name oracle. Overriding it to the documented admin
             # 'postgres' database must leave the anchor on the datastore key - guarding the finding-27 regression.
             $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:fullFiles -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql' -ShellOverrides @{ DATABASE_CONNECTION_STRING_ADMIN = 'host=dms-postgresql;port=5432;username=postgres;password=p;database=postgres;' }
-            $resolved.DatastoreConnectionString | Should -Match 'database=postgres'
+            $resolved.DmsAdminConnectionString | Should -Match 'database=postgres'
             $resolved.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice' -Because "the anchor is the db-service datastore key, never the admin connection's database"
         }
 
@@ -369,6 +370,75 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
         It "SQL Server: an unrelated POSTGRES_DB_NAME shell override cannot become the anchor (engine-keyed selection)" {
             $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:mssqlFullFiles -EnvironmentFile $script:mssqlAnchorEnv -InfrastructureEngine 'mssql' -ShellOverrides @{ POSTGRES_DB_NAME = 'pg_rogue' }
             $resolved.TopologyDatastoreDatabaseName | Should -Be 'edfi_datamanagementservice' -Because "the anchor is selected by the explicit engine (MSSQL_DB_NAME), never positionally, so a PostgreSQL key cannot win on an MSSQL invocation"
+        }
+    }
+
+    Context "E2E safety-field resolution (the DMS_CONFIG_DATABASE_NAME topology seam) and local/published parity" {
+        # provision-e2e-database.ps1's DROP-DATABASE guard reads the protected CMS and DMS-admin targets from
+        # Compose (never a PowerShell ${...} parser). These prove Compose resolves the default-bearing seam
+        # DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME:-edfi_datamanagementservice} - through the config
+        # connection's NESTED ${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}} - the same way the running stack
+        # does, and that the safety-relevant fields are byte-identical across the local and published lanes (so
+        # the guard's fixed local compose set renders the same protected names regardless of image lane).
+        BeforeAll {
+            $script:pgLocal = @("-f", (Join-Path $script:composeRoot "postgresql.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot "local-config.yml"))
+            $script:pgPublished = @("-f", (Join-Path $script:composeRoot "postgresql.yml"), "-f", (Join-Path $script:composeRoot "published-dms.yml"), "-f", (Join-Path $script:composeRoot "published-config.yml"))
+            $script:mssqlLocal = @("-f", (Join-Path $script:composeRoot "mssql.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot "local-config.yml"))
+            $script:mssqlPublished = @("-f", (Join-Path $script:composeRoot "mssql.yml"), "-f", (Join-Path $script:composeRoot "published-dms.yml"), "-f", (Join-Path $script:composeRoot "published-config.yml"))
+            $script:safetyWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-safety-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $script:safetyWork -Force | Out-Null
+            $script:mssqlSafetyEnv = Join-Path $script:safetyWork ".env.mssql.merged"
+            ((Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.example') -Raw) + "`n" + (Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.mssql') -Raw)) | Set-Content -LiteralPath $script:mssqlSafetyEnv -NoNewline
+        }
+        AfterAll {
+            Remove-Item -LiteralPath $script:safetyWork -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        It "PostgreSQL: the CMS and DMS-admin targets resolve to the datastore key when POSTGRES_DB_NAME is present" {
+            $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgLocal -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql'
+            $r.CmsConnectionString | Should -Match 'database=edfi_datamanagementservice'
+            $r.DmsAdminConnectionString | Should -Match 'database=edfi_datamanagementservice'
+        }
+
+        It "PostgreSQL: the CMS target falls back through ':-edfi_datamanagementservice' when POSTGRES_DB_NAME is omitted" {
+            $envFile = Join-Path $script:safetyWork ".env.omitted"
+            ((Get-Content -LiteralPath $script:baseEnvFile -Raw) -replace '(?m)^POSTGRES_DB_NAME=.*$', '') | Set-Content -LiteralPath $envFile -NoNewline
+            $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgLocal -EnvironmentFile $envFile -InfrastructureEngine 'postgresql'
+            $r.CmsConnectionString | Should -Match 'database=edfi_datamanagementservice' -Because "the nested ':-edfi_datamanagementservice' default applies when the key is omitted"
+        }
+
+        It "PostgreSQL: the CMS target falls back through ':-' when POSTGRES_DB_NAME is blank" {
+            $envFile = Join-Path $script:safetyWork ".env.blank"
+            ((Get-Content -LiteralPath $script:baseEnvFile -Raw) -replace '(?m)^POSTGRES_DB_NAME=.*$', 'POSTGRES_DB_NAME=') | Set-Content -LiteralPath $envFile -NoNewline
+            $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgLocal -EnvironmentFile $envFile -InfrastructureEngine 'postgresql'
+            $r.CmsConnectionString | Should -Match 'database=edfi_datamanagementservice' -Because "Compose ':-' uses the default when the variable is blank"
+        }
+
+        It "PostgreSQL: a shell POSTGRES_DB_NAME override moves the CMS and DMS-admin targets (shell precedence)" {
+            $r = Invoke-ComposeConfigResolution -ComposeFiles $script:pgLocal -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql' -ShellOverrides @{ POSTGRES_DB_NAME = 'shell_seam_db' }
+            $r.CmsConnectionString | Should -Match 'database=shell_seam_db'
+            $r.DmsAdminConnectionString | Should -Match 'database=shell_seam_db'
+            $r.TopologyDatastoreDatabaseName | Should -Be 'shell_seam_db'
+        }
+
+        It "the Compose-rendered safety fields are identical between the local and published lanes for <Engine> (<Scenario>)" -ForEach @(
+            @{ Engine = 'postgresql'; Scenario = 'default'; Overrides = @{} }
+            @{ Engine = 'postgresql'; Scenario = 'shell override'; Overrides = @{ POSTGRES_DB_NAME = 'parity_pg' } }
+            @{ Engine = 'mssql'; Scenario = 'default'; Overrides = @{} }
+            @{ Engine = 'mssql'; Scenario = 'shell override'; Overrides = @{ MSSQL_DB_NAME = 'parity_mssql' } }
+        ) {
+            $localFiles = if ($Engine -eq 'mssql') { $script:mssqlLocal } else { $script:pgLocal }
+            $publishedFiles = if ($Engine -eq 'mssql') { $script:mssqlPublished } else { $script:pgPublished }
+            $envFile = if ($Engine -eq 'mssql') { $script:mssqlSafetyEnv } else { $script:baseEnvFile }
+
+            $local = Invoke-ComposeConfigResolution -ComposeFiles $localFiles -EnvironmentFile $envFile -InfrastructureEngine $Engine -ShellOverrides $Overrides
+            $published = Invoke-ComposeConfigResolution -ComposeFiles $publishedFiles -EnvironmentFile $envFile -InfrastructureEngine $Engine -ShellOverrides $Overrides
+
+            $published.TopologyDatastoreDatabaseName | Should -Be $local.TopologyDatastoreDatabaseName -Because "the topology anchor must not differ by image lane"
+            $published.CmsConnectionString | Should -Be $local.CmsConnectionString -Because "the CMS persistence connection must not differ by image lane"
+            $published.DmsAdminConnectionString | Should -Be $local.DmsAdminConnectionString -Because "the DMS admin connection must not differ by image lane"
+            $published.ConfigProvider | Should -Be $local.ConfigProvider
+            $published.DmsProvider | Should -Be $local.DmsProvider
         }
     }
 

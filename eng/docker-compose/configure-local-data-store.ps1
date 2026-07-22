@@ -21,7 +21,13 @@ param(
     # other phases. The Configuration Service uses the selected engine and shares the DMS
     # database in the default local topology.
     [ValidateSet("postgresql", "mssql")]
-    [string]$DatabaseEngine = "postgresql"
+    [string]$DatabaseEngine = "postgresql",
+
+    # Separate configuration-database topology. Only used to reject an explicit -DataStoreDatabaseName
+    # replacement that would collide with the dedicated configuration database (edfi_configurationservice)
+    # under the engine's identity policy; the datastore registration otherwise converges on the
+    # Compose-resolved topology anchor. Topology is never inferred from a name.
+    [switch]$SeparateConfigDatabase
 )
 
 $ErrorActionPreference = "Stop"
@@ -259,7 +265,10 @@ function Invoke-ConfigureLocalDataStore {
 
         [ValidateSet("postgresql", "mssql")]
         [string]
-        $DatabaseEngine = "postgresql"
+        $DatabaseEngine = "postgresql",
+
+        [switch]
+        $SeparateConfigDatabase
     )
 
     $resolvedEnvironmentFile = Resolve-ConfigureEnvironmentFile -Path $EnvironmentFile
@@ -283,6 +292,45 @@ function Invoke-ConfigureLocalDataStore {
     $multiTenancyEnabled = (Get-EnvValueOrDefault -EnvValues $envValues -Name "DMS_CONFIG_MULTI_TENANCY").Equals("true", [System.StringComparison]::OrdinalIgnoreCase)
     if ($schoolYears.Count -gt 0 -and $multiTenancyEnabled -and [string]::IsNullOrWhiteSpace($tenant)) {
         throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true."
+    }
+
+    # Resolve and VALIDATE the registered DMS datastore target BEFORE any CMS mutation (bootstrap client,
+    # tenant, and data-store creation below), so an invalid explicit -DataStoreDatabaseName replacement fails
+    # early rather than after partial CMS state is created. Skipped entirely for -NoDataStore, which selects an
+    # existing CMS record and creates no registration (so it neither resolves the Compose anchor nor needs a
+    # datastore connection). Registration converges on the Compose-resolved topology anchor (the single
+    # datastore-name authority, Resolve-RegisteredDatastoreTarget) unless an explicit replacement is supplied;
+    # the same one compose resolution yields the SQL Server SA password so the stored MSSQL connection matches
+    # the credential the container was initialized with, even under a shell override.
+    # NOTE: the local variable MUST NOT be named $datastoreDatabaseName - PowerShell variable names are
+    # case-insensitive, so that would alias the $DataStoreDatabaseName parameter and null it before the
+    # resolver reads it. Use a distinct name.
+    $registeredDatastoreName = $null
+    $dataStoreConnectionString = ""
+    if (-not $NoDataStore) {
+        $resolvedDatastoreCompose = Get-ComposeResolvedConfiguration `
+            -ComposeFiles @("-f", (Join-Path $PSScriptRoot $(if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }))) `
+            -EnvironmentFile $resolvedEnvironmentFile `
+            -ProjectName "dms-local" `
+            -InfrastructureEngine $DatabaseEngine
+        $registeredDatastoreName = Resolve-RegisteredDatastoreTarget `
+            -InfrastructureEngine $DatabaseEngine `
+            -RequestedDatabaseName $DataStoreDatabaseName `
+            -TopologyDatastoreDatabaseName $resolvedDatastoreCompose.TopologyDatastoreDatabaseName `
+            -SeparateConfigDatabase:$SeparateConfigDatabase
+
+        if ($DatabaseEngine -eq "mssql") {
+            # SQL Server form pointing at the dms-mssql container; PostgreSQL is left empty so Add-DataStore
+            # builds its connection string from the Postgres* values. provision-dms-schema.ps1 reads this back
+            # and translates the Docker host to the host-side mapped port before invoking SchemaTools.
+            $dataStoreConnectionString = New-DataStoreConnectionString `
+                -DatabaseEngine "mssql" `
+                -DbHost "dms-mssql" `
+                -Port 1433 `
+                -Username "sa" `
+                -Password $resolvedDatastoreCompose.MssqlSaPassword `
+                -DatabaseName $registeredDatastoreName
+        }
     }
 
     # DMS-1151: bootstrap admin token acquisition. Add-CmsClient is idempotent (existing
@@ -314,45 +362,13 @@ function Invoke-ConfigureLocalDataStore {
     }
 
     $postgresPassword = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_PASSWORD"
-    $postgresDbName =
-        if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-            Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_DB_NAME" -DefaultValue "edfi_datamanagementservice"
-        }
-        else {
-            $DataStoreDatabaseName
-        }
     $postgresUser = Get-EnvValueOrDefault -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+    # $registeredDatastoreName and $dataStoreConnectionString were resolved and validated above (before any CMS
+    # mutation, and skipped for -NoDataStore). $postgresDbName is $null on the -NoDataStore path, which returns
+    # an existing data store without registering one.
+    $postgresDbName = $registeredDatastoreName
     $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
     $cmsReadOnlyAccess = Resolve-CmsReadOnlyAccessFromEnv -EnvValues $envValues
-
-    # Resolve the data-store connection string stored in CMS for the DMS datastore. For MSSQL
-    # this is the SQL Server form pointing at the dms-mssql container; for PostgreSQL it is left
-    # empty so Add-DataStore builds its PostgreSQL connection string from the Postgres* values.
-    # provision-dms-schema.ps1 reads this string back and translates the Docker host to the
-    # host-side mapped port before invoking SchemaTools.
-    $dataStoreConnectionString = ""
-    if ($DatabaseEngine -eq "mssql") {
-        # The DMS datastore lives on the same SQL Server container; resolve its SA password by asking
-        # Docker Compose itself (the resolved db-service MSSQL_SA_PASSWORD, a shell export over the env
-        # file) so the datastore connection stored in CMS matches the credential the container was
-        # initialized with, even under a shell override. This is the datastore-registration lane (no
-        # Configuration Service / OpenIddict), so it reads only the credential, not the full runtime contract.
-        $mssqlPassword = (Get-ComposeResolvedConfiguration -ComposeFiles @("-f", (Join-Path $PSScriptRoot "mssql.yml")) -EnvironmentFile $resolvedEnvironmentFile -ProjectName "dms-local").MssqlSaPassword
-        $mssqlDbName =
-            if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
-                Get-EnvValueOrDefault -EnvValues $envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"
-            }
-            else {
-                $DataStoreDatabaseName
-            }
-        $dataStoreConnectionString = New-DataStoreConnectionString `
-            -DatabaseEngine "mssql" `
-            -DbHost "dms-mssql" `
-            -Port 1433 `
-            -Username "sa" `
-            -Password $mssqlPassword `
-            -DatabaseName $mssqlDbName
-    }
 
     if ($NoDataStore) {
         Write-Information "Selecting existing route-unqualified data store from CMS." -InformationAction Continue
@@ -441,4 +457,5 @@ Invoke-ConfigureLocalDataStore `
     -SchoolYearRange $SchoolYearRange `
     -DataStoreDatabaseName $DataStoreDatabaseName `
     -AddSmokeTestCredentials:$AddSmokeTestCredentials `
-    -DatabaseEngine $DatabaseEngine
+    -DatabaseEngine $DatabaseEngine `
+    -SeparateConfigDatabase:$SeparateConfigDatabase
