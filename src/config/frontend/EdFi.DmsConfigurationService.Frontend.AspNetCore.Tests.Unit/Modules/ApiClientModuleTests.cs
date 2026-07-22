@@ -922,7 +922,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_bad_request_for_nonexistent_application_on_insert()
+        public async Task It_returns_conflict_for_nonexistent_application_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -945,23 +945,21 @@ public class ApiClientModuleTests
             );
 
             // Assert
-            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseContent = await insertResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseContent);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "ApplicationId": [
-                      "Application with ID 999 not found."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Application with ID 999 not found."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -969,7 +967,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_bad_request_for_nonexistent_application_on_update()
+        public async Task It_returns_conflict_for_nonexistent_application_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -993,23 +991,21 @@ public class ApiClientModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseContent = await updateResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseContent);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "ApplicationId": [
-                      "Application with ID 999 not found."
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "Application with ID 999 not found."
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -1072,7 +1068,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_bad_request_for_nonexistent_data_store_on_insert()
+        public async Task It_returns_conflict_for_nonexistent_data_store_on_insert()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1095,23 +1091,21 @@ public class ApiClientModuleTests
             );
 
             // Assert
-            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseContent = await insertResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseContent);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "DataStoreIds": [
-                      "The following DataStoreIds were not found in database: 999, 888"
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "The following DataStoreIds were not found in database: 999, 888"
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -1119,7 +1113,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_bad_request_for_nonexistent_data_store_on_update()
+        public async Task It_returns_conflict_for_nonexistent_data_store_on_update()
         {
             // Arrange
             using var client = SetUpClient();
@@ -1143,27 +1137,609 @@ public class ApiClientModuleTests
             );
 
             // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             string responseContent = await updateResponse.Content.ReadAsStringAsync();
             var actualResponse = JsonNode.Parse(responseContent);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {
-                    "DataStoreIds": [
-                      "The following DataStoreIds were not found in database: 999, 888"
-                    ]
-                  },
-                  "errors": []
+                  "validationErrors": {},
+                  "errors": [
+                    "The following DataStoreIds were not found in database: 999, 888"
+                  ]
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Applications_Vendor_Cannot_Be_Resolved : ApiClientModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            // The application resolves, but its stored vendor does not. Because the vendor is derived
+            // from the application (not submitted by the caller), this is internal data inconsistency and
+            // must be a sanitized 500, not a 409 unresolved-reference.
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+        }
+
+        [Test]
+        public async Task It_returns_internal_server_error_on_insert()
+        {
+            // A message-bearing provider failure on the derived vendor must be sanitized out of the
+            // public response.
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureUnknown("sensitive vendor connection detail"));
+
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/apiClients",
+                new StringContent(
+                    """
+                    { "applicationId": 1, "name": "Test Client", "isApproved": true, "dataStoreIds": [1] }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            body.ToJsonString().Should().NotContain("sensitive vendor connection detail");
+        }
+
+        [Test]
+        public async Task It_returns_internal_server_error_on_update()
+        {
+            using var client = SetUpClient();
+            var response = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(
+                    """
+                    { "id": 1, "applicationId": 1, "name": "Updated Client", "isApproved": true, "dataStoreIds": [1] }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_ApiClient_Update_Repository_Reports_Not_Found : ApiClientModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test",
+                            ContactName = "Test",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test",
+                        }
+                    )
+                );
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+            // The precheck passes, the IdP client update runs, then the database row is gone (race).
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureNotFound());
+        }
+
+        [Test]
+        public async Task It_returns_not_found_consistent_with_the_precheck()
+        {
+            using var client = SetUpClient();
+            var response = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(
+                    """
+                    { "id": 1, "applicationId": 1, "name": "Updated Client", "isApproved": true, "dataStoreIds": [1] }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ApiClient not found"
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Repository_Lookup_Returns_FailureUnknown : ApiClientModuleTests
+    {
+        private static readonly ApiClientResponse ExistingApiClient = new()
+        {
+            Id = 1,
+            ApplicationId = 1,
+            ClientId = "test-client",
+            ClientUuid = Guid.NewGuid(),
+            Name = "Test",
+            IsApproved = true,
+            DataStoreIds = [1],
+        };
+
+        private static readonly ApplicationResponse ExistingApplication = new()
+        {
+            Id = 1,
+            ApplicationName = "Test Application",
+            ClaimSetName = "TestClaimSet",
+            VendorId = 1,
+            EducationOrganizationIds = [1],
+            DataStoreIds = [1],
+        };
+
+        [SetUp]
+        public void Setup()
+        {
+            // Happy-path baseline; each test overrides a single lookup to FailureUnknown and proves the
+            // precheck short-circuits with a sanitized 500 before any downstream mutation runs.
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(new ApiClientGetResult.Success(ExistingApiClient));
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(new ApplicationGetResult.Success(ExistingApplication));
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test",
+                            ContactName = "Test",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test",
+                        }
+                    )
+                );
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+        }
+
+        private static StringContent InsertBody() =>
+            new(
+                """{ "applicationId": 1, "name": "Test Client", "isApproved": true, "dataStoreIds": [1] }""",
+                Encoding.UTF8,
+                "application/json"
+            );
+
+        private static StringContent UpdateBody() =>
+            new(
+                """{ "id": 1, "applicationId": 1, "name": "Updated Client", "isApproved": true, "dataStoreIds": [1] }""",
+                Encoding.UTF8,
+                "application/json"
+            );
+
+        private static async Task AssertSanitized500(HttpResponseMessage response, string sensitiveMessage)
+        {
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            body.ToJsonString().Should().NotContain(sensitiveMessage);
+        }
+
+        private void AssertNoClientCreation() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        private void AssertNoClientUpdate() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public async Task It_returns_500_when_application_lookup_fails_on_insert()
+        {
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(new ApplicationGetResult.FailureUnknown("app lookup db error"));
+            using var client = SetUpClient();
+            var response = await client.PostAsync("/v3/apiClients", InsertBody());
+            await AssertSanitized500(response, "app lookup db error");
+            AssertNoClientCreation();
+        }
+
+        [Test]
+        public async Task It_returns_500_when_application_lookup_fails_on_update()
+        {
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(new ApplicationGetResult.FailureUnknown("app lookup db error"));
+            using var client = SetUpClient();
+            var response = await client.PutAsync("/v3/apiClients/1", UpdateBody());
+            await AssertSanitized500(response, "app lookup db error");
+            AssertNoClientUpdate();
+        }
+
+        [Test]
+        public async Task It_returns_500_when_apiclient_lookup_fails_on_update()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(new ApiClientGetResult.FailureUnknown("apiclient lookup db error"));
+            using var client = SetUpClient();
+            var response = await client.PutAsync("/v3/apiClients/1", UpdateBody());
+            await AssertSanitized500(response, "apiclient lookup db error");
+            AssertNoClientUpdate();
+        }
+
+        [Test]
+        public async Task It_returns_500_when_apiclient_lookup_fails_on_delete()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(new ApiClientGetResult.FailureUnknown("apiclient lookup db error"));
+            using var client = SetUpClient();
+            var response = await client.DeleteAsync("/v3/apiClients/1");
+            await AssertSanitized500(response, "apiclient lookup db error");
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_returns_500_when_apiclient_lookup_fails_on_reset()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(new ApiClientGetResult.FailureUnknown("apiclient lookup db error"));
+            using var client = SetUpClient();
+            var response = await client.PutAsync("/v3/apiClients/1/reset-credential", null);
+            await AssertSanitized500(response, "apiclient lookup db error");
+            A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>._))
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_ApiClient_Repository_Race_Reports_A_Missing_Reference : ApiClientModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            // The fixture instance (and its fakes) is shared across tests, so reset recorded calls per
+            // test to keep the exactly-once rollback assertions accurate.
+            Fake.ClearRecordedCalls(_identityProviderRepository);
+
+            // All prechecks pass; the repository then reports a missing reference (a race), so the branch
+            // under test is the repository-race path, not the precheck.
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test",
+                            ContactName = "Test",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test",
+                        }
+                    )
+                );
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<long[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1L]));
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>._))
+                .Returns(new ClientDeleteResult.Success());
+        }
+
+        private static StringContent InsertBody() =>
+            new(
+                """{ "applicationId": 1, "name": "Test Client", "isApproved": true, "dataStoreIds": [1] }""",
+                Encoding.UTF8,
+                "application/json"
+            );
+
+        private static StringContent UpdateBody() =>
+            new(
+                """{ "id": 1, "applicationId": 1, "name": "Updated Client", "isApproved": true, "dataStoreIds": [1] }""",
+                Encoding.UTF8,
+                "application/json"
+            );
+
+        [Test]
+        public async Task It_returns_409_and_rolls_back_when_insert_repository_reports_missing_application()
+        {
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(A<ApiClientInsertCommand>._, A<ApiClientCommand>._)
+                )
+                .Returns(new ApiClientInsertResult.FailureApplicationNotFound());
+            using var client = SetUpClient();
+            var response = await client.PostAsync("/v3/apiClients", InsertBody());
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["Application with ID 1 not found."]
+            );
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_returns_409_and_rolls_back_when_insert_repository_reports_missing_data_store()
+        {
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(A<ApiClientInsertCommand>._, A<ApiClientCommand>._)
+                )
+                .Returns(new ApiClientInsertResult.FailureDataStoreNotFound());
+            using var client = SetUpClient();
+            var response = await client.PostAsync("/v3/apiClients", InsertBody());
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["Data store does not exist."]
+            );
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_returns_409_when_update_repository_reports_missing_application()
+        {
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>._))
+                .Returns(new ApiClientUpdateResult.FailureApplicationNotFound());
+            using var client = SetUpClient();
+            var response = await client.PutAsync("/v3/apiClients/1", UpdateBody());
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["Application with ID 1 not found."]
+            );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .MustHaveHappened();
+        }
+
+        [Test]
+        public async Task It_returns_409_when_update_repository_reports_missing_data_store()
+        {
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>._))
+                .Returns(new ApiClientUpdateResult.FailureDataStoreNotFound());
+            using var client = SetUpClient();
+            var response = await client.PutAsync("/v3/apiClients/1", UpdateBody());
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "One or more referenced items could not be resolved. See 'errors' for details.",
+                errors: ["Data store does not exist."]
+            );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<long[]?>._,
+                        A<bool>._,
+                        A<string>._
+                    )
+                )
+                .MustHaveHappened();
         }
     }
 
