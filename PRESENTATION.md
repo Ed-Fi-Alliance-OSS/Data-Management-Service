@@ -199,46 +199,26 @@ sequenceDiagram
 
 ---
 
-# Why version 10 still matters
-
-Version 11 may belong to another document.
-
-“Latest” means:
+# The cursor finds work; repair proves completeness
 
 ```text
-latest current version for each DocumentId
+Student A current version = 10
+Student B current version = 11
 ```
 
-It does not mean “only documents at the database maximum version.”
+Both must be projected and published. Version 11 does not supersede version 10
+because versions are compared only within the same `DocumentId`.
 
----
+If Student A commits after the cursor passes 11, an incremental scan will not
+revisit version 10. Without repair, Student A could remain absent or stale in
+the cache—and therefore absent or stale in Kafka indefinitely.
 
-# Why the incremental cursor is insufficient
+Other below-cursor gaps can result from failed projection, restart timing, or
+cache loss and rebuild.
 
-Work can appear below the cursor because of:
-
-- late commits,
-- cache row loss,
-- cache truncation,
-- failed prior projection, or
-- restart timing.
-
-The cursor is an optimization, never completeness evidence.
-
----
-
-# Why repair is necessary
-
-`DocumentCache` is an asynchronous projection—not part of the API write transaction.
-
-It can become missing or behind because of:
-
-- late commits below the incremental cursor,
-- failed or interrupted projection,
-- cache loss or rebuild, and
-- races during materialization.
-
-Relational reads remain correct, but CDC completeness requires the cache to converge.
+- The cursor provides efficient candidate discovery.
+- Repair provides completeness.
+- Relational reads remain correct while repair converges the derived cache.
 
 ---
 
