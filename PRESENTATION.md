@@ -186,7 +186,7 @@ sequenceDiagram
     participant DB as Relational source database
 
     box DMS background reconciliation — one hosted loop
-        participant I as Incremental lane
+        participant I as Fast incremental lane
         participant F as Full-audit lane
     end
 
@@ -202,7 +202,7 @@ sequenceDiagram
 
 ---
 
-# The cursor finds work; repair proves completeness
+# Incremental scans find recent work; full audits prove completeness
 
 ```text
 Student A current version = 10
@@ -219,13 +219,15 @@ the cache—and therefore absent or stale in Kafka indefinitely.
 Other below-cursor gaps can result from failed projection, restart timing, or
 cache loss and rebuild.
 
-- The cursor provides efficient candidate discovery.
-- Repair provides completeness.
+- Incremental scans discover recent candidates efficiently.
+- Full audits find gaps anywhere; an exact-zero finishing observation proves
+  completeness at that instant.
+- Both lanes use the same repair path for missing or behind cache rows.
 - Relational reads remain correct while repair converges the derived cache.
 
 ---
 
-# What repair does
+# How either lane repairs a candidate
 
 ```mermaid
 flowchart LR
