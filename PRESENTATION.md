@@ -724,7 +724,7 @@ sequenceDiagram
     participant K as Kafka/Connect
     participant D as DMS projector
 
-    C->>DB: Provision E18 schema; keep writes closed
+    C->>DB: Provision E18 schema and keep writes closed
     C->>C: Create immutable binding
     C->>K: Create topics, ACLs, capture, connector
     C->>D: Start projector
