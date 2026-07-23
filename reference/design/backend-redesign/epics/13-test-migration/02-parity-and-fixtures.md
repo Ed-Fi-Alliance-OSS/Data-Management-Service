@@ -149,4 +149,4 @@ Intentional dialect differences are recorded on the catalog row with a rationale
 
 ## Gap ownership
 
-- **`DMS-1285`** owns adding the missing SQL Server no-profile executions — the thin MSSQL wrappers and any bounded MSSQL production defects they expose. No-profile family rows are recorded `KnownGap` with `MssqlGapOwner = DMS-1285` until those twins land.
+- **`DMS-1285`** owns adding the missing SQL Server no-profile executions — the thin MSSQL wrappers and any bounded MSSQL production defects they expose. The seven non-guarded no-profile families (full-surface create, changed-PUT omission semantics, write behavior, collection reorder, multi-batch collection, POST-as-update, rollback safety) run on both engines and are recorded `Both`; the guarded no-op family (`NoProfileGuardedNoOp` and its variants) is the remaining owed gap, recorded `KnownGap` with `MssqlGapOwner = DMS-1285` until its twins land.
