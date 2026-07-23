@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -85,49 +86,20 @@ public class ClaimsManagementModule : IEndpointModule
             }
 
             logger.LogError("Claims reload failed with {FailureCount} failures", status.Failures.Count);
-            return Results.Json(
-                new ReloadClaimsResponse(
-                    Success: false,
-                    Errors: status
-                        .Failures.Select(f => new ClaimsReloadError(
-                            ErrorType: f.FailureType,
-                            Message: f.Message
-                        ))
-                        .ToList()
-                ),
-                statusCode: 500
-            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         catch (JsonException ex)
         {
             logger.LogError(ex, "JSON error during claims reload");
-            return Results.Json(
-                new ReloadClaimsResponse(
-                    Success: false,
-                    Errors: new List<ClaimsReloadError>
-                    {
-                        new ClaimsReloadError(
-                            ErrorType: "JsonError",
-                            Message: "Invalid JSON format: " + ex.Message
-                        ),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.BadRequest(
+                "The request could not be processed.",
+                httpContext.TraceIdentifier
             );
         }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid operation during claims reload");
-            return Results.Json(
-                new ReloadClaimsResponse(
-                    Success: false,
-                    Errors: new List<ClaimsReloadError>
-                    {
-                        new ClaimsReloadError(ErrorType: "OperationError", Message: ex.Message),
-                    }
-                ),
-                statusCode: 500
-            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
     }
 
@@ -156,17 +128,9 @@ public class ClaimsManagementModule : IEndpointModule
 
         if (request?.Claims == null)
         {
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(
-                            ErrorType: "ValidationError",
-                            Message: "Claims JSON is required"
-                        ),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.DataValidation(
+                [new ValidationFailure("Claims", "Claims JSON is required")],
+                httpContext.TraceIdentifier
             );
         }
 
@@ -187,60 +151,28 @@ public class ClaimsManagementModule : IEndpointModule
             }
 
             logger.LogError("Claims upload failed with {FailureCount} failures", status.Failures.Count);
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    status
-                        .Failures.Select(f => new ClaimsUploadError(
-                            ErrorType: f.FailureType,
-                            Message: f.Message,
-                            Path: f.Path
-                        ))
-                        .ToList()
-                ),
-                statusCode: 400
-            );
+            return ToUploadValidationFailureResult(status.Failures, httpContext.TraceIdentifier);
         }
         catch (JsonException ex)
         {
             logger.LogError(ex, "JSON error during claims upload");
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(
-                            ErrorType: "JsonError",
-                            Message: "Invalid JSON format: " + ex.Message
-                        ),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.BadRequest(
+                "The request could not be processed.",
+                httpContext.TraceIdentifier
             );
         }
         catch (ArgumentException ex)
         {
             logger.LogError(ex, "Invalid argument during claims upload");
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(ErrorType: "ArgumentError", Message: ex.Message),
-                    }
-                ),
-                statusCode: 400
+            return FailureResults.BadRequest(
+                "The request could not be processed.",
+                httpContext.TraceIdentifier
             );
         }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid operation during claims upload");
-            return Results.Json(
-                UploadClaimsResponse.Failed(
-                    new List<ClaimsUploadError>
-                    {
-                        new ClaimsUploadError(ErrorType: "OperationError", Message: ex.Message),
-                    }
-                ),
-                statusCode: 500
-            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
     }
 
@@ -301,4 +233,60 @@ public class ClaimsManagementModule : IEndpointModule
             return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
     }
+
+    // Ordinal, service-owned structure literals produced by ClaimsUploadService that are safe to surface.
+    private const string MissingClaimSetsMessage = "Missing required 'claimSets' property";
+    private const string MissingClaimsHierarchyMessage = "Missing required 'claimsHierarchy' property";
+
+    /// <summary>
+    /// Deny-by-default mapping of upload failures to the Ed-Fi contract (HTTP 400 preserved). Only
+    /// field-validation failures carrying a non-whitespace path, and the two fixed service-owned
+    /// structure literals, are proven safe to surface in <c>validationErrors</c>. If every failure is
+    /// proven safe, a data-validation response containing only those entries is returned; if any
+    /// failure is unsafe (including a mixed safe/unsafe set, or an empty set), a generic bad-request
+    /// response with empty extension members is returned so no internal message or exception text can
+    /// leak.
+    /// </summary>
+    private static IResult ToUploadValidationFailureResult(List<ClaimsFailure> failures, string correlationId)
+    {
+        List<ValidationFailure> safeEntries = [];
+        bool anyUnsafe = false;
+
+        foreach (ClaimsFailure failure in failures)
+        {
+            if (
+                string.Equals(failure.FailureType, "Validation", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(failure.Path)
+            )
+            {
+                safeEntries.Add(new ValidationFailure(failure.Path.Trim(), failure.Message));
+            }
+            else if (
+                string.Equals(failure.FailureType, "Structure", StringComparison.Ordinal)
+                && StructureValidationKey(failure.Message) is string structureKey
+            )
+            {
+                safeEntries.Add(new ValidationFailure(structureKey, failure.Message));
+            }
+            else
+            {
+                anyUnsafe = true;
+            }
+        }
+
+        if (anyUnsafe || safeEntries.Count == 0)
+        {
+            return FailureResults.BadRequest("The request could not be processed.", correlationId);
+        }
+
+        return FailureResults.DataValidation(safeEntries, correlationId);
+    }
+
+    private static string? StructureValidationKey(string message) =>
+        message switch
+        {
+            MissingClaimSetsMessage => "claimSets",
+            MissingClaimsHierarchyMessage => "claimsHierarchy",
+            _ => null,
+        };
 }
