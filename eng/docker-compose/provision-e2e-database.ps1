@@ -217,7 +217,7 @@ function Assert-E2EDatabaseIsDedicated {
     # positive costs a rename and a false negative drops shared state.
     foreach ($target in $ProtectedDatabaseTarget) {
         if ($E2EDatabaseName -ieq [string]$target.DatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match the $($target.Source) ('$([string]$target.DatabaseName)')."
+            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and must stay separate from $($target.Source) ('$([string]$target.DatabaseName)')."
         }
     }
 }
@@ -454,8 +454,16 @@ Write-Information "Configuration: $Configuration" -InformationAction Continue
 # RuntimeConfigContract.Tests.ps1), so this local compose set renders the same protected names the E2E stack
 # runs under, regardless of image lane, without threading the caller's file selection through.
 Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
+# Anchor the safety compose files to this script's directory so `docker compose config` resolves them
+# regardless of the caller's working directory (the C# process-level tests deliberately launch from the
+# repository root). Absolute -f paths also set the Compose project directory to eng/docker-compose, so the
+# relative references inside those files resolve exactly as a normal stack start would.
 $safetyDatabaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
-$safetyComposeFiles = @("-f", $safetyDatabaseComposeFile, "-f", "local-dms.yml", "-f", "local-config.yml")
+$safetyComposeFiles = @(
+    "-f", (Join-Path $PSScriptRoot $safetyDatabaseComposeFile),
+    "-f", (Join-Path $PSScriptRoot "local-dms.yml"),
+    "-f", (Join-Path $PSScriptRoot "local-config.yml")
+)
 $resolvedCompose = Get-ComposeResolvedConfiguration `
     -ComposeFiles $safetyComposeFiles `
     -EnvironmentFile $environmentFilePath `
@@ -483,10 +491,14 @@ if ($adminDatabaseTargets.Count -ne 1) {
     throw "E2E database safety check expected exactly one provider-parsed DMS admin database target from DATABASE_CONNECTION_STRING_ADMIN, but found $($adminDatabaseTargets.Count). Refusing to reset '$e2eDatabaseName'."
 }
 
+# Name the concrete authority behind each protected target so the operator-facing diagnostic stays actionable
+# even though the names are now Compose/provider-resolved: the topology datastore anchor is the engine's own
+# db-service key, and the admin/readiness target is DATABASE_CONNECTION_STRING_ADMIN.
+$topologyAnchorKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
 $protectedDatabaseTargets = @(
-    @{ Source = "topology datastore anchor"; DatabaseName = $safetyContract.TopologyDatastoreDatabaseName }
+    @{ Source = "topology datastore anchor ($topologyAnchorKey)"; DatabaseName = $safetyContract.TopologyDatastoreDatabaseName }
     @{ Source = "CMS persistence target"; DatabaseName = $safetyContract.CmsDatabaseName }
-    @{ Source = "DMS admin/readiness target"; DatabaseName = $adminDatabaseTargets[0] }
+    @{ Source = "DATABASE_CONNECTION_STRING_ADMIN (the DMS admin/readiness target)"; DatabaseName = $adminDatabaseTargets[0] }
 )
 
 Assert-E2EDatabaseIsDedicated `
