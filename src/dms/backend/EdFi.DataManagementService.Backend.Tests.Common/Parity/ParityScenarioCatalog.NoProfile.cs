@@ -9,14 +9,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Common.Parity;
 
 public static partial class ParityScenarioCatalog
 {
-    private const string DmsGapOwner = "DMS-1285";
-
     /// <summary>
     /// DMS-984 no-profile relational-write scenarios: the eight canonical families and the variants
-    /// that decompose the behavior each family requires. DMS-1285 closed the SQL Server twins for the
-    /// seven non-guarded families (recorded Covered on both engines below); the guarded no-op family
-    /// is still PostgreSQL-only and owed its SQL Server twin by DMS-1285 (KnownGap). This catalog
-    /// records the closed parity matrix; it does not define or expand it.
+    /// that decompose the behavior each family requires. DMS-1285 closed the SQL Server twins for
+    /// all eight families, so every row is Covered on both engines; intentional dialect differences
+    /// (multi-batch shapes, the commit-window race scheduling) are recorded on their rows. This
+    /// catalog records the closed parity matrix; it does not define or expand it.
     /// </summary>
     internal static readonly ImmutableArray<ParityScenario> NoProfileScenarios =
     [
@@ -196,7 +194,7 @@ public static partial class ParityScenarioCatalog
             ProductionBoundary.GuardedNoOp,
             "RelationalWriteGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
-            mssqlFixture: null,
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_for_an_unchanged_put",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put",
@@ -209,6 +207,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "Put",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_for_an_unchanged_put",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put",
@@ -219,6 +218,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PostAsUpdate",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_preserves_the_existing_document_for_an_unchanged_post_as_update",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update",
@@ -229,6 +229,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PutCurrentStateRefresh",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version",
             [
                 "It_returns_update_success_without_a_repository_retry_when_current_state_refreshes_the_content_version",
                 "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_put",
@@ -240,6 +241,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PostAsUpdateCurrentStateRefresh",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version",
             [
                 "It_returns_update_success_without_a_repository_retry_when_post_as_update_refreshes_current_state_freshness",
                 "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_post_as_update",
@@ -251,6 +253,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PutAfterReorder",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_for_an_unchanged_put_after_reorder",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put_after_reorder",
@@ -261,6 +264,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PostAsUpdateAfterReorder",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_preserves_the_existing_document_for_an_unchanged_post_as_update_after_reorder",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update_after_reorder",
@@ -271,6 +275,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "StalePut",
             "Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_retries_and_returns_update_success_after_the_no_op_compare_goes_stale",
                 "It_preserves_the_rowsets_but_keeps_the_concurrent_content_version_bump",
@@ -281,6 +286,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "StalePostAsUpdate",
             "Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_retries_and_returns_update_success_for_a_stale_post_as_update_no_op_compare",
                 "It_preserves_the_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
@@ -291,24 +297,34 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PutCommitWindowRace",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race",
             [
                 "It_retries_the_no_op_after_the_commit_window_race_and_returns_update_success",
                 "It_preserves_rowsets_but_keeps_the_concurrent_content_version_bump",
             ],
             "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
+            diff: new DialectDifference(
+                "PostgreSQL snapshot reads let the first freshness check run while the competing bump is still uncommitted, so its twin starts the competing transaction before the repository call; SQL Server READ COMMITTED locking reads would block the repository's initial document lookup on the competing X-lock, so its twin begins the competing transaction inside the first freshness-check invocation and the inner freshness read blocks on that X-lock until the competing commit releases.",
+                "Commit-window scheduling and blocking behavior differ by dialect; behavioral parity is the unchanged observable outcome — freshness observations [false, true], exactly one retry, and the competing committed content version and stamp preserved."
+            )
         ),
         GuardedNoOp(
             "PostAsUpdateCommitWindowRace",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race",
             [
                 "It_retries_the_no_op_after_the_commit_window_race_and_preserves_the_existing_document",
                 "It_preserves_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
             ],
             "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
+            diff: new DialectDifference(
+                "PostgreSQL snapshot reads let the first freshness check run while the competing bump is still uncommitted, so its twin starts the competing transaction before the repository call; SQL Server READ COMMITTED locking reads would block the repository's initial document lookup on the competing X-lock, so its twin begins the competing transaction inside the first freshness-check invocation and the inner freshness read blocks on that X-lock until the competing commit releases.",
+                "Commit-window scheduling and blocking behavior differ by dialect; behavioral parity is the unchanged observable outcome — freshness observations [false, true], exactly one retry, and the competing committed content version and stamp preserved."
+            )
         ),
         // --- NoProfileMultiBatchCollection + variants ---------------------------------------
         NoProfile(
@@ -542,28 +558,23 @@ public static partial class ParityScenarioCatalog
         ),
     ];
 
-    // One row of the no-profile matrix. The stem derives the per-engine source files
-    // ("Postgresql{stem}.cs" / "Mssql{stem}.cs") and both engines execute the identically named test
-    // methods; the fixtures are recorded independently per engine. A null mssqlFixture records the
-    // row's SQL Server twin as still owed: MssqlCoverage=Gap owned by DMS-1285 (KnownGap) instead of
-    // Covered/Both.
+    // One row of the no-profile matrix, covered on both engines. The stem derives the per-engine
+    // source files ("Postgresql{stem}.cs" / "Mssql{stem}.cs") and both engines execute the
+    // identically named test methods; the fixtures are recorded independently per engine.
     private static ParityScenario NoProfile(
         string id,
         string contract,
         ProductionBoundary boundary,
         string stem,
         string pgFixture,
-        string? mssqlFixture,
+        string mssqlFixture,
         string[] methods,
         string sharedEntryPoint = "",
         string? boundaryDetail = null,
         string? notes = null,
         DialectDifference? diff = null
-    )
-    {
-        bool mssqlCovered = mssqlFixture is not null;
-
-        return new()
+    ) =>
+        new()
         {
             Id = id,
             Layer = ParityLayer.NoProfile,
@@ -572,15 +583,13 @@ public static partial class ParityScenarioCatalog
             Boundary = boundary,
             BoundaryDetail = boundaryDetail,
             PgsqlLocations = [PgLoc(stem, pgFixture, methods)],
-            MssqlLocations = mssqlCovered ? [MsLoc(stem, mssqlFixture!, methods)] : [],
+            MssqlLocations = [MsLoc(stem, mssqlFixture, methods)],
             PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = mssqlCovered ? EngineCoverage.Covered : EngineCoverage.Gap,
+            MssqlCoverage = EngineCoverage.Covered,
             DialectDifference = diff,
-            Classification = mssqlCovered ? ParityClassification.Both : ParityClassification.KnownGap,
-            MssqlGapOwner = mssqlCovered ? null : DmsGapOwner,
+            Classification = ParityClassification.Both,
             Notes = notes,
         };
-    }
 
     // Every variant names its own SharedEntryPoint: belonging to a canonical family does not resolve a contract
     // (a shared production boundary does not imply running the family's assertion helpers), so each variant must
@@ -644,8 +653,10 @@ public static partial class ParityScenarioCatalog
     private static ParityScenario GuardedNoOp(
         string variant,
         string pgFixture,
-        string[] pgMethods,
-        string sharedEntryPoint
+        string mssqlFixture,
+        string[] methods,
+        string sharedEntryPoint,
+        DialectDifference? diff = null
     ) =>
         NoProfile(
             $"NoProfileGuardedNoOp/{variant}",
@@ -653,8 +664,9 @@ public static partial class ParityScenarioCatalog
             ProductionBoundary.GuardedNoOp,
             "RelationalWriteGuardedNoOpTests",
             pgFixture,
-            mssqlFixture: null,
-            pgMethods,
-            sharedEntryPoint: sharedEntryPoint
+            mssqlFixture,
+            methods,
+            sharedEntryPoint: sharedEntryPoint,
+            diff: diff
         );
 }

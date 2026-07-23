@@ -200,26 +200,12 @@ public class Given_The_Parity_Scenario_Catalog
             .Should()
             .OnlyContain(s => s.Classification == ParityClassification.Both);
 
-    // The exact remaining owed SQL Server no-profile gap set after DMS-1285 Flip A: only the guarded
-    // no-op family (canonical row + 10 variants), each owed by DMS-1285. Rows are selected by
-    // MssqlCoverage == Gap — not by owner — so a row re-owned to a linked blocker ticket stays visible
-    // to this check (its pair would need to be enumerated here explicitly), and the whole no-profile
-    // layer is swept so a forgotten variant of an already-flipped family cannot silently remain a
-    // KnownGap (resolution validates only Covered rows).
-    private static readonly string[] ExpectedRemainingNoProfileMssqlGapPairs =
-    [
-        "NoProfileGuardedNoOp::DMS-1285",
-        "NoProfileGuardedNoOp/Put::DMS-1285",
-        "NoProfileGuardedNoOp/PostAsUpdate::DMS-1285",
-        "NoProfileGuardedNoOp/PutCurrentStateRefresh::DMS-1285",
-        "NoProfileGuardedNoOp/PostAsUpdateCurrentStateRefresh::DMS-1285",
-        "NoProfileGuardedNoOp/PutAfterReorder::DMS-1285",
-        "NoProfileGuardedNoOp/PostAsUpdateAfterReorder::DMS-1285",
-        "NoProfileGuardedNoOp/StalePut::DMS-1285",
-        "NoProfileGuardedNoOp/StalePostAsUpdate::DMS-1285",
-        "NoProfileGuardedNoOp/PutCommitWindowRace::DMS-1285",
-        "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace::DMS-1285",
-    ];
+    // The exact remaining owed SQL Server no-profile gap set after DMS-1285 Flip B: empty — every
+    // no-profile row runs on both engines. Rows are selected by MssqlCoverage == Gap — not by owner —
+    // so any future regression to Gap (or a blocker-owned row, whose (ScenarioId, owner) pair would
+    // need to be enumerated here explicitly) fails this exact-set sweep rather than hiding behind an
+    // owner filter (resolution validates only Covered rows).
+    private static readonly string[] ExpectedRemainingNoProfileMssqlGapPairs = [];
 
     [Test]
     public void It_records_exactly_the_remaining_no_profile_mssql_gap_rows_as_scenario_and_owner_pairs() =>
@@ -432,6 +418,27 @@ public class Given_The_Parity_Scenario_Catalog
                 "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted"
                     + " + NoProfileMultiBatchCollectionScenarios.AssertUpdateBatchPartitions"
             );
+    }
+
+    [Test]
+    public void It_records_the_commit_window_race_scheduling_dialect_difference()
+    {
+        // Phase 6 of DMS-1285 validated the commit-window race on SQL Server with unchanged shared
+        // outcomes; the scheduling/blocking difference that required the redesigned twin choreography
+        // is recorded on exactly these two rows.
+        foreach (
+            string id in (string[])
+                [
+                    "NoProfileGuardedNoOp/PutCommitWindowRace",
+                    "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace",
+                ]
+        )
+        {
+            ParityScenario row = _all.Single(s => s.Id == id);
+            row.DialectDifference.Should().NotBeNull("{0} pins the commit-window scheduling difference", id);
+            row.DialectDifference!.Description.Should().Contain("X-lock");
+            row.DialectDifference.Rationale.Should().Contain("[false, true]");
+        }
     }
 
     [Test]
