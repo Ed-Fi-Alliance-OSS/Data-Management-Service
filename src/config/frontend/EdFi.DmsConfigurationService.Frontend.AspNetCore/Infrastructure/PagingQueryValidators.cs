@@ -22,6 +22,13 @@ public abstract class PagingQueryValidator<T> : AbstractValidator<T>
 
     protected PagingQueryValidator(IReadOnlySet<string> allowedOrderByFields)
     {
+        // Deterministic, value-free allowed-field list: sorted ordinal-ignore-case so the message does not
+        // depend on HashSet enumeration order, and never echoes the supplied 'orderBy' value.
+        string allowedOrderByList = string.Join(
+            ", ",
+            allowedOrderByFields.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+        );
+
         RuleFor(q => q.Offset)
             .GreaterThanOrEqualTo(0)
             .When(q => q.Offset.HasValue)
@@ -38,10 +45,7 @@ public abstract class PagingQueryValidator<T> : AbstractValidator<T>
 
         RuleFor(q => q.OrderBy)
             .Must(ob => ob is null || allowedOrderByFields.Contains(ob))
-            .WithMessage(q =>
-                $"'orderBy' value '{q.OrderBy}' is not a valid field. "
-                + $"Allowed values: {string.Join(", ", allowedOrderByFields)}."
-            );
+            .WithMessage($"'orderBy' is not a valid field. Allowed values: {allowedOrderByList}.");
     }
 }
 

@@ -21,6 +21,7 @@ public static class FailureResponse
     private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
+    private static readonly string _parameterValidationType = $"{_typePrefix}:bad-request:parameter";
     private static readonly string _notFoundTypePrefix = $"{_typePrefix}:not-found";
     private static readonly string _conflictTypePrefix = $"{_typePrefix}:conflict";
     private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
@@ -151,6 +152,21 @@ public static class FailureResponse
                 // Normalize before grouping so failures that map to the same JSON path merge under one key.
                 .GroupBy(x => NormalizeToJsonPath(x.PropertyName))
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
+        );
+
+    // Query-parameter validation failure (400, urn:ed-fi:api:bad-request:parameter). Per the Ed-Fi Error
+    // Response Knowledge Base, invalid query parameters (e.g. limit/offset) use the "Parameter Validation
+    // Failed" contract with details in 'errors', distinct from request-body ("data") validation. The
+    // supplied error messages must already be sanitized (no rejected value echoed); validationErrors stays
+    // empty ({}) because the failures are query parameters, not request-document fields.
+    public static JsonNode ForParameterValidation(string[] errors, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "One or more query parameters were invalid. See 'errors' for details.",
+            type: _parameterValidationType,
+            title: "Parameter Validation Failed",
+            status: 400,
+            correlationId: correlationId,
+            errors: errors
         );
 
     public static JsonNode ForNonUniqueIdentity(

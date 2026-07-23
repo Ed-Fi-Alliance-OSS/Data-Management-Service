@@ -58,6 +58,31 @@ public class FailureResponseTests
     }
 
     [Test]
+    public void ForParameterValidation_ShouldReturnCorrectJsonNode()
+    {
+        // Arrange
+        string[] errors = { "'limit' must be greater than 0." };
+
+        // Act
+        var result = FailureResponse.ForParameterValidation(errors, CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]
+            ?.GetValue<string>()
+            .Should()
+            .Be("One or more query parameters were invalid. See 'errors' for details.");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+        result["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+        result["status"]?.GetValue<int>().Should().Be(400);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"].Should().BeOfType<JsonObject>();
+        result["validationErrors"]!.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Count.Should().Be(1);
+        result["errors"]![0]?.GetValue<string>().Should().Be("'limit' must be greater than 0.");
+    }
+
+    [Test]
     public void ForBadRequest_ShouldReturnCorrectJsonNode()
     {
         // Arrange
