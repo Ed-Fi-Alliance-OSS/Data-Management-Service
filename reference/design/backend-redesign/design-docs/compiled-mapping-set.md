@@ -567,7 +567,7 @@ For a read request targeting resource `R`:
      - Query: insert the output of the compiled “page DocumentId SQL” (which already applies filters + ordering + paging).
    - Execute one batched DB command that yields multiple result sets by concatenating:
      1) **keyset materialization SQL** (create/clear + insert `DocumentId`s),
-     2) a `SELECT` of `dms.Document` joined to the keyset (document UUID + stamps like `_etag`/`_lastModifiedDate` + resource key id), and
+     2) a `SELECT` of `dms.Document` joined to the keyset (document UUID + `ContentVersion` / `ContentLastModifiedAt` stamps used to compose `_etag` / `_lastModifiedDate` + resource key id), and
      3) one `SELECT` per `DbTableModel` in `ResourceReadPlan.Model.TablesInDependencyOrder`, using each table’s compiled `TableReadPlan.SelectByKeysetSql` (each `SELECT` joins the table to the keyset to return all rows for the page).
    - Read result sets in order using `DbDataReader.NextResult()` / `QueryMultiple`, mapping each result set to the corresponding table model in the same order used to build the batch.
    - Each `SelectByKeysetSql` must emit rows ordered by root document scope, then immediate parent scope where applicable, then `Ordinal`, so reconstitution can assemble arrays deterministically.

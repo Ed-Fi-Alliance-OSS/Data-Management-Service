@@ -99,6 +99,9 @@ CREATE INDEX IX_Document_ResourceKeyId_DocumentId
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
+
+CREATE INDEX IX_Document_ContentVersion_DocumentId
+    ON dms.Document (ContentVersion, DocumentId);
 ```
 
 **SQL Server**
@@ -134,6 +137,9 @@ CREATE INDEX IX_Document_ResourceKeyId_DocumentId
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
     ON dms.Document (CreatedByOwnershipTokenId);
+
+CREATE INDEX IX_Document_ContentVersion_DocumentId
+    ON dms.Document (ContentVersion, DocumentId);
 ```
 
 Notes:
@@ -144,8 +150,8 @@ Notes:
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
-  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
-- Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
+  - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
+- Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 
 ##### 1a) `dms.ChangeVersionSequence`
@@ -302,7 +308,55 @@ Descriptor update semantics:
 - Descriptor references remain stable because other resources reference the descriptor document by resolved descriptor identity/URI, not by copied descriptor metadata.
 - Therefore descriptor metadata updates do not participate in identity-propagation cascades for referring resources.
 
-##### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
+##### 4) `dms.DataStoreIdentity`
+
+Always-provisioned singleton physical identity for the logical database source.
+Provisioning inserts one random UUID only when the singleton row is absent; ordinary
+provisioning reruns do not update it. CDC binding, replacement, and recovery semantics are
+owned by
+[`cdc-streaming.md`](../../cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DataStoreIdentity (
+    DataStoreIdentitySingletonId smallint NOT NULL PRIMARY KEY,
+    SourceIdentity uuid NOT NULL,
+    CONSTRAINT CK_DataStoreIdentity_Singleton
+        CHECK (DataStoreIdentitySingletonId = 1)
+);
+
+INSERT INTO dms.DataStoreIdentity (DataStoreIdentitySingletonId, SourceIdentity)
+VALUES (1, gen_random_uuid())
+ON CONFLICT (DataStoreIdentitySingletonId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DataStoreIdentity (
+    DataStoreIdentitySingletonId smallint NOT NULL
+        CONSTRAINT PK_DataStoreIdentity PRIMARY KEY CLUSTERED,
+    SourceIdentity uniqueidentifier NOT NULL,
+    CONSTRAINT CK_DataStoreIdentity_Singleton
+        CHECK (DataStoreIdentitySingletonId = 1)
+);
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM dms.DataStoreIdentity
+    WHERE DataStoreIdentitySingletonId = 1
+)
+BEGIN
+    INSERT INTO dms.DataStoreIdentity (DataStoreIdentitySingletonId, SourceIdentity)
+    VALUES (1, NEWID());
+END;
+```
+
+The emitted SQL text remains deterministic even though the UUID is generated when the
+script is applied.
+
+##### 5) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
 Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database schema is provisioned for, and records the **exact project versions** present in that effective schema. On first use of a given database connection string, DMS uses this to validate that it has a matching mapping set for the database’s recorded fingerprint (cached per connection string; see **EffectiveSchemaHash Calculation** below).
 
@@ -469,35 +523,43 @@ Conformance tests (required):
   - and deterministic inclusion of `RelationalMappingVersion`.
 - Any intentional change to canonicalization or the hashed schema surface must update fixtures in a controlled “bless” workflow (see `ddl-generator-testing.md`).
 
-##### 5) `dms.DocumentCache` (optional, eventually consistent projection)
+##### 6) `dms.DocumentCache` (always-provisioned optional projection)
 
-Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
-
-This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
-
-- it is not purely a “cache-aside” optimization
-- when enabled, DMS should materialize documents into this table via a write-driven/background projector
-
-Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
-
-The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution,
-with `link` subtrees already present when link injection is compiled into the read plan.
-Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
-strip pass runs on the projected document immediately before serialization. The served `_etag` is
-then specific to that representation context: `profileCode`, `linkFlag`, and `contentCoding`
-participate in the request's `variantKey` (see
-[link-injection.md](link-injection.md#cache-and-etag)).
-
-Update tracking note: `dms.DocumentCache` stores the `ContentVersion` associated with the cached
-document, not one reusable `_etag`. Cache reads validate freshness against the current
-`dms.Document.ContentVersion`; the server composes `_etag` per request from that version and the
-request's `variantKey`. `LastModifiedAt` remains denormalized for the materialized projection and
-CDC/indexing consumers.
+This section is the sole owner of the table's physical row shape, column types, keys,
+constraints, indexes, and triggers. It does not define projection or streaming behavior.
+The [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
+owns cached-document semantics, freshness, reconciliation, and lifecycle. The
+[topic/message ADR](cdc/0002-kafka-topic-and-message-contract.md) owns public stream
+mapping and compatibility. [`cdc-streaming.md`](../../cdc-streaming.md) owns configuration,
+deployment, readiness, and operations.
 
 Denormalized resource naming:
 
-- `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
-- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json` (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and denormalized here for CDC/streaming convenience.
+- `ProjectName`/`ResourceName` are denormalized copies from `dms.ResourceKey`.
+- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json`
+  (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and
+  denormalized here.
+
+Denormalized document identity:
+
+- `DocumentId` remains the compact cache primary key and the `ON DELETE CASCADE`
+  foreign key to `dms.Document`. SQL Server keeps it as the clustered key.
+- `DocumentUuid` is a non-indexed denormalized copy. `dms.DocumentCache` has no unique
+  constraint or index on `DocumentUuid`.
+- Provider-specific `DocumentCache` insert/update validation triggers join the incoming
+  `DocumentId` to `dms.Document` through its existing primary key and reject the statement
+  unless the incoming `DocumentUuid` exactly equals the canonical row's `DocumentUuid`.
+  The existing foreign key remains responsible for rejecting a missing parent and fencing
+  deletion.
+- Canonical `dms.Document.DocumentUuid` is immutable after document creation. DMS update
+  plans never assign it; identity changes update referential identities without changing
+  the public document UUID.
+
+This implies one cache row per canonical `DocumentId`, with a UUID matching its canonical
+parent, without adding a composite or UUID index to `dms.Document`. The canonical table's
+existing `UX_Document_DocumentUuid` continues to own public-ID lookup and uniqueness.
+Because every cache UUID is trigger-validated against that unique canonical value, another
+cache UUID index would be redundant.
 
 **PostgreSQL**
 
@@ -510,15 +572,12 @@ CREATE TABLE dms.DocumentCache (
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
+    StreamEtag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object')
 );
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
 **SQL Server**
@@ -531,24 +590,114 @@ CREATE TABLE dms.DocumentCache (
     ResourceName nvarchar(256) NOT NULL,
     ResourceVersion nvarchar(32) NOT NULL,
     ContentVersion bigint NOT NULL,
+    StreamEtag varchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
     CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{')
 );
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
-Uses:
+The DDL emitter also creates the provider-equivalent identity validation trigger. The
+stable trigger name is `TR_DocumentCache_ValidateDocumentUuid`; PostgreSQL uses the stable
+function name `TF_DocumentCache_ValidateDocumentUuid`:
 
-- Faster GET/query responses (skip reconstitution)
-- Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
+- PostgreSQL uses a `BEFORE INSERT OR UPDATE` trigger on `dms.DocumentCache`. It reads the
+  canonical UUID by `NEW.DocumentId`, returns the row when they match, and raises an
+  integrity error when they differ. The subsequent foreign-key check handles a missing
+  canonical row.
+- SQL Server uses one set-based `AFTER INSERT, UPDATE` trigger. It joins `inserted` to
+  `dms.Document` by `DocumentId` and throws when any UUID differs, rolling back the
+  statement. The foreign key is checked independently for a missing canonical row.
+
+The trigger compares only fixed-width identity values and uses the existing canonical
+`DocumentId` primary-key access path. It does not parse `DocumentJson`, add work to normal
+canonical document writes, or require a `DocumentCache.DocumentUuid` index. Projector
+writer behavior is owned by the projector/source ADR; this trigger is only its physical
+database backstop.
+
+##### 7) `dms.DocumentCacheState` (singleton invariant latch)
+
+Always-provisioned singleton physical state for the cache-ahead invariant. Its runtime
+meaning is owned by the projector/source ADR.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DocumentCacheState (
+    StateId smallint PRIMARY KEY,
+    CacheAheadRecoveryRequired boolean NOT NULL,
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1)
+);
+
+INSERT INTO dms.DocumentCacheState (StateId, CacheAheadRecoveryRequired)
+VALUES (1, false)
+ON CONFLICT (StateId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DocumentCacheState (
+    StateId smallint NOT NULL,
+    CacheAheadRecoveryRequired bit NOT NULL,
+    CONSTRAINT PK_DocumentCacheState PRIMARY KEY CLUSTERED (StateId),
+    CONSTRAINT CK_DocumentCacheState_Singleton CHECK (StateId = 1)
+);
+
+IF NOT EXISTS (SELECT 1 FROM dms.DocumentCacheState WHERE StateId = 1)
+    INSERT INTO dms.DocumentCacheState (StateId, CacheAheadRecoveryRequired) VALUES (1, 0);
+```
+
+Provisioning creates exactly the `StateId = 1` row with the latch clear, and ordinary
+provisioning reruns never reset it. The
+[projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery)
+owns all runtime interpretation and recovery behavior for this physical state.
+
+##### 8) `dms.CdcHeartbeat` (opt-in CDC integration object)
+
+Provider CDC setup provisions this singleton only when CDC is selected. It is not part of
+ordinary relational provisioning.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.CdcHeartbeat (
+    HeartbeatId smallint PRIMARY KEY,
+    HeartbeatSequence bigint NOT NULL,
+    HeartbeatAt timestamp with time zone NOT NULL,
+    CONSTRAINT CK_CdcHeartbeat_Singleton CHECK (HeartbeatId = 1),
+    CONSTRAINT CK_CdcHeartbeat_Sequence CHECK (HeartbeatSequence >= 0)
+);
+
+INSERT INTO dms.CdcHeartbeat (HeartbeatId, HeartbeatSequence, HeartbeatAt)
+VALUES (1, 0, now())
+ON CONFLICT (HeartbeatId) DO NOTHING;
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.CdcHeartbeat (
+    HeartbeatId smallint NOT NULL,
+    HeartbeatSequence bigint NOT NULL,
+    HeartbeatAt datetime2(7) NOT NULL,
+    CONSTRAINT PK_CdcHeartbeat PRIMARY KEY CLUSTERED (HeartbeatId),
+    CONSTRAINT CK_CdcHeartbeat_Singleton CHECK (HeartbeatId = 1),
+    CONSTRAINT CK_CdcHeartbeat_Sequence CHECK (HeartbeatSequence >= 0)
+);
+
+IF NOT EXISTS (SELECT 1 FROM dms.CdcHeartbeat WHERE HeartbeatId = 1)
+    INSERT INTO dms.CdcHeartbeat (HeartbeatId, HeartbeatSequence, HeartbeatAt)
+    VALUES (1, 0, sysutcdatetime());
+```
+
+The integration design owns the provider action query, capture enablement, source-position
+barrier, and operational use of this physical row; see
+[`cdc-streaming.md`](../../cdc-streaming.md#provider-source-position-barrier).
 
 ### Authorization companion objects (schema: `auth`)
 
