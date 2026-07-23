@@ -312,6 +312,12 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
             );
+            // Denormalized from dms.Document at insert time and immutable thereafter, so descriptor
+            // paging can root on this table without touching dms.Document. Excluded from the
+            // stamping trigger's no-op diff (_descriptorStoredColumns).
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
+            );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("Namespace"), StringType(255), false)},"
             );
@@ -708,6 +714,17 @@ public sealed class CoreDdlEmitter
 
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
+                _descriptorTable,
+                "FK_Descriptor_ResourceKey",
+                [Col("ResourceKeyId")],
+                _resourceKeyTable,
+                [Col("ResourceKeyId")]
+            )
+        );
+        writer.AppendLine();
+
+        writer.AppendLine(
+            _dialect.AddForeignKeyConstraint(
                 _documentTable,
                 "FK_Document_ResourceKey",
                 [Col("ResourceKeyId")],
@@ -775,12 +792,24 @@ public sealed class CoreDdlEmitter
         writer.WritePhaseHeader(7, "Indexes");
 
         // Ordered by (table name, index name).
+        //
+        // Deliberately not emitted:
+        // - dms.Descriptor (Uri, Discriminator): already indexed by the
+        //   UX_Descriptor_Uri_Discriminator unique constraint.
+        // - dms.Document (ResourceKeyId, DocumentId): descriptor paging roots on
+        //   dms.Descriptor via IX_Descriptor_ResourceKeyId_DocumentId, and no other
+        //   query path filters dms.Document by ResourceKeyId. FK_Document_ResourceKey
+        //   needs no referencing-side index because dms.ResourceKey rows are never
+        //   deleted or updated at runtime.
+        // - dms.ReferentialIdentity (DocumentId): DocumentId-keyed access (FK cascade from
+        //   dms.Document and the identity-maintenance triggers) is served by the leading
+        //   column of UX_ReferentialIdentity_DocumentId_ResourceKeyId.
 
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
                 _descriptorTable,
-                "IX_Descriptor_Uri_Discriminator",
-                [Col("Uri"), Col("Discriminator")]
+                "IX_Descriptor_ResourceKeyId_DocumentId",
+                [Col("ResourceKeyId"), Col("DocumentId")]
             )
         );
         writer.AppendLine();
@@ -796,27 +825,9 @@ public sealed class CoreDdlEmitter
 
         writer.AppendLine(
             _dialect.CreateIndexIfNotExists(
-                _documentTable,
-                "IX_Document_ResourceKeyId_DocumentId",
-                [Col("ResourceKeyId"), Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
                 _documentCacheTable,
                 "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
                 [Col("ProjectName"), Col("ResourceName"), Col("LastModifiedAt"), Col("DocumentId")]
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.CreateIndexIfNotExists(
-                _referentialIdentityTable,
-                "IX_ReferentialIdentity_DocumentId",
-                [Col("DocumentId")]
             )
         );
         writer.AppendLine();

@@ -188,7 +188,7 @@ This inventory is the explicit “what exists in the database” contract that t
 **Indexes**
 
 - All PK/UK indexes implied by constraints
-- Additional explicit indexes called out in the design docs (e.g., `IX_Document_ResourceKeyId_DocumentId`)
+- Additional explicit indexes called out in the design docs (e.g., `IX_Descriptor_ResourceKeyId_DocumentId`)
 - Supporting indexes for all FKs (see “FK index policy” below)
 
 ### 2b) Authorization objects (`auth` schema)

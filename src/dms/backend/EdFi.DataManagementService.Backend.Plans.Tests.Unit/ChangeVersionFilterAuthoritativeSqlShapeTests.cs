@@ -79,7 +79,7 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
     }
 
     [Test]
-    public void It_filters_document_content_version_with_the_resource_key_predicate_for_descriptor_resources()
+    public void It_filters_the_descriptor_mirrored_content_version_with_the_resource_key_predicate_for_descriptor_resources()
     {
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
         _ds52MappingSet.TryGetDescriptorResourceModel(descriptorResource, out _).Should().BeTrue();
@@ -93,7 +93,7 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
             changeVersionRange: _changeVersionRange
         );
 
-        keyset.Plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Document\" r");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");

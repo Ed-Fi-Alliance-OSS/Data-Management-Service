@@ -1337,6 +1337,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -1346,6 +1347,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -1355,6 +1357,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

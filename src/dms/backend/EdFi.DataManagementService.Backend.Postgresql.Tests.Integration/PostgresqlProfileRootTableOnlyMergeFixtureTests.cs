@@ -444,6 +444,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -453,6 +454,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -462,6 +464,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

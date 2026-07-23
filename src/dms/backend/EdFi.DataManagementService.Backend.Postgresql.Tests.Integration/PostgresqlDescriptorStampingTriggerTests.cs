@@ -84,16 +84,21 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
 
     private async Task InsertDescriptorAsync(long documentId, string codeValue = "Female")
     {
+        var resourceKeyId = await _database.ExecuteScalarAsync<short>(
+            """SELECT MIN("ResourceKeyId") FROM dms."ResourceKey";"""
+        );
+
         var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO dms."Descriptor"
-                ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Description",
+                ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Description",
                  "EffectiveBeginDate", "EffectiveEndDate", "Discriminator", "Uri")
-            VALUES (@documentId, @namespace, @codeValue, @shortDescription, @description,
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @description,
                     NULL, NULL, @discriminator, @uri);
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/SexDescriptor"),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", codeValue),
@@ -237,6 +242,36 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             """
             UPDATE dms."Descriptor"
             SET "ShortDescription" = "ShortDescription"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", seed.DocumentId)
+        );
+
+        var after = await ReadStampPairAsync(seed.DocumentId);
+        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
+        after.Document.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Mirror.Should().Be(after.Document);
+    }
+
+    [Test]
+    public async Task It_does_not_stamp_document_when_only_resource_key_id_changes()
+    {
+        // ResourceKeyId is immutable in production and deliberately excluded from the trigger's
+        // no-op diff so a migration backfill UPDATE of the column cannot bump stamps. Prove the
+        // exclusion by forcing an actual value change on that column alone.
+        var seed = await SeedAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO dms."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
+            VALUES (32000, 'Bench', 'BenchDescriptor', '1.0.0')
+            ON CONFLICT DO NOTHING;
+            """
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE dms."Descriptor"
+            SET "ResourceKeyId" = 32000
             WHERE "DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", seed.DocumentId)
