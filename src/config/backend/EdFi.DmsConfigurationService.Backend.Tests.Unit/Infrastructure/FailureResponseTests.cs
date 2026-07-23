@@ -94,6 +94,43 @@ public class FailureResponseTests
     }
 
     [Test]
+    public void ForMethodNotAllowed_ShouldReturnCorrectJsonNode()
+    {
+        // Act
+        var result = FailureResponse.ForMethodNotAllowed(CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be("The request construction was invalid.");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
+        result["title"]?.GetValue<string>().Should().Be("Method Not Allowed");
+        result["status"]?.GetValue<int>().Should().Be(405);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void ForUnsupportedMediaType_ShouldReturnCorrectJsonNode()
+    {
+        // Act
+        var result = FailureResponse.ForUnsupportedMediaType(CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]
+            ?.GetValue<string>()
+            .Should()
+            .Be("The value specified in the 'Content-Type' header is not supported by this host.");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:unsupported-media-type");
+        result["title"]?.GetValue<string>().Should().Be("Unsupported Media Type");
+        result["status"]?.GetValue<int>().Should().Be(415);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Count.Should().Be(0);
+    }
+
+    [Test]
     public void ForConflict_ShouldReturnCorrectJsonNode()
     {
         // Arrange
