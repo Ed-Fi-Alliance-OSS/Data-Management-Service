@@ -105,7 +105,11 @@ public static partial class ParityScenarioCatalog
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
             "Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
             "It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches",
-            "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow"
+            "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow",
+            diff: new DialectDifference(
+                "The seeded payload is sized from the compiled batch limit (MaxRowsPerBatch + 2 rows), which differs by dialect: PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows.",
+                "Dialect parameter limits size the payload and shape the compiled delete batches; behavioral parity is the retained-row reduction semantic, not the payload size or SQL text."
+            )
         ),
         UpdateVariant(
             "DeletedAndReplacedChildCollectionRows",
@@ -377,7 +381,11 @@ public static partial class ParityScenarioCatalog
                 "It_partitions_collection_delete_commands_using_the_compiled_batch_limit",
             ],
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow"
-                + " + NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions",
+            diff: new DialectDifference(
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows (deletes target existing stable row identities, so no id reservation applies on either dialect).",
+                "Dialect parameter limits shape the compiled delete batches; behavioral parity is the retained persisted rowset and batch partition counts, not the SQL text."
+            )
         ),
         NoProfile(
             "NoProfileMultiBatchCollection/AlignedExtensionCreate",
@@ -619,7 +627,8 @@ public static partial class ParityScenarioCatalog
         string mssqlFixture,
         string method,
         string sharedEntryPoint,
-        string? notes = null
+        string? notes = null,
+        DialectDifference? diff = null
     ) =>
         NoProfile(
             $"NoProfileChangedPutOmissionSemantics/{variant}",
@@ -630,7 +639,8 @@ public static partial class ParityScenarioCatalog
             mssqlFixture,
             [method],
             sharedEntryPoint: sharedEntryPoint,
-            notes: notes
+            notes: notes,
+            diff: diff
         );
 
     private static ParityScenario ReorderVariant(
