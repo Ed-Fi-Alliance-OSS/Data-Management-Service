@@ -461,6 +461,24 @@ flowchart TD
 
 ---
 
+# What is a projection target?
+
+A projection target is one deployment-selected logical DMS data store:
+
+`(TenantKey, DataStoreId)`
+
+It tells a DMS process which data store’s canonical documents and
+`dms.DocumentCache` it should reconcile.
+
+- Each process may handle multiple targets.
+- Each target gets one serialized reconciliation loop.
+- `MaxConcurrentTargets` bounds concurrent work within the process.
+- An empty target list means no projection work.
+- Multiple processes may safely share the same target.
+- Targets are not inferred from API traffic or CMS inventory.
+
+---
+
 # Bounded in-process projector
 
 - One serialized loop per selected target
