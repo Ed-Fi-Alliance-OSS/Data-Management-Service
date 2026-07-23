@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -50,12 +51,17 @@ internal static class FailureResponseWriter
         // correlationId is aligned with this request so the two can never diverge.
         failureResponse["correlationId"] = context.TraceIdentifier;
 
+        byte[] payload = Encoding.UTF8.GetBytes(failureResponse.ToJsonString(_serializerOptions));
+
         context.Response.StatusCode = status;
         context.Response.ContentType = ProblemJsonContentType;
 
-        return context.Response.WriteAsync(
-            failureResponse.ToJsonString(_serializerOptions),
-            cancellationToken
-        );
+        // Replace any stale Content-Length before writing. Framework-generated bodiless errors (e.g. a
+        // 404/405) can carry "Content-Length: 0"; writing the body without correcting it would exceed the
+        // declared length and be rejected by Kestrel. Setting the exact UTF-8 byte length keeps the
+        // transport consistent regardless of the pre-existing value.
+        context.Response.ContentLength = payload.Length;
+
+        return context.Response.Body.WriteAsync(payload, 0, payload.Length, cancellationToken);
     }
 }
