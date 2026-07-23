@@ -512,18 +512,12 @@ internal static class SecurableElementColumnPathResolver
             {
                 var owningTable = bindingInfo.OwningModel.TablesInDependencyOrder.FirstOrDefault(table =>
                     table.Table == binding.Table
-                    || string.Equals(table.Table.Name, binding.Table.Name, StringComparison.Ordinal)
                 );
 
                 if (owningTable is not null)
                 {
                     var fkColumn = owningTable.Columns.FirstOrDefault(column =>
                         column.ColumnName == binding.FkColumn
-                        || string.Equals(
-                            column.ColumnName.Value,
-                            binding.FkColumn.Value,
-                            StringComparison.Ordinal
-                        )
                     );
 
                     if (fkColumn is not null)
@@ -543,11 +537,6 @@ internal static class SecurableElementColumnPathResolver
         {
             var fkColumn = owningTable.Columns.FirstOrDefault(column =>
                 column.ColumnName == descriptorEdge.FkColumn
-                || string.Equals(
-                    column.ColumnName.Value,
-                    descriptorEdge.FkColumn.Value,
-                    StringComparison.Ordinal
-                )
             );
             var isRequired = descriptorEdge.IsRequired || (fkColumn is not null && !fkColumn.IsNullable);
 

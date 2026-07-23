@@ -1161,7 +1161,11 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                     tableBuilder.Definition.Table,
                     columnName,
                     descriptorPathInfo.DescriptorResource,
-                    IsRequired: !isNullable
+                    IsRequired: !isNullable,
+                    IsRoleNamed: ReferenceRoleNameConventions.IsDescriptorRoleNamed(
+                        descriptorPathInfo.DescriptorValuePath,
+                        descriptorPathInfo.DescriptorResource
+                    )
                 )
             );
 

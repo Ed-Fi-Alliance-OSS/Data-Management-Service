@@ -228,10 +228,9 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                             descriptorColumnName,
                             descriptorPath.DescriptorResource,
                             IsRequired: mapping.IsRequired,
-                            IsRoleNamed: !string.Equals(
-                                mapping.MappingKey,
-                                mapping.TargetResource.ResourceName,
-                                StringComparison.Ordinal
+                            IsRoleNamed: ReferenceRoleNameConventions.IsDocumentReferenceRoleNamed(
+                                mapping.ReferenceObjectPath,
+                                mapping.TargetResource
                             )
                         )
                     );
@@ -325,13 +324,9 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     mapping.TargetResource,
                     identityBindings.ToArray(),
                     IsRequired: mapping.IsRequired,
-                    // ApiSchema documentPathsMapping has no separate role-name flag. A mapping
-                    // key that differs from the target resource name is the schema-level proxy
-                    // used to preserve role-named reference ranking metadata.
-                    IsRoleNamed: !string.Equals(
-                        mapping.MappingKey,
-                        mapping.TargetResource.ResourceName,
-                        StringComparison.Ordinal
+                    IsRoleNamed: ReferenceRoleNameConventions.IsDocumentReferenceRoleNamed(
+                        mapping.ReferenceObjectPath,
+                        mapping.TargetResource
                     )
                 )
             );

@@ -217,6 +217,7 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
     private DocumentReferenceBinding _classPeriodBinding = default!;
     private DocumentReferenceBinding _calendarBinding = default!;
     private DocumentReferenceBinding _programProgramBinding = default!;
+    private DocumentReferenceBinding _schoolYearTypeBinding = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -255,6 +256,9 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
         _programProgramBinding = _model.DocumentReferenceBindings.Single(binding =>
             binding.ReferenceObjectPath.Canonical == "$.programProgramReference"
         );
+        _schoolYearTypeBinding = _model.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.schoolYearTypeReference"
+        );
     }
 
     /// <summary>
@@ -288,6 +292,15 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
             .Be("ProgramProgram_EducationOrganizationId");
     }
 
+    [Test]
+    public void It_should_use_reference_object_leaf_names_for_role_named_metadata()
+    {
+        _schoolYearTypeBinding
+            .TargetResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "SchoolYearType"));
+        _schoolYearTypeBinding.IsRoleNamed.Should().BeFalse();
+    }
+
     /// <summary>
     /// Builds a project schema containing resources used to validate reference binding against nested target identity paths.
     /// </summary>
@@ -303,6 +316,7 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                 ["studentHomelessProgramAssociations"] = BuildStudentHomelessProgramAssociationSchema(),
                 ["classPeriods"] = BuildClassPeriodSchema(),
                 ["calendars"] = BuildCalendarSchema(),
+                ["schoolYearTypes"] = BuildSchoolYearTypeSchema(),
                 ["programPrograms"] = BuildProgramProgramSchema(),
             },
         };
@@ -340,6 +354,14 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                     ["properties"] = new JsonObject
                     {
                         ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+                ["schoolYearTypeReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolYear"] = new JsonObject { ["type"] = "integer" },
                     },
                 },
             },
@@ -400,6 +422,22 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                         {
                             ["identityJsonPath"] = "$.educationOrganizationReference.educationOrganizationId",
                             ["referenceJsonPath"] = "$.programProgramReference.educationOrganizationId",
+                        },
+                    },
+                },
+                ["SchoolYear"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "SchoolYearType",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolYear",
+                            ["referenceJsonPath"] = "$.schoolYearTypeReference.schoolYear",
                         },
                     },
                 },
@@ -490,6 +528,38 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                     },
                 },
                 ["required"] = new JsonArray { "schoolYearTypeReference" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds a SchoolYearType schema.
+    /// </summary>
+    private static JsonObject BuildSchoolYearTypeSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "SchoolYearType",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolYear" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolYear"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.schoolYear",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["schoolYear"] = new JsonObject { ["type"] = "integer" } },
+                ["required"] = new JsonArray { "schoolYear" },
             },
         };
     }
