@@ -1519,8 +1519,10 @@ function New-SeedLoaderCredentials {
         # claims use the RelationshipsWithEdOrgsAndPeople authorization strategy (Section,
         # CourseOffering, StudentSchoolAssociation, etc.) require the vendor to have explicit
         # EdOrg associations; an empty list 403s those resources. The default covers every
-        # top-level EdOrg present in the v5.x Sample Data inventory.
-        [long[]]$EducationOrganizationIds = @([long]255950, [long]255901, [long]255901001, [long]255901044, [long]255901107, [long]19, [long]19255901, [long]6000203),
+        # top-level EdOrg present in the v5.x Sample Data inventory, plus the TPDM 1.1.0
+        # sample EdOrgs (5, 6, 7) so TPDM sample loads can create educatorPreparationProgram
+        # records, whose claim defaults to RelationshipsWithEdOrgsOnly.
+        [long[]]$EducationOrganizationIds = @([long]5, [long]6, [long]7, [long]255950, [long]255901, [long]255901001, [long]255901044, [long]255901107, [long]19, [long]19255901, [long]6000203),
 
         [string]$Tenant = "",
 

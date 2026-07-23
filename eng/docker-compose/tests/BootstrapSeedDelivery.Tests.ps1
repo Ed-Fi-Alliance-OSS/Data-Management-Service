@@ -3490,9 +3490,9 @@ Set-Content -LiteralPath '$seedArgsPath' -Value "url=`$DmsBaseUrl ids=`$(`$DataS
             $script:seedScriptContent | Should -Match '\$script:DataStandardRefTag\s*=\s*"v5\.2\.0"' -Because "DataStandardRefTag changes require regenerating the SeedLoader claims inventory and EdOrg envelope"
         }
 
-        It "SeedLoader default EdOrg envelope remains pinned to the v5.2.0 Sample XML top-level EdOrgs" {
+        It "SeedLoader default EdOrg envelope remains pinned to the v5.2.0 core + TPDM Sample XML top-level EdOrgs" {
             $mgmtContent = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "../Dms-Management.psm1") -Raw
-            $mgmtContent | Should -Match '\[long\[\]\]\$EducationOrganizationIds\s*=\s*@\(\[long\]255950,\s*\[long\]255901,\s*\[long\]255901001,\s*\[long\]255901044,\s*\[long\]255901107,\s*\[long\]19,\s*\[long\]19255901,\s*\[long\]6000203\)' -Because "EdOrg envelope changes must be reviewed against the pinned Sample XML inventory"
+            $mgmtContent | Should -Match '\[long\[\]\]\$EducationOrganizationIds\s*=\s*@\(\[long\]5,\s*\[long\]6,\s*\[long\]7,\s*\[long\]255950,\s*\[long\]255901,\s*\[long\]255901001,\s*\[long\]255901044,\s*\[long\]255901107,\s*\[long\]19,\s*\[long\]19255901,\s*\[long\]6000203\)' -Because "EdOrg envelope changes must be reviewed against the pinned Sample XML inventory"
         }
 
         It "Wait-CmsClientAvailable defaults to a 30-second cold-stack budget" {

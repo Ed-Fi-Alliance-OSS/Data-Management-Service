@@ -106,8 +106,11 @@ function Get-SmokeTestCredential {
         [string]
         $ClaimSetName = "EdFiSandbox",
 
+        # Includes the TPDM 1.1.0 sample EdOrgs (5, 6, 7) so smoke clients can reach TPDM
+        # resources such as educatorPreparationProgram, whose claim defaults to
+        # RelationshipsWithEdOrgsOnly.
         [long[]]
-        $EducationOrganizationIds = @(255901, 19255901, 100000, 200000, 300000),
+        $EducationOrganizationIds = @(5, 6, 7, 255901, 19255901, 100000, 200000, 300000),
 
         [long[]]
         $DataStoreIds = @(),
