@@ -60,17 +60,24 @@ public class Given_Build_Dms_E2E_Guardrails
         initializeFunctionContents
             .Should()
             .Contain("Invoke-E2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings");
+        // E2ETests invokes Initialize-E2EDatabase and forwards the deferred-start decision so the
+        // SQL Server path starts DMS after provisioning while PostgreSQL restarts it (matched by
+        // token rather than exact line so the multi-line call is not whitespace-brittle).
         e2eTestFunctionContents
             .Should()
-            .Contain(
-                "Invoke-Step { Initialize-E2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }"
-            );
+            .Contain("Initialize-E2EDatabase")
+            .And.Contain("-E2ETestSettings $e2eTestSettings")
+            .And.Contain("-UsePublishedImage:$UsePublishedImage")
+            .And.Contain("-StartDmsAfterProvisioning:$deferDmsStart");
+        // The PostgreSQL (non-deferred) path restarts DMS after reprovisioning to discard cached
+        // datastore connection pools; the SQL Server path instead starts DMS with -DmsOnly.
         initializeFunctionContents
             .Should()
             .Contain("Restart-DmsContainer")
             .And.Contain(
                 "-Reason \"discard cached datastore connection pools after E2E database reprovisioning\""
-            );
+            )
+            .And.Contain("-DmsOnly");
     }
 
     [Test]
