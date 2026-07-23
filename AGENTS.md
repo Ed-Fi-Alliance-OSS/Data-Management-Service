@@ -10,6 +10,7 @@ This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, w
 - Only use .NET 10 code style, including modern C# language features (e.g., primary constructors, pattern matching, records, target-typed new, collection expressions, and file-scoped namespaces).
 - Declare variables non-nullable.
 - Always use `is null` or `is not null` instead of `== null` or `!= null`.
+- Use `System.Text.Json` for JSON serialization and parsing in .NET application code and build tooling. Do not introduce new `Newtonsoft.Json` dependencies or usages.
 
 ### Format Code
 
@@ -118,4 +119,3 @@ Example local container setup:
 - Use NUnit with FluentAssertions, and FakeItEasy for mocks when necessary.
 - NUnit tests should follow the existing style, which is filenames named like the code area being tested,
   TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.
-
