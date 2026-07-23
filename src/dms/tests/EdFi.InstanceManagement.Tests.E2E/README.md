@@ -30,6 +30,9 @@ target.** The target handles the full lifecycle described below; ordinary `dotne
 ```powershell
 # Full suite, default engine (PostgreSQL), self-contained identity:
 pwsh ./build-dms.ps1 InstanceE2ETest -Configuration Release
+
+# Full suite, SQL Server:
+pwsh ./build-dms.ps1 InstanceE2ETest -Configuration Release -DatabaseEngine mssql
 ```
 
 The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mssql` to run the
@@ -81,9 +84,11 @@ suite-owned fixture before any scenario runs:
 1. Start infra + Configuration Service, then provision the **three** route-context databases
    (`eng/docker-compose/provision-e2e-database.ps1`), generating the relational DMS schema and
    verifying the `dms."EffectiveSchema"` singleton and expected tables in each.
-2. Start DMS, wait for `/health`, then register the fixture in the Configuration Service: one
-   vendor, the canonical tenants `Tenant_255901` and `Tenant_255902`, exactly three data stores /
-   route contexts (255901/2024, 255901/2025, 255902/2024), and one application per tenant — using
+2. Start DMS, wait for `/health`, then register the fixture in the Configuration Service: the two
+   canonical tenants `Tenant_255901` and `Tenant_255902`; one distinct vendor per tenant
+   (2 vendors); three data stores (255901/2024 and 255901/2025 under `Tenant_255901`, 255902/2024
+   under `Tenant_255902`); two route-context records per data store — a `districtId` and a
+   `schoolYear` context, 6 total; and one application per tenant (2 applications) — all using
    engine-correct **opaque** connection strings (secrets are never logged).
 3. Restart DMS **exactly once** after registration, wait for `/health`, then run the routed
    scenarios, which hydrate their tenant/route state from the fixture rather than creating it.
@@ -113,35 +118,53 @@ overridden in the environment file (**names only; never print credential values*
 | `INSTANCE_E2E_DATABASE_3_NAME` | `edfi_datamanagementservice_d255902_sy2024` |
 
 The three names must be non-empty and distinct and are validated as dedicated E2E database names
-before any provisioning. Other relevant environment **names**: `ROUTE_QUALIFIER_SEGMENTS`
-(enables route-based instance resolution; `districtId,schoolYear`), `DMS_DATASTORE` (engine),
-and `POSTGRES_PORT` (published datastore port, default `5435`; the SQL Server overlay publishes
-`1435`). If you override any route database name, keep the provisioning and registration values
-aligned to the same databases.
+before any provisioning. The engine-specific database, credential, and port variable **names**
+(never their values) are:
+
+| Scope       | PostgreSQL                                                    | SQL Server                      |
+| ----------- | ------------------------------------------------------------ | ------------------------------- |
+| Database    | `POSTGRES_DB_NAME`                                           | `MSSQL_DB_NAME`                 |
+| Credentials | `POSTGRES_PASSWORD` (user `POSTGRES_USER`, default `postgres`) | `MSSQL_SA_PASSWORD` (user `sa`) |
+| Host port   | `POSTGRES_PORT` (default `5435`)                            | `MSSQL_PORT` (default `1435`)   |
+
+Shared, engine-neutral names: `ROUTE_QUALIFIER_SEGMENTS` (enables route-based instance
+resolution; `districtId,schoolYear`), `DMS_DATASTORE` (engine selector), and
+`DATABASE_CONNECTION_STRING_ADMIN` (admin connection in the selected engine's format); see the
+[standard suite's engine variable names](../EdFi.DataManagementService.Tests.E2E/README.md#environment-files-and-engine-variable-names-names-not-values).
+If you override any route database name, keep the provisioning and registration values aligned to
+the same databases.
 
 URL pattern: `http://localhost:8080/{districtId}/{schoolYear}/data/ed-fi/{resource}` — for
 example `http://localhost:8080/255901/2024/data/ed-fi/contentClassDescriptors`.
 
 ## Diagnostics and logging
 
-- The CI lanes capture the full `build-dms.ps1` setup/provisioning/test output to a per-job
-  diagnostic file, snapshot each container's logs to files, and produce the `.trx` result plus
-  timing artifacts — all **sanitized** by
+- The **SQL Server** Instance CI lane captures the full `build-dms.ps1` setup/provisioning/test
+  output to a per-job diagnostic file (never streamed to the console), snapshots each container's
+  logs to files, and produces the `.trx` result plus timing artifacts. It runs
   [`eng/ci/sanitize-e2e-artifacts.ps1`](../../../../eng/ci/sanitize-e2e-artifacts.ps1)
-  (connection-string passwords, tokens, client keys/secrets, and Authorization headers redacted)
-  before any reporter reads them or any artifact is uploaded or echoed to the console.
-- Locally, inspect a running stack with `docker logs <container>`: `ed-fi-api` (DMS),
-  `ed-fi-api-config-service` (Configuration Service), and `dms-postgresql` or `dms-mssql` (the
-  datastore). Never echo raw credentials from these logs.
+  (redacting connection-string passwords, tokens, client keys/secrets, and Authorization headers)
+  and gates every reporter, artifact upload, and console display on the sanitizer succeeding.
+- The existing **PostgreSQL** Instance lane uploads its captured container logs and reports its
+  `.trx`/timing artifacts directly; it does **not** run that sanitizer step.
+- **Regardless of engine, raw local diagnostics may contain connection strings, tokens, or
+  client secrets — sanitize them before sharing.** Inspect a running stack with
+  `docker logs <container>`: `ed-fi-api` (DMS), `ed-fi-api-config-service` (Configuration
+  Service), and `dms-postgresql` or `dms-mssql` (the datastore). Never echo raw credentials.
 
 ## Teardown and cleanup
 
 Each run reprovisions the `dms-local` stack for its engine. To tear it down explicitly, use the
-engine-aware wrapper with the same engine (its `-EnvironmentFile` defaults to
-`.env.routeContext.e2e`, resolved against `eng/docker-compose`):
+engine-aware wrapper with the **same engine** you started it with. Its `-EnvironmentFile`
+defaults to `.env.routeContext.e2e` (resolved against `eng/docker-compose`); pass the same custom
+file if you used one:
 
 ```powershell
-pwsh ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine <postgresql|mssql>
+# PostgreSQL:
+pwsh ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine postgresql -EnvironmentFile '.env.routeContext.e2e'
+
+# SQL Server:
+pwsh ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile '.env.routeContext.e2e'
 ```
 
 The wrapper delegates to the project-scoped `start-local-dms.ps1 -d -v` primitive: the

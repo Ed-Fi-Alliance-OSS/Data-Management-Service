@@ -43,7 +43,10 @@ pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEn
 ### SQL Server (MSSQL)
 
 ```pwsh
-# SQL Server, self-contained identity, bounded representative cross-section:
+# SQL Server, self-contained identity, full DS 5.2 suite (no filter):
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e'
+
+# SQL Server, self-contained identity, bounded representative cross-section (the PR-gated signal):
 pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative'
 
 # SQL Server, Keycloak identity, same representative set:
@@ -65,7 +68,12 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 # Data Standard 6.1 focused run (add -DataStandardVersion 6.1). The DS 6.1 PostgreSQL lane
 # also needs a Kafka host entry (see the CI workflow); the MSSQL DS 6.1 stack is relational-only
 # and needs none.
+
+# PostgreSQL, DS 6.1:
 pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+
+# SQL Server, DS 6.1:
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
 ```
 
 The `@MssqlRepresentative` and `@StandardVersion-6_1` filters carry no shard, so the run writes
@@ -140,18 +148,24 @@ If the engine or database name does not match the provisioned stack, the run fai
 setup (an engine/schema mismatch surfaces as an `EffectiveSchemaHash` mismatch and all
 data-plane requests return 503).
 
-## Environment files (names, not values)
+## Environment files and engine variable names (names, not values)
 
 The Docker-compose environment file supplies the containerized stack's settings. The default is
 [`eng/docker-compose/.env.e2e`](../../../../eng/docker-compose/.env.e2e); `-DatabaseEngine mssql`
-composes `eng/docker-compose/.env.mssql` on top of it. Notable variable **names** you may need
-to align for a custom stack (do not print their values):
+composes [`eng/docker-compose/.env.mssql`](../../../../eng/docker-compose/.env.mssql) on top of
+it. The engine-specific database, credential, and port variable **names** you may need to align
+for a custom stack (never their values) are:
 
-- `DMS_DATASTORE` — engine backing DMS (`postgresql` / `mssql`).
-- `POSTGRES_PORT` — published host port for PostgreSQL (default `5435`); the SQL Server overlay publishes `1435`.
-- `E2E_DATABASE_NAME` — the E2E database the reset/provision step targets.
-- `SCHEMA_PACKAGES` — the ApiSchema packages baked into the provisioned database.
-- `DATABASE_CONNECTION_STRING_ADMIN` — admin connection used for provisioning.
+| Scope       | PostgreSQL                                                    | SQL Server                      |
+| ----------- | ------------------------------------------------------------ | ------------------------------- |
+| Database    | `POSTGRES_DB_NAME`                                           | `MSSQL_DB_NAME`                 |
+| Credentials | `POSTGRES_PASSWORD` (user `POSTGRES_USER`, default `postgres`) | `MSSQL_SA_PASSWORD` (user `sa`) |
+| Host port   | `POSTGRES_PORT` (default `5435`)                            | `MSSQL_PORT` (default `1435`)   |
+
+Shared, engine-neutral names: `DMS_DATASTORE` (engine selector, `postgresql` / `mssql`),
+`E2E_DATABASE_NAME` (the E2E database the reset/provision step targets), `SCHEMA_PACKAGES` (the
+ApiSchema packages baked into the provisioned database), and `DATABASE_CONNECTION_STRING_ADMIN`
+(admin connection used for provisioning, in the selected engine's connection-string format).
 
 > [!WARNING]
 > The tracked `.env.e2e` / `.env.mssql` files contain **local test credentials**. Never copy
@@ -162,31 +176,39 @@ to align for a custom stack (do not print their values):
 - Test logs are written to the console and to the file system per `appsettings.json`. The API
   container logs are appended to the same file-system log at the end of the run before the
   container is destroyed; search for `API stdout logs`.
-- The CI lanes capture the full `build-dms.ps1` setup/provisioning/test output to a per-job
-  diagnostic file, snapshot each container's logs to files, and produce the `.trx` result plus
-  timing artifacts. All of these are **sanitized** (connection-string passwords, tokens,
-  client keys/secrets, and Authorization headers redacted by
-  [`eng/ci/sanitize-e2e-artifacts.ps1`](../../../../eng/ci/sanitize-e2e-artifacts.ps1)) before
-  any reporter reads them or any artifact is uploaded or echoed to the Actions console.
-- Locally, inspect a running stack with `docker logs <container>`; the containers are
-  `ed-fi-api` (DMS), `ed-fi-api-config-service` (Configuration Service), and `dms-postgresql`
-  or `dms-mssql` (the datastore). Never echo raw credentials from these logs.
+- The **SQL Server** CI lanes capture the full `build-dms.ps1` setup/provisioning/test output to
+  a per-job diagnostic file (never streamed to the console), snapshot each container's logs to
+  files, and produce the `.trx` result plus timing artifacts. Those lanes run
+  [`eng/ci/sanitize-e2e-artifacts.ps1`](../../../../eng/ci/sanitize-e2e-artifacts.ps1) — redacting
+  connection-string passwords, tokens, client keys/secrets, and Authorization headers — and gate
+  every reporter, artifact upload, and console display on the sanitizer step succeeding.
+- The existing **PostgreSQL** standard and DS 6.1 lanes upload their captured container logs and
+  report their `.trx`/timing artifacts directly; they do **not** run that sanitizer step.
+- **Regardless of engine, raw local diagnostics (container logs, TRX, setup output) may contain
+  connection strings, tokens, or client secrets — sanitize them before sharing.** Inspect a
+  running stack with `docker logs <container>`; the containers are `ed-fi-api` (DMS),
+  `ed-fi-api-config-service` (Configuration Service), and `dms-postgresql` or `dms-mssql` (the
+  datastore). Never echo raw credentials from these logs.
 
 ## Teardown and cleanup
 
 Each `build-dms.ps1 E2ETest` run resets and provisions the `dms-local` stack for its engine, so
 back-to-back runs are self-cleaning. To tear the stack down explicitly, use the engine-aware
-wrapper with the same engine (and, if you used a non-default file, the same environment file):
+wrapper with the **same engine** you started it with. Its `-EnvironmentFile` defaults to
+`.env.e2e` (resolved against `eng/docker-compose`); pass the same custom file if you used one:
 
 ```pwsh
-pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine <postgresql|mssql>
+# PostgreSQL:
+pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine postgresql -EnvironmentFile '.env.e2e'
+
+# SQL Server:
+pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile '.env.e2e'
 ```
 
 The wrapper delegates to the project-scoped `start-local-dms.ps1 -d -v` primitive: the
 `dms-local` Docker Compose project is the sole authority for which containers, networks, and
 volumes are removed, and only the two known locally-built images are additionally removed by
-exact name. It never touches unrelated containers, volumes, or databases. Its `-EnvironmentFile`
-defaults to `.env.e2e` (resolved against `eng/docker-compose`).
+exact name. It never touches unrelated containers, volumes, or databases.
 
 > [!TIP]
 > Switching branches or changing DMS debugging code invalidates the running stack. Tear down
