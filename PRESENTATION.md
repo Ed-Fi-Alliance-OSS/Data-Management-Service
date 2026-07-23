@@ -184,15 +184,18 @@ sequenceDiagram
     participant A as Tx A: Student A
     participant B as Tx B: Student B
     participant DB as Relational source database
-    participant P as Incremental projector
-    participant F as Full audit
+
+    box DMS background reconciliation — one hosted loop
+        participant I as Incremental lane
+        participant F as Full-audit lane
+    end
 
     A->>DB: Allocate ContentVersion 10
     B->>DB: Allocate ContentVersion 11
     B->>DB: Commit version 11
-    P->>DB: Scan through global cursor 11
+    I->>DB: Scan through global cursor 11
     A->>DB: Commit version 10
-    Note over P: Cursor has already passed 10
+    Note over I: Cursor has already passed 10
     F->>DB: Compare all canonical/cache rows
     F->>DB: Discover and project Student A
 ```
