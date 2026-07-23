@@ -328,7 +328,10 @@ Describe "Published preflight rejects an invalid separate-topology replacement b
         # here; the provider-oracle tests exercise the verb itself.
         $script:preflightValidator = Join-Path $script:preflightDir "fake-connection-validator.ps1"
         @'
-param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Arguments)
+# No param block: the real validator is invoked as `$ConnectionString | & <tool> connection validate ...`
+# (env-utility.psm1), so the connection string arrives on the pipeline. A simple script routes piped input
+# into $input without advanced-parameter binding, which an advanced param would reject cross-platform with
+# "The input object cannot be bound to any parameters". Consume $input, then emit the canned result.
 $null = @($input)
 Write-Output '{"valid":true,"database":"edfi_configurationservice"}'
 exit 0
@@ -535,7 +538,10 @@ Describe "A successful preflight performs only support operations before any sta
         # provider-oracle and distribution suites).
         $script:f9Validator = Join-Path $script:f9Dir "fake-connection-validator.ps1"
         @'
-param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Arguments)
+# No param block: the real validator is invoked as `$ConnectionString | & <tool> connection validate ...`
+# (env-utility.psm1), so the connection string arrives on the pipeline. A simple script routes piped input
+# into $input without advanced-parameter binding, which an advanced param would reject cross-platform with
+# "The input object cannot be bound to any parameters". Consume $input, then emit the canned result.
 $null = @($input)
 Write-Output '{"valid":true,"database":"edfi_configurationservice"}'
 exit 0
