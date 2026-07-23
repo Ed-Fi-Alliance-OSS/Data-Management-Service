@@ -10,7 +10,7 @@ Ed-Fi Data Management Service — API 8.1
 
 - Relational tables remain authoritative.
 - DMS maintains a rebuildable API-shaped projection (cache) independently of the API write path.
-- CDC reads database logs; DMS never dual-writes to Kafka.
+- CDC (Debezium) reads database logs; DMS never dual-writes to Kafka.
 - Cache upserts publish document state to Kafka.
 - `dms.Document` deletes publish tombstones to Kafka.
 - Normal API correctness never depends on projection or Kafka.
@@ -53,7 +53,7 @@ Ed-Fi Data Management Service — API 8.1
 3. Cache writes are monotonic by `ContentVersion`.
 4. Deleting cached projection state does not change the resource.
 5. Public identity is stable `DocumentUuid`.
-6. Unprovable readiness is not readiness.
+6. Readiness requires positive, current evidence.
 
 ---
 
@@ -77,12 +77,12 @@ flowchart LR
 
 # Why projection is asynchronous
 
-“Asynchronous” means independent of the API write path—not background-only.
+“Asynchronous” means independent of the API write path, not background-only.
 
 `DocumentCache` can be populated by:
 
+- an optional, time-bounded cache fill after a cache miss falls back to a relational read.
 - background reconciliation for convergence and readiness, or
-- optional bounded direct fill after relational read fallback.
 
 Both revalidate the canonical version and use the same monotonic cache upsert.
 
