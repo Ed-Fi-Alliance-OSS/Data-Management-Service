@@ -534,6 +534,21 @@ public class DataStoreModuleTests
         }
 
         [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_offset()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/dataStores?offset=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+        }
+
+        [Test]
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();

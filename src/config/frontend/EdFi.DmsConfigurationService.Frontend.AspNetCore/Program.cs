@@ -15,6 +15,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServices();
 builder.Services.AddHttpClient();
+
+// Classify framework binding/deserialization failures consistently in every environment. Without this,
+// RouteHandlerOptions.ThrowOnBadRequest defaults to IsDevelopment, so a malformed JSON body or a
+// query-binding failure would reach GlobalExceptionHandler only in Development and the (bodyless)
+// status-code-pages path elsewhere. Forcing it on makes GlobalExceptionHandler the single classifier in
+// all environments: malformed JSON body -> bad-request:data, invalid query parameters ->
+// bad-request:parameter, and route/other framework failures -> the generic bad-request contract.
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 

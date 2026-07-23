@@ -124,7 +124,14 @@ public class DataStoreContextModuleTests
         {
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/dataStoreContexts?offset=abc");
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
         }
 
         [Test]

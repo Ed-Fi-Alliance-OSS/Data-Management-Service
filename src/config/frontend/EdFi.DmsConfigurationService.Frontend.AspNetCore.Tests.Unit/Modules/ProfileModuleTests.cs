@@ -535,6 +535,21 @@ public class ProfileModuleTests
     }
 
     [Test]
+    public async Task GetAllProfiles_NonNumericOffset_ShouldReturnParameterValidationFailure()
+    {
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v3/profiles?offset=abc");
+        await response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.BadRequest,
+            "urn:ed-fi:api:bad-request:parameter",
+            "Parameter Validation Failed",
+            "One or more query parameters were invalid. See 'errors' for details.",
+            errors: ["'offset' must be an integer."]
+        );
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+    }
+
+    [Test]
     public async Task GetAllProfiles_MultipleProfiles_ShouldReturnOk()
     {
         A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))

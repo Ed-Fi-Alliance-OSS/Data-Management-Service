@@ -771,6 +771,267 @@ public class VendorModuleTests
         }
 
         [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_offset()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?offset=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+        }
+
+        [Test]
+        public async Task Should_match_query_parameter_names_case_insensitively()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?OFFSET=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_repeated_non_bindable_values()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?offset=1&offset=2");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_a_malformed_json_body()
+        {
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent("{ \"company\": \"x\",, }", Encoding.UTF8, "application/json")
+            );
+
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_preserve_and_normalize_the_json_path_for_a_nested_malformed_body()
+        {
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent("{ \"contactName\": { \"a\": 1,, } }", Encoding.UTF8, "application/json")
+            );
+
+            // The recoverable JsonException.Path is preserved and normalized to a JSON path.
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$.contactName"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_invalid_utf8_json()
+        {
+            using var client = SetUpClient();
+            var content = new ByteArrayContent(new byte[] { 0x7b, 0x22, 0x4e, 0x22, 0x3a, 0xff, 0xfe, 0x7d });
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                "application/json"
+            );
+            var response = await client.PostAsync("/v3/vendors", content);
+
+            // Invalid UTF-8 surfaces as a JsonException (approved Q3 exception); the path "$.N" is normalized.
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$.n"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_a_declared_charset_mismatch()
+        {
+            using var client = SetUpClient();
+            var content = new ByteArrayContent(Encoding.UTF8.GetBytes("{\"company\":\"x\"}"));
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
+            {
+                CharSet = "utf-16",
+            };
+            var response = await client.PostAsync("/v3/vendors", content);
+
+            // A declared-charset mismatch surfaces as a JsonException (approved Q3 exception).
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_an_empty_chunked_body()
+        {
+            // An empty chunked body (no Content-Length) is indistinguishable from a root-level malformed
+            // chunked body without buffering, so it takes the same sanitized bad-request:data contract (the
+            // approved Q3 exception). Content-length empty bodies remain generic bad-request (asserted
+            // separately). The in-memory test host reproduces the chunked framing here.
+            using var client = SetUpClient();
+            var request = new HttpRequestMessage(HttpMethod.Post, "/v3/vendors");
+            request.Headers.TransferEncodingChunked = true;
+            var content = new ByteArrayContent(Array.Empty<byte>());
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                "application/json"
+            );
+            request.Content = content;
+            var response = await client.SendAsync(request);
+
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        private static void AssertNoParserLeak(JsonNode body)
+        {
+            // The raw parser text (positions, line numbers, type names) is never surfaced.
+            string raw = body.ToJsonString();
+            raw.Should().NotContain("System.");
+            raw.Should().NotContain("LineNumber");
+            raw.Should().NotContain("line ");
+            raw.Should().NotContain("position");
+        }
+
+        [Test]
+        public async Task Should_return_generic_bad_request_for_an_empty_body()
+        {
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent("", Encoding.UTF8, "application/json")
+            );
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request was invalid."
+            );
+        }
+
+        [Test]
+        public async Task Should_return_generic_bad_request_for_invalid_route_binding()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors/not-a-long");
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request was invalid."
+            );
+            body.ToJsonString().Should().NotContain("not-a-long");
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_limit()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?limit=xyz");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("xyz");
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_long_id()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?id=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'id' must be an integer."]
+            );
+        }
+
+        [Test]
+        public async Task Should_aggregate_multiple_malformed_query_parameters_in_wire_name_order()
+        {
+            using var client = SetUpClient();
+            // Supplied out of order; the response aggregates in metadata order: offset, limit, then remaining
+            // wire names (id). None of the rejected values is echoed.
+            var response = await client.GetAsync("/v3/vendors?id=foo&limit=xyz&offset=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors:
+                [
+                    "'offset' must be an integer.",
+                    "'limit' must be an integer.",
+                    "'id' must be an integer.",
+                ]
+            );
+            string raw = await response.Content.ReadAsStringAsync();
+            raw.Should().NotContain("foo");
+            raw.Should().NotContain("xyz");
+            raw.Should().NotContain("abc");
+        }
+
+        [Test]
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();

@@ -391,6 +391,62 @@ public class MetadataModuleTests
         }
     }
 
+    [Test]
+    public async Task OpenApi_Integer_Filter_Parameters_Remain_Integer()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/openapi/v1.json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var pathMap = doc
+            .RootElement.GetProperty("paths")
+            .EnumerateObject()
+            .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
+
+        // The integer filter parameters keep their integer schema (no degradation to string), which is the
+        // reason the raw-string binding option was rejected.
+        AssertIntegerQueryParameter(pathMap, "/v3/vendors", "id");
+        AssertIntegerQueryParameter(pathMap, "/v3/apiClients", "applicationid");
+    }
+
+    private static void AssertIntegerQueryParameter(
+        Dictionary<string, System.Text.Json.JsonElement> pathMap,
+        string path,
+        string wireName
+    )
+    {
+        var key = path.TrimEnd('/').ToLowerInvariant();
+        pathMap.Should().ContainKey(key, $"path {path} should exist in OpenAPI spec");
+        pathMap[key].TryGetProperty("get", out var getOp).Should().BeTrue($"GET {path} should exist");
+        getOp
+            .TryGetProperty("parameters", out var parameters)
+            .Should()
+            .BeTrue($"GET {path} should have parameters");
+        var param = parameters
+            .EnumerateArray()
+            .Single(p =>
+                p.GetProperty("name").GetString()!.Equals(wireName, StringComparison.OrdinalIgnoreCase)
+            );
+        param
+            .TryGetProperty("schema", out var schema)
+            .Should()
+            .BeTrue($"GET {path} parameter '{wireName}' should have schema");
+        schema
+            .TryGetProperty("type", out var type)
+            .Should()
+            .BeTrue($"GET {path} parameter '{wireName}' schema should have type");
+        TypeIncludes(type, "integer")
+            .Should()
+            .BeTrue($"GET {path} parameter '{wireName}' schema type should include integer");
+    }
+
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
     {
         return type.ValueKind switch

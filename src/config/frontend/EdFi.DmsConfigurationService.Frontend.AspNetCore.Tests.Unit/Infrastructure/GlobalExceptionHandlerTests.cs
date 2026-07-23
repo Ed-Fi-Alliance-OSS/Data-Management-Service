@@ -132,6 +132,77 @@ internal class GlobalExceptionHandlerTests
     }
 
     [Test]
+    public async Task When_handling_BadHttpRequest_with_a_JsonException_returns_sanitized_data_validation()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        httpContext.Response.Body = new MemoryStream();
+        var jsonException = new System.Text.Json.JsonException(
+            "'/' is invalid after a value. LineNumber: 4 | BytePositionInLine: 25.",
+            "$.contactName",
+            4,
+            25
+        );
+        var exception = new Microsoft.AspNetCore.Http.BadHttpRequestException(
+            "Request body invalid.",
+            400,
+            jsonException
+        );
+
+        // Act
+        var result = await _handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        // Assert
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(400);
+        httpContext.Response.ContentType.Should().Be("application/problem+json");
+
+        httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
+        var responseBody = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+        var body = JsonNode.Parse(responseBody)!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["errors"]!.AsArray().Count.Should().Be(0);
+        var validationErrors = body["validationErrors"]!.AsObject();
+        validationErrors.Count.Should().Be(1);
+        validationErrors["$.contactName"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .Should()
+            .Equal("The request body contains invalid JSON.");
+        // The raw parser text is never surfaced.
+        responseBody.Should().NotContain("BytePositionInLine");
+        responseBody.Should().NotContain("LineNumber");
+        responseBody.Should().NotContain("invalid after a value");
+    }
+
+    [Test]
+    public async Task When_handling_BadHttpRequest_with_a_pathless_JsonException_uses_the_root_path()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        httpContext.Response.Body = new MemoryStream();
+        var jsonException = new System.Text.Json.JsonException("no tokens", null, null, null);
+        var exception = new Microsoft.AspNetCore.Http.BadHttpRequestException("bad", 400, jsonException);
+
+        // Act
+        await _handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        // Assert
+        httpContext.Response.StatusCode.Should().Be(400);
+        httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
+        var body = JsonNode.Parse(await new StreamReader(httpContext.Response.Body).ReadToEndAsync())!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        body["validationErrors"]!.AsObject()["$"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .Should()
+            .Equal("The request body contains invalid JSON.");
+    }
+
+    [Test]
     public async Task When_handling_generic_exception_returns_500_with_unknown_error()
     {
         // Arrange

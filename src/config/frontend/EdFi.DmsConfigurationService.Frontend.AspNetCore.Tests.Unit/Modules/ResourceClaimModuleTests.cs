@@ -315,6 +315,54 @@ public class ResourceClaimModuleTests
                 errors: ["'limit' must be greater than 0."]
             );
         }
+
+        [Test]
+        public async Task It_returns_parameter_validation_failure_for_a_non_numeric_offset_on_resource_claims_endpoint()
+        {
+            var client = SetUpClient();
+            var response = await client.GetAsync("/v3/resourceClaims?offset=abc");
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+        }
+
+        [Test]
+        public async Task It_returns_parameter_validation_failure_for_a_non_numeric_offset_on_actions_endpoint()
+        {
+            var client = SetUpClient();
+            var response = await client.GetAsync("/v3/resourceClaimActions?offset=abc");
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+        }
+
+        [Test]
+        public async Task It_returns_parameter_validation_failure_for_a_non_numeric_offset_on_auth_strategies_endpoint()
+        {
+            var client = SetUpClient();
+            var response = await client.GetAsync("/v3/resourceClaimActionAuthStrategies?offset=abc");
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+        }
     }
 
     [TestFixture]
