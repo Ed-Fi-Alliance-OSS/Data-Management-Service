@@ -227,29 +227,6 @@ cache loss and rebuild.
 
 ---
 
-# How either lane repairs a candidate
-
-```mermaid
-flowchart LR
-    COMPARE[Compare canonical/cache versions]
-    CLASS{Classify}
-    MAT[Materialize current document]
-    CHECK[Recheck canonical version]
-    WRITE[Monotonic cache upsert]
-    LATCH[Set cache-ahead latch]
-
-    COMPARE --> CLASS
-    CLASS -->|missing or behind| MAT --> CHECK --> WRITE
-    CLASS -->|equal| DONE[No action]
-    CLASS -->|cache ahead| LATCH
-```
-
-Repair changes only derived cache state.
-
-It never modifies authoritative relational data, overwrites a newer cache version, or treats cache-ahead as ordinary repair.
-
----
-
 # Two reconciliation lanes
 
 ```mermaid
