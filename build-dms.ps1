@@ -868,7 +868,13 @@ function Start-DockerEnvironment {
         $DatabaseEngine = "postgresql",
 
         [switch]
-        $UseEnvironmentFileSchemaSettings
+        $UseEnvironmentFileSchemaSettings,
+
+        # Start only infrastructure + Configuration Service (via start-local-dms.ps1 -InfraOnly) and
+        # defer the DMS container start to after E2E database provisioning. Used for the SQL Server
+        # local-image E2E path, where the generated relational DDL must exist before DMS starts.
+        [switch]
+        $DeferDmsStart
     )
 
     $resolvedDatabaseEngine =
@@ -924,7 +930,15 @@ function Start-DockerEnvironment {
                 # claims-ready gate is skipped. The DMS container restarts until the configure
                 # step below lands the data store (restart: unless-stopped).
                 Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
+                    if ($DeferDmsStart) {
+                        # SQL Server requires the generated DDL before DMS starts: bring up only
+                        # infrastructure + Configuration Service now. DMS is started after provisioning by
+                        # Initialize-E2EDatabase -StartDmsAfterProvisioning (mirrors setup-local-dms.ps1).
+                        ./start-local-dms.ps1 -InfraOnly -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
+                    }
+                    else {
+                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
+                    }
                 }
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
@@ -1032,7 +1046,17 @@ function Initialize-E2EDatabase {
         $E2ETestSettings,
 
         [switch]
-        $UsePublishedImage
+        $UsePublishedImage,
+
+        [string]
+        $IdentityProvider = "self-contained",
+
+        # When set, DMS was not started with the stack (Start-DockerEnvironment -DeferDmsStart). Start it
+        # now via start-local-dms.ps1 -DmsOnly, after the relational schema is provisioned, instead of
+        # restarting an already-running container. Used for the SQL Server local-image E2E path, which
+        # requires the generated DDL before DMS starts (mirrors setup-local-dms.ps1's DmsOnly phase).
+        [switch]
+        $StartDmsAfterProvisioning
     )
 
     $dmsContainerName =
@@ -1044,14 +1068,32 @@ function Initialize-E2EDatabase {
         }
 
     $provisionedEffectiveSchemaHash = Invoke-E2EDatabaseProvisioning -E2ETestSettings $E2ETestSettings
-    $dmsRestartStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
-    Restart-DmsContainer `
-        -ContainerName $dmsContainerName `
-        -Reason "discard cached datastore connection pools after E2E database reprovisioning"
+    $dmsStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
+    if ($StartDmsAfterProvisioning) {
+        # DMS start was deferred so the generated SQL Server DDL exists first; start it now that the
+        # relational schema is provisioned. Reuses the same environment file, engine, identity provider,
+        # and schema-settings gate as the -InfraOnly phase in Start-DockerEnvironment.
+        Invoke-Execute {
+            try {
+                Push-Location "$PSScriptRoot/eng/docker-compose"
+                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$E2ETestSettings.ShouldProvisionE2EDatabase -Action {
+                    ./start-local-dms.ps1 -DmsOnly -EnvironmentFile $E2ETestSettings.EnvironmentFile -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $E2ETestSettings.DatabaseEngine -AddExtensionSecurityMetadata
+                }
+            }
+            finally {
+                Pop-Location
+            }
+        }
+    }
+    else {
+        Restart-DmsContainer `
+            -ContainerName $dmsContainerName `
+            -Reason "discard cached datastore connection pools after E2E database reprovisioning"
+    }
     Assert-DmsRuntimeSchemaMatchesProvisionedDatabase `
         -ProvisionedEffectiveSchemaHash $provisionedEffectiveSchemaHash `
         -ContainerName $dmsContainerName `
-        -LogsSinceUtc $dmsRestartStartedAtUtc
+        -LogsSinceUtc $dmsStartedAtUtc
 }
 
 function E2ETests {
@@ -1084,6 +1126,13 @@ function E2ETests {
 
     $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine
 
+    # SQL Server requires the generated relational DDL to exist before DMS starts. For the MSSQL
+    # local-image path, start infrastructure + Configuration Service only, provision the schema, then
+    # start DMS - the InfraOnly -> configure -> provision -> DmsOnly sequence proven by
+    # setup-local-dms.ps1. PostgreSQL keeps its proven full-stack start followed by a
+    # post-provisioning restart.
+    $deferDmsStart = ($e2eTestSettings.DatabaseEngine -eq "mssql") -and (-not $UsePublishedImage)
+
     Invoke-Step {
         Start-DockerEnvironment `
             -UsePublishedImage:$UsePublishedImage `
@@ -1092,10 +1141,17 @@ function E2ETests {
             -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile `
             -DataStoreDatabaseName $e2eTestSettings.DataStoreDatabaseName `
             -DatabaseEngine $e2eTestSettings.DatabaseEngine `
-            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.ShouldProvisionE2EDatabase
+            -UseEnvironmentFileSchemaSettings:$e2eTestSettings.ShouldProvisionE2EDatabase `
+            -DeferDmsStart:$deferDmsStart
     }
 
-    Invoke-Step { Initialize-E2EDatabase -E2ETestSettings $e2eTestSettings -UsePublishedImage:$UsePublishedImage }
+    Invoke-Step {
+        Initialize-E2EDatabase `
+            -E2ETestSettings $e2eTestSettings `
+            -UsePublishedImage:$UsePublishedImage `
+            -IdentityProvider $IdentityProvider `
+            -StartDmsAfterProvisioning:$deferDmsStart
+    }
 
     Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
 }
