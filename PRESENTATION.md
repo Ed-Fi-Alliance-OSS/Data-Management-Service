@@ -106,42 +106,27 @@ Direct fill may accelerate one document; only a full audit provides completeness
 
 ---
 
-# What `DocumentCache` represents
+# `DocumentCache` contract
 
-One caller-agnostic, pre-profile document per current resource:
+One caller-agnostic, pre-profile representation per current resource.
 
-- full API-shaped JSON,
-- stable `id`,
-- `_lastModifiedDate`,
-- reference links where applicable,
-- fixed stream-representation ETag, and
-- resource type/version metadata.
+**Contains:** API-shaped JSON, stable `id`, `_lastModifiedDate`, reference links,
+fixed stream ETag, and resource type/version metadata.
 
-It excludes authorization and caller-specific projection.
+**Excludes:** authorization decisions and caller-specific projection.
 
 ---
 
-# Why two document sources
+# Two document sources, one public state stream
 
-`DocumentCache` has the payload but not authoritative lifecycle.
+`DocumentCache` supplies the payload; `dms.Document` supplies stable identity and
+authoritative deletion.
 
-`dms.Document` has stable identity and authoritative lifecycle but no JSON.
-
-Therefore:
-
-- cache create/update/read → public upsert,
-- `dms.Document` delete → public tombstone.
-
----
-
-# Source operation mapping
-
-| Source operation | Public result |
+| Source change | Result |
 | --- | --- |
-| Cache create/update/snapshot | Document upsert |
-| `dms.Document` delete | Tombstone |
-| Cache delete/truncate | Ignore |
-| Other `dms.Document` operations | Ignore |
+| Cache create, update, or snapshot | Public document upsert |
+| `dms.Document` delete | Public tombstone |
+| Cache delete/truncate or other document operation | Ignore |
 | Database/Debezium heartbeat | Internal progress only |
 
 ---
