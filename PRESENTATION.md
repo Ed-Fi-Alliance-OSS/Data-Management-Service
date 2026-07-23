@@ -63,8 +63,11 @@ Ed-Fi Data Management Service — API 8.1
 flowchart LR
     API[DMS API writes] --> DB[(Authoritative relational tables)]
     DB --> DOC[(dms.Document)]
-    DOC --> P[Asynchronous projector]
-    P --> CACHE[(dms.DocumentCache)]
+    DOC --> FILL[Optional direct fill<br/>after cache-miss relational fallback]
+    DOC --> RECON[Background reconciliation]
+    FILL --> UPSERT[Revalidate and monotonic upsert]
+    RECON --> UPSERT
+    UPSERT --> CACHE[(dms.DocumentCache)]
     CACHE --> DEB[Debezium connector]
     DOC -->|deletes| DEB
     HB[(dms.CdcHeartbeat)] --> DEB
