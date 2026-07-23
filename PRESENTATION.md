@@ -156,35 +156,22 @@ flowchart TB
 
 ---
 
-# API ETag versus stream ETag
+# Leverage the existing `ContentVersion`
 
-- `ContentVersion` identifies canonical representation state.
-- API `_etag` also includes the request `variantKey`.
-- Profiles, links, format, and coding can change the API variant.
-- `StreamEtag` is only for the fixed CDC representation.
-- Kafka Connect copies it; it never derives it.
+DMS already stamps every representation change with a `ContentVersion`
+from one database-wide sequence.
 
----
-
-# Freshness is deliberately simple
+`DocumentCache` carries that same value, making freshness a direct comparison:
 
 ```text
 DocumentCache.ContentVersion == Document.ContentVersion
 ```
 
-- `LastModifiedAt` is payload and diagnostics.
-- `ComputedAt` is operational metadata.
-- `StreamEtag` is derived output.
-- None is an additional freshness predicate.
-
----
-
-# `ContentVersion` is global
-
-- Every representation change allocates from one database sequence.
-- Values are unique and globally monotonic when allocated.
-- Freshness and consumer ordering remain per `DocumentId`.
-- Sequence allocation order is not transaction commit order.
+- No cache-specific version or timestamp heuristic is introduced.
+- `LastModifiedAt`, `ComputedAt`, and `StreamEtag` retain their existing purposes.
+- Values are unique and monotonic when allocated.
+- Freshness and ordering remain per `DocumentId`.
+- Allocation order is not commit order.
 
 That last property creates the late-commit case.
 
