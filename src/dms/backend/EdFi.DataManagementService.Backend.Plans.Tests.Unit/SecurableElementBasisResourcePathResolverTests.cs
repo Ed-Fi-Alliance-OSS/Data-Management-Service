@@ -773,6 +773,106 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
     }
 
     [Test]
+    public void It_should_choose_the_fewest_join_steps_when_equal_priority_paths_have_different_owning_tables()
+    {
+        var studentRoot = CreateRootTable(Table("Student"));
+        var subjectDetailTable = new DbTableName(EdFiSchema, "CourseTranscriptDetail");
+        var subjectRoot = CreateRootTable(
+            Table("CourseTranscript"),
+            [
+                new DbColumnModel(
+                    Col("RootStudent_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ]
+        );
+        var subjectDetail = new DbTableModel(
+            subjectDetailTable,
+            Path("$.details[*]"),
+            new TableKey(
+                "PK_CourseTranscriptDetail",
+                [new DbKeyColumn(Col("CollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(Col("CollectionItemId"), ColumnKind.ParentKeyPart, null, false, null, null),
+                new DbColumnModel(
+                    Col("CourseTranscript_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    Col("NestedStudent_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [Col("CollectionItemId")],
+                [Col("CourseTranscript_DocumentId")],
+                [Col("CourseTranscript_DocumentId")],
+                []
+            ),
+        };
+
+        var nestedBinding = new DocumentReferenceBinding(
+            true,
+            Path("$.details[*].studentReference"),
+            subjectDetailTable,
+            Col("NestedStudent_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "Student"),
+            [],
+            IsRequired: true
+        );
+        var rootBinding = new DocumentReferenceBinding(
+            true,
+            Path("$.studentReference"),
+            subjectRoot.Table,
+            Col("RootStudent_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "Student"),
+            [],
+            IsRequired: true
+        );
+        var subjectModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+            EdFiSchema,
+            ResourceStorageKind.RelationalTables,
+            subjectRoot,
+            [subjectRoot, subjectDetail],
+            [nestedBinding, rootBinding],
+            []
+        );
+        var subject = CreateConcrete(1, "Ed-Fi", "CourseTranscript", subjectModel);
+        var student = CreateConcrete(2, "Ed-Fi", "Student", CreateModel("Ed-Fi", "Student", studentRoot));
+
+        var result = SecurableElementColumnPathResolver.ResolveBasisResourcePath(
+            subject,
+            new QualifiedResourceName("Ed-Fi", "Student"),
+            CreateLookup(subject, student),
+            []
+        );
+
+        result.Should().ContainSingle();
+        result[0].SourceTable.Should().Be(Table("CourseTranscript"));
+        result[0].SourceColumnName.Should().Be(Col("RootStudent_DocumentId"));
+        result[0].TargetTable.Should().BeNull();
+        result[0].TargetColumnName.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_allow_a_non_identity_first_hop()
     {
         var studentRoot = CreateRootTable(Table("Student"));

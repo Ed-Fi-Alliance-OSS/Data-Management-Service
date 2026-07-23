@@ -493,9 +493,9 @@ internal static class SecurableElementColumnPathResolver
                 }
             }
 
-            if (left.Hops.Count != right.Hops.Count)
+            if (left.Steps.Count != right.Steps.Count)
             {
-                return left.Hops.Count < right.Hops.Count ? -1 : 1;
+                return left.Steps.Count < right.Steps.Count ? -1 : 1;
             }
 
             return 0;
