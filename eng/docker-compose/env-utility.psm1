@@ -900,6 +900,135 @@ function Invoke-ConnectionStringValidation {
     }
 }
 
+function Invoke-ConnectionStringInspection {
+    <#
+    .SYNOPSIS
+        Invokes the SchemaTools `connection inspect` verb - the single connection-string parsing authority -
+        passing the connection string on stdin (never an argument, so a password stays out of the process
+        listing) and returning the parsed { valid; database; host; port; username; error } of NON-SECRET
+        canonical coordinates. Like Invoke-ConnectionStringValidation it parses with the EXACT runtime
+        provider builders (Npgsql / Microsoft.Data.SqlClient), so alias canonicalization, last-wins synonyms,
+        and rejection of unsupported keywords match runtime exactly.
+
+        THROWS only on a TOOL-CONTRACT / VERSION failure - never as a datastore error: a non-zero exit (which,
+        for a canonical engine, means the `inspect` verb is unavailable in a tool that predates it); blank,
+        null, or unparseable output; or a result - valid OR invalid - that violates the typed/state contract
+        (a missing field, a non-boolean `valid`, an object-valued coordinate, a wrong-type or wrong-state port,
+        or an incoherent valid/error pairing). Only a COMPLETE, TYPED, COHERENT { valid = $false } result is
+        RETURNED to the caller (which classifies stale vs invalid vs incomplete); a malformed invalid result
+        throws as a tool-contract failure, not a datastore error.
+    #>
+    param(
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ConnectionString,
+        [Parameter(Mandatory)][object]$SchemaToolPath
+    )
+    # Canonicalize before the token crosses to the CLI, mirroring the validate verb boundary.
+    $Engine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
+
+    # -SchemaToolPath is either a host executable path (string) or a validator descriptor from
+    # Resolve-DmsConnectionValidator. A DockerImage descriptor runs the SAME 'connection inspect' verb inside
+    # the DMS image. Either way the verb reads the connection string from stdin (no password in argv).
+    $validator = if ($SchemaToolPath -is [string]) {
+        [pscustomobject]@{ Kind = 'HostExe'; Path = $SchemaToolPath }
+    }
+    else {
+        $SchemaToolPath
+    }
+
+    if ([string]$validator.Kind -eq 'DockerImage') {
+        $output = $ConnectionString | & docker run --rm -i --network none --entrypoint dotnet $validator.Image $validator.ToolPath connection inspect --engine $Engine 2>$null
+    }
+    elseif (([string]$validator.Path).EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
+        # A .ps1 tool path (e.g. a test double or wrapper) is invoked via `pwsh -File`, mirroring
+        # Invoke-DmsSchemaProvision, so the connection string on stdin reaches the process instead of trying
+        # to bind to the script's parameters.
+        $output = $ConnectionString | & pwsh -NoLogo -NoProfile -File $validator.Path connection inspect --engine $Engine 2>$null
+    }
+    else {
+        $output = $ConnectionString | & $validator.Path connection inspect --engine $Engine 2>$null
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "The connection-string inspector (api-schema-tools 'connection inspect') exited $LASTEXITCODE for engine '$Engine'. A build that predates the 'connection inspect' verb exits non-zero, so rebuild or re-publish api-schema-tools (dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools) or repull the DMS image."
+    }
+    $json = ($output | Out-String)
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        throw "The connection-string inspector produced no output for engine '$Engine'; rebuild or re-publish api-schema-tools."
+    }
+    try {
+        $result = $json | ConvertFrom-Json
+    }
+    catch {
+        throw "The connection-string inspector produced unparseable output for engine '$Engine' ($($_.Exception.Message)); rebuild or re-publish api-schema-tools."
+    }
+    if ($null -eq $result) {
+        throw "The connection-string inspector produced a null result for engine '$Engine'; rebuild or re-publish api-schema-tools."
+    }
+
+    # Contract shape: EVERY result (valid OR invalid) must carry the complete field set, and 'valid' must be a
+    # real boolean. The C# `connection inspect` always emits { valid, database, host, port, username, error };
+    # a missing field, or a 'valid' that is not a [bool] (e.g. the STRING "false", which is truthy in
+    # PowerShell), is a tool-contract/version failure - never a datastore result.
+    $fieldNames = @($result.PSObject.Properties.Name)
+    foreach ($requiredField in 'valid', 'database', 'host', 'port', 'username', 'error') {
+        if ($fieldNames -notcontains $requiredField) {
+            throw "The connection-string inspector output for engine '$Engine' is missing the '$requiredField' field; rebuild or re-publish api-schema-tools."
+        }
+    }
+    if ($result.valid -isnot [bool]) {
+        throw "The connection-string inspector output for engine '$Engine' has a non-boolean 'valid' field; rebuild or re-publish api-schema-tools."
+    }
+
+    # Typed coordinates: database/host/username/error are string-or-null; port is integer-or-null. An
+    # object-valued or non-integral field is a tool-contract/version failure, never a datastore result.
+    foreach ($stringField in 'database', 'host', 'username', 'error') {
+        $fieldValue = $result.$stringField
+        if ($null -ne $fieldValue -and $fieldValue -isnot [string]) {
+            throw "The connection-string inspector output for engine '$Engine' has a non-string '$stringField' field; rebuild or re-publish api-schema-tools."
+        }
+    }
+    if ($null -ne $result.port -and $result.port -isnot [int] -and $result.port -isnot [long]) {
+        throw "The connection-string inspector output for engine '$Engine' has a non-integer 'port' field; rebuild or re-publish api-schema-tools."
+    }
+
+    # Coherent valid/error state: a valid result carries no error; an invalid result carries a nonblank error.
+    if ($result.valid) {
+        if ($null -ne $result.error) {
+            throw "The connection-string inspector reported a valid result with a non-null 'error' for engine '$Engine'; rebuild or re-publish api-schema-tools."
+        }
+    }
+    elseif ([string]::IsNullOrWhiteSpace([string]$result.error)) {
+        throw "The connection-string inspector reported an invalid result with no 'error' message for engine '$Engine'; rebuild or re-publish api-schema-tools."
+    }
+
+    # Engine/state-specific coordinate rules (the C# contract): a VALID PostgreSQL result carries a concrete
+    # integer port in 1-65535; a VALID SQL Server result carries a NULL port (the port stays encoded in the
+    # data source); an INVALID result carries null coordinates. Any violation is a tool-contract/version
+    # failure - never a datastore result (e.g. a valid PostgreSQL result with a null port must NOT reach
+    # provisioning and get a fabricated default).
+    if ($result.valid) {
+        if ($Engine -eq 'postgresql') {
+            if ($result.port -isnot [int] -and $result.port -isnot [long]) {
+                throw "The connection-string inspector reported a valid PostgreSQL result with no integer 'port' for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+            if ($result.port -lt 1 -or $result.port -gt 65535) {
+                throw "The connection-string inspector reported a valid PostgreSQL 'port' ($($result.port)) outside 1-65535; rebuild or re-publish api-schema-tools."
+            }
+        }
+        elseif ($null -ne $result.port) {
+            throw "The connection-string inspector reported a valid SQL Server result with a non-null 'port' (the port belongs inside the data source); rebuild or re-publish api-schema-tools."
+        }
+    }
+    else {
+        foreach ($coordinate in 'database', 'host', 'port', 'username') {
+            if ($null -ne $result.$coordinate) {
+                throw "The connection-string inspector reported an invalid result with a non-null '$coordinate' field; rebuild or re-publish api-schema-tools."
+            }
+        }
+    }
+    return $result
+}
+
 function Get-CmsConnectionStringDatabaseName {
     <#
     .SYNOPSIS
