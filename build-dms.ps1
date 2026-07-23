@@ -916,29 +916,40 @@ function Start-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
-            if ($UsePublishedImage) {
+            # Choose the startup script by image mode. start-local-dms.ps1 and start-published-dms.ps1
+            # share the -InfraOnly/-DmsOnly phase contract, so the deferred sequence is identical.
+            $startupScriptPath = if ($UsePublishedImage) { "./start-published-dms.ps1" } else { "./start-local-dms.ps1" }
+
+            if ($DeferDmsStart) {
+                # SQL Server (either image mode) requires the generated DDL before DMS starts: bring up
+                # only infrastructure + Configuration Service now, then create the data store. DMS is
+                # started after provisioning by Initialize-E2EDatabase -StartDmsAfterProvisioning
+                # (mirrors setup-local-dms.ps1's InfraOnly -> configure -> provision -> DmsOnly sequence).
                 Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
+                    & $startupScriptPath -InfraOnly -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
+                }
+                # Neither start-published-dms.ps1 -InfraOnly nor start-local-dms.ps1 -InfraOnly creates a
+                # data store; create it explicitly for both image modes so provisioning and DMS startup
+                # find the instance in CMS.
+                ./configure-local-data-store.ps1 -EnvironmentFile $environmentFilePath -DataStoreDatabaseName $DataStoreDatabaseName -DatabaseEngine $resolvedDatabaseEngine
+            }
+            elseif ($UsePublishedImage) {
+                # Published image, PostgreSQL: full start. start-published-dms.ps1 creates the data store
+                # internally from -DataStoreDatabaseName.
+                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                    & $startupScriptPath -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
                 }
             }
             else {
-                # Local-image path: start-local-dms.ps1 is infrastructure-lifecycle-only as of
+                # Local image, PostgreSQL: start-local-dms.ps1 is infrastructure-lifecycle-only as of
                 # DMS-1153 and no longer accepts -LoadSeedData.
                 #
                 # This flow is intentionally outside the bootstrap-manifest contract: the
-                # -RemoveBootstrap teardown above guarantees no manifest is staged, so the
-                # claims-ready gate is skipped. The DMS container restarts until the configure
-                # step below lands the data store (restart: unless-stopped).
+                # -RemoveBootstrap teardown above guarantees no manifest is staged, so the claims-ready
+                # gate is skipped. The DMS container restarts until the configure step below lands the
+                # data store (restart: unless-stopped).
                 Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
-                    if ($DeferDmsStart) {
-                        # SQL Server requires the generated DDL before DMS starts: bring up only
-                        # infrastructure + Configuration Service now. DMS is started after provisioning by
-                        # Initialize-E2EDatabase -StartDmsAfterProvisioning (mirrors setup-local-dms.ps1).
-                        ./start-local-dms.ps1 -InfraOnly -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
-                    }
-                    else {
-                        ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
-                    }
+                    & $startupScriptPath -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
                 }
 
                 # start-local-dms.ps1 no longer creates a default data store (DMS-1153 de-scope);
@@ -1071,13 +1082,16 @@ function Initialize-E2EDatabase {
     $dmsStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-2)
     if ($StartDmsAfterProvisioning) {
         # DMS start was deferred so the generated SQL Server DDL exists first; start it now that the
-        # relational schema is provisioned. Reuses the same environment file, engine, identity provider,
-        # and schema-settings gate as the -InfraOnly phase in Start-DockerEnvironment.
+        # relational schema is provisioned, using the image-appropriate startup script (both
+        # start-local-dms.ps1 and start-published-dms.ps1 share the -DmsOnly phase). Reuses the same
+        # environment file, engine, identity provider, and schema-settings gate as the -InfraOnly phase
+        # in Start-DockerEnvironment.
+        $startupScriptPath = if ($UsePublishedImage) { "./start-published-dms.ps1" } else { "./start-local-dms.ps1" }
         Invoke-Execute {
             try {
                 Push-Location "$PSScriptRoot/eng/docker-compose"
                 Invoke-WithEnvironmentFileSchemaSettings -Enabled:$E2ETestSettings.ShouldProvisionE2EDatabase -Action {
-                    ./start-local-dms.ps1 -DmsOnly -EnvironmentFile $E2ETestSettings.EnvironmentFile -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $E2ETestSettings.DatabaseEngine -AddExtensionSecurityMetadata
+                    & $startupScriptPath -DmsOnly -EnvironmentFile $E2ETestSettings.EnvironmentFile -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $E2ETestSettings.DatabaseEngine -AddExtensionSecurityMetadata
                 }
             }
             finally {
@@ -1126,12 +1140,15 @@ function E2ETests {
 
     $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine
 
-    # SQL Server requires the generated relational DDL to exist before DMS starts. For the MSSQL
-    # local-image path, start infrastructure + Configuration Service only, provision the schema, then
-    # start DMS - the InfraOnly -> configure -> provision -> DmsOnly sequence proven by
-    # setup-local-dms.ps1. PostgreSQL keeps its proven full-stack start followed by a
-    # post-provisioning restart.
-    $deferDmsStart = ($e2eTestSettings.DatabaseEngine -eq "mssql") -and (-not $UsePublishedImage)
+    # Resolve the startup phase plan once (single decision point, unit-tested in
+    # E2EEngineForwarding.Tests.ps1). SQL Server requires the generated relational DDL to exist before
+    # DMS starts, so for MSSQL - in either image mode - start infrastructure + Configuration Service
+    # only, configure the data store, provision the schema, then start DMS: the InfraOnly -> configure
+    # -> provision -> DmsOnly sequence proven by setup-local-dms.ps1. PostgreSQL keeps its proven
+    # full-stack start followed by a post-provisioning restart.
+    Import-Module -Name "$PSScriptRoot/eng/Dms-Management.psm1" -Force
+    $startupPlan = Get-E2EStartupPhasePlan -DatabaseEngine $e2eTestSettings.DatabaseEngine -UsePublishedImage:$UsePublishedImage
+    $deferDmsStart = $startupPlan.DeferDmsStart
 
     Invoke-Step {
         Start-DockerEnvironment `

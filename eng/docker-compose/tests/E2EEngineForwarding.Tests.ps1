@@ -126,4 +126,30 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
             (ReadValuesFromEnvFile $resolved)["DMS_DATASTORE"] | Should -Be "postgresql"
         }
     }
+
+    Context "startup phase plan selection (local and published image modes)" {
+        It "selects the phase sequence for <Engine> published=<Published>" -ForEach @(
+            @{ Engine = "mssql"; Published = $false; Defer = $true; Script = "start-local-dms.ps1"; Container = "ed-fi-api" }
+            @{ Engine = "mssql"; Published = $true; Defer = $true; Script = "start-published-dms.ps1"; Container = "dms-published-dms-1" }
+            @{ Engine = "postgresql"; Published = $false; Defer = $false; Script = "start-local-dms.ps1"; Container = "ed-fi-api" }
+            @{ Engine = "postgresql"; Published = $true; Defer = $false; Script = "start-published-dms.ps1"; Container = "dms-published-dms-1" }
+        ) {
+            $plan = Get-E2EStartupPhasePlan -DatabaseEngine $Engine -UsePublishedImage:$Published
+
+            # DeferDmsStart drives the whole phase sequence: $true => InfraOnly -> configure -> provision
+            # -> DmsOnly (MSSQL, in either image mode); $false => full start -> provision -> restart
+            # (PostgreSQL, in either image mode). The script and container follow the image mode.
+            $plan.DeferDmsStart | Should -Be $Defer
+            $plan.StartupScript | Should -Be $Script
+            $plan.DmsContainerName | Should -Be $Container
+        }
+
+        It "defaults to the PostgreSQL legacy full-start/restart sequence when no engine is specified" {
+            $plan = Get-E2EStartupPhasePlan
+
+            $plan.DatabaseEngine | Should -Be "postgresql"
+            $plan.DeferDmsStart | Should -BeFalse
+            $plan.StartupScript | Should -Be "start-local-dms.ps1"
+        }
+    }
 }

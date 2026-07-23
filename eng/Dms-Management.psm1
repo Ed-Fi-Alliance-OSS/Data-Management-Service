@@ -1035,6 +1035,42 @@ function New-E2EDataStoreConnectionStrings {
     }
 }
 
+function Get-E2EStartupPhasePlan {
+    <#
+    .SYNOPSIS
+        Resolves the standard E2E Docker startup phase plan for a database engine and image mode. This
+        is the single decision point the E2E build orchestration consumes, so the phase sequence is
+        selected consistently for both image modes and can be unit tested without Docker.
+    .DESCRIPTION
+        SQL Server requires the generated relational DDL to exist before DMS starts, so for MSSQL (in
+        either image mode) DMS is deferred: infrastructure + Configuration Service start first
+        (-InfraOnly), the data store is configured and the schema is provisioned, then DMS is started
+        (-DmsOnly). PostgreSQL keeps the proven full-stack start followed by a post-provisioning
+        restart. The startup script and DMS container name follow the image mode.
+    .OUTPUTS
+        [pscustomobject] with DatabaseEngine, UsePublishedImage, DeferDmsStart, StartupScript, and
+        DmsContainerName.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [string]$DatabaseEngine = "postgresql",
+        [switch]$UsePublishedImage
+    )
+
+    $engine = if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) { "postgresql" } else { $DatabaseEngine }
+
+    return [pscustomobject]@{
+        DatabaseEngine    = $engine
+        UsePublishedImage = [bool]$UsePublishedImage
+        # SQL Server needs the generated DDL before DMS starts (defer in either image mode); PostgreSQL
+        # keeps the full-stack start followed by a post-provisioning restart.
+        DeferDmsStart     = ($engine -eq "mssql")
+        StartupScript     = if ($UsePublishedImage) { "start-published-dms.ps1" } else { "start-local-dms.ps1" }
+        DmsContainerName  = if ($UsePublishedImage) { "dms-published-dms-1" } else { "ed-fi-api" }
+    }
+}
+
 <#
 .SYNOPSIS
     Creates a new DMS Instance by sending a POST request to the Configuration Service.
@@ -1885,4 +1921,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
