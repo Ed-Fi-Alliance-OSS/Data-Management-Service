@@ -277,6 +277,125 @@ public class Given_A_Contact_Model_Set_With_Extension_When_Emitting_Manifest
     }
 
     [Test]
+    public void It_should_emit_reference_ranking_metadata_in_resource_details()
+    {
+        var schema = new DbSchemaName("edfi");
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentTransportation");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0", IsAbstractResource: false);
+        var rootTable = new DbTableModel(
+            new DbTableName(schema, "StudentTransportation"),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_StudentTransportation",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    RelationalNameConventions.DocumentIdColumnName,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Student_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+                new DbColumnModel(
+                    new DbColumnName("TransportationTypeDescriptor_DescriptorId"),
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: JsonPathExpressionCompiler.Compile("$.transportationTypeDescriptor"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "TransportationTypeDescriptor")
+                ),
+            ],
+            []
+        );
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    true,
+                    JsonPathExpressionCompiler.Compile("$.studentReference"),
+                    rootTable.Table,
+                    new DbColumnName("Student_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "Student"),
+                    [],
+                    IsRequired: true,
+                    IsRoleNamed: false
+                ),
+            ],
+            DescriptorEdgeSources:
+            [
+                new DescriptorEdgeSource(
+                    true,
+                    JsonPathExpressionCompiler.Compile("$.transportationTypeDescriptor"),
+                    rootTable.Table,
+                    new DbColumnName("TransportationTypeDescriptor_DescriptorId"),
+                    new QualifiedResourceName("Ed-Fi", "TransportationTypeDescriptor"),
+                    IsRequired: true,
+                    IsRoleNamed: false
+                ),
+            ]
+        );
+        var derivedSet = new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo("1.0", "1.0", "hash", 1, [], [], [resourceKey]),
+            SqlDialect.Pgsql,
+            [],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            []
+        );
+
+        var detailedManifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { resource }
+        );
+        var root =
+            JsonNode.Parse(detailedManifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var resourceDetails =
+            root["resource_details"] as JsonArray
+            ?? throw new InvalidOperationException("Expected resource_details to be a JSON array.");
+        var resourceDetail =
+            resourceDetails.Should().ContainSingle().Subject as JsonObject
+            ?? throw new InvalidOperationException("Expected resource detail to be a JSON object.");
+
+        var documentReferenceBindings =
+            resourceDetail["document_reference_bindings"] as JsonArray
+            ?? throw new InvalidOperationException("Expected document_reference_bindings to be an array.");
+        var documentReferenceBinding = documentReferenceBindings
+            .Should()
+            .NotBeEmpty()
+            .And.Subject.OfType<JsonObject>()
+            .First();
+
+        documentReferenceBinding["is_required"]!.GetValue<bool>().Should().BeTrue();
+        documentReferenceBinding["is_role_named"]!.GetValue<bool>().Should().BeFalse();
+
+        var descriptorEdges =
+            resourceDetail["descriptor_edge_sources"] as JsonArray
+            ?? throw new InvalidOperationException("Expected descriptor_edge_sources to be an array.");
+        var descriptorEdge = descriptorEdges.Should().NotBeEmpty().And.Subject.OfType<JsonObject>().First();
+
+        descriptorEdge["is_required"]!.GetValue<bool>().Should().BeTrue();
+        descriptorEdge["is_role_named"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    [Test]
     public void It_should_emit_identity_metadata_in_resource_details_tables()
     {
         var coreSchema = CommonInventoryTestSchemaBuilder.BuildExtensionCoreProjectSchema();

@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -26,6 +27,8 @@ internal sealed record ResolvedEdOrgSecurableElementCandidateResolution(
 /// </summary>
 internal static class SecurableElementColumnPathResolver
 {
+    private static readonly DbTableName DescriptorTable = new(new DbSchemaName("dms"), "Descriptor");
+
     /// <summary>
     /// Resolves all securable element column paths for a single concrete resource.
     /// Returns a list of resolved paths, each carrying the element kind and the column path chain.
@@ -139,6 +142,417 @@ internal static class SecurableElementColumnPathResolver
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Resolves the preferred join path from a subject resource name to a basis resource name.
+    /// This overload matches the view-based authorization design contract.
+    /// </summary>
+    public static IReadOnlyList<ColumnPathStep> ResolveSecurableElementColumnPath(
+        QualifiedResourceName subjectResource,
+        QualifiedResourceName basisResource,
+        DerivedRelationalModelSet modelSet
+    ) => ResolveBasisResourcePath(subjectResource, basisResource, modelSet);
+
+    /// <summary>
+    /// Resolves the preferred join path from a subject resource name to a basis resource name.
+    /// </summary>
+    public static IReadOnlyList<ColumnPathStep> ResolveBasisResourcePath(
+        QualifiedResourceName subjectResource,
+        QualifiedResourceName basisResource,
+        DerivedRelationalModelSet modelSet
+    )
+    {
+        ArgumentNullException.ThrowIfNull(modelSet);
+
+        var resourceLookup = modelSet.GetConcreteResourceModelsByResource();
+        return
+            !resourceLookup.TryGetValue(subjectResource, out var subjectConcreteResource)
+            || !IsKnownBasisResource(basisResource, resourceLookup, modelSet.AbstractUnionViewsInNameOrder)
+            ? []
+            : ResolveBasisResourcePath(
+                subjectConcreteResource,
+                basisResource,
+                resourceLookup,
+                modelSet.AbstractUnionViewsInNameOrder
+            );
+    }
+
+    private static bool IsKnownBasisResource(
+        QualifiedResourceName basisResource,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
+        IReadOnlyList<AbstractUnionViewInfo> abstractUnionViews
+    ) =>
+        resourceLookup.ContainsKey(basisResource)
+        || abstractUnionViews.Any(view =>
+            view.AbstractResourceKey.Resource == basisResource
+            || view.UnionArmsInOrder.Any(arm => arm.ConcreteMemberResourceKey.Resource == basisResource)
+        );
+
+    /// <summary>
+    /// Resolves the preferred join path from a subject resource model to a basis resource.
+    /// Returns an ordered list of column-path steps that end at the basis resource's DocumentId.
+    /// </summary>
+    public static IReadOnlyList<ColumnPathStep> ResolveBasisResourcePath(
+        ConcreteResourceModel subjectResource,
+        QualifiedResourceName basisResource,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
+        IReadOnlyList<AbstractUnionViewInfo> abstractUnionViews
+    )
+    {
+        ArgumentNullException.ThrowIfNull(subjectResource);
+        ArgumentNullException.ThrowIfNull(resourceLookup);
+        ArgumentNullException.ThrowIfNull(abstractUnionViews);
+
+        var subjectModel = subjectResource.RelationalModel;
+        var subjectRoot = subjectModel.Root;
+        var abstractBasisMembersByResource = abstractUnionViews
+            .GroupBy(static view => view.AbstractResourceKey.Resource)
+            .ToDictionary(
+                static grouping => grouping.Key,
+                grouping =>
+                    grouping
+                        .SelectMany(static view => view.UnionArmsInOrder)
+                        .Select(static arm => arm.ConcreteMemberResourceKey.Resource)
+                        .ToHashSet()
+            );
+        var basisIsAbstract = abstractBasisMembersByResource.ContainsKey(basisResource);
+
+        if (IsBasisMatch(subjectModel.Resource, basisResource, abstractBasisMembersByResource))
+        {
+            return
+            [
+                new ColumnPathStep(
+                    subjectRoot.Table,
+                    PersonJoinPathResolver.ResolveToCanonicalColumn(
+                        subjectRoot,
+                        RelationalNameConventions.DocumentIdColumnName
+                    ),
+                    null,
+                    null
+                ),
+            ];
+        }
+
+        var candidates = Explore(subjectModel, [subjectModel.Resource], [], []);
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var bestCandidate = candidates[0];
+        for (var index = 1; index < candidates.Count; index++)
+        {
+            if (CompareCandidates(candidates[index], bestCandidate) < 0)
+            {
+                bestCandidate = candidates[index];
+            }
+        }
+
+        return bestCandidate.Steps;
+
+        List<(
+            IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+            bool PreferExactAbstractBasis,
+            IReadOnlyList<ColumnPathStep> Steps
+        )> Explore(
+            RelationalResourceModel currentModel,
+            HashSet<QualifiedResourceName> visitedResources,
+            List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> hopsSoFar,
+            List<ColumnPathStep> stepsSoFar
+        )
+        {
+            var foundCandidates =
+                new List<(
+                    IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+                    bool PreferExactAbstractBasis,
+                    IReadOnlyList<ColumnPathStep> Steps
+                )>();
+
+            foreach (var binding in currentModel.DocumentReferenceBindings)
+            {
+                var owningTable = FindOwningTable(currentModel, binding.Table);
+                if (owningTable is null)
+                {
+                    continue;
+                }
+
+                if (visitedResources.Contains(binding.TargetResource))
+                {
+                    continue;
+                }
+
+                if (hopsSoFar.Count > 0 && !binding.IsIdentityComponent)
+                {
+                    continue;
+                }
+
+                var sourceColumnName = PersonJoinPathResolver.ResolveToCanonicalColumn(
+                    owningTable,
+                    binding.FkColumn
+                );
+                var terminalMatch = IsBasisMatch(
+                    binding.TargetResource,
+                    basisResource,
+                    abstractBasisMembersByResource
+                );
+                if (terminalMatch && !IsKnownBasisResource(basisResource, resourceLookup, abstractUnionViews))
+                {
+                    continue;
+                }
+
+                if (!terminalMatch)
+                {
+                    if (!resourceLookup.TryGetValue(binding.TargetResource, out var nextResource))
+                    {
+                        continue;
+                    }
+
+                    var nextSteps = CreateStepsToOwningTable(currentModel, owningTable, stepsSoFar);
+                    if (nextSteps is null)
+                    {
+                        continue;
+                    }
+
+                    nextSteps.Add(
+                        new(
+                            owningTable.Table,
+                            sourceColumnName,
+                            nextResource.RelationalModel.Root.Table,
+                            PersonJoinPathResolver.ResolveToCanonicalColumn(
+                                nextResource.RelationalModel.Root,
+                                RelationalNameConventions.DocumentIdColumnName
+                            )
+                        )
+                    );
+                    var nextHops = new List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)>(hopsSoFar)
+                    {
+                        GetBindingPriority((binding, currentModel)),
+                    };
+                    var nextVisitedResources = new HashSet<QualifiedResourceName>(visitedResources)
+                    {
+                        binding.TargetResource,
+                    };
+
+                    foundCandidates.AddRange(
+                        Explore(nextResource.RelationalModel, nextVisitedResources, nextHops, nextSteps)
+                    );
+                    continue;
+                }
+
+                var terminalSteps = CreateStepsToOwningTable(currentModel, owningTable, stepsSoFar);
+                if (terminalSteps is null)
+                {
+                    continue;
+                }
+
+                terminalSteps.Add(new(owningTable.Table, sourceColumnName, null, null));
+                var terminalHops = new List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)>(hopsSoFar)
+                {
+                    GetBindingPriority((binding, currentModel)),
+                };
+
+                foundCandidates.Add(
+                    (
+                        terminalHops,
+                        basisIsAbstract && binding.TargetResource == basisResource && hopsSoFar.Count > 0,
+                        terminalSteps
+                    )
+                );
+            }
+
+            foreach (var descriptorEdge in currentModel.DescriptorEdgeSources)
+            {
+                if (!Equals(descriptorEdge.DescriptorResource, basisResource))
+                {
+                    continue;
+                }
+
+                var owningTable = FindOwningTable(currentModel, descriptorEdge.Table);
+                if (owningTable is null)
+                {
+                    continue;
+                }
+
+                var descriptorSteps = CreateStepsToOwningTable(currentModel, owningTable, stepsSoFar);
+                if (descriptorSteps is null)
+                {
+                    continue;
+                }
+
+                descriptorSteps.Add(
+                    new(
+                        owningTable.Table,
+                        PersonJoinPathResolver.ResolveToCanonicalColumn(owningTable, descriptorEdge.FkColumn),
+                        DescriptorTable,
+                        RelationalNameConventions.DocumentIdColumnName
+                    )
+                );
+                var descriptorHops = new List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)>(hopsSoFar)
+                {
+                    GetDescriptorEdgePriority(descriptorEdge, owningTable),
+                };
+
+                foundCandidates.Add((descriptorHops, false, descriptorSteps));
+            }
+
+            return foundCandidates;
+        }
+
+        static DbTableModel? FindOwningTable(RelationalResourceModel model, DbTableName table) =>
+            model.TablesInDependencyOrder.FirstOrDefault(candidate => candidate.Table.Equals(table));
+
+        static List<ColumnPathStep>? CreateStepsToOwningTable(
+            RelationalResourceModel model,
+            DbTableModel owningTable,
+            IReadOnlyList<ColumnPathStep> stepsSoFar
+        )
+        {
+            var steps = new List<ColumnPathStep>(stepsSoFar);
+            if (owningTable.Table.Equals(model.Root.Table))
+            {
+                return steps;
+            }
+
+            if (owningTable.IdentityMetadata.RootScopeLocatorColumns.Count != 1)
+            {
+                return null;
+            }
+
+            steps.Add(
+                new(
+                    model.Root.Table,
+                    PersonJoinPathResolver.ResolveToCanonicalColumn(
+                        model.Root,
+                        RelationalNameConventions.DocumentIdColumnName
+                    ),
+                    owningTable.Table,
+                    PersonJoinPathResolver.ResolveToCanonicalColumn(
+                        owningTable,
+                        owningTable.IdentityMetadata.RootScopeLocatorColumns[0]
+                    )
+                )
+            );
+
+            return steps;
+        }
+
+        static bool IsBasisMatch(
+            QualifiedResourceName reachedResource,
+            QualifiedResourceName basis,
+            IReadOnlyDictionary<QualifiedResourceName, HashSet<QualifiedResourceName>> abstractMembersByBasis
+        ) =>
+            reachedResource == basis
+            || (
+                abstractMembersByBasis.TryGetValue(basis, out var abstractMembers)
+                && abstractMembers.Contains(reachedResource)
+            )
+            || (
+                abstractMembersByBasis.TryGetValue(reachedResource, out var reachedAbstractMembers)
+                && reachedAbstractMembers.Contains(basis)
+            );
+
+        static int CompareCandidates(
+            (
+                IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+                bool PreferExactAbstractBasis,
+                IReadOnlyList<ColumnPathStep> Steps
+            ) left,
+            (
+                IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+                bool PreferExactAbstractBasis,
+                IReadOnlyList<ColumnPathStep> Steps
+            ) right
+        )
+        {
+            if (left.PreferExactAbstractBasis != right.PreferExactAbstractBasis)
+            {
+                return left.PreferExactAbstractBasis ? -1 : 1;
+            }
+
+            var hopCount = Math.Min(left.Hops.Count, right.Hops.Count);
+            for (var hopIndex = 0; hopIndex < hopCount; hopIndex++)
+            {
+                var leftPriority = left.Hops[hopIndex];
+                var rightPriority = right.Hops[hopIndex];
+
+                if (leftPriority.IsIdentity != rightPriority.IsIdentity)
+                {
+                    return leftPriority.IsIdentity ? -1 : 1;
+                }
+
+                if (leftPriority.IsRequired != rightPriority.IsRequired)
+                {
+                    return leftPriority.IsRequired ? -1 : 1;
+                }
+
+                if (leftPriority.IsRoleNamed != rightPriority.IsRoleNamed)
+                {
+                    return leftPriority.IsRoleNamed ? 1 : -1;
+                }
+            }
+
+            if (left.Hops.Count != right.Hops.Count)
+            {
+                return left.Hops.Count < right.Hops.Count ? -1 : 1;
+            }
+
+            return 0;
+        }
+
+        static (bool IsIdentity, bool IsRequired, bool IsRoleNamed) GetBindingPriority(
+            (DocumentReferenceBinding Binding, RelationalResourceModel OwningModel) bindingInfo
+        )
+        {
+            var binding = bindingInfo.Binding;
+            var isRequired = binding.IsRequired;
+
+            if (!isRequired)
+            {
+                var owningTable = bindingInfo.OwningModel.TablesInDependencyOrder.FirstOrDefault(table =>
+                    table.Table == binding.Table
+                    || string.Equals(table.Table.Name, binding.Table.Name, StringComparison.Ordinal)
+                );
+
+                if (owningTable is not null)
+                {
+                    var fkColumn = owningTable.Columns.FirstOrDefault(column =>
+                        column.ColumnName == binding.FkColumn
+                        || string.Equals(
+                            column.ColumnName.Value,
+                            binding.FkColumn.Value,
+                            StringComparison.Ordinal
+                        )
+                    );
+
+                    if (fkColumn is not null)
+                    {
+                        isRequired = !fkColumn.IsNullable;
+                    }
+                }
+            }
+
+            return (binding.IsIdentityComponent, isRequired, binding.IsRoleNamed);
+        }
+
+        static (bool IsIdentity, bool IsRequired, bool IsRoleNamed) GetDescriptorEdgePriority(
+            DescriptorEdgeSource descriptorEdge,
+            DbTableModel owningTable
+        )
+        {
+            var fkColumn = owningTable.Columns.FirstOrDefault(column =>
+                column.ColumnName == descriptorEdge.FkColumn
+                || string.Equals(
+                    column.ColumnName.Value,
+                    descriptorEdge.FkColumn.Value,
+                    StringComparison.Ordinal
+                )
+            );
+            var isRequired = descriptorEdge.IsRequired || (fkColumn is not null && !fkColumn.IsNullable);
+
+            return (descriptorEdge.IsIdentityComponent, isRequired, descriptorEdge.IsRoleNamed);
+        }
     }
 
     internal static ResolvedEdOrgSecurableElementCandidateResolution ResolveEducationOrganizationCandidates(

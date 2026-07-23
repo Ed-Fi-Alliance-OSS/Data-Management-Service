@@ -898,6 +898,8 @@ public static class DerivedModelSetManifestEmitter
     {
         writer.WriteStartObject();
         writer.WriteBoolean("is_identity_component", binding.IsIdentityComponent);
+        writer.WriteBoolean("is_required", binding.IsRequired);
+        writer.WriteBoolean("is_role_named", binding.IsRoleNamed);
         writer.WriteString("reference_object_path", binding.ReferenceObjectPath.Canonical);
         writer.WritePropertyName("table");
         WriteTableReference(writer, binding.Table);

@@ -25,6 +25,7 @@ public class Given_Reference_Binding
     private DocumentReferenceBinding _calendarBinding = default!;
     private DocumentReferenceBinding _personBinding = default!;
     private DocumentReferenceBinding _programBinding = default!;
+    private DocumentReferenceBinding _learningProgramBinding = default!;
     private DocumentReferenceBinding _extensionBinding = default!;
 
     /// <summary>
@@ -84,6 +85,9 @@ public class Given_Reference_Binding
         );
         _programBinding = _studentModel.DocumentReferenceBindings.Single(binding =>
             binding.ReferenceObjectPath.Canonical == "$.programReference"
+        );
+        _learningProgramBinding = _studentModel.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.learningProgramReference"
         );
         _extensionBinding = _studentModel.DocumentReferenceBindings.Single(binding =>
             binding.ReferenceObjectPath.Canonical == "$._ext.sample.sponsorReference"
@@ -169,6 +173,37 @@ public class Given_Reference_Binding
         _extensionRootTable
             .Columns.Should()
             .Contain(column => column.ColumnName.Value == "SponsorSchool_DocumentId");
+    }
+
+    [Test]
+    public void It_should_populate_requiredness_and_role_named_metadata()
+    {
+        _schoolBinding.IsRequired.Should().BeTrue();
+        _schoolBinding.IsRoleNamed.Should().BeFalse();
+
+        _calendarBinding.IsRequired.Should().BeFalse();
+        _calendarBinding.IsRoleNamed.Should().BeFalse();
+
+        _programBinding.IsRequired.Should().BeFalse();
+        _programBinding.IsRoleNamed.Should().BeFalse();
+
+        var programDescriptorEdge = _studentModel.DescriptorEdgeSources.Single(edge =>
+            edge.DescriptorValuePath.Canonical == "$.programReference.programTypeDescriptor"
+        );
+        programDescriptorEdge.IsRequired.Should().BeFalse();
+        programDescriptorEdge.IsRoleNamed.Should().BeFalse();
+
+        _learningProgramBinding.IsRequired.Should().BeFalse();
+        _learningProgramBinding.IsRoleNamed.Should().BeTrue();
+
+        var learningProgramDescriptorEdge = _studentModel.DescriptorEdgeSources.Single(edge =>
+            edge.DescriptorValuePath.Canonical == "$.learningProgramReference.programTypeDescriptor"
+        );
+        learningProgramDescriptorEdge.IsRequired.Should().BeFalse();
+        learningProgramDescriptorEdge.IsRoleNamed.Should().BeTrue();
+
+        _extensionBinding.IsRequired.Should().BeFalse();
+        _extensionBinding.IsRoleNamed.Should().BeTrue();
     }
 }
 
@@ -797,6 +832,18 @@ internal static class ReferenceBindingTestSchemaBuilder
                         },
                     },
                 },
+                ["learningProgramReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["programTypeDescriptor"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["maxLength"] = 300,
+                        },
+                    },
+                },
                 ["addresses"] = new JsonObject
                 {
                     ["type"] = "array",
@@ -890,6 +937,22 @@ internal static class ReferenceBindingTestSchemaBuilder
                         {
                             ["identityJsonPath"] = "$.programTypeDescriptor",
                             ["referenceJsonPath"] = "$.programReference.programTypeDescriptor",
+                        },
+                    },
+                },
+                ["LearningProgram"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Program",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programTypeDescriptor",
+                            ["referenceJsonPath"] = "$.learningProgramReference.programTypeDescriptor",
                         },
                     },
                 },

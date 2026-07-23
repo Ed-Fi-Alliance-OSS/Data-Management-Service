@@ -73441,6 +73441,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference",
           "table": {
             "schema": "edfi",
@@ -73471,6 +73473,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.assessmentReference",
           "table": {
             "schema": "edfi",
@@ -73496,6 +73500,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": true,
           "reference_object_path": "$.assigningEducationOrganizationReference",
           "table": {
             "schema": "edfi",
@@ -74415,6 +74421,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "reference_object_path": "$.programEvaluationObjectiveReference",
           "table": {
             "schema": "edfi",
@@ -74465,6 +74473,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.programEvaluationReference",
           "table": {
             "schema": "edfi",
@@ -74512,6 +74522,8 @@
       "descriptor_edge_sources": [
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
           "table": {
             "schema": "edfi",
@@ -74525,6 +74537,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -74538,6 +74552,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -74551,6 +74567,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "descriptor_value_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
           "table": {
             "schema": "edfi",
@@ -74564,6 +74582,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "descriptor_value_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -74577,6 +74597,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "descriptor_value_path": "$.programEvaluationReference.programTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -74590,6 +74612,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": false,
           "descriptor_value_path": "$.programEvaluationLevels[*].ratingLevelDescriptor",
           "table": {
             "schema": "edfi",
@@ -75488,6 +75512,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.assessmentAdministrationReference",
           "table": {
             "schema": "edfi",
@@ -75523,6 +75549,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": true,
           "reference_object_path": "$.reportingEducationOrganizationReference",
           "table": {
             "schema": "edfi",
@@ -75543,6 +75571,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": true,
           "reference_object_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference",
           "table": {
             "schema": "edfi",
@@ -75568,6 +75598,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentEducationOrganizationAssociationReference",
           "table": {
             "schema": "edfi",
@@ -75593,6 +75625,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentSchoolAssociationReference",
           "table": {
             "schema": "edfi",
@@ -75623,6 +75657,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": true,
           "reference_object_path": "$.testingEducationOrganizationReference",
           "table": {
             "schema": "edfi",
@@ -75645,6 +75681,8 @@
       "descriptor_edge_sources": [
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.assessmentGradeLevelDescriptor",
           "table": {
             "schema": "edfi",
@@ -75658,6 +75696,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.platformTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -75671,6 +75711,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": false,
           "descriptor_value_path": "$.assessmentAccommodations[*].accommodationDescriptor",
           "table": {
             "schema": "edfi",
@@ -77059,6 +77101,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": true,
           "reference_object_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference",
           "table": {
             "schema": "edfi",
@@ -77089,6 +77133,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "reference_object_path": "$.calendarReference",
           "table": {
             "schema": "edfi",
@@ -77119,6 +77165,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": true,
           "reference_object_path": "$.classOfSchoolYearTypeReference",
           "table": {
             "schema": "edfi",
@@ -77139,6 +77187,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "reference_object_path": "$.graduationPlanReference",
           "table": {
             "schema": "edfi",
@@ -77169,6 +77219,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": true,
           "reference_object_path": "$.nextYearSchoolReference",
           "table": {
             "schema": "edfi",
@@ -77189,6 +77241,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.schoolReference",
           "table": {
             "schema": "edfi",
@@ -77209,6 +77263,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": true,
           "reference_object_path": "$.schoolYearTypeReference",
           "table": {
             "schema": "edfi",
@@ -77229,6 +77285,8 @@
         },
         {
           "is_identity_component": true,
+          "is_required": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentReference",
           "table": {
             "schema": "edfi",
@@ -77251,6 +77309,8 @@
       "descriptor_edge_sources": [
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.enrollmentTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -77264,6 +77324,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": false,
           "descriptor_value_path": "$.entryGradeLevelDescriptor",
           "table": {
             "schema": "edfi",
@@ -77277,6 +77339,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.entryGradeLevelReasonDescriptor",
           "table": {
             "schema": "edfi",
@@ -77290,6 +77354,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.entryTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -77303,6 +77369,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.exitWithdrawTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -77316,6 +77384,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -77329,6 +77399,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.nextYearGradeLevelDescriptor",
           "table": {
             "schema": "edfi",
@@ -77342,6 +77414,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.residencyStatusDescriptor",
           "table": {
             "schema": "edfi",
@@ -77355,6 +77429,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$.schoolChoiceBasisDescriptor",
           "table": {
             "schema": "edfi",
@@ -77368,6 +77444,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": true,
           "descriptor_value_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -77381,6 +77459,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": true,
+          "is_role_named": false,
           "descriptor_value_path": "$.educationPlans[*].educationPlanDescriptor",
           "table": {
             "schema": "edfi",
@@ -77394,6 +77474,8 @@
         },
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "descriptor_value_path": "$._ext.sample.membershipTypeDescriptor",
           "table": {
             "schema": "sample",

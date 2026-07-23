@@ -487,7 +487,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     descriptorPathInfo.DescriptorValuePath,
                     tableBuilder.Definition.Table,
                     columnName,
-                    descriptorPathInfo.DescriptorResource
+                    descriptorPathInfo.DescriptorResource,
+                    IsRequired: !isNullable
                 )
             );
 
