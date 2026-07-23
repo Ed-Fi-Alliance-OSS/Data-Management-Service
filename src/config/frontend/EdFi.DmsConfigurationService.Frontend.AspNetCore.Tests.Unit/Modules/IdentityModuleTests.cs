@@ -590,45 +590,6 @@ public class TokenEndpointTests
     }
 
     [Test]
-    public async Task When_grant_type_is_unsupported()
-    {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act — passes validation (all fields present) but uses an unsupported grant type.
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "password"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert — Ed-Fi bad-request contract, not an OAuth { error, error_description } body.
-        OAuthErrorResponseAssertions.AssertBadRequest(
-            response,
-            content,
-            "The specified grant type is not supported."
-        );
-        content.Should().NotContain("error_description");
-    }
-
-    [Test]
     public async Task When_error_from_backend()
     {
         // Arrange
@@ -911,17 +872,35 @@ public class TokenEndpointTests
 }
 
 /// <summary>
-/// Shared assertion for the Ed-Fi bad-request contract that CMS-generated OAuth/OIDC error branches now
-/// return in place of the OAuth <c>{ error, error_description }</c> shape (DMS-1218 INV-16/17/18).
+/// End-to-end verification that CMS-generated OAuth/OIDC error branches return the Ed-Fi bad-request
+/// contract (400 preserved) in place of the OAuth <c>{ error, error_description }</c> shape, while the
+/// protocol success responses stay untouched (DMS-1218 INV-16/17/18). Non-fixture container; the
+/// runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
-internal static class OAuthErrorResponseAssertions
+public class OAuthEndpointErrorTests
 {
-    public static void AssertBadRequest(HttpResponseMessage response, string content, string expectedDetail)
+    private static WebApplicationFactory<Program> CreateFactory(Action<IServiceCollection>? configureServices)
+    {
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            if (configureServices is not null)
+            {
+                builder.ConfigureServices(configureServices);
+            }
+        });
+    }
+
+    private static void AssertBadRequestContract(
+        HttpResponseMessage response,
+        string content,
+        string expectedDetail
+    )
     {
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
-        JsonNode body = JsonNode.Parse(content)!;
+        JsonObject body = JsonNode.Parse(content)!.AsObject();
         body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
         body["title"]!.GetValue<string>().Should().Be("Bad Request");
         body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
@@ -929,90 +908,190 @@ internal static class OAuthErrorResponseAssertions
         body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
         body["validationErrors"]!.AsObject().Count.Should().Be(0);
         body["errors"]!.AsArray().Count.Should().Be(0);
+
+        // The OAuth { error, error_description } shape must be gone from the parsed body.
+        body.ContainsKey("error").Should().BeFalse();
+        body.ContainsKey("error_description").Should().BeFalse();
     }
-}
 
-[TestFixture]
-public class IntrospectEndpointTests
-{
-    private static WebApplicationFactory<Program> CreateFactory() =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Test"));
-
-    [Test]
-    public async Task When_the_token_parameter_is_missing()
+    [TestFixture]
+    public class Given_a_token_request_with_an_unsupported_grant_type
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
 
-        var response = await client.PostAsync(
-            "/connect/introspect",
-            new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
-        );
-        string content = await response.Content.ReadAsStringAsync();
-
-        OAuthErrorResponseAssertions.AssertBadRequest(response, content, "The token parameter is missing.");
-        content.Should().NotContain("error_description");
-    }
-
-    [Test]
-    public async Task When_a_token_is_present_it_preserves_the_protocol_inactive_success()
-    {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-
-        // An unresolved/opaque token yields the RFC 7662 { active: false } 200 success, unchanged.
-        var response = await client.PostAsync(
-            "/connect/introspect",
-            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
-        );
-        string content = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/problem+json");
-        JsonNode.Parse(content)!["active"]!.GetValue<bool>().Should().BeFalse();
-    }
-}
-
-[TestFixture]
-public class RevokeEndpointTests
-{
-    private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
-
-    private WebApplicationFactory<Program> CreateFactory() =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        [SetUp]
+        public async Task Setup()
         {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(collection => collection.AddTransient(_ => _tokenManager));
-        });
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTransient(_ => new TokenRequest.Validator());
+                collection.AddTransient(_ => _tokenManager);
+            });
+            _client = _factory.CreateClient();
 
-    [Test]
-    public async Task When_the_token_parameter_is_missing()
-    {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+            // Passes validation (all fields present) but uses an unsupported grant type.
+            var requestContent = new FormUrlEncodedContent(
+                new[]
+                {
+                    new KeyValuePair<string, string>("client_id", "CSClient1"),
+                    new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                    new KeyValuePair<string, string>("grant_type", "password"),
+                    new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+                }
+            );
+            _response = await _client.PostAsync("/connect/token", requestContent);
+            _content = await _response.Content.ReadAsStringAsync();
+        }
 
-        var response = await client.PostAsync(
-            "/connect/revoke",
-            new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
-        );
-        string content = await response.Content.ReadAsStringAsync();
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
 
-        OAuthErrorResponseAssertions.AssertBadRequest(response, content, "The token parameter is missing.");
-        content.Should().NotContain("error_description");
+        [Test]
+        public void It_returns_the_ed_fi_bad_request_contract() =>
+            AssertBadRequestContract(_response, _content, "The specified grant type is not supported.");
     }
 
-    [Test]
-    public async Task When_a_token_is_present_it_preserves_the_protocol_success()
+    [TestFixture]
+    public class Given_an_introspection_request_without_a_token
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
 
-        // RFC 7009 requires 200 OK for revocation regardless of the token; this success is unchanged.
-        var response = await client.PostAsync(
-            "/connect/revoke",
-            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
-        );
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(configureServices: null);
+            _client = _factory.CreateClient();
+            _response = await _client.PostAsync(
+                "/connect/introspect",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+            _content = await _response.Content.ReadAsStringAsync();
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_ed_fi_bad_request_contract() =>
+            AssertBadRequestContract(_response, _content, "The token parameter is missing.");
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_request_with_a_token
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(configureServices: null);
+            _client = _factory.CreateClient();
+            // An unresolved/opaque token yields the RFC 7662 { active: false } 200 success, unchanged.
+            _response = await _client.PostAsync(
+                "/connect/introspect",
+                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
+            );
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_is_not_problem_details() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/problem+json");
+
+        [Test]
+        public void It_reports_the_token_as_inactive() =>
+            _body["active"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_without_a_token
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
+            _client = _factory.CreateClient();
+            _response = await _client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+            _content = await _response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_ed_fi_bad_request_contract() =>
+            AssertBadRequestContract(_response, _content, "The token parameter is missing.");
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_token
+    {
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
+            _client = _factory.CreateClient();
+            // RFC 7009 requires 200 OK for revocation regardless of the token; this success is unchanged.
+            _response = await _client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
