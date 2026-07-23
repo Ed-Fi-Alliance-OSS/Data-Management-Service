@@ -93,14 +93,14 @@ Neither makes cache availability part of API correctness.
 
 ---
 
-# Why not project in the mutation path
+# Projection placement: options and decision
 
-| Approach | Consequence |
+| Candidate approach | Decision and rationale |
 | --- | --- |
-| Same API write transaction | Longer transactions and greater lock contention |
-| Separate transaction before response | Failure coupling without atomicity |
-| Request-path Kafka publish | Database/Kafka dual-write ambiguity |
-| Decoupled projection | API write independence with bounded projection lag |
+| Same API write transaction | **Rejected** — longer transactions and greater lock contention |
+| Separate transaction before response | **Rejected** — failure coupling without atomicity |
+| Request-path Kafka publish | **Rejected** — database/Kafka dual-write ambiguity |
+| Decoupled projection | **Selected** — API write independence with bounded projection lag |
 
 Direct fill may accelerate one document; only a full audit provides completeness evidence.
 
