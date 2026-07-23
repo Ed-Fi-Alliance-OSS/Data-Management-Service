@@ -255,6 +255,13 @@ both engines; the choice is never inferred from the engine:
 `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, the shared bootstrap wrapper, and
 `build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase.
 
+The seam requirement is scoped to these full-stack entry points: every full-stack environment profile they
+consume must define `DMS_CONFIG_DATABASE_NAME` and route its CMS connection string through it. The standalone
+Configuration Service lane (`start-local-config.ps1` and the `build-config.ps1` E2E profiles
+`.env.config.e2e`, `.env.config.mssql.e2e`, and `.env.config.mssql.multitenant.e2e`) does not expose
+`-SeparateConfigDatabase`; it owns one explicit CMS target, so those profiles are outside the topology switch
+and deliberately do not define the seam.
+
 As a preflight, the start scripts resolve the effective runtime settings by asking Docker Compose itself
 (`docker compose config`, which applies your shell environment over the env file exactly as `up`
 will) and validate them once. This preflight may resolve Compose configuration and resolve, reuse, or
