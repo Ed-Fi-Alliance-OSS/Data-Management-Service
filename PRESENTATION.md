@@ -8,11 +8,11 @@ Ed-Fi Data Management Service — API 8.1
 
 # Decisions
 
-- Relational tables remain canonical.
-- DMS asynchronously builds a rebuildable API-shaped projection.
+- Relational tables remain authoritative.
+- DMS maintains a rebuildable API-shaped projection independently of the API write path.
 - CDC reads database logs; DMS never dual-writes to Kafka.
 - Cache upserts publish document state.
-- Canonical document deletes publish tombstones.
+- `dms.Document` deletes publish tombstones.
 - Normal API correctness never depends on projection or Kafka.
 
 ---
@@ -29,7 +29,7 @@ Ed-Fi Data Management Service — API 8.1
 # Goals
 
 - Publish complete, caller-agnostic document state.
-- Preserve canonical write availability.
+- Preserve API write availability.
 - Support PostgreSQL and SQL Server.
 - Make projection rebuildable and observable.
 - Give consumers deterministic upsert/delete semantics.
@@ -48,7 +48,7 @@ Ed-Fi Data Management Service — API 8.1
 
 # Invariants
 
-1. Canonical relational state is authoritative.
+1. Relational state is authoritative.
 2. Authorization never trusts `DocumentCache`.
 3. Cache writes are monotonic by `ContentVersion`.
 4. Deleting cached projection state does not change the resource.
@@ -61,7 +61,7 @@ Ed-Fi Data Management Service — API 8.1
 
 ```mermaid
 flowchart LR
-    API[DMS API writes] --> DB[(Canonical relational tables)]
+    API[DMS API writes] --> DB[(Authoritative relational tables)]
     DB --> DOC[(dms.Document)]
     DOC --> P[Asynchronous projector]
     P --> CACHE[(dms.DocumentCache)]
@@ -77,7 +77,7 @@ flowchart LR
 
 # Why projection is asynchronous
 
-“Asynchronous” means independent of canonical mutations—not background-only.
+“Asynchronous” means independent of the API write path—not background-only.
 
 `DocumentCache` can be populated by:
 
@@ -94,10 +94,10 @@ Neither makes cache availability part of API correctness.
 
 | Approach | Consequence |
 | --- | --- |
-| Same canonical transaction | Longer transactions and greater lock contention |
+| Same API write transaction | Longer transactions and greater lock contention |
 | Separate transaction before response | Failure coupling without atomicity |
 | Request-path Kafka publish | Database/Kafka dual-write ambiguity |
-| Decoupled projection | Canonical independence with bounded projection lag |
+| Decoupled projection | API write independence with bounded projection lag |
 
 Direct fill may accelerate one document; only a full audit provides completeness evidence.
 
@@ -127,7 +127,7 @@ It excludes authorization and caller-specific projection.
 Therefore:
 
 - cache create/update/read → public upsert,
-- canonical document delete → public tombstone.
+- `dms.Document` delete → public tombstone.
 
 ---
 
@@ -136,9 +136,9 @@ Therefore:
 | Source operation | Public result |
 | --- | --- |
 | Cache create/update/snapshot | Document upsert |
-| Canonical document delete | Tombstone |
+| `dms.Document` delete | Tombstone |
 | Cache delete/truncate | Ignore |
-| Other canonical operations | Ignore |
+| Other `dms.Document` operations | Ignore |
 | Database/Debezium heartbeat | Internal progress only |
 
 ---
@@ -201,7 +201,7 @@ That last property creates the late-commit case.
 sequenceDiagram
     participant A as Tx A: Student A
     participant B as Tx B: Student B
-    participant DB as Canonical database
+    participant DB as Relational source database
     participant P as Incremental projector
     participant F as Full audit
 
@@ -247,7 +247,7 @@ The cursor is an optimization, never completeness evidence.
 
 # Why repair is necessary
 
-`DocumentCache` is an asynchronous projection—not part of the canonical write transaction.
+`DocumentCache` is an asynchronous projection—not part of the API write transaction.
 
 It can become missing or behind because of:
 
@@ -279,7 +279,7 @@ flowchart LR
 
 Repair changes only derived cache state.
 
-It never rolls canonical data backward, overwrites a newer cache version, or treats cache-ahead as ordinary repair.
+It never modifies authoritative relational data, overwrites a newer cache version, or treats cache-ahead as ordinary repair.
 
 ---
 
@@ -335,7 +335,7 @@ The public topic is a current-state stream, not a commit-order event log.
 Allowed race for one document:
 
 1. Projector materializes version 10.
-2. Canonical writer commits version 11.
+2. API writer commits version 11.
 3. Cache version 10 commits.
 4. Fresh reads reject it as behind.
 5. Reconciliation publishes version 11.
@@ -346,7 +346,7 @@ This avoids write-conflicting source-row locks.
 
 # Why no commit-order fence
 
-A source-row fence would make optional projection contend with canonical writes.
+A source-row fence would make optional projection contend with API writes.
 
 Instead the design combines:
 
@@ -387,11 +387,11 @@ The database decision is atomic; no read-then-unconditional-write race.
 # Delete fencing
 
 - Cache row references `dms.Document` with `ON DELETE CASCADE`.
-- Materialization rechecks that the canonical row still exists.
+- Materialization rechecks that the `dms.Document` row still exists.
 - FK enforcement prevents a post-delete cache insert.
 - API deletion never waits for projection.
 
-Canonical lifecycle remains authoritative.
+`dms.Document` lifecycle remains authoritative.
 
 ---
 
@@ -529,7 +529,7 @@ The API transaction:
 3. Deletes `dms.Document`.
 4. Cascades cache cleanup.
 
-Debezium publishes the canonical delete—not the cache cascade.
+Debezium publishes the `dms.Document` delete—not the cache cascade.
 
 ---
 
@@ -778,7 +778,7 @@ No multi-database connector in v1.
 
 - `pgoutput` logical replication
 - One narrow publication and slot per instance
-- Capture cache, canonical document, and heartbeat only
+- Capture `dms.DocumentCache`, `dms.Document`, and `dms.CdcHeartbeat` only
 - `REPLICA IDENTITY FULL` on `dms.Document`
 - Least-privilege replication/login principal
 - Readiness compares committed `lsn_proc` with a WAL barrier
@@ -1077,7 +1077,7 @@ Fifteen stable `CDC-INV-*` contract groups map design to:
 The design chooses:
 
 ```text
-canonical write independence + eventual convergence
+API write independence + eventual convergence
 ```
 
 over:
@@ -1093,7 +1093,7 @@ The cost is bounded, observable projection lag.
 # Important rejected alternatives
 
 - Capture normalized resource tables directly
-- Capture only cache or only canonical metadata
+- Capture only cache or only `dms.Document` metadata
 - Request-path Kafka publishing
 - Database-trigger JSON construction
 - Synchronous read-through as correctness
