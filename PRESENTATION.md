@@ -237,6 +237,21 @@ flowchart LR
 
 ---
 
+# What “exact-zero” means
+
+After repair, a full audit finishes with one database-wide aggregate:
+
+- missing cache rows = 0,
+- cache-behind rows = 0,
+- cache-ahead rows = 0, and
+- total unresolved differences = 0.
+
+“Exact” means a statement-level observation of the complete relationship—not a cursor, watermark, or lag estimate.
+
+It proves completeness at that instant only. The durable cache-ahead latch is a separate safety condition.
+
+---
+
 # Why asynchronous repair is acceptable for CDC
 
 The public topic is a current-state stream, not a commit-order event log.
@@ -311,6 +326,29 @@ The database decision is atomic; no read-then-unconditional-write race.
 - API deletion never waits for projection.
 
 Canonical lifecycle remains authoritative.
+
+---
+
+# Cache-ahead latch
+
+A durable, one-bit safety state for each physical database:
+
+```text
+CacheAheadRecoveryRequired = true
+```
+
+It is set when reconciliation observes:
+
+```text
+cache.ContentVersion > canonical.ContentVersion
+```
+
+The latch flags that cache correctness can no longer be proven.
+
+- Shared across replicas and preserved across restarts
+- Not work inventory or a measure of projection lag
+- Fail closed if missing, malformed, or unreadable
+- Never cleared by version equality or an exact-zero audit
 
 ---
 
@@ -1034,4 +1072,3 @@ The cost is bounded, observable projection lag.
 - `reference/design/backend-redesign/design-docs/update-tracking.md`
 - `reference/design/backend-redesign/epics/18-document-cache/`
 - `reference/design/backend-redesign/epics/19-cdc-kafka/`
-
