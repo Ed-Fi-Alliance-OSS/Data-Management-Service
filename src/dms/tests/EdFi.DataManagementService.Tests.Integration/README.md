@@ -62,7 +62,7 @@ Start SQL Server in a container. The example maps SQL Server to host port
 `14333` to avoid collisions with a developer SQL Server on `1433`:
 
 ```powershell
-docker run --name dms-mssql-integration -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2025-latest
+docker run --name dms-mssql-integration-2025 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2025-latest
 ```
 
 Then set the admin connection string:
@@ -71,7 +71,10 @@ Then set the admin connection string:
 $env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
 ```
 
-If the container already exists, use `docker start dms-mssql-integration`.
+If the container already exists, use `docker start dms-mssql-integration-2025`.
+The version-suffixed name keeps SQL Server 2025 separate from any `dms-mssql-integration` container created from the earlier SQL Server 2022 instructions.
+Do not reuse that legacy container: it still runs SQL Server 2022, so the MSSQL tests would run against an unsupported runtime and tests gated on SQL Server 2025 (such as the native-json evaluation fixture) would silently skip.
+Remove it with `docker rm -f dms-mssql-integration` once anything you need from it is saved.
 If `14333` is busy, map another host port and use that port in
 `ConnectionStrings__MssqlAdmin`.
 
@@ -247,6 +250,6 @@ Useful checks:
 ```powershell
 Get-ChildItem Env:ConnectionStrings__MssqlAdmin -ErrorAction SilentlyContinue
 Test-NetConnection -ComputerName localhost -Port 14333
-docker ps --filter name=dms-mssql-integration
-docker logs dms-mssql-integration --tail 80
+docker ps --filter name=dms-mssql-integration-2025
+docker logs dms-mssql-integration-2025 --tail 80
 ```

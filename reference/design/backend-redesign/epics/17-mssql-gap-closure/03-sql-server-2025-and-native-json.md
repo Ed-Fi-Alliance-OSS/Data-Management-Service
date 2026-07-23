@@ -60,7 +60,8 @@ Tooling and compatibility-level notes:
   Templates restored from published SQL Server 2022-built packages keep their original compatibility level, including level 160, and are not altered.
 
 Forward-restore proof: restore the published SQL Server 2022-built `EdFi.Api.*.Template.MsSql` packages (from `DMS-1255`) on the 2025 runtime with the existing `verify-template-restore.ps1` machinery, prove served data, and document the result.
-Ongoing coverage comes from the template lanes themselves once pins are flipped.
+That proof is a one-off documented validation of the 2022-to-2025 boundary crossing.
+After the pin flip, the template lanes provide ongoing build/restore coverage only for packages created on SQL Server 2025; no lane continuously re-restores a legacy 2022-built package.
 
 ## Phase 2: Native `json` Storage
 
@@ -238,7 +239,7 @@ They apply only when a future decision is adopt:
 - **D2 - Evaluation spike shape**: dedicated fixture in `EdFi.DataManagementService.Backend.Mssql.Tests.Integration` against a directly created scratch native-`json` table; generated DDL, dialects, goldens, and manifests untouched; runs in the existing MSSQL backend integration lane and is isolated for quick exclusion if preview behavior shifts.
 - **D3 - Image tag**: `2025-latest` moving tag, consistent with the existing `2022-latest` convention and the major-version-level backup coupling documented in the template workflows.
 - **D4 - Compatibility level**: nothing sets it; newly created 2025 databases default to level 170, which the template content gates verify without altering; restored 2022-built templates keep level 160 and are not altered.
-- **D5 - Forward-restore proof**: one-off documented validation restoring published 2022-built `EdFi.Api.*.Template.MsSql` packages on the 2025 image via the existing `verify-template-restore.ps1` machinery; ongoing coverage via the template lanes after the pin flip.
+- **D5 - Forward-restore proof**: one-off documented validation restoring published 2022-built `EdFi.Api.*.Template.MsSql` packages on the 2025 image via the existing `verify-template-restore.ps1` machinery; after the pin flip the template lanes provide ongoing 2025 build/restore coverage only, with no continuous legacy-2022-package restore lane.
 - **Self-resolved**: `EffectiveSchemaHash` is computed only from the logical API schema with no dialect input (`EffectiveSchemaHashProvider`), so the story's no-PostgreSQL-impact premise holds as written.
 - **Self-resolved**: `dms.DocumentCache` is emitted unconditionally by `CoreDdlEmitter`; "optional" is a design label, not a runtime flag, and no production read/write path or round-trip test exists.
 - **Self-resolved**: physical column types are observed only by SchemaTools provisioned-schema introspection; relational-model manifests record logical types; runtime fingerprint validation reads no column types.

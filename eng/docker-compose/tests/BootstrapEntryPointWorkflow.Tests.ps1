@@ -826,6 +826,33 @@ $failureStatement
             $mssqlCompose | Should -Match '(?m)^  dms-mssql-2025:\s*$'
         }
 
+        It "pins the DMS CI MSSQL_IMAGE env to the SQL Server 2025 image (DMS-1279)" {
+            $dmsWorkflow = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot ".github/workflows/on-dms-pullrequest.yml"
+            ) -Raw
+
+            $dmsWorkflow | Should -Match '(?m)^\s*MSSQL_IMAGE:\s*"mcr\.microsoft\.com/mssql/server:2025-latest"\s*$' -Because "the backend, DMS API, and SchemaTools MSSQL lanes must run SQL Server 2025: on an older runtime the native-json evaluation fixture ignores itself instead of failing, so a reverted pin would leave those lanes green while silently dropping the coverage"
+        }
+
+        It "pins the CMS CI integration-test mssql services container to the SQL Server 2025 image (DMS-1279)" {
+            $cmsWorkflow = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot ".github/workflows/on-config-pullrequest.yml"
+            ) -Raw
+
+            $cmsWorkflow | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$' -Because "the CMS integration-test services container is an authoritative runtime pin and must move with the supported SQL Server major version"
+        }
+
+        It "keeps the template-workflow backup-coupling comments aligned with the SQL Server 2025 image (DMS-1279)" {
+            foreach ($workflowName in @("build-minimal-template.yml", "build-populated-template.yml")) {
+                $workflow = Get-Content -LiteralPath (
+                    Join-Path $script:sourceRepoRoot ".github/workflows/$workflowName"
+                ) -Raw
+
+                $workflow | Should -Match 'mcr\.microsoft\.com/mssql/server:2025-latest' -Because "$workflowName documents the exact image line its .bak template packages are coupled to, and that comment must move with the executable pins"
+                $workflow | Should -Not -Match 'mssql/server:2022' -Because "$workflowName must not describe the backup coupling against the retired SQL Server 2022 image"
+            }
+        }
+
         It "start-local-dms.ps1 declares a -DatabaseEngine parameter validated to postgresql/mssql" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"

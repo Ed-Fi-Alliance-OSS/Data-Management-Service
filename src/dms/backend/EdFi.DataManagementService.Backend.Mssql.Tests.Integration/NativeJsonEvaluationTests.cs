@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// </summary>
 [TestFixture]
 [Category(MssqlCiShards.Shard1)]
-public class NativeJsonEvaluationTests
+public class Given_NativeJsonEvaluationTests_A_DocumentCache_Shaped_Scratch_Table
 {
     private const int MinimumNativeJsonProductMajorVersion = 17;
     private const string ScratchTableName = "dbo.DocumentCacheEvaluation";
