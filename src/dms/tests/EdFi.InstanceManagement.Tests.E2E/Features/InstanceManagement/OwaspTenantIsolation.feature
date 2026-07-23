@@ -3,21 +3,12 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-@InstanceCleanup @instance-management-ci-shard-2
+@InstanceCleanup @InstanceFixture @instance-management-ci-shard-2
 Feature: OWASP tenant isolation
     Validate cross-tenant isolation for DMS instance routes.
     Requests authenticated for one tenant must not read or write data in another tenant.
-
-        Background:
-            Given I am authenticated to the Configuration Service as system admin
-              And tenant "Tenant_255901" is set up with a vendor and instances:
-                  | Route       |
-                  | 255901/2024 |
-              And tenant "Tenant_255901" has an application for district "255901"
-              And tenant "Tenant_255902" is set up with a vendor and instances:
-                  | Route       |
-                  | 255902/2024 |
-              And tenant "Tenant_255902" has an application for district "255902"
+    Tenant_255901 (instance 255901/2024) and Tenant_255902 (instance 255902/2024) are
+    pre-registered by the suite-owned fixture.
 
         Scenario: Cross-tenant reads are denied
             Given I am authenticated to DMS with credentials for tenant "Tenant_255901"

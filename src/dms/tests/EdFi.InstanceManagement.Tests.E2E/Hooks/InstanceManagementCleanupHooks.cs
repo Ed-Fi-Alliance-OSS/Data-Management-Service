@@ -31,158 +31,30 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
     {
         _logger?.LogInformation("Starting instance cleanup");
 
-        if (context.ConfigToken == null)
-        {
-            _logger?.LogWarning("No config token available, skipping cleanup");
-            return;
-        }
-
         try
         {
-            // Clean up per-tenant resources
-            foreach (var tenantName in context.TenantNames)
-            {
-                _logger?.LogInformation("Cleaning up resources for tenant {TenantName}", tenantName);
-
-                if (!context.ConfigClientsByTenant.TryGetValue(tenantName, out var tenantClient))
-                {
-                    tenantClient = new ConfigServiceClient(
-                        TestConfiguration.ConfigServiceUrl,
-                        context.ConfigToken,
-                        tenantName
-                    );
-                }
-
-                // Delete applications for this tenant
-                if (context.ApplicationIdsByTenant.TryGetValue(tenantName, out var appId))
-                {
-                    _logger?.LogInformation(
-                        "Deleting application {ApplicationId} for tenant {TenantName}",
-                        appId,
-                        tenantName
-                    );
-                    try
-                    {
-                        await tenantClient.DeleteApplicationAsync(appId);
-                        _logger?.LogInformation("Application deleted successfully");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(ex, "Failed to delete application {ApplicationId}", appId);
-                    }
-                }
-
-                // Delete instances for this tenant
-                var instancesForTenant = context
-                    .DataStoreIdToTenant.Where(kvp => kvp.Value == tenantName)
-                    .Select(kvp => kvp.Key)
-                    .OrderByDescending(id => id)
-                    .ToList();
-
-                foreach (var dataStoreId in instancesForTenant)
-                {
-                    _logger?.LogInformation(
-                        "Deleting instance {DataStoreId} for tenant {TenantName}",
-                        dataStoreId,
-                        tenantName
-                    );
-                    try
-                    {
-                        await tenantClient.DeleteInstanceAsync(dataStoreId);
-                        _logger?.LogInformation("Instance {DataStoreId} deleted successfully", dataStoreId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(ex, "Failed to delete instance {DataStoreId}", dataStoreId);
-                    }
-                }
-
-                // Delete vendor for this tenant
-                if (context.VendorIdsByTenant.TryGetValue(tenantName, out var vendorId))
-                {
-                    _logger?.LogInformation(
-                        "Deleting vendor {VendorId} for tenant {TenantName}",
-                        vendorId,
-                        tenantName
-                    );
-                    try
-                    {
-                        await tenantClient.DeleteVendorAsync(vendorId);
-                        _logger?.LogInformation("Vendor deleted successfully");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(ex, "Failed to delete vendor {VendorId}", vendorId);
-                    }
-                }
-            }
-
-            // Legacy cleanup for single-tenant scenarios
-            if (context.TenantNames.Count == 0 && context.CurrentTenant != null)
-            {
-                var legacyClient = new ConfigServiceClient(
-                    TestConfiguration.ConfigServiceUrl,
-                    context.ConfigToken,
-                    context.CurrentTenant
-                );
-
-                // Delete legacy application
-                if (context.ApplicationId.HasValue)
-                {
-                    _logger?.LogInformation(
-                        "Deleting legacy application {ApplicationId}",
-                        context.ApplicationId
-                    );
-                    try
-                    {
-                        await legacyClient.DeleteApplicationAsync(context.ApplicationId.Value);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(
-                            ex,
-                            "Failed to delete legacy application {ApplicationId}",
-                            context.ApplicationId
-                        );
-                    }
-                }
-
-                // Delete legacy instances
-                foreach (var dataStoreId in context.DataStoreIds.OrderByDescending(id => id))
-                {
-                    _logger?.LogInformation("Deleting legacy instance {DataStoreId}", dataStoreId);
-                    try
-                    {
-                        await legacyClient.DeleteInstanceAsync(dataStoreId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(
-                            ex,
-                            "Failed to delete legacy instance {DataStoreId}",
-                            dataStoreId
-                        );
-                    }
-                }
-
-                // Delete legacy vendor
-                if (context.VendorId.HasValue)
-                {
-                    _logger?.LogInformation("Deleting legacy vendor {VendorId}", context.VendorId);
-                    try
-                    {
-                        await legacyClient.DeleteVendorAsync(context.VendorId.Value);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(
-                            ex,
-                            "Failed to delete legacy vendor {VendorId}",
-                            context.VendorId
-                        );
-                    }
-                }
-            }
+            // Delete only records the scenario explicitly created, in dependency-safe order
+            // (applications, then data stores, then vendors). Every deletion is independently guarded
+            // against the immutable suite-owned fixture IDs so a hydrated fixture record is never deleted,
+            // including a replacement claim-set application created under a fixture tenant.
+            await DeleteScenarioOwnedAsync(
+                context.ScenarioOwnedApplications,
+                context.FixtureApplicationIds,
+                "application",
+                (client, id) => client.DeleteApplicationAsync(id)
+            );
+            await DeleteScenarioOwnedAsync(
+                context.ScenarioOwnedDataStores,
+                context.FixtureDataStoreIds,
+                "data store",
+                (client, id) => client.DeleteInstanceAsync(id)
+            );
+            await DeleteScenarioOwnedAsync(
+                context.ScenarioOwnedVendors,
+                context.FixtureVendorIds,
+                "vendor",
+                (client, id) => client.DeleteVendorAsync(id)
+            );
 
             _logger?.LogInformation("Instance cleanup completed");
         }
@@ -192,8 +64,66 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
         }
         finally
         {
-            // Reset context for next scenario
+            // Reset context for next scenario (discards any replacement credentials so the next
+            // @InstanceFixture scenario re-hydrates canonical fixture state).
             context.Reset();
         }
+    }
+
+    /// <summary>
+    /// Selects the scenario-owned records that may be deleted: every record whose id is not an immutable
+    /// suite-owned fixture id, newest first. Ownership is never inferred from tenant name, so a scenario-owned
+    /// replacement application created under a fixture tenant is selected while the fixture application is not.
+    /// </summary>
+    internal static IReadOnlyList<OwnedRecord> SelectDeletable(
+        IEnumerable<OwnedRecord> ownedRecords,
+        IReadOnlySet<int> fixtureIds
+    ) => [.. ownedRecords.Where(r => !fixtureIds.Contains(r.Id)).OrderByDescending(r => r.Id)];
+
+    private async Task DeleteScenarioOwnedAsync(
+        List<OwnedRecord> ownedRecords,
+        IReadOnlySet<int> fixtureIds,
+        string recordKind,
+        Func<ConfigServiceClient, int, Task> delete
+    )
+    {
+        foreach (var record in SelectDeletable(ownedRecords, fixtureIds))
+        {
+            var client = ResolveClient(record.Tenant);
+            if (client == null)
+            {
+                _logger?.LogWarning(
+                    "No Configuration Service token available; cannot delete scenario-owned {RecordKind} {Id}",
+                    recordKind,
+                    record.Id
+                );
+                continue;
+            }
+
+            try
+            {
+                await delete(client, record.Id);
+                _logger?.LogInformation("Deleted scenario-owned {RecordKind} {Id}", recordKind, record.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to delete {RecordKind} {Id}", recordKind, record.Id);
+            }
+        }
+    }
+
+    private ConfigServiceClient? ResolveClient(string tenantName)
+    {
+        if (context.ConfigClientsByTenant.TryGetValue(tenantName, out var existing))
+        {
+            return existing;
+        }
+
+        if (context.ConfigToken == null)
+        {
+            return null;
+        }
+
+        return new ConfigServiceClient(TestConfiguration.ConfigServiceUrl, context.ConfigToken, tenantName);
     }
 }

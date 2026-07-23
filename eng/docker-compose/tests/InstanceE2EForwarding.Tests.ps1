@@ -204,6 +204,32 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
         Should -Invoke Add-Tenant -Times 1 -Exactly -ParameterFilter { $TenantName -eq "Tenant_255902" }
     }
 
+    It "registers exactly one vendor per tenant with a distinct, deterministic company name" {
+        # CMS enforces a global UX_Vendor_Company uniqueness constraint, so the two fixture tenants must
+        # register different company names. Capture the invoked companies to prove distinctness at runtime
+        # rather than by matching the source text.
+        $script:capturedVendorCompanies = @{}
+        Mock Add-Vendor {
+            $script:capturedVendorCompanies[$Tenant] = $Company
+            $script:vendorSeq++
+            [long](100 + $script:vendorSeq)
+        }
+
+        Register-InstanceE2EFixture -InstanceE2ESettings $script:settings | Out-Null
+
+        Should -Invoke Add-Vendor -Times 2 -Exactly
+        Should -Invoke Add-Vendor -Times 1 -Exactly -ParameterFilter {
+            $Tenant -eq "Tenant_255901" -and $Company -eq "Instance E2E Fixture Vendor Tenant_255901"
+        }
+        Should -Invoke Add-Vendor -Times 1 -Exactly -ParameterFilter {
+            $Tenant -eq "Tenant_255902" -and $Company -eq "Instance E2E Fixture Vendor Tenant_255902"
+        }
+
+        $script:capturedVendorCompanies["Tenant_255901"] |
+            Should -Not -Be $script:capturedVendorCompanies["Tenant_255902"]
+        ($script:capturedVendorCompanies.Values | Select-Object -Unique) | Should -HaveCount 2
+    }
+
     It "registers exactly three data stores with the engine-correct registration strings" {
         Register-InstanceE2EFixture -InstanceE2ESettings $script:settings | Out-Null
         Should -Invoke Add-DataStore -Times 3 -Exactly
@@ -287,8 +313,13 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Invoke-WithInstanceE2ETestProcessContext")))
 
         $script:settings = [pscustomobject]@{
-            DatabaseEngine = "mssql"
-            DatabaseNames  = @("db1", "db2", "db3")
+            DatabaseEngine                = "mssql"
+            DatabaseNames                 = @("db1", "db2", "db3")
+            RegistrationConnectionStrings = @(
+                "Server=dms-mssql,1433;Database=db1;User Id=sa;Password=cs-secret1;TrustServerCertificate=true;",
+                "Server=dms-mssql,1433;Database=db2;User Id=sa;Password=cs-secret2;TrustServerCertificate=true;",
+                "Server=dms-mssql,1433;Database=db3;User Id=sa;Password=cs-secret3;TrustServerCertificate=true;"
+            )
         }
         $script:fixture = [pscustomobject]@{
             Tenants        = @(
@@ -305,7 +336,9 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         }
         $script:managedVariables = @(
             "INSTANCE_E2E_DATABASE_ENGINE", "INSTANCE_E2E_DATABASE_1_NAME", "INSTANCE_E2E_DATABASE_2_NAME",
-            "INSTANCE_E2E_DATABASE_3_NAME", "INSTANCE_E2E_ROUTE_MANIFEST",
+            "INSTANCE_E2E_DATABASE_3_NAME",
+            "INSTANCE_E2E_DATABASE_1_CONNECTION_STRING", "INSTANCE_E2E_DATABASE_2_CONNECTION_STRING",
+            "INSTANCE_E2E_DATABASE_3_CONNECTION_STRING", "INSTANCE_E2E_ROUTE_MANIFEST",
             "INSTANCE_E2E_FIXTURE_TENANT_1_NAME", "INSTANCE_E2E_FIXTURE_TENANT_1_VENDOR_ID",
             "INSTANCE_E2E_FIXTURE_TENANT_1_APPLICATION_ID", "INSTANCE_E2E_FIXTURE_TENANT_1_CLIENT_KEY",
             "INSTANCE_E2E_FIXTURE_TENANT_1_CLIENT_SECRET", "INSTANCE_E2E_FIXTURE_TENANT_2_NAME",
@@ -337,6 +370,46 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         $script:observed.Key1 | Should -Be "key1"
         $script:observed.Secret2 | Should -Be "secret2"
         $script:observed.Stores | Should -Be "201,202,203"
+    }
+
+    It "sets the three opaque engine-correct connection strings verbatim for the action" {
+        $script:observedConnectionStrings = $null
+        Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
+            $script:observedConnectionStrings = @(
+                $env:INSTANCE_E2E_DATABASE_1_CONNECTION_STRING
+                $env:INSTANCE_E2E_DATABASE_2_CONNECTION_STRING
+                $env:INSTANCE_E2E_DATABASE_3_CONNECTION_STRING
+            )
+        }
+
+        $script:observedConnectionStrings[0] | Should -Be $script:settings.RegistrationConnectionStrings[0]
+        $script:observedConnectionStrings[1] | Should -Be $script:settings.RegistrationConnectionStrings[1]
+        $script:observedConnectionStrings[2] | Should -Be $script:settings.RegistrationConnectionStrings[2]
+    }
+
+    It "never leaks the secret-bearing connection strings into the non-secret route manifest" {
+        $script:manifestForConnectionCheck = $null
+        Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
+            $script:manifestForConnectionCheck = $env:INSTANCE_E2E_ROUTE_MANIFEST
+        }
+
+        $script:manifestForConnectionCheck | Should -Not -Match "cs-secret1"
+        $script:manifestForConnectionCheck | Should -Not -Match "cs-secret2"
+        $script:manifestForConnectionCheck | Should -Not -Match "cs-secret3"
+        $script:manifestForConnectionCheck | Should -Not -Match "Password="
+    }
+
+    It "restores prior connection-string states (absent, empty, whitespace, valued) verbatim after the action throws" {
+        Remove-Item Env:INSTANCE_E2E_DATABASE_1_CONNECTION_STRING -ErrorAction SilentlyContinue
+        $env:INSTANCE_E2E_DATABASE_2_CONNECTION_STRING = "   "
+        $env:INSTANCE_E2E_DATABASE_3_CONNECTION_STRING = "prior-connection-string"
+
+        { Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action { throw "boom" } } |
+            Should -Throw
+
+        (Test-Path Env:INSTANCE_E2E_DATABASE_1_CONNECTION_STRING) | Should -BeFalse
+        $env:INSTANCE_E2E_DATABASE_2_CONNECTION_STRING | Should -Be "   "
+        $env:INSTANCE_E2E_DATABASE_3_CONNECTION_STRING | Should -Be "prior-connection-string"
     }
 
     It "exposes the three route mappings as a non-secret JSON manifest for the action" {
@@ -624,5 +697,33 @@ Describe "Instance standalone setup validates every route database name before a
                 -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi_primary" } `
                 -EnvironmentFilePath "/resolved/route.env"
         } | Should -Throw -ExpectedMessage "*must be dedicated*"
+    }
+}
+
+Describe "Instance E2E route-context schema packages match the local image surface (DMS-1284)" {
+    BeforeAll {
+        # Parse the actual SCHEMA_PACKAGES JSON value from the route-context env file (the env-file line
+        # reader does not span the multi-line quoted value), then assert on the parsed package list rather
+        # than matching the source text. The route-context databases must be provisioned with exactly the
+        # DS 5.2 core + TPDM surface the local DMS image bakes, or every routed data request returns 503.
+        $envFilePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.env.routeContext.e2e"))
+        $envFileContent = Get-Content -LiteralPath $envFilePath -Raw
+        $match = [regex]::Match($envFileContent, "SCHEMA_PACKAGES='([\s\S]*?)'")
+        if (-not $match.Success) { throw "SCHEMA_PACKAGES was not found in '$envFilePath'." }
+        $script:schemaPackages = @($match.Groups[1].Value | ConvertFrom-Json)
+        $script:schemaPackageNames = @($script:schemaPackages | ForEach-Object { $_.name })
+    }
+
+    It "declares exactly the core Ed-Fi and TPDM packages in order" {
+        $script:schemaPackageNames | Should -HaveCount 2
+        $script:schemaPackageNames[0] | Should -Be "EdFi.DataStandard52.ApiSchema"
+        $script:schemaPackageNames[1] | Should -Be "EdFi.DataStandard52.TPDM.ApiSchema"
+    }
+
+    It "does not provision the Sample or Homograph extensions the local image does not carry" {
+        $script:schemaPackageNames | Should -Not -Contain "EdFi.DataStandard52.Sample.ApiSchema"
+        $script:schemaPackageNames | Should -Not -Contain "EdFi.DataStandard52.Homograph.ApiSchema"
+        @($script:schemaPackages | ForEach-Object { $_.extensionName }) | Should -Not -Contain "Sample"
+        @($script:schemaPackages | ForEach-Object { $_.extensionName }) | Should -Not -Contain "Homograph"
     }
 }

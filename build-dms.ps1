@@ -1349,11 +1349,13 @@ function Register-InstanceE2EFixture {
         foreach ($tenantName in $tenantOrder) {
             Add-Tenant -CmsUrl $cmsUrl -AccessToken $accessToken -TenantName $tenantName | Out-Null
 
+            # Vendor Company is globally unique in CMS (UX_Vendor_Company), so each canonical fixture
+            # tenant must register a distinct, deterministic company name.
             $vendorId = Add-Vendor `
                 -CmsUrl $cmsUrl `
                 -AccessToken $accessToken `
                 -Tenant $tenantName `
-                -Company "Instance E2E Fixture Vendor" `
+                -Company "Instance E2E Fixture Vendor $tenantName" `
                 -NamespacePrefixes "uri://ed-fi.org"
 
             $tenantRoutes = @($routeDefinitions | Where-Object { $_.TenantName -eq $tenantName })
@@ -1451,14 +1453,19 @@ function Invoke-WithInstanceE2ETestProcessContext {
         }
     )
 
-    # Opaque environment variables the Instance suite's test process consumes (unit 5 wires the C#
-    # consumers). Names are stable and engine-neutral. Credential values are set into the environment
-    # only and are never written to host output.
+    # Opaque environment variables the Instance suite's test process consumes. Names are stable and
+    # engine-neutral. The connection-string values are the exact engine-correct Docker-network strings the
+    # fixture registered (index-aligned to the database ordinals), so the C# consumers never re-derive
+    # credentials, ports, host names, or connection-string syntax. Both the credential and connection-string
+    # values carry secrets: they are set into the environment only and are never written to host output.
     $processVariables = [ordered]@{
         "INSTANCE_E2E_DATABASE_ENGINE"                 = [string]$InstanceE2ESettings.DatabaseEngine
         "INSTANCE_E2E_DATABASE_1_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[0]
         "INSTANCE_E2E_DATABASE_2_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[1]
         "INSTANCE_E2E_DATABASE_3_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[2]
+        "INSTANCE_E2E_DATABASE_1_CONNECTION_STRING"    = [string]$InstanceE2ESettings.RegistrationConnectionStrings[0]
+        "INSTANCE_E2E_DATABASE_2_CONNECTION_STRING"    = [string]$InstanceE2ESettings.RegistrationConnectionStrings[1]
+        "INSTANCE_E2E_DATABASE_3_CONNECTION_STRING"    = [string]$InstanceE2ESettings.RegistrationConnectionStrings[2]
         "INSTANCE_E2E_ROUTE_MANIFEST"                  = [string]$routeManifestJson
         "INSTANCE_E2E_FIXTURE_TENANT_1_NAME"           = [string]$Fixture.Tenants[0].TenantName
         "INSTANCE_E2E_FIXTURE_TENANT_1_VENDOR_ID"      = [string]$Fixture.Tenants[0].VendorId

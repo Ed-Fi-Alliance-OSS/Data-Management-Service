@@ -3,51 +3,60 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
+
 namespace EdFi.InstanceManagement.Tests.E2E.Configuration;
 
 /// <summary>
-/// Compile-time constants for E2E test infrastructure.
-/// Database connection strings and names are known at compile time because
-/// they are created by the setup script before tests run.
+/// Resolves the route-context database identity for the three pre-registered instances from the
+/// environment contract the suite-owned fixture publishes before the tests run. The database names and
+/// connection strings are engine-correct and opaque: they are produced by the setup/build orchestration
+/// (PostgreSQL or SQL Server) and consumed here verbatim, so no fixed database name, default password,
+/// provider SQL, or connection-string construction lives in test code.
 /// </summary>
 public static class TestConstants
 {
-    // Database names (created by setup script)
-    public const string Database1Name = "edfi_datamanagementservice_d255901_sy2024";
-    public const string Database2Name = "edfi_datamanagementservice_d255901_sy2025";
-    public const string Database3Name = "edfi_datamanagementservice_d255902_sy2024";
-
-    // Connection strings for each database (used when creating instances)
-    public const string Database1ConnectionString =
-        "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024;";
-
-    public const string Database2ConnectionString =
-        "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025;";
-
-    public const string Database3ConnectionString =
-        "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024;";
+    private const int MinimumDatabaseIndex = 1;
+    private const int MaximumDatabaseIndex = 3;
 
     /// <summary>
-    /// Get database name by index (1-based)
+    /// Gets the database name for the given 1-based route database ordinal, read verbatim from
+    /// <c>INSTANCE_E2E_DATABASE_{index}_NAME</c>.
     /// </summary>
     public static string GetDatabaseName(int index) =>
-        index switch
-        {
-            1 => Database1Name,
-            2 => Database2Name,
-            3 => Database3Name,
-            _ => throw new ArgumentOutOfRangeException(nameof(index), "Only databases 1-3 are available"),
-        };
+        ReadRequiredDatabaseValue(index, "INSTANCE_E2E_DATABASE_{0}_NAME");
 
     /// <summary>
-    /// Get connection string by index (1-based)
+    /// Gets the engine-correct connection string for the given 1-based route database ordinal, read
+    /// verbatim from <c>INSTANCE_E2E_DATABASE_{index}_CONNECTION_STRING</c>. The value is a secret-bearing
+    /// Docker-network connection string; never log it.
     /// </summary>
     public static string GetConnectionString(int index) =>
-        index switch
+        ReadRequiredDatabaseValue(index, "INSTANCE_E2E_DATABASE_{0}_CONNECTION_STRING");
+
+    private static string ReadRequiredDatabaseValue(int index, string variableNameFormat)
+    {
+        if (index is < MinimumDatabaseIndex or > MaximumDatabaseIndex)
         {
-            1 => Database1ConnectionString,
-            2 => Database2ConnectionString,
-            3 => Database3ConnectionString,
-            _ => throw new ArgumentOutOfRangeException(nameof(index), "Only databases 1-3 are available"),
-        };
+            throw new ArgumentOutOfRangeException(
+                nameof(index),
+                index,
+                $"Only route databases {MinimumDatabaseIndex}-{MaximumDatabaseIndex} are available."
+            );
+        }
+
+        var variableName = string.Format(CultureInfo.InvariantCulture, variableNameFormat, index);
+        var value = Environment.GetEnvironmentVariable(variableName);
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Required environment variable '{variableName}' is not set. The Instance Management E2E "
+                    + "suite must be run through the build orchestration that publishes the route-context "
+                    + "database environment contract."
+            );
+        }
+
+        return value;
+    }
 }
