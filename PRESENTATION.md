@@ -1,24 +1,12 @@
 # Relational Document Projection and CDC/Kafka
 
-## DMS-1245 and DMS-1246 design approval
+## DMS-1245 and DMS-1246 design
 
 Ed-Fi Data Management Service — API 8.1
 
 ---
 
-# Approval requested
-
-Approve the v1 architecture for:
-
-- asynchronous `dms.DocumentCache` projection,
-- optional fresh-cache reads,
-- relational CDC through Debezium and Kafka Connect,
-- the compacted public document-state contract, and
-- the explicitly bounded v1 recovery model.
-
----
-
-# Executive decision
+# Decisions
 
 - Relational tables remain canonical.
 - DMS asynchronously builds a rebuildable API-shaped projection.
@@ -29,29 +17,12 @@ Approve the v1 architecture for:
 
 ---
 
-# Why this design exists
-
-The legacy CDC design targeted storage that no longer exists:
-
-- document-store JSON columns,
-- shared Kafka topics,
-- `EdFiDoc` payloads,
-- `deleted=true` records, and
-- OpenSearch-oriented assumptions.
-
-The relational backend needs a new source and contract.
-
----
-
 # Design ownership
 
 - Physical schema: `data-model.md`
-- Projection semantics: projector/source ADR 0001
-- Kafka contract: topic/message ADR 0002
+- Projection semantics - projector/source: `0001-relational-cdc-projector-and-sources.md`
+- Kafka contract - topic/message: `0002-kafka-topic-and-message-contract.md`
 - Deployment and readiness: `cdc-streaming.md`
-- Delivery evidence: E18 and E19 stories
-
-One normative owner per subject prevents contract drift.
 
 ---
 
@@ -72,18 +43,15 @@ One normative owner per subject prevents contract drift.
 - Exactly-once delivery
 - Linearizable projection at every cache commit
 - CDC retrofit for an existing database
-- A live-writer baseline replacement workflow
-- Debezium Server or embedded Debezium
-- Change Queries as the Kafka source
 
 ---
 
-# Non-negotiable invariants
+# Invariants
 
 1. Canonical relational state is authoritative.
 2. Authorization never trusts `DocumentCache`.
 3. Cache writes are monotonic by `ContentVersion`.
-4. Cache maintenance never means domain deletion.
+4. Deleting cached projection state does not change the resource.
 5. Public identity is stable `DocumentUuid`.
 6. Unprovable readiness is not readiness.
 
@@ -104,30 +72,6 @@ flowchart LR
     SMT --> PUB[(Compacted public topic)]
     SMT --> PROG[(Internal progress topic)]
 ```
-
----
-
-# Why database-log CDC
-
-- API/Kafka dual writes create a distributed commit boundary.
-- Database logs observe committed relational transactions.
-- Kafka outages do not fail DMS writes.
-- Connector retries are independent of request processing.
-- PostgreSQL and SQL Server share the same architecture.
-
----
-
-# Why `DocumentCache` supplies upserts
-
-Canonical resource state is normalized across:
-
-- root tables,
-- child collections,
-- extensions,
-- descriptors, and
-- propagated reference identity columns.
-
-Consumers should not reproduce DMS reconstitution logic.
 
 ---
 
@@ -171,20 +115,6 @@ Therefore:
 
 ---
 
-# Why cache deletes are ignored
-
-Cache rows may disappear because of:
-
-- eviction,
-- rebuild,
-- truncation,
-- corruption recovery, or
-- canonical cascade cleanup.
-
-None of those necessarily means the domain document was deleted.
-
----
-
 # Physical projection model
 
 ```mermaid
@@ -200,31 +130,6 @@ flowchart TB
     IDENT -. identifies physical source .-> DOC
     HEART -. proves connector progress .-> CACHE
 ```
-
----
-
-# Why cache identity is denormalized
-
-- `DocumentId` remains the compact primary/foreign key.
-- `DocumentUuid` is copied for Debezium message keys.
-- A provider trigger validates UUID equality with the parent.
-- Canonical UUID uniqueness already exists.
-- No redundant random-UUID cache index is required.
-
----
-
-# Materialization contract
-
-Before writing the cache, DMS verifies:
-
-```text
-cache.DocumentUuid == canonical.DocumentUuid
-document.id == DocumentUuid
-document._lastModifiedDate == formatted LastModifiedAt
-StreamEtag == fixed stream-variant ETag
-```
-
-Any mismatch fails projection; no partial record is stored.
 
 ---
 
@@ -1120,19 +1025,6 @@ The cost is bounded, observable projection lag.
 
 ---
 
-# Approval decisions
-
-Approve that:
-
-1. Projection is optional and eventually consistent.
-2. Full audits are required despite incremental scans.
-3. CDC is a compacted current-state stream.
-4. Initial exact readiness is new-database/offline only.
-5. Fail-closed and terminal recovery boundaries are intentional.
-6. Deferred cutover/recovery capabilities are outside API 8.1 v1.
-
----
-
 # Normative sources
 
 - `reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md`
@@ -1143,8 +1035,3 @@ Approve that:
 - `reference/design/backend-redesign/epics/18-document-cache/`
 - `reference/design/backend-redesign/epics/19-cdc-kafka/`
 
----
-
-# Discussion
-
-## Questions, objections, and approval conditions
