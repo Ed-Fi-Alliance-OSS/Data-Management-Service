@@ -1585,18 +1585,19 @@ function InstanceE2ETests {
     # fixture registration, teardown, and the test process all consume this context.
     $instanceSettings = Get-InstanceE2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
 
-    # Tear down any prior dms-local stack for the SAME engine and resolved base environment BEFORE
-    # setup, so setup never runs against a stale stack (e.g. a previous engine's containers/volumes or
-    # a leftover run). Uses the shared, project-scoped teardown primitive (start-local-dms.ps1 -d -v),
-    # which removes only the dms-local compose project plus the two known local images. When reusing
-    # built images (-SkipDockerBuild) the images are kept; otherwise they are removed ahead of the
-    # rebuild the setup performs.
+    # Tear down any prior dms-local stack for the SAME engine and the SAME final resolved environment
+    # BEFORE setup, so pre-clean composes the identical engine set that setup/registration consume and
+    # setup never runs against a stale stack (a previous engine's containers/volumes or a leftover run).
+    # Uses the shared, project-scoped teardown primitive (start-local-dms.ps1 -d -v), which removes only
+    # the dms-local compose project plus the two known local images. When reusing built images
+    # (-SkipDockerBuild) the images are kept; otherwise they are removed ahead of the rebuild the setup
+    # performs. The base env file is retained only for the standalone teardown guidance.
     $dockerComposeRoot = "$PSScriptRoot/eng/docker-compose"
     Import-Module -Name "$dockerComposeRoot/e2e-teardown.psm1" -Force
     Invoke-Step {
         $null = Invoke-E2EEngineAwareTeardown `
             -DatabaseEngine $instanceSettings.DatabaseEngine `
-            -EnvironmentFile $instanceSettings.EnvironmentFile `
+            -EnvironmentFile $instanceSettings.ResolvedEnvironmentFile `
             -ComposeRoot $dockerComposeRoot `
             -SkipLocalImageRemoval:$SkipDockerBuild
     }

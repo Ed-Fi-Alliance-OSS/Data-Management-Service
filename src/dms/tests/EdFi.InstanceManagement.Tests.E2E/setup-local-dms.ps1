@@ -177,6 +177,28 @@ function Assert-RouteContextSchemaProvisioned {
     }
 }
 
+function Assert-RouteContextDatabaseNamesAreDedicated {
+    <#
+    .SYNOPSIS
+    Validates every route-context database name up front via the shared database-safety guard, so no
+    infrastructure is started and no database is provisioned until all three names are safe, not a
+    reserved system database, and dedicated (never the primary or CMS database). Throwing on any name
+    (including a later one) guarantees an earlier database is never provisioned before a bad name fails.
+    #>
+    param(
+        [string[]]$DatabaseNames,
+        [hashtable]$EnvironmentValues,
+        [string]$EnvironmentFilePath
+    )
+
+    foreach ($databaseName in $DatabaseNames) {
+        Assert-E2EDatabaseIsDedicated `
+            -EnvironmentValues $EnvironmentValues `
+            -EnvironmentFilePath $EnvironmentFilePath `
+            -E2EDatabaseName $databaseName
+    }
+}
+
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for Instance Management E2E Testing
 ======================================================================
@@ -214,6 +236,7 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
+    Import-Module ./database-safety.psm1 -Force
 
     # Single environment resolution. The build path (build-dms.ps1 InstanceE2ETest) already composed
     # the data-standard and engine overlays exactly once in Get-InstanceE2ETestEnvironmentContext and
@@ -238,9 +261,7 @@ try {
     $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
 
     # Read the three route-context database names from the resolved environment: require three
-    # non-empty distinct names, and never fall back to a fixed name after resolution. Each name's
-    # safe-name and dedicated-E2E database rules are enforced by provision-e2e-database.ps1 when it
-    # provisions the database below.
+    # non-empty distinct names, and never fall back to a fixed name after resolution.
     $databases = @(
         (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_1_NAME"),
         (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_2_NAME"),
@@ -256,6 +277,17 @@ try {
     if (@($databases | Sort-Object -Unique).Count -ne 3) {
         throw "The three INSTANCE_E2E_DATABASE_*_NAME values must be distinct; got: $($databases -join ', ')."
     }
+
+    # Validate ALL three names (safe characters, not a reserved system database, dedicated vs the
+    # primary/CMS databases by name or embedded connection-string database) BEFORE starting any
+    # infrastructure or provisioning any database. This runs on the standalone setup path too, so a
+    # direct run can never provision database 1 and then reject an unsafe/reserved/protected database 2
+    # after a mutation. provision-e2e-database.ps1 re-checks each name when it provisions (defense in
+    # depth); this is the earliest gate on this path.
+    Assert-RouteContextDatabaseNamesAreDedicated `
+        -DatabaseNames $databases `
+        -EnvironmentValues $envValues `
+        -EnvironmentFilePath $resolvedEnvironmentFile
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {

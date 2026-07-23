@@ -434,14 +434,15 @@ Describe "Instance E2E orchestration and setup ordering (DMS-1284)" {
         $script:instanceE2ETests | Should -Match "ResolvedEnvironmentFile\s*=\s*\`$instanceSettings.ResolvedEnvironmentFile"
     }
 
-    It "tears down the prior stack for the same engine and resolved base environment before setup (C1)" {
+    It "tears down the prior stack for the same engine and resolved environment before setup (C1)" {
         $teardownIndex = $script:instanceE2ETests.IndexOf("Invoke-E2EEngineAwareTeardown")
         $setupInvokeIndex = $script:instanceE2ETests.IndexOf("& `$instanceSetupScript @setupParameters")
 
         $teardownIndex | Should -BeGreaterThan -1
         $setupInvokeIndex | Should -BeGreaterThan $teardownIndex
         $script:instanceE2ETests | Should -Match "Invoke-E2EEngineAwareTeardown[\s\S]*?-DatabaseEngine \`$instanceSettings.DatabaseEngine"
-        $script:instanceE2ETests | Should -Match "Invoke-E2EEngineAwareTeardown[\s\S]*?-EnvironmentFile \`$instanceSettings.EnvironmentFile"
+        # Pre-clean composes the SAME final resolved environment that setup/registration consume.
+        $script:instanceE2ETests | Should -Match "Invoke-E2EEngineAwareTeardown[\s\S]*?-EnvironmentFile \`$instanceSettings.ResolvedEnvironmentFile"
         $script:instanceE2ETests | Should -Match "Invoke-E2EEngineAwareTeardown[\s\S]*?-SkipLocalImageRemoval:\`$SkipDockerBuild"
     }
 
@@ -462,6 +463,18 @@ Describe "Instance E2E orchestration and setup ordering (DMS-1284)" {
         $guardIndex | Should -BeGreaterThan -1
         $dataStandardIndex | Should -BeGreaterThan $guardIndex
         $engineResolveIndex | Should -BeGreaterThan $guardIndex
+    }
+
+    It "validates all three route database names before InfraOnly and provisioning on the standalone path (C5)" {
+        $script:setupSource | Should -Match "Import-Module ./database-safety.psm1"
+        # The call site (not the function definition) is anchored on its -DatabaseNames argument.
+        $validateCallIndex = $script:setupSource.IndexOf("-DatabaseNames `$databases")
+        $infraOnlyIndex = $script:setupSource.IndexOf("-InfraOnly -EnableConfig")
+        $provisionIndex = $script:setupSource.IndexOf("& `$provisionE2EDatabaseScript")
+
+        $validateCallIndex | Should -BeGreaterThan -1
+        $infraOnlyIndex | Should -BeGreaterThan $validateCallIndex
+        $provisionIndex | Should -BeGreaterThan $validateCallIndex
     }
 
     It "forwards the database engine through the InstanceE2ETest dispatch" {
@@ -558,5 +571,58 @@ Describe "Instance E2E schema verification is engine-isolated and secret-safe wh
         $invoked | Should -Not -Match "-e SQLCMDPASSWORD"
         $invoked | Should -Not -Match "dms-postgresql"
         $invoked | Should -Not -Match "psql"
+    }
+}
+
+Describe "Instance standalone setup validates every route database name before any mutation (DMS-1284)" {
+    BeforeAll {
+        function Get-SetupScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        # Import the real safety module so the extracted setup guard runs against the actual safe-name /
+        # dedicated-database rules, and dot-source the setup guard that the standalone path invokes.
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../database-safety.psm1"))) -Force
+        $script:setupScriptPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"))
+        . ([scriptblock]::Create((Get-SetupScriptFunctionText -ScriptPath $script:setupScriptPath -FunctionName "Assert-RouteContextDatabaseNamesAreDedicated")))
+    }
+
+    AfterAll {
+        Remove-Module database-safety -Force -ErrorAction SilentlyContinue
+    }
+
+    It "accepts three safe, dedicated names" {
+        {
+            Assert-RouteContextDatabaseNamesAreDedicated `
+                -DatabaseNames @("edfi_route_one", "edfi_route_two", "edfi_route_three") `
+                -EnvironmentValues @{} `
+                -EnvironmentFilePath "/resolved/route.env"
+        } | Should -Not -Throw
+    }
+
+    It "throws on a later unsafe/reserved/protected name so an earlier database is never provisioned first" {
+        # The second name is a reserved PostgreSQL system database; validating all three up front means
+        # the guard rejects it before database 1 could ever be provisioned by the surrounding script.
+        {
+            Assert-RouteContextDatabaseNamesAreDedicated `
+                -DatabaseNames @("edfi_route_one", "postgres", "edfi_route_three") `
+                -EnvironmentValues @{} `
+                -EnvironmentFilePath "/resolved/route.env"
+        } | Should -Throw -ExpectedMessage "*reserved PostgreSQL*"
+    }
+
+    It "throws when a later name collides with the protected primary database name" {
+        {
+            Assert-RouteContextDatabaseNamesAreDedicated `
+                -DatabaseNames @("edfi_route_one", "edfi_route_two", "edfi_primary") `
+                -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi_primary" } `
+                -EnvironmentFilePath "/resolved/route.env"
+        } | Should -Throw -ExpectedMessage "*must be dedicated*"
     }
 }
