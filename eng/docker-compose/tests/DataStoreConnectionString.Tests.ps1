@@ -188,6 +188,46 @@ Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
         # embedded ';' survives because DbConnectionStringBuilder quoted the value.
         $parsed["Password"] | Should -Be 'Re$olved;9!'
     }
+
+    It "does not interpolate a `${VAR} reference inside a single-quoted env value (Compose literal semantics)" {
+        $envValues = @{
+            MSSQL_SA_PASSWORD = "'`${SHARED_SECRET}'"
+            SHARED_SECRET     = "should-not-be-used"
+            MSSQL_PORT        = "1435"
+        }
+
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "db"
+
+        $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $parsed.set_ConnectionString($result.AdminConnectionString)
+        # Single-quoted values are literal in Docker Compose: the reference is kept, not expanded.
+        $parsed["Password"] | Should -Be '${SHARED_SECRET}'
+    }
+
+    It "resolves a `${VAR} reference from the ambient process environment when the file omits it" {
+        $ambientName = "DMS1284_AMBIENT_ONLY_SECRET"
+        $priorExists = Test-Path "Env:$ambientName"
+        $priorValue = [System.Environment]::GetEnvironmentVariable($ambientName)
+        try {
+            [System.Environment]::SetEnvironmentVariable($ambientName, "AmbientResolved9!")
+            $envValues = @{ MSSQL_SA_PASSWORD = "`${$ambientName}"; MSSQL_PORT = "1435" }
+
+            $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "db"
+
+            $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $parsed.set_ConnectionString($result.AdminConnectionString)
+            # The reference exists only in the process environment; Compose (and this helper) resolve it.
+            $parsed["Password"] | Should -Be "AmbientResolved9!"
+        }
+        finally {
+            if ($priorExists) {
+                [System.Environment]::SetEnvironmentVariable($ambientName, $priorValue)
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($ambientName, $null)
+            }
+        }
+    }
 }
 
 Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {

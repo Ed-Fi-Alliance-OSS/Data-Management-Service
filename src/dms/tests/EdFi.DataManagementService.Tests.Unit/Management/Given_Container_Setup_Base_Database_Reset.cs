@@ -106,13 +106,43 @@ public class Given_Container_Setup_Base_Database_Reset
     }
 
     [Test]
-    public void It_matches_the_expected_database_name_case_insensitively()
+    public void It_accepts_a_case_only_database_match_for_sql_server()
     {
-        // A case-only difference between the connection string database and the configured name is
-        // accepted (SQL Server is case-insensitive; the E2E database is the same database).
+        // SQL Server database identifiers are case-insensitive, so 'DB' is the configured 'db'.
         var action = () => ContainerSetupBase.BuildResetPlan("mssql", "Server=s;Database=DB;", "db");
 
         action.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_rejects_a_case_only_database_difference_for_postgresql()
+    {
+        // PostgreSQL database names are case-sensitive: 'DB' is a different database than 'db' and must
+        // not be reset.
+        var action = () => ContainerSetupBase.BuildResetPlan("postgresql", "host=h;database=DB;", "db");
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*reset refused*targets database*");
+    }
+
+    [Test]
+    public async Task It_does_not_execute_a_reset_on_a_case_only_postgresql_difference()
+    {
+        int executorInvocations = 0;
+
+        var action = async () =>
+            await ContainerSetupBase.ResetDatabaseAsync(
+                "postgresql",
+                "host=h;database=DB;",
+                "db",
+                _ =>
+                {
+                    executorInvocations++;
+                    return Task.CompletedTask;
+                }
+            );
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
+        executorInvocations.Should().Be(0);
     }
 
     [Test]

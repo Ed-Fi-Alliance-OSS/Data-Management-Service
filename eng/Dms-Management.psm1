@@ -812,8 +812,8 @@ function New-DataStoreConnectionString {
     # Build through DbConnectionStringBuilder rather than string interpolation so credentials or
     # values containing connection-string metacharacters (';', '"', '''', '=', or surrounding
     # whitespace) are quoted/escaped per the ADO.NET rules instead of silently corrupting or
-    # truncating the connection string. The provider parsers (Microsoft.Data.SqlClient / Npgsql)
-    # round-trip this output exactly.
+    # truncating the connection string. DbConnectionStringBuilder applies the same ADO.NET quoting
+    # that the Microsoft.Data.SqlClient / Npgsql connection-string parsers accept.
     $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
 
     if ($DatabaseEngine -eq "mssql") {
@@ -863,6 +863,11 @@ function Resolve-ComposeEnvReference {
     $working = [regex]::Replace($working, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', {
         param($match)
         $referenceName = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value }
+        # Docker Compose resolves ${VAR} from the shell/process environment with precedence over the
+        # env file, then from the env file, then to empty. Honour that fallback so a reference whose
+        # value lives only in the ambient environment matches what the container receives.
+        $ambient = [System.Environment]::GetEnvironmentVariable($referenceName)
+        if ($null -ne $ambient) { return $ambient }
         if ($null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($referenceName)) {
             $referenced = ConvertFrom-ComposeEnvironmentValue -Value ([string]$EnvironmentValues[$referenceName])
             return Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $referenced -Depth ($Depth + 1)
@@ -895,8 +900,19 @@ function Get-ComposeResolvedEnvValue {
         Import-Module -Name (Join-Path $PSScriptRoot "docker-compose/database-safety.psm1") -Force
     }
 
-    $converted = ConvertFrom-ComposeEnvironmentValue -Value ([string]$EnvironmentValues[$Name])
-    $resolved = Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $converted
+    $rawValue = [string]$EnvironmentValues[$Name]
+    $converted = ConvertFrom-ComposeEnvironmentValue -Value $rawValue
+
+    # Docker Compose does not interpolate ${VAR} inside a single-quoted value (it is literal); only
+    # unquoted and double-quoted values interpolate. Detect the single-quoted form from the raw value
+    # (before ConvertFrom-ComposeEnvironmentValue stripped the quotes) and skip resolution for it.
+    $resolved =
+        if ($rawValue.TrimStart().StartsWith("'")) {
+            $converted
+        }
+        else {
+            Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $converted
+        }
 
     if ([string]::IsNullOrWhiteSpace($resolved)) {
         return $DefaultValue

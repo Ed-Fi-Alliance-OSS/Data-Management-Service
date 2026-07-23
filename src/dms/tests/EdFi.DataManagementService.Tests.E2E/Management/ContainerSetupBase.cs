@@ -156,7 +156,14 @@ public abstract class ContainerSetupBase
             );
         }
 
-        if (!string.Equals(targetDatabase, expectedDatabaseName, StringComparison.OrdinalIgnoreCase))
+        // SQL Server database identifiers are case-insensitive, but PostgreSQL database names are
+        // case-sensitive, so a case-only difference on PostgreSQL is a different database and must be
+        // refused rather than authorizing a reset of the wrong database.
+        StringComparison comparison = IsMssql(databaseEngine)
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        if (!string.Equals(targetDatabase, expectedDatabaseName, comparison))
         {
             throw new InvalidOperationException(
                 $"E2E database reset refused: the admin connection string targets database '{targetDatabase}', "
