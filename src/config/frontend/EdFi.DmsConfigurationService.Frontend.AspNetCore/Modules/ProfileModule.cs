@@ -21,7 +21,7 @@ public class ProfileModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/v3/profiles/", GetAll);
+        endpoints.MapSecuredGet("/v3/profiles/", GetAll).WithQueryParameterValidation<FrontendProfileQuery>();
         endpoints.MapSecuredPost("/v3/profiles/", InsertProfile);
         endpoints.MapSecuredGet($"/v3/profiles/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/profiles/{{id}}", Update);
@@ -56,7 +56,7 @@ public class ProfileModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         var results = await repository.QueryProfiles(query.ToQuery());
         var profiles = results
             .OfType<ProfileGetResult.Success>()
@@ -91,12 +91,10 @@ public class ProfileModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
-            ProfileInsertResult.FailureDuplicateName duplicate => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [new ValidationFailure("Name", $"Profile '{duplicate.Name}' already exists.")],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileInsertResult.FailureDuplicateName duplicate => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                [$"Profile '{duplicate.Name}' already exists."]
             ),
             ProfileInsertResult.FailureUnknown _ => FailureResults.Unknown(httpContext.TraceIdentifier),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -118,10 +116,12 @@ public class ProfileModule : IEndpointModule
                 ? Results.Ok(success.Profile)
                 : Results.Json(
                     FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                    contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.NotFound
                 ),
             ProfileGetResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ProfileGetResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -150,15 +150,14 @@ public class ProfileModule : IEndpointModule
         return result switch
         {
             ProfileUpdateResult.Success => Results.NoContent(),
-            ProfileUpdateResult.FailureDuplicateName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [new ValidationFailure("Name", "A profile with this name already exists.")],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileUpdateResult.FailureDuplicateName => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                ["A profile with this name already exists."]
             ),
             ProfileUpdateResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ProfileUpdateResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -178,15 +177,14 @@ public class ProfileModule : IEndpointModule
         return result switch
         {
             ProfileDeleteResult.Success => Results.NoContent(),
-            ProfileDeleteResult.FailureInUse => Results.Json(
-                FailureResponse.ForBadRequest(
-                    "Profile is assigned to applications and cannot be deleted.",
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileDeleteResult.FailureInUse => FailureResults.DependentItemExists(
+                "The requested action cannot be performed because this item is referenced by existing item(s).",
+                httpContext.TraceIdentifier,
+                ["Profile is assigned to applications and cannot be deleted."]
             ),
             ProfileDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ProfileDeleteResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),

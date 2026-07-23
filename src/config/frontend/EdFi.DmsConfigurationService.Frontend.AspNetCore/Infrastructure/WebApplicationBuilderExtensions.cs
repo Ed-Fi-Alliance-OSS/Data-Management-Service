@@ -120,6 +120,14 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddHttpContextAccessor();
         webApplicationBuilder.Services.AddTransient<IAuditContext, AuditContext>();
 
+        // Ensure framework-generated 401/403 responses use the Ed-Fi Problem Details contract.
+        // Registered before AddAuthorization so it wins over the default handler (which is added
+        // via TryAdd) for both self-contained and Keycloak identity providers.
+        webApplicationBuilder.Services.AddSingleton<
+            IAuthorizationMiddlewareResultHandler,
+            ProblemDetailsAuthorizationMiddlewareResultHandler
+        >();
+
         Serilog.ILogger ConfigureLogging()
         {
             var logger = new LoggerConfiguration()
@@ -235,6 +243,12 @@ public static class WebApplicationBuilderExtensions
                         options.SaveToken = true;
                         options.Audience = identitySettings.Audience;
                         options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+
+                        // Return a bare "Bearer" challenge instead of echoing token-validation
+                        // failures (expiry, signature, issuer/audience) in the WWW-Authenticate
+                        // header, so provider and exception details are not leaked. The sanitized
+                        // Ed-Fi Problem Details body carries the response message instead.
+                        options.IncludeErrorDetails = false;
                         options.TokenValidationParameters = new TokenValidationParameters
                         {
                             ValidateAudience = true,
@@ -355,6 +369,12 @@ public static class WebApplicationBuilderExtensions
                         options.Authority = identitySettings.Authority;
                         options.Audience = identitySettings.Audience;
                         options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+
+                        // Return a bare "Bearer" challenge instead of echoing token-validation
+                        // failures (expiry, signature, issuer/audience) in the WWW-Authenticate
+                        // header, so provider and exception details are not leaked. The sanitized
+                        // Ed-Fi Problem Details body carries the response message instead.
+                        options.IncludeErrorDetails = false;
                         options.TokenValidationParameters = new TokenValidationParameters
                         {
                             ValidateAudience = true,

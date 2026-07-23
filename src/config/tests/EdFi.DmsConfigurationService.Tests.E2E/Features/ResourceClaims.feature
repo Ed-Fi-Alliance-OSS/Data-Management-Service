@@ -41,6 +41,20 @@ Feature: ResourceClaims endpoints
         Scenario: 07 Ensure validation fails for unsupported orderBy field
              When a GET request is made to "/v3/resourceClaims?orderBy=unsupportedField"
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "One or more query parameters were invalid. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:parameter",
+                    "title": "Parameter Validation Failed",
+                    "status": 400,
+                    "validationErrors": {},
+                    "errors": [
+                      "'orderBy' is not a valid field. Allowed values: id, name, parentId, parentName."
+                    ]
+                  }
+                  """
+              And the response body should not contain "unsupportedField"
 
         Scenario: 08 Ensure clients can GET resource claim actions
              When a GET request is made to "/v3/resourceClaimActions"

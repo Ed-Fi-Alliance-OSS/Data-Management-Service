@@ -199,7 +199,7 @@ Feature: Data Store Context
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "Id": [
+                            "$.id": [
                                 "Request body id must match the id in the url."
                             ]
                         },

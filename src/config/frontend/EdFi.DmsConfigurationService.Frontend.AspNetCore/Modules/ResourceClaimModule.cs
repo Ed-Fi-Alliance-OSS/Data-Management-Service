@@ -16,10 +16,16 @@ public class ResourceClaimModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/v3/resourceClaims", GetAll);
+        endpoints
+            .MapSecuredGet("/v3/resourceClaims", GetAll)
+            .WithQueryParameterValidation<FrontendResourceClaimQuery>();
         endpoints.MapSecuredGet("/v3/resourceClaims/{id}", GetById);
-        endpoints.MapSecuredGet("/v3/resourceClaimActions", GetActions);
-        endpoints.MapSecuredGet("/v3/resourceClaimActionAuthStrategies", GetActionAuthStrategies);
+        endpoints
+            .MapSecuredGet("/v3/resourceClaimActions", GetActions)
+            .WithQueryParameterValidation<FrontendResourceClaimActionQuery>();
+        endpoints
+            .MapSecuredGet("/v3/resourceClaimActionAuthStrategies", GetActionAuthStrategies)
+            .WithQueryParameterValidation<FrontendResourceClaimActionAuthStrategyQuery>();
     }
 
     private static async Task<IResult> GetAll(
@@ -29,7 +35,7 @@ public class ResourceClaimModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         var result = await repository.GetResourceClaims(query.ToQuery());
 
         return result switch
@@ -40,6 +46,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimListResult.FailureProjectionIntegrity => FailureResults.Unknown(
@@ -62,6 +69,7 @@ public class ResourceClaimModule : IEndpointModule
             ResourceClaimGetResult.Success success => Results.Ok(success.ResourceClaim),
             ResourceClaimGetResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound($"ResourceClaim {id} not found.", httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimGetResult.FailureHierarchyNotFound => Results.Json(
@@ -69,6 +77,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimGetResult.FailureProjectionIntegrity => FailureResults.Unknown(
@@ -85,7 +94,7 @@ public class ResourceClaimModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         var result = await repository.GetResourceClaimActions(query.ToQuery());
 
         return result switch
@@ -96,6 +105,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimActionListResult.FailureProjectionIntegrity => FailureResults.Unknown(
@@ -112,7 +122,7 @@ public class ResourceClaimModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         var result = await repository.GetResourceClaimActionAuthStrategies(query.ToQuery());
 
         return result switch
@@ -125,6 +135,7 @@ public class ResourceClaimModule : IEndpointModule
                     "The claims hierarchy was not found.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity => FailureResults.Unknown(

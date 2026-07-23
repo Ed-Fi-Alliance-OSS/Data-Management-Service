@@ -42,4 +42,17 @@ public class Given_ClaimSetCommands
 
         result.IsValid.Should().BeTrue();
     }
+
+    [Test]
+    public void It_reports_the_claimSetName_source_path_for_an_invalid_copy_command_name()
+    {
+        // The CLR property is Name but the request field is claimSetName; the copy validator surfaces
+        // "claimSetName" via OverridePropertyName so the normalized validationErrors key is "$.claimSetName".
+        var validator = new ClaimSetCopyCommand.Validator();
+
+        var result = validator.Validate(new ClaimSetCopyCommand { OriginalId = 1, Name = "" });
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().OnlyContain(e => e.PropertyName == "claimSetName");
+    }
 }

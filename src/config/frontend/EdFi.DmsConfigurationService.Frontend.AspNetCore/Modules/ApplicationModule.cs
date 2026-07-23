@@ -12,8 +12,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation;
-using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -23,7 +21,10 @@ public class ApplicationModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/applications/", InsertApplication);
-        endpoints.MapSecuredGet("/v3/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
+        endpoints
+            .MapSecuredGet("/v3/applications/", GetAll)
+            .Produces<List<ApplicationResponse>>(200)
+            .WithQueryParameterValidation<FrontendApplicationQuery>();
         endpoints.MapSecuredGet($"/v3/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
         endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
@@ -69,10 +70,18 @@ public class ApplicationModule : IEndpointModule
             case VendorGetResult.Success success:
                 namespacePrefixes = success.VendorResponse.NamespacePrefixes;
                 break;
+            case VendorGetResult.FailureUnknown vendorFailure:
+                logger.LogError(
+                    "Error validating VendorId: {Message}",
+                    SanitizeForLog(vendorFailure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
             default:
-                throw new ValidationException([
-                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                ]);
+                return FailureResults.UnresolvedReference(
+                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                    httpContext.TraceIdentifier,
+                    ["Reference 'VendorId' does not exist."]
+                );
         }
 
         // Validate references before creating the identity provider client so a failed
@@ -136,27 +145,32 @@ public class ApplicationModule : IEndpointModule
                         );
                     case ApplicationInsertResult.FailureVendorNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                        ]);
+                        return FailureResults.UnresolvedReference(
+                            "One or more referenced items could not be resolved. See 'errors' for details.",
+                            httpContext.TraceIdentifier,
+                            ["Reference 'VendorId' does not exist."]
+                        );
                     case ApplicationInsertResult.FailureDataStoreNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure("DataStoreId", "Data store does not exist."),
-                        ]);
+                        return FailureResults.UnresolvedReference(
+                            "One or more referenced items could not be resolved. See 'errors' for details.",
+                            httpContext.TraceIdentifier,
+                            ["Data store does not exist."]
+                        );
                     case ApplicationInsertResult.FailureProfileNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure("ProfileId", "Profile does not exist."),
-                        ]);
+                        return FailureResults.UnresolvedReference(
+                            "One or more referenced items could not be resolved. See 'errors' for details.",
+                            httpContext.TraceIdentifier,
+                            ["Profile does not exist."]
+                        );
                     case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException([
-                            new ValidationFailure(
-                                "ApplicationName",
-                                $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
-                            ),
-                        ]);
+                        return FailureResults.NonUniqueIdentity(
+                            "The identifying value(s) of the item are the same as another item that already exists.",
+                            httpContext.TraceIdentifier,
+                            [$"Application '{duplicateApp.ApplicationName}' already exists for vendor."]
+                        );
                     case ApplicationInsertResult.FailureUnknown failure:
                         logger.LogError("Failure creating client {Failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -177,7 +191,7 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         ApplicationQueryResult getResult = await applicationRepository.QueryApplication(query.ToQuery());
         return getResult switch
         {
@@ -213,8 +227,8 @@ public class ApplicationModule : IEndpointModule
 
     /// <summary>
     /// Validates that every requested data store id exists within the current tenant.
-    /// Throws a ValidationException when one is missing, returns a failure result for
-    /// infrastructure errors, and returns null when the request is valid.
+    /// Returns a 409 unresolved-reference result when one is missing, a 500 failure result for
+    /// infrastructure errors, and null when the request is valid.
     /// </summary>
     private static async Task<IResult?> ValidateDataStoreIdsExist(
         long[] dataStoreIds,
@@ -233,9 +247,11 @@ public class ApplicationModule : IEndpointModule
         {
             case DataStoreIdsExistResult.Success success
                 when success.ExistingIds.Count != dataStoreIds.Distinct().Count():
-                throw new ValidationException([
-                    new ValidationFailure("DataStoreId", "Data store does not exist."),
-                ]);
+                return FailureResults.UnresolvedReference(
+                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                    httpContext.TraceIdentifier,
+                    ["Data store does not exist."]
+                );
             case DataStoreIdsExistResult.FailureUnknown failure:
                 logger.LogError(
                     "Error validating DataStoreIds: {Message}",
@@ -248,10 +264,10 @@ public class ApplicationModule : IEndpointModule
     }
 
     /// <summary>
-    /// Validates that every requested profile id exists. Throws a ValidationException
-    /// when one is missing, returns a failure result for infrastructure errors, and
-    /// returns null when the request is valid. Profiles are not tenant-scoped, so this
-    /// existence check mirrors the repository's foreign-key validation exactly.
+    /// Validates that every requested profile id exists. Returns a 409 unresolved-reference result
+    /// when one is missing, a 500 failure result for infrastructure errors, and null when the request
+    /// is valid. Profiles are not tenant-scoped, so this existence check mirrors the repository's
+    /// foreign-key validation exactly.
     /// </summary>
     private static async Task<IResult?> ValidateProfileIdsExist(
         long[] profileIds,
@@ -267,9 +283,11 @@ public class ApplicationModule : IEndpointModule
                 case ProfileGetResult.Success:
                     break;
                 case ProfileGetResult.FailureNotFound:
-                    throw new ValidationException([
-                        new ValidationFailure("ProfileId", "Profile does not exist."),
-                    ]);
+                    return FailureResults.UnresolvedReference(
+                        "One or more referenced items could not be resolved. See 'errors' for details.",
+                        httpContext.TraceIdentifier,
+                        ["Profile does not exist."]
+                    );
                 case ProfileGetResult.FailureUnknown failure:
                     logger.LogError("Error validating ProfileId: {Message}", SanitizeForLog(failure.Message));
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
@@ -323,9 +341,11 @@ public class ApplicationModule : IEndpointModule
                             );
                             return FailureResults.Unknown(httpContext.TraceIdentifier);
                         default:
-                            throw new ValidationException([
-                                new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                            ]);
+                            return FailureResults.UnresolvedReference(
+                                "One or more referenced items could not be resolved. See 'errors' for details.",
+                                httpContext.TraceIdentifier,
+                                ["Reference 'VendorId' does not exist."]
+                            );
                     }
 
                     if (
@@ -379,26 +399,29 @@ public class ApplicationModule : IEndpointModule
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure(
-                                        "VendorId",
-                                        $"Reference 'VendorId' does not exist."
-                                    ),
-                                ]);
+                                return FailureResults.UnresolvedReference(
+                                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                                    httpContext.TraceIdentifier,
+                                    ["Reference 'VendorId' does not exist."]
+                                );
                             }
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureDataStoreNotFound)
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure("DataStoreId", $"Data store does not exist."),
-                                ]);
+                                return FailureResults.UnresolvedReference(
+                                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                                    httpContext.TraceIdentifier,
+                                    ["Data store does not exist."]
+                                );
                             }
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureProfileNotFound)
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure("ProfileId", $"Profile does not exist."),
-                                ]);
+                                return FailureResults.UnresolvedReference(
+                                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                                    httpContext.TraceIdentifier,
+                                    ["Profile does not exist."]
+                                );
                             }
 
                             if (
@@ -406,12 +429,13 @@ public class ApplicationModule : IEndpointModule
                                 is ApplicationUpdateResult.FailureDuplicateApplication duplicateApp
                             )
                             {
-                                throw new ValidationException([
-                                    new ValidationFailure(
-                                        "ApplicationName",
-                                        $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
-                                    ),
-                                ]);
+                                return FailureResults.NonUniqueIdentity(
+                                    "The identifying value(s) of the item are the same as another item that already exists.",
+                                    httpContext.TraceIdentifier,
+                                    [
+                                        $"Application '{duplicateApp.ApplicationName}' already exists for vendor.",
+                                    ]
+                                );
                             }
 
                             return applicationUpdateResult switch
@@ -434,8 +458,17 @@ public class ApplicationModule : IEndpointModule
                                 httpContext.TraceIdentifier
                             );
                         case ClientUpdateResult.FailureNotFound notFound:
-                            logger.LogError(notFound.FailureMessage);
-                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            // The application exists in the configuration store but the identity provider
+                            // reports no such client: an upstream inconsistency (sanitized 502), not an
+                            // internal error. Log the sanitized reason without leaking the raw message.
+                            logger.LogError(
+                                "Client not found in identity provider: {Failure}",
+                                SanitizeForLog(notFound.FailureMessage)
+                            );
+                            return FailureResults.BadGateway(
+                                "Identity provider client not found during client update",
+                                httpContext.TraceIdentifier
+                            );
                         case ClientUpdateResult.FailureUnknown unknownFailure:
                             logger.LogError(
                                 "Error updating client {ClientId} {ClientUuid}: {Message}",
@@ -560,8 +593,11 @@ public class ApplicationModule : IEndpointModule
                                     }
                                 );
                             case ClientResetResult.FailureClientNotFound:
-                                return FailureResults.NotFound(
-                                    "Application client not found in identity provider",
+                                // The identity provider reports no such client for an application that
+                                // exists in the configuration store: an upstream inconsistency (sanitized
+                                // 502), not a client-facing 404.
+                                return FailureResults.BadGateway(
+                                    "Identity provider client not found during credential reset",
                                     httpContext.TraceIdentifier
                                 );
                             case ClientResetResult.FailureIdentityProvider failureIdentityProvider:

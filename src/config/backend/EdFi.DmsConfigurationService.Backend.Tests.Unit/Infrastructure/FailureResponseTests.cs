@@ -58,6 +58,31 @@ public class FailureResponseTests
     }
 
     [Test]
+    public void ForParameterValidation_ShouldReturnCorrectJsonNode()
+    {
+        // Arrange
+        string[] errors = { "'limit' must be greater than 0." };
+
+        // Act
+        var result = FailureResponse.ForParameterValidation(errors, CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]
+            ?.GetValue<string>()
+            .Should()
+            .Be("One or more query parameters were invalid. See 'errors' for details.");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+        result["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
+        result["status"]?.GetValue<int>().Should().Be(400);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"].Should().BeOfType<JsonObject>();
+        result["validationErrors"]!.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Count.Should().Be(1);
+        result["errors"]![0]?.GetValue<string>().Should().Be("'limit' must be greater than 0.");
+    }
+
+    [Test]
     public void ForBadRequest_ShouldReturnCorrectJsonNode()
     {
         // Arrange
@@ -112,7 +137,47 @@ public class FailureResponseTests
     }
 
     [Test]
-    public void ForDataValidation_ShouldReturnCorrectJsonNode()
+    public void It_returns_the_correct_method_not_allowed_response()
+    {
+        // Arrange
+        string detail = "The request method is not allowed for this resource.";
+
+        // Act
+        var result = FailureResponse.ForMethodNotAllowed(detail, CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be(detail);
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
+        result["title"]?.GetValue<string>().Should().Be("Method Not Allowed");
+        result["status"]?.GetValue<int>().Should().Be(405);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_returns_the_correct_unsupported_media_type_response()
+    {
+        // Arrange
+        string detail = "The request content type is not supported.";
+
+        // Act
+        var result = FailureResponse.ForUnsupportedMediaType(detail, CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be(detail);
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:unsupported-media-type");
+        result["title"]?.GetValue<string>().Should().Be("Unsupported Media Type");
+        result["status"]?.GetValue<int>().Should().Be(415);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_returns_the_complete_grouped_data_validation_contract()
     {
         // Arrange
         var validationFailures = new List<ValidationFailure>
@@ -127,6 +192,22 @@ public class FailureResponseTests
 
         // Assert
         result.Should().BeOfType<JsonObject>();
+
+        // Exactly the Ed-Fi Problem Details members, no more and no fewer.
+        result
+            .AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+
         result["detail"]
             ?.GetValue<string>()
             .Should()
@@ -135,7 +216,88 @@ public class FailureResponseTests
         result["title"]?.GetValue<string>().Should().Be("Data Validation Failed");
         result["status"]?.GetValue<int>().Should().Be(400);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
-        result["validationErrors"]?.AsObject().Count.Should().Be(2);
+
+        // Each property keeps its own messages, in order, with nothing lost, duplicated, moved between
+        // properties, or reordered.
+        var validationErrors = result["validationErrors"]!.AsObject();
+        validationErrors
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("$.property1", "$.property2");
+        validationErrors["$.property1"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
+            .Equal("Error1", "Error2");
+        validationErrors["$.property2"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
+            .Equal("Error3");
+
+        result["errors"]!.AsArray().Should().BeEmpty();
+    }
+
+    // The validationErrors key is the request document's JSON path: each segment's identifier is
+    // camel-cased with JsonNamingPolicy.CamelCase (preserving array indices and snake_case, and lowering
+    // leading acronyms correctly), the root "$" is prefixed, an empty property name maps to "$", and a
+    // value already in this form is left unchanged (idempotent).
+    [TestCase("Company", "$.company")]
+    [TestCase("NamespacePrefixes", "$.namespacePrefixes")]
+    [TestCase("Contact.Email", "$.contact.email")]
+    [TestCase("EducationOrganizationIds[0]", "$.educationOrganizationIds[0]")]
+    [TestCase("ResourceClaims[0].Name", "$.resourceClaims[0].name")]
+    [TestCase("client_id", "$.client_id")]
+    [TestCase("claimSetName", "$.claimSetName")]
+    [TestCase("APIKey", "$.apiKey")]
+    [TestCase("ID", "$.id")]
+    [TestCase("", "$")]
+    [TestCase("$", "$")]
+    [TestCase("$.claimSets[0].claimSetName", "$.claimSets[0].claimSetName")]
+    public void ForDataValidation_normalizes_the_property_name_to_a_json_path(
+        string propertyName,
+        string expectedKey
+    )
+    {
+        // Act
+        var result = FailureResponse.ForDataValidation(
+            [new ValidationFailure(propertyName, "message")],
+            CorrelationId
+        );
+
+        // Assert
+        result["validationErrors"]!
+            .AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(expectedKey);
+    }
+
+    [Test]
+    public void ForDataValidation_groups_failures_that_normalize_to_the_same_json_path()
+    {
+        // "Name", "name", and "$.name" all normalize to "$.name", so their messages merge under one key
+        // (normalization happens before grouping) rather than producing three separate entries.
+        var validationFailures = new List<ValidationFailure>
+        {
+            new("Name", "Error1"),
+            new("name", "Error2"),
+            new("$.name", "Error3"),
+        };
+
+        // Act
+        var result = FailureResponse.ForDataValidation(validationFailures, CorrelationId);
+
+        // Assert
+        var validationErrors = result["validationErrors"]!.AsObject();
+        validationErrors.Select(property => property.Key).Should().BeEquivalentTo("$.name");
+        validationErrors["$.name"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
+            .Equal("Error1", "Error2", "Error3");
     }
 
     [Test]
@@ -156,6 +318,49 @@ public class FailureResponseTests
         result["title"]?.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
         result["status"]?.GetValue<int>().Should().Be(409);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
+    }
+
+    [Test]
+    public void It_returns_the_unresolved_reference_conflict_contract()
+    {
+        // Arrange
+        string detail = "One or more referenced items could not be resolved. See 'errors' for details.";
+        string[] errors = ["Reference 'VendorId' does not exist."];
+
+        // Act
+        var result = FailureResponse.ForUnresolvedReference(detail, CorrelationId, errors);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be(detail);
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+        result["title"]?.GetValue<string>().Should().Be("Unresolved Reference");
+        result["status"]?.GetValue<int>().Should().Be(409);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
+    }
+
+    [Test]
+    public void It_returns_the_dependent_item_exists_conflict_contract()
+    {
+        // Arrange
+        string detail =
+            "The requested action cannot be performed because this item is referenced by existing item(s).";
+        string[] errors = ["Profile is assigned to one or more applications."];
+
+        // Act
+        var result = FailureResponse.ForDependentItemExists(detail, CorrelationId, errors);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["detail"]?.GetValue<string>().Should().Be(detail);
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:dependent-item-exists");
+        result["title"]?.GetValue<string>().Should().Be("Dependent Item Exists");
+        result["status"]?.GetValue<int>().Should().Be(409);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
         result["errors"]?.AsArray().Should().ContainSingle(error => error!.GetValue<string>() == errors[0]);
     }
 

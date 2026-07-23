@@ -13,8 +13,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation;
-using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -32,7 +30,10 @@ public class ApiClientModule : IEndpointModule
             .MapSecuredPut($"/v3/apiClients/{{id}}/reset-credential", ResetCredential)
             .Produces<ApiClientCredentialsResponse>(200);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
-        endpoints.MapLimitedAccess("/v3/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
+        endpoints
+            .MapLimitedAccess("/v3/apiClients/", GetAll)
+            .Produces<List<ApiClientResponse>>(200)
+            .WithQueryParameterValidation<FrontendApiClientQuery>();
         endpoints
             .MapLimitedAccess("/v3/apiClients/{clientId}", GetByClientId)
             .Produces<ApiClientResponse>(200);
@@ -59,17 +60,25 @@ public class ApiClientModule : IEndpointModule
         ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
             command.ApplicationId
         );
-        if (applicationResult is not ApplicationGetResult.Success applicationSuccess)
+        ApplicationResponse application;
+        switch (applicationResult)
         {
-            throw new ValidationException([
-                new ValidationFailure(
-                    "ApplicationId",
-                    $"Application with ID {command.ApplicationId} not found."
-                ),
-            ]);
+            case ApplicationGetResult.Success applicationSuccess:
+                application = applicationSuccess.ApplicationResponse;
+                break;
+            case ApplicationGetResult.FailureUnknown appFailure:
+                logger.LogError(
+                    "Error resolving ApplicationId: {Message}",
+                    SanitizeForLog(appFailure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                return FailureResults.UnresolvedReference(
+                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                    httpContext.TraceIdentifier,
+                    [$"Application with ID {command.ApplicationId} not found."]
+                );
         }
-
-        ApplicationResponse application = applicationSuccess.ApplicationResponse;
 
         // Validate DataStoreIds exist (optimized single query)
         if (command.DataStoreIds.Length > 0)
@@ -83,12 +92,13 @@ public class ApiClientModule : IEndpointModule
 
                 if (notFoundIds.Count > 0)
                 {
-                    throw new ValidationException([
-                        new ValidationFailure(
-                            "DataStoreIds",
-                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}"
-                        ),
-                    ]);
+                    return FailureResults.UnresolvedReference(
+                        "One or more referenced items could not be resolved. See 'errors' for details.",
+                        httpContext.TraceIdentifier,
+                        [
+                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}",
+                        ]
+                    );
                 }
             }
             else if (existingIdsResult is DataStoreIdsExistResult.FailureUnknown failure)
@@ -98,7 +108,10 @@ public class ApiClientModule : IEndpointModule
             }
         }
 
-        // Get vendor details for namespace prefixes
+        // Get vendor details for namespace prefixes. The vendor is derived from the resolved
+        // application (the caller submits ApplicationId, not VendorId), so a vendor that cannot be
+        // resolved here is internal data inconsistency, not a client unresolved-reference: report a
+        // sanitized 500 rather than a 409.
         string namespacePrefixes;
         switch (await vendorRepository.GetVendor(application.VendorId))
         {
@@ -106,9 +119,10 @@ public class ApiClientModule : IEndpointModule
                 namespacePrefixes = success.VendorResponse.NamespacePrefixes;
                 break;
             default:
-                throw new ValidationException([
-                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-                ]);
+                logger.LogError(
+                    "The application's stored vendor could not be resolved for ApiClient creation."
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         var clientId = Guid.NewGuid().ToString();
@@ -180,17 +194,18 @@ public class ApiClientModule : IEndpointModule
                 );
             case ApiClientInsertResult.FailureApplicationNotFound:
                 await clientRepository.DeleteClientAsync(clientUuid.ToString());
-                throw new ValidationException([
-                    new ValidationFailure(
-                        "ApplicationId",
-                        $"Application with ID {command.ApplicationId} not found."
-                    ),
-                ]);
+                return FailureResults.UnresolvedReference(
+                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                    httpContext.TraceIdentifier,
+                    [$"Application with ID {command.ApplicationId} not found."]
+                );
             case ApiClientInsertResult.FailureDataStoreNotFound:
                 await clientRepository.DeleteClientAsync(clientUuid.ToString());
-                throw new ValidationException([
-                    new ValidationFailure("DataStoreId", "Data store does not exist."),
-                ]);
+                return FailureResults.UnresolvedReference(
+                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                    httpContext.TraceIdentifier,
+                    ["Data store does not exist."]
+                );
             case ApiClientInsertResult.FailureUnknown failure:
                 logger.LogError("Failure creating client {Failure}", failure);
                 await clientRepository.DeleteClientAsync(clientUuid.ToString());
@@ -208,7 +223,7 @@ public class ApiClientModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         ApiClientQueryResult getResult = await apiClientRepository.QueryApiClient(query.ToQuery());
         return getResult switch
         {
@@ -267,28 +282,46 @@ public class ApiClientModule : IEndpointModule
 
         // Get existing API client
         ApiClientGetResult existingResult = await apiClientRepository.GetApiClientById(id);
-        if (existingResult is not ApiClientGetResult.Success existingSuccess)
+        ApiClientResponse existingApiClient;
+        switch (existingResult)
         {
-            return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+            case ApiClientGetResult.Success existingSuccess:
+                existingApiClient = existingSuccess.ApiClientResponse;
+                break;
+            case ApiClientGetResult.FailureUnknown existingFailure:
+                logger.LogError(
+                    "Error resolving ApiClient {Id}: {Message}",
+                    SanitizeForLog(id.ToString()),
+                    SanitizeForLog(existingFailure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
         }
-
-        ApiClientResponse existingApiClient = existingSuccess.ApiClientResponse;
 
         // Validate Application exists and get application details
         ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
             command.ApplicationId
         );
-        if (applicationResult is not ApplicationGetResult.Success applicationSuccess)
+        ApplicationResponse application;
+        switch (applicationResult)
         {
-            throw new ValidationException([
-                new ValidationFailure(
-                    "ApplicationId",
-                    $"Application with ID {command.ApplicationId} not found."
-                ),
-            ]);
+            case ApplicationGetResult.Success applicationSuccess:
+                application = applicationSuccess.ApplicationResponse;
+                break;
+            case ApplicationGetResult.FailureUnknown appFailure:
+                logger.LogError(
+                    "Error resolving ApplicationId: {Message}",
+                    SanitizeForLog(appFailure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                return FailureResults.UnresolvedReference(
+                    "One or more referenced items could not be resolved. See 'errors' for details.",
+                    httpContext.TraceIdentifier,
+                    [$"Application with ID {command.ApplicationId} not found."]
+                );
         }
-
-        ApplicationResponse application = applicationSuccess.ApplicationResponse;
 
         // Validate DataStoreIds exist (optimized single query)
         if (command.DataStoreIds.Length > 0)
@@ -302,12 +335,13 @@ public class ApiClientModule : IEndpointModule
 
                 if (notFoundIds.Count > 0)
                 {
-                    throw new ValidationException([
-                        new ValidationFailure(
-                            "DataStoreIds",
-                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}"
-                        ),
-                    ]);
+                    return FailureResults.UnresolvedReference(
+                        "One or more referenced items could not be resolved. See 'errors' for details.",
+                        httpContext.TraceIdentifier,
+                        [
+                            $"The following DataStoreIds were not found in database: {string.Join(", ", notFoundIds)}",
+                        ]
+                    );
                 }
             }
             else if (existingIdsResult is DataStoreIdsExistResult.FailureUnknown failure)
@@ -320,12 +354,12 @@ public class ApiClientModule : IEndpointModule
             }
         }
 
-        // Validate vendor exists
+        // The vendor is derived from the resolved application, so a vendor that cannot be resolved is
+        // internal data inconsistency, not a client unresolved-reference: report a sanitized 500.
         if (await vendorRepository.GetVendor(application.VendorId) is not VendorGetResult.Success)
         {
-            throw new ValidationException([
-                new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
-            ]);
+            logger.LogError("The application's stored vendor could not be resolved for ApiClient update.");
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         // Get original application for rollback if needed
@@ -364,12 +398,15 @@ public class ApiClientModule : IEndpointModule
                     httpContext.TraceIdentifier
                 );
             case ClientUpdateResult.FailureNotFound notFound:
+                // The configuration store row exists (the entity precheck passed) but the identity
+                // provider reports no such client. That is an upstream inconsistency, not a client-facing
+                // 404, so surface a sanitized 502 without echoing the raw provider message.
                 logger.LogError(
                     "Client not found in identity provider: {Failure}",
                     SanitizeForLog(notFound.FailureMessage)
                 );
-                return FailureResults.NotFound(
-                    "ApiClient not found in identity provider",
+                return FailureResults.BadGateway(
+                    "Identity provider client not found during client update",
                     httpContext.TraceIdentifier
                 );
             case ClientUpdateResult.Success updateSuccess:
@@ -436,22 +473,21 @@ public class ApiClientModule : IEndpointModule
                         return Results.NoContent();
                     case ApiClientUpdateResult.FailureNotFound:
                         await AttemptRollback();
-                        throw new ValidationException([
-                            new ValidationFailure("Id", $"ApiClient with ID {id} not found."),
-                        ]);
+                        return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
                     case ApiClientUpdateResult.FailureApplicationNotFound:
                         await AttemptRollback();
-                        throw new ValidationException([
-                            new ValidationFailure(
-                                "ApplicationId",
-                                $"Application with ID {command.ApplicationId} not found."
-                            ),
-                        ]);
+                        return FailureResults.UnresolvedReference(
+                            "One or more referenced items could not be resolved. See 'errors' for details.",
+                            httpContext.TraceIdentifier,
+                            [$"Application with ID {command.ApplicationId} not found."]
+                        );
                     case ApiClientUpdateResult.FailureDataStoreNotFound:
                         await AttemptRollback();
-                        throw new ValidationException([
-                            new ValidationFailure("DataStoreId", "Data store does not exist."),
-                        ]);
+                        return FailureResults.UnresolvedReference(
+                            "One or more referenced items could not be resolved. See 'errors' for details.",
+                            httpContext.TraceIdentifier,
+                            ["Data store does not exist."]
+                        );
                     case ApiClientUpdateResult.FailureUnknown failure:
                         await AttemptRollback();
                         logger.LogError(
@@ -483,12 +519,22 @@ public class ApiClientModule : IEndpointModule
 
         // Get the API client to retrieve the ClientUuid for identity provider deletion
         ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
-        if (getResult is not ApiClientGetResult.Success getSuccess)
+        ApiClientResponse apiClient;
+        switch (getResult)
         {
-            return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+            case ApiClientGetResult.Success getSuccess:
+                apiClient = getSuccess.ApiClientResponse;
+                break;
+            case ApiClientGetResult.FailureUnknown getFailure:
+                logger.LogError(
+                    "Error resolving ApiClient {Id}: {Message}",
+                    SanitizeForLog(id.ToString()),
+                    SanitizeForLog(getFailure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
         }
-
-        ApiClientResponse apiClient = getSuccess.ApiClientResponse;
 
         // Get application and vendor details for potential rollback
         ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
@@ -627,12 +673,22 @@ public class ApiClientModule : IEndpointModule
 
         // Get the API client to retrieve the ClientUuid and ClientId for identity provider reset
         ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
-        if (getResult is not ApiClientGetResult.Success getSuccess)
+        ApiClientResponse apiClient;
+        switch (getResult)
         {
-            return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+            case ApiClientGetResult.Success getSuccess:
+                apiClient = getSuccess.ApiClientResponse;
+                break;
+            case ApiClientGetResult.FailureUnknown getFailure:
+                logger.LogError(
+                    "Error resolving ApiClient {Id}: {Message}",
+                    SanitizeForLog(id.ToString()),
+                    SanitizeForLog(getFailure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
         }
-
-        ApiClientResponse apiClient = getSuccess.ApiClientResponse;
 
         try
         {
@@ -656,8 +712,10 @@ public class ApiClientModule : IEndpointModule
                         Secret = resetSuccess.ClientSecret,
                     }
                 ),
-                ClientResetResult.FailureClientNotFound => FailureResults.NotFound(
-                    "ApiClient not found in identity provider",
+                // The identity provider reports no such client for an ApiClient that exists in the
+                // configuration store: an upstream inconsistency (sanitized 502), not a client-facing 404.
+                ClientResetResult.FailureClientNotFound => FailureResults.BadGateway(
+                    "Identity provider client not found during credential reset",
                     httpContext.TraceIdentifier
                 ),
                 ClientResetResult.FailureIdentityProvider failureIdentityProvider =>

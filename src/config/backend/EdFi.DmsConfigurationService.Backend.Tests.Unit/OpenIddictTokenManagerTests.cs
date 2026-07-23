@@ -450,4 +450,32 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
         }
     }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheRepositoryFails : OpenIddictTokenManagerTests
+    {
+        private string _token = null!;
+
+        [SetUp]
+        public void Arrange()
+        {
+            var (_, _, signingKey) = CreateSigningKey();
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti))
+                .Throws(new InvalidOperationException("database unavailable"));
+            _token = CreateSignedToken(
+                signingKey,
+                new[] { new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()) }
+            );
+        }
+
+        [Test]
+        public async Task It_propagates_the_repository_failure()
+        {
+            // A service failure must not be swallowed as false: it propagates so the endpoint can
+            // respond 503 (RFC 7009 §2.2) instead of reporting a false success.
+            var act = async () => await _tokenManager.RevokeTokenAsync(_token);
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+    }
 }

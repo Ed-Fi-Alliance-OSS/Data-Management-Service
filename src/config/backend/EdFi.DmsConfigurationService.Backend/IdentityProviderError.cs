@@ -31,4 +31,11 @@ public record IdentityProviderError(string FailureMessage)
     /// Insufficient permission to perform the request
     /// </summary>
     public record Forbidden(string FailureMessage) : IdentityProviderError(FailureMessage);
+
+    /// <summary>
+    /// The identity provider rejected the request with an OAuth 2.0 client error (HTTP 400), such as
+    /// invalid_scope or invalid_grant. This is a client error to be corrected, not a retryable server
+    /// outage. <see cref="Error"/> is the OAuth error code parsed from the provider response.
+    /// </summary>
+    public record BadRequest(string Error, string FailureMessage) : IdentityProviderError(FailureMessage);
 }

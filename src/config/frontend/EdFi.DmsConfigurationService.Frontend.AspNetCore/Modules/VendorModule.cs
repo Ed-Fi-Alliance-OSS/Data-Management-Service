@@ -5,6 +5,7 @@
 
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
@@ -53,7 +54,7 @@ public class VendorModule : IEndpointModule
                     return Task.CompletedTask;
                 }
             );
-        endpoints.MapSecuredGet("/v3/vendors/", GetAll);
+        endpoints.MapSecuredGet("/v3/vendors/", GetAll).WithQueryParameterValidation<FrontendVendorQuery>();
         endpoints.MapSecuredGet($"/v3/vendors/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/vendors/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/vendors/{{id}}", Delete);
@@ -90,17 +91,10 @@ public class VendorModule : IEndpointModule
 
         return insertResult switch
         {
-            VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [
-                        new ValidationFailure(
-                            "Name",
-                            "A vendor name already exists in the database. Please enter a unique name."
-                        ),
-                    ],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            VendorInsertResult.FailureDuplicateCompanyName => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                ["A vendor name already exists in the database. Please enter a unique name."]
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -113,7 +107,7 @@ public class VendorModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         VendorQueryResult getResult = await repository.QueryVendor(query.ToQuery());
         return getResult switch
         {
@@ -139,6 +133,7 @@ public class VendorModule : IEndpointModule
                     $"Vendor {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -182,15 +177,28 @@ public class VendorModule : IEndpointModule
                     case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                         logger.LogError(
                             "Failure updating client: {FailureMessage}",
-                            failureIdentityProvider.IdentityProviderError.FailureMessage
+                            LoggingUtility.SanitizeForLog(
+                                failureIdentityProvider.IdentityProviderError.FailureMessage
+                            )
                         );
+                        // The provider message can carry provider URLs and status detail, so surface only a
+                        // fixed generic response and never the raw upstream message.
                         return FailureResults.BadGateway(
-                            failureIdentityProvider.IdentityProviderError.FailureMessage,
+                            "Identity provider error during client update",
                             httpContext.TraceIdentifier
                         );
                     case ClientUpdateResult.FailureNotFound notFound:
-                        logger.LogError(notFound.FailureMessage);
-                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                        // The vendor exists in the configuration store but the identity provider reports
+                        // no such client: an upstream inconsistency (sanitized 502), not an internal
+                        // error. Log the sanitized reason without leaking the raw provider message.
+                        logger.LogError(
+                            "Client not found in identity provider: {FailureMessage}",
+                            LoggingUtility.SanitizeForLog(notFound.FailureMessage)
+                        );
+                        return FailureResults.BadGateway(
+                            "Identity provider client not found during client update",
+                            httpContext.TraceIdentifier
+                        );
                     case ClientUpdateResult.FailureUnknown unknownFailure:
                         logger.LogError(
                             "Error updating apiClient {ClientUuid}: {Message}",
@@ -210,6 +218,7 @@ public class VendorModule : IEndpointModule
                     $"Vendor {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -233,6 +242,7 @@ public class VendorModule : IEndpointModule
                     $"Vendor {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

@@ -81,4 +81,23 @@ public class ClaimSetCommandValidatorTests
             .Errors.Should()
             .Contain(e => e.ErrorMessage.Contains("Claim set name must not contain white spaces."));
     }
+
+    // The CLR property is Name, but the request field is claimSetName, so both name rules surface
+    // "claimSetName" via OverridePropertyName; the validation-error path normalizer then reports the
+    // failure under "$.claimSetName" rather than "$.name". "" exercises the required/length rule and a
+    // whitespace value exercises the no-whitespace rule.
+    [TestCase("")]
+    [TestCase("Invalid Claim Set")]
+    public void Validate_WithInvalidName_ReportsTheClaimSetNameSourcePath(string invalidName)
+    {
+        // Arrange
+        var command = new ClaimSetImportCommand { Name = invalidName };
+
+        // Act
+        var result = _validator.Validate(command);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().OnlyContain(e => e.PropertyName == "claimSetName");
+    }
 }

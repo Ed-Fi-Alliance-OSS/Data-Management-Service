@@ -7,6 +7,7 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
@@ -391,6 +392,89 @@ public class DataStoreModuleTests
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             queryApplicationsByDataStoreResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.GetAsync("/v3/dataStores/999");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_update()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStores/999",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreUpdateCommand
+                        {
+                            Id = 999,
+                            DataStoreType = "Production",
+                            Name = "Test Instance",
+                            ConnectionString = "Server=localhost;Database=TestDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_delete()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.DeleteAsync("/v3/dataStores/999");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 999 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_returns_the_problem_details_not_found_contract_for_applications_query()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.GetAsync("/v3/dataStores/0/applications/?offset=0&limit=25");
+
+            JsonNode body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "DataStore 0 not found. It may have been recently deleted."
+            );
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
     }
 
     [TestFixture]
@@ -433,6 +517,35 @@ public class DataStoreModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/dataStores?limit=0");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/dataStores?limit=0");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be greater than 0."]
+            );
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_offset()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/dataStores?offset=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
         }
 
         [Test]

@@ -14,15 +14,19 @@ public class ClaimSetCommandValidator<T> : AbstractValidator<T>
 {
     protected ClaimSetCommandValidator()
     {
+        // The CLR property is Name but the request field is claimSetName, so surface the accurate source
+        // name; the validation-error path normalizer then reports it as "$.claimSetName".
         RuleFor(c => c.Name)
             .NotEmpty()
             .WithMessage("Please provide a valid claim set name.")
             .MaximumLength(256)
-            .WithMessage("The claim set name must be less than 256 characters.");
+            .WithMessage("The claim set name must be less than 256 characters.")
+            .OverridePropertyName("claimSetName");
 
         RuleFor(m => m.Name)
             .Matches(new Regex(ValidationConstants.ClaimSetNameNoWhiteSpaceRegex))
             .When(m => !string.IsNullOrEmpty(m.Name))
-            .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage);
+            .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage)
+            .OverridePropertyName("claimSetName");
     }
 }

@@ -227,7 +227,7 @@ Feature: Vendors endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                      "Company": [
+                      "$.company": [
                         "'Company' must not be empty."
                         ]
                     },
@@ -253,7 +253,7 @@ Feature: Vendors endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                      "ContactName": [
+                      "$.contactName": [
                         "'Contact Name' must not be empty."
                         ]
                     },
@@ -279,7 +279,7 @@ Feature: Vendors endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                      "ContactEmailAddress": [
+                      "$.contactEmailAddress": [
                         "'Contact Email Address' is not a valid email address."
                         ]
                     },
@@ -305,7 +305,7 @@ Feature: Vendors endpoints
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
-                      "NamespacePrefixes": [
+                      "$.namespacePrefixes": [
                         "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
                     },

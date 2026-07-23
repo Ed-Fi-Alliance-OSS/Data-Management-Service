@@ -10,7 +10,6 @@ using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -19,7 +18,7 @@ public class TenantModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/tenants/", InsertTenant);
-        endpoints.MapSecuredGet("/v3/tenants/", GetAll);
+        endpoints.MapSecuredGet("/v3/tenants/", GetAll).WithQueryParameterValidation<FrontendPagingQuery>();
         endpoints.MapSecuredGet($"/v3/tenants/{{id}}", GetById);
     }
 
@@ -45,17 +44,10 @@ public class TenantModule : IEndpointModule
                     Title = $"New Tenant {SanitizeForLog(entity.Name)} has been created successfully.",
                 }
             ),
-            TenantInsertResult.FailureDuplicateName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [
-                        new ValidationFailure(
-                            "Name",
-                            "A tenant name already exists in the database. Please enter a unique name."
-                        ),
-                    ],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            TenantInsertResult.FailureDuplicateName => FailureResults.NonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                httpContext.TraceIdentifier,
+                ["A tenant name already exists in the database. Please enter a unique name."]
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -68,7 +60,7 @@ public class TenantModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         TenantQueryResult getResult = await repository.QueryTenant(query);
         return getResult switch
         {
@@ -88,6 +80,7 @@ public class TenantModule : IEndpointModule
                     $"Tenant {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

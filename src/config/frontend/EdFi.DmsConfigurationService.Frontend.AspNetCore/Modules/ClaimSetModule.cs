@@ -26,6 +26,7 @@ public class ClaimSetModule : IEndpointModule
                 httpContext.TraceIdentifier,
                 ["A claim set with this name already exists."]
             ),
+            contentType: "application/problem+json",
             statusCode: (int)HttpStatusCode.Conflict
         );
     }
@@ -33,7 +34,9 @@ public class ClaimSetModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/claimSets/", InsertClaimSet);
-        endpoints.MapLimitedAccess("/v3/claimSets/", GetAll);
+        endpoints
+            .MapLimitedAccess("/v3/claimSets/", GetAll)
+            .WithQueryParameterValidation<FrontendClaimSetQuery>();
         endpoints.MapSecuredGet($"/v3/claimSets/{{id}}", GetById);
         endpoints.MapSecuredGet($"/v3/claimSets/{{id}}/export", Export);
         endpoints.MapSecuredPut($"/v3/claimSets/{{id}}", Update);
@@ -72,7 +75,7 @@ public class ClaimSetModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         ClaimSetQueryResult result = await repository.QueryClaimSet(query.ToQuery());
 
         return result switch
@@ -100,6 +103,7 @@ public class ClaimSetModule : IEndpointModule
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -134,10 +138,12 @@ public class ClaimSetModule : IEndpointModule
                     $"Unable to update claim set due to multi-user conflicts. Retry the request.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.Conflict
             ),
             ClaimSetUpdateResult.FailureMultipleHierarchiesFound => Results.Json(
                 FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.InternalServerError
             ),
             ClaimSetUpdateResult.FailureNotFound => Results.Json(
@@ -145,10 +151,12 @@ public class ClaimSetModule : IEndpointModule
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ClaimSetUpdateResult.FailureUnknown => Results.Json(
                 FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.InternalServerError
             ),
             ClaimSetUpdateResult.FailureSystemReserved => Results.Json(
@@ -156,6 +164,7 @@ public class ClaimSetModule : IEndpointModule
                     "The specified claim set is system-reserved and cannot be updated.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -180,6 +189,7 @@ public class ClaimSetModule : IEndpointModule
                     "The specified claim set is system-reserved and cannot be deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             ClaimSetDeleteResult.FailureNotFound => Results.Json(
@@ -187,6 +197,7 @@ public class ClaimSetModule : IEndpointModule
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ClaimSetDeleteResult.FailureMultiUserConflict => Results.Json(
@@ -194,10 +205,12 @@ public class ClaimSetModule : IEndpointModule
                     "Unable to delete claim set due to multi-user conflicts. Retry the request.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.Conflict
             ),
             ClaimSetDeleteResult.FailureMultipleHierarchiesFound => Results.Json(
                 FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.InternalServerError
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -222,6 +235,7 @@ public class ClaimSetModule : IEndpointModule
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -252,6 +266,7 @@ public class ClaimSetModule : IEndpointModule
                     $"OriginalId {entity.OriginalId} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.NotFound
             ),
             ClaimSetCopyResult.FailureDuplicateClaimSetName => DuplicateClaimSetName(httpContext),
@@ -260,10 +275,12 @@ public class ClaimSetModule : IEndpointModule
                     "Unable to copy claim set due to multi-user conflicts. Retry the request.",
                     httpContext.TraceIdentifier
                 ),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.Conflict
             ),
             ClaimSetCopyResult.FailureMultipleHierarchiesFound => Results.Json(
                 FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.InternalServerError
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -294,6 +311,7 @@ public class ClaimSetModule : IEndpointModule
 
             return Results.Json(
                 FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.InternalServerError
             );
         }
@@ -318,6 +336,7 @@ public class ClaimSetModule : IEndpointModule
 
             return Results.Json(
                 FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                contentType: "application/problem+json",
                 statusCode: (int)HttpStatusCode.InternalServerError
             );
         }
@@ -388,6 +407,7 @@ public class ClaimSetModule : IEndpointModule
                         "The specified claim set is system-reserved and cannot be imported.",
                         httpContext.TraceIdentifier
                     ),
+                    contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.BadRequest
                 );
 

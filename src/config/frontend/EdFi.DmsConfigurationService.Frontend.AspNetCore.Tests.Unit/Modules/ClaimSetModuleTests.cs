@@ -594,7 +594,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The claim set name must be less than 256 characters."
                     ]
                   },
@@ -615,7 +615,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "Claim set name must not contain white spaces."
                     ]
                   },
@@ -637,7 +637,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The claim set name must be less than 256 characters."
                     ]
                   },
@@ -656,7 +656,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The claim set name must be less than 256 characters."
                     ]
                   },
@@ -675,7 +675,7 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Name": [
+                    "$.claimSetName": [
                       "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
                     ]
                   },
@@ -1497,6 +1497,35 @@ public class ClaimSetModuleTests
         }
 
         [Test]
+        public async Task Should_return_parameter_validation_failure_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/claimSets?limit=0");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be greater than 0."]
+            );
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_offset()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/claimSets?offset=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+        }
+
+        [Test]
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();
@@ -1591,5 +1620,722 @@ public class ClaimSetModuleTests
             var response = await client.GetAsync("/v3/claimSets?direction=asc");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
+    }
+
+    // Full-contract HTTP tests (asserting the application/problem+json media type via the shared helper)
+    // for every DMS-1218 error branch. The nested fixtures below arrange one failure result and exercise
+    // the endpoint over HTTP.
+
+    private const string InsertBody = """{ "claimSetName": "Test-ClaimSet" }""";
+    private const string CopyBody = """{ "originalId": 1, "claimSetName": "Test-ClaimSet" }""";
+    private const string ImportBody = """{ "claimSetName": "Test-Duplicate" }""";
+
+    private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+
+    private void ArrangeImportMetadata()
+    {
+        A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+        A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
+            .Returns(
+                new ClaimsHierarchyGetResult.Success([new() { Name = "Test-Duplicate" }], DateTime.Now, 1)
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_GetById_That_Is_Not_Found : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetGetResult.FailureNotFound());
+            _response = await _client.GetAsync("/v3/claimSets/999");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ClaimSet 999 not found. It may have been recently deleted."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Export_That_Is_Not_Found : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+                .Returns(new ClaimSetExportResult.FailureNotFound());
+            _response = await _client.GetAsync("/v3/claimSets/1/export");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ClaimSet 1 not found. It may have been recently deleted."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Update_That_Is_Not_Found : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureNotFound());
+            _response = await _client.PutAsync(
+                "/v3/claimSets/999",
+                Json("""{ "id": 999, "claimSetName": "Test-ClaimSet" }""")
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ClaimSet 999 not found. It may have been recently deleted."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Update_Multi_User_Conflict : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureMultiUserConflict());
+            _response = await _client.PutAsync(
+                "/v3/claimSets/1",
+                Json("""{ "id": 1, "claimSetName": "Test-ClaimSet" }""")
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_conflict_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict",
+                "Conflict",
+                "Unable to update claim set due to multi-user conflicts. Retry the request."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Update_With_Multiple_Hierarchies : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureMultipleHierarchiesFound());
+            _response = await _client.PutAsync(
+                "/v3/claimSets/1",
+                Json("""{ "id": 1, "claimSetName": "Test-ClaimSet" }""")
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Update_That_Fails_Unexpectedly : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureUnknown("boom"));
+            _response = await _client.PutAsync(
+                "/v3/claimSets/1",
+                Json("""{ "id": 1, "claimSetName": "Test-ClaimSet" }""")
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Update_That_Is_System_Reserved : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureSystemReserved());
+            _response = await _client.PutAsync(
+                "/v3/claimSets/1",
+                Json("""{ "id": 1, "claimSetName": "Test-ClaimSet" }""")
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_request_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The specified claim set is system-reserved and cannot be updated."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Delete_That_Is_System_Reserved : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetDeleteResult.FailureSystemReserved());
+            _response = await _client.DeleteAsync("/v3/claimSets/1");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_request_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The specified claim set is system-reserved and cannot be deleted."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Delete_That_Is_Not_Found : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetDeleteResult.FailureNotFound());
+            _response = await _client.DeleteAsync("/v3/claimSets/999");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "ClaimSet 999 not found. It may have been recently deleted."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Delete_Multi_User_Conflict : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetDeleteResult.FailureMultiUserConflict());
+            _response = await _client.DeleteAsync("/v3/claimSets/1");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_conflict_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict",
+                "Conflict",
+                "Unable to delete claim set due to multi-user conflicts. Retry the request."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Delete_With_Multiple_Hierarchies : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetDeleteResult.FailureMultipleHierarchiesFound());
+            _response = await _client.DeleteAsync("/v3/claimSets/1");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Copy_That_Is_Not_Found : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureNotFound());
+            _response = await _client.PostAsync("/v3/claimSets/copy", Json(CopyBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "OriginalId 1 not found. It may have been recently deleted."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Copy_Multi_User_Conflict : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureMultiUserConflict());
+            _response = await _client.PostAsync("/v3/claimSets/copy", Json(CopyBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_conflict_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict",
+                "Conflict",
+                "Unable to copy claim set due to multi-user conflicts. Retry the request."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Copy_With_Multiple_Hierarchies : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureMultipleHierarchiesFound());
+            _response = await _client.PostAsync("/v3/claimSets/copy", Json(CopyBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Insert_With_A_Duplicate_Name : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
+                .Returns(new ClaimSetInsertResult.FailureDuplicateClaimSetName());
+            _response = await _client.PostAsync("/v3/claimSets", Json(InsertBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_non_unique_identity_contract()
+        {
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Update_With_A_Duplicate_Name : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureDuplicateClaimSetName());
+            _response = await _client.PutAsync(
+                "/v3/claimSets/1",
+                Json("""{ "id": 1, "claimSetName": "Test-ClaimSet" }""")
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_non_unique_identity_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Copy_With_A_Duplicate_Name : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureDuplicateClaimSetName());
+            _response = await _client.PostAsync("/v3/claimSets/copy", Json(CopyBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_non_unique_identity_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Import_With_A_Duplicate_Name : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            ArrangeImportMetadata();
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.FailureDuplicateClaimSetName());
+            _response = await _client.PostAsync("/v3/claimSets/import", Json(ImportBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_non_unique_identity_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A claim set with this name already exists."]
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Import_That_Is_System_Reserved : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            ArrangeImportMetadata();
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.FailureSystemReserved());
+            _response = await _client.PostAsync("/v3/claimSets/import", Json(ImportBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_request_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The specified claim set is system-reserved and cannot be imported."
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Import_Whose_Metadata_Cannot_Be_Loaded : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _dataProvider.GetActions()).Throws(new InvalidOperationException("boom"));
+            _response = await _client.PostAsync("/v3/claimSets/import", Json(ImportBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+    }
+
+    [TestFixture]
+    public class Given_A_ClaimSet_Import_Whose_Hierarchy_Cannot_Be_Loaded : ClaimSetModuleTests
+    {
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = SetUpClient();
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
+                .Returns(new ClaimsHierarchyGetResult.FailureUnknown("boom"));
+            _response = await _client.PostAsync("/v3/claimSets/import", Json(ImportBody));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
     }
 }

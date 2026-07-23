@@ -17,4 +17,11 @@ public class TokenResponse
 
     [JsonPropertyName("token_type")]
     public string? TokenType { get; set; }
+
+    // RFC 6749 §5.1: the issued scope is returned when it differs from the requested scope. It is
+    // preserved from the provider response and only serialized when present, so no scope is invented
+    // when the provider omits it.
+    [JsonPropertyName("scope")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Scope { get; set; }
 }

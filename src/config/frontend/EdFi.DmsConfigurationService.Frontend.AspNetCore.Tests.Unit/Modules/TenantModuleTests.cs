@@ -168,6 +168,45 @@ public class TenantModuleTests
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             }
+
+            [Test]
+            public async Task It_returns_parameter_validation_failure_for_invalid_limit()
+            {
+                // Arrange
+                using var client = SetUpClient(multiTenancyEnabled: true);
+
+                // Act
+                var response = await client.GetAsync("/v3/tenants/?limit=0");
+
+                // Assert
+                await response.ShouldBeProblemDetailAsync(
+                    HttpStatusCode.BadRequest,
+                    "urn:ed-fi:api:bad-request:parameter",
+                    "Parameter Validation Failed",
+                    "One or more query parameters were invalid. See 'errors' for details.",
+                    errors: ["'limit' must be greater than 0."]
+                );
+            }
+
+            [Test]
+            public async Task It_returns_parameter_validation_failure_for_a_non_numeric_offset()
+            {
+                // Arrange
+                using var client = SetUpClient(multiTenancyEnabled: true);
+
+                // Act
+                var response = await client.GetAsync("/v3/tenants/?offset=abc");
+
+                // Assert
+                await response.ShouldBeProblemDetailAsync(
+                    HttpStatusCode.BadRequest,
+                    "urn:ed-fi:api:bad-request:parameter",
+                    "Parameter Validation Failed",
+                    "One or more query parameters were invalid. See 'errors' for details.",
+                    errors: ["'offset' must be an integer."]
+                );
+                (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+            }
         }
 
         [TestFixture]
@@ -205,8 +244,8 @@ public class TenantModuleTests
                 actualPostResponse["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
 
                 var validationErrors = actualPostResponse["validationErrors"]!.AsObject();
-                validationErrors.Should().ContainKey("Name");
-                var nameErrors = validationErrors["Name"]!.AsArray();
+                validationErrors.Should().ContainKey("$.name");
+                var nameErrors = validationErrors["$.name"]!.AsArray();
                 nameErrors.Should().HaveCount(1);
                 nameErrors[0]!.GetValue<string>().Should().Contain("256 characters or fewer");
                 nameErrors[0]!.GetValue<string>().Should().Contain("280 characters");
@@ -250,7 +289,7 @@ public class TenantModuleTests
             }
 
             [Test]
-            public async Task It_returns_bad_request_for_duplicate_name()
+            public async Task It_returns_conflict_for_duplicate_name()
             {
                 // Arrange
                 using var client = SetUpClient(multiTenancyEnabled: true);
@@ -270,7 +309,7 @@ public class TenantModuleTests
                 );
 
                 //Assert
-                addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
                 var responseContent = await addResponse.Content.ReadAsStringAsync();
                 responseContent
                     .Should()
@@ -404,6 +443,79 @@ public class TenantModuleTests
                 getResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
                 getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
+        }
+
+        [TestFixture]
+        public class Given_A_Tenant_With_A_Duplicate_Name : Given_MultiTenancy_Is_Enabled
+        {
+            private HttpResponseMessage _response = null!;
+            private JsonNode _body = null!;
+
+            [SetUp]
+            public async Task SetUp()
+            {
+                A.CallTo(() => _tenantRepository.InsertTenant(A<TenantInsertCommand>.Ignored))
+                    .Returns(new TenantInsertResult.FailureDuplicateName());
+
+                using var client = SetUpClient(multiTenancyEnabled: true);
+                _response = await client.PostAsync(
+                    "/v3/tenants/",
+                    new StringContent(
+                        """
+                        {
+                          "name": "Duplicate_Tenant"
+                        }
+                        """,
+                        Encoding.UTF8,
+                        "application/json"
+                    )
+                );
+                _body = await _response.ShouldBeProblemDetailAsync(
+                    HttpStatusCode.Conflict,
+                    "urn:ed-fi:api:conflict:non-unique-identity",
+                    "Identifying Values Are Not Unique",
+                    "The identifying value(s) of the item are the same as another item that already exists.",
+                    errors: ["A tenant name already exists in the database. Please enter a unique name."]
+                );
+            }
+
+            [TearDown]
+            public void TearDown() => _response?.Dispose();
+
+            [Test]
+            public void It_reports_the_duplicate_name_in_errors() =>
+                _body["errors"]!
+                    .ToJsonString()
+                    .Should()
+                    .Contain("A tenant name already exists in the database. Please enter a unique name.");
+        }
+
+        [TestFixture]
+        public class Given_A_Tenant_That_Does_Not_Exist : Given_MultiTenancy_Is_Enabled
+        {
+            private HttpResponseMessage _response = null!;
+
+            [SetUp]
+            public async Task SetUp()
+            {
+                A.CallTo(() => _tenantRepository.GetTenant(A<long>.Ignored))
+                    .Returns(new TenantGetResult.FailureNotFound());
+
+                using var client = SetUpClient(multiTenancyEnabled: true);
+                _response = await client.GetAsync("/v3/tenants/1");
+            }
+
+            [TearDown]
+            public void TearDown() => _response?.Dispose();
+
+            [Test]
+            public async Task It_returns_the_not_found_contract() =>
+                await _response.ShouldBeProblemDetailAsync(
+                    HttpStatusCode.NotFound,
+                    "urn:ed-fi:api:not-found",
+                    "Not Found",
+                    "Tenant 1 not found. It may have been recently deleted."
+                );
         }
     }
 

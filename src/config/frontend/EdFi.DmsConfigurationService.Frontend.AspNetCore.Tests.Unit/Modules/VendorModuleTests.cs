@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -30,6 +31,7 @@ public class VendorModuleTests
 {
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
+    private readonly IIdentityProviderRepository _clientRepository = A.Fake<IIdentityProviderRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
 
     private HttpClient SetUpClient()
@@ -61,7 +63,8 @@ public class VendorModuleTests
                     collection
                         .AddTransient((_) => _httpContext)
                         .AddTransient((_) => _vendorRepository)
-                        .AddTransient((_) => _applicationRepository);
+                        .AddTransient((_) => _applicationRepository)
+                        .AddTransient((_) => _clientRepository);
                 }
             );
         });
@@ -220,7 +223,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_with_Name_field_key()
+        public async Task It_returns_the_non_unique_identity_conflict()
         {
             using var client = SetUpClient();
 
@@ -240,12 +243,11 @@ public class VendorModuleTests
                 )
             );
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             var doc = JsonNode.Parse(await response.Content.ReadAsStringAsync());
-            doc!["validationErrors"]!
-                ["Name"]
-                .Should()
-                .NotBeNull("field key must be 'Name' per existing contract");
+            doc!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+            doc["title"]!.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
+            doc["validationErrors"]!.AsObject().Count.Should().Be(0);
         }
     }
 
@@ -299,16 +301,16 @@ public class VendorModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Company": [
+                    "$.company": [
                       "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactName": [
+                    "$.contactName": [
                       "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactEmailAddress": [
+                    "$.contactEmailAddress": [
                       "'Contact Email Address' is not a valid email address."
                     ],
-                    "NamespacePrefixes": [
+                    "$.namespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
                   },
@@ -327,16 +329,16 @@ public class VendorModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "Company": [
+                    "$.company": [
                       "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactName": [
+                    "$.contactName": [
                       "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
                     ],
-                    "ContactEmailAddress": [
+                    "$.contactEmailAddress": [
                       "'Contact Email Address' is not a valid email address."
                     ],
-                    "NamespacePrefixes": [
+                    "$.namespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
                   },
@@ -755,6 +757,281 @@ public class VendorModuleTests
         }
 
         [Test]
+        public async Task Should_return_parameter_validation_failure_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?limit=0");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be greater than 0."]
+            );
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_offset()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?offset=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
+        }
+
+        [Test]
+        public async Task Should_match_query_parameter_names_case_insensitively()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?OFFSET=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_repeated_non_bindable_values()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?offset=1&offset=2");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'offset' must be an integer."]
+            );
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_a_malformed_json_body()
+        {
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent("{ \"company\": \"x\",, }", Encoding.UTF8, "application/json")
+            );
+
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_preserve_and_normalize_the_json_path_for_a_nested_malformed_body()
+        {
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent("{ \"contactName\": { \"a\": 1,, } }", Encoding.UTF8, "application/json")
+            );
+
+            // The recoverable JsonException.Path is preserved and normalized to a JSON path.
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$.contactName"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_invalid_utf8_json()
+        {
+            using var client = SetUpClient();
+            var content = new ByteArrayContent(new byte[] { 0x7b, 0x22, 0x4e, 0x22, 0x3a, 0xff, 0xfe, 0x7d });
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                "application/json"
+            );
+            var response = await client.PostAsync("/v3/vendors", content);
+
+            // Invalid UTF-8 surfaces as a JsonException (approved Q3 exception); the path "$.N" is normalized.
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$.n"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_a_declared_charset_mismatch()
+        {
+            using var client = SetUpClient();
+            var content = new ByteArrayContent(Encoding.UTF8.GetBytes("{\"company\":\"x\"}"));
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
+            {
+                CharSet = "utf-16",
+            };
+            var response = await client.PostAsync("/v3/vendors", content);
+
+            // A declared-charset mismatch surfaces as a JsonException (approved Q3 exception).
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        [Test]
+        public async Task Should_return_data_validation_failure_for_an_empty_chunked_body()
+        {
+            // An empty chunked body (no Content-Length) is indistinguishable from a root-level malformed
+            // chunked body without buffering, so it takes the same sanitized bad-request:data contract (the
+            // approved Q3 exception). Content-length empty bodies remain generic bad-request (asserted
+            // separately). The in-memory test host reproduces the chunked framing here.
+            using var client = SetUpClient();
+            var request = new HttpRequestMessage(HttpMethod.Post, "/v3/vendors");
+            request.Headers.TransferEncodingChunked = true;
+            var content = new ByteArrayContent(Array.Empty<byte>());
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                "application/json"
+            );
+            request.Content = content;
+            var response = await client.SendAsync(request);
+
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:data",
+                "Data Validation Failed",
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors: new JsonObject
+                {
+                    ["$"] = new JsonArray("The request body contains invalid JSON."),
+                }
+            );
+            AssertNoParserLeak(body);
+        }
+
+        private static void AssertNoParserLeak(JsonNode body)
+        {
+            // The raw parser text (positions, line numbers, type names) is never surfaced.
+            string raw = body.ToJsonString();
+            raw.Should().NotContain("System.");
+            raw.Should().NotContain("LineNumber");
+            raw.Should().NotContain("line ");
+            raw.Should().NotContain("position");
+        }
+
+        [Test]
+        public async Task Should_return_generic_bad_request_for_an_empty_body()
+        {
+            using var client = SetUpClient();
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent("", Encoding.UTF8, "application/json")
+            );
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request was invalid."
+            );
+        }
+
+        [Test]
+        public async Task Should_return_generic_bad_request_for_invalid_route_binding()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors/not-a-long");
+            var body = await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request was invalid."
+            );
+            body.ToJsonString().Should().NotContain("not-a-long");
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_limit()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?limit=xyz");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be an integer."]
+            );
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("xyz");
+        }
+
+        [Test]
+        public async Task Should_return_parameter_validation_failure_for_a_non_numeric_long_id()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/vendors?id=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'id' must be an integer."]
+            );
+        }
+
+        [Test]
+        public async Task Should_aggregate_multiple_malformed_query_parameters_in_wire_name_order()
+        {
+            using var client = SetUpClient();
+            // Supplied out of order; the response aggregates in metadata order: offset, limit, then remaining
+            // wire names (id). None of the rejected values is echoed.
+            var response = await client.GetAsync("/v3/vendors?id=foo&limit=xyz&offset=abc");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors:
+                [
+                    "'offset' must be an integer.",
+                    "'limit' must be an integer.",
+                    "'id' must be an integer.",
+                ]
+            );
+            string raw = await response.Content.ReadAsStringAsync();
+            raw.Should().NotContain("foo");
+            raw.Should().NotContain("xyz");
+            raw.Should().NotContain("abc");
+        }
+
+        [Test]
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();
@@ -836,6 +1113,264 @@ public class VendorModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/vendors?limit=xyz");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Vendor_With_A_Duplicate_Company_Name : VendorModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
+
+            using var client = SetUpClient();
+            _response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            _body = await _response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:non-unique-identity",
+                "Identifying Values Are Not Unique",
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                errors: ["A vendor name already exists in the database. Please enter a unique name."]
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _response?.Dispose();
+
+        [Test]
+        public void It_reports_the_duplicate_name_in_errors() =>
+            _body["errors"]!
+                .ToJsonString()
+                .Should()
+                .Contain("A vendor name already exists in the database. Please enter a unique name.");
+    }
+
+    [TestFixture]
+    public class Given_A_Vendor_That_Does_Not_Exist : VendorModuleTests
+    {
+        private HttpResponseMessage _getResponse = null!;
+        private HttpResponseMessage _updateResponse = null!;
+        private HttpResponseMessage _deleteResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureNotExists());
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+                .Returns(new VendorDeleteResult.FailureNotExists());
+
+            using var client = SetUpClient();
+            _getResponse = await client.GetAsync("/v3/vendors/1");
+            _updateResponse = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            _deleteResponse = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _getResponse?.Dispose();
+            _updateResponse?.Dispose();
+            _deleteResponse?.Dispose();
+        }
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_get_by_id() =>
+            await _getResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "Vendor 1 not found. It may have been recently deleted."
+            );
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_update() =>
+            await _updateResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "Vendor 1 not found. It may have been recently deleted."
+            );
+
+        [Test]
+        public async Task It_returns_the_not_found_contract_for_delete() =>
+            await _deleteResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "Vendor 1 not found. It may have been recently deleted."
+            );
+    }
+
+    /// <summary>
+    /// A vendor update succeeds but the follow-up identity-provider client namespace-claim update fails.
+    /// The endpoint must return the fixed 502 bad-gateway contract and never surface the raw provider
+    /// message (which can carry provider URLs and status detail).
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Vendor_Update_Whose_Client_Namespace_Update_Fails_At_The_Identity_Provider
+        : VendorModuleTests
+    {
+        private const string SensitiveProviderMessage =
+            "Keycloak returned 401 from https://idp.internal/realms/edfi/clients: invalid_grant secret=hunter2";
+
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            // The vendor row updates successfully and reports one affected client, so the endpoint then
+            // calls the identity provider to update that client's namespace claim.
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.Success([Guid.NewGuid()]));
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientNamespaceClaimAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .Returns(
+                    new ClientUpdateResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unreachable(SensitiveProviderMessage)
+                    )
+                );
+
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            JsonNode body = await _updateResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadGateway,
+                "urn:ed-fi:api:bad-gateway",
+                "Bad Gateway",
+                "The request could not be processed. See 'errors' for details.",
+                errors: ["Identity provider error during client update"]
+            );
+
+            // The raw provider message and its embedded detail must never be surfaced to the caller.
+            string raw = body.ToJsonString();
+            raw.Should().NotContain(SensitiveProviderMessage);
+            raw.Should().NotContain("idp.internal");
+            raw.Should().NotContain("hunter2");
+        }
+    }
+
+    /// <summary>
+    /// A vendor update succeeds but the identity provider reports no such client for an affected client
+    /// that exists in the configuration store. That is an upstream inconsistency, so the endpoint must
+    /// return the fixed 502 bad-gateway contract (not an internal 500) and never surface the raw provider
+    /// message.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Vendor_Update_Whose_Client_Is_Missing_At_The_Identity_Provider : VendorModuleTests
+    {
+        private const string SensitiveProviderMessage = "client 9f3c not found in realm edfi at idp.internal";
+
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            // The vendor row updates successfully and reports one affected client, so the endpoint then
+            // calls the identity provider to update that client's namespace claim.
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.Success([Guid.NewGuid()]));
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientNamespaceClaimAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .Returns(new ClientUpdateResult.FailureNotFound(SensitiveProviderMessage));
+
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            JsonNode body = await _updateResponse.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadGateway,
+                "urn:ed-fi:api:bad-gateway",
+                "Bad Gateway",
+                "The request could not be processed. See 'errors' for details.",
+                errors: ["Identity provider client not found during client update"]
+            );
+
+            // The raw provider message must never be surfaced to the caller.
+            string raw = body.ToJsonString();
+            raw.Should().NotContain(SensitiveProviderMessage);
+            raw.Should().NotContain("idp.internal");
         }
     }
 }

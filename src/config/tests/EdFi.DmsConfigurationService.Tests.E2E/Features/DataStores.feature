@@ -221,7 +221,7 @@ Feature: DataStores endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "DataStoreType": [
+                            "$.dataStoreType": [
                                 "'Data Store Type' must not be empty."
                             ]
                         },
@@ -247,7 +247,7 @@ Feature: DataStores endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "Name": [
+                            "$.name": [
                                 "'Name' must not be empty."
                             ]
                         },
@@ -273,7 +273,7 @@ Feature: DataStores endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "ConnectionString": [
+                            "$.connectionString": [
                                 "The length of 'Connection String' must be 1000 characters or fewer. You entered 1010 characters."
                             ]
                         },
@@ -309,7 +309,7 @@ Feature: DataStores endpoints
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
-                            "Id": [
+                            "$.id": [
                                 "Request body id must match the id in the url."
                             ]
                         },

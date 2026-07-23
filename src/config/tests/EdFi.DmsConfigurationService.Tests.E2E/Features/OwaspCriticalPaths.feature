@@ -7,18 +7,72 @@ Feature: OWASP critical attack path protections
         Scenario: 01 SQL injection payload in query string limit is rejected
              When a GET request is made to "/v3/vendors?limit='1;DROP TABLE dmscs.Vendor;--&offset=0"
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "One or more query parameters were invalid. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:parameter",
+                    "title": "Parameter Validation Failed",
+                    "status": 400,
+                    "validationErrors": {},
+                    "errors": [
+                      "'limit' must be an integer."
+                    ]
+                  }
+                  """
+              And the response body should not contain "DROP"
 
         Scenario: 02 SQL injection payload in query string offset is rejected
              When a GET request is made to "/v3/vendors?limit=10&offset='0 OR 1=1--"
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "One or more query parameters were invalid. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:parameter",
+                    "title": "Parameter Validation Failed",
+                    "status": 400,
+                    "validationErrors": {},
+                    "errors": [
+                      "'offset' must be an integer."
+                    ]
+                  }
+                  """
+              And the response body should not contain "1=1"
 
         Scenario: 02a SQL injection payload in query string offset is rejected
              When a GET request is made to "/v3/vendors?limit=10&offset='0+OR+1%3D1--"
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "One or more query parameters were invalid. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:parameter",
+                    "title": "Parameter Validation Failed",
+                    "status": 400,
+                    "validationErrors": {},
+                    "errors": [
+                      "'offset' must be an integer."
+                    ]
+                  }
+                  """
+              And the response body should not contain "1=1"
 
         Scenario: 03 SQL injection payload in route id is rejected
              When a GET request is made to "/v3/vendors/1;DROP TABLE dmscs.Vendor;--"
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "The request was invalid.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "validationErrors": {},
+                    "errors": []
+                  }
+                  """
+              And the response body should not contain "DROP"
 
         Scenario: 04 X-Forwarded-Host spoofing does not make an invalid token acceptable
             Given token signature manipulated
@@ -77,6 +131,21 @@ Feature: OWASP critical attack path protections
                   }
                   """
              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                      "$": [
+                        "The request body contains invalid JSON."
+                      ]
+                    },
+                    "errors": []
+                  }
+                  """
               And the response body should not contain "System.Text"
               And the response body should not contain "System.Exception"
               And the response body should not contain " at EdFi."

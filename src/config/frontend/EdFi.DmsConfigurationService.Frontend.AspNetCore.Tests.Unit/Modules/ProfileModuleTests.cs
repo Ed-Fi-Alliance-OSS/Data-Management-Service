@@ -121,14 +121,14 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        actualResponse!["validationErrors"]!["$.name"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile name is required.");
     }
 
     [Test]
-    public async Task CreateProfile_DuplicateName_ShouldReturnBadRequest()
+    public async Task CreateProfile_DuplicateName_ShouldReturnConflict()
     {
         var duplicateProfile = new
         {
@@ -147,8 +147,10 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        actualResponse!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile 'TestProfile' already exists");
@@ -173,7 +175,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Name must match the name attribute in the XML definition");
@@ -198,8 +200,8 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"].Should().NotBeNull();
-        actualResponse["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"].Should().NotBeNull();
+        actualResponse["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Name must match the name attribute in the XML definition.");
@@ -224,7 +226,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile definition XML is invalid or does not match the XSD.");
@@ -249,7 +251,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile definition XML is invalid or does not match the XSD.");
@@ -348,7 +350,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        actualResponse!["validationErrors"]!["$.name"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile name is required.");
@@ -375,7 +377,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task DeleteProfile_InUse_ShouldReturnBadRequest()
+    public async Task DeleteProfile_InUse_ShouldReturnConflict()
     {
         A.CallTo(() => _profileRepository.DeleteProfile(A<long>.Ignored))
             .Returns(new ProfileDeleteResult.FailureInUse(1));
@@ -384,8 +386,13 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["detail"]!
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        actualResponse!["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:conflict:dependent-item-exists");
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Profile is assigned to applications and cannot be deleted");
@@ -411,14 +418,14 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Id"]![0]!
+        actualResponse!["validationErrors"]!["$.id"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Request body id must match the id in the url");
     }
 
     [Test]
-    public async Task UpdateProfile_DuplicateName_ShouldReturnBadRequest()
+    public async Task UpdateProfile_DuplicateName_ShouldReturnConflict()
     {
         var updateProfile = new
         {
@@ -438,8 +445,10 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        actualResponse!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:non-unique-identity");
+        actualResponse["validationErrors"]!.AsObject().Count.Should().Be(0);
+        actualResponse["errors"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("A profile with this name already exists");
@@ -487,7 +496,7 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!
+        actualResponse!["validationErrors"]!["$.definition"]![0]!
             .GetValue<string>()
             .Should()
             .Contain("Name must match the name attribute in the XML definition");
@@ -509,6 +518,35 @@ public class ProfileModuleTests
         );
 
         profiles.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GetAllProfiles_InvalidLimit_ShouldReturnParameterValidationFailure()
+    {
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v3/profiles?limit=0");
+        await response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.BadRequest,
+            "urn:ed-fi:api:bad-request:parameter",
+            "Parameter Validation Failed",
+            "One or more query parameters were invalid. See 'errors' for details.",
+            errors: ["'limit' must be greater than 0."]
+        );
+    }
+
+    [Test]
+    public async Task GetAllProfiles_NonNumericOffset_ShouldReturnParameterValidationFailure()
+    {
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v3/profiles?offset=abc");
+        await response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.BadRequest,
+            "urn:ed-fi:api:bad-request:parameter",
+            "Parameter Validation Failed",
+            "One or more query parameters were invalid. See 'errors' for details.",
+            errors: ["'offset' must be an integer."]
+        );
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("abc");
     }
 
     [Test]
@@ -781,4 +819,279 @@ public class ProfileModuleTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+}
+
+// Full-contract HTTP tests (asserting the application/problem+json media type via the shared helper) for
+// the DMS-1218 Profile error branches. Added as new Given_/It_ fixtures alongside the legacy fixture.
+public abstract class ProfileProblemDetailsTestBase
+{
+    protected readonly IProfileRepository ProfileRepository = A.Fake<IProfileRepository>();
+    private WebApplicationFactory<Program> _factory = null!;
+    protected HttpClient Client = null!;
+
+    protected const string ValidInsertBody = """
+        {
+            "name": "TestProfile",
+            "definition": "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+        }
+        """;
+
+    protected const string ValidUpdateBody = """
+        {
+            "id": 1,
+            "name": "UpdatedProfile",
+            "definition": "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+        }
+        """;
+
+    [SetUp]
+    public void BaseSetUp()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (ctx, collection) =>
+                {
+                    collection.AddTestAuthentication();
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
+                    collection.AddAuthorization(options =>
+                    {
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
+                    collection.AddTransient(_ => ProfileRepository);
+                }
+            );
+        });
+        Client = _factory.CreateClient();
+        Client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+    }
+
+    [TearDown]
+    public void BaseTearDown()
+    {
+        Client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    protected static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+}
+
+[TestFixture]
+public class Given_A_Profile_Insert_With_A_Duplicate_Name : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
+            .Returns(new ProfileInsertResult.FailureDuplicateName("TestProfile"));
+        _response = await Client.PostAsync("/v3/profiles", Json(ValidInsertBody));
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_non_unique_identity_conflict_contract()
+    {
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.Conflict,
+            "urn:ed-fi:api:conflict:non-unique-identity",
+            "Identifying Values Are Not Unique",
+            "The identifying value(s) of the item are the same as another item that already exists.",
+            errors: ["Profile 'TestProfile' already exists."]
+        );
+    }
+}
+
+[TestFixture]
+public class Given_A_Profile_GetById_With_An_Invalid_Definition : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.GetProfile(A<long>.Ignored))
+            .Returns(
+                new ProfileGetResult.Success(
+                    new ProfileResponse
+                    {
+                        Id = 5,
+                        Name = "TestProfile",
+                        Definition = "<Profile name=\"TestProfile\"></Profile>",
+                    }
+                )
+            );
+        _response = await Client.GetAsync("/v3/profiles/5");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 5 not found."
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_GetById_That_Is_Not_Found : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.GetProfile(A<long>.Ignored))
+            .Returns(new ProfileGetResult.FailureNotFound());
+        _response = await Client.GetAsync("/v3/profiles/999");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 999 not found."
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_Update_With_A_Duplicate_Name : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
+            .Returns(new ProfileUpdateResult.FailureDuplicateName("UpdatedProfile"));
+        _response = await Client.PutAsync("/v3/profiles/1", Json(ValidUpdateBody));
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_non_unique_identity_conflict_contract()
+    {
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.Conflict,
+            "urn:ed-fi:api:conflict:non-unique-identity",
+            "Identifying Values Are Not Unique",
+            "The identifying value(s) of the item are the same as another item that already exists.",
+            errors: ["A profile with this name already exists."]
+        );
+    }
+}
+
+[TestFixture]
+public class Given_A_Profile_Update_That_Is_Not_Found : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
+            .Returns(new ProfileUpdateResult.FailureNotExists(999));
+        _response = await Client.PutAsync(
+            "/v3/profiles/999",
+            Json(
+                """
+                {
+                    "id": 999,
+                    "name": "UpdatedProfile",
+                    "definition": "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+                }
+                """
+            )
+        );
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 999 not found."
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_Delete_That_Is_In_Use : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.DeleteProfile(A<long>.Ignored))
+            .Returns(new ProfileDeleteResult.FailureInUse(1));
+        _response = await Client.DeleteAsync("/v3/profiles/1");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_dependent_item_exists_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.Conflict,
+            "urn:ed-fi:api:conflict:dependent-item-exists",
+            "Dependent Item Exists",
+            "The requested action cannot be performed because this item is referenced by existing item(s).",
+            errors: ["Profile is assigned to applications and cannot be deleted."]
+        );
+}
+
+[TestFixture]
+public class Given_A_Profile_Delete_That_Is_Not_Found : ProfileProblemDetailsTestBase
+{
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        A.CallTo(() => ProfileRepository.DeleteProfile(A<long>.Ignored))
+            .Returns(new ProfileDeleteResult.FailureNotExists(999));
+        _response = await Client.DeleteAsync("/v3/profiles/999");
+    }
+
+    [TearDown]
+    public void TearDown() => _response.Dispose();
+
+    [Test]
+    public async Task It_returns_the_not_found_contract() =>
+        await _response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.NotFound,
+            "urn:ed-fi:api:not-found",
+            "Not Found",
+            "Profile 999 not found."
+        );
 }

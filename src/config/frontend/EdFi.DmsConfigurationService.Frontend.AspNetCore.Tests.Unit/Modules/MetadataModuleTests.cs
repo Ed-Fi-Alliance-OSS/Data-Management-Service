@@ -5,10 +5,16 @@
 
 using System.Collections.Generic;
 using System.Net;
+using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -385,6 +391,62 @@ public class MetadataModuleTests
         }
     }
 
+    [Test]
+    public async Task OpenApi_Integer_Filter_Parameters_Remain_Integer()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/openapi/v1.json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var pathMap = doc
+            .RootElement.GetProperty("paths")
+            .EnumerateObject()
+            .ToDictionary(p => p.Name.TrimEnd('/').ToLowerInvariant(), p => p.Value);
+
+        // The integer filter parameters keep their integer schema (no degradation to string), which is the
+        // reason the raw-string binding option was rejected.
+        AssertIntegerQueryParameter(pathMap, "/v3/vendors", "id");
+        AssertIntegerQueryParameter(pathMap, "/v3/apiClients", "applicationid");
+    }
+
+    private static void AssertIntegerQueryParameter(
+        Dictionary<string, System.Text.Json.JsonElement> pathMap,
+        string path,
+        string wireName
+    )
+    {
+        var key = path.TrimEnd('/').ToLowerInvariant();
+        pathMap.Should().ContainKey(key, $"path {path} should exist in OpenAPI spec");
+        pathMap[key].TryGetProperty("get", out var getOp).Should().BeTrue($"GET {path} should exist");
+        getOp
+            .TryGetProperty("parameters", out var parameters)
+            .Should()
+            .BeTrue($"GET {path} should have parameters");
+        var param = parameters
+            .EnumerateArray()
+            .Single(p =>
+                p.GetProperty("name").GetString()!.Equals(wireName, StringComparison.OrdinalIgnoreCase)
+            );
+        param
+            .TryGetProperty("schema", out var schema)
+            .Should()
+            .BeTrue($"GET {path} parameter '{wireName}' should have schema");
+        schema
+            .TryGetProperty("type", out var type)
+            .Should()
+            .BeTrue($"GET {path} parameter '{wireName}' schema should have type");
+        TypeIncludes(type, "integer")
+            .Should()
+            .BeTrue($"GET {path} parameter '{wireName}' schema type should include integer");
+    }
+
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
     {
         return type.ValueKind switch
@@ -451,4 +513,341 @@ public class MetadataModuleTests
 
         return schema;
     }
+}
+
+/// <summary>
+/// The post-processed /metadata/specifications document must reference the reusable Ed-Fi Problem Details
+/// responses from applicable operations, document the OAuth protocol endpoints with their application/json
+/// error schema (not Ed-Fi Problem Details), and leave success responses intact.
+/// </summary>
+[TestFixture]
+public class Given_The_Metadata_Specifications_Document
+{
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private JsonNode _document = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            // /metadata/specifications self-fetches /openapi/v1.json over HTTP; route that call through
+            // the in-memory test server so the post-processed document can be asserted.
+            builder.ConfigureTestServices(services =>
+                services.AddSingleton<IHttpClientFactory>(
+                    new TestServerHttpClientFactory(() => _factory.Server.CreateHandler())
+                )
+            );
+        });
+        _client = _factory.CreateClient();
+
+        var response = await _client.GetAsync("/metadata/specifications");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        _document = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    private JsonObject Components => _document["components"]!.AsObject();
+
+    private JsonObject FindOperation(string pathContains, bool withPathParameter, string method)
+    {
+        var paths = _document["paths"]!.AsObject();
+        var match = paths.FirstOrDefault(p =>
+            p.Key.Contains(pathContains, StringComparison.OrdinalIgnoreCase)
+            && p.Key.Contains('{') == withPathParameter
+            && p.Value!.AsObject().ContainsKey(method)
+        );
+        match
+            .Value.Should()
+            .NotBeNull(
+                $"a {method.ToUpperInvariant()} operation for a path containing '{pathContains}' "
+                    + $"{(withPathParameter ? "with" : "without")} a path parameter should exist"
+            );
+        return match.Value!.AsObject()[method]!.AsObject();
+    }
+
+    private static string? RefOf(JsonObject operation, string status) =>
+        operation["responses"]?[status]?["$ref"]?.GetValue<string>();
+
+    private JsonObject FindAnyOperation(string pathContains, string method)
+    {
+        var paths = _document["paths"]!.AsObject();
+        var match = paths.FirstOrDefault(p =>
+            p.Key.Contains(pathContains, StringComparison.OrdinalIgnoreCase)
+            && p.Value!.AsObject().ContainsKey(method)
+        );
+        match
+            .Value.Should()
+            .NotBeNull(
+                $"a {method.ToUpperInvariant()} operation for a path containing '{pathContains}' should exist"
+            );
+        return match.Value!.AsObject()[method]!.AsObject();
+    }
+
+    [Test]
+    public void It_marks_the_problem_details_required_members()
+    {
+        var required = Components["schemas"]!["ProblemDetails"]!["required"]!
+            .AsArray()
+            .Select(n => n!.GetValue<string>());
+
+        // The Ed-Fi contract always includes all seven members (validationErrors {} and errors [] when
+        // empty), so the published schema marks every one required.
+        required
+            .Should()
+            .BeEquivalentTo(
+                "type",
+                "title",
+                "detail",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+
+        var properties = Components["schemas"]!["ProblemDetails"]!["properties"]!.AsObject();
+        properties
+            .Should()
+            .ContainKeys("type", "title", "detail", "status", "correlationId", "validationErrors", "errors");
+    }
+
+    [Test]
+    public void It_publishes_a_distinct_oauth_error_schema()
+    {
+        var properties = Components["schemas"]!["OAuthError"]!["properties"]!.AsObject();
+        properties.Should().ContainKeys("error", "error_description");
+    }
+
+    [Test]
+    public void It_defines_the_reusable_problem_details_responses_including_415()
+    {
+        var responses = Components["responses"]!.AsObject();
+        string[] problemDetailsResponses =
+        [
+            "BadRequest",
+            "Unauthorized",
+            "Forbidden",
+            "NotFound",
+            "Conflict",
+            "InternalServerError",
+            "UnsupportedMediaType",
+        ];
+        responses.Should().ContainKeys(problemDetailsResponses);
+        foreach (var name in problemDetailsResponses)
+        {
+            responses[name]!["content"]!["application/problem+json"]!["schema"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/ProblemDetails");
+        }
+    }
+
+    [Test]
+    public void It_defines_the_oauth_error_response_as_application_json()
+    {
+        Components["responses"]!["OAuthError"]!["content"]!["application/json"]!["schema"]!["$ref"]!
+            .GetValue<string>()
+            .Should()
+            .Be("#/components/schemas/OAuthError");
+    }
+
+    [Test]
+    public void It_references_problem_details_from_a_resource_get_by_id()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: true, "get");
+        RefOf(operation, "401").Should().Be("#/components/responses/Unauthorized");
+        RefOf(operation, "403").Should().Be("#/components/responses/Forbidden");
+        RefOf(operation, "404").Should().Be("#/components/responses/NotFound");
+        RefOf(operation, "500").Should().Be("#/components/responses/InternalServerError");
+    }
+
+    [Test]
+    public void It_references_write_error_responses_from_a_resource_post()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: false, "post");
+        RefOf(operation, "400").Should().Be("#/components/responses/BadRequest");
+        RefOf(operation, "409").Should().Be("#/components/responses/Conflict");
+        RefOf(operation, "415").Should().Be("#/components/responses/UnsupportedMediaType");
+    }
+
+    [Test]
+    public void It_documents_the_token_endpoint_with_the_oauth_error_shape()
+    {
+        var operation = FindOperation("/connect/token", withPathParameter: true, "post");
+        RefOf(operation, "400").Should().Be("#/components/responses/OAuthError");
+        RefOf(operation, "401").Should().Be("#/components/responses/OAuthError");
+        RefOf(operation, "503").Should().Be("#/components/responses/OAuthError");
+    }
+
+    [Test]
+    public void It_does_not_document_the_token_endpoint_as_ed_fi_problem_details()
+    {
+        var operation = FindOperation("/connect/token", withPathParameter: true, "post");
+        var references = operation["responses"]!
+            .AsObject()
+            .Select(r => r.Value?["$ref"]?.GetValue<string>())
+            .Where(r => r is not null);
+        references.Should().OnlyContain(r => r == "#/components/responses/OAuthError");
+    }
+
+    [Test]
+    public void It_preserves_success_response_metadata()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: false, "post");
+        operation["responses"]!.AsObject().Should().ContainKey("201");
+    }
+
+    [Test]
+    public void It_references_problem_details_from_a_management_operation()
+    {
+        var operation = FindAnyOperation("/management", "post");
+        RefOf(operation, "401").Should().Be("#/components/responses/Unauthorized");
+        RefOf(operation, "403").Should().Be("#/components/responses/Forbidden");
+        RefOf(operation, "500").Should().Be("#/components/responses/InternalServerError");
+    }
+
+    [Test]
+    public void It_references_bad_request_from_a_collection_get()
+    {
+        var operation = FindOperation("/v3/vendors", withPathParameter: false, "get");
+        RefOf(operation, "400").Should().Be("#/components/responses/BadRequest");
+    }
+
+    [Test]
+    public void It_defines_the_reusable_bad_gateway_response()
+    {
+        var responses = Components["responses"]!.AsObject();
+        responses.Should().ContainKey("BadGateway");
+        responses["BadGateway"]!["content"]!["application/problem+json"]!["schema"]!["$ref"]!
+            .GetValue<string>()
+            .Should()
+            .Be("#/components/schemas/ProblemDetails");
+    }
+
+    [Test]
+    public void It_defines_the_reusable_method_not_allowed_response()
+    {
+        // The runtime returns urn:ed-fi:api:method-not-allowed Problem Details for a wrong-method
+        // request, so the reusable component is published even though no operation references it (a
+        // method mismatch has no operation to attach it to; per-operation documentation is DMS-1293).
+        var responses = Components["responses"]!.AsObject();
+        responses.Should().ContainKey("MethodNotAllowed");
+        responses["MethodNotAllowed"]!["content"]!["application/problem+json"]!["schema"]!["$ref"]!
+            .GetValue<string>()
+            .Should()
+            .Be("#/components/schemas/ProblemDetails");
+    }
+
+    [Test]
+    public void It_references_bad_gateway_from_registration()
+    {
+        var operation = FindAnyOperation("/connect/register", "post");
+        RefOf(operation, "502").Should().Be("#/components/responses/BadGateway");
+    }
+
+    [Test]
+    public void It_documents_introspection_and_revocation_with_the_oauth_error_shape()
+    {
+        RefOf(FindAnyOperation("/connect/introspect", "post"), "400")
+            .Should()
+            .Be("#/components/responses/OAuthError");
+        RefOf(FindAnyOperation("/connect/revoke", "post"), "400")
+            .Should()
+            .Be("#/components/responses/OAuthError");
+    }
+}
+
+/// <summary>
+/// In multi-tenant mode the /metadata/specifications handler self-fetches /openapi/v1.json over HTTP.
+/// That nested request must carry the same Tenant header as the incoming request, or tenant resolution
+/// rejects it and the outer request fails with a 500. Proves the Tenant header is forwarded so the nested
+/// request resolves against the same tenant and the post-processed document is returned with a 200.
+/// </summary>
+[TestFixture]
+public class Given_The_Metadata_Specifications_Document_In_Multi_Tenant_Mode
+{
+    private const string TenantName = "test-tenant";
+
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private ITenantRepository _tenantRepository = null!;
+    private HttpResponseMessage _response = null!;
+    private JsonNode _document = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _tenantRepository = A.Fake<ITenantRepository>();
+        A.CallTo(() => _tenantRepository.GetTenantByName(TenantName))
+            .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = TenantName }));
+
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(cfg =>
+                cfg.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                )
+            );
+            // Route the internal /openapi/v1.json fetch back through the in-memory test server, and resolve
+            // the tenant through the fake repository so both the outer and nested requests pass tenant
+            // resolution.
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<IHttpClientFactory>(
+                    new TestServerHttpClientFactory(() => _factory.Server.CreateHandler())
+                );
+                services.AddSingleton(_tenantRepository);
+            });
+        });
+        _client = _factory.CreateClient();
+        _client.DefaultRequestHeaders.Add("Tenant", TenantName);
+
+        _response = await _client.GetAsync("/metadata/specifications");
+        _document = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_returns_200_with_the_json_content_type()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+    }
+
+    [Test]
+    public void It_returns_the_post_processed_configuration_service_document()
+    {
+        _document["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi API Configuration Service API");
+        _document["components"]!["schemas"]!.AsObject().Should().ContainKey("ProblemDetails");
+    }
+
+    [Test]
+    public void It_resolves_the_same_tenant_for_the_outer_and_nested_requests() =>
+        // The outer /metadata/specifications request and the nested /openapi/v1.json request each resolve
+        // the tenant once. A dropped Tenant header would fail the nested request's resolution before the
+        // repository is consulted, and surface as a 500 on the outer request.
+        A.CallTo(() => _tenantRepository.GetTenantByName(TenantName)).MustHaveHappenedTwiceExactly();
+}
+
+// Routes the module's internal /openapi/v1.json fetch through the in-memory test server.
+file sealed class TestServerHttpClientFactory(Func<HttpMessageHandler> handlerFactory) : IHttpClientFactory
+{
+    public HttpClient CreateClient(string name) => new(handlerFactory(), disposeHandler: false);
 }
