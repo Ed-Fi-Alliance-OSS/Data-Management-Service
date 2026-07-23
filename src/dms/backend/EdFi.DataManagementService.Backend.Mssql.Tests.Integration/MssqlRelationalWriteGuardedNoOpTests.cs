@@ -277,7 +277,10 @@ file sealed class GuardedNoOpCommitWindowFreshnessChecker(
             // the committed concurrent bump.
             _coordinator.ReleaseCommit();
 
-            // (5) Await both operations.
+            // (5) Await both operations. The blocked freshness read is a SqlCommand carrying the
+            // SqlClient default command timeout, so if the released commit stalls or faults, the
+            // read throws a diagnostic timeout exception instead of hanging the shard: this
+            // interval is bounded by the driver even though no fixture token wraps it.
             var isCurrent = await isCurrentTask;
             _probe.Record(isCurrent);
 

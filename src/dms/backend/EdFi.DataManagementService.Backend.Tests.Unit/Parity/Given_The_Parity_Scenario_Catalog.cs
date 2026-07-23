@@ -458,7 +458,10 @@ public class Given_The_Parity_Scenario_Catalog
         {
             ParityScenario row = _all.Single(s => s.Id == id);
             row.DialectDifference.Should().NotBeNull("{0} pins its dialect batch-shape facts", id);
-            row.DialectDifference!.Description.Should().Contain("65535").And.Contain("2100");
+            row.DialectDifference!.Description.Should()
+                .Contain("65535")
+                .And.Contain("2100")
+                .And.Contain("2098");
             row.DialectDifference.Description.Should().Contain(expectedFragment);
         }
     }
