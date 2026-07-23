@@ -24,10 +24,12 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 /// </summary>
 public class GlobalExceptionHandlerTests
 {
-    private static async Task<(DefaultHttpContext Context, string Content, JsonObject Body)> HandleAsync(
-        Exception exception,
-        string traceId
-    )
+    private static async Task<(
+        bool Handled,
+        DefaultHttpContext Context,
+        string Content,
+        JsonObject Body
+    )> HandleAsync(Exception exception, string traceId)
     {
         var context = new DefaultHttpContext { TraceIdentifier = traceId };
         context.Response.Body = new MemoryStream();
@@ -37,11 +39,10 @@ public class GlobalExceptionHandlerTests
             exception,
             CancellationToken.None
         );
-        handled.Should().BeTrue();
 
         context.Response.Body.Seek(0, SeekOrigin.Begin);
         string content = await new StreamReader(context.Response.Body).ReadToEndAsync();
-        return (context, content, JsonNode.Parse(content)!.AsObject());
+        return (handled, context, content, JsonNode.Parse(content)!.AsObject());
     }
 
     private static void AssertHandledContract(
@@ -70,16 +71,20 @@ public class GlobalExceptionHandlerTests
     {
         private const string Sentinel = "SENTINEL_BADREQ_400_3a1c_must_not_leak";
 
+        private bool _handled;
         private DefaultHttpContext _context = null!;
         private string _content = null!;
         private JsonObject _body = null!;
 
         [SetUp]
         public async Task Setup() =>
-            (_context, _content, _body) = await HandleAsync(
+            (_handled, _context, _content, _body) = await HandleAsync(
                 new BadHttpRequestException(Sentinel, StatusCodes.Status400BadRequest),
                 "trace-400"
             );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
 
         [Test]
         public void It_returns_the_generic_bad_request_contract() =>
@@ -108,16 +113,20 @@ public class GlobalExceptionHandlerTests
     {
         private const string Sentinel = "SENTINEL_BADREQ_415_5b2d_must_not_leak";
 
+        private bool _handled;
         private DefaultHttpContext _context = null!;
         private string _content = null!;
         private JsonObject _body = null!;
 
         [SetUp]
         public async Task Setup() =>
-            (_context, _content, _body) = await HandleAsync(
+            (_handled, _context, _content, _body) = await HandleAsync(
                 new BadHttpRequestException(Sentinel, StatusCodes.Status415UnsupportedMediaType),
                 "trace-415"
             );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
 
         [Test]
         public void It_returns_the_unsupported_media_type_contract() =>
@@ -139,6 +148,7 @@ public class GlobalExceptionHandlerTests
     {
         private const string Sentinel = "SENTINEL_BADREQ_413_7c3e_must_not_leak";
 
+        private bool _handled;
         private DefaultHttpContext _context = null!;
         private string _content = null!;
         private JsonObject _body = null!;
@@ -146,10 +156,13 @@ public class GlobalExceptionHandlerTests
         [SetUp]
         public async Task Setup() =>
             // 413 (Kestrel request-body-size limit) has no documented Ed-Fi taxonomy URI → about:blank.
-            (_context, _content, _body) = await HandleAsync(
+            (_handled, _context, _content, _body) = await HandleAsync(
                 new BadHttpRequestException(Sentinel, StatusCodes.Status413PayloadTooLarge),
                 "trace-413"
             );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
 
         [Test]
         public void It_returns_the_about_blank_contract() =>
@@ -176,6 +189,7 @@ public class GlobalExceptionHandlerTests
     [TestFixture]
     public class Given_a_validation_exception
     {
+        private bool _handled;
         private DefaultHttpContext _context = null!;
         private JsonObject _body = null!;
 
@@ -183,8 +197,14 @@ public class GlobalExceptionHandlerTests
         public async Task Setup()
         {
             var failures = new List<ValidationFailure> { new("PropertyName", "Property is required") };
-            (_context, _, _body) = await HandleAsync(new ValidationException(failures), "trace-validation");
+            (_handled, _context, _, _body) = await HandleAsync(
+                new ValidationException(failures),
+                "trace-validation"
+            );
         }
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
 
         [Test]
         public void It_returns_the_data_validation_contract() =>
@@ -216,16 +236,20 @@ public class GlobalExceptionHandlerTests
     {
         private const string Sentinel = "SENTINEL_GENERIC_500_9d4f_must_not_leak";
 
+        private bool _handled;
         private DefaultHttpContext _context = null!;
         private string _content = null!;
         private JsonObject _body = null!;
 
         [SetUp]
         public async Task Setup() =>
-            (_context, _content, _body) = await HandleAsync(
+            (_handled, _context, _content, _body) = await HandleAsync(
                 new InvalidOperationException(Sentinel),
                 "trace-500"
             );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
 
         [Test]
         public void It_returns_the_internal_server_error_contract() =>
