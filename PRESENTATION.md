@@ -135,11 +135,11 @@ authoritative deletion.
 
 ```mermaid
 flowchart TB
-    DOC[dms.Document<br/>DocumentId, DocumentUuid,<br/>ContentVersion]
-    CACHE[dms.DocumentCache<br/>DocumentJson, StreamEtag,<br/>cached ContentVersion]
-    STATE[dms.DocumentCacheState<br/>CacheAheadRecoveryRequired]
-    IDENT[dms.DataStoreIdentity<br/>SourceIdentity]
-    HEART[dms.CdcHeartbeat<br/>Sequence, timestamp]
+    DOC[dms.Document<br/><br/>DocumentId, DocumentUuid,<br/>ContentVersion]
+    CACHE[dms.DocumentCache<br/><br/>DocumentJson, StreamEtag,<br/>cached ContentVersion]
+    STATE[dms.DocumentCacheState<br/><br/>CacheAheadRecoveryRequired]
+    IDENT[dms.DataStoreIdentity<br/><br/>SourceIdentity]
+    HEART[dms.CdcHeartbeat<br/><br/>Sequence, timestamp]
 
     DOC -->|PK/FK + cascade| CACHE
     STATE -. guards all cache use .-> CACHE
