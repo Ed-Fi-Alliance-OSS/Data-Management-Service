@@ -121,7 +121,7 @@ public class FailureResponseWriterTests
     [TestFixture]
     public class Given_a_node_without_a_status_member
     {
-        private Exception? _exception;
+        private Exception _exception = null!;
 
         [SetUp]
         public async Task Setup()
