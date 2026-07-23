@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -45,6 +46,35 @@ internal static class FailureResults
             FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
             contentType: _errorContentType,
             statusCode: 403
+        );
+    }
+
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:api:bad-request</c> response for a generic, non-field-specific
+    /// client error. The <paramref name="detail"/> must contain no sensitive or internal text.
+    /// </summary>
+    public static IResult BadRequest(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForBadRequest(detail, correlationId),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
+    }
+
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:api:bad-request:data</c> data-validation response whose
+    /// <c>validationErrors</c> are grouped from the supplied field-level failures.
+    /// </summary>
+    public static IResult DataValidation(
+        IEnumerable<ValidationFailure> validationFailures,
+        string correlationId
+    )
+    {
+        return Results.Json(
+            FailureResponse.ForDataValidation(validationFailures, correlationId),
+            contentType: _errorContentType,
+            statusCode: 400
         );
     }
 
