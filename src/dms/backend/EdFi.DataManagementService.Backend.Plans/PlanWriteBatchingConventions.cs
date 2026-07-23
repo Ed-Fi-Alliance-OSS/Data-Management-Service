@@ -13,7 +13,10 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public static class PlanWriteBatchingConventions
 {
-    private const int MssqlMaxParametersPerCommand = 2100;
+    // SQL Server's RPC limit is 2100 parameters per request, but parameterized commands execute
+    // through sp_executesql, whose own @stmt/@params arguments consume two of those slots — a
+    // command carrying exactly 2100 user parameters is rejected by the server (error 8003).
+    private const int MssqlMaxParametersPerCommand = 2098;
     private const int PgsqlMaxParametersPerCommand = 65535;
     private const int MssqlMaxValuesRowsPerCommand = 1000;
     private const int PgsqlPolicyMaxRowsPerCommand = 1000;

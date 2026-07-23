@@ -9,23 +9,23 @@ namespace EdFi.DataManagementService.Backend.Tests.Common.Parity;
 
 public static partial class ParityScenarioCatalog
 {
-    private const string DmsGapOwner = "DMS-1285";
-
     /// <summary>
     /// DMS-984 no-profile relational-write scenarios: the eight canonical families and the variants
-    /// that decompose the behavior each family requires. Every canonical family is PostgreSQL-only
-    /// today and owed a SQL Server twin by DMS-1285 (KnownGap). This catalog records the closed parity
-    /// matrix; it does not define or expand it.
+    /// that decompose the behavior each family requires. DMS-1285 closed the SQL Server twins for
+    /// all eight families, so every row is Covered on both engines; intentional dialect differences
+    /// (multi-batch shapes, the commit-window race scheduling) are recorded on their rows. This
+    /// catalog records the closed parity matrix; it does not define or expand it.
     /// </summary>
     internal static readonly ImmutableArray<ParityScenario> NoProfileScenarios =
     [
         // --- NoProfileFullSurfaceCreate + variants ------------------------------------------
-        Gap(
+        NoProfile(
             "NoProfileFullSurfaceCreate",
             "Creates the full no-profile surface (root, nested collections, root extension, collection extension, extension-child collections) with stable ids and contiguous 0-based ordinals.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWriteCreateBaselineTests.cs",
+            "RelationalWriteCreateBaselineTests",
             "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_insert_success_for_the_repository_create_flow",
                 "It_persists_root_and_nested_collection_rows_with_stable_collection_ids",
@@ -54,12 +54,13 @@ public static partial class ParityScenarioCatalog
             "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows"
         ),
         // --- NoProfileChangedPutOmissionSemantics + variants --------------------------------
-        Gap(
+        NoProfile(
             "NoProfileChangedPutOmissionSemantics",
             "Changed PUT bumps ContentVersion, clears omitted inlined columns, and deletes omitted collection-aligned extension scope rows without deleting base rows.",
             ProductionBoundary.NoProfileMerge,
-            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "RelationalWriteUpdateSemanticsTests",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_bumps_content_version_for_the_put_flow",
                 "It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value",
@@ -73,40 +74,49 @@ public static partial class ParityScenarioCatalog
         UpdateVariant(
             "ClearedInlinedColumn",
             "A changed PUT clears an omitted inlined root column instead of preserving the old value.",
-            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "RelationalWriteUpdateSemanticsTests",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             "It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value",
             "NoProfileUpdateSemanticsScenarios.AssertClearedOmittedInlinedColumn"
         ),
         UpdateVariant(
             "DeletedAlignedExtensionScope",
             "A changed PUT deletes omitted collection-aligned extension scope rows without deleting the base rows.",
-            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "RelationalWriteUpdateSemanticsTests",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             "It_deletes_omitted_collection_aligned_extension_scope_rows_without_deleting_base_rows",
             "NoProfileUpdateSemanticsScenarios.AssertDeletedOmittedAlignedExtensionScope"
         ),
         UpdateVariant(
             "ContentVersionBump",
             "A changed PUT returns UpdateSuccess and bumps ContentVersion.",
-            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "RelationalWriteUpdateSemanticsTests",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             "It_returns_update_success_and_bumps_content_version_for_the_put_flow",
             "NoProfileUpdateSemanticsScenarios.AssertUpdateSuccessAndContentVersionBump"
         ),
         UpdateVariant(
             "DeletedBaseCollectionRows",
             "A changed PUT reduces a large base collection to the retained rows, deleting omitted rows in batches.",
-            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "RelationalWriteMultiBatchCollectionTests",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
             "It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches",
-            "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow"
+            "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow",
+            diff: new DialectDifference(
+                "The seeded payload is sized from the compiled batch limit (MaxRowsPerBatch + 2 rows), which differs by dialect: PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows.",
+                "Dialect parameter limits size the payload and shape the compiled delete batches; behavioral parity is the retained-row reduction semantic, not the payload size or SQL text."
+            )
         ),
         UpdateVariant(
             "DeletedAndReplacedChildCollectionRows",
             "A POST-as-update that resolves to an existing document reuses retained child-collection ids and replaces omitted rows across multiple child tables.",
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+            "Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             "It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows",
             "NoProfilePostAsUpdateScenarios.AssertRetainedChildCollectionIdReuse",
             notes: "POST-as-update execution of the shared NoProfileMerge retained-id/omitted-row mechanic (the fixture "
@@ -114,56 +124,46 @@ public static partial class ParityScenarioCatalog
                 + "collection-identity behavior is recorded by NoProfileMultiBatchCollection/AuthoritativeChangedPutIdentity."
         ),
         // --- NoProfileWriteBehavior (umbrella) ----------------------------------------------
-        Gap(
+        NoProfile(
             "NoProfileWriteBehavior",
             "Umbrella no-profile changed-write control path at the persister boundary: the changed-write flow is orchestrated to update success and bumps ContentVersion.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "RelationalWriteUpdateSemanticsTests",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_returns_update_success_and_bumps_content_version_for_the_put_flow"],
             sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertUpdateSuccessAndContentVersionBump",
             notes: "The no-profile _ext create mechanic is recorded on NoProfileWriteBehavior/NoProfileExt; merge-level omission and deletion semantics are owned by NoProfileChangedPutOmissionSemantics at the NoProfileMerge boundary."
         ),
-        Gap(
+        NoProfile(
             "NoProfileWriteBehavior/OmittedNonCollectionScope",
             "A changed PUT clears an omitted non-collection (inlined) scope rather than preserving hidden data.",
             ProductionBoundary.NoProfileMerge,
-            "PostgresqlRelationalWriteUpdateSemanticsTests.cs",
+            "RelationalWriteUpdateSemanticsTests",
             "Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture",
             ["It_clears_omitted_inlined_root_columns_instead_of_preserving_the_old_value"],
             sharedEntryPoint: "NoProfileUpdateSemanticsScenarios.AssertClearedOmittedInlinedColumn"
         ),
-        new ParityScenario
-        {
-            Id = "NoProfileWriteBehavior/NoProfileExt",
-            Layer = ParityLayer.NoProfile,
-            BehavioralContract =
-                "The control full-surface write persists the no-profile _ext surface (root extension, collection-aligned extension, and extension-child collection rows) on create.",
-            SharedEntryPoint =
-                "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows",
-            Boundary = ProductionBoundary.NoProfilePersister,
-            BoundaryDetail =
-                "No-profile _ext create surface persisted via NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild; the omitted-aligned-extension deletion on a changed PUT is a merge mechanic cataloged under NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope.",
-            PgsqlLocations =
-            [
-                Loc(
-                    "PostgresqlRelationalWriteCreateBaselineTests.cs",
-                    "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
-                    ["It_persists_root_extensions_collection_extensions_and_extension_child_collections"]
-                ),
-            ],
-            PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Gap,
-            Classification = ParityClassification.KnownGap,
-            MssqlGapOwner = DmsGapOwner,
-        },
+        NoProfile(
+            "NoProfileWriteBehavior/NoProfileExt",
+            "The control full-surface write persists the no-profile _ext surface (root extension, collection-aligned extension, and extension-child collection rows) on create.",
+            ProductionBoundary.NoProfilePersister,
+            "RelationalWriteCreateBaselineTests",
+            "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+            ["It_persists_root_extensions_collection_extensions_and_extension_child_collections"],
+            sharedEntryPoint: "NoProfileCreateBaselineScenarios.AssertRootAndCollectionExtensionAndExtensionChildRows",
+            boundaryDetail: "No-profile _ext create surface persisted via NoProfileFullSurfaceCreate/RootAndCollectionExtensionAndExtensionChild; the omitted-aligned-extension deletion on a changed PUT is a merge mechanic cataloged under NoProfileChangedPutOmissionSemantics/DeletedAlignedExtensionScope."
+        ),
         // --- FullSurfaceCollectionReorder + variants ----------------------------------------
-        Gap(
+        NoProfile(
             "FullSurfaceCollectionReorder",
             "No-profile full-surface reorder matches stored rows by semantic identity, reuses CollectionItemIds, and recomputes contiguous 0-based ordinals.",
             ProductionBoundary.NoProfileMerge,
-            "PostgresqlRelationalWriteCollectionReorderTests.cs",
+            "RelationalWriteCollectionReorderTests",
             "Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_bumps_content_version_for_a_full_surface_reorder",
                 "It_reuses_collection_item_ids_while_recomputing_ordinals_for_a_full_surface_reorder",
@@ -192,12 +192,13 @@ public static partial class ParityScenarioCatalog
             "NoProfileCollectionReorderScenarios.AssertUpdateSuccessAndContentVersionBump"
         ),
         // --- NoProfileGuardedNoOp (10 variants) ---------------------------------------------
-        Gap(
+        NoProfile(
             "NoProfileGuardedNoOp",
             "An unchanged PUT compares the post-merge rowset to current state and skips DML, revalidating freshness before returning no-op: the full persisted rowset (including referential identity), ContentVersion, every stored update-tracking stamp — document and root-table — and the engine's max ChangeVersion allocation all stay unchanged.",
             ProductionBoundary.GuardedNoOp,
-            "PostgresqlRelationalWriteGuardedNoOpTests.cs",
+            "RelationalWriteGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_for_an_unchanged_put",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put",
@@ -210,6 +211,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "Put",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_for_an_unchanged_put",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put",
@@ -220,6 +222,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PostAsUpdate",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_preserves_the_existing_document_for_an_unchanged_post_as_update",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update",
@@ -230,6 +233,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PutCurrentStateRefresh",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version",
             [
                 "It_returns_update_success_without_a_repository_retry_when_current_state_refreshes_the_content_version",
                 "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_put",
@@ -241,6 +245,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PostAsUpdateCurrentStateRefresh",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version",
             [
                 "It_returns_update_success_without_a_repository_retry_when_post_as_update_refreshes_current_state_freshness",
                 "It_preserves_rowsets_and_avoids_an_extra_content_version_bump_during_the_guarded_no_op_post_as_update",
@@ -252,6 +257,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PutAfterReorder",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_for_an_unchanged_put_after_reorder",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put_after_reorder",
@@ -262,6 +268,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PostAsUpdateAfterReorder",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_preserves_the_existing_document_for_an_unchanged_post_as_update_after_reorder",
                 "It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update_after_reorder",
@@ -272,6 +279,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "StalePut",
             "Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_retries_and_returns_update_success_after_the_no_op_compare_goes_stale",
                 "It_preserves_the_rowsets_but_keeps_the_concurrent_content_version_bump",
@@ -282,6 +290,7 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "StalePostAsUpdate",
             "Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_retries_and_returns_update_success_for_a_stale_post_as_update_no_op_compare",
                 "It_preserves_the_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
@@ -292,32 +301,43 @@ public static partial class ParityScenarioCatalog
         GuardedNoOp(
             "PutCommitWindowRace",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race",
             [
                 "It_retries_the_no_op_after_the_commit_window_race_and_returns_update_success",
                 "It_preserves_rowsets_but_keeps_the_concurrent_content_version_bump",
             ],
             "NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
+            diff: new DialectDifference(
+                "PostgreSQL snapshot reads let the first freshness check run while the competing bump is still uncommitted, so its twin starts the competing transaction before the repository call; SQL Server READ COMMITTED locking reads would block the repository's initial document lookup on the competing X-lock, so its twin begins the competing transaction inside the first freshness-check invocation and the inner freshness read blocks on that X-lock until the competing commit releases.",
+                "Commit-window scheduling and blocking behavior differ by dialect; behavioral parity is the unchanged observable outcome — freshness observations [false, true], exactly one retry, and the competing committed content version and stamp preserved."
+            )
         ),
         GuardedNoOp(
             "PostAsUpdateCommitWindowRace",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race",
+            "Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race",
             [
                 "It_retries_the_no_op_after_the_commit_window_race_and_preserves_the_existing_document",
                 "It_preserves_existing_rowsets_but_keeps_the_concurrent_content_version_bump",
             ],
             "NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertCommitWindowFreshnessObservations"
-                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump"
+                + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
+            diff: new DialectDifference(
+                "PostgreSQL snapshot reads let the first freshness check run while the competing bump is still uncommitted, so its twin starts the competing transaction before the repository call; SQL Server READ COMMITTED locking reads would block the repository's initial document lookup on the competing X-lock, so its twin begins the competing transaction inside the first freshness-check invocation and the inner freshness read blocks on that X-lock until the competing commit releases.",
+                "Commit-window scheduling and blocking behavior differ by dialect; behavioral parity is the unchanged observable outcome — freshness observations [false, true], exactly one retry, and the competing committed content version and stamp preserved."
+            )
         ),
         // --- NoProfileMultiBatchCollection + variants ---------------------------------------
-        Gap(
+        NoProfile(
             "NoProfileMultiBatchCollection",
             "A collection create exceeding the compiled MaxRowsPerBatch persists the full requested collection (every row checked in order) and partitions its id-reservation and insert commands at the compiled MaxRowsPerBatch / ParametersPerRow limits.",
             ProductionBoundary.BatchSqlEmitter,
-            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "RelationalWriteMultiBatchCollectionTests",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_insert_success_and_persists_the_full_large_collection",
                 "It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit",
@@ -327,16 +347,17 @@ public static partial class ParityScenarioCatalog
             boundaryDetail: "WritePlanBatchSqlEmitter / PlanWriteBatchingConventions",
             notes: "This row proves only the multi-batch create mechanic its own location executes. Update/delete batching, aligned-extension batching, parameter pressure, and changed-write identity are decomposed into the explicit NoProfileMultiBatchCollection/* variant rows with their own entry points.",
             diff: new DialectDifference(
-                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent and caps at 2100 parameters / 1000 rows.",
+                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent and caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows.",
                 "Dialect parameter limits and id-reservation strategy differ; behavioral parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts, not the SQL text."
             )
         ),
-        Gap(
+        NoProfile(
             "NoProfileMultiBatchCollection/Create",
             "Multi-batch create persists the full large collection and partitions id-reservation and insert commands at the compiled batch limit.",
             ProductionBoundary.BatchSqlEmitter,
-            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "RelationalWriteMultiBatchCollectionTests",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_insert_success_and_persists_the_full_large_collection",
                 "It_partitions_collection_id_reservation_and_insert_commands_using_the_compiled_batch_limit",
@@ -344,29 +365,35 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions",
             diff: new DialectDifference(
-                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent for id reservation and caps at 2100 parameters / 1000 rows.",
+                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent for id reservation and caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows.",
                 "Dialect id-reservation strategy and parameter limits shape the compiled create batches; behavioral parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts, not the SQL text."
             )
         ),
-        Gap(
+        NoProfile(
             "NoProfileMultiBatchCollection/DeleteUpdate",
             "Multi-batch delete/update reduces a large collection, partitioning delete commands at the compiled batch limit.",
             ProductionBoundary.BatchSqlEmitter,
-            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "RelationalWriteMultiBatchCollectionTests",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches",
                 "It_partitions_collection_delete_commands_using_the_compiled_batch_limit",
             ],
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertMultiBatchDeleteUpdateReducedToRetainedRow"
-                + " + NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions"
+                + " + NoProfileMultiBatchCollectionScenarios.AssertDeleteBatchPartitions",
+            diff: new DialectDifference(
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows (deletes target existing stable row identities, so no id reservation applies on either dialect).",
+                "Dialect parameter limits shape the compiled delete batches; behavioral parity is the retained persisted rowset and batch partition counts, not the SQL text."
+            )
         ),
-        Gap(
+        NoProfile(
             "NoProfileMultiBatchCollection/AlignedExtensionCreate",
             "Multi-batch create of a large collection-aligned extension scope, aligned to base row ids and partitioned at the compiled batch limit.",
             ProductionBoundary.BatchSqlEmitter,
-            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "RelationalWriteMultiBatchCollectionTests",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_Extension_Create_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Aligned_Extension_Create_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_insert_success_and_persists_the_full_large_collection_aligned_extension_scope",
                 "It_partitions_collection_aligned_extension_insert_commands_using_the_compiled_batch_limit",
@@ -374,16 +401,17 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionAlignedExtensionCreatePersisted"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions",
             diff: new DialectDifference(
-                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 parameters / 1000 rows (aligned extension rows are keyed to base collection ids, so no id reservation applies on either dialect).",
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows (aligned extension rows are keyed to base collection ids, so no id reservation applies on either dialect).",
                 "Dialect parameter limits shape the compiled aligned-extension insert batches; behavioral parity is the persisted rowset and batch partition counts, not the SQL text."
             )
         ),
-        Gap(
+        NoProfile(
             "NoProfileMultiBatchCollection/AuthoritativeParameterPressure",
             "Authoritative StudentAcademicRecord large-collection create exercises real parameter pressure (28 rows, >300 insert parameters).",
             ProductionBoundary.BatchSqlEmitter,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+            "Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             [
                 "It_persists_authoritative_student_academic_record_root_extension_and_large_collection_rows_on_create",
                 "It_uses_a_payload_large_enough_to_exercise_real_parameter_pressure",
@@ -391,28 +419,30 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionCreatePersisted"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertParameterPressurePayload"
         ),
-        Gap(
+        NoProfile(
             "NoProfileMultiBatchCollection/AuthoritativeChangedPutIdentity",
             "Authoritative StudentAcademicRecord changed PUT reuses stable collection item ids across the large-collection tables.",
             ProductionBoundary.NoProfileMerge,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+            "Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             ["It_reuses_stable_collection_item_ids_across_large_collection_tables_for_a_changed_put"],
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertAuthoritativeLargeCollectionChangedPutIdentity"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertChangedCollectionReusesRetainedIdsAndReplacesOthers"
         ),
-        Gap(
+        NoProfile(
             "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
             "A changed PUT that replaces a non-identity attribute on more than MaxRowsPerBatch existing rows (keeping each city and order) partitions the collection update-by-stable-row-identity commands into two batches at the compiled limit, preserving the full rowset, stable ids, parent, and contiguous ordinals.",
             ProductionBoundary.BatchSqlEmitter,
-            "PostgresqlRelationalWriteMultiBatchCollectionTests.cs",
+            "RelationalWriteMultiBatchCollectionTests",
             "Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
                 "It_partitions_collection_update_commands_using_the_compiled_batch_limit",
             ],
             diff: new DialectDifference(
-                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 parameters / 1000 rows (updates target existing stable row identities, so no id reservation applies on either dialect).",
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows (updates target existing stable row identities, so no id reservation applies on either dialect).",
                 "Dialect parameter limits shape the compiled update-by-stable-row-identity batches; behavioral parity is the persisted rowset and batch partition counts, not the SQL text."
             ),
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted"
@@ -420,12 +450,13 @@ public static partial class ParityScenarioCatalog
             boundaryDetail: "RelationalWriteNoProfilePersister batching through WritePlanBatchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch"
         ),
         // --- NoProfilePostAsUpdate + variants -----------------------------------------------
-        Gap(
+        NoProfile(
             "NoProfilePostAsUpdate",
             "POST that resolves to an existing document (FocusedStableKey) updates in place, preserving the document row and inserting no duplicate rows.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update",
                 "It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update",
@@ -433,12 +464,13 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
                 + " + NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied"
         ),
-        Gap(
+        NoProfile(
             "NoProfilePostAsUpdate/FocusedStableKey",
             "POST-as-update on the focused stable-key fixture preserves the existing document row and applies changed full-surface state without inserting new rows.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_update_success_and_preserves_the_existing_document_row_for_post_as_update",
                 "It_applies_changed_full_surface_state_without_inserting_new_rows_for_post_as_update",
@@ -446,12 +478,13 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
                 + " + NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied"
         ),
-        Gap(
+        NoProfile(
             "NoProfilePostAsUpdate/ImmutableIdentityRejected",
             "POST-as-update that changes an immutable identity is rejected with UpsertFailureImmutableIdentity and commits no row changes: the document row including ContentVersion and every stored update-tracking stamp (IdentityVersion, ContentLastModifiedAt, IdentityLastModifiedAt, CreatedAt), the root, the base and aligned-extension collections, and the referential identity are all unchanged.",
             ProductionBoundary.IdentityStability,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_returns_explicit_immutable_identity_failure_for_post_as_update",
                 "It_does_not_commit_row_changes_for_rejected_post_as_update",
@@ -460,12 +493,13 @@ public static partial class ParityScenarioCatalog
                 + " + NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges",
             boundaryDetail: "RelationalWriteIdentityStability.TryBuildFailureResult"
         ),
-        Gap(
+        NoProfile(
             "NoProfilePostAsUpdate/CreateRaceConvertedToUpdate",
             "A stale create candidate converts to POST-as-update after a competing create commits, applying last-writer state without duplicate rows.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_Key_Fixture",
             [
                 "It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits",
                 "It_applies_last_writer_state_to_the_existing_document_instead_of_creating_duplicate_rows",
@@ -473,12 +507,13 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertStaleCreateConvertedToPostAsUpdate"
                 + " + NoProfilePostAsUpdateScenarios.AssertLastWriterStateApplied"
         ),
-        Gap(
+        NoProfile(
             "NoProfilePostAsUpdate/AuthoritativeDs52SchoolYearType",
             "Authoritative DS-5.2 SchoolYearType POST-as-update preserves the existing document uuid and updates the row in place.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Ds52_SchoolYearType_Fixture",
+            "Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52_SchoolYearType_Fixture",
             [
                 "It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid",
                 "It_updates_the_authoritative_ds52_row_in_place_for_post_as_update",
@@ -486,12 +521,13 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertUpdatedExistingDocumentInPlace"
                 + " + NoProfilePostAsUpdateScenarios.AssertAuthoritativeSchoolYearTypeRowInPlace"
         ),
-        Gap(
+        NoProfile(
             "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",
             "Authoritative StudentAcademicRecord POST-as-update preserves the existing document uuid and updates root/extension rows in place.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWritePostAsUpdateSmokeTests.cs",
+            "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
+            "Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture",
             [
                 "It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid",
                 "It_updates_root_and_extension_rows_in_place_for_authoritative_student_academic_record_post_as_update",
@@ -500,12 +536,13 @@ public static partial class ParityScenarioCatalog
                 + " + NoProfilePostAsUpdateScenarios.AssertAuthoritativeRootAndExtensionInPlace"
         ),
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
-        Gap(
+        NoProfile(
             "NoProfileRollbackSafety",
             "A failure injected at the last write of a full-surface create rolls the whole request back to its exact pre-state: document and tracking stamps, referential identity, root, nested child/grandchild, root extension, aligned extension, extension-child and visit rows, and tracked-change rowsets all return to empty.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWriteRollbackSafetyTests.cs",
+            "RelationalWriteRollbackSafetyTests",
             "Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted",
                 "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
@@ -513,12 +550,13 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileAtomicRollbackAssertions.AssertInjectedFailureAfterOrderedEarlyWrites"
                 + " + NoProfileAtomicRollbackAssertions.AssertFullSurfaceRollbackToPreState"
         ),
-        Gap(
+        NoProfile(
             "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
             "An injected failure at the write plan's final aligned-extension address write rolls back fully after every earlier full-surface write category was attempted in plan order; the post-rollback snapshot equals the empty pre-state across document, referential-identity, root, child/grandchild, extension, aligned-extension, extension-child, visit, and tracked-change surfaces.",
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWriteRollbackSafetyTests.cs",
+            "RelationalWriteRollbackSafetyTests",
             "Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
             [
                 "It_surfaces_the_injected_failure_only_after_the_early_write_commands_are_attempted",
                 "It_leaves_no_partial_relational_state_after_the_transaction_rolls_back",
@@ -528,21 +566,21 @@ public static partial class ParityScenarioCatalog
         ),
     ];
 
-    private static ScenarioLocation Loc(string file, string fixture, string[] methods) =>
-        new(file, fixture, [.. methods]);
-
-    private static ParityScenario Gap(
+    // One row of the no-profile matrix, covered on both engines. The stem derives the per-engine
+    // source files ("Postgresql{stem}.cs" / "Mssql{stem}.cs") and both engines execute the
+    // identically named test methods; the fixtures are recorded independently per engine.
+    private static ParityScenario NoProfile(
         string id,
         string contract,
         ProductionBoundary boundary,
-        string pgFile,
+        string stem,
         string pgFixture,
-        string[] pgMethods,
+        string mssqlFixture,
+        string[] methods,
         string sharedEntryPoint = "",
         string? boundaryDetail = null,
         string? notes = null,
-        DialectDifference? diff = null,
-        string? providerSpecificRationale = null
+        DialectDifference? diff = null
     ) =>
         new()
         {
@@ -552,13 +590,12 @@ public static partial class ParityScenarioCatalog
             SharedEntryPoint = sharedEntryPoint,
             Boundary = boundary,
             BoundaryDetail = boundaryDetail,
-            PgsqlLocations = [new ScenarioLocation(pgFile, pgFixture, [.. pgMethods])],
+            PgsqlLocations = [PgLoc(stem, pgFixture, methods)],
+            MssqlLocations = [MsLoc(stem, mssqlFixture, methods)],
             PgsqlCoverage = EngineCoverage.Covered,
-            MssqlCoverage = EngineCoverage.Gap,
+            MssqlCoverage = EngineCoverage.Covered,
             DialectDifference = diff,
-            Classification = ParityClassification.KnownGap,
-            MssqlGapOwner = DmsGapOwner,
-            ProviderSpecificEntryPointRationale = providerSpecificRationale,
+            Classification = ParityClassification.Both,
             Notes = notes,
         };
 
@@ -571,12 +608,13 @@ public static partial class ParityScenarioCatalog
         string method,
         string sharedEntryPoint
     ) =>
-        Gap(
+        NoProfile(
             $"NoProfileFullSurfaceCreate/{variant}",
             contract,
             ProductionBoundary.NoProfilePersister,
-            "PostgresqlRelationalWriteCreateBaselineTests.cs",
+            "RelationalWriteCreateBaselineTests",
             "Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture",
             [method],
             sharedEntryPoint: sharedEntryPoint
         );
@@ -584,21 +622,25 @@ public static partial class ParityScenarioCatalog
     private static ParityScenario UpdateVariant(
         string variant,
         string contract,
-        string file,
-        string fixture,
+        string stem,
+        string pgFixture,
+        string mssqlFixture,
         string method,
         string sharedEntryPoint,
-        string? notes = null
+        string? notes = null,
+        DialectDifference? diff = null
     ) =>
-        Gap(
+        NoProfile(
             $"NoProfileChangedPutOmissionSemantics/{variant}",
             contract,
             ProductionBoundary.NoProfileMerge,
-            file,
-            fixture,
+            stem,
+            pgFixture,
+            mssqlFixture,
             [method],
             sharedEntryPoint: sharedEntryPoint,
-            notes: notes
+            notes: notes,
+            diff: diff
         );
 
     private static ParityScenario ReorderVariant(
@@ -607,12 +649,13 @@ public static partial class ParityScenarioCatalog
         string method,
         string sharedEntryPoint
     ) =>
-        Gap(
+        NoProfile(
             $"FullSurfaceCollectionReorder/{variant}",
             contract,
             ProductionBoundary.NoProfileMerge,
-            "PostgresqlRelationalWriteCollectionReorderTests.cs",
+            "RelationalWriteCollectionReorderTests",
             "Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
+            "Given_A_Mssql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture",
             [method],
             sharedEntryPoint: sharedEntryPoint
         );
@@ -620,16 +663,20 @@ public static partial class ParityScenarioCatalog
     private static ParityScenario GuardedNoOp(
         string variant,
         string pgFixture,
-        string[] pgMethods,
-        string sharedEntryPoint
+        string mssqlFixture,
+        string[] methods,
+        string sharedEntryPoint,
+        DialectDifference? diff = null
     ) =>
-        Gap(
+        NoProfile(
             $"NoProfileGuardedNoOp/{variant}",
             $"Guarded no-op variant: {variant}.",
             ProductionBoundary.GuardedNoOp,
-            "PostgresqlRelationalWriteGuardedNoOpTests.cs",
+            "RelationalWriteGuardedNoOpTests",
             pgFixture,
-            pgMethods,
-            sharedEntryPoint: sharedEntryPoint
+            mssqlFixture,
+            methods,
+            sharedEntryPoint: sharedEntryPoint,
+            diff: diff
         );
 }

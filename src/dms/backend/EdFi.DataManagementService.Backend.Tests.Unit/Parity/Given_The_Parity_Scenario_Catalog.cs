@@ -200,23 +200,19 @@ public class Given_The_Parity_Scenario_Catalog
             .Should()
             .OnlyContain(s => s.Classification == ParityClassification.Both);
 
+    // The exact remaining owed SQL Server no-profile gap set after DMS-1285 Flip B: empty — every
+    // no-profile row runs on both engines. Rows are selected by MssqlCoverage == Gap — not by owner —
+    // so any future regression to Gap (or a blocker-owned row, whose (ScenarioId, owner) pair would
+    // need to be enumerated here explicitly) fails this exact-set sweep rather than hiding behind an
+    // owner filter (resolution validates only Covered rows).
+    private static readonly string[] ExpectedRemainingNoProfileMssqlGapPairs = [];
+
     [Test]
-    public void It_owns_every_canonical_no_profile_family_as_a_dms_1285_known_gap()
-    {
-        foreach (string id in ExpectedNoProfileCanonicalIds)
-        {
-            _all.Should()
-                .Contain(
-                    s =>
-                        s.Id == id
-                        && s.Classification == ParityClassification.KnownGap
-                        && s.MssqlGapOwner == "DMS-1285"
-                        && s.MssqlCoverage == EngineCoverage.Gap,
-                    "no-profile family {0} owed to DMS-1285",
-                    id
-                );
-        }
-    }
+    public void It_records_exactly_the_remaining_no_profile_mssql_gap_rows_as_scenario_and_owner_pairs() =>
+        _all.Where(s => s.Layer == ParityLayer.NoProfile && s.MssqlCoverage == EngineCoverage.Gap)
+            .Select(s => $"{s.Id}::{s.MssqlGapOwner}")
+            .Should()
+            .BeEquivalentTo(ExpectedRemainingNoProfileMssqlGapPairs);
 
     [Test]
     public void It_gives_every_no_profile_canonical_family_a_shared_entry_point()
@@ -349,6 +345,11 @@ public class Given_The_Parity_Scenario_Catalog
         "PostgresqlRelationalWriteCreateBaselineTests.cs::Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_persists_root_extensions_collection_extensions_and_extension_child_collections",
     ];
 
+    private static readonly string[] ExpectedNoProfileExtCreateMssqlTriples =
+    [
+        "MssqlRelationalWriteCreateBaselineTests.cs::Given_A_Mssql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_persists_root_extensions_collection_extensions_and_extension_child_collections",
+    ];
+
     private static readonly string[] ExpectedSiblingOrdinalPgTriples =
     [
         "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_returns_update_success",
@@ -378,12 +379,19 @@ public class Given_The_Parity_Scenario_Catalog
     {
         ParityScenario row = _all.Single(s => s.Id == "NoProfileWriteBehavior/NoProfileExt");
         Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtCreatePgTriples);
+        Flatten(row.MssqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtCreateMssqlTriples);
     }
 
     private static readonly string[] ExpectedChangedUpdateBatchPartitionsPgTriples =
     [
         "PostgresqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
         "PostgresqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_partitions_collection_update_commands_using_the_compiled_batch_limit",
+    ];
+
+    private static readonly string[] ExpectedChangedUpdateBatchPartitionsMssqlTriples =
+    [
+        "MssqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
+        "MssqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_partitions_collection_update_commands_using_the_compiled_batch_limit",
     ];
 
     [Test]
@@ -394,10 +402,11 @@ public class Given_The_Parity_Scenario_Catalog
         );
         row.Boundary.Should().Be(ProductionBoundary.BatchSqlEmitter);
         row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
-        row.MssqlCoverage.Should().Be(EngineCoverage.Gap);
-        row.MssqlGapOwner.Should().Be("DMS-1285");
-        row.Classification.Should().Be(ParityClassification.KnownGap);
+        row.MssqlCoverage.Should().Be(EngineCoverage.Covered);
+        row.MssqlGapOwner.Should().BeNull();
+        row.Classification.Should().Be(ParityClassification.Both);
         Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedChangedUpdateBatchPartitionsPgTriples);
+        Flatten(row.MssqlLocations).Should().BeEquivalentTo(ExpectedChangedUpdateBatchPartitionsMssqlTriples);
 
         // The changed-update batch row runs update-specific helpers, not its family's create-batch contract, so
         // it names its own Direct entry point rather than inheriting the family contract by shared boundary.
@@ -412,6 +421,27 @@ public class Given_The_Parity_Scenario_Catalog
     }
 
     [Test]
+    public void It_records_the_commit_window_race_scheduling_dialect_difference()
+    {
+        // Phase 6 of DMS-1285 validated the commit-window race on SQL Server with unchanged shared
+        // outcomes; the scheduling/blocking difference that required the redesigned twin choreography
+        // is recorded on exactly these two rows.
+        foreach (
+            string id in (string[])
+                [
+                    "NoProfileGuardedNoOp/PutCommitWindowRace",
+                    "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace",
+                ]
+        )
+        {
+            ParityScenario row = _all.Single(s => s.Id == id);
+            row.DialectDifference.Should().NotBeNull("{0} pins the commit-window scheduling difference", id);
+            row.DialectDifference!.Description.Should().Contain("X-lock");
+            row.DialectDifference.Rationale.Should().Contain("[false, true]");
+        }
+    }
+
+    [Test]
     public void It_records_accurate_dialect_metadata_on_the_multi_batch_rows()
     {
         // DialectDifference is row-local (variants do not inherit it), so every multi-batch row
@@ -423,12 +453,17 @@ public class Given_The_Parity_Scenario_Catalog
                     ("NoProfileMultiBatchCollection/Create", "generate_series"),
                     ("NoProfileMultiBatchCollection/AlignedExtensionCreate", "no id reservation"),
                     ("NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions", "no id reservation"),
+                    ("NoProfileMultiBatchCollection/DeleteUpdate", "no id reservation"),
+                    ("NoProfileChangedPutOmissionSemantics/DeletedBaseCollectionRows", "MaxRowsPerBatch + 2"),
                 ]
         )
         {
             ParityScenario row = _all.Single(s => s.Id == id);
             row.DialectDifference.Should().NotBeNull("{0} pins its dialect batch-shape facts", id);
-            row.DialectDifference!.Description.Should().Contain("65535").And.Contain("2100");
+            row.DialectDifference!.Description.Should()
+                .Contain("65535")
+                .And.Contain("2100")
+                .And.Contain("2098");
             row.DialectDifference.Description.Should().Contain(expectedFragment);
         }
     }

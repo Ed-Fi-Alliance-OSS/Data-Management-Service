@@ -17,8 +17,10 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// baseline (`NoProfileFullSurfaceCreate`). Each provider suite keeps its own database provisioning,
 /// resolver registration, no-profile production-boundary invocation, SQL dialect, and readback, but
 /// consumes the shared request builder, the neutral persisted-state snapshot records, and the shared
-/// FluentAssertions helpers defined here so PostgreSQL and (later) SQL Server share a single semantic
-/// source of truth for what a full-surface create must persist.
+/// FluentAssertions helpers defined here so PostgreSQL and SQL Server share a single semantic
+/// source of truth for what a full-surface create must persist. The contract is persisted-row
+/// snapshots by design: JSON reconstitution of the stored document is read-path coverage and is not
+/// asserted by this write-path family on either engine.
 /// </summary>
 public static class NoProfileCreateBaselineScenarios
 {

@@ -24,9 +24,9 @@
                 "delete_by_parent_sql_sha256": null,
                 "collection_merge_plan": null,
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 700,
+                  "max_rows_per_batch": 699,
                   "parameters_per_row": 3,
-                  "max_parameters_per_command": 2100
+                  "max_parameters_per_command": 2098
                 },
                 "column_bindings_in_order": [
                   {
@@ -72,7 +72,7 @@
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 2,
-                  "max_parameters_per_command": 2100
+                  "max_parameters_per_command": 2098
                 },
                 "column_bindings_in_order": [
                   {
@@ -121,9 +121,9 @@
                   ]
                 },
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 525,
+                  "max_rows_per_batch": 524,
                   "parameters_per_row": 4,
-                  "max_parameters_per_command": 2100
+                  "max_parameters_per_command": 2098
                 },
                 "column_bindings_in_order": [
                   {
