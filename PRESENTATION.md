@@ -124,10 +124,10 @@ authoritative deletion.
 
 | Source change | Result |
 | --- | --- |
-| Cache create, update, or CDC restart scan | Kafka document upsert |
+| Cache create, update, or Debezium restart scan | Kafka document upsert |
 | `dms.Document` delete | Kafka tombstone |
 | Cache delete/truncate or other document operation | Ignore |
-| Database/Debezium heartbeat | Internal progress only |
+| `dms.CdcHeartbeat` change or Debezium heartbeat | Internal Kafka progress record |
 
 ---
 
