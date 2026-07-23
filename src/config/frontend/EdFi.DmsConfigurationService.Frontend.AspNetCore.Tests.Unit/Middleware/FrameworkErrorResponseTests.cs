@@ -26,9 +26,9 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware
 /// End-to-end verification that framework-generated bodiless 401/403/404/405/415 responses are shaped
 /// into the Ed-Fi contract by <c>FrameworkErrorResponseMiddleware</c>, independent of route and
 /// authentication scheme, while already-structured errors and success/204 responses are left alone and
-/// existing headers (WWW-Authenticate, Allow) are preserved (DMS-1218 INV-25…29).
+/// existing headers (WWW-Authenticate, Allow) are preserved (DMS-1218 INV-25…29). This is a non-fixture
+/// container; the runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
-[TestFixture]
 public class FrameworkErrorResponseTests
 {
     private static WebApplicationFactory<Program> CreateFactory(
@@ -79,8 +79,9 @@ public class FrameworkErrorResponseTests
         });
     }
 
-    private static async Task AssertShapedContractAsync(
+    private static void AssertShapedContract(
         HttpResponseMessage response,
+        JsonObject body,
         HttpStatusCode status,
         string type,
         string title,
@@ -89,9 +90,6 @@ public class FrameworkErrorResponseTests
     {
         response.StatusCode.Should().Be(status);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        string content = await response.Content.ReadAsStringAsync();
-        JsonNode body = JsonNode.Parse(content)!;
         body["type"]!.GetValue<string>().Should().Be(type);
         body["title"]!.GetValue<string>().Should().Be(title);
         body["detail"]!.GetValue<string>().Should().Be(detail);
@@ -101,167 +99,357 @@ public class FrameworkErrorResponseTests
         body["errors"]!.AsArray().Count.Should().Be(0);
     }
 
-    [Test]
-    public async Task Production_jwt_challenge_returns_shaped_401_and_preserves_www_authenticate()
+    private static async Task<JsonObject> ReadBodyAsync(HttpResponseMessage response) =>
+        JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+
+    /// <summary>Production JWT bearer challenge (no token) on a secured endpoint.</summary>
+    [TestFixture]
+    public class Given_a_production_jwt_challenge
     {
-        using var factory = CreateFactory(addTestAuthentication: false);
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
 
-        var response = await client.GetAsync("/management/current-claims");
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: false);
+            _client = _factory.CreateClient();
+            _response = await _client.GetAsync("/management/current-claims");
+            _body = await ReadBodyAsync(_response);
+        }
 
-        await AssertShapedContractAsync(
-            response,
-            HttpStatusCode.Unauthorized,
-            "urn:ed-fi:api:security:authentication",
-            "Authentication Failed",
-            "Authentication is required to access this resource."
-        );
-        response.Headers.WwwAuthenticate.Select(header => header.Scheme).Should().Contain("Bearer");
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_shaped_authentication_contract() =>
+            AssertShapedContract(
+                _response,
+                _body,
+                HttpStatusCode.Unauthorized,
+                "urn:ed-fi:api:security:authentication",
+                "Authentication Failed",
+                "Authentication is required to access this resource."
+            );
+
+        [Test]
+        public void It_preserves_the_www_authenticate_header() =>
+            _response.Headers.WwwAuthenticate.Select(header => header.Scheme).Should().Contain("Bearer");
     }
 
-    [Test]
-    public async Task Test_auth_missing_scope_returns_shaped_401()
+    /// <summary>TestAuthHandler with no scope header fails authentication → scheme-independent 401.</summary>
+    [TestFixture]
+    public class Given_test_auth_with_a_missing_scope
     {
-        using var factory = CreateFactory(addTestAuthentication: true);
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
 
-        // No X-Test-Scope header → TestAuthHandler fails authentication, scheme-independent of JWT.
-        var response = await client.GetAsync("/management/current-claims");
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: true);
+            _client = _factory.CreateClient();
+            _response = await _client.GetAsync("/management/current-claims");
+            _body = await ReadBodyAsync(_response);
+        }
 
-        await AssertShapedContractAsync(
-            response,
-            HttpStatusCode.Unauthorized,
-            "urn:ed-fi:api:security:authentication",
-            "Authentication Failed",
-            "Authentication is required to access this resource."
-        );
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_shaped_authentication_contract() =>
+            AssertShapedContract(
+                _response,
+                _body,
+                HttpStatusCode.Unauthorized,
+                "urn:ed-fi:api:security:authentication",
+                "Authentication Failed",
+                "Authentication is required to access this resource."
+            );
     }
 
-    [Test]
-    public async Task Test_auth_insufficient_scope_returns_shaped_403()
+    /// <summary>TestAuthHandler with a read-only scope on an admin-only endpoint → 403.</summary>
+    [TestFixture]
+    public class Given_test_auth_with_an_insufficient_scope
     {
-        using var factory = CreateFactory(addTestAuthentication: true);
-        using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.ReadOnlyScope.Name);
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
 
-        // reload-claims requires AdminScope, so a read-only principal is authenticated but forbidden.
-        var response = await client.PostAsync(
-            "/management/reload-claims",
-            new StringContent("{}", Encoding.UTF8, "application/json")
-        );
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: true);
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.ReadOnlyScope.Name);
+            _response = await _client.PostAsync(
+                "/management/reload-claims",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+            _body = await ReadBodyAsync(_response);
+        }
 
-        await AssertShapedContractAsync(
-            response,
-            HttpStatusCode.Forbidden,
-            "urn:ed-fi:api:security:authorization",
-            "Authorization Failed",
-            "The authenticated client is not authorized to access this resource."
-        );
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_shaped_authorization_contract() =>
+            AssertShapedContract(
+                _response,
+                _body,
+                HttpStatusCode.Forbidden,
+                "urn:ed-fi:api:security:authorization",
+                "Authorization Failed",
+                "The authenticated client is not authorized to access this resource."
+            );
     }
 
-    [Test]
-    public async Task Unknown_route_returns_shaped_404_even_for_a_health_lookalike_path()
+    /// <summary>An unmatched, health-lookalike route proves there are no route/health exclusions.</summary>
+    [TestFixture]
+    public class Given_an_unknown_health_lookalike_route
     {
-        using var factory = CreateFactory(addTestAuthentication: false);
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
 
-        // A health-lookalike path proves the shaping middleware applies no route/health exclusions.
-        var response = await client.GetAsync("/healthcheck");
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: false);
+            _client = _factory.CreateClient();
+            _response = await _client.GetAsync("/healthcheck");
+            _body = await ReadBodyAsync(_response);
+        }
 
-        await AssertShapedContractAsync(
-            response,
-            HttpStatusCode.NotFound,
-            "urn:ed-fi:api:not-found",
-            "Not Found",
-            "The requested resource could not be found."
-        );
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_shaped_not_found_contract() =>
+            AssertShapedContract(
+                _response,
+                _body,
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:api:not-found",
+                "Not Found",
+                "The requested resource could not be found."
+            );
     }
 
-    [Test]
-    public async Task Wrong_method_returns_shaped_405_and_preserves_the_allow_header()
+    /// <summary>A GET-only route hit with DELETE → routing 405 with an Allow header.</summary>
+    [TestFixture]
+    public class Given_a_wrong_http_method
     {
-        using var factory = CreateFactory(addTestAuthentication: false);
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
 
-        // /health is mapped for GET only; DELETE yields a routing 405 with an Allow header.
-        var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/health"));
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: false);
+            _client = _factory.CreateClient();
+            _response = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/health"));
+            _body = await ReadBodyAsync(_response);
+        }
 
-        await AssertShapedContractAsync(
-            response,
-            HttpStatusCode.MethodNotAllowed,
-            "urn:ed-fi:api:method-not-allowed",
-            "Method Not Allowed",
-            "The request construction was invalid."
-        );
-        response.Content.Headers.Allow.Should().Contain("GET");
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_shaped_method_not_allowed_contract() =>
+            AssertShapedContract(
+                _response,
+                _body,
+                HttpStatusCode.MethodNotAllowed,
+                "urn:ed-fi:api:method-not-allowed",
+                "Method Not Allowed",
+                "The request construction was invalid."
+            );
+
+        [Test]
+        public void It_preserves_the_allow_header() =>
+            _response.Content.Headers.Allow.Should().Contain("GET");
     }
 
-    [Test]
-    public async Task Unsupported_media_type_returns_shaped_415()
+    /// <summary>An authenticated JSON endpoint receiving text/plain → negotiated 415.</summary>
+    [TestFixture]
+    public class Given_an_unsupported_media_type
     {
-        using var factory = CreateFactory(addTestAuthentication: true);
-        using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
 
-        // upload-claims accepts application/json; text/plain is negotiated to a 415 before the handler.
-        var response = await client.PostAsync(
-            "/management/upload-claims",
-            new StringContent("plain text", Encoding.UTF8, "text/plain")
-        );
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: true);
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+            _response = await _client.PostAsync(
+                "/management/upload-claims",
+                new StringContent("plain text", Encoding.UTF8, "text/plain")
+            );
+            _body = await ReadBodyAsync(_response);
+        }
 
-        await AssertShapedContractAsync(
-            response,
-            HttpStatusCode.UnsupportedMediaType,
-            "urn:ed-fi:api:unsupported-media-type",
-            "Unsupported Media Type",
-            "The value specified in the 'Content-Type' header is not supported by this host."
-        );
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_shaped_unsupported_media_type_contract() =>
+            AssertShapedContract(
+                _response,
+                _body,
+                HttpStatusCode.UnsupportedMediaType,
+                "urn:ed-fi:api:unsupported-media-type",
+                "Unsupported Media Type",
+                "The value specified in the 'Content-Type' header is not supported by this host."
+            );
     }
 
-    [Test]
-    public async Task Existing_structured_404_is_left_unchanged()
+    /// <summary>A module that already returns a structured 404 must not be clobbered.</summary>
+    [TestFixture]
+    public class Given_an_existing_structured_404
     {
-        using var factory = CreateFactory(addTestAuthentication: true, dangerousFlag: false);
-        using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
 
-        // The module already returns a structured 404 here; the shaping middleware must not clobber it.
-        var response = await client.GetAsync("/management/current-claims");
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: true, dangerousFlag: false);
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+            _response = await _client.GetAsync("/management/current-claims");
+            _body = await ReadBodyAsync(_response);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-        string content = await response.Content.ReadAsStringAsync();
-        JsonNode body = JsonNode.Parse(content)!;
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
-        body["detail"]!.GetValue<string>().Should().Be("Current claims endpoint is not available.");
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_404() => _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        [Test]
+        public void It_keeps_the_not_found_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+
+        [Test]
+        public void It_preserves_the_module_specific_detail() =>
+            _body["detail"]!.GetValue<string>().Should().Be("Current claims endpoint is not available.");
     }
 
-    [Test]
-    public async Task Health_endpoint_200_is_left_unchanged()
+    /// <summary>A 200 success (health) is never shaped.</summary>
+    [TestFixture]
+    public class Given_a_health_success
     {
-        using var factory = CreateFactory(addTestAuthentication: false);
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
 
-        var response = await client.GetAsync("/health");
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: false);
+            _client = _factory.CreateClient();
+            _response = await _client.GetAsync("/health");
+            _content = await _response.Content.ReadAsStringAsync();
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/problem+json");
-        (await response.Content.ReadAsStringAsync()).Should().NotBeNullOrEmpty();
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_is_not_problem_details() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/problem+json");
+
+        [Test]
+        public void It_keeps_its_body() => _content.Should().NotBeNullOrEmpty();
     }
 
-    [Test]
-    public async Task Cors_preflight_204_is_left_unchanged()
+    /// <summary>A CORS preflight 204 is never shaped and stays empty.</summary>
+    [TestFixture]
+    public class Given_a_cors_preflight
     {
-        using var factory = CreateFactory(addTestAuthentication: false);
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
 
-        var request = new HttpRequestMessage(HttpMethod.Options, "/health");
-        request.Headers.Add("Origin", "http://localhost:8082");
-        request.Headers.Add("Access-Control-Request-Method", "GET");
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(addTestAuthentication: false);
+            _client = _factory.CreateClient();
+            var request = new HttpRequestMessage(HttpMethod.Options, "/health");
+            request.Headers.Add("Origin", "http://localhost:8082");
+            request.Headers.Add("Access-Control-Request-Method", "GET");
+            _response = await _client.SendAsync(request);
+            _content = await _response.Content.ReadAsStringAsync();
+        }
 
-        var response = await client.SendAsync(request);
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        [Test]
+        public void It_returns_204() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_has_an_empty_body() => _content.Should().BeEmpty();
     }
 }
