@@ -690,14 +690,15 @@ public abstract class ClaimsManagementModuleTests
                     [
                         new ClaimsFailure("Validation", "must not be empty", "$.claimSets[0].name"),
                         new ClaimsFailure("Validation", "must be unique", "$.claimSets[0].name"),
-                        new ClaimsFailure("Validation", "unknown claim", "$.claimsHierarchy[0]"),
+                        // Surrounding whitespace proves the path is trimmed before becoming the key.
+                        new ClaimsFailure("Validation", "unknown claim", "  $.claimsHierarchy[0]  "),
                     ]
                 )
             );
         }
 
         [Test]
-        public async Task It_should_group_validation_errors_by_path()
+        public async Task It_should_group_validation_errors_by_trimmed_path_with_exact_messages()
         {
             var response = await Client.PostAsync(UploadClaimsRoute, NonEmptyUploadBody());
             await AssertDataValidationContract(
@@ -705,8 +706,20 @@ public abstract class ClaimsManagementModuleTests
                 validationErrors =>
                 {
                     validationErrors.Count.Should().Be(2);
-                    validationErrors["$.claimSets[0].name"]!.AsArray().Count.Should().Be(2);
-                    validationErrors["$.claimsHierarchy[0]"]!.AsArray().Count.Should().Be(1);
+
+                    validationErrors["$.claimSets[0].name"]!
+                        .AsArray()
+                        .Select(n => n!.GetValue<string>())
+                        .Should()
+                        .Equal("must not be empty", "must be unique");
+
+                    // Keyed by the trimmed path, not the whitespace-padded original.
+                    validationErrors.ContainsKey("  $.claimsHierarchy[0]  ").Should().BeFalse();
+                    validationErrors["$.claimsHierarchy[0]"]!
+                        .AsArray()
+                        .Select(n => n!.GetValue<string>())
+                        .Should()
+                        .Equal("unknown claim");
                 }
             );
         }
