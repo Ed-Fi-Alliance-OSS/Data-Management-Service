@@ -803,7 +803,7 @@
         {
           "is_identity_component": false,
           "is_required": false,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentReference",
           "table": {
             "schema": "edfi",
@@ -827,7 +827,7 @@
         {
           "is_identity_component": false,
           "is_required": false,
-          "is_role_named": false,
+          "is_role_named": true,
           "descriptor_value_path": "$.primarySchoolTypeDescriptor",
           "table": {
             "schema": "edfi",
@@ -842,7 +842,7 @@
         {
           "is_identity_component": false,
           "is_required": false,
-          "is_role_named": false,
+          "is_role_named": true,
           "descriptor_value_path": "$.secondarySchoolTypeDescriptor",
           "table": {
             "schema": "edfi",

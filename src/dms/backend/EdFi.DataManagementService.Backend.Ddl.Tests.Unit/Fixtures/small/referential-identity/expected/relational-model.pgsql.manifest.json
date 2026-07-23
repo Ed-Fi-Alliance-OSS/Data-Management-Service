@@ -2979,7 +2979,7 @@
         {
           "is_identity_component": true,
           "is_required": true,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.edOrgDependentResourceReference",
           "table": {
             "schema": "edfi",
@@ -3503,7 +3503,7 @@
         {
           "is_identity_component": true,
           "is_required": true,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.resourceAReference",
           "table": {
             "schema": "edfi",
@@ -3530,7 +3530,7 @@
         {
           "is_identity_component": true,
           "is_required": true,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.resourceBReference",
           "table": {
             "schema": "edfi",
@@ -3739,7 +3739,7 @@
         {
           "is_identity_component": true,
           "is_required": true,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentReference",
           "table": {
             "schema": "edfi",
@@ -3943,7 +3943,7 @@
         {
           "is_identity_component": true,
           "is_required": true,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.studentReference",
           "table": {
             "schema": "edfi",
@@ -4430,7 +4430,7 @@
         {
           "is_identity_component": true,
           "is_required": true,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.schoolReference",
           "table": {
             "schema": "edfi",
