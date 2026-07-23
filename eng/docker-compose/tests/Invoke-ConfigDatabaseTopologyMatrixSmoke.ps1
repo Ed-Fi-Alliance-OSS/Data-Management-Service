@@ -31,11 +31,14 @@
     run, yet the dedicated configuration database exists with the CMS schema) therefore proves CMS
     EnsureDatabase created it.
 
-    The script is intentionally MANUAL: it is not a *.Tests.ps1 spec, is not discovered by the
-    Pester suite, and is not wired into CI (it needs a Docker daemon). It formalizes the manual
-    engine-by-topology-by-identity-provider validation the reviewer asked to be made durable, so the
-    acceptance matrix is repeatable and observable rather than an ad-hoc console session. The continuous, CI-runnable
-    regression guard for the same contract lives in DatabaseEngineEnvironmentFile.Tests.ps1
+    The script is not a *.Tests.ps1 spec and is not discovered by the Pester suite: it needs a live
+    Docker daemon, so it runs from its own workflow (config-database-topology-matrix.yml) rather than
+    the Bootstrap Pester lane. That workflow drives this same script - enforcing the
+    {PostgreSQL, SQL Server} x {shared, separate} self-contained cells on pull requests and adding the
+    Keycloak identity-provider cells on its scheduled and manual runs - and the script stays directly
+    runnable for the full matrix locally. It formalizes the engine-by-topology-by-identity-provider
+    validation as a repeatable, observable matrix rather than an ad-hoc console session. A lighter,
+    always-on regression guard for the same contract lives in DatabaseEngineEnvironmentFile.Tests.ps1
     ("Configuration database topology matrix").
 
     Prerequisites:
@@ -76,6 +79,13 @@
 .PARAMETER ResultsPath
     Optional path; if supplied, writes a JSON summary of the run (per-cell status + timings).
 
+.PARAMETER DiagnosticLogDirectory
+    Optional path; when supplied, a failing cell captures its container logs into an
+    engine/topology/identity-provider subdirectory here BEFORE the next cell's teardown (or the final
+    teardown) removes them - a post-run export cannot, because every cell is torn down before the next
+    one and again at the end. Capture failures warn only and never replace the cell's original topology
+    failure. Intended for CI diagnostics, uploaded as an artifact on failure.
+
 .EXAMPLE
     # Full matrix (engine x topology x identity provider) against the existing local image
     pwsh ./Invoke-ConfigDatabaseTopologyMatrixSmoke.ps1 -SkipDockerBuild
@@ -108,7 +118,9 @@ param(
 
     [switch]$SkipTeardown,
 
-    [string]$ResultsPath
+    [string]$ResultsPath,
+
+    [string]$DiagnosticLogDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -233,6 +245,57 @@ function Invoke-MatrixTeardown {
     }
 }
 
+function Save-CellDiagnosticLog {
+    param(
+        [Parameter(Mandatory)] [string]$Engine,
+        [Parameter(Mandatory)] [string]$Topology,
+        [Parameter(Mandatory)] [string]$IdentityProvider,
+        [Parameter(Mandatory)] [string]$RootDirectory
+    )
+
+    # Best-effort CI diagnostics: capture this cell's container logs BEFORE the next cell's pre-cell
+    # teardown (or the final teardown) removes them. Every failure here warns and returns; it must never
+    # replace the cell's original topology failure, so the whole capture is guarded. A native docker
+    # command that exits non-zero does NOT throw merely by being inside try/catch, so $LASTEXITCODE is
+    # checked right after each invocation and a non-zero exit is turned into an exception inside these
+    # guarded scopes - otherwise a failed 'docker ps' would look like "no containers" and a failed
+    # 'docker logs' would write an error file yet still be reported as a success.
+    try {
+        $cellDirectory = Join-Path $RootDirectory "$Engine-$Topology-$IdentityProvider"
+        New-Item -ItemType Directory -Force -Path $cellDirectory | Out-Null
+
+        $rawNames = docker ps -a --format "{{.Names}}" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker ps failed with exit code $LASTEXITCODE. Output: $rawNames"
+        }
+
+        $containers = @($rawNames | ForEach-Object { "$_".Trim() } | Where-Object { $_ -ne "" })
+        if ($containers.Count -eq 0) {
+            Write-Host "[topology-smoke] no containers present to capture for $Engine/$Topology/$IdentityProvider."
+            return
+        }
+
+        $capturedCount = 0
+        foreach ($container in $containers) {
+            try {
+                $logPath = Join-Path $cellDirectory "$container.log"
+                docker logs $container > $logPath 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    throw "docker logs failed with exit code $LASTEXITCODE (see $logPath)"
+                }
+                $capturedCount++
+            }
+            catch {
+                Write-Warning "[topology-smoke] could not capture logs for container '$container': $($_.Exception.Message)"
+            }
+        }
+        Write-Host "[topology-smoke] captured logs for $capturedCount of $($containers.Count) container(s) for $Engine/$Topology/$IdentityProvider under $cellDirectory."
+    }
+    catch {
+        Write-Warning "[topology-smoke] diagnostic log capture failed for $Engine/$Topology/${IdentityProvider}: $($_.Exception.Message)"
+    }
+}
+
 function Invoke-Cell {
     param(
         [Parameter(Mandatory)] [string]$Engine,
@@ -343,6 +406,13 @@ function Invoke-Cell {
         $status = "failed"
         $errorMessage = $_.Exception.Message
         Write-Host "[topology-smoke] FAIL: $Engine / $Topology / $IdentityProvider -> $errorMessage" -ForegroundColor Red
+
+        # Capture this cell's container logs now, before the next cell's pre-cell teardown or the final
+        # teardown removes them. Guarded inside the helper so a diagnostics failure never masks the
+        # topology error recorded above.
+        if (-not [string]::IsNullOrWhiteSpace($DiagnosticLogDirectory)) {
+            Save-CellDiagnosticLog -Engine $Engine -Topology $Topology -IdentityProvider $IdentityProvider -RootDirectory $DiagnosticLogDirectory
+        }
     }
     finally {
         $duration = (Get-Date) - $startTime
