@@ -1,4 +1,4 @@
-# Relational Document Projection and CDC/Kafka
+# Relational Document Projection (Cache) and CDC/Kafka
 
 ## DMS-1245 and DMS-1246 design
 
@@ -9,10 +9,10 @@ Ed-Fi Data Management Service — API 8.1
 # Decisions
 
 - Relational tables remain authoritative.
-- DMS maintains a rebuildable API-shaped projection independently of the API write path.
+- DMS maintains a rebuildable API-shaped projection (cache) independently of the API write path.
 - CDC reads database logs; DMS never dual-writes to Kafka.
-- Cache upserts publish document state.
-- `dms.Document` deletes publish tombstones.
+- Cache upserts publish document state to Kafka.
+- `dms.Document` deletes publish tombstones to Kafka.
 - Normal API correctness never depends on projection or Kafka.
 
 ---
