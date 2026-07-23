@@ -65,11 +65,63 @@ BeforeAll {
             DockerCalls = $calls
         }
     }
+
+    # Leak guard (fixed in the OWNING suite, not with cleanup in a later one): snapshot caller-owned global
+    # state, temporarily ISOLATE it so the suite's own stubs operate on clean state, and restore it EXACTLY in
+    # AfterAll. The docker stubs must be GLOBAL (a module's '& docker' resolves module + global scope only),
+    # and a caller-owned global 'docker' ALIAS would shadow the function stubs - so both the caller's global
+    # docker function and alias are removed for the duration and restored afterward (the alias with its full
+    # definition/options/description). Invoking the start scripts also sets DMS_* runtime variables and
+    # $global:LASTEXITCODE in-process, so those are snapshotted and restored too.
+    $script:leakGuardDockerFn = if (Test-Path -LiteralPath Function:docker) { (Get-Item -LiteralPath Function:docker).ScriptBlock } else { $null }
+    $script:leakGuardDockerAlias = Get-Alias -Name docker -Scope Global -ErrorAction SilentlyContinue
+    $script:leakGuardLastExit = $global:LASTEXITCODE
+    $script:leakGuardEnv = @{}
+    Get-ChildItem Env: | ForEach-Object { $script:leakGuardEnv[$_.Name] = $_.Value }
+    if ($null -ne $script:leakGuardDockerAlias) { Remove-Alias -Name docker -Scope Global -Force -ErrorAction SilentlyContinue }
+    if ($null -ne $script:leakGuardDockerFn) { Remove-Item -LiteralPath Function:docker -Force -ErrorAction SilentlyContinue }
 }
 
 AfterAll {
+    # Leak guard: the caller's global docker function/alias were isolated at suite start, so ANY global
+    # 'docker' function/alias present now was created by a test and not cleaned up - likewise any
+    # *_DOCKER_CAPTURE / *_COMPOSE_JSON / DMS_SCHEMA_TOOL_PATH test variable. Detect those, then restore the
+    # snapshot EXACTLY - the docker function and the alias (definition/options/description), $global:LASTEXITCODE,
+    # and every DMS_* variable the start scripts changed - so a later suite in the same session (e.g. the
+    # RuntimeConfigContract live Compose oracle) starts from clean state.
+    $leaked = [System.Collections.Generic.List[string]]::new()
+    $dockerFnNow = if (Test-Path -LiteralPath Function:docker) { (Get-Item -LiteralPath Function:docker).ScriptBlock } else { $null }
+    if ($null -ne $dockerFnNow) { $leaked.Add("global 'docker' function") }
+    $dockerAliasNow = Get-Alias -Name docker -Scope Global -ErrorAction SilentlyContinue
+    if ($null -ne $dockerAliasNow) { $leaked.Add("global 'docker' alias") }
+    foreach ($e in @(Get-ChildItem Env: | Where-Object { $_.Name -like '*_DOCKER_CAPTURE' -or $_.Name -like '*_COMPOSE_JSON' -or $_.Name -eq 'DMS_SCHEMA_TOOL_PATH' })) {
+        if (-not $script:leakGuardEnv.ContainsKey($e.Name)) { $leaked.Add("test env var $($e.Name)") }
+    }
+
+    # Restore the caller's snapshot EXACTLY: remove any test-created docker function/alias, reinstate the
+    # caller's function and alias (full metadata), restore $global:LASTEXITCODE, and undo every DMS_* variable
+    # the suite added or changed.
+    if ($null -ne $dockerFnNow) { Remove-Item -LiteralPath Function:docker -Force -ErrorAction SilentlyContinue }
+    if ($null -ne $script:leakGuardDockerFn) { Set-Item -LiteralPath Function:global:docker -Value $script:leakGuardDockerFn }
+    if ($null -ne $dockerAliasNow) { Remove-Alias -Name docker -Scope Global -Force -ErrorAction SilentlyContinue }
+    if ($null -ne $script:leakGuardDockerAlias) {
+        Set-Alias -Name docker -Value $script:leakGuardDockerAlias.Definition -Option $script:leakGuardDockerAlias.Options -Description $script:leakGuardDockerAlias.Description -Scope Global -Force
+    }
+    $global:LASTEXITCODE = $script:leakGuardLastExit
+    foreach ($e in @(Get-ChildItem Env: | Where-Object { $_.Name -like 'DMS_*' })) {
+        if (-not $script:leakGuardEnv.ContainsKey($e.Name)) { Remove-Item -LiteralPath "Env:$($e.Name)" -ErrorAction SilentlyContinue }
+    }
+    foreach ($name in @($script:leakGuardEnv.Keys | Where-Object { $_ -like 'DMS_*' })) {
+        $current = (Get-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue).Value
+        if ($current -ne $script:leakGuardEnv[$name]) { Set-Item -LiteralPath "Env:$name" -Value $script:leakGuardEnv[$name] }
+    }
+
     if (Test-Path -LiteralPath $script:minimalEnvDir) {
         Remove-Item -Recurse -Force $script:minimalEnvDir -ErrorAction SilentlyContinue
+    }
+
+    if ($leaked.Count -gt 0) {
+        throw "StartScriptLifecycleParticipation left global state its per-test cleanup should have removed: $($leaked -join '; ')."
     }
 }
 
@@ -188,7 +240,7 @@ exit 0
             $priorCapture = $env:DMS_F7_DOCKER_CAPTURE
             $priorLastExit = $global:LASTEXITCODE
             $priorSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
-            $priorDockerFn = if (Test-Path -LiteralPath function:global:docker) { (Get-Item -LiteralPath function:global:docker).ScriptBlock } else { $null }
+            $priorDockerFn = if (Test-Path -LiteralPath Function:docker) { (Get-Item -LiteralPath Function:docker).ScriptBlock } else { $null }
             # Snapshot the FULL metadata (definition, options, description) of the GLOBAL 'docker' alias only -
             # never a nearer script/local alias - so restoration is exact and cannot migrate a narrower-scoped
             # alias into global state. Any nearer surviving alias/function shadow is caught by the unfiltered
@@ -202,14 +254,14 @@ exit 0
             # regression re-imported bootstrap-schema-tool with -Force and overwrote the shadows below. The
             # throwing global shadows remain as additional defense (-DbOnly never imports the module, so they
             # are not overwritten on the happy path). Snapshot/restore any pre-existing shadow definitions.
-            $priorResolveSchema = if (Test-Path -LiteralPath function:global:Resolve-DmsSchemaTool) { (Get-Item -LiteralPath function:global:Resolve-DmsSchemaTool).ScriptBlock } else { $null }
-            $priorResolveValidator = if (Test-Path -LiteralPath function:global:Resolve-DmsConnectionValidator) { (Get-Item -LiteralPath function:global:Resolve-DmsConnectionValidator).ScriptBlock } else { $null }
+            $priorResolveSchema = if (Test-Path -LiteralPath Function:Resolve-DmsSchemaTool) { (Get-Item -LiteralPath Function:Resolve-DmsSchemaTool).ScriptBlock } else { $null }
+            $priorResolveValidator = if (Test-Path -LiteralPath Function:Resolve-DmsConnectionValidator) { (Get-Item -LiteralPath Function:Resolve-DmsConnectionValidator).ScriptBlock } else { $null }
 
             $caught = $null
             $resolvedDocker = $null
             $derivedCreated = $false
             try {
-                if ($null -ne $priorDockerFn) { Remove-Item -LiteralPath function:global:docker -Force }
+                if ($null -ne $priorDockerFn) { Remove-Item -LiteralPath Function:docker -Force }
                 if ($null -ne $priorDockerAlias) { Remove-Alias -Name docker -Scope Global -Force }
                 $env:DMS_F7_DOCKER_CAPTURE = $captureFile
                 $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:f7Dir ("no-such-tool-" + [guid]::NewGuid().ToString("N") + ".exe")
@@ -244,9 +296,9 @@ exit 0
                 $derivedCreated = Test-Path -LiteralPath $derivedTarget
                 if ($derivedCreated) { Remove-Item -LiteralPath $derivedTarget -Force -ErrorAction SilentlyContinue }
 
-                if ($null -ne $priorResolveSchema) { Set-Item -LiteralPath function:global:Resolve-DmsSchemaTool -Value $priorResolveSchema } elseif (Test-Path -LiteralPath function:global:Resolve-DmsSchemaTool) { Remove-Item -LiteralPath function:global:Resolve-DmsSchemaTool -Force }
-                if ($null -ne $priorResolveValidator) { Set-Item -LiteralPath function:global:Resolve-DmsConnectionValidator -Value $priorResolveValidator } elseif (Test-Path -LiteralPath function:global:Resolve-DmsConnectionValidator) { Remove-Item -LiteralPath function:global:Resolve-DmsConnectionValidator -Force }
-                if ($null -ne $priorDockerFn) { Set-Item -LiteralPath function:global:docker -Value $priorDockerFn } elseif (Test-Path -LiteralPath function:global:docker) { Remove-Item -LiteralPath function:global:docker -Force }
+                if ($null -ne $priorResolveSchema) { Set-Item -LiteralPath Function:global:Resolve-DmsSchemaTool -Value $priorResolveSchema } elseif (Test-Path -LiteralPath Function:Resolve-DmsSchemaTool) { Remove-Item -LiteralPath Function:Resolve-DmsSchemaTool -Force }
+                if ($null -ne $priorResolveValidator) { Set-Item -LiteralPath Function:global:Resolve-DmsConnectionValidator -Value $priorResolveValidator } elseif (Test-Path -LiteralPath Function:Resolve-DmsConnectionValidator) { Remove-Item -LiteralPath Function:Resolve-DmsConnectionValidator -Force }
+                if ($null -ne $priorDockerFn) { Set-Item -LiteralPath Function:global:docker -Value $priorDockerFn } elseif (Test-Path -LiteralPath Function:docker) { Remove-Item -LiteralPath Function:docker -Force }
                 if ($null -ne $priorDockerAlias) { Set-Alias -Name docker -Value $priorDockerAlias.Definition -Option $priorDockerAlias.Options -Description $priorDockerAlias.Description -Scope Global -Force }
                 $env:PATH = $priorPath
                 if ($null -eq $priorCapture) { Remove-Item -LiteralPath Env:DMS_F7_DOCKER_CAPTURE -ErrorAction SilentlyContinue } else { $env:DMS_F7_DOCKER_CAPTURE = $priorCapture }
@@ -361,7 +413,7 @@ exit 0
             # finally block, keeping the test independent of suite order and clean in a developer session
             # that already has these set (e.g. a real DMS_SCHEMA_TOOL_PATH). A $null snapshot means "was not
             # set" and is restored by removing the variable, not by leaving an empty string behind.
-            $dockerFn = if (Test-Path -LiteralPath function:global:docker) { (Get-Item -LiteralPath function:global:docker).ScriptBlock } else { $null }
+            $dockerFn = if (Test-Path -LiteralPath Function:docker) { (Get-Item -LiteralPath Function:docker).ScriptBlock } else { $null }
             $priorCapture = $env:DMS_PREFLIGHT_DOCKER_CAPTURE
             $priorToolPath = $env:DMS_SCHEMA_TOOL_PATH
             $priorComposeJson = $env:DMS_PREFLIGHT_COMPOSE_JSON
@@ -396,8 +448,8 @@ exit 0
             finally {
                 # Restore the docker function to exactly its prior state: reinstate the caller's own stub if
                 # one existed, otherwise remove the function this helper created.
-                if ($null -ne $dockerFn) { Set-Item -LiteralPath function:global:docker -Value $dockerFn }
-                else { Remove-Item -LiteralPath function:global:docker -ErrorAction SilentlyContinue }
+                if ($null -ne $dockerFn) { Set-Item -LiteralPath Function:global:docker -Value $dockerFn }
+                else { Remove-Item -LiteralPath Function:docker -ErrorAction SilentlyContinue }
                 if ($null -eq $priorCapture) { Remove-Item -LiteralPath Env:DMS_PREFLIGHT_DOCKER_CAPTURE -ErrorAction SilentlyContinue } else { $env:DMS_PREFLIGHT_DOCKER_CAPTURE = $priorCapture }
                 if ($null -eq $priorToolPath) { Remove-Item -LiteralPath Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue } else { $env:DMS_SCHEMA_TOOL_PATH = $priorToolPath }
                 if ($null -eq $priorComposeJson) { Remove-Item -LiteralPath Env:DMS_PREFLIGHT_COMPOSE_JSON -ErrorAction SilentlyContinue } else { $env:DMS_PREFLIGHT_COMPOSE_JSON = $priorComposeJson }
@@ -565,7 +617,7 @@ exit 0
             $captureFile = Join-Path $script:f9Dir ("docker-" + [guid]::NewGuid().ToString("N") + ".log")
             $outputFile = Join-Path $script:f9Dir ("output-" + [guid]::NewGuid().ToString("N") + ".log")
 
-            $dockerFn = if (Test-Path -LiteralPath function:global:docker) { (Get-Item -LiteralPath function:global:docker).ScriptBlock } else { $null }
+            $dockerFn = if (Test-Path -LiteralPath Function:docker) { (Get-Item -LiteralPath Function:docker).ScriptBlock } else { $null }
             $priorCapture = $env:DMS_F9_DOCKER_CAPTURE
             $priorToolPath = $env:DMS_SCHEMA_TOOL_PATH
             $priorComposeJson = $env:DMS_F9_COMPOSE_JSON
@@ -594,7 +646,7 @@ exit 0
                 $caught = $_
             }
             finally {
-                if ($null -ne $dockerFn) { Set-Item -LiteralPath function:global:docker -Value $dockerFn } else { Remove-Item -LiteralPath function:global:docker -ErrorAction SilentlyContinue }
+                if ($null -ne $dockerFn) { Set-Item -LiteralPath Function:global:docker -Value $dockerFn } else { Remove-Item -LiteralPath Function:docker -ErrorAction SilentlyContinue }
                 if ($null -eq $priorCapture) { Remove-Item -LiteralPath Env:DMS_F9_DOCKER_CAPTURE -ErrorAction SilentlyContinue } else { $env:DMS_F9_DOCKER_CAPTURE = $priorCapture }
                 if ($null -eq $priorToolPath) { Remove-Item -LiteralPath Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue } else { $env:DMS_SCHEMA_TOOL_PATH = $priorToolPath }
                 if ($null -eq $priorComposeJson) { Remove-Item -LiteralPath Env:DMS_F9_COMPOSE_JSON -ErrorAction SilentlyContinue } else { $env:DMS_F9_COMPOSE_JSON = $priorComposeJson }
@@ -659,7 +711,7 @@ exit 0
         $captureFile = Join-Path $script:f9Dir ("image-" + [guid]::NewGuid().ToString("N") + ".log")
         $priorCapture = $env:DMS_F9_DOCKER_CAPTURE
         $priorLastExitCode = $global:LASTEXITCODE
-        $dockerFn = if (Test-Path -LiteralPath function:global:docker) { (Get-Item -LiteralPath function:global:docker).ScriptBlock } else { $null }
+        $dockerFn = if (Test-Path -LiteralPath Function:docker) { (Get-Item -LiteralPath Function:docker).ScriptBlock } else { $null }
         $env:DMS_F9_DOCKER_CAPTURE = $captureFile
 
         Mock -ModuleName 'bootstrap-schema-tool' Resolve-DmsSchemaTool { throw "In-repo api-schema-tools tool not found." }
@@ -691,7 +743,7 @@ exit 0
             $contract.CmsDatabaseName | Should -Be "edfi_datamanagementservice" -Because "the shared-topology CMS database is the datastore anchor, resolved through the image validator"
         }
         finally {
-            if ($null -ne $dockerFn) { Set-Item -LiteralPath function:global:docker -Value $dockerFn } else { Remove-Item -LiteralPath function:global:docker -ErrorAction SilentlyContinue }
+            if ($null -ne $dockerFn) { Set-Item -LiteralPath Function:global:docker -Value $dockerFn } else { Remove-Item -LiteralPath Function:docker -ErrorAction SilentlyContinue }
             if ($null -eq $priorCapture) { Remove-Item -LiteralPath Env:DMS_F9_DOCKER_CAPTURE -ErrorAction SilentlyContinue } else { $env:DMS_F9_DOCKER_CAPTURE = $priorCapture }
             $global:LASTEXITCODE = $priorLastExitCode
         }
