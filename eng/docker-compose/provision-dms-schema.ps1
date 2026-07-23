@@ -13,10 +13,11 @@
     selected CMS instances. The dialect (--dialect pgsql|mssql) is the effective
     DMS_DATASTORE provider (postgresql -> pgsql, mssql -> mssql; an unsupported value
     fails at the engine-token boundary), NOT inferred from the data store connection
-    string. The CMS-stored connection is then parsed under that
-    provider's required keys (PostgreSQL: host/database/username; SQL Server:
-    Server/Database/User Id); a stored connection for the other engine lacks those
-    keys and is rejected as a stale data store. The Docker-internal database host is
+    string. The CMS-stored connection is then parsed ONLY by the exact runtime provider
+    (SchemaTools `connection inspect`), so provider-valid aliases (e.g. Server=, User Id=, DB=)
+    are accepted exactly as the runtime accepts them; only a database is required. A connection
+    the selected provider rejects is a stale data store ONLY when the OTHER provider accepts it,
+    otherwise it is simply invalid for the selected provider. The Docker-internal database host is
     translated to the host-side mapped port before SchemaTools runs
     (dms-postgresql -> localhost:POSTGRES_PORT, dms-mssql -> 127.0.0.1,MSSQL_PORT).
 
@@ -184,116 +185,45 @@ function Resolve-EnvPlaceholdersInText {
     )
 }
 
-function ConvertTo-ConnectionStringBuilder {
+function Test-CmsEncryptedConnectionStringShape {
     <#
     .SYNOPSIS
-    Parses a connection string into a [System.Data.Common.DbConnectionStringBuilder]. Unlike a
-    naive ';' split, this correctly handles quoted values that themselves contain ';' or '=' (for
-    example password="abc;123"). Returns $null instead of throwing when -AllowParseFailure is set
-    and the input is not a valid connection string (used to detect CMS-encrypted base64 blobs).
-
-    Callers must use the explicit get_/set_ accessors on the returned builder: PowerShell's
-    property/indexer sugar (.ConnectionString, ['key'], .Keys) misbehaves on this
-    IDictionary-implementing type and silently fails to parse.
+    Pure STRUCTURAL test for a CMS-encrypted connection string. Returns $true only when the resolved value is
+    a standard base64 payload - the base64 alphabet with optional '=' padding and nothing else - that decodes
+    to a possible AES-CBC payload: at least 32 bytes (a 16-byte IV plus at least one 16-byte block) and a whole
+    number of 16-byte blocks. It interprets NO connection-string vocabulary, so a provider-valid
+    plaintext connection using ANY alias (e.g. DB=, Server=, User Id=) is never misread as ciphertext, and a
+    real connection string - which always carries a ';' or a mid-string '=' - can never match. This is the
+    plaintext-vs-ciphertext gate BEFORE the exact-provider `connection inspect`; the generic
+    DbConnectionStringBuilder is deliberately NOT used, so it cannot become a second parsing authority.
     #>
     param(
-        [string]
-        $ConnectionString,
-
-        [switch]
-        $AllowParseFailure
-    )
-
-    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-    try {
-        $builder.set_ConnectionString($ConnectionString)
-    }
-    catch {
-        if ($AllowParseFailure) {
-            return $null
-        }
-
-        throw "CMS data store connection string is not a valid connection string."
-    }
-
-    return $builder
-}
-
-function Get-ConnectionStringValue {
-    <#
-    .SYNOPSIS
-    Returns the first non-empty value among the supplied case-insensitive keys, or $null when none
-    is present. Used instead of direct indexer access because PowerShell's ['key'] sugar misbehaves
-    on DbConnectionStringBuilder.
-    #>
-    param(
-        [System.Data.Common.DbConnectionStringBuilder]
-        $Builder,
-
-        [string[]]
-        $Keys
-    )
-
-    foreach ($key in $Keys) {
-        if ($Builder.ContainsKey($key)) {
-            $value = [string]$Builder.get_Item($key)
-            if (-not [string]::IsNullOrWhiteSpace($value)) {
-                return $value
-            }
-        }
-    }
-
-    return $null
-}
-
-function Set-ConnectionStringValue {
-    <#
-    .SYNOPSIS
-    Updates or adds a value on the builder via set_Item: it overwrites the key when present or adds it
-    when absent, so host/port can be mutated without duplicating keys or disturbing any other stored
-    option. Unrelated options and their values are preserved; the emitted keyword casing is whatever the
-    builder normalizes it to.
-    #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mutates an in-memory builder object; no system state changes and no -WhatIf surface.')]
-    param(
-        [System.Data.Common.DbConnectionStringBuilder]
-        $Builder,
-
-        [string]
-        $Key,
-
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [AllowNull()]
         [string]
         $Value
     )
 
-    $Builder.set_Item($Key, $Value)
-}
-
-function Get-DatabaseNameFromConnectionString {
-    param(
-        [string]
-        $ConnectionString,
-
-        [switch]
-        $AllowMissing
-    )
-
-    # AllowParseFailure: a CMS-encrypted connection string is an opaque base64 blob that is not a
-    # valid connection string. Treat an unparseable value as "no database name" so the caller falls
-    # through to the decryption path rather than throwing here.
-    $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString -AllowParseFailure
-    if ($null -ne $builder) {
-        $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database", "initial catalog")
-        if (-not [string]::IsNullOrWhiteSpace($databaseName)) {
-            return $databaseName
-        }
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+    # A connection string carries ';', spaces, or a mid-string '='; a base64 blob is only the base64 alphabet
+    # with up to two trailing '=' padding characters.
+    if ($Value -notmatch '^[A-Za-z0-9+/]+={0,2}$') {
+        return $false
+    }
+    try {
+        $decodedBytes = [Convert]::FromBase64String($Value)
+    }
+    catch {
+        return $false
     }
 
-    if ($AllowMissing) {
-        return $null
-    }
-
-    throw "CMS data store connection string did not contain a database name."
+    # The CMS payload is a 16-byte AES IV followed by AES-CBC ciphertext, which is a positive whole number of
+    # 16-byte blocks; a genuine blob is therefore at least 32 bytes and a multiple of 16. This rejects short or
+    # oddly-sized base64 tokens (e.g. a 24-byte value) that cannot be an AES-CBC payload.
+    return ($decodedBytes.Length -ge 32 -and ($decodedBytes.Length % 16) -eq 0)
 }
 
 function Resolve-ExpectedProvisioningDialect {
@@ -326,95 +256,107 @@ function Resolve-ExpectedProvisioningDialect {
     }
 }
 
-function Convert-MssqlCmsConnectionStringToHostSideTarget {
+function Test-ProvisionTargetEquivalent {
     <#
     .SYNOPSIS
-    Builds an effective host-side SQL Server provisioning target from a CMS-stored data store
-    connection string. Translates the Docker-internal server (Server=dms-mssql[,1433]) to the
-    host-side 127.0.0.1,MSSQL_PORT while preserving the user, password, database, and every
-    other stored option. A non-Docker server (e.g. an external SQL Server configured per
-    instance) is preserved as-is.
+    Provider-aware equivalence for two effective provisioning targets, using the actual comparers (never a
+    derived lowercase string key, which does not implement OrdinalIgnoreCase). Two targets are equivalent -
+    and share one SchemaTools invocation - only when their engine (ordinal), translated host
+    (OrdinalIgnoreCase), effective port (normalized integer), database (the engine's own comparer via
+    Get-DatabaseNameComparer: PostgreSQL case-sensitive, SQL Server case-insensitive), and username/auth
+    identity (ordinal, blank tolerated) all match.
     #>
     param(
-        [Parameter(Mandatory)]
-        [System.Data.Common.DbConnectionStringBuilder]
-        $Builder,
-
-        [Parameter(Mandatory)]
-        [hashtable]
-        $EnvValues
+        [Parameter(Mandatory)] $Left,
+        [Parameter(Mandatory)] $Right
     )
 
-    # SQL Server accepts either Database or Initial Catalog for the database name.
-    $databaseName = Get-ConnectionStringValue -Builder $Builder -Keys @("database", "initial catalog")
-    if ([string]::IsNullOrWhiteSpace($databaseName)) {
-        throw "CMS data store connection string did not contain a database name."
+    if (-not [System.StringComparer]::Ordinal.Equals([string]$Left.Engine, [string]$Right.Engine)) {
+        return $false
+    }
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$Left.Host, [string]$Right.Host)) {
+        return $false
     }
 
-    $server = Get-ConnectionStringValue -Builder $Builder -Keys @("server", "data source")
-    if ([string]::IsNullOrWhiteSpace($server)) {
-        throw "CMS data store connection string is missing the server key."
+    # Compare the port as a normalized integer so "5432" and "05432" are one target; if either side is not an
+    # integer, fall back to an exact ordinal comparison rather than silently coercing.
+    $leftPortValue = 0
+    $rightPortValue = 0
+    $leftPortIsInt = [int]::TryParse([string]$Left.Port, [ref]$leftPortValue)
+    $rightPortIsInt = [int]::TryParse([string]$Right.Port, [ref]$rightPortValue)
+    if ($leftPortIsInt -and $rightPortIsInt) {
+        if ($leftPortValue -ne $rightPortValue) { return $false }
+    }
+    elseif (-not [System.StringComparer]::Ordinal.Equals([string]$Left.Port, [string]$Right.Port)) {
+        return $false
     }
 
-    $instanceUser = Get-ConnectionStringValue -Builder $Builder -Keys @("user id", "uid")
-    if ([string]::IsNullOrWhiteSpace($instanceUser)) {
-        throw "CMS data store connection string is missing the user id key."
+    $databaseComparer = Get-DatabaseNameComparer -Engine ([string]$Left.Engine)
+    if (-not $databaseComparer.Equals([string]$Left.DatabaseName, [string]$Right.DatabaseName)) {
+        return $false
+    }
+    if (-not [System.StringComparer]::Ordinal.Equals([string]$Left.Username, [string]$Right.Username)) {
+        return $false
+    }
+    return $true
+}
+
+function Group-ProvisionTarget {
+    <#
+    .SYNOPSIS
+    Partitions effective provisioning targets into equivalence groups using Test-ProvisionTargetEquivalent
+    (the comparers themselves), so two instances pointing at the same physical database under the engine's
+    identity semantics share one SchemaTools invocation. Returns a list of { Representative; Targets } - the
+    representative is the first target of each group; Targets carries every member (for the collected data
+    store ids). No string key and no Group-Object, so an OrdinalIgnoreCase relation that a lowercase key would
+    mis-collapse (e.g. the Kelvin sign) is grouped correctly, and no delimiter can collapse distinct targets.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure function: partitions in-memory records; no system state changes and no -WhatIf surface.')]
+    param(
+        [object[]]
+        $Targets = @()
+    )
+
+    $groups = [System.Collections.Generic.List[object]]::new()
+    foreach ($target in $Targets) {
+        $matchedGroup = $null
+        foreach ($group in $groups) {
+            if (Test-ProvisionTargetEquivalent -Left $group.Representative -Right $target) {
+                $matchedGroup = $group
+                break
+            }
+        }
+        if ($null -ne $matchedGroup) {
+            [void]$matchedGroup.Targets.Add($target)
+        }
+        else {
+            $members = [System.Collections.Generic.List[object]]::new()
+            [void]$members.Add($target)
+            $groups.Add([pscustomobject]@{ Representative = $target; Targets = $members })
+        }
     }
 
-    # SQL Server encodes host and port together as "host,port" (and named instances as
-    # "host\instance"). Split off the host to decide whether this is the Docker-internal target.
-    $serverHost = ($server -split ',')[0].Trim()
-
-    $effectiveServer = $server
-    if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase)) {
-        $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1435"
-        # mssql.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
-        # SqlClient cannot resolve "localhost" to ::1 first and stall or fail on an IPv6 host.
-        $effectiveServer = "127.0.0.1,$mssqlPort"
-    }
-
-    # Mutate only the server; every other stored option (password, TrustServerCertificate,
-    # Encrypt, a password containing ';' or '=', etc.) is carried through verbatim and correctly
-    # re-quoted by the builder. Set whichever server key the source used so we never duplicate it.
-    $serverKey = if ($Builder.ContainsKey("data source")) { "data source" } else { "server" }
-    Set-ConnectionStringValue -Builder $Builder -Key $serverKey -Value $effectiveServer
-
-    $hostConnectionString = $Builder.get_ConnectionString()
-
-    # The port is encoded inside the server value for SQL Server; surface it for the summary.
-    $effectivePort =
-        if ($effectiveServer -match ',') { (($effectiveServer -split ',', 2)[1]).Trim() }
-        else { "1433" }
-
-    # TargetKey identifies an effective provisioning target so two instances pointing at the same
-    # physical database share a single SchemaTools invocation. The server value already encodes
-    # host + port.
-    $targetKey = ("{0}|{1}|{2}|{3}" -f
-        "mssql",
-        $effectiveServer.ToLowerInvariant(),
-        $databaseName.ToLowerInvariant(),
-        $instanceUser.ToLowerInvariant())
-
-    return [pscustomobject]@{
-        Dialect = "mssql"
-        Host = $effectiveServer
-        Port = $effectivePort
-        Username = $instanceUser
-        DatabaseName = $databaseName
-        HostConnectionString = $hostConnectionString
-        TargetKey = $targetKey
-    }
+    return , $groups.ToArray()
 }
 
 function Convert-CmsConnectionStringToHostSideTarget {
     <#
     .SYNOPSIS
-    Builds an effective host-side provisioning target from a single CMS-stored data store
-    connection string. Translates the Docker-internal PostgreSQL hostname/port to the host-side
-    mapped port while preserving the instance-specific username, password, and database name.
-    Non-Docker hosts (e.g. external PostgreSQL servers configured per instance) are preserved
-    as-is. SQL Server connection strings are dispatched to
-    Convert-MssqlCmsConnectionStringToHostSideTarget.
+    Builds an effective host-side provisioning target from a single CMS-stored data store connection string.
+    The connection string is parsed ONLY by the exact runtime provider (SchemaTools `connection inspect`),
+    never a generic PowerShell builder, so a provider-valid alias (e.g. the Npgsql aliases Server= for Host
+    and User Id= for Username) is accepted exactly as the Configuration Service accepts it at runtime.
+
+    The provisioning engine is the effective DMS_DATASTORE (canonicalized), never inferred from the string.
+    Classification of a string the selected provider rejects:
+      * valid under the OTHER engine  -> a genuine stale data store from a previous run with the other engine;
+      * invalid under both engines     -> simply invalid for the selected provider (no stale claim);
+      * valid but no database          -> provider-valid but incomplete (no provisioning target).
+    PowerShell interprets the canonical endpoint ONLY to recognize the Docker-internal service and choose the
+    host-side override coordinates; it never rebuilds the connection string. The ORIGINAL connection string is
+    returned unchanged for `ddl provision`; when a Docker-internal endpoint is recognized, OverrideHost/
+    OverridePort direct SchemaTools (the exact provider) to rewrite the endpoint. External endpoints receive
+    neither override and are passed through verbatim.
     #>
     param(
         [Parameter(Mandatory)]
@@ -423,83 +365,112 @@ function Convert-CmsConnectionStringToHostSideTarget {
 
         [Parameter(Mandatory)]
         [hashtable]
-        $EnvValues
+        $EnvValues,
+
+        [Parameter(Mandatory)]
+        [object]
+        $SchemaToolPath
     )
 
-    $builder = ConvertTo-ConnectionStringBuilder -ConnectionString $ConnectionString
-    # The provisioning dialect is the effective datastore provider (DMS_DATASTORE), not inferred from the
-    # connection string. SchemaTools provisions both (--dialect pgsql|mssql). Parsing the stored connection
-    # under THIS provider's required keys is also the stale-datastore guard: a connection for the other engine
-    # lacks the selected engine's keys and throws below (New-ProvisionTarget surfaces it with a stale hint).
-    $dialect = (Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues).ExpectedDialect
+    $engine = (Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues).EngineValue
+    $dialect = if ($engine -eq "mssql") { "mssql" } else { "pgsql" }
 
-    if ($dialect -eq "mssql") {
-        return Convert-MssqlCmsConnectionStringToHostSideTarget -Builder $builder -EnvValues $EnvValues
+    $inspection = Invoke-ConnectionStringInspection -Engine $engine -ConnectionString $ConnectionString -SchemaToolPath $SchemaToolPath
+
+    if (-not $inspection.valid) {
+        # The selected provider rejected the string. Cross-engine staleness is established ONLY by whether the
+        # OTHER provider accepts it - never asserted otherwise.
+        $otherEngine = if ($engine -eq "mssql") { "postgresql" } else { "mssql" }
+        # A tool-contract/version failure on the other-engine probe is NOT a datastore signal, so it is allowed
+        # to PROPAGATE (surfacing as rebuild guidance with data-store context) rather than being coerced into a
+        # stale/invalid classification. Only a cleanly returned valid=$true/$false drives the decision below.
+        $otherValid = (Invoke-ConnectionStringInspection -Engine $otherEngine -ConnectionString $ConnectionString -SchemaToolPath $SchemaToolPath).valid
+
+        if ($otherValid) {
+            throw "the stored connection string is a valid '$otherEngine' connection but not a valid '$engine' connection ($($inspection.error)). This is a stale data store from a previous run with the other database engine. Reset the local CMS state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
+        }
+        throw "the stored connection string is not a valid '$engine' connection: $($inspection.error)."
     }
 
-    # PostgreSQL path: the surviving keys are database / host / username.
-    $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database")
+    $databaseName = [string]$inspection.database
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
-        throw "CMS data store connection string did not contain a database name."
+        throw "the stored connection string is a valid '$engine' connection but specifies no database (Database/Initial Catalog), so there is no provisioning target."
     }
 
-    $instanceHost = Get-ConnectionStringValue -Builder $builder -Keys @("host")
-    if ([string]::IsNullOrWhiteSpace($instanceHost)) {
-        throw "CMS data store connection string is missing the host key."
+    $canonicalHost = [string]$inspection.host
+    # Username may legitimately be blank (e.g. SQL Server integrated authentication); it is not required.
+    $canonicalUser = [string]$inspection.username
+
+    # Docker-internal -> host translation is the ONLY endpoint interpretation PowerShell performs. When a
+    # Docker-internal service on its container-internal DEFAULT port is recognized, SchemaTools (the exact
+    # provider) rewrites the endpoint at `ddl provision` time via the overrides; otherwise the ORIGINAL
+    # connection string is passed through unchanged. The effective host/port feed the summary and the
+    # equivalence grouping.
+    $overrideHost = $null
+    $overridePort = $null
+    if ($engine -eq "mssql") {
+        # SQL Server data source: an optional case-insensitive "tcp:" protocol prefix, then host[,port] (a
+        # named instance is "host\instance"). Recognize the Docker-internal server ONLY on its default
+        # container port 1433 (explicit or omitted); any OTHER port targets a different endpoint than DMS uses
+        # and must not be silently redirected.
+        $dataSource = $canonicalHost -replace '^\s*tcp:', ''
+        $serverParts = $dataSource -split ",", 2
+        $serverHost = $serverParts[0].Trim()
+        $serverPort = if ($serverParts.Count -eq 2) { $serverParts[1].Trim() } else { "1433" }
+        # Compare the port NUMERICALLY so a zero-padded default (e.g. "01433") is still the container port 1433;
+        # any other numeric port targets a different endpoint and gets no override.
+        $serverPortValue = 0
+        $serverPortIsContainerDefault = [int]::TryParse($serverPort, [ref]$serverPortValue) -and $serverPortValue -eq 1433
+        if ($serverHost.Equals("dms-mssql", [System.StringComparison]::OrdinalIgnoreCase) -and $serverPortIsContainerDefault) {
+            $overrideHost = "127.0.0.1"
+            # mssql.yml publishes this port on 127.0.0.1 (IPv4) only; the literal address avoids an IPv6
+            # "localhost" resolution stall.
+            $overridePort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1435"
+        }
+        if ($null -ne $overrideHost) {
+            $effectiveHost = $overrideHost
+            $effectivePort = [string]$overridePort
+        }
+        else {
+            # External SQL Server: the COMPLETE provider-returned data source IS the endpoint identity - it
+            # encodes host, an optional named instance, and an optional port. Do NOT split off a synthetic 1433,
+            # which would collapse a named instance (resolved via SQL Browser to a dynamic port) with an
+            # explicit ",1433". The port stays inside the data source, so the separate effective port is null.
+            $effectiveHost = $canonicalHost
+            $effectivePort = $null
+        }
     }
-
-    $instanceUser = Get-ConnectionStringValue -Builder $builder -Keys @("username")
-    if ([string]::IsNullOrWhiteSpace($instanceUser)) {
-        throw "CMS data store connection string is missing the username key."
+    else {
+        # Npgsql exposes Host and Port (Port defaults to 5432 when the string omits it). Recognize the
+        # Docker-internal PostgreSQL endpoint dms-postgresql only on the container-internal 5432.
+        $serverPort = if ($null -ne $inspection.port) { [string]$inspection.port } else { "5432" }
+        # Compare the port NUMERICALLY, symmetric with the SQL Server branch.
+        $serverPortValue = 0
+        $serverPortIsContainerDefault = [int]::TryParse($serverPort, [ref]$serverPortValue) -and $serverPortValue -eq 5432
+        if ($canonicalHost.Equals("dms-postgresql", [System.StringComparison]::OrdinalIgnoreCase) -and $serverPortIsContainerDefault) {
+            $overrideHost = "localhost"
+            $overridePort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "POSTGRES_PORT" -DefaultValue "5432"
+        }
+        if ($null -ne $overrideHost) {
+            $effectiveHost = $overrideHost
+            $effectivePort = [string]$overridePort
+        }
+        else {
+            $effectiveHost = $canonicalHost
+            $effectivePort = $serverPort
+        }
     }
-
-    # PostgreSQL canonically defaults to 5432 when port is omitted. Docker-internal targets
-    # (host=dms-postgresql) keep 5432 here and are translated to localhost:POSTGRES_PORT by
-    # the host-side translation block below.
-    $portValue = Get-ConnectionStringValue -Builder $builder -Keys @("port")
-    $instancePort = if (-not [string]::IsNullOrWhiteSpace($portValue)) { $portValue } else { "5432" }
-
-    # Translate Docker-internal PostgreSQL coordinates to host-side coordinates. Any other
-    # host (e.g. an external managed PostgreSQL server) is left untouched so per-instance
-    # routing is preserved.
-    $effectiveHost = $instanceHost
-    $effectivePort = $instancePort
-    if ($instanceHost.Equals("dms-postgresql", [System.StringComparison]::OrdinalIgnoreCase) -and
-        $instancePort -eq "5432") {
-        $effectiveHost = "localhost"
-        $effectivePort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "POSTGRES_PORT" -DefaultValue "5432"
-    }
-
-    # Mutate only host and port. Every other option the CMS stored (SSL Mode, Trust Server
-    # Certificate, Timeout, Pooling, a password containing ';' or '=', etc.) is carried through
-    # verbatim by the builder, which also re-quotes values correctly. Setting port also adds it
-    # when the source omitted one, so the provisioning target always carries an explicit,
-    # reachable port (5432 for an external host, or the host-side mapped POSTGRES_PORT).
-    Set-ConnectionStringValue -Builder $builder -Key "host" -Value $effectiveHost
-    Set-ConnectionStringValue -Builder $builder -Key "port" -Value $effectivePort
-
-    $hostConnectionString = $builder.get_ConnectionString()
-
-    # TargetKey identifies an effective provisioning target. Two instances pointing at the
-    # same physical database (same dialect, translated host, port, database, and user) share
-    # a provisioning invocation. Differing on any field - including username - produces a
-    # separate target so we never collapse instances that happen to share a database name on
-    # different hosts or under different roles.
-    $targetKey = ("{0}|{1}|{2}|{3}|{4}" -f
-        $dialect,
-        $effectiveHost.ToLowerInvariant(),
-        $effectivePort,
-        $databaseName.ToLowerInvariant(),
-        $instanceUser.ToLowerInvariant())
 
     return [pscustomobject]@{
+        Engine = $engine
         Dialect = $dialect
         Host = $effectiveHost
         Port = $effectivePort
-        Username = $instanceUser
+        Username = $canonicalUser
         DatabaseName = $databaseName
-        HostConnectionString = $hostConnectionString
-        TargetKey = $targetKey
+        ConnectionString = $ConnectionString
+        OverrideHost = $overrideHost
+        OverridePort = $overridePort
     }
 }
 
@@ -570,7 +541,10 @@ function Resolve-CmsInstanceConnectionString {
     )
 
     $resolvedConnectionString = Resolve-EnvPlaceholdersInText -Text $ConnectionString -EnvValues $EnvValues
-    if ($null -ne (Get-DatabaseNameFromConnectionString -ConnectionString $resolvedConnectionString -AllowMissing)) {
+    # Detect CMS ciphertext by SHAPE only (a base64 payload), never by parsing connection-string vocabulary,
+    # so a provider-valid plaintext string using an alias (DB=, Server=, User Id=) is passed straight to the
+    # exact-provider path and only a genuine encrypted blob is routed to decryption.
+    if (-not (Test-CmsEncryptedConnectionStringShape -Value $resolvedConnectionString)) {
         return $resolvedConnectionString
     }
 
@@ -668,7 +642,11 @@ function New-ProvisionTarget {
         $Instance,
 
         [hashtable]
-        $EnvValues
+        $EnvValues,
+
+        [Parameter(Mandatory)]
+        [object]
+        $SchemaToolPath
     )
 
     $rawDataStoreId = Get-ProvisionProperty -Object $Instance -Names @("id", "Id")
@@ -685,28 +663,21 @@ function New-ProvisionTarget {
         -ConnectionString $connectionString `
         -EnvValues $EnvValues
 
-    # Resolve the effective provisioning dialect from the explicit DMS_DATASTORE (canonicalized). An
-    # unsupported token (e.g. a 'mysql' typo) throws HERE, at the single engine-token boundary, before any
-    # connection parse or provisioning - never silently proceeding as PostgreSQL.
-    $expectedProvisioningDialect = Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues
-
-    # Stale-datastore guard. configure-local-data-store.ps1 -NoDataStore can select a pre-existing
-    # route-unqualified CMS data store from a previous run with the OTHER database engine, which would
-    # otherwise be provisioned silently while DMS starts against DMS_DATASTORE from this same environment.
-    # The engine is NEVER inferred from the stored connection's keywords (a generic connection-string builder
-    # accepts cross-engine aliases - e.g. Npgsql treats Server= as a Host alias - which a keyword shape-sniff
-    # would misclassify). The dialect is the effective DMS_DATASTORE (resolved above), and
-    # Convert-CmsConnectionStringToHostSideTarget parses the stored connection under THAT provider's required
-    # keys. A stored connection for the other engine lacks the selected engine's keys, so the conversion
-    # throws - which IS the stale-datastore signal, surfaced here with a precise hint before any provisioning.
+    # The provisioning target is built by parsing the stored connection with the exact runtime provider
+    # (Convert-CmsConnectionStringToHostSideTarget -> `connection inspect`), never a generic keyword builder,
+    # so a provider-valid alias is accepted exactly as the runtime accepts it. Any classification failure it
+    # raises - a stale wrong-engine data store, invalid-for-the-selected-provider, incomplete (no database),
+    # or a tool-contract/version failure - is surfaced here with the data-store id/name context, preserving
+    # the specific message rather than relabeling everything as stale.
     try {
         $target = Convert-CmsConnectionStringToHostSideTarget `
             -ConnectionString $resolvedConnectionString `
-            -EnvValues $EnvValues
+            -EnvValues $EnvValues `
+            -SchemaToolPath $SchemaToolPath
     }
     catch {
         $dataStoreName = [string](Get-ProvisionProperty -Object $Instance -Names @("name", "Name"))
-        throw "CMS data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName)): its connection string could not be parsed under the effective DMS_DATASTORE='$(Format-LogSafeText $expectedProvisioningDialect.EngineValue)' provider ($($_.Exception.Message)). This usually means a stale data store from a previous run with the other database engine is being reused (commonly selected via -NoDataStore). Reset the local CMS state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or, when invoking the phase commands directly, make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
+        throw "CMS data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName)): $($_.Exception.Message)"
     }
 
     $routeContexts = @(
@@ -721,13 +692,15 @@ function New-ProvisionTarget {
     return [pscustomobject]@{
         DataStoreId = $dataStoreId
         RouteContexts = $routeContexts
+        Engine = $target.Engine
         Dialect = $target.Dialect
         Host = $target.Host
         Port = $target.Port
         Username = $target.Username
         DatabaseName = $target.DatabaseName
-        HostConnectionString = $target.HostConnectionString
-        TargetKey = $target.TargetKey
+        ConnectionString = $target.ConnectionString
+        OverrideHost = $target.OverrideHost
+        OverridePort = $target.OverridePort
     }
 }
 
@@ -747,9 +720,22 @@ function Invoke-DmsSchemaProvision {
 
         [ValidateSet("pgsql", "mssql")]
         [string]
-        $Dialect = "pgsql"
+        $Dialect = "pgsql",
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]
+        $OverrideHost,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]
+        $OverridePort
     )
 
+    # The connection string is passed to SchemaTools verbatim (never rewritten in PowerShell). When the target
+    # is the Docker-internal service, the host-side endpoint override is applied by the exact provider inside
+    # `ddl provision` via --override-host / --override-port.
     $arguments = @("ddl", "provision")
     foreach ($schemaPath in $SchemaPaths) {
         $arguments += @("--schema", $schemaPath)
@@ -759,6 +745,9 @@ function Invoke-DmsSchemaProvision {
         "--dialect", $Dialect,
         "--create-database"
     )
+    if (-not [string]::IsNullOrWhiteSpace($OverrideHost)) {
+        $arguments += @("--override-host", $OverrideHost, "--override-port", $OverridePort)
+    }
 
     Write-Information "Invoking api-schema-tools ddl provision for database $(Format-LogSafeText $DatabaseName) with $($SchemaPaths.Count) schema file(s)." -InformationAction Continue
 
@@ -988,27 +977,35 @@ function Invoke-ProvisionDmsSchema {
         -SchoolYear $SchoolYear `
         -Tenant $tenant
 
-    $targets = @($selectedInstances | ForEach-Object { New-ProvisionTarget -Instance $_ -EnvValues $envValues })
-    # Group by the effective provisioning target identity (dialect + translated host + port +
-    # database + user). Grouping only by database name would silently collapse two instances
-    # that share a database name on different physical hosts or under different users.
-    $groups = $targets | Group-Object -Property TargetKey
+    # Resolve ONE host SchemaTools executable up front and use it for every target inspection AND every
+    # `ddl provision` call below. An explicit-but-missing DMS_SCHEMA_TOOL_PATH fails here, with no fallback.
     $schemaTool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
     Write-Information "api-schema-tools resolved: $(Format-LogSafeText $schemaTool)." -InformationAction Continue
+
+    # Build ALL provisioning targets (parsing each stored connection with the exact provider via that tool)
+    # BEFORE any DDL executes.
+    $targets = @($selectedInstances | ForEach-Object { New-ProvisionTarget -Instance $_ -EnvValues $envValues -SchemaToolPath $schemaTool })
+    # Group by the effective provisioning target identity (engine + translated endpoint + database + auth).
+    # Partition by the engine's actual identity comparers (Group-ProvisionTarget), never a derived lowercase
+    # string key: a PostgreSQL case-distinct database (SchoolDb vs schooldb) stays separate while SQL Server
+    # case variants group, matching Get-DatabaseNameComparer exactly.
+    $groups = Group-ProvisionTarget -Targets $targets
 
     $provisionedTargets = [System.Collections.ArrayList]::new()
 
     foreach ($group in $groups) {
-        $target = @($group.Group)[0]
-        $dataStoreIds = @($group.Group | ForEach-Object { [long]$_.DataStoreId })
+        $target = $group.Representative
+        $dataStoreIds = @($group.Targets | ForEach-Object { [long]$_.DataStoreId })
         $ids = ($dataStoreIds | ForEach-Object { [string]$_ }) -join ", "
         Write-Information "Provisioning target database $(Format-LogSafeText $target.DatabaseName) on $(Format-LogSafeText $target.Host):$(Format-LogSafeText $target.Port) for data store id(s): $(Format-LogSafeText $ids)." -InformationAction Continue
         Invoke-DmsSchemaProvision `
             -ToolPath $schemaTool `
             -SchemaPaths $schemaPaths `
-            -ConnectionString $target.HostConnectionString `
+            -ConnectionString $target.ConnectionString `
             -DatabaseName $target.DatabaseName `
-            -Dialect $target.Dialect
+            -Dialect $target.Dialect `
+            -OverrideHost $target.OverrideHost `
+            -OverridePort $target.OverridePort
 
         $null = $provisionedTargets.Add([pscustomobject]@{
             DatabaseName = $target.DatabaseName

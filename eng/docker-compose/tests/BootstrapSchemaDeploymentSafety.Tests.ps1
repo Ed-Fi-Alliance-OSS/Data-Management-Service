@@ -215,6 +215,89 @@ exit $ExitCode
             return $toolPath
         }
 
+        function script:New-InspectStubTool {
+            # Writes a .ps1 test double for the exact-provider tool whose `connection inspect` behavior is the
+            # supplied -Body, with $engine bound to the --engine value. Invoked via pwsh -File exactly as the
+            # real tool is, so it deterministically simulates per-engine tool-contract/version failures
+            # (non-zero exit, malformed JSON, a missing field) for the secondary-probe tests. -Body must be a
+            # single-quoted (literal) string so its $engine reference is written verbatim, not expanded here.
+            param(
+                [Parameter(Mandatory)][string]$Directory,
+                [Parameter(Mandatory)][string]$Body
+            )
+            $toolPath = Join-Path $Directory "inspect-stub-$([Guid]::NewGuid().ToString('N')).ps1"
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)][string[]] `$Arguments)
+`$null = `$input
+`$engineIndex = [array]::IndexOf(`$Arguments, '--engine')
+`$engine = if (`$engineIndex -ge 0 -and (`$engineIndex + 1) -lt `$Arguments.Count) { `$Arguments[`$engineIndex + 1] } else { '' }
+$Body
+"@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+            return $toolPath
+        }
+
+        function script:Get-CanonicalInspectionForTest {
+            # TEST double for `connection inspect` on CANONICAL-keyed connection strings. The logic tests use
+            # canonical keys only; alias acceptance and cross-engine staleness are proven separately by the
+            # REAL provider oracle (Resolve-RealProviderTool). Returns the same
+            # { valid; database; host; port; username; error } shape the verb emits (always valid here, since
+            # the logic tests pass provider-valid strings).
+            param(
+                [string]$Engine,
+                [string]$ConnectionString
+            )
+            $readValue = {
+                param([string[]]$Keys)
+                foreach ($key in $Keys) {
+                    $pattern = "(?i)(^|;)\s*$([regex]::Escape($key))\s*=\s*([^;]*)"
+                    $match = [regex]::Match($ConnectionString, $pattern)
+                    if ($match.Success) { return $match.Groups[2].Value.Trim() }
+                }
+                return $null
+            }
+            if ($Engine -eq "mssql") {
+                return [pscustomobject]@{
+                    valid    = $true
+                    database = (& $readValue @("Database", "Initial Catalog"))
+                    host     = (& $readValue @("Server", "Data Source"))
+                    port     = $null
+                    username = (& $readValue @("User Id", "UID"))
+                    error    = $null
+                }
+            }
+            $portText = & $readValue @("Port")
+            return [pscustomobject]@{
+                valid    = $true
+                database = (& $readValue @("Database"))
+                host     = (& $readValue @("Host"))
+                port     = $(if ([string]::IsNullOrWhiteSpace($portText)) { 5432 } else { [int]$portText })
+                username = (& $readValue @("Username"))
+                error    = $null
+            }
+        }
+
+        function script:Resolve-RealProviderTool {
+            # Builds (once) and returns the REAL api-schema-tools executable for provider-oracle tests, so
+            # provider semantics (alias acceptance, cross-engine rejection) are exercised by the exact runtime
+            # builders rather than fabricated in PowerShell.
+            if ($script:realProviderTool -and (Test-Path -LiteralPath $script:realProviderTool)) {
+                return $script:realProviderTool
+            }
+            $project = Join-Path $script:sourceRepoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+            & dotnet build $project -c Release --nologo *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to build api-schema-tools for the provider oracle (dotnet build exit $LASTEXITCODE)."
+            }
+            $tool = Get-ChildItem -Path (Join-Path (Split-Path $project) "bin/Release") -Recurse -File |
+                Where-Object { $_.Name -in "api-schema-tools.exe", "api-schema-tools" } |
+                Select-Object -First 1 -ExpandProperty FullName
+            if (-not $tool) {
+                throw "api-schema-tools executable not found under bin/Release after build."
+            }
+            $script:realProviderTool = $tool
+            return $tool
+        }
+
         function script:Get-DeclaredScriptParameters {
             param(
                 [string]$Path
@@ -237,6 +320,19 @@ exit $ExitCode
 
     BeforeEach {
         $script:repo = New-IsolatedBootstrapRepo
+
+        # Default across the suite: shadow the exact-provider inspector with the canonical test double, so the
+        # end-to-end provisioning logic tests (translation, grouping, summary, schema argv, auth) run without a
+        # live tool. The "provisioning target classification (real provider oracle)" context removes this
+        # shadow in its own BeforeEach and uses the REAL built tool, so provider semantics are never fabricated.
+        # Every $SchemaToolPath the shadow receives is captured so a workflow test can prove the one resolved
+        # executable is threaded to every inspection call.
+        $script:capturedInspectToolPaths = [System.Collections.Generic.List[string]]::new()
+        function Invoke-ConnectionStringInspection {
+            param($Engine, $ConnectionString, $SchemaToolPath)
+            $script:capturedInspectToolPaths.Add([string]$SchemaToolPath)
+            Get-CanonicalInspectionForTest -Engine $Engine -ConnectionString $ConnectionString
+        }
     }
 
     AfterEach {
@@ -548,6 +644,41 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*mutually exclusive*"
         }
 
+        It "resolves one host tool before target construction and threads that exact path to every inspection and to ddl provision" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            $expectedToolPath = [System.IO.Path]::GetFullPath($fakeTool)
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        name = "A"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=tenant_db;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
+
+            # Every `connection inspect` received the ONE resolved host executable (the shadow captures the
+            # $SchemaToolPath it is handed)...
+            @($script:capturedInspectToolPaths).Count | Should -BeGreaterThan 0
+            foreach ($toolPath in $script:capturedInspectToolPaths) {
+                $toolPath | Should -Be $expectedToolPath
+            }
+            # ...and that same executable ran `ddl provision` (the fake tool records its args only when invoked).
+            Test-Path -LiteralPath $capturePath | Should -BeTrue
+            @(Get-Content -LiteralPath $capturePath) | Should -Contain "provision"
+        }
+
         It "invokes api-schema-tools once per target database with host-side connection settings" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
@@ -586,10 +717,12 @@ exit $ExitCode
             @($captured | Where-Object { $_ -eq "--schema" }).Count | Should -Be 2
             $captured | Should -Contain "--connection-string"
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            $connectionString | Should -Match "host=localhost"
-            $connectionString | Should -Match "port=5544"
-            $connectionString | Should -Match "database=tenant_db"
-            $connectionString | Should -Not -Match "dms-postgresql"
+            # The stored connection reaches SchemaTools EXACTLY (every credential/option and casing preserved,
+            # placeholder resolved, no rewrite); the Docker-internal endpoint is carried via the override only.
+            $resolvedPassword = (ReadValuesFromEnvFile $script:repo.EnvFile)['POSTGRES_PASSWORD']
+            $connectionString | Should -BeExactly "host=dms-postgresql;port=5432;username=postgres;password=$resolvedPassword;database=tenant_db;"
+            $captured[[array]::IndexOf($captured, "--override-host") + 1] | Should -Be "localhost"
+            $captured[[array]::IndexOf($captured, "--override-port") + 1] | Should -Be "5544"
             $captured | Should -Contain "--dialect"
             $captured | Should -Contain "pgsql"
             $captured | Should -Contain "--create-database"
@@ -622,10 +755,12 @@ exit $ExitCode
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            $connectionString | Should -Match "host=localhost"
-            $connectionString | Should -Match "port=5544"
-            $connectionString | Should -Match "database=encrypted_db"
-            $connectionString | Should -Not -Match "dms-postgresql"
+            # The decrypted connection reaches SchemaTools EXACTLY (placeholder re-resolved after decryption,
+            # every option preserved); the Docker-internal endpoint is carried via the override only.
+            $resolvedPassword = (ReadValuesFromEnvFile $script:repo.EnvFile)['POSTGRES_PASSWORD']
+            $connectionString | Should -BeExactly "host=dms-postgresql;port=5432;username=postgres;password=$resolvedPassword;database=encrypted_db;"
+            $captured[[array]::IndexOf($captured, "--override-host") + 1] | Should -Be "localhost"
+            $captured[[array]::IndexOf($captured, "--override-port") + 1] | Should -Be "5544"
         }
 
         It "rejects an encrypted connection string when the encryption key is not configured" {
@@ -879,68 +1014,10 @@ exit $ExitCode
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
 
-        It "fails fast when a stale PostgreSQL data store is selected under DMS_DATASTORE=mssql" {
-            # configure-local-data-store.ps1 -NoDataStore can silently reuse a route-unqualified CMS data
-            # store from a previous run with the other engine. The engine is NEVER keyword-sniffed from the
-            # stored connection (a generic builder accepts cross-engine aliases); the provisioning dialect is
-            # the effective DMS_DATASTORE, and the host-side conversion parses the stored connection under that
-            # provider - a PostgreSQL connection (host=, no server) cannot be parsed under the mssql provider,
-            # so the conversion throws and is surfaced as a stale-datastore signal before any provisioning.
-            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
-            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
-            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
-            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
-            $envFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-engine-mismatch.env"
-            Get-Content -LiteralPath $script:repo.EnvFile |
-                Set-Content -LiteralPath $envFile -Encoding utf8
-            Add-Content -LiteralPath $envFile -Value "DMS_DATASTORE=mssql"
-
-            . $script:repo.ProvisionScript
-
-            function Add-CmsClient { }
-            function Get-CmsToken { return "token" }
-            function Get-DataStore {
-                return @(
-                    [pscustomobject]@{
-                        id = 9
-                        name = "StalePostgres"
-                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=stale_pg;'
-                        dataStoreContexts = @()
-                    }
-                )
-            }
-
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(9) } |
-                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*could not be parsed under the effective DMS_DATASTORE='mssql'*stale data store*-NoDataStore*"
-            Test-Path -LiteralPath $capturePath | Should -BeFalse
-        }
-
-        It "fails fast when a stale SQL Server data store is selected under DMS_DATASTORE=postgresql (reverse direction; a Server= alias is never keyword-sniffed as PostgreSQL)" {
-            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
-            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
-            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
-            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
-            # Base repo env has no DMS_DATASTORE, so the effective provider defaults to postgresql.
-
-            . $script:repo.ProvisionScript
-
-            function Add-CmsClient { }
-            function Get-CmsToken { return "token" }
-            function Get-DataStore {
-                return @(
-                    [pscustomobject]@{
-                        id = 12
-                        name = "StaleMssql"
-                        connectionString = 'Server=dms-mssql,1433;Database=stale_mssql;User Id=sa;Password=${POSTGRES_PASSWORD};TrustServerCertificate=true;'
-                        dataStoreContexts = @()
-                    }
-                )
-            }
-
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(12) } |
-                Should -Throw -ExpectedMessage "*CMS data store 12*name=StaleMssql*could not be parsed under the effective DMS_DATASTORE='postgresql'*stale data store*-NoDataStore*"
-            Test-Path -LiteralPath $capturePath | Should -BeFalse
-        }
+        # The cross-engine stale-data-store cases (PostgreSQL-under-mssql and SQL-Server-under-postgresql)
+        # now depend on real provider semantics (which engine actually accepts the string), so they live in
+        # the "provisioning target classification (real provider oracle)" context below, driven by the built
+        # api-schema-tools rather than the canonical test double.
 
         It "fails fast on an unsupported DMS_DATASTORE token before invoking SchemaTools" {
             # DMS_DATASTORE=mysql (a typo / unsupported engine) must fail at the explicit engine-token boundary,
@@ -1612,7 +1689,7 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
     }
 
     Context "host-side target connection conversion" {
-        It "preserves per-instance username, password, and database from the stored connection string" {
+        It "passes a Docker-internal PostgreSQL connection through verbatim and adds the host-side override" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
@@ -1637,11 +1714,12 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            $connectionString | Should -Match "host=localhost"
-            $connectionString | Should -Match "port=5544"
-            $connectionString | Should -Match "username=tenant_a_user"
-            $connectionString | Should -Match "password=tenant_a_secret"
-            $connectionString | Should -Match "database=tenant_a_db"
+            # The connection string reaches SchemaTools byte-for-byte (never rewritten in PowerShell), so the
+            # instance-specific user, password, and database are inherently preserved.
+            $connectionString | Should -BeExactly 'host=dms-postgresql;port=5432;username=tenant_a_user;password=tenant_a_secret;database=tenant_a_db;'
+            # The Docker-internal endpoint carries a host-side override for the exact provider to apply.
+            $captured[[array]::IndexOf($captured, "--override-host") + 1] | Should -Be "localhost"
+            $captured[[array]::IndexOf($captured, "--override-port") + 1] | Should -Be "5544"
         }
 
         It "preserves non-default external host and port for instances not on dms-postgresql:5432" {
@@ -1669,11 +1747,10 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            $connectionString | Should -Match "host=managed-pg.example.com"
-            $connectionString | Should -Match "port=5439"
-            $connectionString | Should -Match "username=ops_user"
-            $connectionString | Should -Match "database=ext_db"
-            $connectionString | Should -Not -Match "host=localhost"
+            # External endpoint: the connection is passed through verbatim with NO override.
+            $connectionString | Should -BeExactly 'host=managed-pg.example.com;port=5439;username=ops_user;password=ops_pass;database=ext_db;'
+            $captured | Should -Not -Contain "--override-host"
+            $captured | Should -Not -Contain "--override-port"
         }
 
         It "provisions MSSQL-style connection strings with --dialect mssql and host-side translation" {
@@ -1710,13 +1787,11 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $captured | Should -Not -Contain "pgsql"
 
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            # The Docker-internal server is translated to the host-side mapped MSSQL_PORT...
-            $connectionString | Should -Match "127\.0\.0\.1,15433"
-            $connectionString | Should -Not -Match "dms-mssql"
-            # ...while the database, user, and other stored options survive verbatim.
-            $connectionString | Should -Match "Database=db1"
-            $connectionString | Should -Match "User Id=sa"
-            $connectionString | Should -Match "TrustServerCertificate=true"
+            # The connection reaches SchemaTools verbatim (dms-mssql and every option intact)...
+            $connectionString | Should -BeExactly 'Server=dms-mssql,1433;Database=db1;User Id=sa;Password=foo;TrustServerCertificate=true;'
+            # ...and the Docker-internal server carries a host-side 127.0.0.1,MSSQL_PORT override.
+            $captured[[array]::IndexOf($captured, "--override-host") + 1] | Should -Be "127.0.0.1"
+            $captured[[array]::IndexOf($captured, "--override-port") + 1] | Should -Be "15433"
         }
 
         It "preserves an external (non-Docker) MSSQL server without translation" {
@@ -1749,9 +1824,10 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $captured = @(Get-Content -LiteralPath $capturePath)
             $captured | Should -Contain "mssql"
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            $connectionString | Should -Match "managed-mssql.example.com,1433"
-            $connectionString | Should -Match "Database=ext_db"
-            $connectionString | Should -Not -Match "127\.0\.0\.1"
+            # External SQL Server: verbatim pass-through, NO override.
+            $connectionString | Should -BeExactly 'Server=managed-mssql.example.com,1433;Database=ext_db;User Id=ops;Password=ops_pass;TrustServerCertificate=true;'
+            $captured | Should -Not -Contain "--override-host"
+            $captured | Should -Not -Contain "--override-port"
         }
 
         It "carries SSL and timeout options through the host-side translation" {
@@ -1779,15 +1855,11 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            # Host and port are translated to host-side coordinates...
-            $connectionString | Should -Match "host=localhost"
-            $connectionString | Should -Match "port=5544"
-            $connectionString | Should -Not -Match "dms-postgresql"
-            # ...while every other stored option survives verbatim rather than being dropped.
-            $connectionString | Should -Match "database=secured_db"
-            $connectionString | Should -Match "SSL Mode=Require"
-            $connectionString | Should -Match "Trust Server Certificate=true"
-            $connectionString | Should -Match "Timeout=45"
+            # The connection - including SSL Mode, Trust Server Certificate, and Timeout - reaches SchemaTools
+            # verbatim; the host-side override is carried separately for the exact provider to apply.
+            $connectionString | Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=secured_db;SSL Mode=Require;Trust Server Certificate=true;Timeout=45;'
+            $captured[[array]::IndexOf($captured, "--override-host") + 1] | Should -Be "localhost"
+            $captured[[array]::IndexOf($captured, "--override-port") + 1] | Should -Be "5544"
         }
 
         It "carries options through unchanged for external (non-translated) hosts" {
@@ -1815,10 +1887,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            $connectionString | Should -Match "host=managed-pg.example.com"
-            $connectionString | Should -Match "port=5439"
-            $connectionString | Should -Match "SSL Mode=VerifyFull"
-            $connectionString | Should -Not -Match "host=localhost"
+            # External host: verbatim pass-through (SSL Mode intact), NO override.
+            $connectionString | Should -BeExactly 'host=managed-pg.example.com;port=5439;username=ops_user;password=ops_pass;database=ext_db;SSL Mode=VerifyFull;'
+            $captured | Should -Not -Contain "--override-host"
         }
 
         It "carries a quoted-semicolon password through the host-side translation intact" {
@@ -1847,17 +1918,17 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
 
-            # The password embeds a semicolon, so the value is quoted and a regex match on
-            # "password=abc;123" would not work. Parse the emitted string back through the same
-            # builder and assert the value survived intact.
+            # The connection reaches SchemaTools byte-for-byte, so the quoted-semicolon password and every
+            # option survive untouched. Re-parse to assert the value round-trips; the host is NOT rewritten
+            # in PowerShell (it stays the Docker-internal name and is overridden by the exact provider).
             $reparsed = [System.Data.Common.DbConnectionStringBuilder]::new()
             $reparsed.set_ConnectionString($connectionString)
             $reparsed.get_Item("password") | Should -Be 'abc;123'
-            $reparsed.get_Item("host") | Should -Be 'localhost'
-            $reparsed.get_Item("port") | Should -Be '5544'
+            $reparsed.get_Item("host") | Should -Be 'dms-postgresql'
             $reparsed.get_Item("database") | Should -Be 'quoted_db'
             $reparsed.get_Item("ssl mode") | Should -Be 'Require'
-            $reparsed.ContainsKey("host") | Should -BeTrue
+            $captured[[array]::IndexOf($captured, "--override-host") + 1] | Should -Be "localhost"
+            $captured[[array]::IndexOf($captured, "--override-port") + 1] | Should -Be "5544"
         }
 
         It "carries a quoted password with semicolons and equals through an external host intact" {
@@ -1900,9 +1971,9 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
     Context "Resolve-ExpectedProvisioningDialect (dialect from the explicit engine, never inferred from the connection string)" {
         # Provisioning never guesses the SchemaTools dialect from connection-string keywords. The effective
         # datastore provider (DMS_DATASTORE) IS the dialect, canonicalized through the single engine-token
-        # boundary; New-ProvisionTarget guards a stale wrong-engine data store by whether the stored
-        # connection parses under that provider (Convert-CmsConnectionStringToHostSideTarget), not by a
-        # keyword shape-sniff.
+        # boundary; New-ProvisionTarget classifies a wrong-engine (stale) data store via the exact-provider
+        # `connection inspect` in Convert-CmsConnectionStringToHostSideTarget - by which engine actually
+        # accepts the stored connection - never by a keyword shape-sniff.
         It "maps DMS_DATASTORE=mssql to the mssql dialect" {
             . $script:repo.ProvisionScript
             (Resolve-ExpectedProvisioningDialect -EnvValues @{ DMS_DATASTORE = "mssql" }).ExpectedDialect | Should -Be "mssql"
@@ -1952,6 +2023,347 @@ param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
                 $content | Should -Not -Match 'auto-detect' -Because "$doc must not describe the provisioning dialect as auto-detected from the connection string"
                 $content | Should -Not -Match 'otherwise[\s,>-]*pgsql' -Because "$doc must not describe an unsupported engine as falling through to pgsql; unsupported values fail at the engine-token boundary"
             }
+        }
+    }
+
+    Context "CMS ciphertext detection is shape-based (no connection-string vocabulary)" {
+        BeforeEach { . $script:repo.ProvisionScript }
+
+        It "treats an alias/plaintext connection as plaintext, never ciphertext: <Value>" -ForEach @(
+            @{ Value = 'Server=dms-postgresql;User Id=postgres;DB=alias_db;Password=p' }
+            @{ Value = 'host=dms-postgresql;database=d;username=u;password=p' }
+            @{ Value = 'Server=dms-mssql,1433;Initial Catalog=d;User Id=sa;Password=p;Encrypt=True' }
+        ) {
+            Test-CmsEncryptedConnectionStringShape -Value $Value | Should -BeFalse
+        }
+
+        It "treats a genuine AES-CBC-sized base64 payload (>=32 bytes, multiple of 16) as ciphertext" {
+            $blob = [Convert]::ToBase64String([byte[]](1..32))
+            Test-CmsEncryptedConnectionStringShape -Value $blob | Should -BeTrue
+        }
+
+        It "requires an AES-CBC payload length (>=32 bytes and a multiple of 16), rejecting shorter or non-block-aligned base64: <Bytes> bytes" -ForEach @(
+            @{ Bytes = 16 }   # only the IV, no ciphertext block
+            @{ Bytes = 24 }   # >16 (the old defective '>16' rule accepted this) but not >=32 nor a multiple of 16
+            @{ Bytes = 31 }   # just under the 32-byte minimum
+            @{ Bytes = 40 }   # >=32 but not a multiple of 16 (16 IV + 24)
+            @{ Bytes = 32 }   # 16-byte IV + one 16-byte block
+            @{ Bytes = 48 }   # 16-byte IV + two blocks
+        ) {
+            $blob = [Convert]::ToBase64String([byte[]]::new($Bytes))
+            $expected = ($Bytes -ge 32 -and ($Bytes % 16) -eq 0)
+            Test-CmsEncryptedConnectionStringShape -Value $blob | Should -Be $expected
+        }
+
+        It "returns an alias/plaintext connection verbatim without attempting decryption (no key required)" {
+            # Under the old generic-parser gate, a DB= alias plaintext with no 'database'/'initial catalog'
+            # key could be misread as ciphertext and routed to decryption; the shape gate returns it verbatim,
+            # so it reaches the exact-provider inspection. With no encryption key set, a decrypt attempt would
+            # instead throw.
+            $plain = 'Server=dms-postgresql;User Id=postgres;DB=alias_db;Password=secret'
+            Resolve-CmsInstanceConnectionString -ConnectionString $plain -EnvValues @{} | Should -BeExactly $plain
+        }
+    }
+
+    Context "Group-ProvisionTarget (comparer-based, provider-aware grouping identity)" {
+        BeforeEach { . $script:repo.ProvisionScript }
+
+        It "keeps case-distinct PostgreSQL databases (SchoolDb vs schooldb) in separate groups" {
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'SchoolDb'; Username = 'postgres' },
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'schooldb'; Username = 'postgres' }
+            )
+            $groups.Count | Should -Be 2
+        }
+
+        It "groups case-variant SQL Server databases together (case-insensitive identity)" {
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'mssql'; Host = '127.0.0.1'; Port = '1433'; DatabaseName = 'SchoolDb'; Username = 'sa' },
+                [pscustomobject]@{ Engine = 'mssql'; Host = '127.0.0.1'; Port = '1433'; DatabaseName = 'schooldb'; Username = 'sa' }
+            )
+            $groups.Count | Should -Be 1
+            $groups[0].Targets.Count | Should -Be 2
+        }
+
+        It "folds the translated host case-insensitively" {
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'LOCALHOST'; Port = '5432'; DatabaseName = 'db'; Username = 'u' },
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'db'; Username = 'u' }
+            )
+            $groups.Count | Should -Be 1
+        }
+
+        It "compares the port as a normalized integer" {
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '05432'; DatabaseName = 'db'; Username = 'u' },
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'db'; Username = 'u' }
+            )
+            $groups.Count | Should -Be 1
+        }
+
+        It "keeps distinct ports in separate groups" {
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'db'; Username = 'u' },
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5433'; DatabaseName = 'db'; Username = 'u' }
+            )
+            $groups.Count | Should -Be 2
+        }
+
+        It "preserves the username exactly (case-sensitive) and tolerates a blank username" {
+            $distinct = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'db'; Username = 'RoleA' },
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'db'; Username = 'rolea' }
+            )
+            $distinct.Count | Should -Be 2
+            { Group-ProvisionTarget -Targets @([pscustomobject]@{ Engine = 'mssql'; Host = '127.0.0.1'; Port = '1433'; DatabaseName = 'db'; Username = '' }) } | Should -Not -Throw
+        }
+
+        It "cannot collapse two distinct targets whose legal values contain a delimiter character" {
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'a|b'; Username = 'u' },
+                [pscustomobject]@{ Engine = 'postgresql'; Host = 'localhost'; Port = '5432'; DatabaseName = 'a'; Username = 'b|u' }
+            )
+            $groups.Count | Should -Be 2
+        }
+
+        It "groups SQL Server databases by OrdinalIgnoreCase, not ToLowerInvariant (Kelvin sign)" {
+            # The Kelvin sign (U+212A) lowercases to 'k' exactly like ASCII 'K', so a derived-lowercase key
+            # would wrongly MERGE them; the SQL Server comparer (OrdinalIgnoreCase) treats them as DISTINCT.
+            $kelvin = [string][char]0x212A
+            $comparer = Get-DatabaseNameComparer -Engine 'mssql'
+            # Guard the test's premise: for these inputs the comparer must diverge from lowercase equality.
+            $comparer.Equals('K', $kelvin) |
+                Should -Not -Be ('K'.ToLowerInvariant() -eq $kelvin.ToLowerInvariant())
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'mssql'; Host = '127.0.0.1'; Port = '1433'; DatabaseName = 'K'; Username = 'sa' },
+                [pscustomobject]@{ Engine = 'mssql'; Host = '127.0.0.1'; Port = '1433'; DatabaseName = $kelvin; Username = 'sa' }
+            )
+            $groups.Count | Should -Be 2
+        }
+
+        It "groups SQL Server databases exactly as the OrdinalIgnoreCase comparer does (sigma/final-sigma)" {
+            # Whatever the runtime comparer decides for sigma vs final-sigma, grouping must AGREE with it (it
+            # must derive from the comparer, not a lowercase key).
+            $sigma = [string][char]0x03A3
+            $finalSigma = [string][char]0x03C2
+            $comparer = Get-DatabaseNameComparer -Engine 'mssql'
+            $expectedGroups = if ($comparer.Equals($sigma, $finalSigma)) { 1 } else { 2 }
+            $groups = Group-ProvisionTarget -Targets @(
+                [pscustomobject]@{ Engine = 'mssql'; Host = '127.0.0.1'; Port = '1433'; DatabaseName = $sigma; Username = 'sa' },
+                [pscustomobject]@{ Engine = 'mssql'; Host = '127.0.0.1'; Port = '1433'; DatabaseName = $finalSigma; Username = 'sa' }
+            )
+            $groups.Count | Should -Be $expectedGroups
+        }
+    }
+
+    Context "provisioning target classification (real provider oracle)" {
+        # Uses the REAL api-schema-tools `connection inspect` (exact Npgsql / Microsoft.Data.SqlClient
+        # builders) so provider semantics - alias acceptance and cross-engine rejection - are never fabricated
+        # in PowerShell. Convert-CmsConnectionStringToHostSideTarget is called directly with the built tool.
+        BeforeAll { $script:oracleTool = Resolve-RealProviderTool }
+        BeforeEach {
+            . $script:repo.ProvisionScript
+            # Use the REAL exact-provider inspector here, not the suite-wide canonical test double.
+            Remove-Item Function:\Invoke-ConnectionStringInspection -ErrorAction SilentlyContinue
+        }
+
+        It "accepts a provider-valid PostgreSQL alias connection (Server=/User Id=) and overrides the Docker-internal endpoint" {
+            $target = Convert-CmsConnectionStringToHostSideTarget `
+                -ConnectionString 'Server=dms-postgresql;User Id=postgres;Database=aliased_db;Password=p' `
+                -EnvValues @{ DMS_DATASTORE = 'postgresql'; POSTGRES_PORT = '5544' } `
+                -SchemaToolPath $script:oracleTool
+            $target.DatabaseName | Should -Be 'aliased_db'
+            $target.Dialect | Should -Be 'pgsql'
+            # The original connection is preserved verbatim; only the override coordinates are added.
+            $target.ConnectionString | Should -BeExactly 'Server=dms-postgresql;User Id=postgres;Database=aliased_db;Password=p'
+            $target.OverrideHost | Should -Be 'localhost'
+            $target.OverridePort | Should -Be '5544'
+        }
+
+        It "flags a SQL Server connection selected under postgresql as a stale cross-engine data store" {
+            {
+                # Encrypt= is a Microsoft.Data.SqlClient keyword Npgsql does not accept, so this string is
+                # valid only under SQL Server - an unambiguous cross-engine (stale) data store under postgresql.
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'Server=dms-mssql,1433;Database=stale_mssql;User Id=sa;Password=p;Encrypt=True' `
+                    -EnvValues @{ DMS_DATASTORE = 'postgresql' } `
+                    -SchemaToolPath $script:oracleTool
+            } | Should -Throw -ExpectedMessage "*stale data store*start-local-dms.ps1 -d -v*"
+        }
+
+        It "flags a PostgreSQL connection selected under mssql as a stale cross-engine data store" {
+            {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=stale_pg;' `
+                    -EnvValues @{ DMS_DATASTORE = 'mssql' } `
+                    -SchemaToolPath $script:oracleTool
+            } | Should -Throw -ExpectedMessage "*stale data store*"
+        }
+
+        It "reports a connection invalid under both providers as invalid for the selected provider (no stale claim)" {
+            # Capture the message and assert BOTH halves explicitly: the stale message also contains
+            # "not a valid '<engine>' connection", so a plain -ExpectedMessage match cannot distinguish them.
+            $caught = $null
+            try {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'ThisKeyword=nonsense;Another=bad' `
+                    -EnvValues @{ DMS_DATASTORE = 'postgresql' } `
+                    -SchemaToolPath $script:oracleTool
+            }
+            catch { $caught = [string]$_.Exception.Message }
+            $caught | Should -Not -BeNullOrEmpty
+            $caught | Should -Match "not a valid 'postgresql' connection"
+            $caught | Should -Not -Match "stale"
+        }
+
+        It "reports a provider-valid connection with no database as incomplete, not stale" {
+            {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p' `
+                    -EnvValues @{ DMS_DATASTORE = 'postgresql' } `
+                    -SchemaToolPath $script:oracleTool
+            } | Should -Throw -ExpectedMessage "*specifies no database*"
+        }
+
+        It "treats an old tool lacking the inspect verb as a rebuild/tool-contract failure, not a datastore error" {
+            $oldTool = Join-Path $script:repo.RepoRoot "old-api-schema-tools.ps1"
+            Set-Content -LiteralPath $oldTool -Encoding utf8 -Value @'
+param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Arguments)
+$null = $input
+[Console]::Error.WriteLine("Unrecognized command or argument 'inspect'")
+exit 1
+'@
+            {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=db;' `
+                    -EnvValues @{ DMS_DATASTORE = 'postgresql' } `
+                    -SchemaToolPath $oldTool
+            } | Should -Throw -ExpectedMessage "*rebuild or re-publish api-schema-tools*"
+        }
+
+        It "treats a <Case> from the secondary (other-engine) probe as a tool-contract failure, never a datastore error" -ForEach @(
+            @{ Case = "non-zero exit"; OtherBody = "[Console]::Error.WriteLine('boom'); exit 1" }
+            @{ Case = "malformed JSON"; OtherBody = "Write-Output 'not-json{'" }
+            @{ Case = "missing field"; OtherBody = "Write-Output '{`"valid`":true}'" }
+        ) {
+            # postgresql is rejected (valid=false, full fields) so the mssql secondary probe runs; that probe
+            # then fails as a tool-contract/version problem, which must PROPAGATE as rebuild guidance rather
+            # than being coerced into a stale/invalid datastore claim.
+            $body = @"
+if (`$engine -eq 'postgresql') {
+    Write-Output '{"valid":false,"database":null,"host":null,"port":null,"username":null,"error":"unsupported keyword"}'
+}
+else {
+    $OtherBody
+}
+"@
+            $stub = New-InspectStubTool -Directory $script:repo.RepoRoot -Body $body
+            $caught = $null
+            try {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=db;' `
+                    -EnvValues @{ DMS_DATASTORE = 'postgresql' } `
+                    -SchemaToolPath $stub
+            }
+            catch { $caught = [string]$_.Exception.Message }
+            $caught | Should -Match "rebuild or re-publish api-schema-tools"
+            $caught | Should -Not -Match "stale"
+            $caught | Should -Not -Match "not a valid"
+        }
+
+        It "treats a non-boolean 'valid' field as a tool-contract failure" {
+            $stub = New-InspectStubTool -Directory $script:repo.RepoRoot `
+                -Body "Write-Output '{`"valid`":`"false`",`"database`":null,`"host`":null,`"port`":null,`"username`":null,`"error`":null}'"
+            {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=db;' `
+                    -EnvValues @{ DMS_DATASTORE = 'postgresql' } `
+                    -SchemaToolPath $stub
+            } | Should -Throw -ExpectedMessage "*non-boolean 'valid' field*"
+        }
+
+        It "treats a result missing a coordinate field as a tool-contract failure" {
+            $stub = New-InspectStubTool -Directory $script:repo.RepoRoot -Body "Write-Output '{`"valid`":false}'"
+            {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'host=dms-postgresql;port=5432;username=postgres;password=p;database=db;' `
+                    -EnvValues @{ DMS_DATASTORE = 'postgresql' } `
+                    -SchemaToolPath $stub
+            } | Should -Throw -ExpectedMessage "*is missing the*field*rebuild*"
+        }
+
+        It "SQL Server endpoint override - <Case>" -ForEach @(
+            @{ Case = "tcp: prefix on the container default port translates";  HostField = "tcp:dms-mssql,1433";        ExpectOverride = $true }
+            @{ Case = "zero-padded container default port translates";         HostField = "tcp:dms-mssql,01433";       ExpectOverride = $true }
+            @{ Case = "bare dms-mssql with no port translates";                HostField = "dms-mssql";                 ExpectOverride = $true }
+            @{ Case = "a non-default container port is NOT translated";         HostField = "tcp:dms-mssql,1444";        ExpectOverride = $false }
+            @{ Case = "an external SQL Server is NOT translated";               HostField = "external.example.com,1433"; ExpectOverride = $false }
+        ) {
+            # Deterministic host value from the stub, so the tcp:-strip and 1433-only rule are tested without
+            # depending on how SqlClient normalizes the data source.
+            $json = '{"valid":true,"database":"d","host":"' + $HostField + '","port":null,"username":"sa","error":null}'
+            $stub = New-InspectStubTool -Directory $script:repo.RepoRoot -Body "Write-Output '$json'"
+            $target = Convert-CmsConnectionStringToHostSideTarget `
+                -ConnectionString 'Server=placeholder;Database=d;User Id=sa;Password=p' `
+                -EnvValues @{ DMS_DATASTORE = 'mssql'; MSSQL_PORT = '15433' } `
+                -SchemaToolPath $stub
+            if ($ExpectOverride) {
+                $target.OverrideHost | Should -Be '127.0.0.1'
+                $target.OverridePort | Should -Be '15433'
+            }
+            else {
+                $target.OverrideHost | Should -BeNullOrEmpty
+                $target.OverridePort | Should -BeNullOrEmpty
+            }
+        }
+
+        It "keeps distinct external SQL Server named-instance endpoints in separate groups (no synthetic 1433)" {
+            # 'sqlhost\instance' (SQL Browser resolves a dynamic port) and 'sqlhost\instance,1433' (explicit
+            # 1433) are DIFFERENT endpoints; the COMPLETE data source is the external identity, so they must
+            # not collapse to one grouping identity. (JSON escapes the backslash as \\.)
+            $dynamicStub = New-InspectStubTool -Directory $script:repo.RepoRoot `
+                -Body "Write-Output '{`"valid`":true,`"database`":`"d`",`"host`":`"sqlhost\\instance`",`"port`":null,`"username`":`"sa`",`"error`":null}'"
+            $explicitStub = New-InspectStubTool -Directory $script:repo.RepoRoot `
+                -Body "Write-Output '{`"valid`":true,`"database`":`"d`",`"host`":`"sqlhost\\instance,1433`",`"port`":null,`"username`":`"sa`",`"error`":null}'"
+            $mssqlEnv = @{ DMS_DATASTORE = 'mssql'; MSSQL_PORT = '15433' }
+            $connection = 'Server=x;Database=d;User Id=sa;Password=p'
+            $dynamicTarget = Convert-CmsConnectionStringToHostSideTarget -ConnectionString $connection -EnvValues $mssqlEnv -SchemaToolPath $dynamicStub
+            $explicitTarget = Convert-CmsConnectionStringToHostSideTarget -ConnectionString $connection -EnvValues $mssqlEnv -SchemaToolPath $explicitStub
+
+            # Neither is the Docker-internal server, so both are external (no override) and keep the full data source.
+            $dynamicTarget.OverrideHost | Should -BeNullOrEmpty
+            $dynamicTarget.Host | Should -BeExactly 'sqlhost\instance'
+            $explicitTarget.Host | Should -BeExactly 'sqlhost\instance,1433'
+
+            (Group-ProvisionTarget -Targets @($dynamicTarget, $explicitTarget)).Count | Should -Be 2
+            # Identical data sources still share one invocation.
+            (Group-ProvisionTarget -Targets @($dynamicTarget, $dynamicTarget)).Count | Should -Be 1
+        }
+
+        It "treats a <Case> as a tool-contract failure, not a datastore result" -ForEach @(
+            # Typed coordinate fields (string-or-null), each proven independently.
+            @{ Case = "non-string database"; Datastore = 'postgresql'; Json = '{"valid":true,"database":{"x":1},"host":"dms-postgresql","port":5432,"username":"u","error":null}'; Expect = "*non-string 'database'*" }
+            @{ Case = "non-string host"; Datastore = 'postgresql'; Json = '{"valid":true,"database":"d","host":{"x":1},"port":5432,"username":"u","error":null}'; Expect = "*non-string 'host'*" }
+            @{ Case = "non-string username"; Datastore = 'postgresql'; Json = '{"valid":true,"database":"d","host":"dms-postgresql","port":5432,"username":{"x":1},"error":null}'; Expect = "*non-string 'username'*" }
+            @{ Case = "non-string error"; Datastore = 'postgresql'; Json = '{"valid":false,"database":null,"host":null,"port":null,"username":null,"error":{"x":1}}'; Expect = "*non-string 'error'*" }
+            @{ Case = "non-integer port"; Datastore = 'postgresql'; Json = '{"valid":true,"database":"d","host":"dms-postgresql","port":"5432","username":"u","error":null}'; Expect = "*non-integer 'port'*" }
+            # Provider/state-specific port rules.
+            @{ Case = "a valid PostgreSQL result with a null port"; Datastore = 'postgresql'; Json = '{"valid":true,"database":"d","host":"dms-postgresql","port":null,"username":"u","error":null}'; Expect = "*valid PostgreSQL result with no integer 'port'*" }
+            @{ Case = "a valid PostgreSQL port below range"; Datastore = 'postgresql'; Json = '{"valid":true,"database":"d","host":"dms-postgresql","port":0,"username":"u","error":null}'; Expect = "*outside 1-65535*" }
+            @{ Case = "a valid PostgreSQL port above range"; Datastore = 'postgresql'; Json = '{"valid":true,"database":"d","host":"dms-postgresql","port":70000,"username":"u","error":null}'; Expect = "*outside 1-65535*" }
+            @{ Case = "a valid SQL Server result with a non-null port"; Datastore = 'mssql'; Json = '{"valid":true,"database":"d","host":"dms-mssql,1433","port":1433,"username":"sa","error":null}'; Expect = "*valid SQL Server result with a non-null 'port'*" }
+            # Valid/invalid state coherence.
+            @{ Case = "a valid result carrying an error"; Datastore = 'postgresql'; Json = '{"valid":true,"database":"d","host":"dms-postgresql","port":5432,"username":"u","error":"oops"}'; Expect = "*valid result with a non-null 'error'*" }
+            @{ Case = "an invalid result with no error message"; Datastore = 'postgresql'; Json = '{"valid":false,"database":null,"host":null,"port":null,"username":null,"error":null}'; Expect = "*invalid result with no 'error'*" }
+            @{ Case = "an invalid result with a non-null coordinate"; Datastore = 'postgresql'; Json = '{"valid":false,"database":"leftover","host":null,"port":null,"username":null,"error":"bad"}'; Expect = "*invalid result with a non-null 'database'*" }
+        ) {
+            $stub = New-InspectStubTool -Directory $script:repo.RepoRoot -Body "Write-Output '$Json'"
+            {
+                Convert-CmsConnectionStringToHostSideTarget `
+                    -ConnectionString 'host=x;database=d;username=u;password=p' `
+                    -EnvValues @{ DMS_DATASTORE = $Datastore } `
+                    -SchemaToolPath $stub
+            } | Should -Throw -ExpectedMessage $Expect
         }
     }
 
@@ -2279,9 +2691,11 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -DataStoreId @(1)
 
                 $captured = @(Get-Content -LiteralPath $capturePath)
-                $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-                $connectionString | Should -Match "port=9876"
-                $connectionString | Should -Not -Match "port=1111"
+                # The host-side override port is read from the supplied env FILE (POSTGRES_PORT=9876), never
+                # the ambient process env (POSTGRES_PORT=1111). The connection string is passed verbatim.
+                $overridePort = $captured[[array]::IndexOf($captured, "--override-port") + 1]
+                $overridePort | Should -Be "9876"
+                $overridePort | Should -Not -Be "1111"
             }
             finally {
                 $env:POSTGRES_PORT = $null
@@ -2394,12 +2808,14 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            # External host with no port in the stored connection: passed through verbatim (no port added, no
+            # override). The exact provider defaults the port at connect time.
             $connectionString | Should -Match "host=managed-pg.example.com"
-            $connectionString | Should -Match "port=5432"
-            $connectionString | Should -Not -Match "host=localhost"
+            $connectionString | Should -Not -Match "port="
+            $captured | Should -Not -Contain "--override-host"
         }
 
-        It "defaults a missing port for dms-postgresql to the host-side mapped POSTGRES_PORT" {
+        It "recognizes dms-postgresql without an explicit port as the Docker-internal endpoint and overrides it" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
@@ -2424,11 +2840,16 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             $captured = @(Get-Content -LiteralPath $capturePath)
             $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-            $connectionString | Should -Match "host=localhost"
-            $connectionString | Should -Match "port=5544"
+            # No port in the stored connection: the provider defaults to 5432, recognized as the
+            # Docker-internal endpoint and overridden to the host-side mapped POSTGRES_PORT. The connection
+            # itself is passed through verbatim (no port added).
+            $connectionString | Should -Match "host=dms-postgresql"
+            $connectionString | Should -Not -Match "port="
+            $captured[[array]::IndexOf($captured, "--override-host") + 1] | Should -Be "localhost"
+            $captured[[array]::IndexOf($captured, "--override-port") + 1] | Should -Be "5544"
         }
 
-        It "still fails fast when both host and port are missing" {
+        It "passes a hostless provider-valid connection through unchanged with no override (host is not required)" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
             $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
@@ -2442,18 +2863,21 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 return @(
                     [pscustomobject]@{
                         id = 1
-                        name = "MissingHost"
+                        name = "NoHost"
                         connectionString = 'username=postgres;password=secret-pass;database=no_host_db;'
                         dataStoreContexts = @()
                     }
                 )
             }
 
-            # "username" is a definitive PostgreSQL marker, so this resolves to pgsql and then
-            # fails further along, on the missing host key specifically, rather than on
-            # dialect resolution itself.
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1) } |
-                Should -Throw -ExpectedMessage "*missing the host key*"
+            # A provider-valid connection with no host is not a Docker-internal endpoint, so it is passed
+            # through verbatim with no override; host is not a required provisioning coordinate (only database
+            # is). Reachability is the provider's concern at connect time, not a pre-provisioning rejection.
+            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1)
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -BeExactly 'username=postgres;password=secret-pass;database=no_host_db;'
+            $captured | Should -Not -Contain "--override-host"
         }
     }
 
