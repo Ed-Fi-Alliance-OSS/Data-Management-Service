@@ -40,11 +40,14 @@ $script:RedactionMarker = "***REDACTED***"
 # value with the marker. Rules are intentionally conservative about non-secret text: they anchor on a
 # key name or scheme so ordinary diagnostics (ids, hostnames, ports, timings) are preserved.
 $script:RedactionRules = @(
-    # Connection-string secrets: password=..., pwd=... up to the next ';', quote, or whitespace.
-    # Covers PostgreSQL (password=) and SQL Server (Password=) connection strings.
+    # Connection-string secrets: password=... / pwd=... in PostgreSQL and SQL Server connection
+    # strings. The value is redacted whether it is bare (up to the next ';'/','/whitespace) OR
+    # wrapped so it can legally contain spaces/';'/'=': double-quoted ("..."), single-quoted
+    # ('...'), or XML-escaped (&quot;...&quot;) as it appears inside a TRX. The quoted/escaped
+    # forms are matched as a whole so the enclosed secret is not left behind.
     [pscustomobject]@{
         Name        = "connection-string-password"
-        Pattern     = "(?i)((?:password|pwd)\s*=\s*)([^;""'\r\n]+)"
+        Pattern     = "(?i)((?:password|pwd)\s*=\s*)(&quot;.*?&quot;|""[^""]*""|'[^']*'|[^;,\s""'\r\n]+)"
         Replacement = "`${1}$($script:RedactionMarker)"
     },
     # JSON string values for credential-bearing property names.

@@ -32,6 +32,32 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $result | Should -Match "TrustServerCertificate=true"
     }
 
+    It "redacts a double-quoted connection-string password containing spaces and a semicolon" {
+        $result = Get-SanitizedText -Text 'Server=dms-mssql,1433;Database=db;User Id=sa;Password="Aa1! secret; with spaces";TrustServerCertificate=true'
+
+        $result | Should -Not -Match "secret"
+        $result | Should -Not -Match "with spaces"
+        $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "User Id=sa"
+        $result | Should -Match "TrustServerCertificate=true"
+    }
+
+    It "redacts a single-quoted connection-string password" {
+        $result = Get-SanitizedText -Text "host=h;password='pa;ss word';database=db"
+
+        $result | Should -Not -Match "pa;ss word"
+        $result | Should -Match "password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "database=db"
+    }
+
+    It "redacts an XML-escaped connection-string password as it appears inside a TRX" {
+        $result = Get-SanitizedText -Text '<Output>connect failed: Server=s;Password=&quot;Aa1!xmlSecretValue&quot;;TrustServerCertificate=true</Output>'
+
+        $result | Should -Not -Match "Aa1!xmlSecretValue"
+        $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "TrustServerCertificate=true"
+    }
+
     It "redacts JSON credential properties but preserves benign properties" {
         $result = Get-SanitizedText -Text '{ "clientId": "svc-1", "clientSecret": "topSecretValue", "password": "pw12345", "tenant": "Tenant_255901" }'
 

@@ -90,7 +90,7 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
         foreach (var record in SelectDeletable(ownedRecords, fixtureIds))
         {
             var client = ResolveClient(record.Tenant);
-            if (client == null)
+            if (client is null)
             {
                 _logger?.LogWarning(
                     "No Configuration Service token available; cannot delete scenario-owned {RecordKind} {Id}",
@@ -119,7 +119,7 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
             return existing;
         }
 
-        if (context.ConfigToken == null)
+        if (context.ConfigToken is null)
         {
             return null;
         }

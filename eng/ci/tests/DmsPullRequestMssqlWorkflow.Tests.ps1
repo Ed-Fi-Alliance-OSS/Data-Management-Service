@@ -412,5 +412,24 @@ Describe "on-dms-pullrequest.yml SQL Server E2E lane guardrails" {
             $buildIndex | Should -BeLessThan $runIndex `
                 -Because "the Build step must compile the tags before the category filter selects scenarios"
         }
+
+        It "restricts diagnostic container capture to the dms-local Compose project, not every container" -ForEach @(
+            @{ Name = 'run-e2e-tests-mssql' }
+            @{ Name = 'run-e2e-tests-mssql-ds61' }
+            @{ Name = 'run-instance-management-e2e-tests-mssql' }
+        ) {
+            $block = switch ($Name) {
+                'run-e2e-tests-mssql' { $script:standard }
+                'run-e2e-tests-mssql-ds61' { $script:ds61 }
+                'run-instance-management-e2e-tests-mssql' { $script:instance }
+            }
+
+            $captureStep = Get-StepChunk -Block $block | Where-Object { $_ -match "docker logs" }
+            $captureStep | Should -Not -BeNullOrEmpty
+            $captureStep | Should -Match ([regex]::Escape('docker ps -a --filter "label=com.docker.compose.project=dms-local"')) `
+                -Because "diagnostics must not collect unrelated (buildx / other) containers"
+            $captureStep | Should -Not -Match ([regex]::Escape('docker ps -a --format')) `
+                -Because "an unfiltered enumeration of every container is rejected"
+        }
     }
 }

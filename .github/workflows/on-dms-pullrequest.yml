@@ -1726,7 +1726,9 @@ jobs:
           $logDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+          # Restrict capture to the dms-local Compose project so unrelated containers (buildx, other
+          # services on the runner) are never collected into the uploaded diagnostics.
+          $containers = @(docker ps -a --filter "label=com.docker.compose.project=dms-local" --format "{{.Names}}" | Sort-Object)
 
           if ($containers.Count -eq 0) {
               Write-Host "No Docker containers found for log export."
@@ -1927,7 +1929,9 @@ jobs:
           $logDir = "${{ github.workspace }}/logs/e2e-mssql-ds61"
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+          # Restrict capture to the dms-local Compose project so unrelated containers (buildx, other
+          # services on the runner) are never collected into the uploaded diagnostics.
+          $containers = @(docker ps -a --filter "label=com.docker.compose.project=dms-local" --format "{{.Names}}" | Sort-Object)
 
           if ($containers.Count -eq 0) {
               Write-Host "No Docker containers found for log export."
@@ -2345,7 +2349,9 @@ jobs:
           $logDir = "${{ github.workspace }}/logs"
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+          # Restrict capture to the dms-local Compose project so unrelated containers (buildx, other
+          # services on the runner) are never collected into the uploaded diagnostics.
+          $containers = @(docker ps -a --filter "label=com.docker.compose.project=dms-local" --format "{{.Names}}" | Sort-Object)
 
           if ($containers.Count -eq 0) {
               Write-Host "No Docker containers found for log export."
