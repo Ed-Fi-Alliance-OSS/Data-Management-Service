@@ -453,6 +453,8 @@ public class Given_The_Parity_Scenario_Catalog
                     ("NoProfileMultiBatchCollection/Create", "generate_series"),
                     ("NoProfileMultiBatchCollection/AlignedExtensionCreate", "no id reservation"),
                     ("NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions", "no id reservation"),
+                    ("NoProfileMultiBatchCollection/DeleteUpdate", "no id reservation"),
+                    ("NoProfileChangedPutOmissionSemantics/DeletedBaseCollectionRows", "MaxRowsPerBatch + 2"),
                 ]
         )
         {
