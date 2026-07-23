@@ -6,6 +6,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.DataModel;
@@ -73,6 +74,44 @@ public abstract class ClaimsManagementModuleTests
         body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
         body["validationErrors"]!.AsObject().Count.Should().Be(0);
         body["errors"]!.AsArray().Count.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Configures the shared IClaimsProvider fake so that GetCurrentClaims' document build throws.
+    /// </summary>
+    protected void ArrangeCurrentClaimsToThrow(Exception exception)
+    {
+        A.CallTo(() => _claimsProvider.GetClaimsDocumentNodes()).Throws(exception);
+    }
+
+    /// <summary>
+    /// Asserts the full Ed-Fi internal-server-error contract for a 500 response and proves the raw
+    /// exception text (<paramref name="secretThatMustNotLeak"/>) is absent from the body, including
+    /// the legacy ad-hoc singular <c>error</c>/<c>message</c> members.
+    /// </summary>
+    protected static async Task AssertInternalServerErrorContract(
+        HttpResponseMessage response,
+        string secretThatMustNotLeak
+    )
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        string content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain(secretThatMustNotLeak);
+
+        JsonNode body = JsonNode.Parse(content)!;
+        body["detail"]!.GetValue<string>().Should().BeEmpty();
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+        body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
+        body["status"]!.GetValue<int>().Should().Be(500);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
+
+        JsonObject bodyObject = body.AsObject();
+        bodyObject.ContainsKey("error").Should().BeFalse();
+        bodyObject.ContainsKey("message").Should().BeFalse();
     }
 
     protected void ArrangeUnauthenticatedClient(bool dangerousFlagEnabled)
@@ -414,6 +453,56 @@ public abstract class ClaimsManagementModuleTests
         {
             var response = await Client.GetAsync(CurrentClaimsRoute);
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+    }
+
+    /// <summary>
+    /// With the dangerous flag enabled and an authorized caller, a JsonException thrown while building
+    /// the current-claims document is caught and returned as the Ed-Fi internal-server-error contract,
+    /// never leaking the exception message.
+    /// </summary>
+    [TestFixture]
+    public class Given_current_claims_throws_a_json_exception : ClaimsManagementModuleTests
+    {
+        private const string SecretSentinel = "SENTINEL_JSON_a91f3c2e_must_not_leak";
+
+        [SetUp]
+        public void Setup()
+        {
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+            ArrangeCurrentClaimsToThrow(new JsonException(SecretSentinel));
+        }
+
+        [Test]
+        public async Task It_should_return_the_internal_server_error_contract()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            await AssertInternalServerErrorContract(response, SecretSentinel);
+        }
+    }
+
+    /// <summary>
+    /// With the dangerous flag enabled and an authorized caller, an InvalidOperationException thrown
+    /// while building the current-claims document is caught and returned as the Ed-Fi
+    /// internal-server-error contract, never leaking the exception message.
+    /// </summary>
+    [TestFixture]
+    public class Given_current_claims_throws_an_invalid_operation_exception : ClaimsManagementModuleTests
+    {
+        private const string SecretSentinel = "SENTINEL_INVOP_5d7b1c04_must_not_leak";
+
+        [SetUp]
+        public void Setup()
+        {
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+            ArrangeCurrentClaimsToThrow(new InvalidOperationException(SecretSentinel));
+        }
+
+        [Test]
+        public async Task It_should_return_the_internal_server_error_contract()
+        {
+            var response = await Client.GetAsync(CurrentClaimsRoute);
+            await AssertInternalServerErrorContract(response, SecretSentinel);
         }
     }
 }

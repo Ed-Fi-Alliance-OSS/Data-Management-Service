@@ -293,12 +293,12 @@ public class ClaimsManagementModule : IEndpointModule
         catch (JsonException ex)
         {
             logger.LogError(ex, "JSON error while retrieving current claims");
-            return Results.Json(new { error = "JSON format error", message = ex.Message }, statusCode: 500);
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid operation while retrieving current claims");
-            return Results.Json(new { error = "Invalid operation", message = ex.Message }, statusCode: 500);
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
     }
 }
