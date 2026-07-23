@@ -6,6 +6,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -53,6 +54,26 @@ public abstract class ClaimsManagementModuleTests
     }
 
     protected static StringContent EmptyJsonBody() => new("{}", Encoding.UTF8, "application/json");
+
+    /// <summary>
+    /// Asserts the full Ed-Fi not-found error contract for a disabled claims-management endpoint,
+    /// including the exact route-specific <paramref name="expectedDetail"/>.
+    /// </summary>
+    protected static async Task AssertNotFoundContract(HttpResponseMessage response, string expectedDetail)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        string content = await response.Content.ReadAsStringAsync();
+        JsonNode body = JsonNode.Parse(content)!;
+        body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+        body["title"]!.GetValue<string>().Should().Be("Not Found");
+        body["status"]!.GetValue<int>().Should().Be(404);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(0);
+    }
 
     protected void ArrangeUnauthenticatedClient(bool dangerousFlagEnabled)
     {
@@ -316,21 +337,21 @@ public abstract class ClaimsManagementModuleTests
         public async Task It_should_return_404_for_reload_claims()
         {
             var response = await Client.PostAsync(ReloadClaimsRoute, EmptyJsonBody());
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await AssertNotFoundContract(response, "Claims reload endpoint is not available.");
         }
 
         [Test]
         public async Task It_should_return_404_for_upload_claims()
         {
             var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await AssertNotFoundContract(response, "Claims upload endpoint is not available.");
         }
 
         [Test]
         public async Task It_should_return_404_for_current_claims()
         {
             var response = await Client.GetAsync(CurrentClaimsRoute);
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await AssertNotFoundContract(response, "Current claims endpoint is not available.");
         }
     }
 
