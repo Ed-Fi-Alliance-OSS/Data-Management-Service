@@ -228,6 +228,56 @@ Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
             }
         }
     }
+
+    It "gives a process/shell value for the requested key precedence over the env-file value" {
+        # Docker Compose interpolation gives a set shell/process MSSQL_SA_PASSWORD precedence over the
+        # same key in the --env-file when compose.yml consumes ${MSSQL_SA_PASSWORD}. The resolver must
+        # match so the test process's connection string equals what the container receives, not the
+        # file value. Isolate and restore the ambient variable.
+        $priorExists = Test-Path "Env:MSSQL_SA_PASSWORD"
+        $priorValue = [System.Environment]::GetEnvironmentVariable("MSSQL_SA_PASSWORD")
+        try {
+            [System.Environment]::SetEnvironmentVariable("MSSQL_SA_PASSWORD", "AmbientWins9!")
+            $envValues = @{ MSSQL_SA_PASSWORD = "FileValueShouldLose9!"; MSSQL_PORT = "1435" }
+
+            $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "db"
+
+            $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $parsed.set_ConnectionString($result.AdminConnectionString)
+            $parsed["Password"] | Should -Be "AmbientWins9!"
+            $result.AdminConnectionString | Should -Not -Match "FileValueShouldLose9"
+        }
+        finally {
+            # Reliably clear the ambient key so it does not leak into sibling tests that resolve
+            # MSSQL_SA_PASSWORD from the env file (SetEnvironmentVariable with $null leaves an empty
+            # string here, which would then win by ambient precedence and mask the file value).
+            if ($priorExists) {
+                [System.Environment]::SetEnvironmentVariable("MSSQL_SA_PASSWORD", $priorValue)
+            }
+            else {
+                Remove-Item Env:MSSQL_SA_PASSWORD -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    It "keeps a single-quoted referenced value literal through a reference chain (Compose literal semantics)" {
+        # MSSQL_SA_PASSWORD references SHARED_SECRET, whose value is single-quoted. Compose keeps a
+        # single-quoted value literal, so ${OTHER} must not be expanded even though it is reached
+        # through a reference chain rather than being the top-level value.
+        $envValues = @{
+            MSSQL_SA_PASSWORD = '${SHARED_SECRET}'
+            SHARED_SECRET     = "'`${OTHER}'"
+            OTHER             = "should-not-be-used"
+            MSSQL_PORT        = "1435"
+        }
+
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "db"
+
+        $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $parsed.set_ConnectionString($result.AdminConnectionString)
+        $parsed["Password"] | Should -Be '${OTHER}'
+        $result.AdminConnectionString | Should -Not -Match "should-not-be-used"
+    }
 }
 
 Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {

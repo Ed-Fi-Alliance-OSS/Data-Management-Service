@@ -836,14 +836,42 @@ function New-DataStoreConnectionString {
     return $builder.ConnectionString
 }
 
+function Resolve-ComposeEnvRawValue {
+    <#
+    .SYNOPSIS
+        Applies Docker Compose value semantics to a single raw env-file map value: strips surrounding
+        quotes and inline comments (ConvertFrom-ComposeEnvironmentValue), then resolves ${VAR}/$VAR
+        references EXCEPT when the raw value is single-quoted, which Compose treats as literal (no
+        interpolation). This is the single place that decides convert-then-resolve vs. literal, so the
+        rule applies identically to the top-level requested key and to every value reached through a
+        ${VAR} reference chain.
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [AllowEmptyString()][string]$RawValue,
+        [int]$Depth = 0
+    )
+
+    $converted = ConvertFrom-ComposeEnvironmentValue -Value $RawValue
+
+    if ($RawValue.TrimStart().StartsWith("'")) {
+        # Single-quoted: Compose keeps the value literal (quotes stripped), no ${VAR} interpolation.
+        return $converted
+    }
+
+    return Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $converted -Depth $Depth
+}
+
 function Resolve-ComposeEnvReference {
     <#
     .SYNOPSIS
         Resolves ${VAR}/$VAR references in a Compose-converted value against the other environment
         values, following Docker Compose interpolation: a literal '$' is written '$$' in the file and
         is preserved, ${NAME}/$NAME expand to another value (recursively, bounded), and an unset
-        reference expands to empty. Applied to the values that flow into connection strings so a
-        referenced credential/port matches the compose stack instead of being embedded literally.
+        reference expands to empty. A referenced value is resolved through Resolve-ComposeEnvRawValue
+        so its own quoting (single-quote literal) semantics are honoured. Applied to the values that
+        flow into connection strings so a referenced credential/port matches the compose stack instead
+        of being embedded literally.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'EnvironmentValues', Justification = 'Consumed inside the [regex]::Replace callback scriptblock to resolve ${VAR} references; the analyzer does not detect uses within the nested scriptblock.')]
     param(
@@ -869,8 +897,10 @@ function Resolve-ComposeEnvReference {
         $ambient = [System.Environment]::GetEnvironmentVariable($referenceName)
         if ($null -ne $ambient) { return $ambient }
         if ($null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($referenceName)) {
-            $referenced = ConvertFrom-ComposeEnvironmentValue -Value ([string]$EnvironmentValues[$referenceName])
-            return Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $referenced -Depth ($Depth + 1)
+            # Resolve the referenced raw value through the shared convert + quote-aware helper so a
+            # single-quoted referenced value keeps Compose's literal semantics through the chain
+            # (it is not re-interpolated), matching the top-level key's behavior.
+            return Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$referenceName]) -Depth ($Depth + 1)
         }
         return ""
     })
@@ -882,9 +912,11 @@ function Get-ComposeResolvedEnvValue {
     <#
     .SYNOPSIS
         Reads an env-file value the way Docker Compose does before it is embedded in a connection
-        string: strips surrounding quotes and inline comments (ConvertFrom-ComposeEnvironmentValue),
-        resolves ${VAR}/$VAR references, and falls back to the documented default when the key is
-        absent, blank, or resolves to empty. Never logs the value.
+        string: a value set for the same key in the process/shell environment wins (Compose
+        interpolation precedence); otherwise strips surrounding quotes and inline comments
+        (ConvertFrom-ComposeEnvironmentValue) and resolves ${VAR}/$VAR references (single-quoted values
+        stay literal). Falls back to the documented default when the key is absent, blank, or resolves
+        to empty. Never logs the value.
     #>
     param(
         [hashtable]$EnvironmentValues,
@@ -892,26 +924,26 @@ function Get-ComposeResolvedEnvValue {
         [string]$DefaultValue = ""
     )
 
-    if ($null -eq $EnvironmentValues -or -not $EnvironmentValues.ContainsKey($Name)) {
-        return $DefaultValue
-    }
-
+    # Ensure the conversion helper is available before either the ambient or file path needs it.
     if (-not (Get-Command ConvertFrom-ComposeEnvironmentValue -ErrorAction SilentlyContinue)) {
         Import-Module -Name (Join-Path $PSScriptRoot "docker-compose/database-safety.psm1") -Force
     }
 
-    $rawValue = [string]$EnvironmentValues[$Name]
-    $converted = ConvertFrom-ComposeEnvironmentValue -Value $rawValue
-
-    # Docker Compose does not interpolate ${VAR} inside a single-quoted value (it is literal); only
-    # unquoted and double-quoted values interpolate. Detect the single-quoted form from the raw value
-    # (before ConvertFrom-ComposeEnvironmentValue stripped the quotes) and skip resolution for it.
+    # Docker Compose interpolation gives a value set in the process/shell environment precedence over
+    # the same key in the --env-file. Honour that for the requested key itself: when $Name is set in
+    # the ambient environment, the container receives that value verbatim (an interpolation result is
+    # not itself re-interpolated), so it wins over the file value. Otherwise use the file value through
+    # the shared convert + quote-aware resolver, or the documented default when the key is absent.
+    $ambient = [System.Environment]::GetEnvironmentVariable($Name)
     $resolved =
-        if ($rawValue.TrimStart().StartsWith("'")) {
-            $converted
+        if ($null -ne $ambient) {
+            $ambient
+        }
+        elseif ($null -eq $EnvironmentValues -or -not $EnvironmentValues.ContainsKey($Name)) {
+            $DefaultValue
         }
         else {
-            Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $converted
+            Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$Name])
         }
 
     if ([string]::IsNullOrWhiteSpace($resolved)) {
