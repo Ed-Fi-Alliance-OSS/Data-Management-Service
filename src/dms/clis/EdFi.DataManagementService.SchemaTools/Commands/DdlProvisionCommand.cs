@@ -7,6 +7,7 @@ using System.CommandLine;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.SchemaTools.Connections;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
 using Microsoft.Extensions.Logging;
 
@@ -56,12 +57,29 @@ public static class DdlProvisionCommand
             DefaultValueFactory = _ => 300,
         };
 
+        var overrideHostOption = new Option<string?>("--override-host")
+        {
+            Description =
+                "Optional host to substitute for the connection string's endpoint. Must be supplied together "
+                + "with --override-port. The exact provider rewrites only the endpoint; every other option "
+                + "(credentials, SSL, ...) is preserved.",
+        };
+
+        var overridePortOption = new Option<int?>("--override-port")
+        {
+            Description =
+                "Optional port (1-65535) to substitute for the connection string's endpoint. Must be supplied "
+                + "together with --override-host.",
+        };
+
         var command = new Command("provision", "Generate DDL and execute it against a target database");
         command.Options.Add(schemaOption);
         command.Options.Add(connectionStringOption);
         command.Options.Add(dialectOption);
         command.Options.Add(createDatabaseOption);
         command.Options.Add(timeoutOption);
+        command.Options.Add(overrideHostOption);
+        command.Options.Add(overridePortOption);
 
         command.SetAction(parseResult =>
         {
@@ -70,6 +88,8 @@ public static class DdlProvisionCommand
             var dialect = parseResult.GetValue(dialectOption)!;
             var createDatabase = parseResult.GetValue(createDatabaseOption);
             var timeout = parseResult.GetValue(timeoutOption);
+            var overrideHost = parseResult.GetValue(overrideHostOption);
+            var overridePort = parseResult.GetValue(overridePortOption);
             return Execute(
                 logger,
                 fileLoader,
@@ -78,7 +98,9 @@ public static class DdlProvisionCommand
                 connectionString,
                 dialect,
                 createDatabase,
-                timeout
+                timeout,
+                overrideHost,
+                overridePort
             );
         });
 
@@ -93,7 +115,9 @@ public static class DdlProvisionCommand
         string connectionString,
         string dialectName,
         bool createDatabase,
-        int commandTimeoutSeconds
+        int commandTimeoutSeconds,
+        string? overrideHost,
+        int? overridePort
     )
     {
         if (schemaPaths.Length == 0)
@@ -103,6 +127,28 @@ public static class DdlProvisionCommand
         }
 
         var dialect = ParseDialect(dialectName);
+
+        // Endpoint-override contract (atomic): supply --override-host and --override-port together or not at
+        // all; a non-blank host and a port in 1-65535. When supplied, the exact provider rewrites ONLY the
+        // endpoint (every other option is preserved), and the rewritten connection is then used for every
+        // operation below - database-name lookup, optional create, MVCC, seed/schema preflight, and
+        // transactional DDL. Validated up front, before any schema load or database connection.
+        if (
+            !TryResolveEffectiveConnectionString(
+                dialect,
+                connectionString,
+                overrideHost,
+                overridePort,
+                out connectionString,
+                out var overrideError
+            )
+        )
+        {
+            // Route provider-derived text (from user-controlled connection parsing) through the console
+            // safety boundary before emission.
+            Console.Error.WriteLine(LoggingSanitizer.SanitizeForConsole(overrideError));
+            return 1;
+        }
 
         // Load schemas
         var corePath = schemaPaths[0];
@@ -175,6 +221,68 @@ public static class DdlProvisionCommand
                 return 0;
             }
         );
+    }
+
+    /// <summary>
+    /// Validates the atomic endpoint-override contract and, when supplied, rewrites the connection string's
+    /// endpoint through the exact provider (<see cref="ConnectionInspectors"/>), preserving every other
+    /// option. Returns false with a usage message when the contract is violated.
+    /// </summary>
+    private static bool TryResolveEffectiveConnectionString(
+        SqlDialect dialect,
+        string connectionString,
+        string? overrideHost,
+        int? overridePort,
+        out string effectiveConnectionString,
+        out string? error
+    )
+    {
+        effectiveConnectionString = connectionString;
+        error = null;
+
+        var hostProvided = overrideHost is not null;
+        var portProvided = overridePort is not null;
+        if (!hostProvided && !portProvided)
+        {
+            // Neither supplied: the connection string is used unchanged.
+            return true;
+        }
+        if (hostProvided != portProvided)
+        {
+            error = "--override-host and --override-port must be supplied together.";
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(overrideHost))
+        {
+            error = "--override-host must be a non-blank host.";
+            return false;
+        }
+        if (overridePort < 1 || overridePort > 65535)
+        {
+            error = $"--override-port must be between 1 and 65535 (got {overridePort}).";
+            return false;
+        }
+
+        var engine = dialect == SqlDialect.Pgsql ? "postgresql" : "mssql";
+        var inspector = ConnectionInspectors.ForEngine(engine)!;
+        try
+        {
+            effectiveConnectionString = inspector.ApplyEndpointOverride(
+                connectionString,
+                overrideHost!,
+                overridePort!.Value
+            );
+        }
+        catch (Exception ex)
+        {
+            // The exact provider rejected the connection string. Surface a controlled usage error with the
+            // provider's own (keyword-level) message - never a stack trace, and never the connection string or
+            // the password (the provider message references the offending keyword, not its value).
+            error =
+                $"The connection string is not a valid '{engine}' connection, so the endpoint override cannot be applied: {ex.Message}";
+            return false;
+        }
+        return true;
     }
 
     private static SqlDialect ParseDialect(string dialectName)
