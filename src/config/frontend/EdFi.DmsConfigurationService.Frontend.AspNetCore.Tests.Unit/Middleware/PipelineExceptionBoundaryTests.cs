@@ -25,65 +25,109 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware
 /// (rather than an unshaped framework 500), and — because RequestLoggingMiddleware remains outermost —
 /// the handled failure is logged exactly once as HttpRequestFailed.
 /// </summary>
-[TestFixture]
 public class PipelineExceptionBoundaryTests
 {
-    private const string Sentinel = "SENTINEL_TENANT_REPO_7f3a91_must_not_leak";
-
-    [Test]
-    public async Task Tenant_resolution_exception_is_shaped_as_ed_fi_500_and_logged_once()
+    [TestFixture]
+    public class Given_tenant_resolution_throws_an_unexpected_exception
     {
-        // Arrange: multitenancy on, a tenant repository that throws, and a recording logger for
-        // RequestLoggingMiddleware so we can count HttpRequestFailed events.
-        var tenantRepository = A.Fake<ITenantRepository>();
-        A.CallTo(() => tenantRepository.GetTenantByName(A<string>._))
-            .Throws(new InvalidOperationException(Sentinel));
+        private const string Sentinel = "SENTINEL_TENANT_REPO_7f3a91_must_not_leak";
 
-        var recordingLogger = new TestLogger<RequestLoggingMiddleware>();
+        private ITenantRepository _tenantRepository = null!;
+        private TestLogger<RequestLoggingMiddleware> _recordingLogger = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
 
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        [SetUp]
+        public async Task Setup()
         {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("AppSettings:MultiTenancy", "true");
-            builder.ConfigureServices(collection =>
+            _tenantRepository = A.Fake<ITenantRepository>();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>._))
+                .Throws(new InvalidOperationException(Sentinel));
+            _recordingLogger = new TestLogger<RequestLoggingMiddleware>();
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
-                collection.Configure<AppSettings>(options => options.MultiTenancy = true);
-                collection.AddTransient<ITenantRepository>(_ => tenantRepository);
-                collection.AddSingleton<ILogger<RequestLoggingMiddleware>>(recordingLogger);
+                builder.UseEnvironment("Test");
+                builder.UseSetting("AppSettings:MultiTenancy", "true");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.Configure<AppSettings>(options => options.MultiTenancy = true);
+                    collection.AddTransient<ITenantRepository>(_ => _tenantRepository);
+                    collection.AddSingleton<ILogger<RequestLoggingMiddleware>>(_recordingLogger);
+                });
             });
-        });
-        using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("Tenant", "some-tenant");
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("Tenant", "some-tenant");
 
-        // Act: a non-bypassed route with a valid Tenant header reaches tenant resolution, which throws.
-        var response = await client.GetAsync("/v3/applications");
-        string content = await response.Content.ReadAsStringAsync();
+            // A non-bypassed route with a valid Tenant header reaches tenant resolution, which throws.
+            _response = await _client.GetAsync("/v3/applications");
+            _content = await _response.Content.ReadAsStringAsync();
+            _body = JsonNode.Parse(_content)!.AsObject();
+        }
 
-        // Assert: the repository was actually reached.
-        A.CallTo(() => tenantRepository.GetTenantByName(A<string>._)).MustHaveHappened();
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
 
-        // Assert: the full Ed-Fi internal-server-error contract, with no leaked exception text.
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-        content.Should().NotContain(Sentinel);
+        [Test]
+        public void It_reaches_the_tenant_repository() =>
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>._)).MustHaveHappened();
 
-        JsonNode body = JsonNode.Parse(content)!;
-        body["detail"]!.GetValue<string>().Should().BeEmpty();
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
-        body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
-        body["status"]!.GetValue<int>().Should().Be(500);
-        string correlationId = body["correlationId"]!.GetValue<string>();
-        correlationId.Should().NotBeNullOrEmpty();
-        body["validationErrors"]!.AsObject().Count.Should().Be(0);
-        body["errors"]!.AsArray().Count.Should().Be(0);
+        [Test]
+        public void It_returns_500() => _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        // Assert: the TraceId response header matches the body's correlationId.
-        response.Headers.GetValues("TraceId").Should().ContainSingle().Which.Should().Be(correlationId);
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
-        // Assert: exactly one HttpRequestFailed event for the handled tenant exception.
-        recordingLogger
-            .Entries.Count(entry => entry.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id)
-            .Should()
-            .Be(1);
+        [Test]
+        public void It_returns_the_internal_server_error_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+
+        [Test]
+        public void It_has_the_internal_server_error_title() =>
+            _body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
+
+        [Test]
+        public void It_has_an_empty_detail() => _body["detail"]!.GetValue<string>().Should().BeEmpty();
+
+        [Test]
+        public void It_has_a_body_status_of_500() => _body["status"]!.GetValue<int>().Should().Be(500);
+
+        [Test]
+        public void It_includes_a_non_empty_correlation_id() =>
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+        [Test]
+        public void It_includes_empty_extension_members()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_matches_the_trace_id_header_to_the_correlation_id() =>
+            _response
+                .Headers.GetValues("TraceId")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(_body["correlationId"]!.GetValue<string>());
+
+        [Test]
+        public void It_logs_exactly_one_http_request_failed_event() =>
+            _recordingLogger
+                .Entries.Count(entry => entry.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id)
+                .Should()
+                .Be(1);
     }
 }
