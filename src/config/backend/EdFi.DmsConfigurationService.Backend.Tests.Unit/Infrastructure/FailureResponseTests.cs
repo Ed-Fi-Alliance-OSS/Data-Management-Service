@@ -131,6 +131,23 @@ public class FailureResponseTests
     }
 
     [Test]
+    public void ForUnclassifiedStatus_ShouldReturnAboutBlankJsonNode()
+    {
+        // Act — 413 Payload Too Large has no documented Ed-Fi taxonomy URI (D-08).
+        var result = FailureResponse.ForUnclassifiedStatus(413, "Payload Too Large", CorrelationId);
+
+        // Assert
+        result.Should().BeOfType<JsonObject>();
+        result["type"]?.GetValue<string>().Should().Be("about:blank");
+        result["title"]?.GetValue<string>().Should().Be("Payload Too Large");
+        result["detail"]?.GetValue<string>().Should().BeEmpty();
+        result["status"]?.GetValue<int>().Should().Be(413);
+        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+        result["validationErrors"]?.AsObject().Count.Should().Be(0);
+        result["errors"]?.AsArray().Count.Should().Be(0);
+    }
+
+    [Test]
     public void ForConflict_ShouldReturnCorrectJsonNode()
     {
         // Arrange
