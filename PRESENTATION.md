@@ -75,6 +75,34 @@ flowchart LR
 
 ---
 
+# Why projection is asynchronous
+
+“Asynchronous” means independent of canonical mutations—not background-only.
+
+`DocumentCache` can be populated by:
+
+- background reconciliation for convergence and readiness, or
+- optional bounded direct fill after relational read fallback.
+
+Both revalidate the canonical version and use the same monotonic cache upsert.
+
+Neither makes cache availability part of API correctness.
+
+---
+
+# Why not project in the mutation path
+
+| Approach | Consequence |
+| --- | --- |
+| Same canonical transaction | Longer transactions and greater lock contention |
+| Separate transaction before response | Failure coupling without atomicity |
+| Request-path Kafka publish | Database/Kafka dual-write ambiguity |
+| Decoupled projection | Canonical independence with bounded projection lag |
+
+Direct fill may accelerate one document; only a full audit provides completeness evidence.
+
+---
+
 # What `DocumentCache` represents
 
 One caller-agnostic, pre-profile document per current resource:
@@ -214,6 +242,44 @@ Work can appear below the cursor because of:
 - restart timing.
 
 The cursor is an optimization, never completeness evidence.
+
+---
+
+# Why repair is necessary
+
+`DocumentCache` is an asynchronous projection—not part of the canonical write transaction.
+
+It can become missing or behind because of:
+
+- late commits below the incremental cursor,
+- failed or interrupted projection,
+- cache loss or rebuild, and
+- races during materialization.
+
+Relational reads remain correct, but CDC completeness requires the cache to converge.
+
+---
+
+# What repair does
+
+```mermaid
+flowchart LR
+    COMPARE[Compare canonical/cache versions]
+    CLASS{Classify}
+    MAT[Materialize current document]
+    CHECK[Recheck canonical version]
+    WRITE[Monotonic cache upsert]
+    LATCH[Set cache-ahead latch]
+
+    COMPARE --> CLASS
+    CLASS -->|missing or behind| MAT --> CHECK --> WRITE
+    CLASS -->|equal| DONE[No action]
+    CLASS -->|cache ahead| LATCH
+```
+
+Repair changes only derived cache state.
+
+It never rolls canonical data backward, overwrites a newer cache version, or treats cache-ahead as ordinary repair.
 
 ---
 
@@ -380,7 +446,7 @@ Fail closed: equality cannot prove payload identity.
 
 ---
 
-# Cache-ahead recovery boundary
+# Cache-ahead recovery ops workflow
 
 ```mermaid
 flowchart TD
