@@ -183,6 +183,18 @@ selection. Everything else (`SCHEMA_PACKAGES`, Kafka, Keycloak, identity-provide
 endpoints, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
 override those base settings, and the overlay still composes on top of it.
 
+> [!WARNING]
+> **SQL Server 2022 volume transition.** `mssql.yml` mounts the major-versioned
+> `dms-mssql-2025` volume so an ordinary `docker compose up` never reuses a legacy
+> `dms-mssql` volume with the SQL Server 2025 image. Microsoft currently supports persisted
+> container upgrades only between release candidates and GA, not from SQL Server 2022 to 2025.
+> Existing 2022 volumes remain intact for backup with the SQL Server 2022 image. The current
+> `-d -v` teardown removes only the 2025 volume; after stopping the old stack and confirming its
+> backups, locate legacy volumes with
+> `docker volume ls --filter label=com.docker.compose.volume=dms-mssql` and remove each intended
+> volume explicitly with `docker volume rm <volume-name>`.
+> See [Microsoft's SQL Server container upgrade guidance](https://learn.microsoft.com/en-us/sql/linux/containers/deploy?view=sql-server-ver17#upgrade-sql-server-in-containers).
+
 > [!NOTE]
 > **Database topology.** Local deployments host the Configuration Service and DMS in one shared
 > physical database on both engines: the CMS `dmscs` schema, and the self-contained (OpenIddict)

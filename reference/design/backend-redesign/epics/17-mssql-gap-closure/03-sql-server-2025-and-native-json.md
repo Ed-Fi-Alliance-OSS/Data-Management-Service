@@ -26,6 +26,8 @@ adoption. A defer decision keeps `nvarchar(max)` and links a follow-up without p
 ## Phase 1: SQL Server 2025 Runtime
 
 - Update every authoritative image pin used by local compose, DMS CI, CMS CI, and template-build workflows.
+- Isolate local SQL Server 2025 storage from volumes initialized by SQL Server 2022; preserve legacy volumes
+  for explicit backup and cleanup instead of attaching them to the new runtime.
 - Keep workflow comments and package documentation aligned with the actual image used to build MSSQL backup
   packages.
 - Verify container readiness and in-container `sqlcmd` tooling before changing generated DDL.
@@ -53,9 +55,9 @@ Tooling and compatibility-level notes:
 - `/opt/mssql-tools18/bin/sqlcmd` is a hard in-container dependency (compose healthcheck, container readiness polls, template content gates, `eng/DatabaseTemplates` and `eng/docker-compose` scripts, and Pester fixtures asserting the exact path).
   Verify the path exists in the selected 2025 image before flipping pins; relocating the tools path is in scope if the image layout changed.
   The SchemaTools lane's host-installed `go-sqlcmd` is unaffected.
-- Nothing in the repo sets or checks the database compatibility level today.
-  Databases created on SQL Server 2025 default to level 170; verify level 170 for newly built template databases in the existing template content gates and document it as the supported-runtime baseline.
-  Templates restored from published SQL Server 2022-built packages keep their original compatibility level and are not altered.
+- Before this story, nothing in the repo set or checked the database compatibility level.
+  The template content gates added by this story verify, but never set, level 170 only for newly built template databases.
+  Templates restored from published SQL Server 2022-built packages keep their original compatibility level, including level 160, and are not altered.
 
 Forward-restore proof: restore the published SQL Server 2022-built `EdFi.Api.*.Template.MsSql` packages (from `DMS-1255`) on the 2025 runtime with the existing `verify-template-restore.ps1` machinery, prove served data, and document the result.
 Ongoing coverage comes from the template lanes themselves once pins are flipped.
@@ -74,22 +76,23 @@ production `DocumentCache` path.
 The release-status gate below was executed on 2026-07-22 and the decision is defer.
 
 - The native `json` type remains in preview for boxed SQL Server 2025 (17.x).
-  The live Microsoft Learn `json` data-type page (content revised 2026-01-14, re-verified live on 2026-07-22) states general availability for Azure SQL Database and Azure SQL Managed Instance only.
-  The latest cumulative update at verification time (CU5, KB5084896, 2026-05-20) records no change to that status.
+  The live Microsoft Learn `json` data-type page, re-verified on 2026-07-22, states general availability for Azure SQL Database and Azure SQL Managed Instance only.
+  The latest cumulative update at verification time (CU7, build 17.0.4065.4, KB5096981, 2026-07-16) records no change to that status.
 - The provider-capability leg passes: the repo targets `net10.0` and pins `Microsoft.Data.SqlClient` 6.1.4, which includes the JSON surface (`SqlDbType.Json`, `SqlJson`) introduced in provider version 6.0.
-- The project does not accept a preview storage format for the supported MSSQL tier, so `MssqlDialect.JsonColumnType` stays `nvarchar(max)` and the conditional adoption criteria transfer to a follow-up ticket.
+- The project does not accept a preview storage format for the supported MSSQL tier, so `MssqlDialect.JsonColumnType` stays `nvarchar(max)` and the conditional adoption criteria transfer to [`DMS-1328`](https://edfi.atlassian.net/browse/DMS-1328).
 - Gate steps 1-3 below are executed by this story; step 3 resolves to the direct `DocumentCache` provider-round-trip boundary.
-  Steps 4-6 are adoption work owned by the follow-up ticket.
-- The follow-up ticket is filed at story completion and detailed with the evaluation-spike findings below.
+  Steps 4-6 are adoption work owned by `DMS-1328`.
+- The `DMS-1328` provider baseline is explicit: PostgreSQL `DocumentJson` uses `jsonb`, MSSQL
+  `DocumentJson` uses `nvarchar(max)`, and only MSSQL adoption of native `json` is in scope.
 
 ### Evaluation Spike (In Scope Under Defer)
 
-The defer decision still ships evaluation tests so their findings detail the follow-up ticket.
+The defer decision still ships evaluation tests so their findings detail `DMS-1328`.
 
 - Add a dedicated real-SQL-Server evaluation fixture to `EdFi.DataManagementService.Backend.Mssql.Tests.Integration` that creates a scratch `DocumentCache`-shaped table with a native `json` column directly, without changing `MssqlDialect.JsonColumnType`, generated DDL, goldens, or manifests.
 - Exercise the provider surface enumerated in step 5 below against that scratch table: table creation, object-only validation via `ISJSON(DocumentJson, OBJECT) = 1`, explicit (`SqlDbType.Json`) and inferred (CLR `string`) parameter binding, insert/select round trips, `OPENJSON`, `JSON_VALUE`, supported bulk operations, schema inspection, and result materialization.
 - The fixture runs in the existing MSSQL backend integration lane once Phase 1 moves it to SQL Server 2025, and is isolated so it can be excluded quickly if preview behavior shifts.
-- Record findings, including provider and TDS limitations observed, in the follow-up ticket.
+- Record findings, including provider and TDS limitations observed, in `DMS-1328`.
 
 Before enabling native storage:
 
@@ -154,13 +157,16 @@ uses mandatory reprovisioning rather than an in-place migration:
 - Document that there is no in-place data-preserving conversion in this story. A future production migration
   requires its own design and tests.
 
-SQL Server 2025 uses compatibility level 170 as its default/recommended release baseline. Microsoft documents
-the native `json` type as available at all database compatibility levels, so level 170 is not a prerequisite
-for the type. Set or verify level 170 for a consistent supported-runtime baseline, and do not describe it as
-the mechanism that enables native JSON.
+SQL Server 2025 uses compatibility level 170 as its default/recommended release baseline. For databases newly
+created on SQL Server 2025, the template content gates verify, but never set, level 170. Restored databases
+preserve their existing compatibility level, including level 160 for SQL Server 2022-built templates.
+Microsoft documents the native `json` type as available at all database compatibility levels, so level 170 is
+not a prerequisite for the type and must not be described as the mechanism that enables native JSON.
 
 ## Backup Compatibility
 
+- Local Compose uses a SQL Server-major-versioned volume identity. Moving to this branch creates a fresh 2025
+  volume and leaves legacy 2022 volumes untouched for explicit backup and cleanup.
 - Validate the forward path from SQL Server 2022-built backups to the 2025 runtime before republishing.
 - Once packages are built against SQL Server 2025, document that they are not expected to restore to SQL Server 2022.
   This boundary applies from the runtime flip alone and does not depend on the deferred native-JSON storage change.
@@ -172,17 +178,19 @@ the mechanism that enables native JSON.
 ### Required Runtime Upgrade And Decision
 
 - All local, CI, CMS, and template workflow image pins use the selected SQL Server 2025 image.
+- Local Compose mounts a SQL Server 2025-specific volume and never automatically attaches the 2025 runtime
+  to a legacy SQL Server 2022 data volume.
 - Existing MSSQL lanes pass on SQL Server 2025 before generated JSON storage changes.
 - Published SQL Server 2022-built templates restore and serve data on the 2025 runtime.
-- The Phase 2 decision is recorded as defer per the 2026-07-22 Decision Record: `nvarchar(max)` is kept, the preview status is recorded as the reason, and a follow-up adoption ticket is filed and linked without blocking Phase 1 completion.
+- The Phase 2 decision is recorded as defer per the 2026-07-22 Decision Record: `nvarchar(max)` is kept on MSSQL, the preview status is recorded as the reason, and `DMS-1328` is linked as the adoption follow-up without blocking Phase 1 completion.
 - The native-JSON evaluation spike runs against SQL Server 2025 using a directly created scratch table and covers the provider round-trip surface in Phase 2 step 5, without changing generated DDL, dialects, goldens, or manifests.
-- Evaluation findings, including observed provider and TDS limitations, are recorded in the follow-up ticket.
+- Evaluation findings, including observed provider and TDS limitations, are recorded in `DMS-1328`.
 - PostgreSQL behavior and generated DDL remain unchanged.
 - Documentation states the backup compatibility boundary and the reason for compatibility level 170.
 
 ### Conditional Native-JSON Adoption
 
-The 2026-07-22 decision is defer, so these criteria are out of scope for this story and transfer to the linked follow-up ticket.
+The 2026-07-22 decision is defer, so these criteria are out of scope for this story and transfer to `DMS-1328`.
 They apply only when a future decision is adopt:
 
 - Generated DDL, authoritative data-model DDL, goldens, manifests, and newly built template packages use native
@@ -202,7 +210,7 @@ They apply only when a future decision is adopt:
 
 ## Non-Goals
 
-- Adopting the native `json` type in this story; the 2026-07-22 decision is defer and adoption is owned by the linked follow-up ticket.
+- Adopting the native `json` type in this story; the 2026-07-22 decision is defer and adoption is owned by `DMS-1328`.
 - Changing the public JSON document contract.
 - Introducing JSON-specific indexes without measured query requirements.
 - Treating a preview feature as mandatory without explicit project acceptance.
@@ -217,22 +225,23 @@ They apply only when a future decision is adopt:
 - [Microsoft: JSON data type](https://learn.microsoft.com/en-us/sql/t-sql/data-types/json-data-type?view=sql-server-ver17)
 - [Microsoft: JSON data type support in SqlClient](https://learn.microsoft.com/en-us/sql/connect/ado-net/sql/json-data-sql-server?view=sql-server-ver17)
 - [Microsoft: ALTER DATABASE compatibility level](https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-database-transact-sql-compatibility-level?view=sql-server-ver17)
+- [Microsoft: Latest SQL Server updates and version history](https://learn.microsoft.com/en-us/troubleshoot/sql/releases/download-and-install-latest-updates)
 
 ## Review Log
 
 ### 2026-07-22
 
 - **D1 - Phase 2 decision committed: defer, with an in-scope evaluation spike.**
-  Verified live on 2026-07-22: the native `json` type is GA on Azure SQL Database and Managed Instance but still in preview for boxed SQL Server 2025 (17.x), and CU5 (KB5084896, 2026-05-20) records no status change.
+  Verified live on 2026-07-22: the native `json` type is GA on Azure SQL Database and Managed Instance but still in preview for boxed SQL Server 2025 (17.x), and CU7 (build 17.0.4065.4, KB5096981, 2026-07-16) records no status change.
   The provider leg passes (`net10.0`, `Microsoft.Data.SqlClient` 6.1.4).
-  Evaluation tests still run so their findings detail the follow-up adoption ticket.
+  Evaluation tests still run so their findings detail `DMS-1328`.
 - **D2 - Evaluation spike shape**: dedicated fixture in `EdFi.DataManagementService.Backend.Mssql.Tests.Integration` against a directly created scratch native-`json` table; generated DDL, dialects, goldens, and manifests untouched; runs in the existing MSSQL backend integration lane and is isolated for quick exclusion if preview behavior shifts.
 - **D3 - Image tag**: `2025-latest` moving tag, consistent with the existing `2022-latest` convention and the major-version-level backup coupling documented in the template workflows.
-- **D4 - Compatibility level**: nothing sets or checks it today; newly created 2025 databases default to level 170, verified in the template content gates and documented; restored 2022-built templates keep their original level and are not altered.
+- **D4 - Compatibility level**: nothing sets it; newly created 2025 databases default to level 170, which the template content gates verify without altering; restored 2022-built templates keep level 160 and are not altered.
 - **D5 - Forward-restore proof**: one-off documented validation restoring published 2022-built `EdFi.Api.*.Template.MsSql` packages on the 2025 image via the existing `verify-template-restore.ps1` machinery; ongoing coverage via the template lanes after the pin flip.
 - **Self-resolved**: `EffectiveSchemaHash` is computed only from the logical API schema with no dialect input (`EffectiveSchemaHashProvider`), so the story's no-PostgreSQL-impact premise holds as written.
 - **Self-resolved**: `dms.DocumentCache` is emitted unconditionally by `CoreDdlEmitter`; "optional" is a design label, not a runtime flag, and no production read/write path or round-trip test exists.
 - **Self-resolved**: physical column types are observed only by SchemaTools provisioned-schema introspection; relational-model manifests record logical types; runtime fingerprint validation reads no column types.
 - **Self-resolved**: MSSQL lane inventory enumerated in Phase 1 (three DMS lanes via `start-mssql-test-container` and `MSSQL_IMAGE`, the CMS integration services container, two CMS E2E compose lanes, two MsSql template lanes); no scheduled MSSQL smoke exists today (owned by `DMS-1289`).
 - **Self-resolved**: `/opt/mssql-tools18/bin/sqlcmd` is hardcoded across healthchecks, readiness polls, template gates, scripts, and Pester fixtures; the Phase 1 tooling-verification step covers this risk explicitly.
-- **Self-resolved**: `DMS-1271` already carries "any engine-defined physical-schema version" in its restore-manifest contract; `MssqlPhysicalSchemaVersion` semantics remain owned by this story's design and transfer to the follow-up ticket under defer.
+- **Self-resolved**: `DMS-1271` already carries "any engine-defined physical-schema version" in its restore-manifest contract; `MssqlPhysicalSchemaVersion` semantics remain owned by this story's design and transfer to `DMS-1328` under defer.

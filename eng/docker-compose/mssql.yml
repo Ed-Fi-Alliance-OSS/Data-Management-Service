@@ -22,7 +22,9 @@ services:
     ports:
       - '127.0.0.1:${MSSQL_PORT:-1435}:1433'
     volumes:
-      - dms-mssql:/var/opt/mssql
+      # Keep the data volume major-versioned so an ordinary Compose recreation cannot attach
+      # SQL Server 2025 to system and user databases initialized by SQL Server 2022.
+      - dms-mssql-2025:/var/opt/mssql
     networks:
       - dms
     restart: always
@@ -44,4 +46,4 @@ networks:
     external: true
 
 volumes:
-  dms-mssql:
+  dms-mssql-2025:
