@@ -28,11 +28,22 @@ wrappers, and `build-dms.ps1 StartEnvironment`. It must not be inferred from the
 | Separate | Dedicated configuration database | Selected DMS datastore database | Create and initialize CMS independently; never redirect DMS schema or template restore into the CMS database. |
 
 Expose the separate mode through `-SeparateConfigDatabase`. `DMS_CONFIG_DATABASE_NAME` is the definitive
-configuration-database-name contract for both engines and must be interpolated into both engines'
-`DMS_CONFIG_DATABASE_CONNECTION_STRING`. Without the switch, it resolves to the selected DMS datastore
-database (`POSTGRES_DB_NAME` or `MSSQL_DB_NAME`). With the switch, it resolves to the dedicated
-`edfi_configurationservice` database. Every wrapper and entry point must forward the switch and preserve this
-effective name; caller-authored connection strings must agree with it or fail with a clear diagnostic.
+configuration-database-name contract for the full-stack entry points that expose or receive that switch, and
+on both engines their `DMS_CONFIG_DATABASE_CONNECTION_STRING` must interpolate it. Without the switch, it
+resolves to the selected DMS datastore database (`POSTGRES_DB_NAME` or `MSSQL_DB_NAME`). With the switch, it
+resolves to the dedicated `edfi_configurationservice` database. Every wrapper and full-stack entry point must
+forward the switch and preserve this effective name; caller-authored connection strings must agree with it or
+fail with a clear diagnostic.
+
+This seam contract is scoped to full-stack DMS entry points that expose or receive `-SeparateConfigDatabase`
+(the local and published start scripts, the bootstrap wrappers, and `build-dms.ps1 StartEnvironment`).
+Standalone Configuration Service entry points (`start-local-config.ps1` and the `build-config.ps1` E2E lanes)
+own one explicit CMS target and are outside the shared/separate topology switch: they do not expose
+`-SeparateConfigDatabase`, do not resolve the topology seam, and their `DMS_CONFIG_DATABASE_CONNECTION_STRING`
+is authoritative for its single target. Consequently every full-stack environment profile those switch-capable
+entry points consume must define `DMS_CONFIG_DATABASE_NAME` and route the CMS connection through it, while the
+standalone Configuration Service profiles (`.env.config.e2e`, `.env.config.mssql.e2e`, and
+`.env.config.mssql.multitenant.e2e`) are the explicit, tracked exceptions.
 
 ## Database Creation
 

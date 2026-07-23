@@ -373,6 +373,85 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
         }
     }
 
+    Context "every switch-capable full-stack base resolves the CMS database through real Compose (shared and separate)" {
+        # Durable per-profile guard (not one-time evidence): for EVERY dynamically discovered switch-capable
+        # base profile (Get-ConfigProfileInventory - the same single authority the static seam guard uses),
+        # run the real `docker compose config` in shared and separate topology using the profile's declared
+        # engine, and assert the rendered CMS connection resolves to the datastore anchor (shared) or
+        # edfi_configurationservice (separate). The database is extracted with the EXACT-provider oracle
+        # (Get-CmsConnectionStringDatabaseName), never a regex. Compose-resolution only: no `up`, no image
+        # build, no start-script preflight - so this guards the interpolation/default/shell semantics for
+        # every profile without multiplying heavy lifecycle runs. All switch-capable bases are PostgreSQL
+        # full profiles; the SQL Server engine is exercised by the sibling anchor Context via the .env.mssql
+        # overlay composed onto a base.
+        BeforeDiscovery {
+            Import-Module (Join-Path $PSScriptRoot "ConfigProfileInventory.psm1") -Force
+            $discoveryComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+            $discoveryRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $discoveryComposeRoot "../.."))
+            $discoveryInventory = Get-ConfigProfileInventory -RepoRoot $discoveryRepoRoot -DockerComposeRoot $discoveryComposeRoot
+            # Script-scoped so PSScriptAnalyzer sees it as used (it cannot follow the Pester -ForEach reference).
+            # The shared-topology expected database is NOT hardcoded - it is derived at run time from the
+            # profile's Compose-resolved datastore anchor, so a future profile selecting a different datastore
+            # still passes as long as CMS follows the anchor. Only the separate-topology contract literal is fixed.
+            $script:composeProfileCases = foreach ($profileName in @($discoveryInventory.SwitchCapableBases)) {
+                @{ Profile = $profileName; Topology = 'shared';   Separate = $false }
+                @{ Profile = $profileName; Topology = 'separate'; Separate = $true }
+            }
+        }
+
+        BeforeAll {
+            Import-Module (Join-Path $PSScriptRoot "ConfigProfileInventory.psm1") -Force
+            $script:composeGuardFiles = @(
+                "-f", (Join-Path $script:composeRoot "postgresql.yml"),
+                "-f", (Join-Path $script:composeRoot "local-dms.yml"),
+                "-f", (Join-Path $script:composeRoot "local-config.yml")
+            )
+            $script:composeGuardWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-profile-compose-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $script:composeGuardWork -Force | Out-Null
+            $script:composeGuardInventory = Get-ConfigProfileInventory `
+                -RepoRoot ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot "../.."))) `
+                -DockerComposeRoot $script:composeRoot
+        }
+
+        AfterAll {
+            if ($script:composeGuardWork) {
+                Remove-Item -LiteralPath $script:composeGuardWork -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "establishes the switch-capable base inventory for the Compose guard (fails closed)" {
+            $script:composeGuardInventory.Error | Should -BeNullOrEmpty -Because "the inventory must be established, not silently empty"
+            @($script:composeGuardInventory.SwitchCapableBases).Count | Should -BeGreaterThan 0 -Because "there must be at least one switch-capable base to resolve through Compose"
+        }
+
+        It "<Profile> (<Topology>): real Compose renders the CMS database to match the topology contract" -ForEach $script:composeProfileCases {
+            $base = Join-Path $script:composeRoot $Profile
+            $resolvedEnv = Resolve-ConfigDatabaseTopologyEnvironmentFile `
+                -BaseEnvironmentFile $base `
+                -DockerComposeRoot $script:composeGuardWork `
+                -DatabaseEngine 'postgresql' `
+                -SeparateConfigDatabase:$Separate
+            $resolved = Get-ComposeResolvedConfiguration `
+                -ComposeFiles $script:composeGuardFiles `
+                -EnvironmentFile $resolvedEnv `
+                -ProjectName "dms-profile-compose" `
+                -InfrastructureEngine 'postgresql'
+
+            # Shared topology means the CMS target EQUALS the Compose-resolved datastore anchor (not a
+            # hardcoded literal); separate topology uses the dedicated configuration-database contract literal.
+            $anchor = $resolved.TopologyDatastoreDatabaseName
+            $anchor | Should -Not -BeNullOrEmpty -Because "$Profile must resolve a single concrete DMS datastore anchor"
+            $anchor | Should -Not -Match '\$\{' -Because "$Profile must resolve the datastore anchor to a concrete value, not an unexpanded reference"
+            $expectedDatabase = if ($Separate) { 'edfi_configurationservice' } else { $anchor }
+
+            # Extract the rendered database with the exact-provider oracle, never a regex.
+            $targets = @(Get-CmsConnectionStringDatabaseName -Engine 'postgresql' -ConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool)
+            $targets | Should -HaveCount 1 -Because "$Profile must render a single concrete CMS database in $Topology mode"
+            # PostgreSQL identity is case-sensitive: compare exactly, never case-insensitively.
+            $targets[0] | Should -BeExactly $expectedDatabase -Because "$Profile in $Topology mode must render the CMS database as the $Topology topology target"
+        }
+    }
+
     Context "E2E safety-field resolution (the DMS_CONFIG_DATABASE_NAME topology seam) and local/published parity" {
         # provision-e2e-database.ps1's DROP-DATABASE guard reads the protected CMS and DMS-admin targets from
         # Compose (never a PowerShell ${...} parser). These prove Compose resolves the default-bearing seam

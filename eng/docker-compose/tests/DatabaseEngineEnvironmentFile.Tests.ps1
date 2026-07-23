@@ -548,19 +548,10 @@ Describe "Configuration database topology matrix (per-cell DB targeting on the r
         }
     }
 
-    It "<EnvFile> wires the CMS connection string to the DMS_CONFIG_DATABASE_NAME seam" -ForEach @(
-        @{ EnvFile = ".env.e2e" }
-        @{ EnvFile = ".env.example" }
-        @{ EnvFile = ".env.mssql" }
-    ) {
-        # Finding 1's exact class: a switch-capable default env file whose CMS connection string does
-        # not interpolate the ${DMS_CONFIG_DATABASE_NAME} seam cannot flip the CMS database when the
-        # topology switch is supplied. Every such tracked file must define the seam and route through it.
-        $values = ReadValuesFromEnvFile (Join-Path $script:realComposeRoot $EnvFile)
-        $values["DMS_CONFIG_DATABASE_NAME"] | Should -Not -BeNullOrEmpty -Because "$EnvFile must define the topology seam"
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
-            Should -Match '\$\{DMS_CONFIG_DATABASE_NAME\}' -Because "$EnvFile must route the CMS database through the seam so -SeparateConfigDatabase flips it"
-    }
+    # The seam-routing invariant for EVERY switch-capable profile (not just these representative cells) is
+    # enforced by the glob-derived, fail-closed inventory guard in the
+    # "Switch-capable full-stack profile inventory" Describe below, so this suite keeps only the per-cell
+    # resolver-behavior checks on the representative default env files.
 
     It "cell <Engine>/<Topology> via <EnvFile>: CMS targets <ExpectedConfigDb>, DMS datastore stays <Datastore>" -ForEach @(
         @{ EnvFile = ".env.e2e";     Engine = "postgresql"; DatastoreKey = "POSTGRES_DB_NAME"; Datastore = "edfi_datamanagementservice"; Topology = "shared";   Separate = $false; ExpectedConfigDb = "edfi_datamanagementservice" }
@@ -589,6 +580,76 @@ Describe "Configuration database topology matrix (per-cell DB targeting on the r
 
         # The DMS datastore selection is topology-invariant (these files define it as a literal).
         $resolvedValues[$DatastoreKey] | Should -Be $Datastore -Because "the DMS datastore database must never change with the topology switch"
+    }
+}
+
+Describe "Switch-capable full-stack profile inventory routes CMS through the DMS_CONFIG_DATABASE_NAME seam" {
+    # Single, glob-derived authority (Get-ConfigProfileInventory) for the supported full-stack profile
+    # inventory. It is NOT filtered by the property under test: every tracked eng/docker-compose/.env*
+    # profile defaults to a switch-capable base that must define DMS_CONFIG_DATABASE_NAME and route its CMS
+    # connection through it, so a new profile that forgets the seam FAILS here rather than silently dropping
+    # out. Only three explicit, existence-checked exception sets are subtracted (standalone Configuration
+    # Service lane, the connection-bearing engine overlay, and the data-standard/bootstrap overlays), each
+    # asserted below. Discovery failures (git unavailable, ls-files failure, empty inventory) are captured
+    # and asserted in the "establishes the tracked profile inventory" test, so an inventory problem fails
+    # CLOSED without aborting discovery of the rest of this specification.
+    BeforeDiscovery {
+        Import-Module (Join-Path $PSScriptRoot "ConfigProfileInventory.psm1") -Force
+        $dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeRoot "../.."))
+        $inventory = Get-ConfigProfileInventory -RepoRoot $repoRoot -DockerComposeRoot $dockerComposeRoot
+
+        # Names the STATIC seam guard checks: switch-capable bases plus the connection-bearing engine overlay
+        # (both must route the CMS connection through the seam). Empty when discovery failed, so the
+        # per-profile cases collapse to zero and the "establishes ..." test is what fails closed.
+        # Script-scoped so PSScriptAnalyzer sees them as used (it cannot follow the Pester -ForEach reference).
+        $script:seamProfiles = @($inventory.SwitchCapableBases) + @($inventory.EngineOverlays | ForEach-Object { $_.Name })
+        $script:standaloneExclusions = @($inventory.StandaloneConfig)
+        $script:engineOverlayExclusions = @($inventory.EngineOverlays)
+        $script:dataStandardOverlayExclusions = @($inventory.DataStandardOverlays)
+    }
+
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot "ConfigProfileInventory.psm1") -Force
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $script:dockerComposeRoot "../.."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+        $script:inventory = Get-ConfigProfileInventory -RepoRoot $script:repoRoot -DockerComposeRoot $script:dockerComposeRoot
+    }
+
+    It "establishes the tracked profile inventory (fails closed on git/enumeration/empty errors)" {
+        $script:inventory.Error | Should -BeNullOrEmpty -Because "the inventory must be established, not silently empty"
+        @($script:inventory.SwitchCapableBases).Count | Should -BeGreaterThan 0 -Because "there must be at least one switch-capable full-stack base"
+    }
+
+    It "<_> defines DMS_CONFIG_DATABASE_NAME and routes the CMS connection through it" -ForEach $script:seamProfiles {
+        $values = ReadValuesFromEnvFile (Join-Path $script:dockerComposeRoot $_)
+        # Three INDEPENDENT assertions - the inventory is not pre-filtered on these, so an omitted or blank
+        # key is a failure here, never a silent drop.
+        [string]$values['DMS_CONFIG_DATABASE_NAME'] |
+            Should -Not -BeNullOrEmpty -Because "$_ must define the topology seam"
+        [string]$values['DMS_CONFIG_DATABASE_CONNECTION_STRING'] |
+            Should -Not -BeNullOrEmpty -Because "$_ must define a CMS connection string"
+        [string]$values['DMS_CONFIG_DATABASE_CONNECTION_STRING'] |
+            Should -Match '\$\{DMS_CONFIG_DATABASE_NAME\}' -Because "$_ must route the CMS database through the seam so -SeparateConfigDatabase flips it"
+    }
+
+    It "standalone-config exclusion '<Name>' is tracked, connection-bearing, and documents why it is excluded" -ForEach $script:standaloneExclusions {
+        $IsTracked | Should -BeTrue -Because "$Name must be a tracked file (git ls-files, case-sensitive) or the exclusion is stale"
+        $IsConnectionBearing | Should -BeTrue -Because "$Name is connection-authoritative, so it must carry a CMS connection or the exclusion is stale"
+        $Reason | Should -Not -BeNullOrEmpty -Because "each exclusion must document why it is outside the topology switch"
+    }
+
+    It "engine overlay '<Name>' is tracked, connection-bearing, and documents why it is excluded" -ForEach $script:engineOverlayExclusions {
+        $IsTracked | Should -BeTrue -Because "$Name must be a tracked file (git ls-files, case-sensitive) or the exclusion is stale"
+        $IsConnectionBearing | Should -BeTrue -Because "$Name is a connection-bearing engine overlay (it still routes through the seam, checked above) or the exclusion is stale"
+        $Reason | Should -Not -BeNullOrEmpty -Because "each exclusion must document why it is outside the standalone-base contract"
+    }
+
+    It "data-standard overlay '<Name>' is tracked, carries no standalone CMS connection, and documents why it is excluded" -ForEach $script:dataStandardOverlayExclusions {
+        $IsTracked | Should -BeTrue -Because "$Name must be a tracked file (git ls-files, case-sensitive) or the exclusion is stale"
+        $IsConnectionBearing | Should -BeFalse -Because "$Name is an overlay composed onto a base; if it gained a standalone CMS connection it must become a switch-capable base instead"
+        $Reason | Should -Not -BeNullOrEmpty -Because "each exclusion must document why it is outside the switch-capable base contract"
     }
 }
 
