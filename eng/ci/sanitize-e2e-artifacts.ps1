@@ -43,11 +43,14 @@ $script:RedactionRules = @(
     # Connection-string secrets: password=... / pwd=... in PostgreSQL and SQL Server connection
     # strings. The value is redacted whether it is bare (up to the next ';'/','/whitespace) OR
     # wrapped so it can legally contain spaces/';'/'=': double-quoted ("..."), single-quoted
-    # ('...'), or XML-escaped (&quot;...&quot;) as it appears inside a TRX. The quoted/escaped
-    # forms are matched as a whole so the enclosed secret is not left behind.
+    # ('...'), or XML-escaped (&quot;...&quot;) as it appears inside a TRX. Each quoted form consumes
+    # ADO.NET-doubled quote pairs ("" / '' / &quot;&quot;) as part of the value so an embedded quote
+    # does not terminate the match early and leak the remainder; the loop stops only at a single
+    # (undoubled) closing delimiter, so a following key/value is not swallowed. The whole quoted or
+    # escaped span is matched so the enclosed secret is not left behind.
     [pscustomobject]@{
         Name        = "connection-string-password"
-        Pattern     = "(?i)((?:password|pwd)\s*=\s*)(&quot;.*?&quot;|""[^""]*""|'[^']*'|[^;,\s""'\r\n]+)"
+        Pattern     = "(?i)((?:password|pwd)\s*=\s*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;,\s""'\r\n]+)"
         Replacement = "`${1}$($script:RedactionMarker)"
     },
     # JSON string values for credential-bearing property names.

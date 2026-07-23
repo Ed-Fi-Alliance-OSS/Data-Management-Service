@@ -58,6 +58,42 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $result | Should -Match "TrustServerCertificate=true"
     }
 
+    It "redacts a double-quoted password with ADO.NET-doubled embedded quotes without leaking the tail" {
+        # ADO.NET wraps a value containing both quote styles in double quotes and doubles each embedded
+        # double quote. A naive `"[^"]*"` match stops at the first quote of a doubled pair and leaks the
+        # remainder; the whole span (through the doubled pairs) must be redacted. The distinctive secret
+        # carries a semicolon, spaces, a single quote, and embedded double quotes.
+        $result = Get-SanitizedText -Text 'Server=dms-mssql,1433;Database=db;User Id=sa;Password="FRAGA; sp''ace ""FRAGB"" FRAGC";TrustServerCertificate=true'
+
+        $result | Should -Not -Match "FRAGA"
+        $result | Should -Not -Match "FRAGB"
+        $result | Should -Not -Match "FRAGC"
+        $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "TrustServerCertificate=true"
+    }
+
+    It "redacts an XML-escaped password with doubled &quot;&quot; pairs inside a TRX without leaking the tail" {
+        $result = Get-SanitizedText -Text '<Output>Server=s;Password=&quot;XFRAGA; space &quot;&quot;XFRAGB&quot;&quot; XFRAGC&quot;;TrustServerCertificate=true</Output>'
+
+        $result | Should -Not -Match "XFRAGA"
+        $result | Should -Not -Match "XFRAGB"
+        $result | Should -Not -Match "XFRAGC"
+        $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "TrustServerCertificate=true"
+    }
+
+    It "redacts a single-quoted password with ADO.NET-doubled embedded quotes without leaking the tail" {
+        # ADO.NET doubles an embedded single quote inside a single-quoted value; the doubled pairs must be
+        # consumed as part of the secret rather than terminating the match at the first inner quote.
+        $result = Get-SanitizedText -Text 'host=h;password=''SFRAGA; it''''SFRAGB''''s SFRAGC'';database=db'
+
+        $result | Should -Not -Match "SFRAGA"
+        $result | Should -Not -Match "SFRAGB"
+        $result | Should -Not -Match "SFRAGC"
+        $result | Should -Match "password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "database=db"
+    }
+
     It "redacts JSON credential properties but preserves benign properties" {
         $result = Get-SanitizedText -Text '{ "clientId": "svc-1", "clientSecret": "topSecretValue", "password": "pw12345", "tenant": "Tenant_255901" }'
 
