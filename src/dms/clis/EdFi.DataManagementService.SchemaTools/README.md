@@ -72,6 +72,37 @@ api-schema-tools hash core/ApiSchema.json extensions/tpdm/ApiSchema.json
 api-schema-tools hash core/ApiSchema.json extensions/tpdm/ApiSchema.json extensions/sample/ApiSchema.json
 ```
 
+### `connection` — Parse a connection string with the exact runtime provider
+
+Both verbs read the connection string from **stdin** (never a command argument, so the password does not
+appear in the process arguments) and parse it with the exact runtime provider (Npgsql for PostgreSQL,
+Microsoft.Data.SqlClient for SQL Server), so alias canonicalization, last-wins duplicate synonyms, and
+rejection of unsupported keywords match what the services do at runtime.
+
+```bash
+# validate: print { valid, database, error }
+echo "Host=localhost;Database=edfi_dms;Username=postgres;Password=secret" | api-schema-tools connection validate --engine postgresql
+
+# inspect: print the non-secret canonical { valid, database, host, port, username, error }
+echo "Server=dms-mssql,1433;Database=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" | api-schema-tools connection inspect --engine mssql
+```
+
+**Options (both verbs):**
+
+| Option | Required | Description |
+|---|---|---|
+| `--engine` | Yes | Target database engine: `postgresql` or `mssql` (case-insensitive; an unsupported value is a usage error, exit `2`). |
+
+**`validate`** prints a JSON `{ valid, database, error }` result — the stable contract the docker-compose
+start scripts consume for host-side pre-flight validation. It never emits any other field.
+
+**`inspect`** prints a JSON `{ valid, database, host, port, username, error }` of the **non-secret** canonical
+coordinates. It never emits the password. `port` is `null` for SQL Server, which encodes the port inside the
+data source (`host,port`); split it host-side when a separate port is needed.
+
+Both verbs exit `0` with a `{ valid: false, ... }` result for a connection string the provider rejects, and
+exit `2` (a usage error) for an unsupported `--engine` value.
+
 ### `ddl emit` — Generate DDL SQL and manifests
 
 Generates dialect-specific DDL scripts and manifest files to an output directory.
@@ -135,6 +166,17 @@ api-schema-tools ddl provision --schema <paths...> --connection-string <connstr>
 | `--dialect` | `-d` | Yes | — | SQL dialect: `pgsql` or `mssql` (not `both`). |
 | `--create-database` | — | No | `false` | Create the target database if it does not exist before provisioning. |
 | `--timeout` | `-t` | No | `300` | Command timeout in seconds for DDL execution. |
+| `--override-host` | — | No | — | Host to substitute for the connection string's endpoint. Must be paired with `--override-port`. |
+| `--override-port` | — | No | — | Port (`1`-`65535`) to substitute for the connection string's endpoint. Must be paired with `--override-host`. |
+
+**Endpoint override.** `--override-host` / `--override-port` optionally substitute the connection string's
+endpoint — for host-side tooling that must reach a Docker-published port rather than the container-internal
+one. They are atomic: supply **both or neither**; the host must be non-blank and the port in `1`-`65535`
+(otherwise a controlled usage error, non-zero exit). When supplied, the exact provider rewrites **only** the
+endpoint — every other option (credentials, SSL, pooling, a password containing `;` or `=`, …) is preserved —
+and the rewritten connection is used for every operation below (database-name lookup, optional create, MVCC,
+seed/schema preflight, and transactional DDL). A connection string the provider rejects fails with a
+controlled usage error, never a stack trace, and never echoes the connection string or password.
 
 **Examples:**
 

@@ -217,4 +217,81 @@ public class ConnectionCommandTests
             _error.Should().Contain("Unsupported engine");
         }
     }
+
+    [TestFixture]
+    public class Given_Connection_Validate_A_Valid_Connection : ConnectionCommandTests
+    {
+        private string _output = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            (_, _output, _) = CliTestHelper.RunCliWithStandardInput(
+                "Host=localhost;Database=Foo;",
+                "connection",
+                "validate",
+                "--engine",
+                "postgresql"
+            );
+        }
+
+        [Test]
+        public void It_emits_exactly_the_valid_result_contract()
+        {
+            // Byte-stable contract: exactly these fields, in this order. Only the platform newline is normalized.
+            _output
+                .Replace("\r\n", "\n")
+                .TrimEnd('\n')
+                .Should()
+                .Be("{\"valid\":true,\"database\":\"Foo\",\"error\":null}");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Connection_Validate_An_Invalid_Connection : ConnectionCommandTests
+    {
+        private int _exitCode;
+        private string _output = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // An unsupported keyword makes the exact provider reject the string: a { valid:false } result at exit 0.
+            (_exitCode, _output, _) = CliTestHelper.RunCliWithStandardInput(
+                "Host=localhost;Database=Foo;Bogus=x",
+                "connection",
+                "validate",
+                "--engine",
+                "postgresql"
+            );
+        }
+
+        [Test]
+        public void It_returns_exit_code_0()
+        {
+            _exitCode.Should().Be(0);
+        }
+
+        [Test]
+        public void It_reports_the_connection_as_invalid_with_a_null_database()
+        {
+            _output.Should().Contain("\"valid\":false");
+            _output.Should().Contain("\"database\":null");
+            _output.Should().Contain("\"error\":");
+        }
+
+        [Test]
+        public void It_emits_exactly_the_validate_field_set()
+        {
+            // Parse and assert the exact top-level property set, so an added, removed, or renamed field
+            // fails - validate must never acquire the inspection fields (host/port/username) or any other.
+            using var document = System.Text.Json.JsonDocument.Parse(_output);
+            var propertyNames = new System.Collections.Generic.List<string>();
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                propertyNames.Add(property.Name);
+            }
+            propertyNames.Should().BeEquivalentTo("valid", "database", "error");
+        }
+    }
 }
