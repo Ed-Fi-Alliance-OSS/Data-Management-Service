@@ -23,7 +23,7 @@ coverage, new coverage, or a justified non-applicable dialect difference.
 
 | Scenario family | Required assertions | SQL Server suite (`Backend.Mssql.Tests.Integration`) |
 | --- | --- | --- |
-| Baseline create | Root, nested collection, extension, and extension-child rows are complete and reconstitute correctly. | `MssqlRelationalWriteCreateBaselineTests.cs` |
+| Baseline create | Root, nested collection, extension, and extension-child rows are complete with stable identities and ordinals. | `MssqlRelationalWriteCreateBaselineTests.cs` |
 | Changed PUT | Omitted inlined values clear correctly; omitted collection and extension state is deleted. | `MssqlRelationalWriteUpdateSemanticsTests.cs` |
 | Collection reorder | Stable `CollectionItemId` values are reused and sibling ordinals remain unique and contiguous. | `MssqlRelationalWriteCollectionReorderTests.cs` |
 | Guarded no-op and races | Unchanged writes do not rewrite rowsets or bump content version; stale and commit-window races preserve committed state and retry semantics. | `MssqlRelationalWriteGuardedNoOpTests.cs` |
