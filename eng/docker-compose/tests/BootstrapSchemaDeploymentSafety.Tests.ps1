@@ -2748,10 +2748,10 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
             $e2eSetupScript = Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
             $content = Get-Content -LiteralPath $e2eSetupScript -Raw
 
-            $content | Should -Match 'Assert-RelationalSchemaProvisioned -Database \$db'
+            $content | Should -Match 'Assert-RouteContextSchemaProvisioned -Database \$db'
             $content | Should -Match 'dms\."EffectiveSchema"'
-            $content | Should -Match 'edfi\.School'
-            $content | Should -Match 'edfi\.Student'
+            $content | Should -Match '"edfi"\."School"'
+            $content | Should -Match '"edfi"\."Student"'
         }
 
         It "does not pass the removed connector skip flag to start-local-dms.ps1" {

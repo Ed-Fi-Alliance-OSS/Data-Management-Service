@@ -42,6 +42,9 @@ $script:ResolvedSchemaDirectory = $null
 
 Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+# Shared database-name safety guards (safe-name and dedicated-E2E rules), also consumed by the
+# Instance Management E2E orchestration so both validate route-context names with the same logic.
+Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
 
 if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
     function Format-LogSafeText {
@@ -83,57 +86,6 @@ function Resolve-ScriptRelativePath {
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $Path))
 }
 
-function ConvertFrom-ComposeEnvironmentValue {
-    param(
-        [AllowEmptyString()]
-        [string]$Value
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $Value
-    }
-
-    $trimmedValue = $Value.Trim()
-    $firstCharacter = $trimmedValue[0]
-
-    if ($firstCharacter -in @("'", '"')) {
-        $closingQuoteIndex = -1
-        $escaped = $false
-
-        for ($index = 1; $index -lt $trimmedValue.Length; $index++) {
-            $character = $trimmedValue[$index]
-
-            if ($character -eq "\" -and -not $escaped) {
-                $escaped = $true
-                continue
-            }
-
-            if ($character -eq $firstCharacter -and -not $escaped) {
-                $closingQuoteIndex = $index
-                break
-            }
-
-            $escaped = $false
-        }
-
-        if ($closingQuoteIndex -gt 0) {
-            $trailingContent = $trimmedValue.Substring($closingQuoteIndex + 1).Trim()
-            if ([string]::IsNullOrEmpty($trailingContent) -or $trailingContent.StartsWith("#")) {
-                $unquotedValue = $trimmedValue.Substring(1, $closingQuoteIndex - 1)
-                if ($firstCharacter -eq "'") {
-                    return $unquotedValue.Replace("\'", "'")
-                }
-
-                return $unquotedValue.Replace('\"', '"').Replace('\\', '\')
-            }
-        }
-    }
-
-    # Docker Compose treats a # preceded by whitespace as an inline comment for an unquoted
-    # value. A # without leading whitespace remains part of the value.
-    return ($trimmedValue -replace '[ \t]+#.*$', '').Trim()
-}
-
 function Get-EnvironmentValueMap {
     param([string]$EnvironmentFilePath)
 
@@ -171,153 +123,6 @@ function Get-RequiredEnvValue {
     }
 
     return $value
-}
-
-function Assert-SafeDatabaseName {
-    param([string]$DatabaseName)
-
-    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
-        throw "Database name '$DatabaseName' contains unsupported characters."
-    }
-
-    if ($DatabaseName -iin @("postgres", "template0", "template1")) {
-        throw "Database name '$DatabaseName' is a reserved PostgreSQL system database and cannot be used for E2E provisioning."
-    }
-
-    if ($DatabaseName -iin @("master", "model", "msdb", "tempdb")) {
-        throw "Database name '$DatabaseName' is a reserved SQL Server system database and cannot be used for E2E provisioning."
-    }
-}
-
-function Resolve-EnvironmentValueReference {
-    param(
-        [string]$Value,
-        [hashtable]$EnvironmentValues,
-        [System.Collections.Generic.HashSet[string]]$VisitedKeys
-    )
-
-    $Value = ConvertFrom-ComposeEnvironmentValue -Value $Value
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $Value
-    }
-
-    $match = [Regex]::Match($Value, '^\$\{(?<key>[^}]+)\}$')
-
-    if (-not $match.Success) {
-        return $Value
-    }
-
-    $referencedKey = $match.Groups["key"].Value
-    if (-not $EnvironmentValues.ContainsKey($referencedKey)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is not defined."
-    }
-
-    $resolvedValue = [string]$EnvironmentValues[$referencedKey]
-    if ([string]::IsNullOrWhiteSpace($resolvedValue)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is blank."
-    }
-
-    if ($null -eq $VisitedKeys) {
-        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    }
-    if (-not $VisitedKeys.Add($referencedKey)) {
-        throw "Environment value reference '$Value' is cyclic at '$referencedKey'."
-    }
-
-    try {
-        return Resolve-EnvironmentValueReference `
-            -Value $resolvedValue `
-            -EnvironmentValues $EnvironmentValues `
-            -VisitedKeys $VisitedKeys
-    }
-    finally {
-        $null = $VisitedKeys.Remove($referencedKey)
-    }
-}
-
-function Get-DatabaseNameFromConnectionString {
-    param(
-        [string]$ConnectionString,
-        [hashtable]$EnvironmentValues
-    )
-
-    $ConnectionString = ConvertFrom-ComposeEnvironmentValue -Value $ConnectionString
-
-    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-        return $null
-    }
-
-    try {
-        $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
-        # DbConnectionStringBuilder implements IDictionary, so PowerShell's adapted view treats
-        # `.ConnectionString = ...` as an item named "ConnectionString". PSBase selects the real
-        # CLR property and exposes the parsed keys/items.
-        $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
-
-        foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
-                return Resolve-EnvironmentValueReference `
-                    -Value ([string]$connectionStringBuilder.PSBase.get_Item($key)) `
-                    -EnvironmentValues $EnvironmentValues
-            }
-        }
-    }
-    catch {
-        throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
-    }
-
-    return $null
-}
-
-function Assert-E2EDatabaseIsDedicated {
-    param(
-        [hashtable]$EnvironmentValues,
-        [string]$EnvironmentFilePath,
-        [string]$E2EDatabaseName
-    )
-
-    Assert-SafeDatabaseName -DatabaseName $E2EDatabaseName
-
-    # All comparisons are case-insensitive: SQL Server's default collation treats database
-    # identifiers case-insensitively, so a case-variant of a protected name IS the same database
-    # there and would still be dropped. PostgreSQL names are case-sensitive, so this is stricter
-    # than required on that engine - acceptable for a guard in front of DROP DATABASE, where a
-    # false positive costs a rename and a false negative drops shared state.
-    foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
-        $protectedDatabaseName = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$databaseNameKey]) `
-            -EnvironmentValues $EnvironmentValues
-
-        if (-not [string]::IsNullOrWhiteSpace($protectedDatabaseName) -and $E2EDatabaseName -ieq $protectedDatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
-        }
-    }
-
-    foreach ($connectionStringKey in @(
-            "DATABASE_CONNECTION_STRING_ADMIN",
-            "DMS_CONFIG_DATABASE_CONNECTION_STRING"
-        )) {
-        $connectionString = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$connectionStringKey]) `
-            -EnvironmentValues $EnvironmentValues
-
-        if ([string]::IsNullOrWhiteSpace($connectionString)) {
-            continue
-        }
-
-        $connectionStringDatabaseName = Get-DatabaseNameFromConnectionString `
-            -ConnectionString $connectionString `
-            -EnvironmentValues $EnvironmentValues
-
-        if ([string]::IsNullOrWhiteSpace($connectionStringDatabaseName)) {
-            throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
-        }
-
-        if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
-        }
-    }
 }
 
 function Wait-ForPostgresql {

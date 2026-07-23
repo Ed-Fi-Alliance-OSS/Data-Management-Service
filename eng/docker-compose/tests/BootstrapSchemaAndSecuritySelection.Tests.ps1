@@ -1855,8 +1855,11 @@ exit 0
 
         It "InstanceManagement E2E setup composes the Data Standard env file before start and route-context provisioning" {
             $imSetup = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1") -Raw
-            $composePattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile[^\r\n]*\.env\.routeContext\.e2e.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile'
+            # The base env file defaults to the route-context file in the parameter block; the standalone
+            # path resolves it and then composes the Data Standard overlay before start/provisioning.
+            $composePattern = '(?ms)\$baseEnvironmentFile\s*=\s*Resolve-LocalSettingsEnvironmentFile[^\r\n]*-Path\s+\$EnvironmentFile.*\$resolvedEnvironmentFile\s*=\s*Resolve-DataStandardEnvironmentFile.*-DataStandardVersion\s+\$DataStandardVersion.*-BaseEnvironmentFile\s+\$baseEnvironmentFile'
 
+            $imSetup | Should -Match '(?m)^\s*\$EnvironmentFile\s*=\s*"\./\.env\.routeContext\.e2e"'
             $imSetup | Should -Match $composePattern
             $imSetup | Should -Match 'start-local-dms\.ps1[^\r\n]*-EnvironmentFile\s+\$resolvedEnvironmentFile'
             $imSetup | Should -Match 'provision-e2e-database\.ps1'

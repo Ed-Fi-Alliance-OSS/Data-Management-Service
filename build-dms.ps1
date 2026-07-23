@@ -1235,6 +1235,7 @@ function Get-InstanceE2ETestEnvironmentContext {
 
     $dockerComposeRoot = "$PSScriptRoot/eng/docker-compose"
     Import-Module -Name "$dockerComposeRoot/env-utility.psm1" -Force
+    Import-Module -Name "$dockerComposeRoot/database-safety.psm1" -Force
     Import-Module -Name "$PSScriptRoot/eng/Dms-Management.psm1" -Force
 
     # Single resolution point for the Instance suite: compose the data-standard overlay first, then the
@@ -1252,8 +1253,7 @@ function Get-InstanceE2ETestEnvironmentContext {
     $environmentValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
 
     # Read the three route-context database names from the resolved environment; require three
-    # non-empty distinct names and never fall back to a fixed name. Each name's safe-name and
-    # dedicated-E2E rules are enforced by provision-e2e-database.ps1 when the setup provisions it.
+    # non-empty distinct names and never fall back to a fixed name.
     $databaseNames = @(
         (Get-EnvValue -EnvValues $environmentValues -Name "INSTANCE_E2E_DATABASE_1_NAME"),
         (Get-EnvValue -EnvValues $environmentValues -Name "INSTANCE_E2E_DATABASE_2_NAME"),
@@ -1268,6 +1268,19 @@ function Get-InstanceE2ETestEnvironmentContext {
 
     if (@($databaseNames | Sort-Object -Unique).Count -ne $databaseNames.Count) {
         throw "The three INSTANCE_E2E_DATABASE_*_NAME values must be distinct; got: $($databaseNames -join ', ')."
+    }
+
+    # Validate every route-context database name up front - safe characters, not a reserved system
+    # database, and dedicated (never the primary or CMS database by name or by the database embedded
+    # in the admin/CMS connection strings) - BEFORE any registration connection string is built and
+    # BEFORE the setup script provisions anything, so an unsafe or shared name fails fast and can never
+    # reach a DROP/CREATE. provision-e2e-database.ps1 re-checks each name when it provisions (defense in
+    # depth); this is the earliest gate in the Instance flow.
+    foreach ($databaseName in $databaseNames) {
+        Assert-E2EDatabaseIsDedicated `
+            -EnvironmentValues $environmentValues `
+            -EnvironmentFilePath $resolvedEnvironmentFile `
+            -E2EDatabaseName $databaseName
     }
 
     # Docker-network registration connection string per database (dms-postgresql:5432 or
@@ -1345,7 +1358,10 @@ function Register-InstanceE2EFixture {
 
             $tenantRoutes = @($routeDefinitions | Where-Object { $_.TenantName -eq $tenantName })
 
-            $dataStoreIds = @(
+            # One structured route record per data store, capturing the CMS-assigned data-store id and
+            # both route-context ids (districtId, schoolYear) alongside the resolved database name/index
+            # this route is bound to. These records back the engine-neutral, non-secret route manifest.
+            $routeRecords = @(
                 foreach ($route in $tenantRoutes) {
                     $dataStoreId = Add-DataStore `
                         -CmsUrl $cmsUrl `
@@ -1356,13 +1372,23 @@ function Register-InstanceE2EFixture {
                         -PostgresCredential $postgresCredential `
                         -ConnectionString $InstanceE2ESettings.RegistrationConnectionStrings[$route.Index]
 
-                    Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "districtId" -ContextValue $route.DistrictId | Out-Null
-                    Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "schoolYear" -ContextValue $route.SchoolYear | Out-Null
+                    $districtContextId = Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "districtId" -ContextValue $route.DistrictId
+                    $schoolYearContextId = Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "schoolYear" -ContextValue $route.SchoolYear
 
-                    [long]$dataStoreId
+                    [pscustomobject]@{
+                        TenantName          = $tenantName
+                        DistrictId          = $route.DistrictId
+                        SchoolYear          = $route.SchoolYear
+                        DatabaseOrdinal     = $route.Index + 1
+                        DatabaseName        = [string]$InstanceE2ESettings.DatabaseNames[$route.Index]
+                        DataStoreId         = [long]$dataStoreId
+                        DistrictContextId   = $districtContextId
+                        SchoolYearContextId = $schoolYearContextId
+                    }
                 }
             )
 
+            $dataStoreIds = @($routeRecords | ForEach-Object { $_.DataStoreId })
             $educationOrganizationIds = @($tenantRoutes | ForEach-Object { [long]$_.DistrictId } | Sort-Object -Unique)
 
             $application = Add-Application `
@@ -1379,6 +1405,7 @@ function Register-InstanceE2EFixture {
                 TenantName    = $tenantName
                 VendorId      = $vendorId
                 DataStoreIds  = $dataStoreIds
+                Routes        = $routeRecords
                 ApplicationId = $application.Id
                 ClientKey     = $application.Key
                 ClientSecret  = $application.Secret
@@ -1390,6 +1417,7 @@ function Register-InstanceE2EFixture {
         Tenants        = $tenants
         DataStoreIds   = @($tenants | ForEach-Object { $_.DataStoreIds } | ForEach-Object { $_ })
         ApplicationIds = @($tenants | ForEach-Object { $_.ApplicationId })
+        Routes         = @($tenants | ForEach-Object { $_.Routes } | ForEach-Object { $_ })
     }
 }
 
@@ -1405,6 +1433,24 @@ function Invoke-WithInstanceE2ETestProcessContext {
         $Action
     )
 
+    # Engine-neutral, non-secret route manifest: the exact tenant -> district/schoolYear -> database ->
+    # data-store/route-context mapping the fixture created, as compact JSON. Contains no keys, secrets,
+    # passwords, tokens, or connection strings, so it is safe for the test process to read and log.
+    $routeManifestJson = ConvertTo-Json -Compress -Depth 5 -InputObject @(
+        foreach ($route in $Fixture.Routes) {
+            [ordered]@{
+                tenant              = [string]$route.TenantName
+                districtId          = [string]$route.DistrictId
+                schoolYear          = [string]$route.SchoolYear
+                databaseOrdinal     = [int]$route.DatabaseOrdinal
+                databaseName        = [string]$route.DatabaseName
+                dataStoreId         = [long]$route.DataStoreId
+                districtContextId   = [long]$route.DistrictContextId
+                schoolYearContextId = [long]$route.SchoolYearContextId
+            }
+        }
+    )
+
     # Opaque environment variables the Instance suite's test process consumes (unit 5 wires the C#
     # consumers). Names are stable and engine-neutral. Credential values are set into the environment
     # only and are never written to host output.
@@ -1413,6 +1459,7 @@ function Invoke-WithInstanceE2ETestProcessContext {
         "INSTANCE_E2E_DATABASE_1_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[0]
         "INSTANCE_E2E_DATABASE_2_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[1]
         "INSTANCE_E2E_DATABASE_3_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[2]
+        "INSTANCE_E2E_ROUTE_MANIFEST"                  = [string]$routeManifestJson
         "INSTANCE_E2E_FIXTURE_TENANT_1_NAME"           = [string]$Fixture.Tenants[0].TenantName
         "INSTANCE_E2E_FIXTURE_TENANT_1_VENDOR_ID"      = [string]$Fixture.Tenants[0].VendorId
         "INSTANCE_E2E_FIXTURE_TENANT_1_APPLICATION_ID" = [string]$Fixture.Tenants[0].ApplicationId
@@ -1538,20 +1585,42 @@ function InstanceE2ETests {
     # fixture registration, teardown, and the test process all consume this context.
     $instanceSettings = Get-InstanceE2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
 
+    # Tear down any prior dms-local stack for the SAME engine and resolved base environment BEFORE
+    # setup, so setup never runs against a stale stack (e.g. a previous engine's containers/volumes or
+    # a leftover run). Uses the shared, project-scoped teardown primitive (start-local-dms.ps1 -d -v),
+    # which removes only the dms-local compose project plus the two known local images. When reusing
+    # built images (-SkipDockerBuild) the images are kept; otherwise they are removed ahead of the
+    # rebuild the setup performs.
+    $dockerComposeRoot = "$PSScriptRoot/eng/docker-compose"
+    Import-Module -Name "$dockerComposeRoot/e2e-teardown.psm1" -Force
+    Invoke-Step {
+        $null = Invoke-E2EEngineAwareTeardown `
+            -DatabaseEngine $instanceSettings.DatabaseEngine `
+            -EnvironmentFile $instanceSettings.EnvironmentFile `
+            -ComposeRoot $dockerComposeRoot `
+            -SkipLocalImageRemoval:$SkipDockerBuild
+    }
+
     $instanceSetupScript = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
 
     if (Test-Path $instanceSetupScript) {
         Write-Host "Starting Docker environment and route-context provisioning ($($instanceSettings.DatabaseEngine))..." -ForegroundColor Cyan
         # The setup script owns the deterministic order: InfraOnly/Config Service -> provision all three
         # route-context databases (generated engine-correct DDL) -> engine-dispatched schema verification
-        # -> DmsOnly -> DMS health.
+        # -> DmsOnly -> DMS health. The environment was already composed once here; pass both the base
+        # file (for teardown guidance) and the resolved file (-ResolvedEnvironmentFile, used verbatim)
+        # so the setup performs no second overlay composition.
+        $setupParameters = @{
+            DataStandardVersion     = $DataStandardVersion
+            DatabaseEngine          = $instanceSettings.DatabaseEngine
+            EnvironmentFile         = $instanceSettings.EnvironmentFile
+            ResolvedEnvironmentFile = $instanceSettings.ResolvedEnvironmentFile
+        }
+        if ($SkipDockerBuild) {
+            $setupParameters.SkipDockerBuild = $true
+        }
         Invoke-Execute {
-            if ($SkipDockerBuild) {
-                & $instanceSetupScript -SkipDockerBuild -DataStandardVersion $DataStandardVersion -DatabaseEngine $instanceSettings.DatabaseEngine -EnvironmentFile $instanceSettings.EnvironmentFile
-            }
-            else {
-                & $instanceSetupScript -DataStandardVersion $DataStandardVersion -DatabaseEngine $instanceSettings.DatabaseEngine -EnvironmentFile $instanceSettings.EnvironmentFile
-            }
+            & $instanceSetupScript @setupParameters
         }
     }
     else {

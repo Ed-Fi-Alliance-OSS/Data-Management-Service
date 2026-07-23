@@ -26,7 +26,14 @@
 .PARAMETER DatabaseEngine
     Database engine backing the stack. "postgresql" (default) or "mssql".
 .PARAMETER EnvironmentFile
-    Environment file, resolved against eng/docker-compose. Defaults to the route-context env file.
+    Base environment file, resolved against eng/docker-compose. Defaults to the route-context env
+    file. Standalone runs resolve it once here (data-standard overlay then engine overlay). Its base
+    path is used for the teardown guidance regardless of how the resolved file was obtained.
+.PARAMETER ResolvedEnvironmentFile
+    Fully composed environment file supplied by the build path (build-dms.ps1 InstanceE2ETest), which
+    already resolved the data-standard and engine overlays exactly once in
+    Get-InstanceE2ETestEnvironmentContext. When supplied it is used verbatim and this script performs
+    no further overlay composition; when omitted, this script resolves -EnvironmentFile itself.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -43,7 +50,10 @@ param(
     $DatabaseEngine = "postgresql",
 
     [string]
-    $EnvironmentFile = "./.env.routeContext.e2e"
+    $EnvironmentFile = "./.env.routeContext.e2e",
+
+    [string]
+    $ResolvedEnvironmentFile
 )
 
 function Assert-PostgresRouteContextSchema {
@@ -51,12 +61,13 @@ function Assert-PostgresRouteContextSchema {
     .SYNOPSIS
     Verifies the dms.EffectiveSchema singleton and required relations exist in a PostgreSQL route
     database via psql/to_regclass. Throws when the query itself fails so a failed invocation is never
-    read as "relation absent".
+    read as "relation absent". The PostgreSQL role is the resolved POSTGRES_USER, not a hardcoded
+    superuser, so a stack started with a non-default role still verifies.
     #>
-    param([string]$Database)
+    param([string]$Database, [string]$PostgresUser = "postgres")
 
     $effectiveSchemaRowCount = (
-        docker exec dms-postgresql psql -U postgres -d $Database -tAc 'SELECT COUNT(*) FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1;' |
+        docker exec dms-postgresql psql -U $PostgresUser -d $Database -tAc 'SELECT COUNT(*) FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1;' |
             Out-String
     ).Trim()
 
@@ -77,7 +88,7 @@ function Assert-PostgresRouteContextSchema {
 
     foreach ($relation in $requiredRelations) {
         $regclass = (
-            docker exec dms-postgresql psql -U postgres -d $Database -tAc "SELECT to_regclass('$relation');" |
+            docker exec dms-postgresql psql -U $PostgresUser -d $Database -tAc "SELECT to_regclass('$relation');" |
                 Out-String
         ).Trim()
 
@@ -96,17 +107,22 @@ function Assert-MssqlRouteContextSchema {
     .SYNOPSIS
     Verifies the dms.EffectiveSchema singleton and required tables exist in a SQL Server route database
     via sqlcmd/OBJECT_ID. Throws when the query itself fails.
+    .DESCRIPTION
+    sqlcmd runs INSIDE dms-mssql and reads its password from SQLCMDPASSWORD, exported in the container
+    from the container-resident MSSQL_SA_PASSWORD (matching the compose healthcheck). The SA password
+    is never placed on the host process argument list (no host password flag) and is never injected
+    through the exec environment, so it cannot leak through host process arguments or the exec
+    environment. -b makes sqlcmd exit non-zero on a SQL error so a failed query is never read as a
+    schema result.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and must be passed to sqlcmd as plaintext; SecureString adds no protection across that boundary.')]
-    param([string]$Database, [string]$SaPassword)
+    param([string]$Database)
 
-    $sqlcmd = @(
-        "/opt/mssql-tools18/bin/sqlcmd",
-        "-S", "localhost", "-U", "sa", "-P", $SaPassword, "-C", "-d", $Database, "-h", "-1", "-W"
-    )
+    # The database name and query travel as bash positional args ($1/$2); only the password stays
+    # inside the container as an environment expansion, so it never appears in host args.
+    $sqlcmdScript = 'export SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"; exec /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -d "$1" -h -1 -W -b -Q "$2"'
 
     $effectiveSchemaRowCount = (
-        docker exec dms-mssql @sqlcmd -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dms.EffectiveSchema WHERE EffectiveSchemaSingletonId = 1;" |
+        docker exec dms-mssql bash -c $sqlcmdScript "sqlcmd-runner" $Database "SET NOCOUNT ON; SELECT COUNT(*) FROM dms.EffectiveSchema WHERE EffectiveSchemaSingletonId = 1;" |
             Out-String
     ).Trim()
 
@@ -127,7 +143,7 @@ function Assert-MssqlRouteContextSchema {
 
     foreach ($table in $requiredTables) {
         $objectId = (
-            docker exec dms-mssql @sqlcmd -Q "SET NOCOUNT ON; SELECT OBJECT_ID('$table');" |
+            docker exec dms-mssql bash -c $sqlcmdScript "sqlcmd-runner" $Database "SET NOCOUNT ON; SELECT OBJECT_ID('$table');" |
                 Out-String
         ).Trim()
 
@@ -146,19 +162,18 @@ function Assert-RouteContextSchemaProvisioned {
     .SYNOPSIS
     Engine-dispatched schema verification. Only the selected provider's command is invoked.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and must be passed to sqlcmd as plaintext; SecureString adds no protection across that boundary.')]
     param(
         [string]$Database,
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine,
-        [string]$SaPassword
+        [string]$PostgresUser = "postgres"
     )
 
     if ($DatabaseEngine -eq "mssql") {
-        Assert-MssqlRouteContextSchema -Database $Database -SaPassword $SaPassword
+        Assert-MssqlRouteContextSchema -Database $Database
     }
     else {
-        Assert-PostgresRouteContextSchema -Database $Database
+        Assert-PostgresRouteContextSchema -Database $Database -PostgresUser $PostgresUser
     }
 }
 
@@ -200,16 +215,26 @@ try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
 
-    # Resolve the environment once: data-standard overlay first, then the database-engine overlay.
-    $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
-    $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
-        -DataStandardVersion $DataStandardVersion `
-        -BaseEnvironmentFile $baseEnvironmentFile `
-        -DockerComposeRoot $dockerComposeDir
-    $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile `
-        -DatabaseEngine $DatabaseEngine `
-        -BaseEnvironmentFile $resolvedEnvironmentFile `
-        -DockerComposeRoot $dockerComposeDir
+    # Single environment resolution. The build path (build-dms.ps1 InstanceE2ETest) already composed
+    # the data-standard and engine overlays exactly once in Get-InstanceE2ETestEnvironmentContext and
+    # passes the result via -ResolvedEnvironmentFile; use it verbatim so setup never recomposes. A
+    # standalone run composes here instead (data-standard overlay first, then the engine overlay). The
+    # base env file is retained for the teardown guidance in both cases.
+    if ([string]::IsNullOrWhiteSpace($ResolvedEnvironmentFile)) {
+        $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
+        $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
+            -DataStandardVersion $DataStandardVersion `
+            -BaseEnvironmentFile $baseEnvironmentFile `
+            -DockerComposeRoot $dockerComposeDir
+        $resolvedEnvironmentFile = Resolve-DatabaseEngineEnvironmentFile `
+            -DatabaseEngine $DatabaseEngine `
+            -BaseEnvironmentFile $resolvedEnvironmentFile `
+            -DockerComposeRoot $dockerComposeDir
+    }
+    else {
+        $baseEnvironmentFile = $EnvironmentFile
+        $resolvedEnvironmentFile = $ResolvedEnvironmentFile
+    }
     $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
 
     # Read the three route-context database names from the resolved environment: require three
@@ -264,8 +289,8 @@ try {
     try {
         # The resolved environment file carries the file-based ApiSchema package settings. Process env
         # values win over docker compose --env-file entries, so clear stale overrides left by teardown
-        # or earlier bootstrap runs and let the env file provide USE_API_SCHEMA_PATH, API_SCHEMA_PATH,
-        # and SCHEMA_PACKAGES.
+        # or earlier bootstrap runs and let the env file provide
+        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
         $env:USE_API_SCHEMA_PATH = $null
         $env:API_SCHEMA_PATH = $null
         $env:SCHEMA_PACKAGES = $null
@@ -289,7 +314,11 @@ try {
         #    verify each with the engine-dispatched schema check.
         Write-Host "`nProvisioning and verifying route-context test databases..." -ForegroundColor Cyan
         $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
-        $mssqlSaPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        # PostgreSQL verification connects as the resolved role, not a hardcoded superuser, so a stack
+        # started with a non-default POSTGRES_USER still verifies. MSSQL verification reads its password
+        # inside dms-mssql from the container-resident MSSQL_SA_PASSWORD, so no SA password is resolved
+        # or passed on the host here.
+        $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
 
         foreach ($db in $databases) {
             & $provisionE2EDatabaseScript `
@@ -302,7 +331,7 @@ try {
                 throw "Failed to provision route-context database '$db' (exit code $LASTEXITCODE)."
             }
 
-            Assert-RouteContextSchemaProvisioned -Database $db -DatabaseEngine $DatabaseEngine -SaPassword $mssqlSaPassword
+            Assert-RouteContextSchemaProvisioned -Database $db -DatabaseEngine $DatabaseEngine -PostgresUser $postgresUser
             Write-Host "  Provisioned and verified relational schema: $db" -ForegroundColor Green
         }
 
