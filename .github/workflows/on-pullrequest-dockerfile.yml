@@ -16,6 +16,11 @@ on:
       - "src/dms/Dockerfile"
       - "src/config/Dockerfile"
       - ".github/workflows/on-pullrequest-dockerfile.yml"
+      # The DMS image bundles the api-schema-tools connection validator, so a change to that tool or the
+      # shared package/restore configuration can alter the bundled provider parsers the oracle exercises.
+      - "src/dms/clis/EdFi.DataManagementService.SchemaTools/**"
+      - "src/Directory.Packages.props"
+      - "src/nuget.config"
   workflow_dispatch:
 
 concurrency:
@@ -79,6 +84,51 @@ jobs:
             --build-context parentdir=../ \
             --load \
             .
+
+      - name: Validate bundled connection-string provider oracle
+        if: matrix.dockerfile.name == 'dms'
+        run: |
+          # Provider oracle (finding 6): run the EXACT api-schema-tools artifact bundled in the dms:pr-test
+          # image built by THIS workflow run - not a published image or a separately built tool - offline, to
+          # prove both runtime provider parsers (Npgsql / Microsoft.Data.SqlClient) are packaged and the CLI
+          # contract holds. The connection string is piped on stdin so credentials never appear in arguments;
+          # --network none guarantees a parse-only run (no connection is attempted). Passwords below are
+          # parse-only dummies.
+          image="dms:pr-test"
+          tool="/app/ApiSchemaTools/api-schema-tools.dll"
+
+          assert_valid() {
+            local label="$1" engine="$2" conn="$3" expected_db="$4" out code valid db
+            if out="$(printf '%s' "$conn" | docker run --rm -i --network none --entrypoint dotnet "$image" "$tool" connection validate --engine "$engine")"; then code=0; else code=$?; fi
+            echo "[$label] exit=$code stdout=$out"
+            if [ "$code" -ne 0 ]; then echo "::error::[$label] expected exit 0, got $code"; exit 1; fi
+            if ! printf '%s' "$out" | jq -e . >/dev/null 2>&1; then echo "::error::[$label] stdout is not valid JSON"; exit 1; fi
+            valid="$(printf '%s' "$out" | jq -r '.valid')"
+            db="$(printf '%s' "$out" | jq -r '.database')"
+            if [ "$valid" != "true" ]; then echo "::error::[$label] expected valid=true, got '$valid' (a missing provider dependency parses as valid=false)"; exit 1; fi
+            if [ "$db" != "$expected_db" ]; then echo "::error::[$label] expected database='$expected_db', got '$db'"; exit 1; fi
+            echo "[$label] OK: valid=true database=$db"
+          }
+
+          # PostgreSQL parser (Npgsql): a valid connection string resolves the expected database.
+          assert_valid "postgresql" "postgresql" \
+            "host=dms-postgresql;port=5432;username=postgres;password=not-a-real-secret;database=edfi_provider_oracle_pg;" \
+            "edfi_provider_oracle_pg"
+
+          # SQL Server parser (Microsoft.Data.SqlClient): Database/Initial Catalog resolves the expected database.
+          assert_valid "mssql" "mssql" \
+            "Server=dms-mssql;Database=edfi_provider_oracle_mssql;User Id=sa;Password=not-a-real-secret;TrustServerCertificate=true;" \
+            "edfi_provider_oracle_mssql"
+
+          # Unsupported engine: the documented usage error - a nonzero exit (2) plus the unsupported-engine
+          # diagnostic on stderr, distinct from a { valid: false } result.
+          if err="$(printf '%s' 'host=h;database=x;' | docker run --rm -i --network none --entrypoint dotnet "$image" "$tool" connection validate --engine mysql 2>&1 1>/dev/null)"; then code=0; else code=$?; fi
+          echo "[unsupported] exit=$code stderr=$err"
+          if [ "$code" -ne 2 ]; then echo "::error::[unsupported] expected the documented usage exit 2, got $code"; exit 1; fi
+          if ! printf '%s' "$err" | grep -q "Unsupported engine"; then echo "::error::[unsupported] missing unsupported-engine diagnostic"; exit 1; fi
+          echo "[unsupported] OK: exit 2 with unsupported-engine diagnostic"
+
+          echo "Provider oracle passed: PostgreSQL and SQL Server parsers are packaged and the unsupported engine is rejected."
 
       - name: Analyze with Docker Scout
         uses: docker/scout-action@b23590dc1e4d09febc00cfcbc51e9e8c0f7ee9f3 # v1.16.1
