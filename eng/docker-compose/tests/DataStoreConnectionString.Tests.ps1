@@ -27,7 +27,7 @@ Describe "New-DataStoreConnectionString (DMS-1238)" {
             -Password "Abcdefgh1!" `
             -DatabaseName "edfi_datamanagementservice"
 
-        $cs | Should -Be "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true;"
+        $cs | Should -Be "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true"
     }
 
     It "builds a PostgreSQL connection string for the postgresql engine" {
@@ -39,7 +39,15 @@ Describe "New-DataStoreConnectionString (DMS-1238)" {
             -Password "abcdefgh1!" `
             -DatabaseName "edfi_datamanagementservice"
 
-        $cs | Should -Be "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
+        $cs | Should -Be "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice"
+    }
+
+    It "appends NoResetOnClose only when requested (postgresql)" {
+        $cs = New-DataStoreConnectionString `
+            -DatabaseEngine postgresql -DbHost "localhost" -Port 5435 `
+            -Username "postgres" -Password "p" -DatabaseName "db" -NoResetOnClose
+
+        $cs | Should -Match "database=db;NoResetOnClose=true$"
     }
 
     It "defaults to the PostgreSQL form when no engine is specified" {
@@ -51,6 +59,22 @@ Describe "New-DataStoreConnectionString (DMS-1238)" {
             -DatabaseName "db"
 
         $cs | Should -Match "^host=dms-postgresql;port=5432;"
+    }
+
+    It "escapes a credential containing connection-string metacharacters for <Engine> and round-trips it" -ForEach @(
+        @{ Engine = "mssql"; Secret = "pa;ss wo=rd" }
+        @{ Engine = "postgresql"; Secret = 'pa;ss "wo" rd' }
+    ) {
+        # A ';' / '"' / '=' / space in a credential must not corrupt or truncate the connection string;
+        # DbConnectionStringBuilder quotes it, and the provider parser reads it back unchanged.
+        $cs = New-DataStoreConnectionString `
+            -DatabaseEngine $Engine -DbHost "h" -Port 1 -Username "u" -Password $Secret -DatabaseName "db"
+
+        # A correct round-trip proves the ';' / '"' / '=' / space are inside a quoted value rather than
+        # breaking the string into stray tokens (a bare metacharacter would truncate or corrupt it).
+        $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $parsed.set_ConnectionString($cs)
+        $parsed["Password"] | Should -Be $Secret
     }
 }
 
@@ -70,9 +94,9 @@ Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
         $result = New-E2EDataStoreConnectionStrings -EnvironmentValues $envValues -DatabaseName "edfi_e2e"
 
         $result.AdminConnectionString |
-            Should -Be "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_e2e;NoResetOnClose=true;"
+            Should -Be "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_e2e;NoResetOnClose=true"
         $result.RegistrationConnectionString |
-            Should -Be "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_e2e;"
+            Should -Be "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_e2e"
     }
 
     It "builds host-side reset and Docker-network registration strings for mssql" {
@@ -81,9 +105,9 @@ Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
         $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "edfi_e2e"
 
         $result.AdminConnectionString |
-            Should -Be "Server=127.0.0.1,1435;Database=edfi_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true;"
+            Should -Be "Server=127.0.0.1,1435;Database=edfi_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true"
         $result.RegistrationConnectionString |
-            Should -Be "Server=dms-mssql,1433;Database=edfi_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true;"
+            Should -Be "Server=dms-mssql,1433;Database=edfi_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true"
     }
 
     It "separates the host-side reset host/port from the Docker-network registration host/port" {
@@ -102,9 +126,9 @@ Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
         $result = New-E2EDataStoreConnectionStrings -DatabaseEngine postgresql -EnvironmentValues $envValues -DatabaseName "custom_db"
 
         $result.AdminConnectionString |
-            Should -Be "host=localhost;port=6543;username=customuser;password=custompass;database=custom_db;NoResetOnClose=true;"
+            Should -Be "host=localhost;port=6543;username=customuser;password=custompass;database=custom_db;NoResetOnClose=true"
         $result.RegistrationConnectionString |
-            Should -Be "host=dms-postgresql;port=5432;username=customuser;password=custompass;database=custom_db;"
+            Should -Be "host=dms-postgresql;port=5432;username=customuser;password=custompass;database=custom_db"
     }
 
     It "honors custom mssql password and port from the resolved environment" {
@@ -113,26 +137,56 @@ Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
         $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "custom_db"
 
         $result.AdminConnectionString |
-            Should -Be "Server=127.0.0.1,14333;Database=custom_db;User Id=sa;Password=Custom!Pass9;TrustServerCertificate=true;"
+            Should -Be "Server=127.0.0.1,14333;Database=custom_db;User Id=sa;Password=Custom!Pass9;TrustServerCertificate=true"
         $result.RegistrationConnectionString |
-            Should -Be "Server=dms-mssql,1433;Database=custom_db;User Id=sa;Password=Custom!Pass9;TrustServerCertificate=true;"
+            Should -Be "Server=dms-mssql,1433;Database=custom_db;User Id=sa;Password=Custom!Pass9;TrustServerCertificate=true"
     }
 
     It "appends NoResetOnClose only to the postgresql host-side reset string" {
         $result = New-E2EDataStoreConnectionStrings -DatabaseEngine postgresql -EnvironmentValues @{} -DatabaseName "db"
 
-        $result.AdminConnectionString | Should -Match "NoResetOnClose=true;$"
+        $result.AdminConnectionString | Should -Match "NoResetOnClose=true$"
         $result.RegistrationConnectionString | Should -Not -Match "NoResetOnClose"
     }
 
     It "falls back to documented dev defaults when the environment omits credentials and ports" {
         $pg = New-E2EDataStoreConnectionStrings -DatabaseEngine postgresql -EnvironmentValues @{} -DatabaseName "db"
         $pg.AdminConnectionString |
-            Should -Be "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=db;NoResetOnClose=true;"
+            Should -Be "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=db;NoResetOnClose=true"
 
         $mssql = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues @{} -DatabaseName "db"
         $mssql.AdminConnectionString |
-            Should -Be "Server=127.0.0.1,1435;Database=db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+            Should -Be "Server=127.0.0.1,1435;Database=db;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+    }
+
+    It "strips surrounding quotes and inline comments from resolved env values (Docker Compose semantics)" {
+        $envValues = @{
+            MSSQL_SA_PASSWORD = '"Quoted Pass9!"'
+            MSSQL_PORT        = "1435 # published host port"
+        }
+
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "db"
+
+        $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $parsed.set_ConnectionString($result.AdminConnectionString)
+        $parsed["Password"] | Should -Be "Quoted Pass9!"
+        $parsed["Server"] | Should -Be "127.0.0.1,1435"
+    }
+
+    It "resolves a `${VAR} reference and preserves a `$`$-escaped literal dollar in a credential" {
+        $envValues = @{
+            MSSQL_SA_PASSWORD = '${SHARED_SECRET}'
+            SHARED_SECRET     = 'Re$$olved;9!'
+            MSSQL_PORT        = "1435"
+        }
+
+        $result = New-E2EDataStoreConnectionStrings -DatabaseEngine mssql -EnvironmentValues $envValues -DatabaseName "db"
+
+        $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $parsed.set_ConnectionString($result.AdminConnectionString)
+        # ${SHARED_SECRET} expands; the referenced value's `$`$ collapses to one literal `$`, and the
+        # embedded ';' survives because DbConnectionStringBuilder quoted the value.
+        $parsed["Password"] | Should -Be 'Re$olved;9!'
     }
 }
 

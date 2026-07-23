@@ -96,9 +96,9 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
                 -DatabaseName ([string]$values["E2E_DATABASE_NAME"])
 
             $connectionStrings.AdminConnectionString |
-                Should -Be "Server=127.0.0.1,1435;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true;"
+                Should -Be "Server=127.0.0.1,1435;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true"
             $connectionStrings.RegistrationConnectionString |
-                Should -Be "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true;"
+                Should -Be "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true"
         }
 
         It "keeps the datastore as mssql when the engine overlay is composed again (idempotent)" {

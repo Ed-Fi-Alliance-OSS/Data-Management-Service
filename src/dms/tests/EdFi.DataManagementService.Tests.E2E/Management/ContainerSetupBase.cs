@@ -77,10 +77,12 @@ public abstract class ContainerSetupBase
         // orchestration resolved once from the selected environment (custom credentials, published
         // port, and database, plus NoResetOnClose=true for PostgreSQL). PostgreSQL keeps Npgsql and the
         // existing DO $$ reset SQL; MSSQL uses SqlClient and the shared MssqlDatabaseResetSql. The C#
-        // harness never re-derives ports or credentials.
+        // harness never re-derives ports or credentials. The reset TRUNCATEs every non-metadata table,
+        // so the admin connection string is first proven to target the configured E2E database.
         await ResetDatabaseAsync(
             AppSettings.DatabaseEngine,
             AppSettings.DataStoreAdminConnectionString,
+            AppSettings.DataStoreDatabaseName,
             ExecuteResetAsync
         );
     }
@@ -91,15 +93,25 @@ public abstract class ContainerSetupBase
     internal static async Task ResetDatabaseAsync(
         string databaseEngine,
         string connectionString,
+        string expectedDatabaseName,
         Func<DatabaseResetPlan, Task> executeReset
     )
     {
-        DatabaseResetPlan plan = BuildResetPlan(databaseEngine, connectionString);
+        DatabaseResetPlan plan = BuildResetPlan(databaseEngine, connectionString, expectedDatabaseName);
         await executeReset(plan);
     }
 
-    internal static DatabaseResetPlan BuildResetPlan(string databaseEngine, string connectionString)
+    internal static DatabaseResetPlan BuildResetPlan(
+        string databaseEngine,
+        string connectionString,
+        string expectedDatabaseName
+    )
     {
+        // Fail closed before producing any reset plan: the reset TRUNCATEs every non-metadata table in
+        // the target database, so a misconfigured admin connection string (empty, malformed, or a
+        // different database) must never reach a truncate against a primary DMS/CMS database.
+        RequireResetTargetsExpectedDatabase(databaseEngine, connectionString, expectedDatabaseName);
+
         if (IsMssql(databaseEngine))
         {
             // Reuse the tested SQL Server reset (disables triggers/constraints, deletes, reseeds
@@ -113,6 +125,72 @@ public abstract class ContainerSetupBase
         }
 
         return new DatabaseResetPlan(DatabaseResetProvider.Postgres, connectionString, _resetSql);
+    }
+
+    // Proves the admin/reset connection string targets exactly the configured E2E database. Parses the
+    // database out of the provider-specific connection string (InitialCatalog for SQL Server, Database
+    // for PostgreSQL) and refuses on an unconfigured expected name, an empty/malformed connection
+    // string, or a database that differs from the configured E2E database. Error messages carry only
+    // database names, never the connection string or any credential.
+    internal static void RequireResetTargetsExpectedDatabase(
+        string databaseEngine,
+        string connectionString,
+        string expectedDatabaseName
+    )
+    {
+        if (string.IsNullOrWhiteSpace(expectedDatabaseName))
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the configured E2E data-store database name is empty."
+            );
+        }
+
+        string targetDatabase = IsMssql(databaseEngine)
+            ? ParseSqlServerDatabase(connectionString)
+            : ParsePostgresDatabase(connectionString);
+
+        if (string.IsNullOrWhiteSpace(targetDatabase))
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the admin connection string does not specify a database."
+            );
+        }
+
+        if (!string.Equals(targetDatabase, expectedDatabaseName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"E2E database reset refused: the admin connection string targets database '{targetDatabase}', "
+                    + $"not the configured E2E database '{expectedDatabaseName}'."
+            );
+        }
+    }
+
+    private static string ParseSqlServerDatabase(string connectionString)
+    {
+        try
+        {
+            return new SqlConnectionStringBuilder(connectionString).InitialCatalog;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the SQL Server admin connection string is malformed."
+            );
+        }
+    }
+
+    private static string ParsePostgresDatabase(string connectionString)
+    {
+        try
+        {
+            return new NpgsqlConnectionStringBuilder(connectionString).Database ?? string.Empty;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            throw new InvalidOperationException(
+                "E2E database reset refused: the PostgreSQL admin connection string is malformed."
+            );
+        }
     }
 
     private static async Task ExecuteResetAsync(DatabaseResetPlan plan)

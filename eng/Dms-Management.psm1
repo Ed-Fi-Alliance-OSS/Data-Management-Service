@@ -803,14 +803,106 @@ function New-DataStoreConnectionString {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string]$DatabaseName
+        [string]$DatabaseName,
+
+        # PostgreSQL host-side reset parity: append NoResetOnClose=true. Ignored for mssql.
+        [switch]$NoResetOnClose
     )
 
+    # Build through DbConnectionStringBuilder rather than string interpolation so credentials or
+    # values containing connection-string metacharacters (';', '"', '''', '=', or surrounding
+    # whitespace) are quoted/escaped per the ADO.NET rules instead of silently corrupting or
+    # truncating the connection string. The provider parsers (Microsoft.Data.SqlClient / Npgsql)
+    # round-trip this output exactly.
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+
     if ($DatabaseEngine -eq "mssql") {
-        return "Server=$DbHost,$Port;Database=$DatabaseName;User Id=$Username;Password=$Password;TrustServerCertificate=true;"
+        $builder["Server"] = "$DbHost,$Port"
+        $builder["Database"] = $DatabaseName
+        $builder["User Id"] = $Username
+        $builder["Password"] = $Password
+        $builder["TrustServerCertificate"] = "true"
+        return $builder.ConnectionString
     }
 
-    return "host=$DbHost;port=$Port;username=$Username;password=$Password;database=$DatabaseName;"
+    $builder["host"] = $DbHost
+    $builder["port"] = "$Port"
+    $builder["username"] = $Username
+    $builder["password"] = $Password
+    $builder["database"] = $DatabaseName
+    if ($NoResetOnClose) {
+        $builder["NoResetOnClose"] = "true"
+    }
+    return $builder.ConnectionString
+}
+
+function Resolve-ComposeEnvReference {
+    <#
+    .SYNOPSIS
+        Resolves ${VAR}/$VAR references in a Compose-converted value against the other environment
+        values, following Docker Compose interpolation: a literal '$' is written '$$' in the file and
+        is preserved, ${NAME}/$NAME expand to another value (recursively, bounded), and an unset
+        reference expands to empty. Applied to the values that flow into connection strings so a
+        referenced credential/port matches the compose stack instead of being embedded literally.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'EnvironmentValues', Justification = 'Consumed inside the [regex]::Replace callback scriptblock to resolve ${VAR} references; the analyzer does not detect uses within the nested scriptblock.')]
+    param(
+        [hashtable]$EnvironmentValues,
+        [AllowEmptyString()][string]$Value,
+        [int]$Depth = 0
+    )
+
+    if ([string]::IsNullOrEmpty($Value) -or $Value.IndexOf('$') -lt 0 -or $Depth -ge 8) {
+        return $Value
+    }
+
+    # Protect Compose's literal-'$' escape ('$$') before resolving any reference, then restore it.
+    $placeholder = [char]0x1
+    $working = $Value.Replace('$$', $placeholder)
+
+    $working = [regex]::Replace($working, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', {
+        param($match)
+        $referenceName = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value }
+        if ($null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($referenceName)) {
+            $referenced = ConvertFrom-ComposeEnvironmentValue -Value ([string]$EnvironmentValues[$referenceName])
+            return Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $referenced -Depth ($Depth + 1)
+        }
+        return ""
+    })
+
+    return $working.Replace($placeholder, '$')
+}
+
+function Get-ComposeResolvedEnvValue {
+    <#
+    .SYNOPSIS
+        Reads an env-file value the way Docker Compose does before it is embedded in a connection
+        string: strips surrounding quotes and inline comments (ConvertFrom-ComposeEnvironmentValue),
+        resolves ${VAR}/$VAR references, and falls back to the documented default when the key is
+        absent, blank, or resolves to empty. Never logs the value.
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [Parameter(Mandatory)][string]$Name,
+        [string]$DefaultValue = ""
+    )
+
+    if ($null -eq $EnvironmentValues -or -not $EnvironmentValues.ContainsKey($Name)) {
+        return $DefaultValue
+    }
+
+    if (-not (Get-Command ConvertFrom-ComposeEnvironmentValue -ErrorAction SilentlyContinue)) {
+        Import-Module -Name (Join-Path $PSScriptRoot "docker-compose/database-safety.psm1") -Force
+    }
+
+    $converted = ConvertFrom-ComposeEnvironmentValue -Value ([string]$EnvironmentValues[$Name])
+    $resolved = Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $converted
+
+    if ([string]::IsNullOrWhiteSpace($resolved)) {
+        return $DefaultValue
+    }
+
+    return $resolved
 }
 
 <#
@@ -864,11 +956,8 @@ function New-E2EDataStoreConnectionStrings {
 
     if ($DatabaseEngine -eq "mssql") {
         $username = "sa"
-        $password = [string]$EnvironmentValues["MSSQL_SA_PASSWORD"]
-        if ([string]::IsNullOrWhiteSpace($password)) { $password = "abcdefgh1!" }
-        $publishedPortValue = [string]$EnvironmentValues["MSSQL_PORT"]
-        if ([string]::IsNullOrWhiteSpace($publishedPortValue)) { $publishedPortValue = "1435" }
-        $publishedPort = [int]$publishedPortValue
+        $password = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        $publishedPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "MSSQL_PORT" -DefaultValue "1435")
 
         $adminConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine mssql -DbHost "127.0.0.1" -Port $publishedPort `
@@ -878,20 +967,15 @@ function New-E2EDataStoreConnectionStrings {
             -Username $username -Password $password -DatabaseName $DatabaseName
     }
     else {
-        $username = [string]$EnvironmentValues["POSTGRES_USER"]
-        if ([string]::IsNullOrWhiteSpace($username)) { $username = "postgres" }
-        $password = [string]$EnvironmentValues["POSTGRES_PASSWORD"]
-        if ([string]::IsNullOrWhiteSpace($password)) { $password = "abcdefgh1!" }
-        $publishedPortValue = [string]$EnvironmentValues["POSTGRES_PORT"]
-        if ([string]::IsNullOrWhiteSpace($publishedPortValue)) { $publishedPortValue = "5435" }
-        $publishedPort = [int]$publishedPortValue
+        $username = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+        $password = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
+        $publishedPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "POSTGRES_PORT" -DefaultValue "5435")
 
-        # Host-side reset parity: the standard E2E harness resets over a pooled Npgsql connection
-        # with NoResetOnClose=true (see ContainerSetupBase). New-DataStoreConnectionString does not
-        # emit it, so append it here for the PostgreSQL admin/reset string only.
-        $adminConnectionString = (New-DataStoreConnectionString `
-                -DatabaseEngine postgresql -DbHost "localhost" -Port $publishedPort `
-                -Username $username -Password $password -DatabaseName $DatabaseName) + "NoResetOnClose=true;"
+        # Host-side reset parity: the standard E2E harness resets over a pooled Npgsql connection with
+        # NoResetOnClose=true (see ContainerSetupBase); build it into the admin/reset string only.
+        $adminConnectionString = New-DataStoreConnectionString `
+            -DatabaseEngine postgresql -DbHost "localhost" -Port $publishedPort `
+            -Username $username -Password $password -DatabaseName $DatabaseName -NoResetOnClose
         $registrationConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine postgresql -DbHost "dms-postgresql" -Port 5432 `
             -Username $username -Password $password -DatabaseName $DatabaseName

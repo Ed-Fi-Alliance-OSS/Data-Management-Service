@@ -220,6 +220,26 @@ function Reset-E2EDatabase {
     }
 }
 
+function Get-MssqlResetBatch {
+    param([string]$DatabaseName)
+
+    # SQL Server has no equivalent of pg_terminate_backend + dropdb --if-exists: dropping active
+    # connections and reclaiming the database is an ALTER DATABASE SET SINGLE_USER WITH ROLLBACK
+    # IMMEDIATE followed by DROP DATABASE. Both statements MUST run in ONE batch on ONE connection:
+    # SET SINGLE_USER puts the database in single-user mode, and if the DROP ran in a separate
+    # sqlcmd invocation an intervening client could seize the single-user slot and block/fail the
+    # drop. Emitting them as a single guarded batch (a no-op when the database does not exist)
+    # closes that window. Returned as a pure string so the batch shape can be unit tested without
+    # touching SQL Server.
+    return @"
+IF DB_ID(N'$DatabaseName') IS NOT NULL
+BEGIN
+    ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE [$DatabaseName];
+END
+"@
+}
+
 function Reset-E2EMssqlDatabase {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     [CmdletBinding(SupportsShouldProcess)]
@@ -235,24 +255,12 @@ function Reset-E2EMssqlDatabase {
         return
     }
 
-    # SQL Server has no equivalent of pg_terminate_backend + dropdb --if-exists: dropping active
-    # connections and reclaiming the database is instead a two-statement ALTER DATABASE / DROP
-    # DATABASE sequence, each guarded so a database that does not yet exist is a no-op.
-    $setSingleUserSql =
-        "IF DB_ID(N'$DatabaseName') IS NOT NULL ALTER DATABASE [$DatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
+    $resetBatch = Get-MssqlResetBatch -DatabaseName $DatabaseName
 
-    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $setSingleUserSql -C -b
+    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $resetBatch -C -b
 
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to terminate active connections for E2E database '$DatabaseName'."
-    }
-
-    $dropDatabaseSql = "DROP DATABASE IF EXISTS [$DatabaseName];"
-
-    & docker exec -e "SQLCMDPASSWORD=$SaPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q $dropDatabaseSql -C -b
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to drop E2E database '$DatabaseName'."
+        throw "Failed to reset E2E database '$DatabaseName'."
     }
 }
 

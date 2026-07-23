@@ -203,6 +203,7 @@ jobs:
             "eng/docker-compose/tests/EffectiveSchemaHashParser.Tests.ps1",
             "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
             "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
+            "eng/docker-compose/tests/ProvisionE2EDatabaseReset.Tests.ps1",
             "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
             "eng/docker-compose/tests/E2EEngineForwarding.Tests.ps1",
             "eng/docker-compose/tests/E2ETestProcessContext.Tests.ps1",
