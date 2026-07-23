@@ -335,7 +335,7 @@ Describe "on-dms-pullrequest.yml SQL Server E2E lane guardrails" {
     }
 
     Context "secret-safe file-only capture and build-before-filter (DMS1284-U6-C1)" {
-        It "captures build output to a file only - never Tee-Object or a raw *>&1 console pass-through" -ForEach @(
+        It "captures build output via a child pwsh to a file only - never Tee-Object, raw *>&1, or a direct in-process invocation" -ForEach @(
             @{ Name = 'run-e2e-tests-mssql'; Command = 'E2ETest' }
             @{ Name = 'run-e2e-tests-mssql-ds61'; Command = 'E2ETest' }
             @{ Name = 'run-instance-management-e2e-tests-mssql'; Command = 'InstanceE2ETest' }
@@ -352,10 +352,28 @@ Describe "on-dms-pullrequest.yml SQL Server E2E lane guardrails" {
                 -Because "a raw all-stream pass-through pipe would expose credentials on the console"
 
             $runLine = Get-RunCommandLine -Block $block -Command $Command
+            $runLine | Should -Match ([regex]::Escape("& pwsh -NoProfile -File ./build-dms.ps1 $Command")) `
+                -Because "build-dms.ps1 must run in a child pwsh so its Invoke-Main exit does not terminate the run block and the LASTEXITCODE guard stays reachable"
+            $runLine | Should -Not -Match '^\s*\./build-dms\.ps1' `
+                -Because "a direct in-process ./build-dms.ps1 invocation makes the LASTEXITCODE guard unreachable"
             $runLine | Should -Match ([regex]::Escape("*> `$diagFile")) `
-                -Because "build output must be redirected to a file only"
-            $block | Should -Match ([regex]::Escape('if ($LASTEXITCODE -ne 0)')) `
-                -Because "a redirected script exit must be re-raised so the step fails on a build/test failure"
+                -Because "child build output must be redirected to a file only"
+            $block | Should -Match ([regex]::Escape('$buildExitCode = $LASTEXITCODE')) `
+                -Because "the child exit code must be captured immediately after the redirected child invocation"
+            $block | Should -Match ([regex]::Escape('if ($buildExitCode -ne 0)')) `
+                -Because "the captured child exit code must be re-raised as a secret-free failure"
+        }
+
+        It "confirms a child pwsh exit code returns to the parent so the LASTEXITCODE guard is reachable (placeholder probe)" {
+            # The lanes rely on this control flow: build-dms.ps1's Invoke-Main `exit` must terminate only a
+            # CHILD pwsh so control returns to the run block and the guard runs. Proven with a bare `exit 7`
+            # in a child pwsh - no Docker, no build-dms.ps1, no arguments or captured output.
+            & pwsh -NoProfile -Command 'exit 7' 2>$null
+            $buildExitCode = $LASTEXITCODE
+            $guardReached = $true
+
+            $guardReached | Should -BeTrue -Because "the child exit did not terminate this runspace"
+            $buildExitCode | Should -Be 7 -Because "the parent receives the child's exit code, unlike a direct in-process exit which would terminate the runspace before the guard"
         }
 
         It "shows only the already-sanitized setup log on the console, gated on sanitizer success" -ForEach @(

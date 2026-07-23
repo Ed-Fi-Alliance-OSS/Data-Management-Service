@@ -1702,15 +1702,18 @@ jobs:
         run: |
           # Capture the full build-dms.ps1 setup/provisioning/test output to a per-job diagnostic FILE ONLY.
           # It is never streamed to the Actions console, which is immutable and cannot be sanitized after the
-          # fact (build-dms.ps1 emits credentials during CMS bootstrap). `*>` redirects every stream to the
-          # file; a redirected script `exit N` returns to this block rather than terminating it, so the
-          # explicit LASTEXITCODE check re-raises the failure. The thrown message carries only the exit code.
+          # fact (build-dms.ps1 emits credentials during CMS bootstrap). build-dms.ps1 ends through
+          # Invoke-Main's `exit`, which would terminate this run block if the script were invoked directly;
+          # running it in a CHILD pwsh confines that exit to the child and returns control here, so the
+          # LASTEXITCODE guard is live. `*>` keeps every child stream file-only; the thrown message carries
+          # only the exit code.
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
-          if ($LASTEXITCODE -ne 0) {
-              throw "build-dms.ps1 E2ETest failed with exit code $LASTEXITCODE. See the sanitized build-dms-setup.log artifact."
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+              throw "build-dms.ps1 E2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
           }
 
       - name: Capture DMS E2E Docker Logs
@@ -1903,15 +1906,16 @@ jobs:
         id: e2e_ds61_mssql
         if: success()
         run: |
-          # File-only capture (see run-e2e-tests-mssql); never streamed to the console. `*>` redirects every
-          # stream to the file and the LASTEXITCODE check re-raises a build-dms.ps1 failure without printing
-          # any captured output.
+          # File-only capture in a CHILD pwsh (see run-e2e-tests-mssql); never streamed to the console. The
+          # child confines build-dms.ps1's Invoke-Main `exit` so control returns to the live LASTEXITCODE
+          # guard; `*>` keeps every child stream in the file and the thrown message carries only the exit code.
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-ds61"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
-          if ($LASTEXITCODE -ne 0) {
-              throw "build-dms.ps1 E2ETest (DS 6.1) failed with exit code $LASTEXITCODE. See the sanitized build-dms-setup.log artifact."
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+              throw "build-dms.ps1 E2ETest (DS 6.1) failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
           }
 
       - name: Capture DMS E2E Docker Logs
@@ -2319,14 +2323,16 @@ jobs:
           # -EnvironmentFile is intentionally omitted so the InstanceE2ETest default resolves the tracked
           # eng/docker-compose/.env.routeContext.e2e (DMS1284-U6-P1). The full build-dms.ps1
           # setup/provisioning/test output is captured to a per-job diagnostic FILE ONLY (never streamed to
-          # the console; build-dms.ps1 emits credentials during CMS bootstrap). `*>` redirects every stream
-          # to the file; the LASTEXITCODE check re-raises a failure without printing any captured output.
+          # the console; build-dms.ps1 emits credentials during CMS bootstrap). Running build-dms.ps1 in a
+          # CHILD pwsh confines its Invoke-Main `exit` to the child and returns control to the live
+          # LASTEXITCODE guard; `*>` keeps every child stream file-only.
           $diagDir = "${{ github.workspace }}/logs"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}' *> $diagFile
-          if ($LASTEXITCODE -ne 0) {
-              throw "build-dms.ps1 InstanceE2ETest failed with exit code $LASTEXITCODE. See the sanitized build-dms-setup.log artifact."
+          & pwsh -NoProfile -File ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}' *> $diagFile
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+              throw "build-dms.ps1 InstanceE2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
           }
 
       - name: Capture Docker Logs
