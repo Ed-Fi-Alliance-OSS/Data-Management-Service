@@ -16,6 +16,11 @@ Describe "Azure VM lifecycle safety" {
     }
 
     BeforeEach {
+        # Capture PATH BEFORE any fallible setup (the New-Item/Copy-Item/chmod below can throw - e.g. chmod is
+        # absent on a non-Unix host). AfterEach unconditionally restores $script:originalPath, so a setup
+        # failure that skipped a later capture would restore a null PATH and erase it for every following spec
+        # in the glob-ordered suite. Capturing first keeps this fixture's failure self-contained.
+        $script:originalPath = $env:PATH
         $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-$([Guid]::NewGuid().ToString('N'))"
         $script:composeRoot = Join-Path $script:work "compose"
         $script:binRoot = Join-Path $script:work "bin"
@@ -96,7 +101,7 @@ esac
 '@ -NoNewline
         & chmod +x $curlStub
 
-        $script:originalPath = $env:PATH
+        # PATH was snapshotted at the top of BeforeEach (before any fallible setup); prepend the stub bin dir.
         $env:PATH = "$script:binRoot$([IO.Path]::PathSeparator)$env:PATH"
         $env:DOCKER_LOG = $script:dockerLog
         $env:CURL_LOG = $script:curlLog
