@@ -147,10 +147,12 @@ flowchart TB
     HEART -. proves connector progress .-> CACHE
 ```
 
-`dms.CdcHeartbeat` is an internal singleton table updated by Debezium’s periodic action
-query. Its captured update advances connector offsets even when the database is idle,
-proving progress beyond a source-position barrier. It contains no document data and routes
-only to the internal progress topic.
+- **`dms.DataStoreIdentity`** — Stable source UUID used with the provider to bind CDC
+  infrastructure to the correct physical database; clones and replacements receive a new identity.
+- **`dms.DocumentCacheState`** — Durable cache-ahead safety latch that disables cache use,
+  writes, and readiness until operator recovery; API reads fall back to relational reconstitution.
+- **`dms.CdcHeartbeat`** — Debezium-updated singleton that advances offsets while the
+  database is idle; contains no document data and routes only to the internal progress topic.
 
 ---
 
