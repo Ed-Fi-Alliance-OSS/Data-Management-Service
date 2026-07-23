@@ -200,23 +200,33 @@ public class Given_The_Parity_Scenario_Catalog
             .Should()
             .OnlyContain(s => s.Classification == ParityClassification.Both);
 
+    // The exact remaining owed SQL Server no-profile gap set after DMS-1285 Flip A: only the guarded
+    // no-op family (canonical row + 10 variants), each owed by DMS-1285. Rows are selected by
+    // MssqlCoverage == Gap — not by owner — so a row re-owned to a linked blocker ticket stays visible
+    // to this check (its pair would need to be enumerated here explicitly), and the whole no-profile
+    // layer is swept so a forgotten variant of an already-flipped family cannot silently remain a
+    // KnownGap (resolution validates only Covered rows).
+    private static readonly string[] ExpectedRemainingNoProfileMssqlGapPairs =
+    [
+        "NoProfileGuardedNoOp::DMS-1285",
+        "NoProfileGuardedNoOp/Put::DMS-1285",
+        "NoProfileGuardedNoOp/PostAsUpdate::DMS-1285",
+        "NoProfileGuardedNoOp/PutCurrentStateRefresh::DMS-1285",
+        "NoProfileGuardedNoOp/PostAsUpdateCurrentStateRefresh::DMS-1285",
+        "NoProfileGuardedNoOp/PutAfterReorder::DMS-1285",
+        "NoProfileGuardedNoOp/PostAsUpdateAfterReorder::DMS-1285",
+        "NoProfileGuardedNoOp/StalePut::DMS-1285",
+        "NoProfileGuardedNoOp/StalePostAsUpdate::DMS-1285",
+        "NoProfileGuardedNoOp/PutCommitWindowRace::DMS-1285",
+        "NoProfileGuardedNoOp/PostAsUpdateCommitWindowRace::DMS-1285",
+    ];
+
     [Test]
-    public void It_owns_every_canonical_no_profile_family_as_a_dms_1285_known_gap()
-    {
-        foreach (string id in ExpectedNoProfileCanonicalIds)
-        {
-            _all.Should()
-                .Contain(
-                    s =>
-                        s.Id == id
-                        && s.Classification == ParityClassification.KnownGap
-                        && s.MssqlGapOwner == "DMS-1285"
-                        && s.MssqlCoverage == EngineCoverage.Gap,
-                    "no-profile family {0} owed to DMS-1285",
-                    id
-                );
-        }
-    }
+    public void It_records_exactly_the_remaining_no_profile_mssql_gap_rows_as_scenario_and_owner_pairs() =>
+        _all.Where(s => s.Layer == ParityLayer.NoProfile && s.MssqlCoverage == EngineCoverage.Gap)
+            .Select(s => $"{s.Id}::{s.MssqlGapOwner}")
+            .Should()
+            .BeEquivalentTo(ExpectedRemainingNoProfileMssqlGapPairs);
 
     [Test]
     public void It_gives_every_no_profile_canonical_family_a_shared_entry_point()
@@ -349,6 +359,11 @@ public class Given_The_Parity_Scenario_Catalog
         "PostgresqlRelationalWriteCreateBaselineTests.cs::Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_persists_root_extensions_collection_extensions_and_extension_child_collections",
     ];
 
+    private static readonly string[] ExpectedNoProfileExtCreateMssqlTriples =
+    [
+        "MssqlRelationalWriteCreateBaselineTests.cs::Given_A_Mssql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture::It_persists_root_extensions_collection_extensions_and_extension_child_collections",
+    ];
+
     private static readonly string[] ExpectedSiblingOrdinalPgTriples =
     [
         "PostgresqlProfileCollectionAlignedExtensionMergeTests.cs::Given_a_Postgresql_ProfileCollectionAlignedExtension_update_request_reordering_and_inserting_aligned_extension_children::It_returns_update_success",
@@ -378,12 +393,19 @@ public class Given_The_Parity_Scenario_Catalog
     {
         ParityScenario row = _all.Single(s => s.Id == "NoProfileWriteBehavior/NoProfileExt");
         Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtCreatePgTriples);
+        Flatten(row.MssqlLocations).Should().BeEquivalentTo(ExpectedNoProfileExtCreateMssqlTriples);
     }
 
     private static readonly string[] ExpectedChangedUpdateBatchPartitionsPgTriples =
     [
         "PostgresqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
         "PostgresqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_partitions_collection_update_commands_using_the_compiled_batch_limit",
+    ];
+
+    private static readonly string[] ExpectedChangedUpdateBatchPartitionsMssqlTriples =
+    [
+        "MssqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_returns_update_success_and_applies_the_changed_descriptor_to_every_row",
+        "MssqlRelationalWriteMultiBatchCollectionTests.cs::Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descriptor_Update_With_A_Focused_Stable_Key_Fixture::It_partitions_collection_update_commands_using_the_compiled_batch_limit",
     ];
 
     [Test]
@@ -394,10 +416,11 @@ public class Given_The_Parity_Scenario_Catalog
         );
         row.Boundary.Should().Be(ProductionBoundary.BatchSqlEmitter);
         row.PgsqlCoverage.Should().Be(EngineCoverage.Covered);
-        row.MssqlCoverage.Should().Be(EngineCoverage.Gap);
-        row.MssqlGapOwner.Should().Be("DMS-1285");
-        row.Classification.Should().Be(ParityClassification.KnownGap);
+        row.MssqlCoverage.Should().Be(EngineCoverage.Covered);
+        row.MssqlGapOwner.Should().BeNull();
+        row.Classification.Should().Be(ParityClassification.Both);
         Flatten(row.PgsqlLocations).Should().BeEquivalentTo(ExpectedChangedUpdateBatchPartitionsPgTriples);
+        Flatten(row.MssqlLocations).Should().BeEquivalentTo(ExpectedChangedUpdateBatchPartitionsMssqlTriples);
 
         // The changed-update batch row runs update-specific helpers, not its family's create-batch contract, so
         // it names its own Direct entry point rather than inheriting the family contract by shared boundary.
