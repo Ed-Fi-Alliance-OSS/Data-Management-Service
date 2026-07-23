@@ -70,8 +70,8 @@ flowchart LR
     UPSERT --> CACHE[(dms.DocumentCache)]
     CACHE --> DEB[Debezium connector]
     DOC -->|deletes| DEB
-    HB[(dms.CdcHeartbeat)] --> DEB
-    DEB --> SMT[DocumentState SMT]
+    HB[(dms.CdcHeartbeat<br/>internal progress)] --> DEB
+    DEB --> SMT[DocumentState<br/>Kafka SMT]
     SMT --> PUB[(Compacted public topic)]
     SMT --> PROG[(Internal progress topic)]
 ```
@@ -161,6 +161,11 @@ flowchart TB
     IDENT -. identifies physical source .-> DOC
     HEART -. proves connector progress .-> CACHE
 ```
+
+`dms.CdcHeartbeat` is an internal singleton table updated by Debezium’s periodic action
+query. Its captured update advances connector offsets even when the database is idle,
+proving progress beyond a source-position barrier. It contains no document data and routes
+only to the internal progress topic.
 
 ---
 
