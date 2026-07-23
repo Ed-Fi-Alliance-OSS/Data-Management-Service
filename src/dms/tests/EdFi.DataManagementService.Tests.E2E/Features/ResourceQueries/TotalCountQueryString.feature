@@ -37,7 +37,7 @@ Feature: TotalCount Response Header for GET Requests
               And the response headers does not include total-count
 
         @API-140
-        @e2e-ci-shard-4
+        @e2e-ci-shard-4 @MssqlRepresentative
         Scenario: 05 Ensure that schools return the total count
              When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200

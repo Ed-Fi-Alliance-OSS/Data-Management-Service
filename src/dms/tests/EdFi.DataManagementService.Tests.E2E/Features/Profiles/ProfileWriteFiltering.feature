@@ -110,7 +110,7 @@ Feature: Profile Write Filtering
              And the response body should contain fields "schoolId, nameOfInstitution"
              And the response body should not contain fields "webSite, shortNameOfInstitution"
 
-        @e2e-ci-shard-3
+        @e2e-ci-shard-3 @MssqlRepresentative
         Scenario: 04 POST with ExcludeOnly write profile preserves non-excluded fields
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-ExcludeOnly" for resource "School" with body
                   """

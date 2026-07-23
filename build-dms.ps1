@@ -1219,6 +1219,40 @@ function Wait-ForPostgreSQL {
     }
 }
 
+function Resolve-InstanceE2EBaseEnvironmentFile {
+    <#
+    .SYNOPSIS
+    Resolves the Instance Management E2E base environment file, defaulting to the tracked
+    route-context env file at the docker-compose root when no explicit file is supplied.
+
+    .DESCRIPTION
+    When -EnvironmentFile is empty (the InstanceE2ETest default), the tracked
+    <docker-compose>/.env.routeContext.e2e is used so the documented repo-root entry point
+    (./build-dms.ps1 InstanceE2ETest) works regardless of the caller's current working directory.
+    An explicitly supplied path keeps the caller-relative (relative) or verbatim (absolute) contract
+    of Resolve-LocalSettingsEnvironmentFile, whose repository-wide semantics are unchanged. A missing
+    file fails fast.
+    #>
+    param(
+        [string]
+        $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [string]
+        $DockerComposeRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($EnvironmentFile)) {
+        $defaultRouteContextEnvironmentFile = Join-Path $DockerComposeRoot ".env.routeContext.e2e"
+        if (-not (Test-Path -LiteralPath $defaultRouteContextEnvironmentFile -PathType Leaf)) {
+            throw "Instance Management E2E default environment file not found: $defaultRouteContextEnvironmentFile"
+        }
+        return $defaultRouteContextEnvironmentFile
+    }
+
+    return Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $DockerComposeRoot
+}
+
 function Get-InstanceE2ETestEnvironmentContext {
     param(
         [string]
@@ -1241,7 +1275,7 @@ function Get-InstanceE2ETestEnvironmentContext {
     # Single resolution point for the Instance suite: compose the data-standard overlay first, then the
     # database-engine overlay, so setup, provisioning, fixture registration, teardown, and the test
     # process all read the same resolved file. PostgreSQL and an omitted engine are behavior-compatible.
-    $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeRoot
+    $baseEnvironmentFile = Resolve-InstanceE2EBaseEnvironmentFile -EnvironmentFile $EnvironmentFile -DockerComposeRoot $dockerComposeRoot
     $resolvedEnvironmentFile = Resolve-DataStandardEnvironmentFile `
         -DataStandardVersion $DataStandardVersion `
         -BaseEnvironmentFile $baseEnvironmentFile `
@@ -1580,9 +1614,11 @@ function InstanceE2ETests {
         [string]
         $DatabaseEngine = "postgresql",
 
-        # Environment file, resolved against eng/docker-compose. Defaults to the route-context env file.
+        # Environment file. Empty (the default) resolves to the tracked route-context env file at the
+        # docker-compose root regardless of the current working directory; an explicit relative path is
+        # caller-relative and an explicit absolute path is used verbatim.
         [string]
-        $EnvironmentFile = "./.env.routeContext.e2e"
+        $EnvironmentFile = ""
     )
 
     # Instance management tests require route qualifiers and three explicitly provisioned route-context databases.

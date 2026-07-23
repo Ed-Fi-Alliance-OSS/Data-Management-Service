@@ -5,7 +5,7 @@ Feature: Homograph extension resources
 
     Rule: Homograph Extension Resources
 
-        @e2e-ci-shard-2
+        @e2e-ci-shard-2 @MssqlRepresentative
         Scenario: 01 Ensure clients can create/update/get/delete a school in homograph extension
       # POST request to create a school
              When a POST request is made to "/homograph/schools/" with

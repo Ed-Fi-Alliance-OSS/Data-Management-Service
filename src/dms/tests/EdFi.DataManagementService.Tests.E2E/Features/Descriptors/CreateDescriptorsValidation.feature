@@ -4,7 +4,7 @@ Feature: Create a Descriptor
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-006
-        @e2e-ci-shard-2
+        @e2e-ci-shard-2 @MssqlRepresentative
         Scenario: 01 Ensure clients can create a descriptor
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """

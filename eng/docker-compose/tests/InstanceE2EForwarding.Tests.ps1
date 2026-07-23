@@ -33,6 +33,10 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
         Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../Dms-Management.psm1"))) -Force
         Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../env-utility.psm1"))) -Force
         Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../database-safety.psm1"))) -Force
+        # Get-InstanceE2ETestEnvironmentContext resolves its base env file through
+        # Resolve-InstanceE2EBaseEnvironmentFile, so that helper must be defined too; with an explicit
+        # -EnvironmentFile it delegates to the mocked Resolve-LocalSettingsEnvironmentFile leaf.
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Resolve-InstanceE2EBaseEnvironmentFile")))
         . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Get-InstanceE2ETestEnvironmentContext")))
     }
 
@@ -725,5 +729,110 @@ Describe "Instance E2E route-context schema packages match the local image surfa
         $script:schemaPackageNames | Should -Not -Contain "EdFi.DataStandard52.Homograph.ApiSchema"
         @($script:schemaPackages | ForEach-Object { $_.extensionName }) | Should -Not -Contain "Sample"
         @($script:schemaPackages | ForEach-Object { $_.extensionName }) | Should -Not -Contain "Homograph"
+    }
+}
+
+Describe "Resolve-InstanceE2EBaseEnvironmentFile default environment-file resolution (DMS-1284)" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        # Import env-utility so Resolve-LocalSettingsEnvironmentFile exists and can be mocked for the
+        # explicit-path delegation tests.
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../env-utility.psm1"))) -Force
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Resolve-InstanceE2EBaseEnvironmentFile")))
+    }
+
+    AfterAll {
+        Remove-Module env-utility -Force -ErrorAction SilentlyContinue
+    }
+
+    Context "with no explicit environment file (the InstanceE2ETest default)" {
+        It "resolves the tracked route-context env file at the docker-compose root regardless of CWD" {
+            $root = Join-Path $TestDrive "dc-root"
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+            $expected = Join-Path $root ".env.routeContext.e2e"
+            Set-Content -LiteralPath $expected -Value "ROUTE_QUALIFIER_SEGMENTS=districtId,schoolYear"
+
+            Resolve-InstanceE2EBaseEnvironmentFile -EnvironmentFile "" -DockerComposeRoot $root |
+                Should -Be $expected
+        }
+
+        It "treats whitespace the same as omitted" {
+            $root = Join-Path $TestDrive "dc-root-ws"
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+            $expected = Join-Path $root ".env.routeContext.e2e"
+            Set-Content -LiteralPath $expected -Value "x=1"
+
+            Resolve-InstanceE2EBaseEnvironmentFile -EnvironmentFile "   " -DockerComposeRoot $root |
+                Should -Be $expected
+        }
+
+        It "fails fast when the default route-context env file is missing" {
+            $root = Join-Path $TestDrive "dc-root-missing"
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            { Resolve-InstanceE2EBaseEnvironmentFile -EnvironmentFile "" -DockerComposeRoot $root } |
+                Should -Throw -ExpectedMessage "*default environment file not found*"
+        }
+    }
+
+    Context "with an explicit environment file" {
+        BeforeEach {
+            Mock Resolve-LocalSettingsEnvironmentFile { "RESOLVED::$Path" }
+        }
+
+        It "delegates an explicit relative path to the caller-relative resolver" {
+            $result = Resolve-InstanceE2EBaseEnvironmentFile -EnvironmentFile "./custom.e2e" -DockerComposeRoot "C:\dc"
+
+            $result | Should -Be "RESOLVED::./custom.e2e"
+            Should -Invoke Resolve-LocalSettingsEnvironmentFile -Times 1 -Exactly -ParameterFilter { $Path -eq "./custom.e2e" }
+        }
+
+        It "delegates an explicit absolute path to the resolver (kept verbatim by the resolver)" {
+            $absolute = "C:\abs\file.env"
+            Resolve-InstanceE2EBaseEnvironmentFile -EnvironmentFile $absolute -DockerComposeRoot "C:\dc" |
+                Should -Be "RESOLVED::$absolute"
+        }
+    }
+}
+
+Describe "InstanceE2ETest environment-file wiring (DMS-1284)" {
+    BeforeAll {
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        $script:ast = [System.Management.Automation.Language.Parser]::ParseFile($script:buildScript, [ref]$null, [ref]$null)
+        $script:buildScriptText = Get-Content -LiteralPath $script:buildScript -Raw
+    }
+
+    It "declares an empty InstanceE2ETests -EnvironmentFile default (no CWD-relative default)" {
+        $instanceE2ETests = $script:ast.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "InstanceE2ETests" },
+            $true) | Select-Object -First 1
+        $instanceE2ETests | Should -Not -BeNullOrEmpty
+
+        $parameter = $instanceE2ETests.Body.ParamBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq "EnvironmentFile" }
+        $parameter | Should -Not -BeNullOrEmpty
+        $parameter.DefaultValue.Extent.Text | Should -Be '""'
+    }
+
+    It "forwards -EnvironmentFile to InstanceE2ETests only when explicitly supplied (never the ./.env.e2e default)" {
+        $dispatch = [regex]::Match($script:buildScriptText, "(?s)InstanceE2ETest\s*\{.*?Invoke-Step\s*\{\s*InstanceE2ETests")
+        $dispatch.Success | Should -BeTrue
+        $dispatchText = $dispatch.Value
+
+        $dispatchText | Should -Match 'if\s*\(\s*\$environmentFileSupplied\s*\)'
+        $dispatchText | Should -Match '\$instanceE2EArguments\.EnvironmentFile\s*=\s*\$EnvironmentFile'
+        # The forward must use the $EnvironmentFile variable (guarded), never a hard-coded env-file
+        # literal such as the standard suite's ./.env.e2e default.
+        $dispatchText | Should -Not -Match 'EnvironmentFile\s*=\s*"[^"]*\.e2e"'
     }
 }
