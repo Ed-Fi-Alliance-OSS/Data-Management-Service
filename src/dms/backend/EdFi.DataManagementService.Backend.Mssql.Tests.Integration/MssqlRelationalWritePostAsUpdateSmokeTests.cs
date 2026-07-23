@@ -1205,11 +1205,16 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
         Guid.Parse("bbbbbbbb-0000-0000-0000-000000000102")
     );
 
+    // Bounds the race-coordination waits so a stale-candidate worker that faults or blocks before
+    // reaching the resolver gate fails the fixture instead of hanging the shard.
+    private static readonly TimeSpan CoordinationTimeout = TimeSpan.FromSeconds(30);
+
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ConcurrentPostCreateRaceCoordinator _raceCoordinator = null!;
+    private Task<UpsertResult> _staleCreateCandidateTask = null!;
     private UpsertResult _createWinnerResult = null!;
     private UpsertResult _staleCreateCandidateResult = null!;
     private ReferentialId _sharedSchoolReferentialId;
@@ -1239,14 +1244,25 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider(_raceCoordinator);
         _sharedSchoolReferentialId = new ReferentialId(await ComputeSchoolReferentialIdAsync());
 
-        var staleCreateCandidateTask = ExecuteUpsertAsync(
+        _staleCreateCandidateTask = ExecuteUpsertAsync(
             StaleCreateCandidateRequestBodyJson,
             StaleCreateCandidateDocumentUuid,
             "mssql-post-create-race-stale-candidate",
             _sharedSchoolReferentialId
         );
 
-        await _raceCoordinator.WaitUntilFirstResolverCallIsPendingAsync();
+        // Race readiness against the worker task under a bounded timeout — a bare readiness wait
+        // would hang the shard if the worker faulted before reaching the resolver gate. The worker
+        // cannot complete successfully while gated at the resolver, so its winning the race always
+        // propagates a fault.
+        using (var readinessTimeout = new CancellationTokenSource(CoordinationTimeout))
+        {
+            Task readinessTask = _raceCoordinator.WaitUntilFirstResolverCallIsPendingAsync(
+                readinessTimeout.Token
+            );
+            Task completedFirst = await Task.WhenAny(readinessTask, _staleCreateCandidateTask);
+            await completedFirst;
+        }
 
         _createWinnerResult = await ExecuteUpsertAsync(
             CreateWinnerRequestBodyJson,
@@ -1260,7 +1276,7 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
 
         _raceCoordinator.ReleaseFirstResolverCall();
 
-        _staleCreateCandidateResult = await staleCreateCandidateTask;
+        _staleCreateCandidateResult = await _staleCreateCandidateTask;
         _documentAfterRequests = await ReadDocumentAsync(CreateWinnerDocumentUuid.Value);
         _schoolAfterRequests = await ReadSchoolAsync(_documentAfterRequests.DocumentId);
         _addressesAfterRequests = await ReadSchoolAddressesAsync(_documentAfterRequests.DocumentId);
@@ -1274,6 +1290,30 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
     public async Task OneTimeTearDown()
     {
         _raceCoordinator?.ReleaseFirstResolverCall();
+
+        if (_staleCreateCandidateTask is not null)
+        {
+            try
+            {
+                // Bounded, best-effort observation: when OneTimeSetUp fails before awaiting the
+                // worker, surface its fault here instead of leaving it unobserved while disposal
+                // races the still-running task. On the success path this is an instant no-op.
+                using var drainTimeout = new CancellationTokenSource(CoordinationTimeout);
+                await _staleCreateCandidateTask.WaitAsync(drainTimeout.Token);
+            }
+            catch
+            {
+                // The OneTimeSetUp failure is already the reported error; the worker's fault or
+                // timeout here is cleanup-only.
+            }
+
+            // Disposing an incomplete Task throws, so only dispose when the drain observed
+            // completion (NUnit1032 requires the field disposed here).
+            if (_staleCreateCandidateTask.IsCompleted)
+            {
+                _staleCreateCandidateTask.Dispose();
+            }
+        }
 
         if (_serviceProvider is not null)
         {

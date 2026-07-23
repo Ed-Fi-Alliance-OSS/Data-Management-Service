@@ -343,7 +343,7 @@ public static partial class ParityScenarioCatalog
             boundaryDetail: "WritePlanBatchSqlEmitter / PlanWriteBatchingConventions",
             notes: "This row proves only the multi-batch create mechanic its own location executes. Update/delete batching, aligned-extension batching, parameter pressure, and changed-write identity are decomposed into the explicit NoProfileMultiBatchCollection/* variant rows with their own entry points.",
             diff: new DialectDifference(
-                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent and caps at 2100 parameters / 1000 rows.",
+                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent and caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows.",
                 "Dialect parameter limits and id-reservation strategy differ; behavioral parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts, not the SQL text."
             )
         ),
@@ -361,7 +361,7 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionCreatePersisted"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertCreateBatchPartitions",
             diff: new DialectDifference(
-                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent for id reservation and caps at 2100 parameters / 1000 rows.",
+                "PostgreSQL reserves collection ids via generate_series and caps at 65535 parameters / 1000 rows; SQL Server has no generate_series equivalent for id reservation and caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows.",
                 "Dialect id-reservation strategy and parameter limits shape the compiled create batches; behavioral parity is the persisted rowset, contiguous 0-based ordinals, and batch partition counts, not the SQL text."
             )
         ),
@@ -393,7 +393,7 @@ public static partial class ParityScenarioCatalog
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionAlignedExtensionCreatePersisted"
                 + " + NoProfileMultiBatchCollectionScenarios.AssertAlignedExtensionInsertBatchPartitions",
             diff: new DialectDifference(
-                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 parameters / 1000 rows (aligned extension rows are keyed to base collection ids, so no id reservation applies on either dialect).",
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows (aligned extension rows are keyed to base collection ids, so no id reservation applies on either dialect).",
                 "Dialect parameter limits shape the compiled aligned-extension insert batches; behavioral parity is the persisted rowset and batch partition counts, not the SQL text."
             )
         ),
@@ -434,7 +434,7 @@ public static partial class ParityScenarioCatalog
                 "It_partitions_collection_update_commands_using_the_compiled_batch_limit",
             ],
             diff: new DialectDifference(
-                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 parameters / 1000 rows (updates target existing stable row identities, so no id reservation applies on either dialect).",
+                "PostgreSQL caps at 65535 parameters / 1000 rows; SQL Server caps at 2100 RPC parameters (2098 usable per command through sp_executesql) / 1000 rows (updates target existing stable row identities, so no id reservation applies on either dialect).",
                 "Dialect parameter limits shape the compiled update-by-stable-row-identity batches; behavioral parity is the persisted rowset and batch partition counts, not the SQL text."
             ),
             sharedEntryPoint: "NoProfileMultiBatchCollectionScenarios.AssertLargeCollectionChangedDescriptorUpdatePersisted"
