@@ -270,6 +270,51 @@ public class ResourceClaimModuleTests
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
+
+        [Test]
+        public async Task It_returns_parameter_validation_failure_for_invalid_limit_on_resource_claims_endpoint()
+        {
+            var client = SetUpClient();
+            var response = await client.GetAsync("/v3/resourceClaims?limit=0");
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be greater than 0."]
+            );
+        }
+
+        [Test]
+        public async Task It_returns_parameter_validation_failure_for_invalid_limit_on_actions_endpoint()
+        {
+            var client = SetUpClient();
+            var response = await client.GetAsync("/v3/resourceClaimActions?limit=0");
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be greater than 0."]
+            );
+        }
+
+        [Test]
+        public async Task It_returns_parameter_validation_failure_for_invalid_limit_on_auth_strategies_endpoint()
+        {
+            var client = SetUpClient();
+            var response = await client.GetAsync("/v3/resourceClaimActionAuthStrategies?limit=0");
+
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be greater than 0."]
+            );
+        }
     }
 
     [TestFixture]

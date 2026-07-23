@@ -168,6 +168,25 @@ public class TenantModuleTests
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             }
+
+            [Test]
+            public async Task It_returns_parameter_validation_failure_for_invalid_limit()
+            {
+                // Arrange
+                using var client = SetUpClient(multiTenancyEnabled: true);
+
+                // Act
+                var response = await client.GetAsync("/v3/tenants/?limit=0");
+
+                // Assert
+                await response.ShouldBeProblemDetailAsync(
+                    HttpStatusCode.BadRequest,
+                    "urn:ed-fi:api:bad-request:parameter",
+                    "Parameter Validation Failed",
+                    "One or more query parameters were invalid. See 'errors' for details.",
+                    errors: ["'limit' must be greater than 0."]
+                );
+            }
         }
 
         [TestFixture]

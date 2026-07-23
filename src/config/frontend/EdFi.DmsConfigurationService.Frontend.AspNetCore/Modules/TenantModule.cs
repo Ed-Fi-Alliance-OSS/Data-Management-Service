@@ -18,7 +18,7 @@ public class TenantModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/tenants/", InsertTenant);
-        endpoints.MapSecuredGet("/v3/tenants/", GetAll);
+        endpoints.MapSecuredGet("/v3/tenants/", GetAll).WithQueryParameterValidation<FrontendPagingQuery>();
         endpoints.MapSecuredGet($"/v3/tenants/{{id}}", GetById);
     }
 
@@ -60,7 +60,7 @@ public class TenantModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         TenantQueryResult getResult = await repository.QueryTenant(query);
         return getResult switch
         {

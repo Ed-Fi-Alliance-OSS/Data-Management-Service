@@ -521,6 +521,20 @@ public class ProfileModuleTests
     }
 
     [Test]
+    public async Task GetAllProfiles_InvalidLimit_ShouldReturnParameterValidationFailure()
+    {
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v3/profiles?limit=0");
+        await response.ShouldBeProblemDetailAsync(
+            HttpStatusCode.BadRequest,
+            "urn:ed-fi:api:bad-request:parameter",
+            "Parameter Validation Failed",
+            "One or more query parameters were invalid. See 'errors' for details.",
+            errors: ["'limit' must be greater than 0."]
+        );
+    }
+
+    [Test]
     public async Task GetAllProfiles_MultipleProfiles_ShouldReturnOk()
     {
         A.CallTo(() => _profileRepository.QueryProfiles(A<ProfileQuery>.Ignored))

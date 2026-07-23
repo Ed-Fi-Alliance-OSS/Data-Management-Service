@@ -19,7 +19,9 @@ public class DataStoreContextModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/dataStoreContexts/", InsertDataStoreContext);
-        endpoints.MapLimitedAccess("/v3/dataStoreContexts/", GetAll);
+        endpoints
+            .MapLimitedAccess("/v3/dataStoreContexts/", GetAll)
+            .WithQueryParameterValidation<FrontendPagingQuery>();
         endpoints.MapLimitedAccess($"/v3/dataStoreContexts/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/dataStoreContexts/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/dataStoreContexts/{{id}}", Delete);
@@ -71,7 +73,7 @@ public class DataStoreContextModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         var getResult = await dataStoreContextRepository.QueryDataStoreContext(query);
         return getResult switch
         {

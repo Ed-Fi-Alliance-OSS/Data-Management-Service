@@ -82,6 +82,56 @@ internal class GlobalExceptionHandlerTests
     }
 
     [Test]
+    public async Task When_handling_ParameterValidationException_returns_400_with_parameter_contract()
+    {
+        // Arrange
+        var httpContext = new DefaultHttpContext();
+        httpContext.Response.Body = new MemoryStream();
+        var exception = new ParameterValidationException(["'limit' must be greater than 0."]);
+
+        // Act
+        var result = await _handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        // Assert
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(400);
+        httpContext.Response.ContentType.Should().Be("application/problem+json");
+        httpContext.Response.Headers["TraceId"].Should().NotBeNullOrEmpty();
+
+        httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
+        var reader = new StreamReader(httpContext.Response.Body);
+        var responseBody = await reader.ReadToEndAsync();
+
+        var body = JsonNode.Parse(responseBody)!;
+        body.AsObject()
+            .Select(member => member.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+        body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("One or more query parameters were invalid. See 'errors' for details.");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .Should()
+            .Equal("'limit' must be greater than 0.");
+    }
+
+    [Test]
     public async Task When_handling_generic_exception_returns_500_with_unknown_error()
     {
         // Arrange

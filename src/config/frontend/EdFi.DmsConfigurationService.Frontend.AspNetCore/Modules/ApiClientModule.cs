@@ -30,7 +30,10 @@ public class ApiClientModule : IEndpointModule
             .MapSecuredPut($"/v3/apiClients/{{id}}/reset-credential", ResetCredential)
             .Produces<ApiClientCredentialsResponse>(200);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
-        endpoints.MapLimitedAccess("/v3/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
+        endpoints
+            .MapLimitedAccess("/v3/apiClients/", GetAll)
+            .Produces<List<ApiClientResponse>>(200)
+            .WithQueryParameterValidation<FrontendApiClientQuery>();
         endpoints
             .MapLimitedAccess("/v3/apiClients/{clientId}", GetByClientId)
             .Produces<ApiClientResponse>(200);
@@ -220,7 +223,7 @@ public class ApiClientModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         ApiClientQueryResult getResult = await apiClientRepository.QueryApiClient(query.ToQuery());
         return getResult switch
         {

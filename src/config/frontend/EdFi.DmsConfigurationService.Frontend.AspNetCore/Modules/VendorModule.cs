@@ -54,7 +54,7 @@ public class VendorModule : IEndpointModule
                     return Task.CompletedTask;
                 }
             );
-        endpoints.MapSecuredGet("/v3/vendors/", GetAll);
+        endpoints.MapSecuredGet("/v3/vendors/", GetAll).WithQueryParameterValidation<FrontendVendorQuery>();
         endpoints.MapSecuredGet($"/v3/vendors/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/vendors/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/vendors/{{id}}", Delete);
@@ -107,7 +107,7 @@ public class VendorModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         VendorQueryResult getResult = await repository.QueryVendor(query.ToQuery());
         return getResult switch
         {

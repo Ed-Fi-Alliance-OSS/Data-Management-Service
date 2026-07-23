@@ -21,7 +21,10 @@ public class ApplicationModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/applications/", InsertApplication);
-        endpoints.MapSecuredGet("/v3/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
+        endpoints
+            .MapSecuredGet("/v3/applications/", GetAll)
+            .Produces<List<ApplicationResponse>>(200)
+            .WithQueryParameterValidation<FrontendApplicationQuery>();
         endpoints.MapSecuredGet($"/v3/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
         endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
@@ -188,7 +191,7 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         ApplicationQueryResult getResult = await applicationRepository.QueryApplication(query.ToQuery());
         return getResult switch
         {

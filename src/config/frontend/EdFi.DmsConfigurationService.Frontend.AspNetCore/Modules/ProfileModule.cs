@@ -21,7 +21,7 @@ public class ProfileModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/v3/profiles/", GetAll);
+        endpoints.MapSecuredGet("/v3/profiles/", GetAll).WithQueryParameterValidation<FrontendProfileQuery>();
         endpoints.MapSecuredPost("/v3/profiles/", InsertProfile);
         endpoints.MapSecuredGet($"/v3/profiles/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/profiles/{{id}}", Update);
@@ -56,7 +56,7 @@ public class ProfileModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         var results = await repository.QueryProfiles(query.ToQuery());
         var profiles = results
             .OfType<ProfileGetResult.Success>()

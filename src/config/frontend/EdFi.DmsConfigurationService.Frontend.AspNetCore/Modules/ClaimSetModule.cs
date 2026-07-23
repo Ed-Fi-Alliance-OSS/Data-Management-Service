@@ -34,7 +34,9 @@ public class ClaimSetModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/claimSets/", InsertClaimSet);
-        endpoints.MapLimitedAccess("/v3/claimSets/", GetAll);
+        endpoints
+            .MapLimitedAccess("/v3/claimSets/", GetAll)
+            .WithQueryParameterValidation<FrontendClaimSetQuery>();
         endpoints.MapSecuredGet($"/v3/claimSets/{{id}}", GetById);
         endpoints.MapSecuredGet($"/v3/claimSets/{{id}}/export", Export);
         endpoints.MapSecuredPut($"/v3/claimSets/{{id}}", Update);
@@ -73,7 +75,7 @@ public class ClaimSetModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         ClaimSetQueryResult result = await repository.QueryClaimSet(query.ToQuery());
 
         return result switch

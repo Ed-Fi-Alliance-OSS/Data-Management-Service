@@ -22,7 +22,9 @@ public class DataStoreModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/dataStores/", InsertDataStore);
-        endpoints.MapLimitedAccess("/v3/dataStores/", GetAll);
+        endpoints
+            .MapLimitedAccess("/v3/dataStores/", GetAll)
+            .WithQueryParameterValidation<FrontendDataStoreQuery>();
         endpoints.MapLimitedAccess($"/v3/dataStores/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/dataStores/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/dataStores/{{id}}", Delete);
@@ -64,7 +66,7 @@ public class DataStoreModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         DataStoreQueryResult getResult = await repository.QueryDataStore(query.ToQuery());
         return getResult switch
         {

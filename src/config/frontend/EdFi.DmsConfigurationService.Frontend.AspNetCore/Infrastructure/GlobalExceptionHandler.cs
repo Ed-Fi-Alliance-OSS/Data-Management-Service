@@ -37,6 +37,19 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
 
         switch (exception)
         {
+            case ParameterValidationException parameterValidation:
+                // Query-parameter validation failure (e.g. limit=0, an unknown orderBy). Reported with the
+                // Ed-Fi "Parameter Validation Failed" (urn:ed-fi:api:bad-request:parameter) contract rather
+                // than the request-body "data" contract. Messages are already sanitized (value-free).
+                response.StatusCode = (int)HttpStatusCode.BadRequest;
+                await response.WriteAsync(
+                    JsonSerializer.Serialize(
+                        FailureResponse.ForParameterValidation(parameterValidation.Errors.ToArray(), traceId),
+                        relaxedSerializer
+                    ),
+                    cancellationToken: cancellationToken
+                );
+                break;
             case BadHttpRequestException badHttpRequest:
                 // Do not surface the framework message: it can echo raw route or body values back to the
                 // caller. In Development, ASP.NET Core enables ThrowOnBadRequest, so framework binding

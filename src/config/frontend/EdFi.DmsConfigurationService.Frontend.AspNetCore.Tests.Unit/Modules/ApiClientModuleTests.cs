@@ -2124,6 +2124,20 @@ public class ApiClientModuleTests
         }
 
         [Test]
+        public async Task Should_return_parameter_validation_failure_when_limit_is_zero()
+        {
+            using var client = SetUpClient();
+            var response = await client.GetAsync("/v3/apiClients?limit=0");
+            await response.ShouldBeProblemDetailAsync(
+                HttpStatusCode.BadRequest,
+                "urn:ed-fi:api:bad-request:parameter",
+                "Parameter Validation Failed",
+                "One or more query parameters were invalid. See 'errors' for details.",
+                errors: ["'limit' must be greater than 0."]
+            );
+        }
+
+        [Test]
         public async Task Should_return_200_with_valid_orderBy_and_direction()
         {
             using var client = SetUpClient();

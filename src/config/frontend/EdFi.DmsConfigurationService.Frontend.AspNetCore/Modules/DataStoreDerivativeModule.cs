@@ -20,7 +20,9 @@ public class DataStoreDerivativeModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/dataStoreDerivatives/", InsertDataStoreDerivative);
-        endpoints.MapLimitedAccess("/v3/dataStoreDerivatives/", GetAll);
+        endpoints
+            .MapLimitedAccess("/v3/dataStoreDerivatives/", GetAll)
+            .WithQueryParameterValidation<FrontendPagingQuery>();
         endpoints.MapLimitedAccess($"/v3/dataStoreDerivatives/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/dataStoreDerivatives/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/dataStoreDerivatives/{{id}}", Delete);
@@ -64,7 +66,7 @@ public class DataStoreDerivativeModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        await validator.GuardAsync(query);
+        await validator.GuardQueryAsync(query);
         DataStoreDerivativeQueryResult getResult = await repository.QueryDataStoreDerivative(query);
         return getResult switch
         {
