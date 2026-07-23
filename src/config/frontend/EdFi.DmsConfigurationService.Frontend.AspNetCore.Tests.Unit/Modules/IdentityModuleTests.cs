@@ -364,9 +364,24 @@ public class RegisterEndpointTests
             new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
         ]);
         var response = await client.PostAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        JsonNode body = JsonNode.Parse(content)!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
+        body["title"]!.GetValue<string>().Should().Be("Authorization Failed");
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The request could not be processed. See 'errors' for details.");
+        body["status"]!.GetValue<int>().Should().Be(403);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        body["errors"]!.AsArray().Count.Should().Be(1);
+        body["errors"]![0]!.GetValue<string>().Should().Be("Registration is disabled.");
     }
 
     [Test]

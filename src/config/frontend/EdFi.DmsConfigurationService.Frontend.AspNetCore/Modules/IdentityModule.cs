@@ -125,7 +125,7 @@ public class IdentityModule : IEndpointModule
             }
         }
 
-        return Results.Forbid();
+        return FailureResults.Authorization(httpContext.TraceIdentifier, ["Registration is disabled."]);
     }
 
     private static async Task<IResult> GetClientAccessToken(
