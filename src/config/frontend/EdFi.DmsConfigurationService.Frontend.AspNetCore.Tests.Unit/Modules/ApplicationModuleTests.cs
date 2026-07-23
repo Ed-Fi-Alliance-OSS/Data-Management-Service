@@ -1165,6 +1165,23 @@ public class ApplicationModuleTests
 
             // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var actualResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "Reference 'VendorId' does not exist."
+                  ]
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
                         A<string>.Ignored,
@@ -1214,6 +1231,23 @@ public class ApplicationModuleTests
             );
 
             addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var actualResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "Reference 'VendorId' does not exist."
+                  ]
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
             A.CallTo(() =>
                     _clientRepository.CreateClientAsync(
                         A<string>._,
@@ -1619,6 +1653,23 @@ public class ApplicationModuleTests
 
             // Assert
             insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var actualResponse = JsonNode.Parse(await insertResponse.Content.ReadAsStringAsync());
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "Data store does not exist."
+                  ]
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
             A.CallTo(() =>
                     _clientRepository.CreateClientAsync(
                         A<string>.Ignored,
@@ -1676,6 +1727,23 @@ public class ApplicationModuleTests
 
             // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var actualResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "Data store does not exist."
+                  ]
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
             A.CallTo(() =>
                     _clientRepository.UpdateClientAsync(
                         A<string>.Ignored,
@@ -1943,6 +2011,23 @@ public class ApplicationModuleTests
 
             // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var actualResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "One or more referenced items could not be resolved. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "title": "Unresolved Reference",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "Profile does not exist."
+                  ]
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
 
             // Assert - the identity provider client was never mutated for an invalid
             // profile reference, so a rejected update cannot leave the client out of sync
