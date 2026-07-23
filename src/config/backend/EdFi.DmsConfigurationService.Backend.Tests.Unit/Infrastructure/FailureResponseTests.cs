@@ -94,60 +94,6 @@ public class FailureResponseTests
     }
 
     [Test]
-    public void ForMethodNotAllowed_ShouldReturnCorrectJsonNode()
-    {
-        // Act
-        var result = FailureResponse.ForMethodNotAllowed(CorrelationId);
-
-        // Assert
-        result.Should().BeOfType<JsonObject>();
-        result["detail"]?.GetValue<string>().Should().Be("The request construction was invalid.");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
-        result["title"]?.GetValue<string>().Should().Be("Method Not Allowed");
-        result["status"]?.GetValue<int>().Should().Be(405);
-        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
-        result["validationErrors"]?.AsObject().Count.Should().Be(0);
-        result["errors"]?.AsArray().Count.Should().Be(0);
-    }
-
-    [Test]
-    public void ForUnsupportedMediaType_ShouldReturnCorrectJsonNode()
-    {
-        // Act
-        var result = FailureResponse.ForUnsupportedMediaType(CorrelationId);
-
-        // Assert
-        result.Should().BeOfType<JsonObject>();
-        result["detail"]
-            ?.GetValue<string>()
-            .Should()
-            .Be("The value specified in the 'Content-Type' header is not supported by this host.");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:unsupported-media-type");
-        result["title"]?.GetValue<string>().Should().Be("Unsupported Media Type");
-        result["status"]?.GetValue<int>().Should().Be(415);
-        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
-        result["validationErrors"]?.AsObject().Count.Should().Be(0);
-        result["errors"]?.AsArray().Count.Should().Be(0);
-    }
-
-    [Test]
-    public void ForUnclassifiedStatus_ShouldReturnAboutBlankJsonNode()
-    {
-        // Act — 413 Payload Too Large has no documented Ed-Fi taxonomy URI (D-08).
-        var result = FailureResponse.ForUnclassifiedStatus(413, "Payload Too Large", CorrelationId);
-
-        // Assert
-        result.Should().BeOfType<JsonObject>();
-        result["type"]?.GetValue<string>().Should().Be("about:blank");
-        result["title"]?.GetValue<string>().Should().Be("Payload Too Large");
-        result["detail"]?.GetValue<string>().Should().BeEmpty();
-        result["status"]?.GetValue<int>().Should().Be(413);
-        result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
-        result["validationErrors"]?.AsObject().Count.Should().Be(0);
-        result["errors"]?.AsArray().Count.Should().Be(0);
-    }
-
-    [Test]
     public void ForConflict_ShouldReturnCorrectJsonNode()
     {
         // Arrange
@@ -246,5 +192,123 @@ public class FailureResponseTests
         result["title"]?.GetValue<string>().Should().Be("Internal Server Error");
         result["status"]?.GetValue<int>().Should().Be(500);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+    }
+
+    [TestFixture]
+    public class Given_a_method_not_allowed_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForMethodNotAllowed(CorrelationId);
+
+        [Test]
+        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_method_not_allowed_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
+
+        [Test]
+        public void It_has_the_method_not_allowed_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Method Not Allowed");
+
+        [Test]
+        public void It_has_a_detail() =>
+            _result["detail"]?.GetValue<string>().Should().Be("The request construction was invalid.");
+
+        [Test]
+        public void It_has_status_405() => _result["status"]?.GetValue<int>().Should().Be(405);
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_unsupported_media_type_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForUnsupportedMediaType(CorrelationId);
+
+        [Test]
+        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_has_the_unsupported_media_type_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:unsupported-media-type");
+
+        [Test]
+        public void It_has_the_unsupported_media_type_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Unsupported Media Type");
+
+        [Test]
+        public void It_has_a_detail() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("The value specified in the 'Content-Type' header is not supported by this host.");
+
+        [Test]
+        public void It_has_status_415() => _result["status"]?.GetValue<int>().Should().Be(415);
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_unclassified_status_failure
+    {
+        // 413 Payload Too Large has no documented Ed-Fi taxonomy URI (D-08).
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = FailureResponse.ForUnclassifiedStatus(413, "Payload Too Large", CorrelationId);
+
+        [Test]
+        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_uses_the_about_blank_type() =>
+            _result["type"]?.GetValue<string>().Should().Be("about:blank");
+
+        [Test]
+        public void It_uses_the_reason_phrase_as_the_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Payload Too Large");
+
+        [Test]
+        public void It_has_an_empty_detail() => _result["detail"]?.GetValue<string>().Should().BeEmpty();
+
+        [Test]
+        public void It_carries_the_supplied_status() => _result["status"]?.GetValue<int>().Should().Be(413);
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
     }
 }
