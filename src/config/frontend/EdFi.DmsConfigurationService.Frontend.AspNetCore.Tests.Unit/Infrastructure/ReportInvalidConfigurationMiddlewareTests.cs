@@ -91,10 +91,13 @@ public class ReportInvalidConfigurationMiddlewareTests
         [Test]
         public void It_logs_each_configuration_failure_at_critical_level()
         {
-            _logger.Entries.Where(entry => entry.Level == LogLevel.Critical).Should().HaveCount(2);
+            _logger.Entries.FindAll(entry => entry.Level == LogLevel.Critical).Should().HaveCount(2);
             _logger
-                .Entries.Should()
-                .Contain(entry => entry.State != null && entry.State.ToString()!.Contains(Sentinel));
+                .Entries.Exists(entry =>
+                    entry.State is not null && entry.State.ToString()!.Contains(Sentinel)
+                )
+                .Should()
+                .BeTrue();
         }
 
         [Test]

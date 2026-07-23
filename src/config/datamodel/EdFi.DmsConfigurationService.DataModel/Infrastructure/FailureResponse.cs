@@ -25,6 +25,8 @@ public static class FailureResponse
     private static readonly string _conflictTypePrefix = $"{_typePrefix}:conflict";
     private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
     private static readonly string _unavailableType = $"{_typePrefix}:internal-server-error";
+    private static readonly string _methodNotAllowedType = $"{_typePrefix}:method-not-allowed";
+    private static readonly string _unsupportedMediaTypeType = $"{_typePrefix}:unsupported-media-type";
 
     private static JsonObject CreateBaseJsonObject(
         string detail,
@@ -98,6 +100,26 @@ public static class FailureResponse
             type: _notFoundTypePrefix,
             title: "Not Found",
             status: 404,
+            correlationId: correlationId,
+            []
+        );
+
+    public static JsonNode ForMethodNotAllowed(string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "The request construction was invalid.",
+            type: _methodNotAllowedType,
+            title: "Method Not Allowed",
+            status: 405,
+            correlationId: correlationId,
+            []
+        );
+
+    public static JsonNode ForUnsupportedMediaType(string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "The value specified in the 'Content-Type' header is not supported by this host.",
+            type: _unsupportedMediaTypeType,
+            title: "Unsupported Media Type",
+            status: 415,
             correlationId: correlationId,
             []
         );

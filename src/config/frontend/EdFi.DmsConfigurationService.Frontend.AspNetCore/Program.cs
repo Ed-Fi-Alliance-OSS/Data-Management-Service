@@ -75,6 +75,12 @@ if (!ReportInvalidConfiguration(app))
 }
 
 app.UseRouting();
+
+// Shape framework-generated bodiless 401/403/404/405/415 responses into the Ed-Fi contract
+// (DMS-1218 INV-25…29). Placed after routing but before CORS/authentication/authorization so it wraps
+// the auth short-circuits and the endpoint terminal, independent of route and authentication scheme.
+app.UseMiddleware<FrameworkErrorResponseMiddleware>();
+
 app.UseCors("AllowSwaggerUI");
 app.UseAuthentication();
 app.UseAuthorization();
