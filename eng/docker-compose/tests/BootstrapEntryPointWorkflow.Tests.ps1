@@ -31,6 +31,38 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
             )
         }
 
+        function script:Get-YamlSection {
+            # Indentation-scoped block extraction (not a YAML parser): returns the lines
+            # nested under the first matching "<Key>:" mapping line, so assertions can be
+            # anchored to an authoritative YAML path instead of matching anywhere in the
+            # file. -TopLevel restricts the key match to zero indentation.
+            param(
+                [string[]]$Lines,
+                [string]$Key,
+                [switch]$TopLevel
+            )
+
+            for ($i = 0; $i -lt $Lines.Count; $i++) {
+                if ($Lines[$i] -notmatch "^(\s*)$([regex]::Escape($Key)):\s*(#.*)?$") { continue }
+                $keyIndent = $Matches[1].Length
+                if ($TopLevel -and $keyIndent -ne 0) { continue }
+
+                $section = @()
+                for ($j = $i + 1; $j -lt $Lines.Count; $j++) {
+                    if ($Lines[$j] -match "^\s*$") {
+                        $section += $Lines[$j]
+                        continue
+                    }
+                    [void]($Lines[$j] -match "^(\s*)")
+                    if ($Matches[1].Length -le $keyIndent) { break }
+                    $section += $Lines[$j]
+                }
+                return ,$section
+            }
+
+            return ,@()
+        }
+
         function script:New-TestDirectory {
             $path = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1153-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $path -Force | Out-Null
@@ -816,30 +848,49 @@ $failureStatement
 
     Context "MSSQL datastore engine compose selection and runtime isolation (DMS-1238, DMS-1279)" {
         It "isolates the SQL Server 2025 runtime from legacy SQL Server volumes (DMS-1279)" {
-            $mssqlCompose = Get-Content -LiteralPath (
+            $mssqlComposeLines = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "mssql.yml"
-            ) -Raw
+            )
 
-            $mssqlCompose | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$'
-            $mssqlCompose | Should -Match '(?m)^\s*-\s*dms-mssql-2025:/var/opt/mssql\s*$'
-            $mssqlCompose | Should -Not -Match '(?m)^\s*-\s*dms-mssql:/var/opt/mssql\s*$'
-            $mssqlCompose | Should -Match '(?m)^  dms-mssql-2025:\s*$'
+            $dbService = (
+                Get-YamlSection -Lines (
+                    Get-YamlSection -Lines $mssqlComposeLines -Key "services" -TopLevel
+                ) -Key "db"
+            ) -join "`n"
+            $dbService | Should -Not -BeNullOrEmpty -Because "mssql.yml must keep the shared db service that swaps in for postgresql.yml"
+            $dbService | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$'
+            $dbService | Should -Match '(?m)^\s*-\s*dms-mssql-2025:/var/opt/mssql\s*$'
+            $dbService | Should -Not -Match '(?m)^\s*-\s*dms-mssql:/var/opt/mssql\s*$'
+
+            $volumeDefinitions = (Get-YamlSection -Lines $mssqlComposeLines -Key "volumes" -TopLevel) -join "`n"
+            $volumeDefinitions | Should -Match '(?m)^\s*dms-mssql-2025:\s*$' -Because "the major-versioned named volume must be declared in the compose file's top-level volumes block"
         }
 
         It "pins the DMS CI MSSQL_IMAGE env to the SQL Server 2025 image (DMS-1279)" {
-            $dmsWorkflow = Get-Content -LiteralPath (
+            $dmsWorkflowLines = Get-Content -LiteralPath (
                 Join-Path $script:sourceRepoRoot ".github/workflows/on-dms-pullrequest.yml"
-            ) -Raw
+            )
 
-            $dmsWorkflow | Should -Match '(?m)^\s*MSSQL_IMAGE:\s*"mcr\.microsoft\.com/mssql/server:2025-latest"\s*$' -Because "the backend, DMS API, and SchemaTools MSSQL lanes must run SQL Server 2025: on an older runtime the native-json evaluation fixture ignores itself instead of failing, so a reverted pin would leave those lanes green while silently dropping the coverage"
+            $workflowEnv = (Get-YamlSection -Lines $dmsWorkflowLines -Key "env" -TopLevel) -join "`n"
+            $workflowEnv | Should -Match '(?m)^\s*MSSQL_IMAGE:\s*"mcr\.microsoft\.com/mssql/server:2025-latest"\s*$' -Because "the workflow-level env.MSSQL_IMAGE is the authoritative pin for the backend, DMS API, and SchemaTools MSSQL lanes: on an older runtime the native-json evaluation fixture ignores itself instead of failing, and a job-local MSSQL_IMAGE elsewhere must not satisfy this guard"
         }
 
         It "pins the CMS CI integration-test mssql services container to the SQL Server 2025 image (DMS-1279)" {
-            $cmsWorkflow = Get-Content -LiteralPath (
+            $cmsWorkflowLines = Get-Content -LiteralPath (
                 Join-Path $script:sourceRepoRoot ".github/workflows/on-config-pullrequest.yml"
-            ) -Raw
+            )
 
-            $cmsWorkflow | Should -Match '(?m)^\s*mssql:\s*\r?\n\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$' -Because "the services.mssql.image pin is the authoritative CMS integration-test runtime and must move with the supported SQL Server major version; matching the service key and its image line together keeps an unrelated 2025-latest occurrence from masking a stale pin"
+            $mssqlService = (
+                Get-YamlSection -Lines (
+                    Get-YamlSection -Lines (
+                        Get-YamlSection -Lines (
+                            Get-YamlSection -Lines $cmsWorkflowLines -Key "jobs" -TopLevel
+                        ) -Key "run-integration-tests"
+                    ) -Key "services"
+                ) -Key "mssql"
+            ) -join "`n"
+            $mssqlService | Should -Not -BeNullOrEmpty -Because "on-config-pullrequest.yml must keep the run-integration-tests mssql services container this pin guards"
+            $mssqlService | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$' -Because "jobs.run-integration-tests.services.mssql.image is the authoritative CMS integration-test runtime pin and must move with the supported SQL Server major version"
         }
 
         It "keeps the template-workflow backup-coupling comments aligned with the SQL Server 2025 image (DMS-1279)" {
