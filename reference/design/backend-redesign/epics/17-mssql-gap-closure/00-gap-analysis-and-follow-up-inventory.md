@@ -22,7 +22,7 @@ pending for those items.
 | --- | --- | --- |
 | `DMS-1270` | Optional separate CMS database topology is not consistent across local PostgreSQL and MSSQL workflows | [`01-local-database-topology-parity.md`](01-local-database-topology-parity.md) |
 | `DMS-1271` | Bootstrap cannot materialize a datastore from a published database-template package before CMS and DMS startup | [`02-database-template-restore-workflow.md`](02-database-template-restore-workflow.md) |
-| `DMS-1279` | Local/CI MSSQL remains on SQL Server 2022, and the optional document-cache column needs a gated adopt/defer decision for SQL Server 2025 native `json` | [`03-sql-server-2025-and-native-json.md`](03-sql-server-2025-and-native-json.md) |
+| `DMS-1279` | SQL Server 2025 is the delivered local/CI MSSQL runtime; native MSSQL `DocumentJson` adoption is deferred to `DMS-1328`, while MSSQL retains `nvarchar(max)` and PostgreSQL retains `jsonb` | [`03-sql-server-2025-and-native-json.md`](03-sql-server-2025-and-native-json.md) |
 | `DMS-1284` | The standard DMS and Instance Management Docker E2E paths are PostgreSQL-specific | [`04-mssql-docker-e2e.md`](04-mssql-docker-e2e.md) |
 | `DMS-1285` | Several critical relational write-path correctness and resilience scenarios lack real-MSSQL execution | [`05-mssql-write-path-coverage.md`](05-mssql-write-path-coverage.md) |
 | `DMS-1286` | NamespaceBased CRUD authorization lacks broad real-MSSQL provider integration coverage | [`06-mssql-namespace-authorization-coverage.md`](06-mssql-namespace-authorization-coverage.md) |
@@ -72,8 +72,8 @@ existing epic ownership while remaining on the MSSQL parity-closure path.
    behavior is available.
 2. Close local topology and template-restore workflow gaps (`DMS-1270`, `DMS-1271`) using the foundation
    delivered by `DMS-1255`.
-3. Upgrade the MSSQL runtime and make a deliberate native-JSON adopt/defer decision (`DMS-1279`); deferral does
-   not block the runtime upgrade.
+3. The SQL Server 2025 runtime and native-JSON defer decision are delivered under `DMS-1279`; `DMS-1328`
+   owns any future native-JSON adoption for MSSQL.
 4. Establish MSSQL lanes for both the standard DMS and Instance Management Docker E2E suites (`DMS-1284`).
 5. Close provider-backed write and NamespaceBased authorization matrices (`DMS-1285`, `DMS-1286`), using
    E2E for representative public-boundary confidence rather than duplicating every integration scenario.

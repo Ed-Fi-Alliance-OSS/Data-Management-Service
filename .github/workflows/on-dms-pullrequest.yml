@@ -48,7 +48,7 @@ concurrency:
 
 env:
   CONFIGURATION: "Release"
-  MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2022-latest"
+  MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2025-latest"
   MSSQL_CONTAINER_MEMORY: "10g"
   MSSQL_MEMORY_LIMIT_MB: "4096"
   MSSQL_TMPFS_SIZE: "4g"

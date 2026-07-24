@@ -276,7 +276,7 @@ jobs:
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
       mssql:
-        image: mcr.microsoft.com/mssql/server:2022-latest
+        image: mcr.microsoft.com/mssql/server:2025-latest
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: IntegrationTest1!

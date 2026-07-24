@@ -814,7 +814,18 @@ $failureStatement
         }
     }
 
-    Context "MSSQL datastore engine compose selection (DMS-1238)" {
+    Context "MSSQL datastore engine compose selection and runtime isolation (DMS-1238, DMS-1279)" {
+        It "isolates the SQL Server 2025 runtime from legacy SQL Server volumes (DMS-1279)" {
+            $mssqlCompose = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "mssql.yml"
+            ) -Raw
+
+            $mssqlCompose | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$'
+            $mssqlCompose | Should -Match '(?m)^\s*-\s*dms-mssql-2025:/var/opt/mssql\s*$'
+            $mssqlCompose | Should -Not -Match '(?m)^\s*-\s*dms-mssql:/var/opt/mssql\s*$'
+            $mssqlCompose | Should -Match '(?m)^  dms-mssql-2025:\s*$'
+        }
+
         It "start-local-dms.ps1 declares a -DatabaseEngine parameter validated to postgresql/mssql" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"

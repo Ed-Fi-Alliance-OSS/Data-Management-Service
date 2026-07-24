@@ -41,9 +41,9 @@ on:
         type: string
         default: "./.env.template"
       # The built package's data dump is coupled to an engine image line: the mssql .bak
-      # backup is coupled to the mcr.microsoft.com/mssql/server:2022-latest image used to create
-      # and restore it (a moving tag tracking the latest SQL Server 2022 build; the coupling is
-      # at the SQL Server 2022 level, not an exact build), the same way the postgresql .sql dump
+      # backup is coupled to the mcr.microsoft.com/mssql/server:2025-latest image used to create
+      # and restore it (a moving tag tracking the latest SQL Server 2025 build; the coupling is
+      # at the SQL Server 2025 level, not an exact build), the same way the postgresql .sql dump
       # is coupled to the PostgreSQL major version it was built and restored against.
       database_engine:
         description: "Database engine for the relational template datastore (postgresql or mssql)"
@@ -283,6 +283,21 @@ jobs:
               throw "Failed to query dms.Descriptor row count from database '$($env:RELATIONAL_DB_NAME)'."
             }
             $descriptorCount = [long](@($rawOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+
+            # Verify (never set) the supported-runtime baseline: newly created databases on
+            # SQL Server 2025 default to compatibility level 170. Templates restored from
+            # 2022-built packages intentionally keep their original level, so this check only
+            # applies to a freshly built template like this one.
+            $compatQuery = "SET NOCOUNT ON; SELECT compatibility_level FROM sys.databases WHERE name = N'$($env:RELATIONAL_DB_NAME)';"
+            $rawCompatOutput = & docker exec dms-mssql /bin/bash -c 'export SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"; exec "$@"' -- /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $env:RELATIONAL_DB_NAME -C -b -h -1 -W -Q $compatQuery
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to query compatibility_level from database '$($env:RELATIONAL_DB_NAME)'."
+            }
+            $compatibilityLevel = [long](@($rawCompatOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+            if ($compatibilityLevel -ne 170) {
+              throw "Compatibility level gate failed: database '$($env:RELATIONAL_DB_NAME)' is at compatibility level $compatibilityLevel, expected 170 (SQL Server 2025 default for newly created databases)."
+            }
+            Write-Host "Compatibility level gate passed: database '$($env:RELATIONAL_DB_NAME)' is at compatibility level $compatibilityLevel." -ForegroundColor Green
           }
           else {
             $rawOutput = & docker exec dms-postgresql psql -U postgres -d $env:RELATIONAL_DB_NAME -tA -c 'SELECT COUNT(*) FROM dms."Descriptor";'
