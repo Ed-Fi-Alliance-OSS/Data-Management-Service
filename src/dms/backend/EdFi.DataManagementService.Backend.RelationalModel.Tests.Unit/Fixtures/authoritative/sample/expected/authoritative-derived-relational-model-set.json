@@ -75682,7 +75682,7 @@
         {
           "is_identity_component": false,
           "is_required": false,
-          "is_role_named": false,
+          "is_role_named": true,
           "descriptor_value_path": "$.assessmentGradeLevelDescriptor",
           "table": {
             "schema": "edfi",
@@ -77264,7 +77264,7 @@
         {
           "is_identity_component": false,
           "is_required": false,
-          "is_role_named": true,
+          "is_role_named": false,
           "reference_object_path": "$.schoolYearTypeReference",
           "table": {
             "schema": "edfi",
@@ -77325,7 +77325,7 @@
         {
           "is_identity_component": false,
           "is_required": true,
-          "is_role_named": false,
+          "is_role_named": true,
           "descriptor_value_path": "$.entryGradeLevelDescriptor",
           "table": {
             "schema": "edfi",
@@ -77400,7 +77400,7 @@
         {
           "is_identity_component": false,
           "is_required": false,
-          "is_role_named": false,
+          "is_role_named": true,
           "descriptor_value_path": "$.nextYearGradeLevelDescriptor",
           "table": {
             "schema": "edfi",
