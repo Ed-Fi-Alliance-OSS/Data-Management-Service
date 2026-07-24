@@ -350,17 +350,18 @@ Describe "start-published-dms.ps1 MSSQL data-store wiring (DMS-1255)" {
             Should -BeGreaterOrEqual 2
     }
 
-    It "defaults MSSQL_SA_PASSWORD to the documented dev password when the env file omits it" {
-        # Matches the abcdefgh1! default baked into mssql.yml and the script's own
-        # Wait-MssqlReady readiness polls.
-        $script:startPublishedSource | Should -Match '(?s)\$mssqlPassword =\s*if \(\[string\]::IsNullOrWhiteSpace\(\$envValues\.MSSQL_SA_PASSWORD\)\)\s*\{\s*"abcdefgh1!"'
+    It "defaults MSSQL_SA_PASSWORD to the documented dev password when the effective environment omits it" {
+        # Matches the abcdefgh1! default baked into mssql.yml and the script's own Wait-MssqlReady
+        # readiness polls, read through the shared Compose-equivalent resolver so an ambient
+        # process/shell override reaches the registered data store exactly as the container did.
+        $script:startPublishedSource | Should -Match '\$mssqlPassword = Get-ComposeResolvedEnvValue -EnvironmentValues \$envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"'
     }
 
     It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {
         # Mirrors the PostgreSQL $postgresDbName resolution so a caller-supplied database name
         # is not silently overridden by the env default on the mssql branch.
         $script:startPublishedSource | Should -Match '(?s)\$mssqlDbName =\s*if \(-not \[string\]::IsNullOrWhiteSpace\(\$DataStoreDatabaseName\)\)\s*\{\s*\$DataStoreDatabaseName'
-        $script:startPublishedSource | Should -Match 'MSSQL_DB_NAME'
+        $script:startPublishedSource | Should -Match 'Get-ComposeResolvedEnvValue -EnvironmentValues \$envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"'
     }
 }
 

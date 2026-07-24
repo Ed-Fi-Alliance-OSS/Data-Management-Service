@@ -175,8 +175,11 @@ public class Given_Build_Dms_E2E_Guardrails
             "Resolve-DatabaseEngineEnvironmentFile",
             StringComparison.Ordinal
         );
+        // The database name is read through the shared Compose-equivalent resolver so an ambient
+        // E2E_DATABASE_NAME override selects the same reset/provision target as
+        // provision-e2e-database.ps1.
         int databaseNameIndex = environmentContext.IndexOf(
-            "$environmentValues[\"E2E_DATABASE_NAME\"]",
+            "Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name \"E2E_DATABASE_NAME\"",
             StringComparison.Ordinal
         );
 

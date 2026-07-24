@@ -355,6 +355,9 @@ function Get-E2ETestEnvironmentContext {
 
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
     Import-Module -Name "$PSScriptRoot/eng/Dms-Management.psm1" -Force
+    # Shared Compose-equivalent resolver so the E2E target database honours an ambient
+    # E2E_DATABASE_NAME override exactly like provision-e2e-database.ps1's destructive reset does.
+    Import-Module -Name "$PSScriptRoot/eng/docker-compose/database-safety.psm1" -Force
 
     # Single resolution point for the standard suite: compose the data-standard overlay (.env.ds<NN>)
     # first, then the database-engine overlay (.env.mssql), so every downstream consumer - relational
@@ -372,10 +375,14 @@ function Get-E2ETestEnvironmentContext {
         -DockerComposeRoot "$PSScriptRoot/eng/docker-compose"
 
     $environmentValues = ReadValuesFromEnvFile $environmentFilePath
-    $e2eDatabaseName = [string]$environmentValues["E2E_DATABASE_NAME"]
+    # Resolve the E2E database name with Docker Compose precedence (an ambient process/shell value
+    # wins over the env file), the same rule provision-e2e-database.ps1 applies before its
+    # destructive reset - so the CMS data store, the test process, and the reset/provision phase
+    # all target one database.
+    $e2eDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "E2E_DATABASE_NAME"
 
     if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
-        throw "E2E_DATABASE_NAME must be set in '$environmentFilePath' so the DMS E2E database can be reset and provisioned before tests run."
+        throw "E2E_DATABASE_NAME must be set in '$environmentFilePath' or the process environment so the DMS E2E database can be reset and provisioned before tests run."
     }
 
     # Build the two opaque connection strings once from the resolved environment: host-side

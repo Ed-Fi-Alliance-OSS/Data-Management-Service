@@ -35,6 +35,10 @@ param (
     [string] $HashIterations = "ENV:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS"
 )
 Import-Module ./env-utility.psm1
+# Shared Compose-equivalent resolver: ENV: indirections below resolve with Docker Compose
+# interpolation precedence (ambient process/shell value wins over the env file), so the identity
+# stores are created against the same database/credentials the running containers received.
+Import-Module ./database-safety.psm1
 Import-Module ./OpenIddict-Crypto.psm1
 
 $script:DbType = $DbType
@@ -305,9 +309,10 @@ function Resolve-EnvValue {
     )
     if ($Value -like "ENV:*") {
         $envVarName = $Value.Substring(4)
-        $envVal = $envValues["$envVarName"]
-        if ($envVal) { return $envVal }
-        throw "ENV file or variable not found for $envVarName"
+        # Compose-equivalent read (ambient wins over the env file, references are followed,
+        # single-quoted values stay literal); throws by key name when the value is configured
+        # nowhere. The resolved value may be a credential and is never echoed.
+        return Get-RequiredComposeResolvedEnvValue -EnvironmentValues $envValues -Name $envVarName
     }
     return $Value
 }

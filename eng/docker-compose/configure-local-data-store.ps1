@@ -29,6 +29,11 @@ Set-StrictMode -Version Latest
 
 Import-Module "$PSScriptRoot/bootstrap-manifest.psm1" -Force -Global
 Import-Module "$PSScriptRoot/env-utility.psm1" -Force -Global
+# Shared Compose-equivalent resolver: env reads below honour Docker Compose interpolation
+# precedence (an ambient process/shell value wins over the env file, ${VAR} references are
+# followed, single-quoted values stay literal), so the data store registered in CMS carries
+# exactly the credentials, names, and tenant the running containers received.
+Import-Module "$PSScriptRoot/database-safety.psm1" -Force
 Import-Module "$PSScriptRoot/../Dms-Management.psm1" -Force
 
 if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
@@ -75,7 +80,9 @@ function Get-EnvValueOrDefault {
         $DefaultValue = ""
     )
 
-    return Get-EnvValue -EnvValues $EnvValues -Name $Name -DefaultValue $DefaultValue
+    # Compose-equivalent read: the process/shell environment wins over the env file, matching the
+    # values Docker Compose interpolates into the running containers.
+    return Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name $Name -DefaultValue $DefaultValue
 }
 
 function Get-DataStoreContexts {
@@ -138,7 +145,7 @@ function Resolve-CmsReadOnlyAccessFromEnv {
     .SYNOPSIS
     Builds the optional CMSReadOnlyAccess block included in the configure result. Returns
     $null when none of CONFIG_SERVICE_CLIENT_ID, CONFIG_SERVICE_CLIENT_SCOPE, or
-    CONFIG_SERVICE_CLIENT_SECRET are explicitly present in the env file. Per
+    CONFIG_SERVICE_CLIENT_SECRET are present in the effective environment. Per
     command-boundaries.md Section 3.4, "may include" means "include when actually populated"; a
     default-derived client id alone does not satisfy that contract. The client id/scope/secret
     come from the local environment file (start-local-dms.ps1's provider-specific local
@@ -170,16 +177,17 @@ function Resolve-CmsReadOnlyAccessFromEnv {
 function Test-CmsReadOnlyAccessEnvPresent {
     <#
     .SYNOPSIS
-    Returns $true when the env file explicitly supplies at least one of the three
-    CONFIG_SERVICE_CLIENT_* keys with a non-blank value. Used to gate the optional
-    CMSReadOnlyAccess block so defaults alone do not advertise the block as available.
+    Returns $true when the effective environment (env file or ambient process environment, with
+    Compose precedence) supplies at least one of the three CONFIG_SERVICE_CLIENT_* keys with a
+    non-blank value. Used to gate the optional CMSReadOnlyAccess block so defaults alone do not
+    advertise the block as available.
     #>
     param(
         [hashtable]$EnvValues
     )
 
     foreach ($name in @("CONFIG_SERVICE_CLIENT_ID", "CONFIG_SERVICE_CLIENT_SCOPE", "CONFIG_SERVICE_CLIENT_SECRET")) {
-        if ($EnvValues.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace([string]$EnvValues[$name])) {
+        if (-not [string]::IsNullOrWhiteSpace((Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name $name))) {
             return $true
         }
     }

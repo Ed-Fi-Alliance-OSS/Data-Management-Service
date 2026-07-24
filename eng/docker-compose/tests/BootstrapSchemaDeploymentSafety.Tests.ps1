@@ -40,6 +40,9 @@ Describe "DMS-1151 bootstrap schema deployment safety" {
                 "bootstrap-schema-tool.psm1",
                 "bootstrap-schema-workspace.psm1",
                 "env-utility.psm1",
+                # configure-local-data-store.ps1 and provision-dms-schema.ps1 import the shared
+                # Compose-equivalent resolver from this module.
+                "database-safety.psm1",
                 "configure-local-data-store.ps1",
                 "provision-dms-schema.ps1",
                 "provision-e2e-database.ps1",
@@ -2012,7 +2015,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
     }
 
     Context "EnvironmentFile precedence" {
-        It "configure-local-data-store.ps1 reads only the supplied -EnvironmentFile, not ambient process env" {
+        # Docker Compose interpolation gives a process/shell value precedence over the same key in the
+        # env file, so the running containers receive the ambient value. The configure phase must read
+        # with the same precedence: a file-only read would register CMS data stores (and select the
+        # tenant) from values the running stack never received. The shared resolver in
+        # database-safety.psm1 is the single rule for this across startup, readiness, provisioning,
+        # destructive-reset safety, and CMS configuration.
+        It "configure-local-data-store.ps1 resolves ambient process env over the supplied -EnvironmentFile (Compose precedence)" {
             $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
             @"
 POSTGRES_PASSWORD=isolated-pass
@@ -2025,9 +2034,6 @@ CONFIG_SERVICE_TENANT=isolated-tenant
 DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
-            # Set conflicting values in process env; the script must ignore them and use the file.
-            $env:POSTGRES_PASSWORD = "process-pass"
-            $env:POSTGRES_DB_NAME = "process_db"
             $env:CONFIG_SERVICE_TENANT = "process-tenant"
             try {
                 . $script:repo.ConfigureScript
@@ -2046,16 +2052,93 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
                 $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $isolatedEnvFile -NoDataStore
 
-                $result.Tenant | Should -Be "isolated-tenant"
+                $result.Tenant | Should -Be "process-tenant"
             }
             finally {
-                $env:POSTGRES_PASSWORD = $null
-                $env:POSTGRES_DB_NAME = $null
                 $env:CONFIG_SERVICE_TENANT = $null
             }
         }
 
-        It "provision-dms-schema.ps1 host-side connection uses POSTGRES_PORT from supplied env file, not process env" {
+        It "configure-local-data-store.ps1 uses the supplied -EnvironmentFile values when no ambient override exists" {
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant-no-ambient.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=isolated_db
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+CONFIG_SERVICE_TENANT=isolated-tenant
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            Remove-Item Env:CONFIG_SERVICE_TENANT -ErrorAction SilentlyContinue
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        name = "Sole"
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $isolatedEnvFile -NoDataStore
+
+            $result.Tenant | Should -Be "isolated-tenant"
+        }
+
+        It "configure-local-data-store.ps1 registers the MSSQL data store with ambient credential and database-name overrides" {
+            # The running SQL Server container received the ambient MSSQL_SA_PASSWORD /
+            # MSSQL_DB_NAME (Compose interpolation), so the connection string registered in CMS
+            # must carry exactly those values - including a password full of connection-string
+            # metacharacters, which must round-trip through the safe builder unbroken.
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-ambient.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            $ambientPassword = 'Amb;ient "P@ss,word''=1 $x'
+            $env:MSSQL_SA_PASSWORD = $ambientPassword
+            $env:MSSQL_DB_NAME = "ambient_dms_db"
+            try {
+                . $script:repo.ConfigureScript
+
+                function Add-CmsClient { }
+                function Get-CmsToken { return "token" }
+                $script:capturedDataStore = $null
+                function Add-DataStore {
+                    param($CmsUrl, $AccessToken, [System.Management.Automation.PSCredential]$PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                    $script:capturedDataStore = [pscustomobject]@{
+                        ConnectionString = $ConnectionString
+                        PostgresDbName = $PostgresDbName
+                    }
+                    return [long]42
+                }
+
+                $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $isolatedEnvFile -DatabaseEngine mssql
+
+                $result.SelectedDataStoreIds | Should -Be @([long]42)
+                $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+                $parsed.set_ConnectionString($script:capturedDataStore.ConnectionString)
+                $parsed["Password"] | Should -Be $ambientPassword
+                $parsed["Database"] | Should -Be "ambient_dms_db"
+            }
+            finally {
+                Remove-Item Env:MSSQL_SA_PASSWORD -ErrorAction SilentlyContinue
+                Remove-Item Env:MSSQL_DB_NAME -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "provision-dms-schema.ps1 host-side connection resolves POSTGRES_PORT with Compose precedence (ambient wins)" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
 
             $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-port-isolation.env"
@@ -2092,14 +2175,58 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
                 Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -DataStoreId @(1)
 
+                # Compose publishes the host-side port from the ambient-resolved POSTGRES_PORT, so
+                # the SchemaTools host-side translation must use the same value: with an ambient
+                # override in place, the file value names a port nothing is listening on.
                 $captured = @(Get-Content -LiteralPath $capturePath)
                 $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
-                $connectionString | Should -Match "port=9876"
-                $connectionString | Should -Not -Match "port=1111"
+                $connectionString | Should -Match "port=1111"
+                $connectionString | Should -Not -Match "port=9876"
             }
             finally {
                 $env:POSTGRES_PORT = $null
             }
+        }
+
+        It "provision-dms-schema.ps1 host-side connection uses the env-file POSTGRES_PORT when no ambient override exists" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-port-file-only.env"
+            @"
+POSTGRES_PASSWORD=isolated-pass
+POSTGRES_DB_NAME=isolated_db
+POSTGRES_PORT=9876
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
+
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args-file-only.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            Remove-Item Env:POSTGRES_PORT -ErrorAction SilentlyContinue
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 1
+                        name = "Sole"
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=isolated_db;'
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            Invoke-ProvisionDmsSchema -EnvironmentFile $isolatedEnvFile -DataStoreId @(1)
+
+            $captured = @(Get-Content -LiteralPath $capturePath)
+            $connectionString = $captured[[array]::IndexOf($captured, "--connection-string") + 1]
+            $connectionString | Should -Match "port=9876"
         }
     }
 
@@ -3275,6 +3402,87 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             finally {
                 if ($priorExists) { [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", $priorValue) }
                 else { Remove-Item Env:MSSQL_DB_NAME -ErrorAction SilentlyContinue }
+            }
+        }
+
+        # A protected key explicitly present with a blank value is NOT the same as an absent key:
+        # Docker Compose's ${VAR:-default} substitution uses the default when the configured value is
+        # blank, so the running container can be on the compose-file default database (e.g.
+        # edfi_datamanagementservice) while a value-based check sees "" and skips the collision check
+        # entirely. An explicitly present blank protected key therefore counts as configured and the
+        # guard fails closed rather than proving the reset target dedicated against an empty value.
+        It "fails closed when <Key> is explicitly present but blank" -ForEach @(
+            @{ Key = "POSTGRES_DB_NAME" }
+            @{ Key = "MSSQL_DB_NAME" }
+        ) {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ $Key = "" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice"
+            } | Should -Throw "*could not resolve $Key*"
+        }
+
+        It "fails closed when the protected <Key> connection string is explicitly present but blank" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+        ) {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ $Key = "" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice"
+            } | Should -Throw "*could not resolve $Key*"
+        }
+
+        It "permits a genuinely absent protected key" {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{ UNRELATED_KEY = "value" } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_datamanagementservice_e2e"
+            } | Should -Not -Throw
+        }
+
+        It "fails closed when a direct ambient <Key> override targets the reset database" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+        ) {
+            $priorExists = Test-Path "Env:$Key"
+            $priorValue = [System.Environment]::GetEnvironmentVariable($Key)
+            try {
+                [System.Environment]::SetEnvironmentVariable($Key, "Server=dms-mssql,1433;Database=shared_e2e;User ID=sa;Password=p;")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{ $Key = "Server=dms-mssql,1433;Database=main_db;User ID=sa;Password=p;" } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must stay separate*$Key*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable($Key, $priorValue) }
+                else { Remove-Item "Env:$Key" -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "fails closed when an ambient override of a referenced POSTGRES_DB_NAME variable targets the reset database" {
+            $priorExists = Test-Path "Env:DMS1284_SHARED_PG_DBNAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_SHARED_PG_DBNAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_PG_DBNAME", "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{
+                            POSTGRES_DB_NAME         = '${DMS1284_SHARED_PG_DBNAME}'
+                            DMS1284_SHARED_PG_DBNAME = "main_db"
+                        } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must be dedicated*POSTGRES_DB_NAME*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_PG_DBNAME", $priorValue) }
+                else { Remove-Item Env:DMS1284_SHARED_PG_DBNAME -ErrorAction SilentlyContinue }
             }
         }
     }

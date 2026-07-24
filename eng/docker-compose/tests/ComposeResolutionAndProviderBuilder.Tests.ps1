@@ -5,6 +5,9 @@
 
 #Requires -Version 7
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'The extracted Resolve-EnvValue reads $envValues from the caller scope via dynamic scoping; the analyzer cannot see that use.')]
+param()
+
 # DMS-1284 FR8/FR10: the E2E startup readiness, provisioning, CMS/test, and destructive-safety phases all
 # resolve credentials/ports through one Compose-equivalent resolver (database-safety.psm1) so an ambient
 # process/shell override, a reference chain, or a special-character credential is read exactly as the
@@ -72,6 +75,89 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         It "throws when the required value is absent in both the environment and the file" {
             { Get-RequiredComposeResolvedEnvValue -EnvironmentValues @{} -Name "MISSING_REQUIRED" } |
                 Should -Throw "*MISSING_REQUIRED*is not set*"
+        }
+    }
+
+    Context "setup-openiddict Resolve-EnvValue (ENV: indirection)" {
+        BeforeAll {
+            # Extract just the Resolve-EnvValue function from setup-openiddict.ps1 via the AST so the
+            # ENV: indirection used for identity-store database values can be exercised without the
+            # script's top-level Docker/SQL orchestration. The function reads $envValues from the
+            # caller's scope (dynamic scoping), so each test defines it locally.
+            $parseErrors = $null
+            $tokens = $null
+            $setupScript = Join-Path $script:dockerComposeRoot "setup-openiddict.ps1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($setupScript, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "Resolve-EnvValue" }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Resolve-EnvValue was not found in setup-openiddict.ps1." }
+            . ([scriptblock]::Create($functionAst.Extent.Text))
+        }
+
+        It "resolves an ENV: value with ambient process precedence over the env file (Compose precedence)" {
+            # The container received the ambient value through Compose interpolation, so the
+            # identity-store setup must connect with the same value or authentication fails on any
+            # ambient credential override.
+            $priorExists = Test-Path "Env:DMS1284_OPENIDDICT_PROBE"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_OPENIDDICT_PROBE")
+            try {
+                [System.Environment]::SetEnvironmentVariable("DMS1284_OPENIDDICT_PROBE", "ambient-value")
+                $envValues = @{ DMS1284_OPENIDDICT_PROBE = "file-value" }
+
+                Resolve-EnvValue "ENV:DMS1284_OPENIDDICT_PROBE" | Should -Be "ambient-value"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("DMS1284_OPENIDDICT_PROBE", $priorValue) }
+                else { Remove-Item Env:DMS1284_OPENIDDICT_PROBE -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "resolves an ENV: value from the env file when no ambient override exists" {
+            Remove-Item Env:DMS1284_OPENIDDICT_PROBE -ErrorAction SilentlyContinue
+            $envValues = @{ DMS1284_OPENIDDICT_PROBE = "file-value" }
+
+            Resolve-EnvValue "ENV:DMS1284_OPENIDDICT_PROBE" | Should -Be "file-value"
+        }
+
+        It "returns a non-ENV: value verbatim" {
+            $envValues = @{}
+            Resolve-EnvValue "literal-value" | Should -Be "literal-value"
+        }
+
+        It "throws by key name, without echoing any value, when an ENV: value is configured nowhere" {
+            Remove-Item Env:DMS1284_OPENIDDICT_MISSING -ErrorAction SilentlyContinue
+            $envValues = @{}
+
+            { Resolve-EnvValue "ENV:DMS1284_OPENIDDICT_MISSING" } | Should -Throw "*DMS1284_OPENIDDICT_MISSING*"
+        }
+    }
+
+    Context "phase wiring for the Compose-equivalent resolver" {
+        # Wiring guards for the two seams that cannot be invoked without a Docker stack: the
+        # published startup's inline readiness/data-store block and the standard E2E setup wrapper's
+        # target-database read. The resolver behavior itself is covered by the invoked tests above.
+        BeforeAll {
+            $script:startPublishedSource = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-published-dms.ps1") -Raw
+            $script:setupLocalDmsSource = Get-Content -LiteralPath ([System.IO.Path]::GetFullPath((Join-Path $script:dockerComposeRoot "../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))) -Raw
+        }
+
+        It "start-published-dms.ps1 imports the shared resolver and reads no protected value from raw env-file properties" {
+            $script:startPublishedSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "database-safety\.psm1"\)'
+            foreach ($rawRead in @(
+                    '\$envValues\.MSSQL_SA_PASSWORD',
+                    '\$envValues\.MSSQL_DB_NAME',
+                    '\$envValues\.POSTGRES_DB_NAME',
+                    '\$envValues\.POSTGRES_USER',
+                    '\$envValues\.POSTGRES_PASSWORD',
+                    '\$envValues\.CONFIG_SERVICE_TENANT',
+                    '\$envValues\.DMS_CONFIG_MULTI_TENANCY'
+                )) {
+                $script:startPublishedSource | Should -Not -Match $rawRead
+            }
+        }
+
+        It "setup-local-dms.ps1 resolves E2E_DATABASE_NAME through the shared resolver" {
+            $script:setupLocalDmsSource | Should -Match 'Import-Module \./database-safety\.psm1'
+            $script:setupLocalDmsSource | Should -Match 'Get-ComposeResolvedEnvValue -EnvironmentValues \$envValues -Name "E2E_DATABASE_NAME"'
         }
     }
 

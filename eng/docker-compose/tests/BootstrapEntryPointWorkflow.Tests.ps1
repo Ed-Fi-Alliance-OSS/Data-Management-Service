@@ -60,6 +60,9 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
                 # (default 5.2) onto the base env via env-utility, so every wrapper
                 # invocation needs the utility module and the overlay files.
                 "env-utility.psm1",
+                # The real start scripts (copied into this fixture by contexts that run them)
+                # import the shared Compose-equivalent resolver from this module.
+                "database-safety.psm1",
                 ".env.bootstrap.ds52",
                 ".env.bootstrap.ds61"
             )) {
@@ -1654,7 +1657,9 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
                     $StartScriptName,
                     "bootstrap-manifest.psm1",
                     "bootstrap-claims-gate.psm1",
-                    "env-utility.psm1"
+                    "env-utility.psm1",
+                    # Both start scripts import the shared Compose-equivalent resolver.
+                    "database-safety.psm1"
                 )) {
                     Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
                 }

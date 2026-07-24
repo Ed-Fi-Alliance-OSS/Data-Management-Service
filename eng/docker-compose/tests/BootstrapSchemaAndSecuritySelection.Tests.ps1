@@ -1945,8 +1945,15 @@ exit 0
             $buildScript | Should -Match '"SCHEMA_PACKAGES"'
             $buildScript | Should -Match 'Remove-Item "Env:\$name"'
             $buildScript | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
-            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 4
-            ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 4
+            # Five compose calls are gated on the caller's -UseEnvironmentFileSchemaSettings: the two
+            # teardown paths and the three Start-DockerEnvironment startup shapes (deferred InfraOnly,
+            # published full start, local full start). The deferred -DmsOnly start after provisioning
+            # runs inside Initialize-E2EDatabase and is gated on the E2E settings object instead.
+            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 5
+            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$E2ETestSettings\.ShouldProvisionE2EDatabase -Action')).Count | Should -Be 1
+            # Literal start-script references: one per teardown path, plus the two image-mode
+            # selection lines (Start-DockerEnvironment and Initialize-E2EDatabase) naming both scripts.
+            ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 6
             $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
             $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap'
             $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'

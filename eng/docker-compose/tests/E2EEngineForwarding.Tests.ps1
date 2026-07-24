@@ -153,3 +153,96 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
         }
     }
 }
+
+Describe "Get-E2ETestEnvironmentContext resolves the E2E database name with Compose precedence (DMS-1284)" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        # Import the real modules so the env/connection helper commands exist and can be mocked; the
+        # extracted function's own Import-Module calls are mocked to no-ops in BeforeEach.
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../Dms-Management.psm1"))) -Force
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../env-utility.psm1"))) -Force
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../database-safety.psm1"))) -Force
+        # Get-E2ETestEnvironmentContext derives the TRX suffix through Get-E2ETestResultSuffix
+        # (which normalizes the filter through ConvertTo-NormalizedTestFilter), so those pure
+        # helpers must be defined too.
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "ConvertTo-NormalizedTestFilter")))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Get-E2ETestResultSuffix")))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Get-E2ETestEnvironmentContext")))
+
+        # The extracted function resolves its env-file path through this build-dms.ps1 helper; the
+        # path itself is irrelevant here because ReadValuesFromEnvFile is mocked.
+        function Resolve-E2EEnvironmentFilePath {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Path', Justification = 'Production-compatible signature for a Pester stub; the resolved path is fixed because ReadValuesFromEnvFile is mocked.')]
+            param([string]$Path)
+            "/resolved/.env.e2e"
+        }
+    }
+
+    AfterAll {
+        Remove-Module Dms-Management -Force -ErrorAction SilentlyContinue
+        Remove-Module database-safety -Force -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $script:contextEnvValues = @{ "E2E_DATABASE_NAME" = "edfi_datamanagementservice_e2e" }
+
+        Mock Import-Module { }
+        Mock Resolve-DataStandardEnvironmentFile { $BaseEnvironmentFile }
+        Mock Resolve-DatabaseEngineEnvironmentFile { $BaseEnvironmentFile }
+        Mock ReadValuesFromEnvFile { $script:contextEnvValues }
+        Mock New-E2EDataStoreConnectionStrings {
+            [pscustomobject]@{
+                AdminConnectionString        = "admin:$DatabaseName"
+                RegistrationConnectionString = "reg:$DatabaseName"
+            }
+        }
+    }
+
+    It "uses the env-file E2E_DATABASE_NAME when no ambient override exists" {
+        Remove-Item Env:E2E_DATABASE_NAME -ErrorAction SilentlyContinue
+
+        $context = Get-E2ETestEnvironmentContext -EnvironmentFile "./.env.e2e" -DatabaseEngine "postgresql"
+
+        $context.DataStoreDatabaseName | Should -Be "edfi_datamanagementservice_e2e"
+    }
+
+    It "lets an ambient E2E_DATABASE_NAME override select the reset/provision target (Compose precedence)" {
+        # provision-e2e-database.ps1 resolves E2E_DATABASE_NAME with ambient-wins Compose precedence
+        # before its destructive reset. The context that feeds the CMS data store and the test
+        # process must resolve the same way, or an ambient override would reset one database while
+        # CMS registration and the tests target another.
+        $priorExists = Test-Path "Env:E2E_DATABASE_NAME"
+        $priorValue = [System.Environment]::GetEnvironmentVariable("E2E_DATABASE_NAME")
+        try {
+            [System.Environment]::SetEnvironmentVariable("E2E_DATABASE_NAME", "ambient_e2e_db")
+
+            $context = Get-E2ETestEnvironmentContext -EnvironmentFile "./.env.e2e" -DatabaseEngine "postgresql"
+
+            $context.DataStoreDatabaseName | Should -Be "ambient_e2e_db"
+            $context.DataStoreAdminConnectionString | Should -Be "admin:ambient_e2e_db"
+            $context.DataStoreConnectionString | Should -Be "reg:ambient_e2e_db"
+        }
+        finally {
+            if ($priorExists) { [System.Environment]::SetEnvironmentVariable("E2E_DATABASE_NAME", $priorValue) }
+            else { Remove-Item Env:E2E_DATABASE_NAME -ErrorAction SilentlyContinue }
+        }
+    }
+
+    It "throws when E2E_DATABASE_NAME is absent from both the env file and the process environment" {
+        Remove-Item Env:E2E_DATABASE_NAME -ErrorAction SilentlyContinue
+        $script:contextEnvValues.Remove("E2E_DATABASE_NAME")
+
+        { Get-E2ETestEnvironmentContext -EnvironmentFile "./.env.e2e" -DatabaseEngine "postgresql" } |
+            Should -Throw "*E2E_DATABASE_NAME*"
+    }
+}

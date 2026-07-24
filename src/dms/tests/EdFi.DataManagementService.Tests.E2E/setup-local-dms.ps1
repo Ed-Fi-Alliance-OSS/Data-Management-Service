@@ -94,6 +94,9 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
+    # Shared Compose-equivalent resolver so this wrapper selects the same E2E target database the
+    # provision phase resets (an ambient E2E_DATABASE_NAME override wins over the env file).
+    Import-Module ./database-safety.psm1 -Force
 
     $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
     # Compose the data-standard overlay first, then the database-engine overlay (same order as
@@ -108,10 +111,10 @@ try {
         -BaseEnvironmentFile $resolvedEnvironmentFile `
         -DockerComposeRoot $dockerComposeDir
     $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
-    $e2eDatabaseName = Get-EnvValue -EnvValues $envValues -Name "E2E_DATABASE_NAME"
+    $e2eDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "E2E_DATABASE_NAME"
 
     if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
-        throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
+        throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' or the process environment so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
     }
 
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
