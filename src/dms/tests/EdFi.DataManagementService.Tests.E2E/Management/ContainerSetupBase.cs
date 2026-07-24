@@ -200,6 +200,15 @@ public abstract class ContainerSetupBase
         }
     }
 
+    // The between-scenario/after-feature reset (disable constraints, delete every non-metadata row,
+    // reseed identities, restart sequences) can legitimately run long under lock contention with a live
+    // DMS. The 30-second ADO.NET default caused a required MSSQL E2E lane to time out in
+    // ExecuteResetAsync on a first clean attempt, so the reset uses the same generous command timeout
+    // the repository's integration reset helpers use (MssqlTestDatabaseHelper /
+    // *GeneratedDdlTestDatabase all use 300 seconds) rather than relying on a fresh-teardown rerun,
+    // which is not a deterministic acceptance strategy for a once-run required lane.
+    internal const int ResetCommandTimeoutSeconds = 300;
+
     private static async Task ExecuteResetAsync(DatabaseResetPlan plan)
     {
         if (plan.Provider == DatabaseResetProvider.SqlServer)
@@ -207,6 +216,7 @@ public abstract class ContainerSetupBase
             using var connection = new SqlConnection(plan.ConnectionString);
             await connection.OpenAsync();
             using var command = new SqlCommand(plan.Sql, connection);
+            ConfigureResetCommandTimeout(command);
             await command.ExecuteNonQueryAsync();
         }
         else
@@ -214,8 +224,16 @@ public abstract class ContainerSetupBase
             using var connection = new NpgsqlConnection(plan.ConnectionString);
             await connection.OpenAsync();
             using var command = new NpgsqlCommand(plan.Sql, connection);
+            ConfigureResetCommandTimeout(command);
             await command.ExecuteNonQueryAsync();
         }
+    }
+
+    // Applies the explicit reset command timeout. Kept internal and connection-free so a unit test can
+    // assert the timeout is set on both providers without opening a database connection.
+    internal static void ConfigureResetCommandTimeout(System.Data.Common.DbCommand command)
+    {
+        command.CommandTimeout = ResetCommandTimeoutSeconds;
     }
 
     private static bool IsMssql(string databaseEngine) =>

@@ -13,6 +13,23 @@ namespace EdFi.DataManagementService.Tests.Unit.Management;
 public class Given_Container_Setup_Base_Database_Reset
 {
     [Test]
+    public void It_configures_the_reset_command_with_the_integration_convention_timeout()
+    {
+        // The between-scenario reset can run long under lock contention with a live DMS; both providers
+        // must use the generous integration-convention timeout (300s), not the 30-second ADO.NET
+        // default that timed out a required MSSQL E2E lane on a first clean attempt.
+        ContainerSetupBase.ResetCommandTimeoutSeconds.Should().Be(300);
+
+        using var sqlCommand = new Microsoft.Data.SqlClient.SqlCommand();
+        ContainerSetupBase.ConfigureResetCommandTimeout(sqlCommand);
+        sqlCommand.CommandTimeout.Should().Be(300);
+
+        using var npgsqlCommand = new Npgsql.NpgsqlCommand();
+        ContainerSetupBase.ConfigureResetCommandTimeout(npgsqlCommand);
+        npgsqlCommand.CommandTimeout.Should().Be(300);
+    }
+
+    [Test]
     public void It_builds_a_postgres_reset_plan_for_the_postgresql_engine()
     {
         var plan = ContainerSetupBase.BuildResetPlan(
