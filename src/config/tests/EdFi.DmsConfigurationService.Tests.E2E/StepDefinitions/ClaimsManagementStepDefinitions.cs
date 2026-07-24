@@ -287,17 +287,29 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
         var responseBody = await response.TextAsync();
         var responseJson = JsonNode.Parse(responseBody);
 
-        // Check for validation error structure
-        var errors = responseJson!["errors"]?.AsArray();
-        var success = responseJson["success"]?.GetValue<bool>();
-
+        // Legacy upload responses carried a boolean "success" flag; the Ed-Fi error contract
+        // (DMS-1218) does not, but tolerate it if a response still includes one.
+        var success = responseJson!["success"]?.GetValue<bool>();
         if (success.HasValue)
         {
             success.Should().BeFalse();
         }
 
-        errors.Should().NotBeNull();
-        errors!.Count.Should().BeGreaterThan(0, "Expected validation errors in the response");
+        // Per the Ed-Fi error contract, field-level validation detail is carried in the
+        // "validationErrors" object (keyed by property path); "errors" is reserved for general
+        // developer messages and is "[]" when empty. A compliant data-validation response therefore
+        // surfaces the detail under "validationErrors". Accept either location so the step stays
+        // valid regardless of which the response uses, but require that detail is present.
+        var validationErrors = responseJson["validationErrors"]?.AsObject();
+        var errors = responseJson["errors"]?.AsArray();
+
+        int detailCount = (validationErrors?.Count ?? 0) + (errors?.Count ?? 0);
+        detailCount
+            .Should()
+            .BeGreaterThan(
+                0,
+                "Expected validation detail in the response body under 'validationErrors' or 'errors'"
+            );
     }
 
     private IAPIResponse GetLastApiResponse()
