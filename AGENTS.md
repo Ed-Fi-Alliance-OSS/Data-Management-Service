@@ -80,19 +80,19 @@ For SQL Server/MSSQL tests, `ConnectionStrings__MssqlAdmin` must point to a runn
 ```powershell
 Get-ChildItem Env:ConnectionStrings__MssqlAdmin -ErrorAction SilentlyContinue
 Test-NetConnection -ComputerName localhost -Port 14333
-docker ps --filter name=dms-mssql-integration
-docker logs dms-mssql-integration --tail 80
+docker ps --filter name=dms-mssql-integration-2025
+docker logs dms-mssql-integration-2025 --tail 80
 ```
 
 Known-good local MSSQL setup:
 
 ```powershell
-docker run --name dms-mssql-integration -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+docker run --name dms-mssql-integration-2025 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2025-latest
 $env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
 dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter "Category=MssqlIntegration"
 ```
 
-If the container already exists, use `docker start dms-mssql-integration`. If port `14333` is busy, map another host port and use the same port in `ConnectionStrings__MssqlAdmin`.
+If the container already exists, use `docker start dms-mssql-integration-2025`. The version-suffixed name keeps SQL Server 2025 separate from any `dms-mssql-integration` container created from the earlier SQL Server 2022 instructions; do not reuse that legacy container, because tests gated on SQL Server 2025 (such as the native-json evaluation fixture) silently skip on it. Remove it with `docker rm -f dms-mssql-integration` once anything you need from it is saved. If port `14333` is busy, map another host port and use the same port in `ConnectionStrings__MssqlAdmin`.
 
 ## Working with DMS Configuration Management Service E2E Tests
 
@@ -107,7 +107,7 @@ Before running MSSQL backend integration tests, verify that a SQL Server instanc
 Example local container setup:
 
 1. Start SQL Server:
-   - `docker run --rm --name dms-codex-mssql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<StrongPassword>' -p 1434:1433 -d mcr.microsoft.com/mssql/server:2022-latest`
+   - `docker run --rm --name dms-codex-mssql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<StrongPassword>' -p 1434:1433 -d mcr.microsoft.com/mssql/server:2025-latest`
 2. Wait until SQL Server is ready before running tests.
 3. Run MSSQL integration tests with:
    - `ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=<StrongPassword>;TrustServerCertificate=True;Encrypt=True' dotnet test <mssql test project or solution> --filter <filter>`

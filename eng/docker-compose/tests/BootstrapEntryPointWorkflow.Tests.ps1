@@ -814,7 +814,60 @@ $failureStatement
         }
     }
 
-    Context "MSSQL datastore engine compose selection (DMS-1238)" {
+    Context "MSSQL datastore engine compose selection and runtime isolation (DMS-1238, DMS-1279)" {
+        # The pin guards below assert uniqueness plus value: exactly one occurrence of each
+        # pinned line may exist in the file, and it must carry the pinned value. A reverted
+        # pin fails the value check, and any second occurrence (however it is nested) fails
+        # the count check, so no unrelated occurrence can mask a stale authoritative pin.
+        It "isolates the SQL Server 2025 runtime from legacy SQL Server volumes (DMS-1279)" {
+            $mssqlCompose = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "mssql.yml"
+            ) -Raw
+
+            $imagePins = [regex]::Matches($mssqlCompose, '(?m)^\s*image:\s*\S+\s*$')
+            $imagePins.Count | Should -Be 1 -Because "mssql.yml defines a single db service with a single image pin"
+            $imagePins[0].Value.Trim() | Should -Be 'image: mcr.microsoft.com/mssql/server:2025-latest'
+
+            $dataMounts = [regex]::Matches($mssqlCompose, '(?m)^\s*-\s*\S+:/var/opt/mssql\s*$')
+            $dataMounts.Count | Should -Be 1 -Because "the SQL Server data directory must be mounted from exactly one named volume"
+            $dataMounts[0].Value.Trim() | Should -Be '- dms-mssql-2025:/var/opt/mssql' -Because "attaching the 2025 runtime to a legacy SQL Server 2022 volume is not supported"
+
+            $volumeDeclarations = [regex]::Matches($mssqlCompose, '(?m)^\s*dms-mssql[\w-]*:\s*$')
+            $volumeDeclarations.Count | Should -Be 1 -Because "exactly one dms-mssql* named volume may be declared, keeping the legacy volume detached"
+            $volumeDeclarations[0].Value.Trim() | Should -Be 'dms-mssql-2025:'
+        }
+
+        It "pins the DMS CI MSSQL_IMAGE env to the SQL Server 2025 image (DMS-1279)" {
+            $dmsWorkflow = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot ".github/workflows/on-dms-pullrequest.yml"
+            ) -Raw
+
+            $imagePins = [regex]::Matches($dmsWorkflow, '(?m)^\s*MSSQL_IMAGE:\s*\S+\s*$')
+            $imagePins.Count | Should -Be 1 -Because "the workflow-level env is the single authoritative MSSQL_IMAGE pin for the backend, DMS API, and SchemaTools MSSQL lanes: on an older runtime the native-json evaluation fixture ignores itself instead of failing, so this pin must never be duplicated or reverted silently"
+            $imagePins[0].Value.Trim() | Should -Be 'MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2025-latest"'
+        }
+
+        It "pins the CMS CI integration-test mssql services container to the SQL Server 2025 image (DMS-1279)" {
+            $cmsWorkflow = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot ".github/workflows/on-config-pullrequest.yml"
+            ) -Raw
+
+            $mssqlImagePins = [regex]::Matches($cmsWorkflow, '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:\S+\s*$')
+            $mssqlImagePins.Count | Should -Be 1 -Because "the workflow runs exactly one SQL Server container (the run-integration-tests mssql service), so a second occurrence could only mask a stale pin"
+            $mssqlImagePins[0].Value.Trim() | Should -Be 'image: mcr.microsoft.com/mssql/server:2025-latest'
+        }
+
+        It "keeps the template-workflow backup-coupling comments aligned with the SQL Server 2025 image (DMS-1279)" {
+            foreach ($workflowName in @("build-minimal-template.yml", "build-populated-template.yml")) {
+                $workflow = Get-Content -LiteralPath (
+                    Join-Path $script:sourceRepoRoot ".github/workflows/$workflowName"
+                ) -Raw
+
+                $workflow | Should -Match '(?m)^\s*#\s*backup is coupled to the mcr\.microsoft\.com/mssql/server:2025-latest image used to create\s*$' -Because "$workflowName documents the exact image line its .bak template packages are coupled to in this comment, and that comment must move with the executable pins"
+                $workflow | Should -Not -Match 'mssql/server:2022' -Because "$workflowName must not describe the backup coupling against the retired SQL Server 2022 image"
+            }
+        }
+
         It "start-local-dms.ps1 declares a -DatabaseEngine parameter validated to postgresql/mssql" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"

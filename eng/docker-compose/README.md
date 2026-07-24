@@ -173,7 +173,7 @@ entry points or `start-local-dms.ps1` (they seed `.env` from `.env.example` when
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v
 ```
 
-`mssql.yml` runs `mcr.microsoft.com/mssql/server:2022-latest` (Developer Edition), the same
+`mssql.yml` runs `mcr.microsoft.com/mssql/server:2025-latest` (Developer Edition), the same
 image used in CI, publishing host port `1435`. `-DatabaseEngine mssql` composes the `.env.mssql`
 overlay (`DMS_DATASTORE=mssql`, `DMS_CONFIG_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL
 Server connection strings) onto the base environment file automatically — the same composition
@@ -182,6 +182,18 @@ every phase (configure, provision, and the DMS container itself) sees a consiste
 selection. Everything else (`SCHEMA_PACKAGES`, Kafka, Keycloak, identity-provider token
 endpoints, etc.) still comes from the base environment file; pass `-EnvironmentFile` only to
 override those base settings, and the overlay still composes on top of it.
+
+> [!WARNING]
+> **SQL Server 2022 volume transition.** `mssql.yml` mounts the major-versioned
+> `dms-mssql-2025` volume so an ordinary `docker compose up` never reuses a legacy
+> `dms-mssql` volume with the SQL Server 2025 image. Microsoft currently supports persisted
+> container upgrades only between release candidates and GA, not from SQL Server 2022 to 2025.
+> Existing 2022 volumes remain intact for backup with the SQL Server 2022 image. The current
+> `-d -v` teardown removes only the 2025 volume; after stopping the old stack and confirming its
+> backups, locate legacy volumes with
+> `docker volume ls --filter label=com.docker.compose.volume=dms-mssql` and remove each intended
+> volume explicitly with `docker volume rm <volume-name>`.
+> See [Microsoft's SQL Server container upgrade guidance](https://learn.microsoft.com/en-us/sql/linux/containers/deploy?view=sql-server-ver17#upgrade-sql-server-in-containers).
 
 > [!NOTE]
 > **Database topology.** Local deployments host the Configuration Service and DMS in one shared
@@ -215,10 +227,20 @@ A few things are specific to the MSSQL path:
   `EdFi.Api.Populated.Template.MsSql.*` NuGet packages alongside the existing PostgreSQL ones.
   On MSSQL the package's data dump is a native `BACKUP DATABASE` `.bak` file (restored with
   `RESTORE DATABASE`); that `.bak` is coupled to the
-  `mcr.microsoft.com/mssql/server:2022-latest` image line it was built and verified against
-  (a moving tag tracking the latest SQL Server 2022 build - the coupling is at the SQL Server
-  2022 level, not an exact build), the same way the PostgreSQL `.sql` dump is coupled to the
+  `mcr.microsoft.com/mssql/server:2025-latest` image line it was built and verified against
+  (a moving tag tracking the latest SQL Server 2025 build - the coupling is at the SQL Server
+  2025 level, not an exact build), the same way the PostgreSQL `.sql` dump is coupled to the
   PostgreSQL major version it was built against.
+  This `.bak` coupling is a one-way compatibility boundary.
+  A package built and verified on SQL Server 2025 is not expected to restore onto a SQL Server
+  2022 instance.
+  Packages published previously against SQL Server 2022 do restore forward onto the SQL Server
+  2025 runtime.
+  Compatibility level 170 is the supported-runtime baseline because it is the SQL Server 2025
+  default for newly created databases.
+  The template content gates only verify that level; they never set it.
+  A database restored from a SQL Server 2022-built package keeps the compatibility level it had
+  at backup time; restoring does not upgrade it to 170.
   Every published package is restore-verified in CI
   (`eng/DatabaseTemplates/verify-template-restore.ps1`) before publishing. Base environment files'
   `DATABASE_TEMPLATE_PACKAGE` value (e.g. `EdFi.Api.Populated.Template.PostgreSql.5.2.0`) carries
