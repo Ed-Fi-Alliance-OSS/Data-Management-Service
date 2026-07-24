@@ -214,6 +214,17 @@ public class Given_The_Parity_Scenario_Catalog
             .Should()
             .BeEquivalentTo(ExpectedRemainingNoProfileMssqlGapPairs);
 
+    // The positive counterpart to the Gap sweep above, mirroring the API layer's both-engine assertion.
+    // The Gap sweep alone cannot express "every family runs on both engines": a family demoted to Na
+    // (NotApplicable on both engines plus a unit location) has no Gap coverage to catch, keeps its id in
+    // the canonical set, and may still carry a SharedEntryPoint — so it would pass every other catalog
+    // test. OnlyContain also fails on an empty subject, so the filter cannot silently stop matching.
+    [Test]
+    public void It_records_every_canonical_no_profile_family_as_both_engine_covered() =>
+        _all.Where(s => ExpectedNoProfileCanonicalIds.Contains(s.Id))
+            .Should()
+            .OnlyContain(s => s.Classification == ParityClassification.Both);
+
     [Test]
     public void It_gives_every_no_profile_canonical_family_a_shared_entry_point()
     {

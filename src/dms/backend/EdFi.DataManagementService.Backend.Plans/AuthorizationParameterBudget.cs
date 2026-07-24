@@ -29,8 +29,15 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </remarks>
 public static class AuthorizationParameterBudget
 {
-    /// <summary>SQL Server's documented maximum number of parameters per command.</summary>
-    public const int MssqlMaxCommandParameters = 2100;
+    /// <summary>
+    /// The maximum number of user parameters SQL Server can actually bind in one command. The documented
+    /// RPC limit is 2100 parameters per request, but parameterized commands execute through
+    /// <c>sp_executesql</c>, whose own <c>@stmt</c>/<c>@params</c> arguments consume two of those slots — a
+    /// command carrying 2099 or 2100 user parameters is rejected by the server (error 8003). This is the
+    /// single source of the usable-per-command ceiling for every SQL Server command shape; write-plan bulk
+    /// insert batching derives its batch sizes from it (see <see cref="PlanWriteBatchingConventions" />).
+    /// </summary>
+    public const int MssqlMaxCommandParameters = 2098;
 
     /// <summary>The number of paging parameters (offset and limit) every page query binds.</summary>
     public const int PaginationParameterCount = 2;

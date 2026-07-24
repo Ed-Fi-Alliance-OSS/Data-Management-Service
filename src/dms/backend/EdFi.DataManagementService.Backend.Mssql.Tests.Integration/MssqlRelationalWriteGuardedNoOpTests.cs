@@ -92,6 +92,8 @@ internal sealed class GuardedNoOpCommitWindowCoordinator(IDataStoreSelection dat
     private SqlConnection? _connection;
     private SqlTransaction? _transaction;
     private bool _commitCompleted;
+    private int _sessionId;
+    private string? _connectionString;
 
     public int CommitCallCount { get; private set; }
 
@@ -109,8 +111,21 @@ internal sealed class GuardedNoOpCommitWindowCoordinator(IDataStoreSelection dat
             );
         }
 
+        _connectionString = connectionString;
         _connection = new SqlConnection(connectionString);
         await _connection.OpenAsync(cancellationToken);
+
+        // Record this transaction's session id so the freshness read can be proven to be lock-blocked
+        // by THIS session (see WaitUntilBlockingAnotherRequestAsync) before the commit is released.
+        await using (var sessionIdCommand = _connection.CreateCommand())
+        {
+            sessionIdCommand.CommandText = "SELECT @@SPID;";
+            _sessionId = Convert.ToInt32(
+                await sessionIdCommand.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture
+            );
+        }
+
         _transaction = (SqlTransaction)
             await _connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
 
@@ -151,6 +166,53 @@ internal sealed class GuardedNoOpCommitWindowCoordinator(IDataStoreSelection dat
 
     public Task WaitUntilWriteIsPendingAsync(CancellationToken cancellationToken = default) =>
         _writePending.Task.WaitAsync(cancellationToken);
+
+    /// <summary>
+    /// Polls until SQL Server reports some request lock-blocked by this coordinator's session, proving the
+    /// freshness read has actually reached the server and is waiting on the pending bump's X-lock. This is
+    /// what makes the commit-window race deterministic rather than dependent on the inner checker issuing
+    /// its SELECT before its first suspension point: without it, an <c>await</c> added ahead of that SELECT
+    /// would let the released commit land first, and the fixture would silently degenerate into the
+    /// stale-compare scenario while still observing <c>[false, true]</c>. Uses its own short-lived
+    /// connection because the coordinator's own connection is inside the uncommitted transaction.
+    /// </summary>
+    public async Task WaitUntilBlockingAnotherRequestAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            throw new InvalidOperationException(
+                "The pending content-version bump must be started before waiting for it to block a request."
+            );
+        }
+
+        await using var observerConnection = new SqlConnection(_connectionString);
+        await observerConnection.OpenAsync(cancellationToken);
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await using var command = observerConnection.CreateCommand();
+            command.CommandText = """
+                SELECT COUNT(*)
+                FROM sys.dm_exec_requests
+                WHERE [blocking_session_id] = @blockingSessionId;
+                """;
+            command.Parameters.Add(new SqlParameter("@blockingSessionId", _sessionId));
+
+            var blockedRequestCount = Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture
+            );
+
+            if (blockedRequestCount > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
+        }
+    }
 
     public void ReleaseCommit() => _allowCommit.TrySetResult();
 
@@ -273,11 +335,22 @@ file sealed class GuardedNoOpCommitWindowFreshnessChecker(
                 cancellationToken
             );
 
-            // (4) Release the competing commit so the blocked freshness read proceeds and observes
+            // (4) Wait until SQL Server actually reports the freshness read as lock-blocked by the
+            // competing session. This is what makes the scenario a commit-window race rather than a
+            // stale compare: both orderings observe a stale version and satisfy the [false, true]
+            // outcome, so if the commit were allowed to land before the read reached the server this
+            // fixture would silently become a duplicate of the stale-compare fixture. Bounded by
+            // CoordinationTimeout, so a read that never blocks fails the test instead of hanging.
+            using (var blockedTimeout = new CancellationTokenSource(CoordinationTimeout))
+            {
+                await _coordinator.WaitUntilBlockingAnotherRequestAsync(blockedTimeout.Token);
+            }
+
+            // (5) Release the competing commit so the blocked freshness read proceeds and observes
             // the committed concurrent bump.
             _coordinator.ReleaseCommit();
 
-            // (5) Await both operations. The blocked freshness read is a SqlCommand carrying the
+            // (6) Await both operations. The blocked freshness read is a SqlCommand carrying the
             // SqlClient default command timeout, so if the released commit stalls or faults, the
             // read throws a diagnostic timeout exception instead of hanging the shard: this
             // interval is bounded by the driver even though no fixture token wraps it.
