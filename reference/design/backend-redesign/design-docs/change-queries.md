@@ -1151,6 +1151,8 @@ The `*IncludingDeletes` authorization views used by `ReadChanges` are the except
 
 The model derivation pass owns the semantic decisions: which resources get tracked-change tables, which columns are included, how duplicate canonical columns are de-duplicated, and which descriptor/person joins are needed. PostgreSQL and SQL Server emitters render this inventory mechanically into tables, triggers, indexes, views, manifests, and fixture outputs. Runtime Change Query SQL planning must consume the same inventory so endpoint selection, authorization, generated DDL, and manifests cannot drift.
 
+Tracked-change index entries are not tracked-change-specific inventory records: `DeriveTrackedChangeIndexInventoryPass` appends plain `DbIndexInfo` entries to the shared `IndexesInCreateOrder` (see § "Indexes on the `tracked_changes*` tables").
+
 #### `tracked_changes*` tables
 
 Similar to ODS, each resource will get an accompanying `TrackedChangeTableInfo` with the `tracked_changes_<ProjectName>.<ResourceName>` naming convention. The usual DMS identifier-shortening logic applies to avoid exceeding the PostgreSQL length limit.
@@ -1557,6 +1559,57 @@ The `ON DELETE CASCADE` FK from the resource row to `dms.Document` (see [data-mo
 
 There is no `*_Stamp` trigger in `dms.Descriptor`, so we will create one that follows the existing convention.
 
+#### Indexes on the `tracked_changes*` tables
+
+Each tracked-change table is created with a single clustered/primary key on `ChangeVersion`.
+That key serves the `ChangeVersion` window predicates and `ORDER BY ChangeVersion` paging of `/deletes` and `/keyChanges`, and the `(Id, ChangeVersion)` self-joins of `/keyChanges`.
+It does not serve the `ReadChanges` authorization predicates, and it does not serve the tracked-change arms of the `*IncludingDeletes` authorization views, which probe five `tracked_changes_edfi` association tables by old-value columns on every people-strategy request for any resource (see the Authorization section below).
+
+DMS therefore emits a bounded set of secondary indexes on tracked-change tables, derived by a dedicated pass (spike: DMS-1185).
+
+##### `DeriveTrackedChangeIndexInventoryPass`
+
+A set-level derivation pass ordered immediately after `DeriveAuthorizationIndexInventoryPass` and before `ApplyDialectIdentifierShorteningPass`.
+It must run in that window because it reads the tracked-change inventory produced by `DeriveTrackedChangeInventoryPass`, and its output identifiers must participate in dialect shortening and canonical ordering.
+`DeriveIndexInventoryPass` cannot own these entries: it runs before the tracked-change inventory exists, and its position ahead of trigger inventory derivation is load-bearing.
+The pass appends plain `DbIndexInfo` entries to the shared index inventory, so DDL emission, manifest emission, identifier shortening, and index-name uniqueness validation apply unchanged.
+It takes the same strictness flag as `DeriveAuthorizationIndexInventoryPass` (`throwOnMissingPaLiteral` semantics): the strict pipeline throws when an expected literal column is missing, and the default pipeline skips so synthetic test fixtures continue to build.
+
+The pass emits two categories.
+
+**1. Tracked PrimaryAssociation covering indexes.**
+For each of the five PrimaryAssociation resources, one `DbIndexKind.Authorization` covering index on the resource's tracked-change table, mapping the live PA `(key, INCLUDE)` pair through the `Old` value-column naming convention:
+
+| Table (in `tracked_changes_edfi`) | Key | INCLUDE |
+|---|---|---|
+| `StudentSchoolAssociation` | `OldSchoolId_Unified` | `OldStudent_DocumentId` |
+| `StudentContactAssociation` | `OldStudent_DocumentId` | `OldContact_DocumentId` |
+| `StaffEducationOrganizationAssignmentAssociation` | `OldEducationOrganization_EducationOrganizationId` | `OldStaff_DocumentId` |
+| `StaffEducationOrganizationEmploymentAssociation` | `OldEducationOrganization_EducationOrganizationId` | `OldStaff_DocumentId` |
+| `StudentEducationOrganizationResponsibilityAssociation` | `OldEducationOrganization_EducationOrganizationId` | `OldStudent_DocumentId` |
+
+These are the tracked-side mirror of the five live PrimaryAssociation covering indexes and make the tracked-change arms of every `*IncludingDeletes` view an index-only scan.
+Names follow the standard `_Auth` authorization-index convention.
+Gating is per table (the tracked table must be present in the inventory and carry both mapped columns), deliberately not the all-five gating the `*IncludingDeletes` views use: an index without its view is harmless, and the views degrade gracefully without indexes.
+
+**2. Shared-descriptor Discriminator index.**
+The `SharedDescriptor` tracked-change table gets one `DbIndexKind.Explicit` index with key order `[Discriminator, ChangeVersion]`.
+Every descriptor `/deletes` filters the shared table by `Discriminator IN (<bare>, <qualified>)` plus a `ChangeVersion` window with `ORDER BY ChangeVersion`, for all descriptor kinds sharing the table, so `Discriminator` leads and `ChangeVersion` completes the seek and ordered scan.
+This mirrors the `IX_Descriptor_Discriminator_ContentVersion` rationale on the live shared table.
+A `(Discriminator, OldNamespace)` variant was measured and rejected: after the `Discriminator` seek, the residual namespace `LIKE` filters a single kind's tombstones, and only two descriptors use `NamespaceBased` `ReadChanges` authorization.
+
+Write cost is bounded by design: tracked-change rows are inserted only on delete and key-change.
+Measured on PostgreSQL (DMS-1185), the emitted indexes add roughly one microsecond per row to bulk tombstone inserts (+69% relative on an index-light table, trivial absolute), with covering-index storage around 30% of table size.
+Workloads dominated by bulk deletes or cascading key changes (year-end purges, delete-and-reload resyncs) are the only ones that see meaningful overhead.
+
+##### Per-resource securable-element indexes are deferred
+
+Indexes on the outer `ReadChanges` predicate columns of per-resource tracked-change tables (EducationOrganization securable columns, person `Old*_DocumentId` columns, and namespace columns) are deliberately not emitted yet.
+DMS-1185 benchmarks showed they are a planner hazard on PostgreSQL as long as the authorization predicate is `IN (SELECT ... FROM <UNION view>)`: PostgreSQL estimates the views' deduplicated output at the default 200 distinct rows (measured actuals 20k-80k), and the resulting misestimates flip plans to per-row nested loops and join-filter anti-joins, with measured regressions up to 18x on `/keyChanges` at 10M tombstones.
+The prerequisite is a runtime query-shape change that exposes real subject-set cardinalities to the planner (for example, resolving the claim's person and EdOrg subject sets before composing the main query).
+Once that lands, the same derivation pass gains the per-resource rules; their inputs already exist on the inventory (`TrackedChangeColumnInfo.Origin` securable-element flag with `Role = Scalar`, `Role = PersonDocumentId`), so no new contracts are required.
+Related PostgreSQL caveat, tracked separately: under non-C collations a plain B-tree never uses a prefix `LIKE` as an index boundary, which already limits the live-side `IX_*_Namespace_Auth` indexes to full-index-scan-plus-filter behavior; namespace indexes need an operator-class decision (`varchar_pattern_ops`) before they are worth emitting on either side.
+
 ### Authorization
 
 This section covers authorization concerns specific to the `/deletes` and `/keyChanges` endpoints. The base authorization design lives in [auth.md](auth.md).
@@ -1764,7 +1817,11 @@ This makes the physical order of the `UX_<Table>_RefKey` key columns important. 
 
 For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>, DocumentId)`. The composite reference FKs that target `*_RefKey` must use the same target-column ordering. This preserves the uniqueness contract while giving `/deletes` a useful seek path for the anti-join against the live table.
 
-Descriptor `/deletes` uses the same conceptual anti-join, but it probes `dms.Descriptor` by `(Discriminator, CodeValue, Namespace)`. DMS v1 will not add a separate descriptor identity lookup index for this path because descriptor deletes and recreations are expected to be rare.
+Descriptor `/deletes` uses the same conceptual anti-join, but it probes `dms.Descriptor` by `(Discriminator, CodeValue, Namespace)`. DMS will not add a separate descriptor identity lookup index for this path.
+The durable reason is not that descriptor deletes are rare: the same probe shape also runs per tombstone row for every resource `/deletes` whose identity includes a descriptor reference.
+It is that `dms.Descriptor` is small and every probe leads with `Discriminator`, so the existing `Discriminator`-leading access paths (`IX_Descriptor_Discriminator_ContentVersion`, and `UX_Descriptor_Uri_Discriminator` for Uri-shaped probes) already bound the probe cost.
+DMS-1185 measured this at 10M tracked rows: a dedicated `(Discriminator, Namespace, CodeValue)` index produced no observable improvement over the existing paths.
+Revisit only if `dms.Descriptor` grows by orders of magnitude or loses its `Discriminator`-leading indexes.
 
 An example generated SQL query used to fulfill the `GET crisisTypeDescriptors/deletes` request is:
 
@@ -2012,6 +2069,10 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
 - Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
 - `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), and `IX_Descriptor_Discriminator_ContentVersion` composite index on `dms.Descriptor` with key columns in order `[Discriminator, ContentVersion]`.
+- The five tracked PrimaryAssociation covering indexes in `IndexesInCreateOrder` (Authorization kind, `Old*` key column, `Old*` INCLUDE column per § "Indexes on the `tracked_changes*` tables"), present only when the tracked table and both mapped columns exist; strict pipeline throws on a missing literal column, default pipeline skips.
+- The shared descriptor tracked-change index (Explicit kind) with key columns in order `[Discriminator, ChangeVersion]`.
+- No other secondary indexes on tracked-change tables (per-resource securable-element indexes are deferred; see § "Per-resource securable-element indexes are deferred").
+- Emitted-DDL and manifest coverage for tracked-change indexes on PostgreSQL and SQL Server, including dialect identifier shortening of index names against long tracked-change table names.
 - Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
 - DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.

@@ -62,3 +62,9 @@ These spikes investigate features explicitly deferred in `change-queries.md`. Ea
 - `DMS-1190` — `29-snapshot-support.md` — Spike: snapshot support (`Use-Snapshot` header) for Change Queries
 - `DMS-1191` — `30-disable-change-queries-feature.md` — Spike: runtime feature flag to disable Change Queries
 - `DMS-1193` — `31-custom-view-based-readchanges-authorization.md` — Spike: custom view-based authorization for `ReadChanges`
+
+## Follow-on Stories (spawned by DMS-1185)
+
+- `TBD` - `33-tracked-change-index-emission.md` - Emit Tier-1 auth-check indexes on `tracked_changes_*` tables
+- `TBD` - `34-readchanges-subject-preresolution.md` - Pre-resolve `ReadChanges` authorization subjects; emit per-resource tracked-change indexes
+- `TBD` - `35-namespace-auth-index-prefix-like.md` - Make namespace authorization indexes serve prefix `LIKE` on PostgreSQL
