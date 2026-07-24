@@ -59,6 +59,13 @@ if (useReverseProxyHeaders)
 app.UseMiddleware<SecurityHeadersMiddleware>();
 
 app.UseMiddleware<RequestLoggingMiddleware>();
+
+// The exception boundary must wrap tenant resolution and the invalid-configuration short-circuit so
+// that any unexpected exception in those middlewares is shaped by GlobalExceptionHandler instead of
+// surfacing as an unshaped framework 500 (DMS-1218 INV-36). RequestLoggingMiddleware stays outermost,
+// so a handled 500 is still logged exactly once as HttpRequestFailed via IExceptionHandlerFeature.
+app.UseExceptionHandler(o => { });
+
 app.UseMiddleware<TenantResolutionMiddleware>();
 
 if (!ReportInvalidConfiguration(app))
@@ -67,8 +74,13 @@ if (!ReportInvalidConfiguration(app))
     await InitializeClaimsData(app);
 }
 
-app.UseExceptionHandler(o => { });
 app.UseRouting();
+
+// Shape framework-generated bodiless 401/403/404/405/415 responses into the Ed-Fi contract
+// (DMS-1218 INV-25…29). Placed after routing but before CORS/authentication/authorization so it wraps
+// the auth short-circuits and the endpoint terminal, independent of route and authentication scheme.
+app.UseMiddleware<FrameworkErrorResponseMiddleware>();
+
 app.UseCors("AllowSwaggerUI");
 app.UseAuthentication();
 app.UseAuthorization();

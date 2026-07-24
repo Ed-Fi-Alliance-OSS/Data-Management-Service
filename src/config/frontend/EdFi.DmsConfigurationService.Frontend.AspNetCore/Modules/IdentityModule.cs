@@ -125,7 +125,7 @@ public class IdentityModule : IEndpointModule
             }
         }
 
-        return Results.Forbid();
+        return FailureResults.Authorization(httpContext.TraceIdentifier, ["Registration is disabled."]);
     }
 
     private static async Task<IResult> GetClientAccessToken(
@@ -221,13 +221,9 @@ public class IdentityModule : IEndpointModule
             )
         )
         {
-            return Results.Json(
-                new
-                {
-                    error = OpenIddictConstants.Errors.UnsupportedGrantType,
-                    error_description = "The specified grant type is not supported.",
-                },
-                statusCode: 400
+            return FailureResults.BadRequest(
+                "The specified grant type is not supported.",
+                httpContext.TraceIdentifier
             );
         }
 
@@ -286,14 +282,7 @@ public class IdentityModule : IEndpointModule
 
         if (string.IsNullOrEmpty(model.Token))
         {
-            return Results.Json(
-                new
-                {
-                    error = OpenIddictConstants.Errors.InvalidRequest,
-                    error_description = "The token parameter is missing.",
-                },
-                statusCode: 400
-            );
+            return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
         }
 
         if (tokenValidator == null)
@@ -344,14 +333,7 @@ public class IdentityModule : IEndpointModule
 
         if (string.IsNullOrEmpty(model.Token))
         {
-            return Results.Json(
-                new
-                {
-                    error = OpenIddictConstants.Errors.InvalidRequest,
-                    error_description = "The token parameter is missing.",
-                },
-                statusCode: 400
-            );
+            return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
         }
 
         // Check if token manager supports revocation via interface

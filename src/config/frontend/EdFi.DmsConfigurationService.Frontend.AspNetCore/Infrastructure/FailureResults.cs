@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -16,12 +17,65 @@ internal static class FailureResults
 
     public static IResult Unknown(string correlationId)
     {
-        return Results.Json(FailureResponse.ForUnknown(correlationId), statusCode: 500);
+        return Results.Json(
+            FailureResponse.ForUnknown(correlationId),
+            contentType: _errorContentType,
+            statusCode: 500
+        );
     }
 
     public static IResult NotFound(string detail, string correlationId)
     {
-        return Results.Json(FailureResponse.ForNotFound(detail, correlationId), statusCode: 404);
+        return Results.Json(
+            FailureResponse.ForNotFound(detail, correlationId),
+            contentType: _errorContentType,
+            statusCode: 404
+        );
+    }
+
+    /// <summary>
+    /// Structured 403 authorization failure with an explicit, caller-supplied <paramref name="errors"/>
+    /// array. Unlike <see cref="Forbidden"/>, this does NOT parse the input as an identity-provider
+    /// payload; it is intended for endpoint-owned authorization messages (for example, a disabled
+    /// feature such as client registration). Emits the documented
+    /// <c>urn:ed-fi:api:security:authorization</c> contract.
+    /// </summary>
+    public static IResult Authorization(string correlationId, string[] errors)
+    {
+        return Results.Json(
+            FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 403
+        );
+    }
+
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:api:bad-request</c> response for a generic, non-field-specific
+    /// client error. The <paramref name="detail"/> must contain no sensitive or internal text.
+    /// </summary>
+    public static IResult BadRequest(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForBadRequest(detail, correlationId),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
+    }
+
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:api:bad-request:data</c> data-validation response whose
+    /// <c>validationErrors</c> are grouped from the supplied field-level failures.
+    /// </summary>
+    public static IResult DataValidation(
+        IEnumerable<ValidationFailure> validationFailures,
+        string correlationId
+    )
+    {
+        return Results.Json(
+            FailureResponse.ForDataValidation(validationFailures, correlationId),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
     }
 
     public static IResult BadGateway(string detail, string correlationId)
