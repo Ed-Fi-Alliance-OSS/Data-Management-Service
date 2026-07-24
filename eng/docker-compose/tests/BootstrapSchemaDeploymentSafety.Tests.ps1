@@ -253,8 +253,10 @@ exit $ExitCode
             Remove-Item -LiteralPath $script:repo.RepoRoot -Recurse -Force
         }
 
-        [System.Environment]::SetEnvironmentVariable("DMS_SCHEMA_TOOL_PATH", $null)
-        [System.Environment]::SetEnvironmentVariable("DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK", $null)
+        # Remove-Item, not SetEnvironmentVariable with $null: PowerShell coerces $null to "", which
+        # newer pwsh/.NET on Unix stores as a present-but-blank variable instead of removing it.
+        Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue
+        Remove-Item Env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -ErrorAction SilentlyContinue
     }
 
     Context "public script contracts" {

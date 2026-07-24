@@ -461,8 +461,17 @@ exit $ExitCode
     }
 
     AfterEach {
+        # A $null snapshot value must remove the variable. Calling SetEnvironmentVariable with $null
+        # cannot do that from PowerShell: the [string] parameter coerces $null to "", and on newer
+        # pwsh/.NET on Unix an empty value is stored rather than removed, leaking a present-but-blank
+        # variable into every later test in the same Pester process.
         foreach ($name in $script:bootstrapEnvVars) {
-            [System.Environment]::SetEnvironmentVariable($name, $script:envSnapshot[$name])
+            if ($null -eq $script:envSnapshot[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $script:envSnapshot[$name])
+            }
         }
 
         if ($null -ne $script:repo -and (Test-Path -LiteralPath $script:repo.RepoRoot)) {
@@ -1538,9 +1547,9 @@ exit $ExitCode
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
             $env:DMS_CONFIG_CLAIMS_SOURCE = "existing"
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_CLAIMS_DIRECTORY", $null)
+            Remove-Item Env:DMS_CONFIG_CLAIMS_DIRECTORY -ErrorAction SilentlyContinue
             $env:USE_API_SCHEMA_PATH = "true"
-            [System.Environment]::SetEnvironmentVariable("API_SCHEMA_PATH", $null)
+            Remove-Item Env:API_SCHEMA_PATH -ErrorAction SilentlyContinue
             $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/prior/ApiSchema"
             $env:SCHEMA_PACKAGES = "prior-packages"
             $snapshot = Get-BootstrapEnvSnapshot
@@ -1673,8 +1682,16 @@ exit 0
                 $LASTEXITCODE | Should -Be 0 -Because ($runOutput -join [Environment]::NewLine)
             }
             finally {
+                # Restore absence with Remove-Item: SetEnvironmentVariable coerces a $null snapshot
+                # to "" from PowerShell, which newer pwsh/.NET on Unix stores as a present-but-blank
+                # variable instead of removing it — poisoning ambient-precedence checks downstream.
                 foreach ($name in $envNames) {
-                    [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    if ($null -eq $envSnapshot[$name]) {
+                        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    }
                 }
             }
 
@@ -1746,8 +1763,16 @@ exit 0
                     Should -Match "Skipping PostgreSQL readiness check for datastore 'mssql'\."
             }
             finally {
+                # Restore absence with Remove-Item: SetEnvironmentVariable coerces a $null snapshot
+                # to "" from PowerShell, which newer pwsh/.NET on Unix stores as a present-but-blank
+                # variable instead of removing it — poisoning ambient-precedence checks downstream.
                 foreach ($name in $envNames) {
-                    [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    if ($null -eq $envSnapshot[$name]) {
+                        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    }
                 }
             }
 

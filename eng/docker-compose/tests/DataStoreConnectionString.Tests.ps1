@@ -224,7 +224,9 @@ Describe "New-E2EDataStoreConnectionStrings (DMS-1284)" {
                 [System.Environment]::SetEnvironmentVariable($ambientName, $priorValue)
             }
             else {
-                [System.Environment]::SetEnvironmentVariable($ambientName, $null)
+                # Remove-Item restores absence; SetEnvironmentVariable with $null leaves a
+                # present-but-blank variable on newer pwsh/.NET on Unix.
+                Remove-Item -LiteralPath "Env:$ambientName" -ErrorAction SilentlyContinue
             }
         }
     }
