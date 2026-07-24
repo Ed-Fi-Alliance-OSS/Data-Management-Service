@@ -747,6 +747,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -756,6 +757,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -765,6 +767,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

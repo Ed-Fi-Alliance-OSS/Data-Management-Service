@@ -94,8 +94,11 @@ internal static class PlanSqlGoldenFixtureQueryPlans
 
     private static PageDocumentIdQuerySpec CreateDescriptorQuerySpec()
     {
+        // Mirrors the DescriptorQueryPageKeysetPlanner production shape: the keyset roots on
+        // dms.Descriptor (denormalized ResourceKeyId + descriptor field columns), and only the
+        // ?id= filter reaches dms.Document through the shared document join.
         return new PageDocumentIdQuerySpec(
-            RootTable: new DbTableName(new DbSchemaName("dms"), "Document"),
+            RootTable: new DbTableName(new DbSchemaName("dms"), "Descriptor"),
             Predicates:
             [
                 new QueryValuePredicate(
@@ -104,18 +107,18 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                     "resourceKeyId"
                 ),
                 new QueryValuePredicate(
-                    new DbColumnName("DocumentUuid"),
+                    new QueryPredicateTarget.DocumentUuid(),
                     QueryComparisonOperator.Equal,
                     "id"
                 ),
                 new QueryValuePredicate(
-                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
+                    new DbColumnName("Namespace"),
                     QueryComparisonOperator.Equal,
                     "namespace",
                     ScalarKind.String
                 ),
                 new QueryValuePredicate(
-                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName("EffectiveEndDate")),
+                    new DbColumnName("EffectiveEndDate"),
                     QueryComparisonOperator.Equal,
                     "effectiveEndDate",
                     ScalarKind.Date

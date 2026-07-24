@@ -469,6 +469,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -478,6 +479,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -487,6 +489,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", codeValue),

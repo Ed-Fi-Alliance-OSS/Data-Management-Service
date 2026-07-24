@@ -473,6 +473,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
@@ -482,6 +483,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -491,6 +493,7 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             );
             """,
             new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),

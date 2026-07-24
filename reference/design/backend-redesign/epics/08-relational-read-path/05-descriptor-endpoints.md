@@ -92,7 +92,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
 
 2. Question removed.
 
-3. Treat dms.Document.ResourceKeyId as authoritative. dms.Descriptor.Discriminator is diagnostic. Missing/wrong Document is 404; matching Document with no Descriptor row is a 500 invariant failure.
+3. Treat ResourceKeyId as authoritative for descriptor typing; dms.Descriptor.Discriminator is diagnostic. GET-by-id reads the authority from dms.Document (missing/wrong Document is 404; a matching Document with no Descriptor row is a 500 invariant failure during hydration). GET-all/GET-by-query paging reads the authority from the denormalized dms.Descriptor.ResourceKeyId (the page keyset roots on dms.Descriptor), which is written in the same transaction as the Document row and immutable; a hand-corrupted Document-without-Descriptor row is therefore excluded from list results rather than failing the page.
 
 4. Drive descriptor field mapping from DescriptorMetadata.ColumnContract, with an optional startup sanity check against ApiSchema.queryFieldMapping. The data model already defines descriptor
      query fields, and current generic query capability intentionally omits SharedDescriptorTable resources.

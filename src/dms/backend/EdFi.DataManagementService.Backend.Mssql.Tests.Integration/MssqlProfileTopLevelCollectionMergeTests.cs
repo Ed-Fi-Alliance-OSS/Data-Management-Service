@@ -431,6 +431,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -440,6 +441,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @codeValue,
@@ -449,6 +451,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@discriminator", "Ed-Fi:AddressTypeDescriptor"),

@@ -375,6 +375,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -384,6 +385,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -393,6 +395,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),

@@ -167,85 +167,46 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    public void It_should_join_descriptor_table_when_any_predicate_targets_descriptor_column()
+    public void It_should_reject_namespace_checks_that_target_the_shared_descriptor_table_from_a_document_root()
     {
-        var plan = _compiler.Compile(
-            CreateDescriptorSpec(
-                [
-                    new QueryValuePredicate(
-                        new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
-                        QueryComparisonOperator.Equal,
-                        "namespace"
-                    ),
-                    new QueryValuePredicate(
-                        new DbColumnName("ResourceKeyId"),
-                        QueryComparisonOperator.Equal,
-                        "resourceKeyId"
-                    ),
-                ],
-                includeTotalCountSql: true
-            )
-        );
-
-        const string ExpectedDescriptorJoin =
-            "INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"";
-        const string ExpectedDescriptorPredicate = "d.\"Namespace\" = @namespace";
-
-        plan.PageDocumentIdSql.Should().Contain(ExpectedDescriptorJoin);
-        plan.PageDocumentIdSql.Should().Contain(ExpectedDescriptorPredicate);
-        plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql.Should().Contain(ExpectedDescriptorJoin);
-        plan.TotalCountSql.Should().Contain(ExpectedDescriptorPredicate);
-    }
-
-    [Test]
-    public void It_should_join_descriptor_table_when_any_namespace_check_targets_descriptor_table()
-    {
+        // Descriptor queries root on dms.Descriptor, so a dms.Descriptor namespace check paired
+        // with a dms.Document root has no production planner. The compiler must fail closed
+        // rather than silently binding the check to a table that is not in the query.
         var documentTable = new DbTableName(new DbSchemaName("dms"), "Document");
         var descriptorTable = new DbTableName(new DbSchemaName("dms"), "Descriptor");
         var namespaceColumn = new DbColumnName("Namespace");
-        var plan = _compiler.Compile(
-            new PageDocumentIdQuerySpec(
-                RootTable: documentTable,
-                Predicates: [],
-                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-                IncludeTotalCountSql: true,
-                Authorization: new PageDocumentIdAuthorizationSpec(
-                    Strategies: [],
-                    NamespaceChecks:
-                    [
-                        new NamespaceAuthorizationCheckSpec(
-                            0,
-                            NamespaceAuthorizationCheckValueSource.Stored,
-                            documentTable,
-                            namespaceColumn
-                        ),
-                        new NamespaceAuthorizationCheckSpec(
-                            1,
-                            NamespaceAuthorizationCheckValueSource.Stored,
-                            descriptorTable,
-                            namespaceColumn
-                        ),
-                    ],
-                    NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
-                        SqlDialect.Pgsql,
-                        ["uri://ed-fi.org/"],
-                        "namespacePrefixes"
-                    )
+        var spec = new PageDocumentIdQuerySpec(
+            RootTable: documentTable,
+            Predicates: [],
+            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+            IncludeTotalCountSql: true,
+            Authorization: new PageDocumentIdAuthorizationSpec(
+                Strategies: [],
+                NamespaceChecks:
+                [
+                    new NamespaceAuthorizationCheckSpec(
+                        0,
+                        NamespaceAuthorizationCheckValueSource.Stored,
+                        descriptorTable,
+                        namespaceColumn
+                    ),
+                ],
+                NamespacePrefixParameterization: NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    ["uri://ed-fi.org/"],
+                    "namespacePrefixes"
                 )
             )
         );
 
-        const string ExpectedDescriptorJoin =
-            "INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"";
-        const string ExpectedNamespaceAuthorizationGroup =
-            "(r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes) AND d.\"Namespace\" IS NOT NULL AND d.\"Namespace\" LIKE ANY(@namespacePrefixes))";
+        var act = () => _compiler.Compile(spec);
 
-        plan.PageDocumentIdSql.Should().Contain(ExpectedDescriptorJoin);
-        plan.PageDocumentIdSql.Should().Contain(ExpectedNamespaceAuthorizationGroup);
-        plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql.Should().Contain(ExpectedDescriptorJoin);
-        plan.TotalCountSql.Should().Contain(ExpectedNamespaceAuthorizationGroup);
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Namespace authorization check spec table '{descriptorTable}' does not match query root table '{documentTable}'. "
+                    + "Namespace authorization SQL emission supports only concrete root-table columns."
+            );
     }
 
     [Test]
@@ -286,7 +247,7 @@ public class Given_PageDocumentIdSqlCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                $"Namespace authorization check spec table '{unrelatedTable}' does not match query root table '{documentTable}'. Namespace authorization SQL emission supports only concrete root-table columns (or the shared dms.Descriptor join for descriptor queries)."
+                $"Namespace authorization check spec table '{unrelatedTable}' does not match query root table '{documentTable}'. Namespace authorization SQL emission supports only concrete root-table columns."
             );
     }
 
@@ -973,125 +934,6 @@ public class Given_PageDocumentIdSqlCompiler
 
         plan.PageDocumentIdSql.Should()
             .Contain("r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 = @nameOfInstitution");
-    }
-
-    [TestCase("Namespace", ScalarKind.String)]
-    [TestCase("CodeValue", ScalarKind.String)]
-    [TestCase("ShortDescription", ScalarKind.String)]
-    [TestCase("Description", ScalarKind.String)]
-    [TestCase("EffectiveBeginDate", ScalarKind.Date)]
-    [TestCase("EffectiveEndDate", ScalarKind.Date)]
-    public void It_should_target_descriptor_query_fields_against_the_shared_descriptor_table(
-        string columnName,
-        ScalarKind scalarKind
-    )
-    {
-        var plan = _compiler.Compile(
-            CreateDescriptorSpec([
-                new QueryValuePredicate(
-                    new DbColumnName("ResourceKeyId"),
-                    QueryComparisonOperator.Equal,
-                    "resourceKeyId"
-                ),
-                new QueryValuePredicate(
-                    new QueryPredicateTarget.DescriptorColumn(new DbColumnName(columnName)),
-                    QueryComparisonOperator.Equal,
-                    "field",
-                    scalarKind
-                ),
-            ])
-        );
-
-        plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Document\" r");
-        plan.PageDocumentIdSql.Should()
-            .Contain("INNER JOIN \"dms\".\"Descriptor\" d ON d.\"DocumentId\" = r.\"DocumentId\"");
-        plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
-        plan.PageDocumentIdSql.Should().Contain($"d.\"{columnName}\" = @field");
-        plan.PageDocumentIdSql.Should().NotContain("SchoolTypeDescriptor");
-    }
-
-    [Test]
-    public void It_should_not_join_the_shared_descriptor_table_when_descriptor_page_filters_only_target_document_columns()
-    {
-        var plan = _compiler.Compile(
-            CreateDescriptorSpec([
-                new QueryValuePredicate(
-                    new DbColumnName("DocumentUuid"),
-                    QueryComparisonOperator.Equal,
-                    "id"
-                ),
-                new QueryValuePredicate(
-                    new DbColumnName("ResourceKeyId"),
-                    QueryComparisonOperator.Equal,
-                    "resourceKeyId"
-                ),
-            ])
-        );
-
-        plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Document\" r");
-        plan.PageDocumentIdSql.Should().Contain("r.\"DocumentUuid\" = @id");
-        plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
-        plan.PageDocumentIdSql.Should().NotContain("\"dms\".\"Descriptor\"");
-    }
-
-    [Test]
-    public void It_should_apply_binary_string_equality_to_mssql_descriptor_string_predicates()
-    {
-        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
-        var plan = compiler.Compile(
-            CreateDescriptorSpec(
-                [
-                    new QueryValuePredicate(
-                        new DbColumnName("ResourceKeyId"),
-                        QueryComparisonOperator.Equal,
-                        "resourceKeyId"
-                    ),
-                    new QueryValuePredicate(
-                        new QueryPredicateTarget.DescriptorColumn(new DbColumnName("Namespace")),
-                        QueryComparisonOperator.Equal,
-                        "namespace",
-                        ScalarKind.String
-                    ),
-                ],
-                includeTotalCountSql: true
-            )
-        );
-
-        plan.PageDocumentIdSql.Should().Contain("d.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace");
-        plan.TotalCountSql.Should().Contain("d.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace");
-    }
-
-    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" r")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document] r")]
-    public void It_should_emit_descriptor_total_count_sql_without_optional_joins_when_only_resource_key_discrimination_is_required(
-        SqlDialect dialect,
-        string expectedDocumentFromFragment
-    )
-    {
-        var compiler = new PageDocumentIdSqlCompiler(dialect);
-        var plan = compiler.Compile(
-            CreateDescriptorSpec(
-                [
-                    new QueryValuePredicate(
-                        new DbColumnName("ResourceKeyId"),
-                        QueryComparisonOperator.Equal,
-                        "resourceKeyId"
-                    ),
-                ],
-                includeTotalCountSql: true
-            )
-        );
-
-        plan.TotalCountSql.Should().NotBeNull();
-        plan.TotalCountSql.Should().Contain($"FROM {expectedDocumentFromFragment}");
-        plan.TotalCountSql.Should().Contain("ResourceKeyId");
-        plan.TotalCountSql.Should().NotContain("Descriptor");
-        plan.TotalCountSql.Should().NotContain("doc.");
-        plan.TotalCountSql.Should().NotContain("@offset");
-        plan.TotalCountSql.Should().NotContain("@limit");
-        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
-            .Should()
-            .Equal("resourceKeyId");
     }
 
     [Test]
@@ -2790,23 +2632,6 @@ public class Given_PageDocumentIdSqlCompiler
             LimitParameterName: limitParameterName,
             IncludeTotalCountSql: includeTotalCountSql,
             Authorization: authorization
-        );
-    }
-
-    private static PageDocumentIdQuerySpec CreateDescriptorSpec(
-        IReadOnlyList<QueryValuePredicate> predicates,
-        string offsetParameterName = "offset",
-        string limitParameterName = "limit",
-        bool includeTotalCountSql = false
-    )
-    {
-        return new PageDocumentIdQuerySpec(
-            RootTable: new DbTableName(new DbSchemaName("dms"), "Document"),
-            Predicates: predicates,
-            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            OffsetParameterName: offsetParameterName,
-            LimitParameterName: limitParameterName,
-            IncludeTotalCountSql: includeTotalCountSql
         );
     }
 

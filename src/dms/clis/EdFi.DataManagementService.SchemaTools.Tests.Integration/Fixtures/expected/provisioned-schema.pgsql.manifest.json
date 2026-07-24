@@ -2908,7 +2908,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "CodeValue",
-      "ordinal_position": 3,
+      "ordinal_position": 4,
       "data_type": "character varying(50)",
       "is_nullable": false,
       "default_expression": null,
@@ -2918,7 +2918,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "ContentLastModifiedAt",
-      "ordinal_position": 11,
+      "ordinal_position": 12,
       "data_type": "timestamp with time zone",
       "is_nullable": false,
       "default_expression": "now()",
@@ -2928,7 +2928,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "ContentVersion",
-      "ordinal_position": 10,
+      "ordinal_position": 11,
       "data_type": "bigint",
       "is_nullable": false,
       "default_expression": "0",
@@ -2938,7 +2938,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "Description",
-      "ordinal_position": 5,
+      "ordinal_position": 6,
       "data_type": "character varying(1024)",
       "is_nullable": true,
       "default_expression": null,
@@ -2948,7 +2948,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "Discriminator",
-      "ordinal_position": 8,
+      "ordinal_position": 9,
       "data_type": "character varying(128)",
       "is_nullable": false,
       "default_expression": null,
@@ -2968,16 +2968,6 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "EffectiveBeginDate",
-      "ordinal_position": 6,
-      "data_type": "date",
-      "is_nullable": true,
-      "default_expression": null,
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Descriptor",
-      "column_name": "EffectiveEndDate",
       "ordinal_position": 7,
       "data_type": "date",
       "is_nullable": true,
@@ -2987,8 +2977,18 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
+      "column_name": "EffectiveEndDate",
+      "ordinal_position": 8,
+      "data_type": "date",
+      "is_nullable": true,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
       "column_name": "Namespace",
-      "ordinal_position": 2,
+      "ordinal_position": 3,
       "data_type": "character varying(255)",
       "is_nullable": false,
       "default_expression": null,
@@ -2997,8 +2997,18 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
+      "column_name": "ResourceKeyId",
+      "ordinal_position": 2,
+      "data_type": "smallint",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
       "column_name": "ShortDescription",
-      "ordinal_position": 4,
+      "ordinal_position": 5,
       "data_type": "character varying(75)",
       "is_nullable": false,
       "default_expression": null,
@@ -3008,7 +3018,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "Uri",
-      "ordinal_position": 9,
+      "ordinal_position": 10,
       "data_type": "character varying(306)",
       "is_nullable": false,
       "default_expression": null,
@@ -66126,6 +66136,20 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
+      "constraint_name": "FK_Descriptor_ResourceKey",
+      "constraint_type": "FOREIGN KEY",
+      "columns": [
+        "ResourceKeyId"
+      ],
+      "referenced_schema": "dms",
+      "referenced_table": "ResourceKey",
+      "referenced_columns": [
+        "ResourceKeyId"
+      ]
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
       "constraint_name": "PK_Descriptor",
       "constraint_type": "PRIMARY KEY",
       "columns": [
@@ -114541,11 +114565,11 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
-      "index_name": "IX_Descriptor_Uri_Discriminator",
+      "index_name": "IX_Descriptor_ResourceKeyId_DocumentId",
       "is_unique": false,
       "columns": [
-        "Uri",
-        "Discriminator"
+        "ResourceKeyId",
+        "DocumentId"
       ]
     },
     {
@@ -114559,16 +114583,6 @@
     },
     {
       "schema_name": "dms",
-      "table_name": "Document",
-      "index_name": "IX_Document_ResourceKeyId_DocumentId",
-      "is_unique": false,
-      "columns": [
-        "ResourceKeyId",
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
       "table_name": "DocumentCache",
       "index_name": "IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt",
       "is_unique": false,
@@ -114576,15 +114590,6 @@
         "ProjectName",
         "ResourceName",
         "LastModifiedAt",
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "ReferentialIdentity",
-      "index_name": "IX_ReferentialIdentity_DocumentId",
-      "is_unique": false,
-      "columns": [
         "DocumentId"
       ]
     },
@@ -140222,7 +140227,7 @@
       "function_name": "TF_Descriptor_Stamp_Document",
       "return_type": "trigger",
       "parameter_types": [],
-      "definition": "CREATE OR REPLACE FUNCTION dms.\u0022TF_Descriptor_Stamp_Document\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = \u0027UPDATE\u0027 THEN\n        IF NOT (OLD.\u0022Namespace\u0022 IS DISTINCT FROM NEW.\u0022Namespace\u0022 OR OLD.\u0022CodeValue\u0022 IS DISTINCT FROM NEW.\u0022CodeValue\u0022 OR OLD.\u0022ShortDescription\u0022 IS DISTINCT FROM NEW.\u0022ShortDescription\u0022 OR OLD.\u0022Description\u0022 IS DISTINCT FROM NEW.\u0022Description\u0022 OR OLD.\u0022EffectiveBeginDate\u0022 IS DISTINCT FROM NEW.\u0022EffectiveBeginDate\u0022 OR OLD.\u0022EffectiveEndDate\u0022 IS DISTINCT FROM NEW.\u0022EffectiveEndDate\u0022 OR OLD.\u0022Discriminator\u0022 IS DISTINCT FROM NEW.\u0022Discriminator\u0022 OR OLD.\u0022Uri\u0022 IS DISTINCT FROM NEW.\u0022Uri\u0022) THEN\n            RETURN NEW;\n        END IF;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 THEN\n        WITH stamped AS (\n            SELECT \u0022DocumentId\u0022, \u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022\n            FROM \u0022dms\u0022.\u0022Document\u0022\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n        )\n        UPDATE \u0022dms\u0022.\u0022Descriptor\u0022 r\n        SET \u0022ContentVersion\u0022 = stamped.\u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022 = stamped.\u0022ContentLastModifiedAt\u0022\n        FROM stamped\n        WHERE r.\u0022DocumentId\u0022 = stamped.\u0022DocumentId\u0022;\n    ELSIF TG_OP = \u0027UPDATE\u0027 THEN\n        WITH stamped AS (\n            UPDATE \u0022dms\u0022.\u0022Document\u0022\n            SET \u0022ContentVersion\u0022 = nextval(\u0027\u0022dms\u0022.\u0022ChangeVersionSequence\u0022\u0027), \u0022ContentLastModifiedAt\u0022 = now()\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n            RETURNING \u0022DocumentId\u0022, \u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022\n        )\n        UPDATE \u0022dms\u0022.\u0022Descriptor\u0022 r\n        SET \u0022ContentVersion\u0022 = stamped.\u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022 = stamped.\u0022ContentLastModifiedAt\u0022\n        FROM stamped\n        WHERE r.\u0022DocumentId\u0022 = stamped.\u0022DocumentId\u0022;\n    ELSIF TG_OP = \u0027DELETE\u0027 THEN\n        UPDATE \u0022dms\u0022.\u0022Document\u0022\n        SET \u0022ContentVersion\u0022 = nextval(\u0027\u0022dms\u0022.\u0022ChangeVersionSequence\u0022\u0027), \u0022ContentLastModifiedAt\u0022 = now()\n        WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        INSERT INTO \u0022tracked_changes_edfi\u0022.\u0022Descriptor\u0022 (\n            \u0022Discriminator\u0022,\n            \u0022OldNamespace\u0022,\n            \u0022OldCodeValue\u0022,\n            \u0022Id\u0022,\n            \u0022ChangeVersion\u0022\n        )\n        SELECT\n            OLD.\u0022Discriminator\u0022,\n            OLD.\u0022Namespace\u0022,\n            OLD.\u0022CodeValue\u0022,\n            doc.\u0022DocumentUuid\u0022,\n            doc.\u0022ContentVersion\u0022\n        FROM \u0022dms\u0022.\u0022Document\u0022 doc\n        WHERE doc.\u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
+      "definition": "CREATE OR REPLACE FUNCTION dms.\u0022TF_Descriptor_Stamp_Document\u0022()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP IN (\u0027INSERT\u0027, \u0027UPDATE\u0027) THEN\n        IF NOT EXISTS (\n            SELECT 1\n            FROM \u0022dms\u0022.\u0022Document\u0022\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n                AND \u0022ResourceKeyId\u0022 = NEW.\u0022ResourceKeyId\u0022\n        ) THEN\n            RAISE EXCEPTION \u0027dms.Descriptor.ResourceKeyId % diverges from the owning dms.Document row for DocumentId %\u0027, NEW.\u0022ResourceKeyId\u0022, NEW.\u0022DocumentId\u0022;\n        END IF;\n    END IF;\n    IF TG_OP = \u0027UPDATE\u0027 THEN\n        IF NOT (OLD.\u0022Namespace\u0022 IS DISTINCT FROM NEW.\u0022Namespace\u0022 OR OLD.\u0022CodeValue\u0022 IS DISTINCT FROM NEW.\u0022CodeValue\u0022 OR OLD.\u0022ShortDescription\u0022 IS DISTINCT FROM NEW.\u0022ShortDescription\u0022 OR OLD.\u0022Description\u0022 IS DISTINCT FROM NEW.\u0022Description\u0022 OR OLD.\u0022EffectiveBeginDate\u0022 IS DISTINCT FROM NEW.\u0022EffectiveBeginDate\u0022 OR OLD.\u0022EffectiveEndDate\u0022 IS DISTINCT FROM NEW.\u0022EffectiveEndDate\u0022 OR OLD.\u0022Discriminator\u0022 IS DISTINCT FROM NEW.\u0022Discriminator\u0022 OR OLD.\u0022Uri\u0022 IS DISTINCT FROM NEW.\u0022Uri\u0022) THEN\n            RETURN NEW;\n        END IF;\n    END IF;\n    IF TG_OP = \u0027INSERT\u0027 THEN\n        WITH stamped AS (\n            SELECT \u0022DocumentId\u0022, \u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022\n            FROM \u0022dms\u0022.\u0022Document\u0022\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n        )\n        UPDATE \u0022dms\u0022.\u0022Descriptor\u0022 r\n        SET \u0022ContentVersion\u0022 = stamped.\u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022 = stamped.\u0022ContentLastModifiedAt\u0022\n        FROM stamped\n        WHERE r.\u0022DocumentId\u0022 = stamped.\u0022DocumentId\u0022;\n    ELSIF TG_OP = \u0027UPDATE\u0027 THEN\n        WITH stamped AS (\n            UPDATE \u0022dms\u0022.\u0022Document\u0022\n            SET \u0022ContentVersion\u0022 = nextval(\u0027\u0022dms\u0022.\u0022ChangeVersionSequence\u0022\u0027), \u0022ContentLastModifiedAt\u0022 = now()\n            WHERE \u0022DocumentId\u0022 = NEW.\u0022DocumentId\u0022\n            RETURNING \u0022DocumentId\u0022, \u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022\n        )\n        UPDATE \u0022dms\u0022.\u0022Descriptor\u0022 r\n        SET \u0022ContentVersion\u0022 = stamped.\u0022ContentVersion\u0022, \u0022ContentLastModifiedAt\u0022 = stamped.\u0022ContentLastModifiedAt\u0022\n        FROM stamped\n        WHERE r.\u0022DocumentId\u0022 = stamped.\u0022DocumentId\u0022;\n    ELSIF TG_OP = \u0027DELETE\u0027 THEN\n        UPDATE \u0022dms\u0022.\u0022Document\u0022\n        SET \u0022ContentVersion\u0022 = nextval(\u0027\u0022dms\u0022.\u0022ChangeVersionSequence\u0022\u0027), \u0022ContentLastModifiedAt\u0022 = now()\n        WHERE \u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        INSERT INTO \u0022tracked_changes_edfi\u0022.\u0022Descriptor\u0022 (\n            \u0022Discriminator\u0022,\n            \u0022OldNamespace\u0022,\n            \u0022OldCodeValue\u0022,\n            \u0022Id\u0022,\n            \u0022ChangeVersion\u0022\n        )\n        SELECT\n            OLD.\u0022Discriminator\u0022,\n            OLD.\u0022Namespace\u0022,\n            OLD.\u0022CodeValue\u0022,\n            doc.\u0022DocumentUuid\u0022,\n            doc.\u0022ContentVersion\u0022\n        FROM \u0022dms\u0022.\u0022Document\u0022 doc\n        WHERE doc.\u0022DocumentId\u0022 = OLD.\u0022DocumentId\u0022;\n        RETURN OLD;\n    END IF;\n    RETURN NEW;\nEND;\n$function$"
     },
     {
       "schema_name": "dms",
