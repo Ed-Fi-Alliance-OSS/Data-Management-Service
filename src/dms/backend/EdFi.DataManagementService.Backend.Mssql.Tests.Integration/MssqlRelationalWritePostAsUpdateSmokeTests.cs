@@ -3040,6 +3040,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -3049,6 +3050,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -3058,6 +3060,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
@@ -4848,6 +4851,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             """
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
@@ -4857,6 +4861,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             )
             VALUES (
                 @documentId,
+                @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
@@ -4866,6 +4871,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             );
             """,
             new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
