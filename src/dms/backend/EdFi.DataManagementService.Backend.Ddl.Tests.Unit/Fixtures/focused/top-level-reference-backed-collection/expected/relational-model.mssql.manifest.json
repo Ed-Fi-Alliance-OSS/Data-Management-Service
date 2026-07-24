@@ -890,6 +890,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "reference_object_path": "$.programs[*].programReference",
           "table": {
             "schema": "edfi",

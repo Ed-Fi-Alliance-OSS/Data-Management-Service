@@ -686,7 +686,9 @@ public sealed record DocumentReferenceBinding(
     DbTableName Table,
     DbColumnName FkColumn,
     QualifiedResourceName TargetResource,
-    IReadOnlyList<ReferenceIdentityBinding> IdentityBindings
+    IReadOnlyList<ReferenceIdentityBinding> IdentityBindings,
+    bool IsRequired = false,
+    bool IsRoleNamed = false
 );
 
 /// <summary>
@@ -726,12 +728,16 @@ public sealed record ReferenceIdentityBinding
 /// <param name="Table">The table that stores the descriptor FK column.</param>
 /// <param name="FkColumn">The descriptor FK column name.</param>
 /// <param name="DescriptorResource">The descriptor resource type expected at this path.</param>
+/// <param name="IsRequired">Indicates whether the descriptor path is required by the API schema.</param>
+/// <param name="IsRoleNamed">Indicates whether this descriptor is reached through a role-named reference mapping.</param>
 public sealed record DescriptorEdgeSource(
     bool IsIdentityComponent,
     JsonPathExpression DescriptorValuePath,
     DbTableName Table,
     DbColumnName FkColumn,
-    QualifiedResourceName DescriptorResource
+    QualifiedResourceName DescriptorResource,
+    bool IsRequired = false,
+    bool IsRoleNamed = false
 );
 
 /// <summary>

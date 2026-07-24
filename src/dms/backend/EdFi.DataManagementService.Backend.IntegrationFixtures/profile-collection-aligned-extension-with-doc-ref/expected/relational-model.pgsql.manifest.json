@@ -850,6 +850,8 @@
       "document_reference_bindings": [
         {
           "is_identity_component": false,
+          "is_required": false,
+          "is_role_named": false,
           "reference_object_path": "$.parents[*]._ext.aligned.sponsorReference",
           "table": {
             "schema": "aligned",
