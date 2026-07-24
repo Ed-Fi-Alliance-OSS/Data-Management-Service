@@ -141,7 +141,14 @@ param(
     # matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
     [string]
     [ValidateSet("5.2", "6.1")]
-    $DataStandardVersion
+    $DataStandardVersion,
+
+    # For StartEnvironment only: select the separate local database topology. Forwarded to the
+    # bootstrap wrapper. Omitted keeps the shared-database default (the Configuration Service uses
+    # the DMS datastore database); supplied points the Configuration Service at a dedicated
+    # edfi_configurationservice database without changing the DMS datastore selection.
+    [switch]
+    $SeparateConfigDatabase
 )
 
 # Captured here (script scope) rather than at the point of use: $PSBoundParameters inside the
@@ -880,7 +887,10 @@ function Start-BootstrapDockerEnvironment {
         $DataStandardVersion,
 
         [switch]
-        $DataStandardVersionSupplied
+        $DataStandardVersionSupplied,
+
+        [switch]
+        $SeparateConfigDatabase
     )
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
@@ -891,6 +901,27 @@ function Start-BootstrapDockerEnvironment {
         else {
             $DatabaseEngine
         }
+
+    # Validate the effective runtime contract BEFORE any external mutation (image build, teardown, volume
+    # deletion). This invokes the SAME preflight the eventual start path runs - the start script's own
+    # -PreflightOnly stop point - so an invalid Compose-resolved provider or connection string is reported
+    # before existing databases are destroyed rather than after. The start script throws on a contract
+    # violation, aborting this orchestration ahead of the build and teardown steps that follow.
+    $preflightStartScript = if ($UsePublishedImage) { "start-published-dms.ps1" } else { "start-local-dms.ps1" }
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
+                & "./$preflightStartScript" -PreflightOnly -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $effectiveDatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "$preflightStartScript -PreflightOnly failed with exit code $LASTEXITCODE."
+                }
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
 
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
@@ -922,6 +953,10 @@ function Start-BootstrapDockerEnvironment {
 
             if ($DataStandardVersionSupplied) {
                 $bootstrapArgs.DataStandardVersion = $DataStandardVersion
+            }
+
+            if ($SeparateConfigDatabase) {
+                $bootstrapArgs.SeparateConfigDatabase = $true
             }
 
             Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
@@ -1460,7 +1495,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied -SeparateConfigDatabase:$SeparateConfigDatabase } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

@@ -1,0 +1,229 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Config Database Topology Matrix
+
+# Automated enforcement of the configuration-database topology acceptance matrix against a live
+# Docker stack. The physical schema-placement assertions (shared datastore vs. dedicated
+# edfi_configurationservice, and the identity-provider creation owner) live once in
+# eng/docker-compose/tests/Invoke-ConfigDatabaseTopologyMatrixSmoke.ps1; this workflow selects the
+# cells, builds the images once, and drives that script. It does not re-implement any assertion.
+#
+#   * Pull requests enforce the four physical {PostgreSQL, SQL Server} x {shared, separate} cells
+#     using the self-contained identity provider (path-scoped to the topology surface below).
+#   * The scheduled and manual (workflow_dispatch) runs add the heavier Keycloak identity-provider
+#     cells for the full engine x topology x identity-provider matrix.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *" # Daily at 6 AM UTC (distinct from the other nightly/scheduled lanes)
+  pull_request:
+    branches:
+      - main
+    # Scoped to the surface that determines configuration-database topology: the Compose/bootstrap
+    # orchestration and the smoke script (eng/docker-compose), the StartEnvironment entry point
+    # (build-dms.ps1), the Configuration Service (owns dedicated-database creation on the Keycloak
+    # path via EnsureDatabase) and the DMS runtime/datastore selection and provider validator
+    # (src/config, src/dms), and the image-build inputs. A change to any of these can alter physical
+    # schema placement without touching the others, so all are enforced on the pull request.
+    paths:
+      - "eng/docker-compose/**"
+      - "build-dms.ps1"
+      - "src/config/**"
+      - "src/dms/**"
+      - "src/Directory.Packages.props"
+      - "src/nuget.config"
+      - ".github/workflows/config-database-topology-matrix.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+env:
+  CONFIGURATION: "Release"
+
+jobs:
+  topology-matrix:
+    name: Config DB Topology (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      # One leg per engine so a failure in one engine does not mask the other, and the two legs run
+      # in parallel on separate runners (each with its own Docker daemon, so the smoke script's
+      # cross-cell teardown cannot leak between engines).
+      fail-fast: false
+      matrix:
+        engine: [postgresql, mssql]
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Cache Docker layers
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/nuget.config', 'src/dms/Dockerfile', 'src/dms/**', 'src/config/Dockerfile', 'src/config/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      # Build both stack images once and reuse them across every cell via StartEnvironment
+      # -SkipDockerBuild (forwarded by the smoke script). Without this, StartEnvironment would rebuild
+      # the images on every cell. The tags match the Compose defaults (ed-fi-api-local,
+      # ed-fi-api-config-local), so the -SkipDockerBuild start path finds them.
+      - name: Build DMS Docker image
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Build Config Docker image
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-config-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      # The schema-provisioning phase resolves a host api-schema-tools executable from the in-repo
+      # build output (the connection validator has an in-image fallback, but DDL provisioning does
+      # not), so build it on the host before bringing up the stack - the same reason the nightly
+      # Keycloak and scheduled smoke lanes run a host Build first.
+      - name: Build DMS
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+
+      - name: Run configuration-database topology matrix (${{ matrix.engine }})
+        id: matrix
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Pull requests enforce only the self-contained cells; the scheduled and manual runs add the
+          # heavier Keycloak cells for the full identity-provider matrix.
+          $identityProviders = @('self-contained')
+          if ('${{ github.event_name }}' -ne 'pull_request') {
+            $identityProviders += 'keycloak'
+          }
+
+          Write-Host "Event '${{ github.event_name }}', engine '${{ matrix.engine }}': identity providers $($identityProviders -join ', ')."
+
+          $resultsDirectory = Join-Path '${{ github.workspace }}' 'TestResults'
+          New-Item -ItemType Directory -Force -Path $resultsDirectory | Out-Null
+          $resultsPath = Join-Path $resultsDirectory 'config-db-topology-${{ matrix.engine }}.json'
+
+          # A failing cell captures its own container logs into this directory before the next cell's
+          # teardown removes them. The smoke script performs the capture in each cell's catch, because a
+          # post-run export step cannot: every cell is torn down before the next one and again at the end,
+          # so by the time this step exits the failing cell's containers are already gone.
+          $logDirectory = Join-Path '${{ github.workspace }}' 'logs/config-db-topology-${{ matrix.engine }}'
+
+          # Reuse the topology smoke script as the single source of the physical schema-placement
+          # assertions; this step only selects the engine, topologies, and identity providers, and the
+          # images built above are reused via -SkipDockerBuild.
+          ./eng/docker-compose/tests/Invoke-ConfigDatabaseTopologyMatrixSmoke.ps1 `
+            -Engines '${{ matrix.engine }}' `
+            -Topologies 'shared', 'separate' `
+            -IdentityProviders $identityProviders `
+            -SkipDockerBuild `
+            -ResultsPath $resultsPath `
+            -DiagnosticLogDirectory $logDirectory
+
+      - name: Upload topology matrix results (${{ matrix.engine }})
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: config-db-topology-results-${{ matrix.engine }}
+          path: TestResults/config-db-topology-${{ matrix.engine }}.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload Docker logs (${{ matrix.engine }})
+        # The failing cell writes its container logs (per cell, before teardown) into this directory via
+        # the smoke script's -DiagnosticLogDirectory; upload whatever it captured.
+        if: always() && steps.matrix.outcome == 'failure'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: config-db-topology-logs-${{ matrix.engine }}
+          path: ${{ github.workspace }}/logs/config-db-topology-${{ matrix.engine }}
+          if-no-files-found: ignore
+          retention-days: 10
+
+  notify-results:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: topology-matrix
+    # Only the unattended scheduled run notifies Slack; pull requests and manual dispatches report
+    # through the normal checks UI.
+    if: always() && github.event_name == 'schedule'
+    steps:
+      - name: Notify Slack on success
+        if: needs.topology-matrix.result == 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
+        with:
+          payload: |
+            {
+              "text": "Config Database Topology Matrix passed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Workflow:* ${{ github.workflow }}\n*Branch/Ref:* ${{ github.ref }}\n*Commit SHA:* ${{ github.sha }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+
+      - name: Notify Slack on failure
+        if: needs.topology-matrix.result != 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
+        with:
+          payload: |
+            {
+              "text": "Config Database Topology Matrix failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Workflow:* ${{ github.workflow }}\n*Branch/Ref:* ${{ github.ref }}\n*Commit SHA:* ${{ github.sha }}\n*Result:* ${{ needs.topology-matrix.result }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook

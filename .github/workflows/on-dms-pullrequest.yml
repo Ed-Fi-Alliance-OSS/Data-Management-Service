@@ -183,28 +183,44 @@ jobs:
           # silently.
           DMS_BOOTSTRAP_RUN_PACKAGE_TESTS: "true"
         run: |
-          # Every eng/docker-compose/tests spec runs here except BootstrapDockerSmoke.Tests.ps1,
-          # which requires a live Docker stack and is deliberately excluded from this unit lane.
-          $paths = @(
-            "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1",
-            "eng/docker-compose/tests/BootstrapContainerPackaging.Tests.ps1",
-            "eng/docker-compose/tests/SchemaPackageUtility.Tests.ps1",
-            "eng/docker-compose/tests/ResolveIdentityClientSecrets.Tests.ps1",
-            "eng/docker-compose/tests/LockFileParity.Tests.ps1",
-            "eng/docker-compose/tests/DatabaseEngineEnvironmentFile.Tests.ps1",
-            "eng/docker-compose/tests/EffectiveSchemaHashParser.Tests.ps1",
-            "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
-            "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
-            "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
-            "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
-            "eng/smoke_test/tests/SmokeTest.Tests.ps1"
+          # Deterministic glob discovery of the eng/docker-compose Pester specs, replacing the previously
+          # hand-maintained list so a newly added spec cannot silently go unrun. Exactly two specs are
+          # excluded from this lane, each by exact normalized path with its reason. A rename or stale
+          # exclusion fails loudly: every excluded path must be present in the discovered set.
+          $testsDir = "eng/docker-compose/tests"
+          $discovered = Get-ChildItem -Path $testsDir -Filter "*.Tests.ps1" -File |
+            Sort-Object -Property Name |
+            ForEach-Object { "$testsDir/$($_.Name)" }
+
+          $excluded = @(
+            "$testsDir/BootstrapDockerSmoke.Tests.ps1"   # requires a live Docker stack
+            "$testsDir/OpenIddictCrypto.Tests.ps1"       # executed by on-config-pullrequest.yml
           )
+          # Case-SENSITIVE membership (-cnotcontains, used for both validation and filtering) so a case-only
+          # rename cannot stay silently excluded despite matching the exact-normalized-path invariant.
+          foreach ($spec in $excluded) {
+            if ($discovered -cnotcontains $spec) {
+              throw "Excluded spec '$spec' is not in the discovered set under '$testsDir'; a rename or stale exclusion must not pass silently."
+            }
+          }
+          $paths = @($discovered | Where-Object { $excluded -cnotcontains $_ })
+
+          # Template-Management.Tests.ps1 lives outside the discovery directory, so include it explicitly.
+          # Require an actual leaf file (not merely an existing path) so a directory or broken link fails loudly.
+          $templateSpec = "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1"
+          if (-not (Test-Path -LiteralPath $templateSpec -PathType Leaf)) {
+            throw "Expected spec '$templateSpec' was not found as a file."
+          }
+          $paths += $templateSpec
+
+          # SmokeTest.Tests.ps1 also lives outside the discovery directory, so include it explicitly
+          # with the same fail-loud leaf guard.
+          $smokeSpec = "eng/smoke_test/tests/SmokeTest.Tests.ps1"
+          if (-not (Test-Path -LiteralPath $smokeSpec -PathType Leaf)) {
+            throw "Expected spec '$smokeSpec' was not found as a file."
+          }
+          $paths += $smokeSpec
+
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
           if ($result.FailedCount -gt 0) {
               throw "$($result.FailedCount) bootstrap Pester test(s) failed."

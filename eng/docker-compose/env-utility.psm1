@@ -760,28 +760,822 @@ function Convert-TemplatePackageToken {
     return "$($match.Groups['prefix'].Value).$($match.Groups['template'].Value).Template.$Engine.$($match.Groups['version'].Value)"
 }
 
-function Test-MssqlConnectionStringValue {
+function ConvertTo-CanonicalDatabaseEngine {
+    <#
+    .SYNOPSIS
+        The single engine-token boundary for the PowerShell start/bootstrap scripts. Accepts the two
+        supported engines case-insensitively - so publicly documented variants such as 'MSSQL' and
+        'PostgreSQL' resolve to the canonical 'mssql' / 'postgresql' - and throws for anything else,
+        including surrounding-whitespace variants, which are not canonical engines. Mirrors the
+        api-schema-tools 'connection validate' CLI boundary so a case variant produces the same
+        canonical engine on both sides.
+    #>
     param(
-        [AllowEmptyString()]
-        [string]$ConnectionString
+        [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$Engine
     )
 
+    if ([string]::Equals($Engine, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 'postgresql'
+    }
+    if ([string]::Equals($Engine, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 'mssql'
+    }
+    throw "Unsupported database engine '$Engine'. Use exactly 'postgresql' or 'mssql' (case-insensitive)."
+}
+
+function Get-DatabaseNameComparer {
+    <#
+    .SYNOPSIS
+        Returns the StringComparer that expresses database-name identity for an engine and is the single
+        equivalence policy every database-target comparison and collision guard routes through.
+        PostgreSQL uses Ordinal (case-sensitive: 'SchoolDb' and 'schooldb' are distinct physical
+        databases). SQL Server uses OrdinalIgnoreCase - conservative for its supported/default
+        case-insensitive identifier semantics, so case variants are treated as the same database.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Engine
+    )
+
+    $canonicalEngine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
+    if ($canonicalEngine -eq 'mssql') {
+        return [System.StringComparer]::OrdinalIgnoreCase
+    }
+    return [System.StringComparer]::Ordinal
+}
+
+function Test-DatabaseNameEquivalent {
+    <#
+    .SYNOPSIS
+        Provider-aware database-name equality: returns $true when two names refer to the same physical
+        database under the engine's identity semantics (Get-DatabaseNameComparer). PostgreSQL compares
+        ordinally (case-sensitive); SQL Server compares case-insensitively. All datastore/CMS target
+        comparisons and the separate-topology collision guard use this one policy rather than ad hoc
+        OrdinalIgnoreCase comparers.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Engine,
+        [AllowEmptyString()][AllowNull()][string]$Left,
+        [AllowEmptyString()][AllowNull()][string]$Right
+    )
+
+    $comparer = Get-DatabaseNameComparer -Engine $Engine
+    return $comparer.Equals([string]$Left, [string]$Right)
+}
+
+function Test-SqlServerConnectionString {
+    <#
+    .SYNOPSIS
+        Structural shape check used ONLY by the MSSQL engine-overlay composition to decide whether a
+        base-file connection string is already SQL Server-shaped (keep it) or a PostgreSQL value to be
+        replaced by the overlay: a SQL Server connection carries no PostgreSQL 'host' key. This is a
+        quoting-correct marker check for OVERLAY COMPOSITION, not connection-string validation - the
+        runtime contract parses with the exact provider via the SchemaTools 'connection validate' verb
+        (Get-CmsConnectionStringDatabaseName), never a generic or non-runtime builder.
+    #>
+    param([AllowEmptyString()][AllowNull()][string]$ConnectionString)
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         return $false
     }
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    try {
+        $builder.set_ConnectionString($ConnectionString)
+    }
+    catch {
+        return $false
+    }
+    return -not $builder.ContainsKey('host')
+}
 
-    # Require a SQL Server data-source keyword at a connection-string segment boundary.
-    # This distinguishes SQL Server values from the PostgreSQL host=... strings carried by
-    # the shared base env files while accepting the standard SqlClient aliases.
-    return [regex]::IsMatch(
-        $ConnectionString,
-        '(?:^|;)\s*(?:Server|Data Source|Address|Addr|Network Address)\s*=',
-        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
-            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+function Invoke-ConnectionStringValidation {
+    <#
+    .SYNOPSIS
+        Invokes the SchemaTools `connection validate` verb - the single connection-string parsing
+        authority - passing the connection string on stdin (never an argument, so a password stays out of
+        the process listing) and returning the parsed { valid; database; error } result. The verb parses
+        with the EXACT runtime provider builders (Npgsql / Microsoft.Data.SqlClient), so alias
+        canonicalization, last-wins synonyms, and rejection of unsupported keywords match runtime exactly.
+    #>
+    param(
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ConnectionString,
+        [Parameter(Mandatory)][object]$SchemaToolPath
+    )
+    # Canonicalize before the token crosses to the CLI: ValidateSet accepts and preserves a case
+    # variant ('MSSQL'), so route it through the single engine-token boundary to forward the canonical
+    # 'postgresql'/'mssql' the verb parses with.
+    $Engine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
+
+    # -SchemaToolPath is either a host executable path (string) or a validator descriptor from
+    # Resolve-DmsConnectionValidator. A DockerImage descriptor runs the SAME 'connection validate' verb
+    # inside the DMS image, so a clean Docker/PowerShell-only host parses with the exact runtime providers
+    # without a host tool. Either way the verb reads the connection string from stdin (no password in argv).
+    $validator = if ($SchemaToolPath -is [string]) {
+        [pscustomobject]@{ Kind = 'HostExe'; Path = $SchemaToolPath }
+    }
+    else {
+        $SchemaToolPath
+    }
+
+    if ([string]$validator.Kind -eq 'DockerImage') {
+        # --network none: the verb only parses the string, never connects, so it must run offline.
+        $validatorDescription = "image '$($validator.Image)'"
+        $output = $ConnectionString | & docker run --rm -i --network none --entrypoint dotnet $validator.Image $validator.ToolPath connection validate --engine $Engine 2>$null
+    }
+    else {
+        $validatorDescription = "tool at '$($validator.Path)'"
+        $output = $ConnectionString | & $validator.Path connection validate --engine $Engine 2>$null
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "The connection-string validator (api-schema-tools 'connection validate') exited $LASTEXITCODE for engine '$Engine'. Ensure the $validatorDescription is runnable; a build that predates the 'connection validate' verb exits non-zero, so rebuild or re-publish api-schema-tools (dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools) or repull the DMS image."
+    }
+    $json = ($output | Out-String)
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        throw "The connection-string validator produced no output for engine '$Engine'."
+    }
+    try {
+        return ($json | ConvertFrom-Json)
+    }
+    catch {
+        throw "The connection-string validator produced unparseable output for engine '$Engine': $($_.Exception.Message)"
+    }
+}
+
+function Invoke-ConnectionStringInspection {
+    <#
+    .SYNOPSIS
+        Invokes the SchemaTools `connection inspect` verb - the single connection-string parsing authority -
+        passing the connection string on stdin (never an argument, so a password stays out of the process
+        listing) and returning the parsed { valid; database; host; port; username; error } of NON-SECRET
+        canonical coordinates. Like Invoke-ConnectionStringValidation it parses with the EXACT runtime
+        provider builders (Npgsql / Microsoft.Data.SqlClient), so alias canonicalization, last-wins synonyms,
+        and rejection of unsupported keywords match runtime exactly.
+
+        THROWS only on a TOOL-CONTRACT / VERSION failure - never as a datastore error: a non-zero exit (which,
+        for a canonical engine, means the `inspect` verb is unavailable in a tool that predates it); blank,
+        null, or unparseable output; or a result - valid OR invalid - that violates the typed/state contract
+        (a missing field, a non-boolean `valid`, an object-valued coordinate, a wrong-type or wrong-state port,
+        or an incoherent valid/error pairing). Only a COMPLETE, TYPED, COHERENT { valid = $false } result is
+        RETURNED to the caller (which classifies stale vs invalid vs incomplete); a malformed invalid result
+        throws as a tool-contract failure, not a datastore error.
+    #>
+    param(
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ConnectionString,
+        [Parameter(Mandatory)][object]$SchemaToolPath
+    )
+    # Canonicalize before the token crosses to the CLI, mirroring the validate verb boundary.
+    $Engine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
+
+    # -SchemaToolPath is either a host executable path (string) or a validator descriptor from
+    # Resolve-DmsConnectionValidator. A DockerImage descriptor runs the SAME 'connection inspect' verb inside
+    # the DMS image. Either way the verb reads the connection string from stdin (no password in argv).
+    $validator = if ($SchemaToolPath -is [string]) {
+        [pscustomobject]@{ Kind = 'HostExe'; Path = $SchemaToolPath }
+    }
+    else {
+        $SchemaToolPath
+    }
+
+    if ([string]$validator.Kind -eq 'DockerImage') {
+        $output = $ConnectionString | & docker run --rm -i --network none --entrypoint dotnet $validator.Image $validator.ToolPath connection inspect --engine $Engine 2>$null
+    }
+    elseif (([string]$validator.Path).EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
+        # A .ps1 tool path (e.g. a test double or wrapper) is invoked via `pwsh -File`, mirroring
+        # Invoke-DmsSchemaProvision, so the connection string on stdin reaches the process instead of trying
+        # to bind to the script's parameters.
+        $output = $ConnectionString | & pwsh -NoLogo -NoProfile -File $validator.Path connection inspect --engine $Engine 2>$null
+    }
+    else {
+        $output = $ConnectionString | & $validator.Path connection inspect --engine $Engine 2>$null
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "The connection-string inspector (api-schema-tools 'connection inspect') exited $LASTEXITCODE for engine '$Engine'. A build that predates the 'connection inspect' verb exits non-zero, so rebuild or re-publish api-schema-tools (dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools) or repull the DMS image."
+    }
+    $json = ($output | Out-String)
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        throw "The connection-string inspector produced no output for engine '$Engine'; rebuild or re-publish api-schema-tools."
+    }
+    try {
+        $result = $json | ConvertFrom-Json
+    }
+    catch {
+        throw "The connection-string inspector produced unparseable output for engine '$Engine' ($($_.Exception.Message)); rebuild or re-publish api-schema-tools."
+    }
+    if ($null -eq $result) {
+        throw "The connection-string inspector produced a null result for engine '$Engine'; rebuild or re-publish api-schema-tools."
+    }
+
+    # Contract shape: EVERY result (valid OR invalid) must carry the complete field set, and 'valid' must be a
+    # real boolean. The C# `connection inspect` always emits { valid, database, host, port, username, error };
+    # a missing field, or a 'valid' that is not a [bool] (e.g. the STRING "false", which is truthy in
+    # PowerShell), is a tool-contract/version failure - never a datastore result.
+    $fieldNames = @($result.PSObject.Properties.Name)
+    foreach ($requiredField in 'valid', 'database', 'host', 'port', 'username', 'error') {
+        if ($fieldNames -notcontains $requiredField) {
+            throw "The connection-string inspector output for engine '$Engine' is missing the '$requiredField' field; rebuild or re-publish api-schema-tools."
+        }
+    }
+    if ($result.valid -isnot [bool]) {
+        throw "The connection-string inspector output for engine '$Engine' has a non-boolean 'valid' field; rebuild or re-publish api-schema-tools."
+    }
+
+    # Typed coordinates: database/host/username/error are string-or-null; port is integer-or-null. An
+    # object-valued or non-integral field is a tool-contract/version failure, never a datastore result.
+    foreach ($stringField in 'database', 'host', 'username', 'error') {
+        $fieldValue = $result.$stringField
+        if ($null -ne $fieldValue -and $fieldValue -isnot [string]) {
+            throw "The connection-string inspector output for engine '$Engine' has a non-string '$stringField' field; rebuild or re-publish api-schema-tools."
+        }
+    }
+    if ($null -ne $result.port -and $result.port -isnot [int] -and $result.port -isnot [long]) {
+        throw "The connection-string inspector output for engine '$Engine' has a non-integer 'port' field; rebuild or re-publish api-schema-tools."
+    }
+
+    # Coherent valid/error state: a valid result carries no error; an invalid result carries a nonblank error.
+    if ($result.valid) {
+        if ($null -ne $result.error) {
+            throw "The connection-string inspector reported a valid result with a non-null 'error' for engine '$Engine'; rebuild or re-publish api-schema-tools."
+        }
+    }
+    elseif ([string]::IsNullOrWhiteSpace([string]$result.error)) {
+        throw "The connection-string inspector reported an invalid result with no 'error' message for engine '$Engine'; rebuild or re-publish api-schema-tools."
+    }
+
+    # Engine/state-specific coordinate rules (the C# contract): a VALID PostgreSQL result carries a concrete
+    # integer port in 1-65535; a VALID SQL Server result carries a NULL port (the port stays encoded in the
+    # data source); an INVALID result carries null coordinates. Any violation is a tool-contract/version
+    # failure - never a datastore result (e.g. a valid PostgreSQL result with a null port must NOT reach
+    # provisioning and get a fabricated default).
+    if ($result.valid) {
+        if ($Engine -eq 'postgresql') {
+            if ($result.port -isnot [int] -and $result.port -isnot [long]) {
+                throw "The connection-string inspector reported a valid PostgreSQL result with no integer 'port' for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+            if ($result.port -lt 1 -or $result.port -gt 65535) {
+                throw "The connection-string inspector reported a valid PostgreSQL 'port' ($($result.port)) outside 1-65535; rebuild or re-publish api-schema-tools."
+            }
+        }
+        elseif ($null -ne $result.port) {
+            throw "The connection-string inspector reported a valid SQL Server result with a non-null 'port' (the port belongs inside the data source); rebuild or re-publish api-schema-tools."
+        }
+    }
+    else {
+        foreach ($coordinate in 'database', 'host', 'port', 'username') {
+            if ($null -ne $result.$coordinate) {
+                throw "The connection-string inspector reported an invalid result with a non-null '$coordinate' field; rebuild or re-publish api-schema-tools."
+            }
+        }
+    }
+    return $result
+}
+
+function Get-CmsConnectionStringDatabaseName {
+    <#
+    .SYNOPSIS
+        Returns the canonical target database of an ALREADY-RESOLVED connection string, parsed by the
+        EXACT runtime provider (Npgsql 8.0.4 / Microsoft.Data.SqlClient 6.1.4) via the SchemaTools
+        `connection validate` verb - the single connection-string parsing authority. No keyword vocabulary
+        or generic builder is used, so alias canonicalization, last-wins duplicate synonyms, and rejection
+        of keywords the provider does not support match exactly what the Configuration Service does at
+        runtime. Throws when the connection is not valid for -Engine (a wrong-engine or unsupported
+        keyword); returns an empty array when the connection targets no database.
+    #>
+    param(
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
+        [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ConnectionString,
+        # Host executable path (string) OR a validator descriptor from Resolve-DmsConnectionValidator;
+        # passed through to Invoke-ConnectionStringValidation, which dispatches host-exe vs container.
+        [Parameter(Mandatory)][object]$SchemaToolPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return @()
+    }
+
+    $result = Invoke-ConnectionStringValidation -Engine $Engine -ConnectionString $ConnectionString -SchemaToolPath $SchemaToolPath
+    if (-not $result.valid) {
+        throw "The effective connection string is not a valid '$Engine' connection: $($result.error)"
+    }
+    if ([string]::IsNullOrEmpty($result.database)) {
+        return @()
+    }
+    return @([string]$result.database)
+}
+
+function Get-ComposeResolvedConfiguration {
+    <#
+    .SYNOPSIS
+        Resolves the effective Configuration Service runtime values by asking Docker Compose itself
+        (`docker compose ... config --format json`), rather than re-implementing interpolation in
+        PowerShell. Compose applies shell-over-env-file precedence, ${VAR:-default}, nested substitution,
+        quoting, and single-quote opacity exactly as the ensuing `up` will, so the returned values ARE
+        what the containers receive and cannot drift from a second interpolation model.
+
+    .DESCRIPTION
+        `docker compose config` needs no started containers, no pulled images, and no pre-existing
+        external network, so it is safe to run before any Docker or Keycloak mutation. Compose renders a
+        literal '$' as '$$' in its output; this unescapes it, so a value carrying an opaque, unexpanded
+        ${...} - a shell-substituted terminal Compose does not re-expand - is returned as the literal
+        text the container receives and is compared literally by the runtime contract.
+
+        Returns a record { ConfigProvider; DmsProvider; CmsConnectionString; MssqlSaPassword;
+        DmsAdminConnectionString; TopologyDatastoreDatabaseName; DmsImage }. ConfigProvider is the
+        Configuration Service (config) service's AppSettings__Datastore (interpolated from DMS_CONFIG_DATASTORE);
+        DmsProvider is the DMS (dms) service's AppSettings__Datastore (interpolated INDEPENDENTLY from
+        DMS_DATASTORE). The two are deliberately separate fields so a consumer can never confuse the CMS runtime
+        provider with the DMS runtime provider - a shell DMS_DATASTORE could otherwise point the DMS container at
+        a different engine than the one that starts, unnoticed. A field is $null when its service or key is
+        absent from the composed set (e.g. the standalone-CMS lane composes no dms service, so DmsProvider and
+        DmsAdminConnectionString are $null). TopologyDatastoreDatabaseName is the AUTHORITATIVE DMS datastore
+        database name: the db service's engine-specific datastore key (POSTGRES_DB_NAME or MSSQL_DB_NAME,
+        selected by -InfrastructureEngine, never positionally), which Compose resolves with the compose-file
+        default and shell-over-env-file precedence. It is deliberately NOT read from DmsAdminConnectionString
+        (DATABASE_CONNECTION_STRING_ADMIN), which run.sh consumes only for a readiness probe (host/port/username)
+        and whose database can legitimately differ; that admin connection is never the datastore-name oracle.
+
+    .PARAMETER ComposeFiles
+        The docker compose "-f <file>" arguments, exactly as the ensuing `up` uses them.
+
+    .PARAMETER EnvironmentFile
+        The --env-file path, exactly as the ensuing `up` uses it.
+
+    .PARAMETER ProjectName
+        The compose project name (-p), exactly as the ensuing `up` uses it.
+
+    .PARAMETER ConfigServiceName
+        The Configuration Service service name to read (default "config").
+
+    .PARAMETER DbServiceName
+        The database service name to read for the SQL Server SA password (default "db").
+
+    .PARAMETER DmsServiceName
+        The DMS service name to read for the datastore admin connection (default "dms").
+
+    .PARAMETER InfrastructureEngine
+        The engine the caller selected ('postgresql' | 'mssql'), used to choose the db-service datastore key
+        for TopologyDatastoreDatabaseName ('postgresql' -> POSTGRES_DB_NAME, 'mssql' -> MSSQL_DB_NAME). The
+        anchor is never chosen positionally, so an unrelated engine's key can never become the anchor. When
+        omitted (callers that do not consume the anchor), TopologyDatastoreDatabaseName is $null.
+    #>
+    param(
+        [Parameter(Mandatory)][string[]]$ComposeFiles,
+        [Parameter(Mandatory)][string]$EnvironmentFile,
+        [Parameter(Mandatory)][string]$ProjectName,
+        [string]$ConfigServiceName = "config",
+        [string]$DbServiceName = "db",
+        [string]$DmsServiceName = "dms",
+        [ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine
+    )
+
+    function Get-ComposeEnvironmentValue {
+        param([object]$EnvironmentObject, [string]$Key)
+        if ($null -eq $EnvironmentObject) {
+            return $null
+        }
+        if ($EnvironmentObject.PSObject.Properties.Name -contains $Key) {
+            $raw = $EnvironmentObject.$Key
+            if ($null -eq $raw) {
+                return $null
+            }
+            return ([string]$raw -replace '\$\$', '$')
+        }
+        return $null
+    }
+
+    $composeArguments = @($ComposeFiles) + @("--env-file", $EnvironmentFile, "-p", $ProjectName, "config", "--format", "json")
+    $output = & docker compose @composeArguments 2>$null
+    $json = ($output | Out-String)
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
+        throw "Unable to resolve the effective docker-compose configuration for project '$ProjectName' (docker compose config exited $LASTEXITCODE). The runtime contract is validated against Compose's own resolution, so a compose-file or environment-file error must be corrected before any container starts."
+    }
+
+    try {
+        $parsed = $json | ConvertFrom-Json
+    }
+    catch {
+        throw "Unable to parse 'docker compose config --format json' output for project '$ProjectName': $($_.Exception.Message)"
+    }
+
+    $configEnvironment = $null
+    $dbEnvironment = $null
+    $dmsEnvironment = $null
+    $dmsImage = $null
+    $services = $parsed.services
+    if ($null -ne $services) {
+        if ($services.PSObject.Properties.Name -contains $ConfigServiceName) {
+            $configEnvironment = $services.$ConfigServiceName.environment
+        }
+        if ($services.PSObject.Properties.Name -contains $DbServiceName) {
+            $dbEnvironment = $services.$DbServiceName.environment
+        }
+        if ($services.PSObject.Properties.Name -contains $DmsServiceName) {
+            $dmsEnvironment = $services.$DmsServiceName.environment
+            # The concrete DMS image Compose resolved - the same image the ensuing `up` runs. On a clean
+            # Docker/PowerShell-only host it bundles the api-schema-tools CLI, so the runtime contract can
+            # run the exact-provider 'connection validate' verb inside it without a host tool or SDK.
+            if ($services.$DmsServiceName.PSObject.Properties.Name -contains "image") {
+                $dmsImage = [string]$services.$DmsServiceName.image
+            }
+        }
+    }
+
+    # The topology datastore anchor: the engine-specific datastore database name the db service is
+    # initialized with (POSTGRES_DB_NAME on postgresql.yml, MSSQL_DB_NAME on mssql.yml), resolved by Docker
+    # Compose with the compose-file default and shell-over-env-file precedence. This is the AUTHORITATIVE
+    # datastore-name source - never DATABASE_CONNECTION_STRING_ADMIN, which run.sh consumes only for a
+    # readiness probe (host/port/username) and whose database can legitimately differ (a documented admin
+    # connection). The key is selected by the EXPLICIT engine, never positionally, so an unrelated engine's
+    # key (should both ever appear through composition) can never become the anchor. Callers that do not
+    # consume the anchor omit -InfrastructureEngine and receive $null.
+    $topologyDatastoreDatabaseName = $null
+    if (-not [string]::IsNullOrWhiteSpace($InfrastructureEngine)) {
+        $datastoreKeyName = if ((ConvertTo-CanonicalDatabaseEngine -Engine $InfrastructureEngine) -eq 'mssql') { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
+        $topologyDatastoreDatabaseName = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key $datastoreKeyName
+    }
+
+    return [pscustomobject]@{
+        ConfigProvider                = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "AppSettings__Datastore"
+        DmsProvider                   = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "AppSettings__Datastore"
+        CmsConnectionString           = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "DatabaseSettings__DatabaseConnection"
+        MssqlSaPassword               = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key "MSSQL_SA_PASSWORD"
+        DmsAdminConnectionString      = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "DATABASE_CONNECTION_STRING_ADMIN"
+        TopologyDatastoreDatabaseName = $topologyDatastoreDatabaseName
+        DmsImage                      = $dmsImage
+    }
+}
+
+function Resolve-EffectiveConfigRuntimeContract {
+    <#
+    .SYNOPSIS
+        Computes and validates the effective local Configuration Service runtime contract exactly once,
+        from values Docker Compose itself resolved (Get-ComposeResolvedConfiguration), and returns the one
+        object every consumer (standalone/local/published startup, database readiness, OpenIddict
+        init/insert, datastore registration) reads instead of independently re-resolving anything.
+
+    .DESCRIPTION
+        The engine the start script selected (-InfrastructureEngine) is authoritative and is NEVER
+        inferred from a connection string. There are three finite components, each with an explicit
+        participation authority (decided by the caller from its own compose-file selection, never inferred
+        from null Compose fields) and a Compose-resolved runtime value:
+          * database infrastructure - always present; the SQL Server SA password is validated when the
+            selected engine is MSSQL;
+          * the DMS service - validated only when -DmsServiceIncluded (its dms compose file is in the set);
+          * the Configuration Service - validated only when -ConfigServiceIncluded (its config compose file
+            is in the set).
+        The DMS and Configuration Service runtime providers are INDEPENDENTLY interpolated by Compose
+        (AppSettings__Datastore from DMS_DATASTORE and DMS_CONFIG_DATASTORE respectively), so each is checked
+        against -InfrastructureEngine separately - a shell override of either cannot point its container at a
+        different engine than the one that starts, unnoticed. The contract enforces, all fail-fast and before
+        any Docker or Keycloak mutation:
+          * on SQL Server, the SA password resolves to a non-blank value (stack invariant, always);
+          * (when the DMS service participates) the DMS provider (Compose-resolved dms AppSettings__Datastore)
+            is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and the DMS topology datastore
+            database (POSTGRES_DB_NAME / MSSQL_DB_NAME, resolved by Compose on the db service - NOT the
+            readiness/admin connection) is a single nonblank, concrete value;
+          * (when the Configuration Service participates) the CMS provider (Compose-resolved config
+            AppSettings__Datastore) is EXACTLY 'postgresql' or 'mssql' and equals -InfrastructureEngine; and
+            the CMS connection string parses under the selected provider's own builder (a wrong-engine string
+            is rejected by the builder, not by keyword classification) and targets a concrete database that
+            equals the INDEPENDENTLY expected configuration database - the DMS datastore anchor in shared
+            topology, or the dedicated 'edfi_configurationservice' under -SeparateConfigDatabase - so a
+            caller-authored connection can never redefine the topology; it must agree. In the standalone lane
+            (no DMS service) the connection's own single target IS the effective name. Separate topology
+            additionally requires the datastore and configuration databases to be different physical databases.
+
+        The Compose-resolved values are passed in (-ResolvedConfigProvider / -ResolvedDmsProvider /
+        -ResolvedCmsConnectionString / -ResolvedMssqlSaPassword / -ResolvedTopologyDatastoreDatabaseName); the
+        start scripts obtain them from Get-ComposeResolvedConfiguration. Connection strings are parsed by the
+        exact runtime providers via the SchemaTools `connection validate` verb (Get-CmsConnectionStringDatabaseName),
+        located by -SchemaToolPath. Unit tests mock Get-CmsConnectionStringDatabaseName to exercise the
+        contract logic without the tool; the provider-oracle tests exercise the verb directly.
+
+    .PARAMETER InfrastructureEngine
+        The engine the start script actually selected ('postgresql' | 'mssql'); drives the Compose
+        database file and OpenIddict, and is the authoritative engine.
+
+    .PARAMETER ConfigServiceIncluded
+        Whether the Configuration Service participates in this compose set, decided by the caller from its
+        own compose-file selection (never inferred from null Compose fields). When $true the CMS invariants
+        (provider enum and engine agreement, connection string and configuration database, OpenIddict target)
+        are validated; when $false they are skipped - a Keycloak run that omits the local config service, or
+        one pointed at an external CONFIG_SERVICE_URL, has no local CMS to validate.
+
+    .PARAMETER DmsServiceIncluded
+        Whether the DMS service participates in this compose set, decided by the caller from its own
+        compose-file selection (never inferred from null Compose fields). When $true the DMS provider
+        (enum + engine agreement) and the DMS topology datastore anchor (a single nonblank, concrete value)
+        are validated, and the configuration database is expected against that anchor; when $false they are
+        skipped - the standalone Configuration Service lane composes no dms service. The stack SA-password
+        invariant is validated regardless of both participation flags.
+
+    .PARAMETER SeparateConfigDatabase
+        The topology the start script selected (never inferred from a name). When set, the expected
+        configuration database is the dedicated 'edfi_configurationservice' and must be a different physical
+        database from the DMS datastore anchor; when omitted (shared) the expected configuration database IS
+        the datastore anchor.
+
+    .PARAMETER ResolvedConfigProvider
+        The Compose-resolved Configuration Service AppSettings__Datastore value (from DMS_CONFIG_DATASTORE).
+
+    .PARAMETER ResolvedDmsProvider
+        The Compose-resolved DMS service AppSettings__Datastore value (from DMS_DATASTORE), interpolated
+        independently of the CMS provider.
+
+    .PARAMETER ResolvedCmsConnectionString
+        The Compose-resolved DatabaseSettings__DatabaseConnection value (final text the container receives).
+
+    .PARAMETER SchemaToolPath
+        The connection-string validator: either a host executable path (string) or a descriptor from
+        Resolve-DmsConnectionValidator ({ Kind = 'HostExe' | 'DockerImage' ... }). Connection strings are
+        parsed with the exact runtime providers via the api-schema-tools 'connection validate' verb, run on
+        the host or - on a clean Docker/PowerShell-only published host - inside the DMS image that bundles
+        the tool. Passed through to Get-CmsConnectionStringDatabaseName / Invoke-ConnectionStringValidation.
+
+    .PARAMETER ResolvedMssqlSaPassword
+        The Compose-resolved db-service MSSQL_SA_PASSWORD value (SQL Server stacks).
+
+    .PARAMETER ResolvedTopologyDatastoreDatabaseName
+        The Compose-resolved DMS topology datastore database name (POSTGRES_DB_NAME / MSSQL_DB_NAME on the db
+        service, from Get-ComposeResolvedConfiguration.TopologyDatastoreDatabaseName). When the DMS service
+        participates it is validated for a single nonblank, concrete value and is the expected configuration
+        database in shared topology. Omitted (null) in the standalone-CMS lane.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'ResolvedMssqlSaPassword', Justification = 'The SQL Server SA password is the local docker-compose plaintext value resolved by Compose (mssql.yml MSSQL_SA_PASSWORD); it is passed as a string throughout these compose scripts by design.')]
+    param(
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
+        [Parameter(Mandatory)][bool]$ConfigServiceIncluded,
+        [Parameter(Mandatory)][bool]$DmsServiceIncluded,
+        [switch]$SeparateConfigDatabase,
+        [AllowEmptyString()][AllowNull()][string]$ResolvedConfigProvider,
+        [AllowEmptyString()][AllowNull()][string]$ResolvedDmsProvider,
+        [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedCmsConnectionString,
+        [Parameter(Mandatory)][object]$SchemaToolPath,
+        [AllowEmptyString()][AllowNull()][string]$ResolvedMssqlSaPassword,
+        [AllowEmptyString()][AllowNull()][string]$ResolvedTopologyDatastoreDatabaseName
+    )
+
+    # Canonicalize the selected engine once at entry through the single engine-token boundary, so every
+    # comparison below, the CLI forwarding, and the returned contract use the canonical 'postgresql' /
+    # 'mssql' even when a caller supplied a case variant ('MSSQL') through ValidateSet.
+    $InfrastructureEngine = ConvertTo-CanonicalDatabaseEngine -Engine $InfrastructureEngine
+
+    # (STACK INVARIANT, always) SQL Server SA password, keyed on the AUTHORITATIVE engine the start script
+    # selected - not on the CMS provider - so it is enforced even when no local Configuration Service
+    # participates (a Keycloak run without the local config service still starts the SQL Server datastore).
+    # Compose already resolved ${MSSQL_SA_PASSWORD:-<default>} at shell-over-file precedence; a blank value
+    # cannot authenticate CMS, OpenIddict, or the datastore registration.
+    $mssqlSaPassword = $null
+    if ($InfrastructureEngine -eq 'mssql') {
+        $mssqlSaPassword = $ResolvedMssqlSaPassword
+        if ([string]::IsNullOrWhiteSpace($mssqlSaPassword)) {
+            throw "Configuration runtime-contract error: MSSQL_SA_PASSWORD resolves to a blank value on a SQL Server stack, so the Configuration Service connection and OpenIddict initialization cannot authenticate. Set MSSQL_SA_PASSWORD (or the variable it references)."
+        }
+    }
+
+    # DMS INVARIANTS - validated only when the DMS service participates in this compose set (its dms compose
+    # file is included). The DMS runtime provider (dms AppSettings__Datastore) is interpolated by Compose from
+    # DMS_DATASTORE, INDEPENDENTLY of the CMS provider, so it must be checked against the selected engine on
+    # its own - otherwise a shell DMS_DATASTORE could point the DMS container at a different engine than the
+    # one that starts even though the CMS provider matches, or no local CMS participates at all. The datastore
+    # database the DMS container receives is validated here too (same participation authority). Skipped for the
+    # standalone Configuration Service lane, which composes no dms service. Participation is decided by the
+    # caller from its own compose-file selection and is NEVER inferred from null Compose fields.
+    $dmsProviderCanonical = $null
+    $topologyDatastoreName = $null
+    if ($DmsServiceIncluded) {
+        # (1) DMS provider is an EXACT enum (case-insensitively, no surrounding whitespace); anything else -
+        # 'mysql', blank, ' mssql ' - fails fast rather than being coerced.
+        $dmsProviderCanonical =
+            if ([string]::Equals($ResolvedDmsProvider, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' }
+            elseif ([string]::Equals($ResolvedDmsProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
+            else { $null }
+        if ($null -eq $dmsProviderCanonical) {
+            throw "Configuration runtime-contract error: the effective DMS runtime provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedDmsProvider', which is not a supported engine. Set DMS_DATASTORE to exactly 'postgresql' or 'mssql'."
+        }
+
+        # (2) DMS provider MUST equal the infrastructure engine the start script selected (which starts that
+        # Compose database file). A shell DMS_DATASTORE that differs cannot silently point the DMS container
+        # at a different engine than the one that starts.
+        if ($dmsProviderCanonical -ne $InfrastructureEngine) {
+            throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective DMS runtime provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$dmsProviderCanonical'. Unset the conflicting DMS_DATASTORE shell override, or select that engine with -DatabaseEngine."
+        }
+
+        # (3) Topology datastore anchor. The DMS datastore database is the engine-specific datastore name
+        # (POSTGRES_DB_NAME / MSSQL_DB_NAME) Docker Compose resolved on the db service - the authoritative
+        # source, never DATABASE_CONNECTION_STRING_ADMIN (a readiness/admin connection whose database can
+        # legitimately differ). A participating DMS service must have exactly one nonblank, concrete target
+        # (not an unexpanded shell terminal). The container-vs-host-tooling agreement - that configure /
+        # provision register this same database - is guaranteed by the host-side tooling converging on this
+        # Compose-resolved anchor (wired in a follow-up commit), not by comparing an env-file projection here.
+        $topologyDatastoreName = $ResolvedTopologyDatastoreDatabaseName
+        if ([string]::IsNullOrWhiteSpace($topologyDatastoreName)) {
+            throw "Configuration runtime-contract error: the DMS topology datastore database is blank, so a participating DMS service has no database target. Set POSTGRES_DB_NAME (PostgreSQL) or MSSQL_DB_NAME (SQL Server), or the variable it references."
+        }
+        if ($topologyDatastoreName -match '\$\{') {
+            throw "Configuration runtime-contract error: the DMS topology datastore database resolves to '$topologyDatastoreName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
+        }
+    }
+
+    # CMS INVARIANTS - validated only when the Configuration Service participates in this compose set. When
+    # it does not (a Keycloak run that omits the local config service, or one pointed at an external
+    # CONFIG_SERVICE_URL), Compose exposes no config-service provider/connection to resolve, so validating
+    # them would fail on values that are legitimately absent. Participation is decided by the caller from its
+    # own compose-file selection and is NEVER inferred from null Compose fields.
+    $configProviderCanonical = $null
+    $effectiveDatabaseName = $null
+    $openIddict = $null
+    if ($ConfigServiceIncluded) {
+        # (1) CMS provider is an EXACT enum, read from the Compose-resolved config AppSettings__Datastore. Only
+        # the two supported engines are accepted (case-insensitively, no surrounding whitespace); anything
+        # else - 'mysql', blank, ' mssql ' - fails fast rather than being coerced, because Compose passes the
+        # raw value straight to the Configuration Service.
+        $configProviderCanonical =
+            if ([string]::Equals($ResolvedConfigProvider, 'mssql', [System.StringComparison]::OrdinalIgnoreCase)) { 'mssql' }
+            elseif ([string]::Equals($ResolvedConfigProvider, 'postgresql', [System.StringComparison]::OrdinalIgnoreCase)) { 'postgresql' }
+            else { $null }
+        if ($null -eq $configProviderCanonical) {
+            throw "Configuration runtime-contract error: the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose) is '$ResolvedConfigProvider', which is not a supported engine. Set DMS_CONFIG_DATASTORE to exactly 'postgresql' or 'mssql'."
+        }
+
+        # (2) CMS provider MUST equal the infrastructure engine the start script selected (which starts that
+        # Compose database file and initializes OpenIddict for it). A shell DMS_CONFIG_DATASTORE that differs
+        # cannot silently point the Configuration Service at a different engine than the one that starts.
+        if ($configProviderCanonical -ne $InfrastructureEngine) {
+            throw "Configuration runtime-contract mismatch: the start script selected the '$InfrastructureEngine' infrastructure engine, but the effective Configuration Service provider (AppSettings__Datastore, resolved by Docker Compose at shell-over-env-file precedence) is '$configProviderCanonical'. Unset the conflicting DMS_CONFIG_DATASTORE shell override, or select that engine with -DatabaseEngine."
+        }
+
+        # (3) The effective CMS connection must be present, parse under the selected provider (wrong-engine
+        # strings are rejected by the provider's own builder), and target a concrete database.
+        if ([string]::IsNullOrWhiteSpace($ResolvedCmsConnectionString)) {
+            throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING (resolved by Docker Compose) is empty on a '$InfrastructureEngine' stack. On a SQL Server stack this occurs when no connection string is set and Compose would substitute the PostgreSQL-only compose-file fallback. Set a '$InfrastructureEngine' connection string targeting the effective configuration database."
+        }
+        $targetDatabases = @(Get-CmsConnectionStringDatabaseName -Engine $InfrastructureEngine -ConnectionString $ResolvedCmsConnectionString -SchemaToolPath $SchemaToolPath)
+        if ($targetDatabases.Count -eq 0) {
+            throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets no database (set Database or Initial Catalog), so the Configuration Service would connect to the engine default instead of the effective configuration database."
+        }
+
+        # (4) Effective configuration database name and topology relationship.
+        if ($DmsServiceIncluded) {
+            # FULL-STACK: the expected configuration database is computed INDEPENDENTLY of the connection -
+            # shared topology uses the DMS datastore anchor, -SeparateConfigDatabase the dedicated
+            # configuration database - so a caller-authored connection can never redefine the topology (the
+            # DMS_CONFIG_DATABASE_NAME seam remains definitive); the connection must AGREE with it.
+            $separateConfigDatabaseName = 'edfi_configurationservice'
+            $expectedConfigDatabaseName = if ($SeparateConfigDatabase) { $separateConfigDatabaseName } else { $topologyDatastoreName }
+            foreach ($target in $targetDatabases) {
+                if (-not (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $target -Right $expectedConfigDatabaseName)) {
+                    throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING targets database '$target', but the effective configuration database is '$expectedConfigDatabaseName' (shared topology uses the DMS datastore database; -SeparateConfigDatabase uses the dedicated configuration database). Align the connection string, or the shell variable it routes through."
+                }
+            }
+            $effectiveDatabaseName = $expectedConfigDatabaseName
+
+            # Separate topology requires the DMS datastore and the configuration database to be DIFFERENT
+            # physical databases under the engine's identity policy, so the topology is not "separate" in
+            # name only. (Shared topology deliberately makes them the same - already enforced by the equality
+            # above, since the expected name IS the datastore anchor.)
+            if ($SeparateConfigDatabase -and (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $topologyDatastoreName -Right $expectedConfigDatabaseName)) {
+                throw "Configuration runtime-contract error: -SeparateConfigDatabase selects the dedicated configuration database '$expectedConfigDatabaseName', but the DMS datastore database ('$topologyDatastoreName') is the same physical database under $InfrastructureEngine identity semantics, so the topology would not be separate. Choose a different DMS datastore name, or omit -SeparateConfigDatabase for the shared topology."
+            }
+        }
+        else {
+            # STANDALONE (no DMS service participates): there is no datastore anchor to expect against, so the
+            # resolved connection is authoritative and its single target IS the effective configuration
+            # database (which OpenIddict initialization then uses).
+            $distinctTargets = [System.Collections.Generic.HashSet[string]]::new((Get-DatabaseNameComparer -Engine $InfrastructureEngine))
+            foreach ($target in $targetDatabases) { [void]$distinctTargets.Add($target) }
+            if ($distinctTargets.Count -gt 1) {
+                throw "Configuration runtime-contract error: the effective DMS_CONFIG_DATABASE_CONNECTION_STRING specifies conflicting database targets ($($targetDatabases -join ', ')). Set a single database so OpenIddict initialization and the Configuration Service agree."
+            }
+            $effectiveDatabaseName = $targetDatabases[0]
+        }
+
+        # A target Compose kept opaque (a shell-substituted ${...} it does not re-expand) is not a real
+        # database. In the full-stack lanes the equality check above already rejects it; guard the standalone
+        # lane too.
+        if ($effectiveDatabaseName -match '\$\{') {
+            throw "Configuration runtime-contract error: the effective configuration database resolves to '$effectiveDatabaseName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
+        }
+
+        # (5) OpenIddict host-side target, built from the EXPLICIT engine and the resolved name/password -
+        # never inferred from a string. Read only by the self-contained identity path (which always includes
+        # the config service), so it is populated exactly when a caller will consume it.
+        $openIddict = [pscustomobject]@{
+            DbType     = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
+            DbUser     = if ($InfrastructureEngine -eq 'mssql') { 'sa' } else { 'postgres' }
+            DbPort     = if ($InfrastructureEngine -eq 'mssql') { 'ENV:MSSQL_PORT' } else { 'ENV:POSTGRES_PORT' }
+            DbName     = $effectiveDatabaseName
+            DbPassword = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword } else { $null }
+        }
+    }
+
+    return [pscustomobject]@{
+        InfrastructureEngine          = $InfrastructureEngine
+        ConfigProvider                = $configProviderCanonical
+        DmsProvider                   = $dmsProviderCanonical
+        CmsConnectionString           = $ResolvedCmsConnectionString
+        CmsDatabaseName               = $effectiveDatabaseName
+        TopologyDatastoreDatabaseName = $topologyDatastoreName
+        MssqlSaPassword               = $mssqlSaPassword
+        OpenIddict                    = $openIddict
+    }
+}
+
+function Get-NormalizedEnvValue {
+    <#
+    .SYNOPSIS
+        Trims an env-file value and removes one surrounding matching single- or double-quote pair,
+        returning the unquoted content. Single source of the unquoting used by the reference expander
+        (Resolve-EnvValueReference) and the reference-key detector (Get-EnvValueReferenceKey). It ONLY
+        strips quotes; whether the content is then interpolated depends on the quote kind - callers use
+        Test-EnvValueIsSingleQuoted to suppress interpolation for single-quoted values, which docker-compose
+        preserves literally.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $normalized = $Value.Trim()
+    if (
+        $normalized.Length -ge 2 -and
+        $normalized[0] -in @("'", '"') -and
+        $normalized[-1] -eq $normalized[0]
+    ) {
+        $normalized = $normalized.Substring(1, $normalized.Length - 2)
+    }
+
+    return $normalized
+}
+
+function Test-EnvValueIsSingleQuoted {
+    <#
+    .SYNOPSIS
+        Returns $true when a trimmed env-file value is wrapped in a matching pair of SINGLE quotes.
+        Docker Compose interpolates unquoted and double-quoted values but preserves single-quoted values
+        literally - it does not expand ${...} inside single quotes (verified with `docker compose config`).
+        Callers must therefore return the unquoted content verbatim for a single-quoted value rather than
+        resolve it as a reference, or the host would initialize a different database than CMS receives.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $trimmed = $Value.Trim()
+    return (
+        $trimmed.Length -ge 2 -and
+        $trimmed[0] -eq "'" -and
+        $trimmed[-1] -eq "'"
     )
 }
 
-function Resolve-MssqlDatabaseNameReference {
+function Get-EnvValueReferenceKey {
+    <#
+    .SYNOPSIS
+        Returns the referenced key name when a value is a single whole-value ${NAME} reference that
+        docker-compose would interpolate (unquoted or double-quoted), otherwise $null. A single-quoted
+        value is preserved literally by docker-compose, so it is NOT a reference and yields $null.
+        Single-sources the whole-value-reference detection so a caller that must recover the referenced
+        key for shell-precedence guarding parses a value exactly as Resolve-EnvValueReference expands it -
+        a double-quoted "${NAME}" yields NAME, a single-quoted '${NAME}' yields $null.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if (Test-EnvValueIsSingleQuoted -Value $Value) {
+        return $null
+    }
+
+    $normalized = Get-NormalizedEnvValue -Value $Value
+    $referenceMatch = [regex]::Match($normalized, '^\$\{(?<key>[A-Za-z_][A-Za-z0-9_]*)\}$')
+    if ($referenceMatch.Success) {
+        return $referenceMatch.Groups["key"].Value
+    }
+
+    return $null
+}
+
+function Resolve-EnvValueReference {
+    <#
+    .SYNOPSIS
+        Resolves an env-file value that is either a literal or a single whole-value ${NAME}
+        reference, expanding the reference recursively against the effective environment values
+        (cycle-guarded). Partial or embedded ${...} expressions are rejected. A single-quoted value is
+        returned verbatim (quotes stripped) without interpolation, because docker-compose preserves
+        single-quoted values literally. Engine-agnostic: used for both the SQL Server and PostgreSQL
+        configuration-database name seams.
+
+    .PARAMETER TreatUnresolvedReferenceAsEmpty
+        Models docker-compose's bare ${NAME} semantics: a reference to an unset or blank variable resolves
+        to empty (rather than throwing), so a caller modeling a ${VAR:-default} expression can then apply
+        its default. Cyclic and unsupported-expression references still throw. Off by default: an
+        unresolved reference is a hard error for callers that require a concrete value.
+    #>
     param(
         [Parameter(Mandatory)]
         [AllowEmptyString()]
@@ -790,99 +1584,59 @@ function Resolve-MssqlDatabaseNameReference {
         [Parameter(Mandatory)]
         [hashtable]$EnvValues,
 
+        [switch]$TreatUnresolvedReferenceAsEmpty,
+
         [System.Collections.Generic.HashSet[string]]$VisitedKeys
     )
 
-    $resolvedValue = $Value.Trim()
-    if (
-        $resolvedValue.Length -ge 2 -and
-        $resolvedValue[0] -in @("'", '"') -and
-        $resolvedValue[-1] -eq $resolvedValue[0]
-    ) {
-        $resolvedValue = $resolvedValue.Substring(1, $resolvedValue.Length - 2)
+    if (Test-EnvValueIsSingleQuoted -Value $Value) {
+        # docker-compose does not interpolate single-quoted values; the content is literal even when it
+        # contains ${...}. Return the unquoted content verbatim so the host observes the same literal value
+        # CMS receives (rather than expanding it and initializing a different database).
+        return Get-NormalizedEnvValue -Value $Value
     }
 
-    $referenceMatch = [regex]::Match($resolvedValue, '^\$\{(?<key>[A-Za-z_][A-Za-z0-9_]*)\}$')
-    if (-not $referenceMatch.Success) {
+    $resolvedValue = Get-NormalizedEnvValue -Value $Value
+
+    $referencedKey = Get-EnvValueReferenceKey -Value $Value
+    if ($null -eq $referencedKey) {
         if ($resolvedValue -match '\$\{') {
-            throw "MSSQL database name '$resolvedValue' uses an unsupported environment expression. Use a literal name or a simple `${NAME} reference."
+            throw "Environment value '$resolvedValue' uses an unsupported environment expression. Use a literal value or a simple `${NAME} reference."
         }
 
         return $resolvedValue
     }
 
-    $referencedKey = $referenceMatch.Groups["key"].Value
     if (-not $EnvValues.ContainsKey($referencedKey)) {
-        throw "MSSQL database name reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is absent from the effective environment."
+        # docker-compose resolves a bare ${NAME} reference to an unset variable as empty (a ':-' default in
+        # the referring expression then applies). Callers modeling that (e.g. ${MSSQL_SA_PASSWORD:-...}) pass
+        # -TreatUnresolvedReferenceAsEmpty so an unset reference yields "" instead of aborting.
+        if ($TreatUnresolvedReferenceAsEmpty) { return "" }
+        throw "Environment reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is absent from the effective environment."
     }
 
     $referencedValue = [string]$EnvValues[$referencedKey]
     if ([string]::IsNullOrWhiteSpace($referencedValue)) {
-        throw "MSSQL database name reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is blank."
+        if ($TreatUnresolvedReferenceAsEmpty) { return "" }
+        throw "Environment reference '`${$referencedKey}' cannot be resolved because '$referencedKey' is blank."
     }
 
     if ($null -eq $VisitedKeys) {
         $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     }
     if (-not $VisitedKeys.Add($referencedKey)) {
-        throw "MSSQL database name reference '`${$referencedKey}' is cyclic."
+        throw "Environment reference '`${$referencedKey}' is cyclic."
     }
 
     try {
-        return Resolve-MssqlDatabaseNameReference `
+        return Resolve-EnvValueReference `
             -Value $referencedValue `
             -EnvValues $EnvValues `
+            -TreatUnresolvedReferenceAsEmpty:$TreatUnresolvedReferenceAsEmpty `
             -VisitedKeys $VisitedKeys
     }
     finally {
         $null = $VisitedKeys.Remove($referencedKey)
-    }
-}
-
-function Assert-MssqlCmsDatabaseIsShared {
-    param(
-        [Parameter(Mandatory)]
-        [string]$ConnectionString,
-
-        [Parameter(Mandatory)]
-        [hashtable]$EnvValues
-    )
-
-    $expectedDatabaseName = Resolve-MssqlDatabaseNameReference `
-        -Value (Get-EnvValue -EnvValues $EnvValues -Name "MSSQL_DB_NAME") `
-        -EnvValues $EnvValues
-    if ([string]::IsNullOrWhiteSpace($expectedDatabaseName)) {
-        throw "MSSQL_DB_NAME must be non-blank when preserving a caller-authored CMS MSSQL connection string."
-    }
-
-    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-    try {
-        $builder.set_ConnectionString($ConnectionString)
-    }
-    catch {
-        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING is not a valid connection string."
-    }
-
-    $databaseValues = @(
-        foreach ($key in $builder.get_Keys()) {
-            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
-                [string]$builder.get_Item($key)
-            }
-        }
-    )
-    if ($databaseValues.Count -eq 0) {
-        throw "DMS_CONFIG_DATABASE_CONNECTION_STRING must include Database or Initial Catalog and target MSSQL_DB_NAME ('$expectedDatabaseName')."
-    }
-
-    foreach ($databaseValue in $databaseValues) {
-        $actualDatabaseName = Resolve-MssqlDatabaseNameReference -Value $databaseValue -EnvValues $EnvValues
-        if (-not [string]::Equals(
-            $actualDatabaseName,
-            $expectedDatabaseName,
-            [System.StringComparison]::OrdinalIgnoreCase
-        )) {
-            throw "MSSQL shared-database configuration mismatch: DMS_CONFIG_DATABASE_CONNECTION_STRING targets '$actualDatabaseName', but MSSQL_DB_NAME resolves to '$expectedDatabaseName'. DMS-1255 requires CMS and OpenIddict to share MSSQL_DB_NAME; align the values. Separate CMS database support is tracked by DMS-1270."
-        }
     }
 }
 
@@ -930,17 +1684,11 @@ function Resolve-DatabaseEngineEnvironmentFile {
     .PARAMETER DockerComposeRoot
         Directory holding .env.mssql and the .derived output. Defaults to this module's
         directory (eng/docker-compose).
-
-    .PARAMETER SkipMssqlCmsDatabaseValidation
-        Skips the CMS/OpenIddict shared-database invariant only for a dedicated database-only
-        diagnostic startup or teardown, where neither CMS nor OpenIddict is initialized. Full-stack,
-        configure, provision, and wrapper startup flows must leave this off.
     #>
     param(
         [string]$DatabaseEngine = "postgresql",
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
-        [string]$DockerComposeRoot,
-        [switch]$SkipMssqlCmsDatabaseValidation
+        [string]$DockerComposeRoot
     )
 
     if ($DatabaseEngine -ne "mssql") {
@@ -967,25 +1715,10 @@ function Resolve-DatabaseEngineEnvironmentFile {
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_DATASTORE") -eq "mssql" -or
         (Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATASTORE") -eq "mssql"
 
-    if ($baseDeclaresMssql -and -not $SkipMssqlCmsDatabaseValidation) {
-        $baseCmsConnectionString = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
-        if (Test-MssqlConnectionStringValue -ConnectionString $baseCmsConnectionString) {
-            # Overlay values establish defaults; caller values then win, matching the actual
-            # composition order used below. Validate the resulting shared-database identity before
-            # either the idempotent return or partial-value preservation can accept this string.
-            $effectiveMssqlValues = @{}
-            foreach ($entry in $overlayValues.GetEnumerator()) {
-                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
-            }
-            foreach ($entry in $baseValues.GetEnumerator()) {
-                $effectiveMssqlValues[[string]$entry.Key] = [string]$entry.Value
-            }
-
-            Assert-MssqlCmsDatabaseIsShared `
-                -ConnectionString $baseCmsConnectionString `
-                -EnvValues $effectiveMssqlValues
-        }
-    }
+    # The CMS connection-string / OpenIddict database invariant is no longer enforced here. The start
+    # scripts resolve and validate the whole Configuration Service runtime contract once, up front,
+    # against Docker Compose's own resolution (Resolve-EffectiveConfigRuntimeContract), so there is a
+    # single engine/database policy rather than a second one embedded in overlay composition.
 
     # A fixed three-key signal can become stale when .env.mssql gains another required setting.
     # Prove that every current overlay key exists and is non-blank before treating a file as an
@@ -1000,7 +1733,7 @@ function Resolve-DatabaseEngineEnvironmentFile {
             $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
             if (
                 [string]::IsNullOrWhiteSpace($baseValue) -or
-                ($isConnectionString -and -not (Test-MssqlConnectionStringValue -ConnectionString $baseValue))
+                ($isConnectionString -and -not (Test-SqlServerConnectionString -ConnectionString $baseValue))
             ) {
                 $overlayAlreadyComposed = $false
                 break
@@ -1036,7 +1769,7 @@ function Resolve-DatabaseEngineEnvironmentFile {
             $isConnectionString = $overlayKeyName -match 'CONNECTION_STRING'
             if (
                 -not [string]::IsNullOrWhiteSpace($baseValue) -and
-                (-not $isConnectionString -or (Test-MssqlConnectionStringValue -ConnectionString $baseValue))
+                (-not $isConnectionString -or (Test-SqlServerConnectionString -ConnectionString $baseValue))
             ) {
                 $keyOverrides[$overlayKeyName] = $baseValue
             }
@@ -1062,4 +1795,195 @@ function Resolve-DatabaseEngineEnvironmentFile {
     }
 
     return $composedPath
+}
+
+function Resolve-ConfigDatabaseTopologyEnvironmentFile {
+    <#
+    .SYNOPSIS
+        Resolves the local database-topology contract onto an (already engine-composed) environment
+        file and returns the effective file path. Engine-agnostic: applies to PostgreSQL and SQL
+        Server identically. The topology is never inferred from the engine.
+
+    .DESCRIPTION
+        DMS_CONFIG_DATABASE_NAME is the single configuration-database-name seam that both engines'
+        DMS_CONFIG_DATABASE_CONNECTION_STRING interpolate. This function materializes the effective seam
+        value into a derived file under <DockerComposeRoot>/.derived/ WITHOUT interpolating any datastore
+        value in PowerShell - Docker Compose remains the single interpolation authority.
+
+        Shared (default): the seam is materialized as a REFERENCE to the engine's datastore key
+        (${POSTGRES_DB_NAME} / ${MSSQL_DB_NAME}); Compose resolves it (with the compose-file default,
+        shell-over-env-file precedence, and any indirection), so the configuration database follows the DMS
+        datastore. Separate (-SeparateConfigDatabase): the seam is the dedicated edfi_configurationservice
+        literal, without changing the DMS datastore selection. The effective configuration database, the
+        datastore concreteness, and the separate-topology distinctness are all validated downstream by
+        Resolve-EffectiveConfigRuntimeContract against Compose's own resolution; the resolved concrete name
+        every host-side consumer uses (e.g. setup-openiddict.ps1) comes from that contract, not from re-reading
+        this seam.
+
+        Idempotency: when the base file already carries exactly this effective value (the seam reference in
+        shared mode, the literal in separate mode) the base file is returned unchanged. The effective value is
+        a pure function of -SeparateConfigDatabase, not of any name the base file already carries. Separate
+        mode stays separate across re-resolution because every phase is passed the same switch (so a
+        re-resolution with the switch supplied no-ops here), not by preserving an existing name.
+
+        This function only computes and materializes the effective name. The Configuration Service
+        engine / connection / database agreement is validated once, up front, by the start scripts via
+        Resolve-EffectiveConfigRuntimeContract (against Docker Compose's own resolution), so there is a
+        single validation policy rather than a second one embedded here.
+
+    .PARAMETER BaseEnvironmentFile
+        Absolute path to the (engine-composed) base env file. Must exist.
+
+    .PARAMETER DockerComposeRoot
+        Directory holding the .derived output. Defaults to this module's directory.
+
+    .PARAMETER DatabaseEngine
+        "postgresql" (default) or "mssql"; selects the datastore-name key for the shared default.
+
+    .PARAMETER SeparateConfigDatabase
+        Selects the dedicated edfi_configurationservice configuration database.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
+        [string]$DockerComposeRoot,
+        [string]$DatabaseEngine = "postgresql",
+        [switch]$SeparateConfigDatabase
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) {
+        $DockerComposeRoot = $PSScriptRoot
+    }
+
+    # Canonicalize through the single engine-token boundary so the datastore-key selection below uses the
+    # canonical engine even under a case variant.
+    $DatabaseEngine = ConvertTo-CanonicalDatabaseEngine -Engine $DatabaseEngine
+
+    $separateConfigDatabaseName = "edfi_configurationservice"
+
+    $baseValues = ReadValuesFromEnvFile $BaseEnvironmentFile
+
+    # The effective DMS_CONFIG_DATABASE_NAME is a pure function of -SeparateConfigDatabase, and is NEVER
+    # interpolated in PowerShell - Docker Compose is the single interpolation authority:
+    #   * Shared (default): a REFERENCE to the engine's datastore key (${POSTGRES_DB_NAME} / ${MSSQL_DB_NAME}).
+    #     Compose resolves it with the compose-file default and shell-over-env-file precedence, and through
+    #     any indirection (e.g. ${LOCAL_DB:-...}), so the configuration database always follows the DMS
+    #     datastore without a second PowerShell interpolation model.
+    #   * Separate (-SeparateConfigDatabase): the dedicated 'edfi_configurationservice' literal.
+    # The datastore concreteness and the separate-topology datastore-vs-configuration distinctness ("separate"
+    # is not separate in name only) are enforced by the runtime contract against Compose's own resolution of
+    # the topology datastore anchor - not here against an env-file projection a shell override could bypass.
+    # Shared mode materializes a DEFAULT-BEARING reference (${KEY:-edfi_datamanagementservice}) whose default
+    # equals the db service's own datastore default (postgresql.yml POSTGRES_DB_NAME / mssql.yml MSSQL_DB_NAME).
+    # A bare ${KEY} would resolve to EMPTY when the key is omitted from the env file - Compose cannot reach a
+    # default declared inside another service's environment while interpolating this env-file value - which
+    # would blank the CMS seam while the db anchor still defaulted. The matching default keeps the CMS
+    # configuration database identical to the datastore anchor even when the key is fully omitted.
+    $datastoreKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
+    $effectiveName = if ($SeparateConfigDatabase) { $separateConfigDatabaseName } else { "`${${datastoreKey}:-edfi_datamanagementservice}" }
+
+    # The raw DMS_CONFIG_DATABASE_NAME the base file already carries (used only for the idempotent no-op).
+    # Idempotency in separate mode comes from forwarding the switch to every phase (so a re-resolution stays
+    # separate and no-ops here), not from preserving an existing name.
+    $existingRaw = Get-EnvValue -EnvValues $baseValues -Name "DMS_CONFIG_DATABASE_NAME"
+
+    # Idempotent no-op when the base file already carries exactly this effective value (the seam reference in
+    # shared mode, the literal in separate mode).
+    if ([string]::Equals($existingRaw, $effectiveName, [System.StringComparison]::Ordinal)) {
+        return $BaseEnvironmentFile
+    }
+
+    $derivedName = "$([System.IO.Path]::GetFileName($BaseEnvironmentFile)).config-db"
+    $derivedPath = Join-Path (Join-Path $DockerComposeRoot ".derived") $derivedName
+    Write-DerivedEnvFile `
+        -BaseEnvironmentFile $BaseEnvironmentFile `
+        -TargetPath $derivedPath `
+        -KeyOverrides @{ DMS_CONFIG_DATABASE_NAME = $effectiveName }
+
+    return $derivedPath
+}
+
+function Resolve-RegisteredDatastoreTarget {
+    <#
+    .SYNOPSIS
+        The single authority for the DMS datastore database a host-side phase registers in CMS. Both
+        configure-local-data-store.ps1 and start-published-dms.ps1's in-process registration call it BEFORE
+        any mutation (CMS client/tenant creation, container start, OpenIddict init), so an invalid effective
+        target fails in preflight rather than after initialization. Pure (no Docker/IO): the caller supplies
+        the already-Compose-resolved topology anchor.
+
+    .DESCRIPTION
+        One normalization rule, one place:
+          * Null / empty / whitespace -DataStoreDatabaseName is treated as OMITTED (the bootstrap chain's
+            convention - build-dms forwards an empty default mechanically), so it converges on the
+            Compose-resolved topology anchor.
+          * A nonblank -DataStoreDatabaseName is an intentional replacement (e.g. the E2E database).
+        The resulting EFFECTIVE target (replacement or anchor) must be a single nonblank value, and in
+        separate topology must NOT identify the dedicated configuration database (edfi_configurationservice)
+        under the engine's provider-specific identity, or the topology would collapse. That collision is
+        validated on the effective target regardless of whether it came from a replacement or the anchor.
+        The datastore registration is skipped entirely for -NoDataStore (it selects an existing CMS record and
+        creates nothing), so callers do not resolve a target in that case.
+
+    .PARAMETER InfrastructureEngine
+        The engine the caller selected ('postgresql' | 'mssql').
+
+    .PARAMETER RequestedDatabaseName
+        The explicit -DataStoreDatabaseName value (blank = omitted, converge on the anchor).
+
+    .PARAMETER TopologyDatastoreDatabaseName
+        The Compose-resolved topology datastore anchor (Get-ComposeResolvedConfiguration.TopologyDatastoreDatabaseName).
+
+    .PARAMETER SeparateConfigDatabase
+        The topology; when set, the EFFECTIVE target (replacement or anchor) must be a different physical
+        database from edfi_configurationservice.
+    #>
+    param(
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
+        [AllowEmptyString()][AllowNull()][string]$RequestedDatabaseName,
+        [AllowEmptyString()][AllowNull()][string]$TopologyDatastoreDatabaseName,
+        [switch]$SeparateConfigDatabase
+    )
+
+    $InfrastructureEngine = ConvertTo-CanonicalDatabaseEngine -Engine $InfrastructureEngine
+
+    # 1. Determine the effective registered target: an explicit replacement (blank = omitted) else the anchor.
+    $effectiveTarget = if (-not [string]::IsNullOrWhiteSpace($RequestedDatabaseName)) { $RequestedDatabaseName } else { $TopologyDatastoreDatabaseName }
+
+    # 2. The effective target must be a single nonblank concrete value.
+    if ([string]::IsNullOrWhiteSpace($effectiveTarget)) {
+        throw "The DMS topology datastore database resolved by Docker Compose is blank, so there is no database to register. Set POSTGRES_DB_NAME (PostgreSQL) or MSSQL_DB_NAME (SQL Server), or the variable it references."
+    }
+
+    # 2a. The effective target must carry no leading/trailing whitespace. The exact providers (Npgsql /
+    #     Microsoft.Data.SqlClient) TRIM whitespace around a keyword value when parsing, so 'Database= edfi_configurationservice'
+    #     parses as 'edfi_configurationservice'. An untrimmed value would therefore fail the collision
+    #     comparison below (compared ordinally/case-insensitively but NOT trimmed) while the constructed
+    #     connection silently targets the trimmed name - the same collapse the collision check is meant to
+    #     prevent. Reject it rather than silently trimming; internal spaces (e.g. 'edfi data-store') are fine.
+    if ($effectiveTarget -ne $effectiveTarget.Trim()) {
+        throw "The DMS datastore database '$effectiveTarget' has leading or trailing whitespace. The connection-string providers trim it when parsing, so it would not compare equal to the dedicated configuration database here yet target the trimmed name at runtime. Remove the surrounding whitespace (internal spaces are allowed)."
+    }
+
+    # 2b. The effective target is concatenated into the CMS/DMS connection string as the Database keyword value
+    #     (Dms-Management New-DataStoreConnectionString / Add-DataStore), and the exact providers use last-wins
+    #     keyword semantics - so a value carrying a connection-string delimiter, a quoting/interpolation
+    #     character, or a control character could inject a second Database/Host/Server keyword and silently
+    #     redirect the stored connection (collapsing a separate topology past a green preflight, or the
+    #     equivalence check below). Reject those here, once, for the effective target (replacement OR anchor),
+    #     before the collision comparison and before any connection is built. This is an identifier-safety
+    #     check, not a connection-string parser: ordinary names - letters (including Unicode), digits, spaces,
+    #     '_', '-', '.' - pass unchanged; only connection-string-hostile characters are rejected.
+    if ($effectiveTarget -match '[;={}"''`\x00-\x1F\x7F]') {
+        throw "The DMS datastore database '$effectiveTarget' contains a character that is not valid in a database identifier (a connection-string delimiter ';' or '=', a quoting/interpolation character, or a control character). It is used verbatim as the connection-string Database keyword, so it must not be able to inject additional keywords. Use a plain database name (letters, digits, spaces, '_', '-', '.')."
+    }
+
+    # 3. Separate topology: the EFFECTIVE target (replacement OR anchor) must not identify the dedicated
+    #    configuration database, or the topology would collapse - validated regardless of the source, so a
+    #    colliding anchor is caught in direct/manual configure without depending on another caller having run
+    #    the runtime contract first.
+    if ($SeparateConfigDatabase -and (Test-DatabaseNameEquivalent -Engine $InfrastructureEngine -Left $effectiveTarget -Right 'edfi_configurationservice')) {
+        throw "The effective DMS datastore database '$effectiveTarget' is the same physical database as the dedicated configuration database 'edfi_configurationservice' under $InfrastructureEngine identity semantics, so the separate topology would collapse. Choose a different DMS datastore database (or -DataStoreDatabaseName)."
+    }
+
+    return $effectiveTarget
 }

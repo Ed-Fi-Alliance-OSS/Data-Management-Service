@@ -184,11 +184,12 @@ endpoints, etc.) still comes from the base environment file; pass `-EnvironmentF
 override those base settings, and the overlay still composes on top of it.
 
 > [!NOTE]
-> **Database topology.** Local deployments host the Configuration Service and DMS in one shared
-> physical database on both engines: the CMS `dmscs` schema, and the self-contained (OpenIddict)
-> identity stores, live inside the same database as the DMS datastore (`POSTGRES_DB_NAME` on
-> PostgreSQL, `MSSQL_DB_NAME` on MSSQL) rather than a separate Configuration Service database. An
-> opt-in separate-CMS-database mode is planned (DMS-1270).
+> **Database topology.** Local deployments default to a *shared* database on both engines: the CMS
+> `dmscs` schema and the self-contained (OpenIddict) identity stores live inside the same database
+> as the DMS datastore (`POSTGRES_DB_NAME` on PostgreSQL, `MSSQL_DB_NAME` on MSSQL). Pass
+> `-SeparateConfigDatabase` for a production-like *separate* topology in which the Configuration
+> Service uses a dedicated `edfi_configurationservice` database while the DMS datastore selection is
+> unchanged. See "Configuration Service database topology" below.
 
 A few things are specific to the MSSQL path:
 
@@ -201,8 +202,8 @@ A few things are specific to the MSSQL path:
   the DMS relational schema into that database (see "Database topology" above).
 * **Relational backend only.** MSSQL is supported through the relational backend
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
-  which auto-detects the SQL Server dialect from the data-store connection string and invokes
-  `api-schema-tools ddl provision --dialect mssql --create-database`.
+  which selects the dialect from the effective `DMS_DATASTORE` (not the data-store connection
+  string) and invokes `api-schema-tools ddl provision --dialect mssql --create-database`.
 * **No Debezium CDC.** The relational backend serves both writes and queries directly from
   SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
@@ -233,6 +234,134 @@ After the stack is up, run the smoke tests the same way as for PostgreSQL:
 ```pwsh
 ../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
+
+## Configuration Service database topology
+
+The Configuration Service (CMS) database is selected independently of the database engine through
+`DMS_CONFIG_DATABASE_NAME`, the single configuration-database name that both PostgreSQL and SQL
+Server interpolate into `DMS_CONFIG_DATABASE_CONNECTION_STRING`. Two topologies are available on
+both engines; the choice is never inferred from the engine:
+
+* **Shared (default).** `DMS_CONFIG_DATABASE_NAME` resolves to the DMS datastore database
+  (`POSTGRES_DB_NAME` / `MSSQL_DB_NAME`), so CMS shares that database.
+* **Separate (`-SeparateConfigDatabase`).** `DMS_CONFIG_DATABASE_NAME` resolves to the dedicated
+  `edfi_configurationservice` database. The DMS datastore selection is unchanged; only CMS moves.
+  Selecting separate mode when the DMS datastore is the same physical database as
+  `edfi_configurationservice` (under the engine's identity semantics - PostgreSQL is case-sensitive, SQL
+  Server case-insensitive) is rejected with a clear diagnostic, because the topology would not actually be
+  separate.
+
+`-SeparateConfigDatabase` is available on `start-local-dms.ps1`, `start-published-dms.ps1`,
+`bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1`, the shared bootstrap wrapper, and
+`build-dms.ps1 StartEnvironment`, and is forwarded consistently through every phase.
+
+The seam requirement is scoped to these full-stack entry points: every full-stack environment profile they
+consume must define `DMS_CONFIG_DATABASE_NAME` and route its CMS connection string through it. The standalone
+Configuration Service lane (`start-local-config.ps1` and the `build-config.ps1` E2E profiles
+`.env.config.e2e`, `.env.config.mssql.e2e`, and `.env.config.mssql.multitenant.e2e`) does not expose
+`-SeparateConfigDatabase`; it owns one explicit CMS target, so those profiles are outside the topology switch
+and deliberately do not define the seam.
+
+As a preflight, the start scripts resolve the effective runtime settings by asking Docker Compose itself
+(`docker compose config`, which applies your shell environment over the env file exactly as `up`
+will) and validate them once. This preflight may resolve Compose configuration and resolve, reuse, or
+build the host validator tool; where no host tool is available, the published start instead pulls the
+selected published image and runs an isolated `--network none` validator container. It completes before
+any stack lifecycle mutation - no DMS/config Docker-image build, Compose up/down, volume deletion,
+network creation, stack-service startup, or identity/CMS initialization. Each service has its own
+independently interpolated runtime provider, so each is checked against the selected engine separately:
+
+* **DMS service** (when its compose file is in the set): its runtime provider (`DMS_DATASTORE`, the
+  `dms` service's `AppSettings__Datastore`) must be exactly `postgresql` or `mssql` and match the
+  selected engine; and the topology datastore database is the engine-specific `POSTGRES_DB_NAME` /
+  `MSSQL_DB_NAME` that Compose resolves on the `db` service - the authoritative anchor, never
+  `DATABASE_CONNECTION_STRING_ADMIN` (a readiness/admin connection whose database can differ). A shell
+  override of that key - direct or through a referenced variable - is reflected; the runtime contract
+  validates that concrete resolved value, and host-side configuration and registration consume it by
+  default (an explicit `-DataStoreDatabaseName` can replace the registered datastore target without
+  changing this topology anchor).
+* **Configuration Service** (when its compose file is in the set): its runtime provider
+  (`DMS_CONFIG_DATASTORE`, the `config` service's `AppSettings__Datastore`) must be exactly `postgresql`
+  or `mssql` and match the selected engine; and the connection string must be a valid connection for
+  that engine (parsed with the exact runtime providers - Npgsql / Microsoft.Data.SqlClient - via the
+  `api-schema-tools connection validate` verb, so any keyword the driver rejects is caught here) and
+  target the effective `DMS_CONFIG_DATABASE_NAME`.
+* **Database infrastructure** (always): on SQL Server the SA password must be non-blank.
+
+Because `DMS_DATASTORE` and `DMS_CONFIG_DATASTORE` are separate variables, a shell override of either
+cannot silently point its container at a different engine than the one that starts. Each service is
+validated only when its compose file is actually selected (a published Keycloak start whose compose set
+omits the local Configuration Service skips only the CMS checks - the DMS and stack checks still run;
+several modes include CMS, so participation is decided by the composed file set, not by `-EnableConfig`
+alone). Anything else fails fast with a clear diagnostic before any stack lifecycle mutation.
+
+> Because connection strings are parsed with the exact runtime providers, the start scripts need the
+> `api-schema-tools` executable (the same tool the provisioning phase uses). How they obtain it differs by
+> lane, because only the published lane can run a source-less host.
+>
+> The **local start scripts** (`start-local-dms.ps1` and the standalone `start-local-config.ps1`) call
+> `Resolve-DmsSchemaTool -BuildIfMissing`, which resolves a host executable as follows:
+>
+> * an explicit `DMS_SCHEMA_TOOL_PATH` is authoritative (it must exist);
+> * otherwise a prebuilt copy is discovered under `eng/docker-compose/.bootstrap/tools/api-schema-tools`
+>   or the SchemaTools build output;
+> * otherwise, when no candidate exists and the .NET SDK and SchemaTools project are available, the
+>   start lane publishes the tool from source once to `.bootstrap/tools/api-schema-tools` and re-probes,
+>   so a clean checkout self-heals without a manual build;
+> * finally, an `api-schema-tools` already on `PATH` is accepted only when
+>   `DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true` opts in; otherwise resolution throws rather than silently
+>   using an unpinned tool.
+>
+> An already-existing executable is reused as-is; after pulling changes to SchemaTools, rebuild or
+> re-publish it (`dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools`,
+> or `build-dms.ps1 BuildAndPublish` / the bootstrap flow) so the resolver picks up the current tool. These
+> local lanes have **no image fallback**: on a host with neither a resolvable tool nor the SDK, resolution
+> fails with build/configuration guidance. (`prepare-dms-schema.ps1` likewise does not auto-publish - it
+> requires an already-resolvable prebuilt tool.)
+>
+> `start-published-dms.ps1` instead calls `Resolve-DmsConnectionValidator`, which first attempts that same
+> host-first resolution (`Resolve-DmsSchemaTool -BuildIfMissing`, so a prebuilt host tool or an SDK build is
+> still preferred when present) and, **only** when no explicit `DMS_SCHEMA_TOOL_PATH` was supplied and no
+> host tool can be resolved or built - the clean Docker/PowerShell-only **published-image** host with no .NET
+> SDK and no source build - falls back to running the exact same `connection validate` verb **inside the DMS
+> image**, which bundles the `api-schema-tools` CLI at `/app/ApiSchemaTools/` (invoked as
+> `dotnet /app/ApiSchemaTools/api-schema-tools.dll ...` with `docker run --network none`, so it only parses
+> the string and never connects). Connection strings are therefore still validated with the exact runtime
+> providers - the parser is never weakened - without a host SDK. An explicit `DMS_SCHEMA_TOOL_PATH` stays
+> authoritative and is never masked by the image: a wrong or stale explicit path fails hard rather than
+> silently falling back to the container. A published Keycloak start with no local Configuration Service
+> still resolves the validator, because the DMS datastore validation above remains active even when the CMS
+> checks are skipped. Only the database-only diagnostic startup (`-DbOnly`) and teardown skip the validator
+> entirely - they do not participate in the DMS/CMS runtime contract or register a datastore, so there is
+> nothing for the preflight to validate.
+
+```pwsh
+# Shared (default): CMS shares the DMS datastore database
+./bootstrap-local-dms.ps1 -EnableSwaggerUI
+
+# Separate: CMS uses a dedicated edfi_configurationservice database
+./bootstrap-local-dms.ps1 -SeparateConfigDatabase -EnableSwaggerUI
+
+# Separate on SQL Server (topology is orthogonal to the engine)
+./bootstrap-local-dms.ps1 -DatabaseEngine mssql -SeparateConfigDatabase -EnableSwaggerUI
+```
+
+### Who creates the configuration database
+
+Creation of a missing configuration database depends only on the identity provider, and is
+idempotent on both engines:
+
+* **Keycloak.** The Configuration Service's engine-neutral DbUp `EnsureDatabase` deployment creates
+  the database during normal CMS startup, for both PostgreSQL and SQL Server.
+* **Self-contained (OpenIddict).** `setup-openiddict.ps1 -InitDb` runs before CMS starts and creates
+  the database: SQL Server through its guarded `master`-database creation, PostgreSQL through an
+  equivalent guarded creation via the `postgres` maintenance database (with database-name
+  validation). It then initializes the OpenIddict key store that CMS reads at startup.
+
+The PostgreSQL container entrypoint (`postgresql-init.sh`) creates only the DMS datastore database
+on a fresh volume; it never creates a dedicated Configuration Service database, so the two creation
+owners above are not duplicated. (In the shared topology the datastore database is also the
+configuration database, and the guarded pre-CMS creation then no-ops idempotently.)
 
 ## Selecting a Data Standard version (bootstrap)
 

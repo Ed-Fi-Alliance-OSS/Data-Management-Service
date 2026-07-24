@@ -89,19 +89,27 @@ Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
             Should -BeGreaterOrEqual 2
     }
 
-    It "defaults MSSQL_SA_PASSWORD to the documented dev password when the env file omits it" {
-        # Matches the abcdefgh1! default baked into mssql.yml and start-local-dms.ps1's
-        # readiness poll, so a custom env file that omits the key does not bring SQL Server
-        # up on the default password while leaving the resolved connection string blank.
-        $script:configureSource | Should -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"'
+    It "resolves the datastore SA password and topology anchor by asking Docker Compose (shell-over-file), not a PowerShell re-implementation" {
+        # The DMS datastore is on the same SQL Server container as CMS, whose password is compose's
+        # ${MSSQL_SA_PASSWORD:-abcdefgh1!} (a shell export wins over the env file). Resolve it - and the
+        # engine-keyed topology datastore anchor - by asking Docker Compose itself so the datastore
+        # connection stored in CMS matches the container under a shell override, without re-implementing
+        # compose precedence in PowerShell.
+        $script:configureSource | Should -Match 'Get-ComposeResolvedConfiguration'
+        $script:configureSource | Should -Match '-InfrastructureEngine \$DatabaseEngine'
+        $script:configureSource | Should -Match '\$resolvedDatastoreCompose\.MssqlSaPassword'
+        ([regex]::Matches($script:configureSource, 'Resolve-ComposeVariable')).Count | Should -Be 0
     }
 
-    It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {
-        # Mirrors the PostgreSQL $postgresDbName resolution so per-instance database names
-        # passed via -DataStoreDatabaseName are not silently overridden by the env default
-        # on the mssql branch.
-        $script:configureSource | Should -Match '\$mssqlDbName\s*=\s*\r?\n\s*if \(\[string\]::IsNullOrWhiteSpace\(\$DataStoreDatabaseName\)\)'
-        $script:configureSource | Should -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_DB_NAME" -DefaultValue "edfi_datamanagementservice"'
+    It "converges the datastore database on the Compose-resolved topology anchor, not a raw MSSQL_DB_NAME env read" {
+        # The registered datastore database is the Compose-resolved anchor unless an explicit
+        # -DataStoreDatabaseName replacement is supplied; configure must not independently read the raw
+        # MSSQL_DB_NAME / POSTGRES_DB_NAME env value (which a shell override could split from the container).
+        $script:configureSource | Should -Match 'Resolve-RegisteredDatastoreTarget'
+        $script:configureSource | Should -Match '-TopologyDatastoreDatabaseName \$resolvedDatastoreCompose\.TopologyDatastoreDatabaseName'
+        $script:configureSource | Should -Match '-RequestedDatabaseName \$DataStoreDatabaseName'
+        $script:configureSource | Should -Not -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "MSSQL_DB_NAME"'
+        $script:configureSource | Should -Not -Match 'Get-EnvValueOrDefault -EnvValues \$envValues -Name "POSTGRES_DB_NAME"'
     }
 }
 
@@ -124,17 +132,22 @@ Describe "start-published-dms.ps1 MSSQL data-store wiring (DMS-1255)" {
             Should -BeGreaterOrEqual 2
     }
 
-    It "defaults MSSQL_SA_PASSWORD to the documented dev password when the env file omits it" {
-        # Matches the abcdefgh1! default baked into mssql.yml and the script's own
-        # Wait-MssqlReady readiness polls.
-        $script:startPublishedSource | Should -Match '(?s)\$mssqlPassword =\s*if \(\[string\]::IsNullOrWhiteSpace\(\$envValues\.MSSQL_SA_PASSWORD\)\)\s*\{\s*"abcdefgh1!"'
+    It "reuses the runtime contract's effective SA password for the datastore connection" {
+        # The DMS datastore is on the same SQL Server container as CMS. start-published-dms.ps1 already
+        # resolves one Resolve-EffectiveConfigRuntimeContract (modeling ${MSSQL_SA_PASSWORD:-abcdefgh1!}
+        # shell-over-file); the datastore connection stored in CMS must reuse that same effective value so a
+        # shell override cannot split the datastore credential from the container's.
+        $script:startPublishedSource | Should -Match '-Password \$contract\.MssqlSaPassword\b'
+        ([regex]::Matches($script:startPublishedSource, '\.MssqlSaPassword\.Value')).Count | Should -Be 0
     }
 
-    It "honors -DataStoreDatabaseName for the MSSQL database name instead of always reading MSSQL_DB_NAME" {
-        # Mirrors the PostgreSQL $postgresDbName resolution so a caller-supplied database name
-        # is not silently overridden by the env default on the mssql branch.
-        $script:startPublishedSource | Should -Match '(?s)\$mssqlDbName =\s*if \(-not \[string\]::IsNullOrWhiteSpace\(\$DataStoreDatabaseName\)\)\s*\{\s*\$DataStoreDatabaseName'
-        $script:startPublishedSource | Should -Match 'MSSQL_DB_NAME'
+    It "converges the datastore database on the contract anchor or an explicit -DataStoreDatabaseName replacement, not a raw MSSQL_DB_NAME env read" {
+        # An explicit replacement (e.g. the E2E database) wins; otherwise the registered datastore database
+        # is the runtime contract's Compose-resolved topology anchor - never a raw env re-read that a shell
+        # override could split from the container's database.
+        $script:startPublishedSource | Should -Match 'Resolve-RegisteredDatastoreTarget'
+        $script:startPublishedSource | Should -Match '-TopologyDatastoreDatabaseName \$contract\.TopologyDatastoreDatabaseName'
+        $script:startPublishedSource | Should -Match '\$postgresDbName = \$registeredDatastoreDatabaseName'
     }
 }
 

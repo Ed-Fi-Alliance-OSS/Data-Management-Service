@@ -1474,8 +1474,12 @@ exit $ExitCode
                 $content | Should -Match "\`$bootstrapMode" -Because "$startScript must gate the bootstrap-dms.yml inclusion on the boolean returned by Invoke-BootstrapStartupConfiguration"
             }
 
+            # Config Service participation folds $bootstrapMode into the single $configServiceIncluded
+            # authority, and published-config.yml is gated on it - so bootstrap mode always mounts the config
+            # service (and its staged claims).
             $publishedStartScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1") -Raw
-            $publishedStartScript | Should -Match 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode\)\s*\{[^}]*?published-config\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
+            $publishedStartScript | Should -Match '\$configServiceIncluded\s*=\s*\$EnableConfig -or \$InfraOnly -or \(\$IdentityProvider -eq "self-contained"\) -or \$bootstrapMode' -Because "the participation authority must fold in bootstrap mode"
+            $publishedStartScript | Should -Match 'if \(\$configServiceIncluded\)\s*\{[^}]*?published-config\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
         }
 
         It "retains AddExtensionSecurityMetadata as a transitional non-bootstrap hybrid claims path" {

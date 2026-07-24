@@ -177,7 +177,25 @@ param (
     # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
-    $DatabaseEngine = "postgresql"
+    $DatabaseEngine = "postgresql",
+
+    # Local database topology. Omitted (shared, the default): the Configuration Service uses the
+    # selected DMS datastore database. Supplied (separate): the Configuration Service uses the
+    # dedicated edfi_configurationservice database, without changing the DMS datastore selection.
+    # Orthogonal to the database engine - the topology is never inferred from the engine.
+    [Switch]
+    $SeparateConfigDatabase,
+
+    # Resolve and validate the effective Configuration Service runtime contract, then stop before starting
+    # the stack. Preflight may resolve Compose configuration (`docker compose config`) and resolve, reuse, or
+    # build the host validator tool (the host schema tool, published from source via the .NET SDK when
+    # missing). It completes before any stack lifecycle mutation: no DMS/config Docker-image build, Compose
+    # up/down, volume deletion, network creation, stack-service startup, or identity/CMS initialization. Same
+    # preflight the full startup path runs, exposed as a stop point so an outer orchestrator (build-dms.ps1
+    # StartEnvironment) gets identical validation before it builds images or tears down volumes. Not valid
+    # with teardown (-d).
+    [Switch]
+    $PreflightOnly
 )
 
 # Early fail-fast parameter validation — runs before any module import or Docker activity.
@@ -195,6 +213,10 @@ if ($PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhi
 
 if ($DbOnly -and $r) {
     throw "Parameter -r/-Rebuild is not valid with -DbOnly. Database-only mode starts and waits for the database without building application images."
+}
+
+if ($PreflightOnly -and $d) {
+    throw "Parameter -PreflightOnly is not valid with -d (teardown). Preflight validates the startup contract; it does not stop services."
 }
 
 $databaseOnlyStartup = $DbOnly -and -not $d
@@ -241,7 +263,17 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already composed via
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
-$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -SkipMssqlCmsDatabaseValidation:($databaseOnlyStartup -or $d)
+$EnvironmentFile = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $DatabaseEngine -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot
+# Resolve the local database topology ONLY when the application (Configuration Service) topology
+# participates in this lifecycle mode. Full startup (default / -InfraOnly / -DmsOnly) materializes
+# DMS_CONFIG_DATABASE_NAME to a concrete name so docker-compose interpolation and every host-side
+# consumer - including setup-openiddict.ps1 - target the same Configuration Service database. The
+# database-only diagnostic slice and teardown do not participate in CMS topology: they must not require
+# its materialization (which would otherwise throw on a minimal environment that omits POSTGRES_DB_NAME)
+# and instead honor the Compose database default (${POSTGRES_DB_NAME:-edfi_datamanagementservice}).
+if (-not $d -and -not $DbOnly) {
+    $EnvironmentFile = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DockerComposeRoot $PSScriptRoot -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase
+}
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     # Identity/CMS/DMS settings are application concerns. Keeping them outside DbOnly means an
@@ -390,6 +422,50 @@ if ($d) {
     }
 }
 else {
+    # Resolve and validate the effective Configuration Service runtime contract ONCE, before starting the
+    # stack. Preflight may resolve Compose configuration (`docker compose config`) and resolve, reuse, or
+    # build the host validator tool; it completes before any stack lifecycle mutation (no DMS/config
+    # Docker-image build, Compose up/down, volume deletion, network creation, stack-service startup, or
+    # identity/CMS initialization). `docker compose config` resolves the same files, env file, and shell the `up` calls
+    # below use - so what is validated here is exactly what the containers receive. Connection strings are
+    # parsed by the exact runtime providers via the api-schema-tools validator. The DbOnly diagnostic slice
+    # initializes no CMS, so it resolves only the SA-password credential it needs (below), not the full
+    # contract.
+    if (-not $DbOnly) {
+        # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool).
+        # Imported here in the startup path only (never on teardown or -DbOnly), and with -Force so a
+        # long-lived session that loaded a pre-BuildIfMissing copy is refreshed to the current resolver
+        # signature. The module's own nested bootstrap-manifest import stays WITHOUT -Force, so this reload
+        # refreshes the resolver without re-homing the manifest functions this script already loaded.
+        # -BuildIfMissing publishes the tool from source once when no prebuilt copy exists and the SDK is present.
+        Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
+        $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
+        $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local" -InfrastructureEngine $DatabaseEngine
+        # The local stack always includes local-dms.yml and local-config.yml (outside the DbOnly diagnostic
+        # phase), so both the DMS service and the Configuration Service participate and their runtime
+        # providers are both validated against the selected engine.
+        $contract = Resolve-EffectiveConfigRuntimeContract `
+            -InfrastructureEngine $DatabaseEngine `
+            -ConfigServiceIncluded $true `
+            -DmsServiceIncluded $true `
+            -SeparateConfigDatabase:$SeparateConfigDatabase `
+            -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
+            -ResolvedDmsProvider $resolvedCompose.DmsProvider `
+            -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
+            -SchemaToolPath $schemaToolPath `
+            -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
+            -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName
+    }
+
+    if ($PreflightOnly) {
+        # The runtime contract resolved and validated above. Preflight may have resolved Compose configuration
+        # and resolved, reused, or built the host validator tool; it completes before any stack lifecycle
+        # mutation. Return before the first such mutation so an outer orchestrator can gate image build,
+        # teardown, and volume deletion on this exact preflight.
+        Write-Output "Preflight validation complete. Preflight may resolve Compose configuration and resolve, reuse, or build a host validator tool. It completes before any stack lifecycle mutation: no DMS/config Docker-image build, Compose up/down, volume deletion, network creation, stack-service startup, or identity/CMS initialization."
+        return
+    }
+
     $existingNetwork = docker network ls --filter name="dms" -q
     if (! $existingNetwork) {
         docker network create dms
@@ -540,13 +616,11 @@ else {
         }
 
         if ($DatabaseEngine -eq "mssql") {
-            $mssqlSaPassword =
-                if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                    "abcdefgh1!"
-                }
-                else {
-                    $envValues.MSSQL_SA_PASSWORD
-                }
+            # Resolve the SA password the container is initialized with by asking Docker Compose itself
+            # (the resolved db-service MSSQL_SA_PASSWORD, a shell export over the env file), so the readiness
+            # poll authenticates with the credential the container actually uses. This diagnostic slice
+            # starts only the database, so it reads just the credential, not the full runtime contract.
+            $mssqlSaPassword = (Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local").MssqlSaPassword
             Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
         }
         else {
@@ -583,31 +657,25 @@ else {
     }
 
     if ($DatabaseEngine -eq "mssql") {
-        # SQL Server accepts connections noticeably later than its container reports running;
-        # poll before the phase commands need it. Default matches mssql.yml's compose default.
-        $mssqlSaPassword =
-            if ([string]::IsNullOrWhiteSpace($envValues.MSSQL_SA_PASSWORD)) {
-                "abcdefgh1!"
-            }
-            else {
-                $envValues.MSSQL_SA_PASSWORD
-            }
-        Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+        # SQL Server accepts connections noticeably later than its container reports running; poll before
+        # the phase commands need it, using the contract's effective SA credential (resolved above).
+        Wait-MssqlReady -ContainerName "dms-mssql" -Password $contract.MssqlSaPassword
     }
 
-    # Engine-aware database parameters for the setup-openiddict.ps1 calls below (mirrors
-    # start-local-config.ps1). On SQL Server the OpenIddict stores live in the shared DMS
-    # datastore database (MSSQL_DB_NAME), which CMS also uses now that the two share one
-    # database; -InitDb creates it (and the dmscs schema) when missing, ahead of the CMS
-    # startup deploy. On PostgreSQL the script defaults apply unchanged (shared
-    # POSTGRES_DB_NAME database).
-    $identityDbParams =
-        if ($DatabaseEngine -eq "mssql") {
-            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME" }
+    # Engine-aware database parameters for the setup-openiddict.ps1 calls below, all from the one contract.
+    # Built (and $contract.OpenIddict read) only for self-contained identity - the sole consumer of these
+    # parameters. A Keycloak run never reads them.
+    if ($IdentityProvider -eq "self-contained") {
+        $identityDbParams = @{
+            DbType = $contract.OpenIddict.DbType
+            DbUser = $contract.OpenIddict.DbUser
+            DbPort = $contract.OpenIddict.DbPort
+            DbName = $contract.OpenIddict.DbName
         }
-        else {
-            @{}
+        if ($contract.OpenIddict.DbPassword) {
+            $identityDbParams.DbPassword = $contract.OpenIddict.DbPassword
         }
+    }
 
     Start-Sleep 20
 

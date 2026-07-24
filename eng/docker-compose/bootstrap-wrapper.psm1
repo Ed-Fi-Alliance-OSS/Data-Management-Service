@@ -555,7 +555,14 @@ function Invoke-BootstrapWrapper {
         # E2E-shaped .env.ds<NN> overlays (which add the Sample/Homograph test extensions) and
         # would override this surface.
         [ValidateSet("5.2", "6.1")]
-        [string]$DataStandardVersion = "5.2"
+        [string]$DataStandardVersion = "5.2",
+
+        # Local database topology, forwarded verbatim to every start-script phase (infrastructure,
+        # health-wait continuation, and DMS-only) so repeated environment resolution stays
+        # consistent and never resets separate mode back to shared. Shared (default): the
+        # Configuration Service uses the DMS datastore database. Separate: the Configuration
+        # Service uses the dedicated edfi_configurationservice database.
+        [Switch]$SeparateConfigDatabase
     )
 
     $ErrorActionPreference = "Stop"
@@ -702,6 +709,10 @@ function Invoke-BootstrapWrapper {
         # composition order is deterministic; the two overlays touch disjoint keys. Guarded for
         # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
         # env-utility sibling module.
+        # The wrapper composes the engine overlay only to source the DMS datastore settings for the
+        # phases; it never reads the CMS connection string. The start script owns validating the whole
+        # Configuration Service runtime contract (engine, connection, and effective configuration
+        # database) once, up front, against Docker Compose's own resolution before CMS starts.
         $envUtilityPathForEngineOverlay = Join-Path $PSScriptRoot "env-utility.psm1"
         if ($DatabaseEngine -eq "mssql" -and (Test-Path -LiteralPath $envUtilityPathForEngineOverlay)) {
             Import-Module $envUtilityPathForEngineOverlay -Force
@@ -828,6 +839,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.DatabaseEngine = $DatabaseEngine
+        $startArgs.SeparateConfigDatabase = $SeparateConfigDatabase
         $startArgs.EnvironmentFile = $effectiveEnvFile
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -871,6 +883,7 @@ function Invoke-BootstrapWrapper {
         if ($AddSmokeTestCredentials) { $configureArgs.AddSmokeTestCredentials = $true }
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) { $configureArgs.SchoolYearRange = $SchoolYearRange }
         $configureArgs.DatabaseEngine = $DatabaseEngine
+        $configureArgs.SeparateConfigDatabase = $SeparateConfigDatabase
 
         # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
         $global:LASTEXITCODE = 0
@@ -946,6 +959,7 @@ function Invoke-BootstrapWrapper {
             if ($EnableSwaggerUI) { $healthWaitArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $healthWaitArgs.AddExtensionSecurityMetadata = $true }
             $healthWaitArgs.DatabaseEngine = $DatabaseEngine
+            $healthWaitArgs.SeparateConfigDatabase = $SeparateConfigDatabase
 
             & "$PSScriptRoot/$StartScriptName" @healthWaitArgs
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -985,6 +999,7 @@ function Invoke-BootstrapWrapper {
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
         $dmsStartArgs.DatabaseEngine = $DatabaseEngine
+        $dmsStartArgs.SeparateConfigDatabase = $SeparateConfigDatabase
 
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {

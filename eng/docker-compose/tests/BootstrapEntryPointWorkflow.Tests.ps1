@@ -793,8 +793,11 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $publishedConfigGuardPattern = 'if \(\$EnableConfig -or \$InfraOnly -or \$IdentityProvider -eq "self-contained" -or \$bootstrapMode\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
-            $startScript | Should -Match $publishedConfigGuardPattern -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+            # The single participation authority ($configServiceIncluded) folds in $bootstrapMode, and the
+            # published-config.yml inclusion is gated on it - so a bootstrap start always mounts the config
+            # service (and its staged claims) alongside DMS ApiSchema.
+            $startScript | Should -Match '\$configServiceIncluded\s*=\s*\$EnableConfig -or \$InfraOnly -or \(\$IdentityProvider -eq "self-contained"\) -or \$bootstrapMode'
+            $startScript | Should -Match 'if \(\$configServiceIncluded\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
         }
 
         It "start-published-dms.ps1 keeps non-bootstrap keycloak published-config.yml opt-in behavior" {
@@ -802,15 +805,23 @@ $failureStatement
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
 
-            $guardMatch = [regex]::Match(
+            # Opt-in now lives in the $configServiceIncluded definition, not in the file-inclusion guard: a
+            # non-bootstrap keycloak start (no -EnableConfig, no -InfraOnly, not self-contained) leaves the
+            # variable false, so published-config.yml stays out and the runtime contract skips the CMS
+            # invariants. Participation is never inferred from Keycloak.
+            $definitionMatch = [regex]::Match(
                 $startScript,
-                'if \((?<condition>[^\r\n]+)\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+                '\$configServiceIncluded\s*=\s*(?<definition>[^\r\n]+)'
             )
-            $guardMatch.Success | Should -BeTrue
+            $definitionMatch.Success | Should -BeTrue
 
-            $condition = $guardMatch.Groups["condition"].Value
-            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode'
-            $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
+            $definition = $definitionMatch.Groups["definition"].Value
+            $definition | Should -Be '$EnableConfig -or $InfraOnly -or ($IdentityProvider -eq "self-contained") -or $bootstrapMode'
+            $definition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
+
+            # The file inclusion and the runtime contract both consume that one authority.
+            $startScript | Should -Match 'if \(\$configServiceIncluded\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)'
+            $startScript | Should -Match '-ConfigServiceIncluded \$configServiceIncluded'
         }
     }
 
@@ -849,15 +860,48 @@ $failureStatement
             $startScript | Should -Not -Match '\$files \+= @\("-f", "mssql\.yml"\)'
         }
 
-        It "start-local-dms.ps1 passes engine-aware database parameters to every setup-openiddict.ps1 call" {
+        It "start-local-dms.ps1 sources the setup-openiddict.ps1 and readiness parameters from the runtime contract" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # On SQL Server the OpenIddict stores live in the shared DMS datastore database
-            # (created by -InitDb when missing, now that CMS shares it too); every invocation
-            # must splat the shared engine-aware parameters.
-            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:MSSQL_DB_NAME"'
+            # The full-stack lane resolves the runtime contract from Docker Compose's own resolution
+            # (Get-ComposeResolvedConfiguration) and reads every OpenIddict parameter, the readiness
+            # credential, and the SA password from it - so a shell override cannot split the container
+            # (and CMS) from pre-CMS OpenIddict initialization.
+            $startScript | Should -Match 'Get-ComposeResolvedConfiguration -ComposeFiles \$files -EnvironmentFile \$EnvironmentFile -ProjectName "dms-local"'
+            $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
+            $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
+            $startScript | Should -Match '-DmsServiceIncluded \$true'
+            $startScript | Should -Match 'DbType = \$contract\.OpenIddict\.DbType'
+            $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
+            ([regex]::Matches($startScript, 'Resolve-ComposeVariable')).Count | Should -Be 0 -Because "the full-stack lane must not re-implement compose precedence; the SA password comes from the runtime contract"
+
+            $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
+            $openiddictCalls.Count | Should -BeGreaterThan 0
+            foreach ($call in $openiddictCalls) {
+                $call.Value | Should -Match '@identityDbParams'
+            }
+        }
+
+        It "start-published-dms.ps1 sources the setup-openiddict.ps1, readiness, and datastore parameters from the runtime contract" {
+            $startScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
+            ) -Raw
+
+            # Same runtime-contract wiring as start-local-dms.ps1 (both full-stack lanes), extended to the DMS
+            # datastore connection stored in CMS, so every SQL Server credential is the one effective value.
+            $startScript | Should -Match 'Get-ComposeResolvedConfiguration -ComposeFiles \$files -EnvironmentFile \$EnvironmentFile -ProjectName "dms-published"'
+            $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
+            $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
+            $startScript | Should -Match '-DmsServiceIncluded \$true'
+            $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
+            $startScript | Should -Match '-Password \$contract\.MssqlSaPassword\b' -Because "the datastore connection stored in CMS reuses the contract's effective SA password"
+            $startScript | Should -Match '\$contract\.TopologyDatastoreDatabaseName' -Because "the registered datastore database sources from the runtime contract's Compose-resolved anchor (or an explicit -DataStoreDatabaseName replacement)"
+            ([regex]::Matches($startScript, 'Resolve-ComposeVariable')).Count | Should -Be 0 -Because "the full-stack lane must not re-implement compose precedence; every SA password comes from the runtime contract"
+
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
             foreach ($call in $openiddictCalls) {
@@ -1339,7 +1383,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
-                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials'
+                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials',
+                'SeparateConfigDatabase'
             )
 
             # Completeness guard: every parameter the entry script declares must be classified here
@@ -1368,6 +1413,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -AddExtensionSecurityMetadata `
                 -NoDataStore `
                 -AddSmokeTestCredentials `
+                -SeparateConfigDatabase `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
@@ -1617,6 +1663,146 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
         }
     }
 
+    Context "Bootstrap -SeparateConfigDatabase parameter surface and forwarding across both start scripts" {
+        BeforeAll {
+            # Isolated fixture proving forwarding directly: a stub start script declares its own
+            # -SeparateConfigDatabase switch and records the bound value, so the assertion does not
+            # depend on inspecting the wrapper's own source. Mirrors New-DatabaseEngineForwardingProbeRepo.
+            function script:New-SeparateConfigDatabaseForwardingProbeRepo {
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateSet("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")]
+                    [string]$WrapperEntryScriptName
+                )
+
+                $repoRoot = New-TestDirectory
+                $dockerComposeRoot = Join-Path $repoRoot "eng/docker-compose"
+                New-Item -ItemType Directory -Path $dockerComposeRoot -Force | Out-Null
+
+                foreach ($fileName in @(
+                    "bootstrap-wrapper.psm1",
+                    $WrapperEntryScriptName,
+                    "env-utility.psm1",
+                    ".env.bootstrap.ds52",
+                    ".env.bootstrap.ds61",
+                    ".env.mssql"
+                )) {
+                    Copy-DockerComposeFile -FileName $fileName -Destination $dockerComposeRoot
+                }
+
+                $envFile = Join-Path $dockerComposeRoot ".env.example"
+                @"
+POSTGRES_PASSWORD=secret-pass
+POSTGRES_DB_NAME=edfi_datamanagementservice
+POSTGRES_PORT=5544
+DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+DMS_HTTP_PORTS=18080
+DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+"@ | Set-Content -LiteralPath $envFile -Encoding utf8
+
+                $callLog = Join-Path $repoRoot "call-log.txt"
+                $startScriptName = $WrapperEntryScriptName -replace '^bootstrap-', 'start-'
+                @"
+param(
+    [string] `$EnvironmentFile,
+    [Switch] `$SeparateConfigDatabase,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$callLog' -Value "start SeparateConfigDatabase=`$SeparateConfigDatabase"
+"@ | Set-Content -LiteralPath (Join-Path $dockerComposeRoot $startScriptName) -Encoding utf8
+
+                return [pscustomobject]@{
+                    RepoRoot      = $repoRoot
+                    WrapperScript = Join-Path $dockerComposeRoot $WrapperEntryScriptName
+                    CallLog       = $callLog
+                }
+            }
+        }
+
+        AfterEach {
+            if ($null -ne $script:separateConfigForwardingRepo -and (Test-Path -LiteralPath $script:separateConfigForwardingRepo.RepoRoot)) {
+                Remove-Item -LiteralPath $script:separateConfigForwardingRepo.RepoRoot -Recurse -Force
+            }
+            $script:separateConfigForwardingRepo = $null
+        }
+
+        It "every start and bootstrap entry point declares -SeparateConfigDatabase" {
+            foreach ($name in @(
+                "start-local-dms.ps1",
+                "start-published-dms.ps1",
+                "bootstrap-local-dms.ps1",
+                "bootstrap-published-dms.ps1"
+            )) {
+                (Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot $name)) |
+                    Should -Contain "SeparateConfigDatabase" -Because "$name must expose the topology switch"
+            }
+
+            # The wrapper's parameters live on the Invoke-BootstrapWrapper function, not a
+            # script-level param block, so assert its declaration via source.
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+            $wrapperSource | Should -Match '\[Switch\]\$SeparateConfigDatabase'
+        }
+
+        It "the wrapper forwards -SeparateConfigDatabase to the start, health-wait, and DMS-start phases unconditionally" {
+            $wrapperSource = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
+            ) -Raw
+
+            $wrapperSource | Should -Match '(?m)^\s*\$startArgs\.SeparateConfigDatabase\s*=\s*\$SeparateConfigDatabase\s*$'
+            $wrapperSource | Should -Match '(?m)^\s*\$healthWaitArgs\.SeparateConfigDatabase\s*=\s*\$SeparateConfigDatabase\s*$'
+            $wrapperSource | Should -Match '(?m)^\s*\$dmsStartArgs\.SeparateConfigDatabase\s*=\s*\$SeparateConfigDatabase\s*$'
+        }
+
+        It "the datastore-only overlay phases (wrapper, configure, provision) do not validate the CMS runtime contract" {
+            # These phases compose the engine overlay for the DMS datastore only; the Configuration
+            # Service engine/connection/database agreement is owned and validated once, up front, by the
+            # start scripts (Resolve-EffectiveConfigRuntimeContract, against Docker Compose's own
+            # resolution). There is a single policy, so these phases neither re-validate it nor carry the
+            # removed shared-only skip flag.
+            foreach ($name in @('bootstrap-wrapper.psm1', 'configure-local-data-store.ps1', 'provision-dms-schema.ps1')) {
+                $source = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
+                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile' -Because "$name composes the engine overlay for the datastore"
+                # Count actual invocations via the AST, not comment mentions (these files reference the
+                # function by name in comments to document where CMS validation happens).
+                $perr = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$perr)
+                $contractCalls = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Resolve-EffectiveConfigRuntimeContract' }, $true)
+                $contractCalls.Count | Should -Be 0 -Because "$name is a datastore-only phase; the start script owns CMS runtime-contract validation"
+                ([regex]::Matches($source, 'SkipMssqlCmsDatabaseValidation')).Count | Should -Be 0 -Because "the shared-only CMS invariant and its skip flag no longer exist"
+            }
+        }
+
+        It "bootstrap-local-dms.ps1 forwards -SeparateConfigDatabase to start-local-dms.ps1" {
+            $script:separateConfigForwardingRepo = New-SeparateConfigDatabaseForwardingProbeRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+
+            & $script:separateConfigForwardingRepo.WrapperScript -SeparateConfigDatabase
+
+            $log = @(Get-Content -LiteralPath $script:separateConfigForwardingRepo.CallLog)
+            $log | Should -Contain "start SeparateConfigDatabase=True"
+        }
+
+        It "bootstrap-published-dms.ps1 forwards -SeparateConfigDatabase to start-published-dms.ps1" {
+            $script:separateConfigForwardingRepo = New-SeparateConfigDatabaseForwardingProbeRepo -WrapperEntryScriptName "bootstrap-published-dms.ps1"
+
+            & $script:separateConfigForwardingRepo.WrapperScript -SeparateConfigDatabase
+
+            $log = @(Get-Content -LiteralPath $script:separateConfigForwardingRepo.CallLog)
+            $log | Should -Contain "start SeparateConfigDatabase=True"
+        }
+
+        It "defaults to the shared topology when -SeparateConfigDatabase is omitted, reaching the start phase as False" {
+            $script:separateConfigForwardingRepo = New-SeparateConfigDatabaseForwardingProbeRepo -WrapperEntryScriptName "bootstrap-local-dms.ps1"
+
+            & $script:separateConfigForwardingRepo.WrapperScript
+
+            $log = @(Get-Content -LiteralPath $script:separateConfigForwardingRepo.CallLog)
+            $log | Should -Contain "start SeparateConfigDatabase=False"
+        }
+    }
+
     # =========================================================================
     # -DbOnly parameter surface and mutual exclusivity: both start scripts start only the
     # database container (a slice for diagnostics and for other tooling to sequence a
@@ -1693,7 +1879,8 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $source | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?Import-Module .*?bootstrap-manifest\.psm1.*?bootstrap-claims-gate\.psm1'
                 $source | Should -Match '(?s)\$bootstrapMode\s*=\s*\$false.*?\$bootstrapManifestPresent\s*=\s*\$false.*?if \(-not \$databaseOnlyStartup\) \{.*?Invoke-BootstrapStartupConfiguration.*?Get-BootstrapRoot'
                 $source | Should -Match '(?s)\$envValues\s*=\s*ReadValuesFromEnvFile.*?if \(-not \$databaseOnlyStartup\) \{.*?Resolve-IdentityClientSecretConfiguration'
-                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile[^\r\n]*-SkipMssqlCmsDatabaseValidation:\(\$databaseOnlyStartup -or \$d\)' -Because "DbOnly and teardown must not parse application-only CMS database settings"
+                $source | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$EnvironmentFile -DockerComposeRoot \$PSScriptRoot' -Because "the engine overlay is composed for the datastore; the start script's runtime contract (Resolve-EffectiveConfigRuntimeContract) owns CMS validation"
+                ([regex]::Matches($source, 'SkipMssqlCmsDatabaseValidation')).Count | Should -Be 0 -Because "the shared-only CMS invariant and its skip flag no longer exist"
             }
         }
 
@@ -1777,7 +1964,8 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             ) -Raw
 
             $buildScript | Should -Match '\[ValidateSet\("postgresql",\s*"mssql"\)\]\s*\$DatabaseEngine,'
-            $buildScript | Should -Match '\[ValidateSet\("5\.2",\s*"6\.1"\)\]\s*\$DataStandardVersion\r?\n\)'
+            $buildScript | Should -Match '\[ValidateSet\("5\.2",\s*"6\.1"\)\]\s*\$DataStandardVersion,'
+            $buildScript | Should -Match '\[switch\]\s*\$SeparateConfigDatabase\r?\n\)'
         }
 
         It "captures whether -DataStandardVersion was supplied at script scope, before Invoke-Main" {
@@ -1799,7 +1987,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 Join-Path $script:sourceRepoRoot "build-dms.ps1"
             ) -Raw
 
-            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied -SeparateConfigDatabase:\$SeparateConfigDatabase \} \}'
         }
 
         It "Start-BootstrapDockerEnvironment forwards -DatabaseEngine to the bootstrap wrapper only when supplied" {
@@ -1828,6 +2016,24 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             ) -Raw
 
             $buildScript | Should -Match '(?s)if \(\$DataStandardVersionSupplied\) \{\s*\$bootstrapArgs\.DataStandardVersion = \$DataStandardVersion\s*\}'
+        }
+
+        It "declares -SeparateConfigDatabase as a switch" {
+            (Get-DeclaredScriptParameters -Path (Join-Path $script:sourceRepoRoot "build-dms.ps1")) |
+                Should -Contain "SeparateConfigDatabase"
+
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+            $buildScript | Should -Match '\[switch\]\s*\$SeparateConfigDatabase'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards -SeparateConfigDatabase to the bootstrap wrapper only when supplied" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)if \(\$SeparateConfigDatabase\) \{\s*\$bootstrapArgs\.SeparateConfigDatabase = \$true\s*\}'
         }
     }
 }

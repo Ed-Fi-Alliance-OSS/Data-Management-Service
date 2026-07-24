@@ -232,74 +232,6 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
     }
 
-    It "fails fast when a fully composed MSSQL environment points CMS at a different database" {
-        $mismatchedPath = Join-Path $script:work ".env.mismatched-cms-database"
-        $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
-            Replace(
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            )
-        Set-Content -LiteralPath $mismatchedPath -Value $mismatchedContent -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $mismatchedPath `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*shared-database configuration mismatch*legacy_config*edfi_datamanagementservice*DMS-1270*"
-    }
-
-    It "resolves caller-authored CMS database references before enforcing the shared database" {
-        $mismatchedPath = Join-Path $script:work ".env.mismatched-cms-reference"
-        Set-Content -LiteralPath $mismatchedPath -Value @"
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_DB_NAME=shared_database
-CMS_DATABASE_NAME=legacy_config
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $mismatchedPath `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*shared-database configuration mismatch*legacy_config*shared_database*DMS-1270*"
-    }
-
-    It "fails fast when a caller-authored CMS MSSQL connection omits its database" {
-        $missingDatabasePath = Join-Path $script:work ".env.missing-cms-database"
-        Set-Content -LiteralPath $missingDatabasePath -Value @"
-DMS_CONFIG_DATASTORE=mssql
-MSSQL_DB_NAME=shared_database
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;User Id=custom;Password=secret;
-"@ -NoNewline
-
-        {
-            Resolve-DatabaseEngineEnvironmentFile `
-                -DatabaseEngine "mssql" `
-                -BaseEnvironmentFile $missingDatabasePath `
-                -DockerComposeRoot $script:composeRoot
-        } | Should -Throw "*must include Database or Initial Catalog*shared_database*"
-    }
-
-    It "allows only an explicit database-only diagnostic caller to bypass the CMS database invariant" {
-        $mismatchedPath = Join-Path $script:work ".env.db-only-mismatched-cms"
-        $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
-            Replace(
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            )
-        Set-Content -LiteralPath $mismatchedPath -Value $mismatchedContent -NoNewline
-
-        $result = Resolve-DatabaseEngineEnvironmentFile `
-            -DatabaseEngine "mssql" `
-            -BaseEnvironmentFile $mismatchedPath `
-            -DockerComposeRoot $script:composeRoot `
-            -SkipMssqlCmsDatabaseValidation
-
-        $result | Should -Be $mismatchedPath -Because "DbOnly neither starts CMS nor initializes OpenIddict"
-    }
-
     It "requires every current overlay key before short-circuiting composition" {
         $overlayPath = Join-Path $script:composeRoot ".env.mssql"
         $overlayValues = ReadValuesFromEnvFile $overlayPath
@@ -356,8 +288,11 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
         # DMS-1243 delivered the CMS SQL Server backend, so -DatabaseEngine mssql runs the
         # whole stack on SQL Server: no PostgreSQL container exists to fall back to.
         $script:overlayValues["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        # DMS_CONFIG_DATABASE_NAME is the single configuration-database seam and defaults to the
+        # DMS datastore database (MSSQL_DB_NAME) for the shared-database default.
+        $script:overlayValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be '${MSSQL_DB_NAME:-edfi_datamanagementservice}'
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
-            Should -Match '^Server=dms-mssql,1433;Database=\$\{MSSQL_DB_NAME\};'
+            Should -Match '^Server=dms-mssql,1433;Database=\$\{DMS_CONFIG_DATABASE_NAME\};'
         $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
             Should -Match '\$\{MSSQL_SA_PASSWORD\}'
     }
@@ -393,6 +328,402 @@ Describe "The .env.example MSSQL hint block" {
     It "defines every variable referenced by the commented CMS SQL Server connection string" {
         $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_DB_NAME=edfi_datamanagementservice$'
         $script:exampleEnvironment | Should -Match '(?m)^# MSSQL_SA_PASSWORD=abcdefgh1!$'
-        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_CONNECTION_STRING=.*\$\{MSSQL_DB_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
+        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_NAME=\$\{MSSQL_DB_NAME:-edfi_datamanagementservice\}$'
+        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_CONNECTION_STRING=.*\$\{DMS_CONFIG_DATABASE_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
+    }
+}
+
+Describe "Resolve-ConfigDatabaseTopologyEnvironmentFile" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-config-db-$([Guid]::NewGuid().ToString('N'))"
+        $script:composeRoot = Join-Path $script:work "compose"
+        New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
+        $script:basePath = Join-Path $script:work ".env.base"
+
+        # The resolver's process-environment guard reads the real process environment by default, so
+        # clear the configuration-database variables before every test (saving them for restore) to keep
+        # the suite hermetic: a dev shell that exports POSTGRES_DB_NAME/MSSQL_DB_NAME/DMS_CONFIG_* must
+        # not spuriously trip the guard in the topology/idempotency/validation Contexts, and the
+        # integration Context below sets these deliberately within its own tests. Use Remove-Item to
+        # truly delete: [Environment]::SetEnvironmentVariable(name, $null) leaves a BLANK value that the
+        # guard would then read as an empty override.
+        $script:savedAmbientEnv = @{}
+        foreach ($ambientName in 'DMS_CONFIG_DATABASE_NAME', 'DMS_CONFIG_DATABASE_CONNECTION_STRING', 'DMS_CONFIG_DATASTORE', 'POSTGRES_DB_NAME', 'MSSQL_DB_NAME') {
+            $script:savedAmbientEnv[$ambientName] = [Environment]::GetEnvironmentVariable($ambientName)
+            Remove-Item "Env:$ambientName" -ErrorAction SilentlyContinue
+        }
+    }
+
+    AfterEach {
+        foreach ($ambientName in $script:savedAmbientEnv.Keys) {
+            if ($null -ne $script:savedAmbientEnv[$ambientName]) { Set-Item "Env:$ambientName" -Value $script:savedAmbientEnv[$ambientName] }
+            else { Remove-Item "Env:$ambientName" -ErrorAction SilentlyContinue }
+        }
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context "shared topology (default)" {
+        It "keeps DMS_CONFIG_DATABASE_NAME as the PostgreSQL datastore-key reference (Compose resolves it, no PowerShell interpolation)" {
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=postgresql
+POSTGRES_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATASTORE=postgresql
+DMS_CONFIG_DATABASE_NAME=`${POSTGRES_DB_NAME}
+DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abc;database=`${DMS_CONFIG_DATABASE_NAME};
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
+
+            # The base already carries the seam reference, so shared mode is an idempotent no-op; the
+            # configuration database follows the datastore because Docker Compose resolves ${POSTGRES_DB_NAME}.
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
+        }
+
+        It "keeps DMS_CONFIG_DATABASE_NAME as the SQL Server datastore-key reference" {
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=mssql
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATASTORE=mssql
+DMS_CONFIG_DATABASE_NAME=`${MSSQL_DB_NAME}
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=abc;
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "mssql"
+
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${MSSQL_DB_NAME:-edfi_datamanagementservice}'
+        }
+
+        It "materializes the datastore-key reference even when the base carries a non-seam DMS_CONFIG_DATABASE_NAME (custom datastore honored via Compose)" {
+            # A custom datastore name (district_local) is honored because the materialized reference
+            # ${POSTGRES_DB_NAME} lets Docker Compose resolve it - the resolver never bakes a concrete literal.
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=postgresql
+POSTGRES_DB_NAME=district_local
+DMS_CONFIG_DATABASE_NAME=some_stale_literal
+DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};username=postgres;password=abc;
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
+
+            $result | Should -Not -Be $script:basePath -Because "a base carrying a non-seam value is materialized to the datastore-key reference"
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
+        }
+    }
+
+    Context "separate topology (-SeparateConfigDatabase)" {
+        It "selects the dedicated configuration database on PostgreSQL without changing the datastore" {
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=postgresql
+POSTGRES_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_NAME=`${POSTGRES_DB_NAME}
+DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};username=postgres;password=abc;
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql" -SeparateConfigDatabase
+
+            $values = ReadValuesFromEnvFile $result
+            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["POSTGRES_DB_NAME"] | Should -Be "edfi_datamanagementservice" -Because "the DMS datastore selection must not change"
+        }
+
+        It "selects the dedicated configuration database on SQL Server" {
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=mssql
+DMS_CONFIG_DATASTORE=mssql
+MSSQL_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_NAME=`${MSSQL_DB_NAME}
+DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=abc;
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "mssql" -SeparateConfigDatabase
+
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+        }
+    }
+
+    Context "idempotency" {
+        It "returns the base file unchanged when it already carries the default-bearing datastore-key reference (shared no-op)" {
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=postgresql
+POSTGRES_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_NAME=`${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};username=postgres;password=abc;
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
+
+            $result | Should -Be $script:basePath
+        }
+
+        It "resets a stale separate configuration-database name to the datastore-key reference when the switch is omitted" {
+            # Per the topology contract, omitting -SeparateConfigDatabase always resolves the configuration
+            # database to the DMS datastore (the seam reference) - a base carrying a separate or custom
+            # DMS_CONFIG_DATABASE_NAME is reset, not preserved.
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=postgresql
+POSTGRES_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_NAME=edfi_configurationservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};username=postgres;password=abc;
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
+
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
+        }
+
+        It "is idempotent in separate mode when the switch is re-supplied (no-op)" {
+            # Idempotency in separate mode is achieved by forwarding the switch to every phase: a
+            # prior phase materialized the concrete separate name, and re-resolving WITH the switch
+            # returns the base unchanged.
+            Set-Content -LiteralPath $script:basePath -Value @"
+DMS_DATASTORE=postgresql
+POSTGRES_DB_NAME=edfi_datamanagementservice
+DMS_CONFIG_DATABASE_NAME=edfi_configurationservice
+DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};username=postgres;password=abc;
+"@ -NoNewline
+
+            $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql" -SeparateConfigDatabase
+
+            $result | Should -Be $script:basePath
+            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+        }
+    }
+
+    It "materializes the datastore-key reference without inspecting the datastore value (blank-datastore validation is the contract's job)" {
+        # The resolver no longer parses or validates the datastore value in PowerShell; a base with no
+        # POSTGRES_DB_NAME still materializes the ${POSTGRES_DB_NAME} reference, and the runtime contract
+        # rejects a blank Compose-resolved anchor.
+        Set-Content -LiteralPath $script:basePath -Value "DMS_DATASTORE=postgresql`nLOG_LEVEL=Warning`n" -NoNewline
+
+        $result = Resolve-ConfigDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -DatabaseEngine "postgresql"
+        (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly '${POSTGRES_DB_NAME:-edfi_datamanagementservice}'
+    }
+}
+
+Describe "Configuration database topology matrix (per-cell DB targeting on the real default env files)" {
+    # The earlier suite resolves the topology onto SYNTHETIC temp env files, which is why it did not
+    # catch a lagging real default env file. This suite runs the real topology resolver against the
+    # actual tracked env files that the switch-capable entry points consume - .env.e2e (build-dms.ps1
+    # StartEnvironment default), .env.example (start-local/published default), and .env.mssql (the
+    # SQL Server overlay) - and proves, for every engine x topology cell, that CMS targets the correct
+    # configuration database while the DMS datastore selection never changes. It is the durable, CI-
+    # runnable guard for the ticket's highest-risk acceptance matrix and for the class of default-env
+    # regression that slipped through StartEnvironment.
+    BeforeAll {
+        $script:realComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:realComposeRoot "env-utility.psm1") -Force
+        $script:matrixWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-topology-matrix-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:matrixWork -Force | Out-Null
+    }
+
+    AfterAll {
+        if (Test-Path -LiteralPath $script:matrixWork) {
+            Remove-Item -LiteralPath $script:matrixWork -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        # The resolver's process-environment guard reads the real process environment, so clear the
+        # configuration-database variables (saving them for restore) to keep the per-cell resolutions
+        # hermetic against a dev shell that exports them. Use Remove-Item to truly delete:
+        # [Environment]::SetEnvironmentVariable(name, $null) leaves a BLANK value the guard would read.
+        $script:savedAmbientEnv = @{}
+        foreach ($ambientName in 'DMS_CONFIG_DATABASE_NAME', 'DMS_CONFIG_DATABASE_CONNECTION_STRING', 'DMS_CONFIG_DATASTORE', 'POSTGRES_DB_NAME', 'MSSQL_DB_NAME') {
+            $script:savedAmbientEnv[$ambientName] = [Environment]::GetEnvironmentVariable($ambientName)
+            Remove-Item "Env:$ambientName" -ErrorAction SilentlyContinue
+        }
+    }
+
+    AfterEach {
+        foreach ($ambientName in $script:savedAmbientEnv.Keys) {
+            if ($null -ne $script:savedAmbientEnv[$ambientName]) { Set-Item "Env:$ambientName" -Value $script:savedAmbientEnv[$ambientName] }
+            else { Remove-Item "Env:$ambientName" -ErrorAction SilentlyContinue }
+        }
+    }
+
+    # The seam-routing invariant for EVERY switch-capable profile (not just these representative cells) is
+    # enforced by the glob-derived, fail-closed inventory guard in the
+    # "Switch-capable full-stack profile inventory" Describe below, so this suite keeps only the per-cell
+    # resolver-behavior checks on the representative default env files.
+
+    It "cell <Engine>/<Topology> via <EnvFile>: CMS targets <ExpectedConfigDb>, DMS datastore stays <Datastore>" -ForEach @(
+        @{ EnvFile = ".env.e2e";     Engine = "postgresql"; DatastoreKey = "POSTGRES_DB_NAME"; Datastore = "edfi_datamanagementservice"; Topology = "shared";   Separate = $false; ExpectedConfigDb = "edfi_datamanagementservice" }
+        @{ EnvFile = ".env.e2e";     Engine = "postgresql"; DatastoreKey = "POSTGRES_DB_NAME"; Datastore = "edfi_datamanagementservice"; Topology = "separate"; Separate = $true;  ExpectedConfigDb = "edfi_configurationservice" }
+        @{ EnvFile = ".env.example"; Engine = "postgresql"; DatastoreKey = "POSTGRES_DB_NAME"; Datastore = "edfi_datamanagementservice"; Topology = "shared";   Separate = $false; ExpectedConfigDb = "edfi_datamanagementservice" }
+        @{ EnvFile = ".env.example"; Engine = "postgresql"; DatastoreKey = "POSTGRES_DB_NAME"; Datastore = "edfi_datamanagementservice"; Topology = "separate"; Separate = $true;  ExpectedConfigDb = "edfi_configurationservice" }
+        @{ EnvFile = ".env.mssql";   Engine = "mssql";      DatastoreKey = "MSSQL_DB_NAME";    Datastore = "edfi_datamanagementservice"; Topology = "shared";   Separate = $false; ExpectedConfigDb = "edfi_datamanagementservice" }
+        @{ EnvFile = ".env.mssql";   Engine = "mssql";      DatastoreKey = "MSSQL_DB_NAME";    Datastore = "edfi_datamanagementservice"; Topology = "separate"; Separate = $true;  ExpectedConfigDb = "edfi_configurationservice" }
+    ) {
+        $basePath = Join-Path $script:realComposeRoot $EnvFile
+        $resolved = Resolve-ConfigDatabaseTopologyEnvironmentFile `
+            -BaseEnvironmentFile $basePath `
+            -DockerComposeRoot $script:matrixWork `
+            -DatabaseEngine $Engine `
+            -SeparateConfigDatabase:$Separate
+        $resolvedValues = ReadValuesFromEnvFile $resolved
+
+        # The topology resolver materializes DMS_CONFIG_DATABASE_NAME to the datastore-key REFERENCE in
+        # shared mode (Docker Compose resolves ${<key>} to the datastore) and to the dedicated literal in
+        # separate mode. Because the sibling test proves every tracked env file routes the CMS connection
+        # string through the ${DMS_CONFIG_DATABASE_NAME} seam, this hermetically proves CMS targets
+        # $ExpectedConfigDb when Compose interpolates it (the end-to-end compose oracle confirms the same in
+        # the docker-gated RuntimeConfigContract suite).
+        $expectedSeam = if ($Separate) { $ExpectedConfigDb } else { "`${${DatastoreKey}:-edfi_datamanagementservice}" }
+        $resolvedValues["DMS_CONFIG_DATABASE_NAME"] | Should -BeExactly $expectedSeam -Because "the $Topology topology materializes $(if ($Separate) { "the dedicated literal $ExpectedConfigDb" } else { "the default-bearing datastore-key reference (Compose resolves it to $ExpectedConfigDb)" })"
+
+        # The DMS datastore selection is topology-invariant (these files define it as a literal).
+        $resolvedValues[$DatastoreKey] | Should -Be $Datastore -Because "the DMS datastore database must never change with the topology switch"
+    }
+}
+
+Describe "Switch-capable full-stack profile inventory routes CMS through the DMS_CONFIG_DATABASE_NAME seam" {
+    # Single, glob-derived authority (Get-ConfigProfileInventory) for the supported full-stack profile
+    # inventory. It is NOT filtered by the property under test: every tracked eng/docker-compose/.env*
+    # profile defaults to a switch-capable base that must define DMS_CONFIG_DATABASE_NAME and route its CMS
+    # connection through it, so a new profile that forgets the seam FAILS here rather than silently dropping
+    # out. Only three explicit, existence-checked exception sets are subtracted (standalone Configuration
+    # Service lane, the connection-bearing engine overlay, and the data-standard/bootstrap overlays), each
+    # asserted below. Discovery failures (git unavailable, ls-files failure, empty inventory) are captured
+    # and asserted in the "establishes the tracked profile inventory" test, so an inventory problem fails
+    # CLOSED without aborting discovery of the rest of this specification.
+    BeforeDiscovery {
+        Import-Module (Join-Path $PSScriptRoot "ConfigProfileInventory.psm1") -Force
+        $dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeRoot "../.."))
+        $inventory = Get-ConfigProfileInventory -RepoRoot $repoRoot -DockerComposeRoot $dockerComposeRoot
+
+        # Names the STATIC seam guard checks: switch-capable bases plus the connection-bearing engine overlay
+        # (both must route the CMS connection through the seam). Empty when discovery failed, so the
+        # per-profile cases collapse to zero and the "establishes ..." test is what fails closed.
+        # Script-scoped so PSScriptAnalyzer sees them as used (it cannot follow the Pester -ForEach reference).
+        $script:seamProfiles = @($inventory.SwitchCapableBases) + @($inventory.EngineOverlays | ForEach-Object { $_.Name })
+        $script:standaloneExclusions = @($inventory.StandaloneConfig)
+        $script:engineOverlayExclusions = @($inventory.EngineOverlays)
+        $script:dataStandardOverlayExclusions = @($inventory.DataStandardOverlays)
+    }
+
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot "ConfigProfileInventory.psm1") -Force
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $script:dockerComposeRoot "../.."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+        $script:inventory = Get-ConfigProfileInventory -RepoRoot $script:repoRoot -DockerComposeRoot $script:dockerComposeRoot
+    }
+
+    It "establishes the tracked profile inventory (fails closed on git/enumeration/empty errors)" {
+        $script:inventory.Error | Should -BeNullOrEmpty -Because "the inventory must be established, not silently empty"
+        @($script:inventory.SwitchCapableBases).Count | Should -BeGreaterThan 0 -Because "there must be at least one switch-capable full-stack base"
+    }
+
+    It "<_> defines DMS_CONFIG_DATABASE_NAME and routes the CMS connection through it" -ForEach $script:seamProfiles {
+        $values = ReadValuesFromEnvFile (Join-Path $script:dockerComposeRoot $_)
+        # Three INDEPENDENT assertions - the inventory is not pre-filtered on these, so an omitted or blank
+        # key is a failure here, never a silent drop.
+        [string]$values['DMS_CONFIG_DATABASE_NAME'] |
+            Should -Not -BeNullOrEmpty -Because "$_ must define the topology seam"
+        [string]$values['DMS_CONFIG_DATABASE_CONNECTION_STRING'] |
+            Should -Not -BeNullOrEmpty -Because "$_ must define a CMS connection string"
+        [string]$values['DMS_CONFIG_DATABASE_CONNECTION_STRING'] |
+            Should -Match '\$\{DMS_CONFIG_DATABASE_NAME\}' -Because "$_ must route the CMS database through the seam so -SeparateConfigDatabase flips it"
+    }
+
+    It "standalone-config exclusion '<Name>' is tracked, connection-bearing, and documents why it is excluded" -ForEach $script:standaloneExclusions {
+        $IsTracked | Should -BeTrue -Because "$Name must be a tracked file (git ls-files, case-sensitive) or the exclusion is stale"
+        $IsConnectionBearing | Should -BeTrue -Because "$Name is connection-authoritative, so it must carry a CMS connection or the exclusion is stale"
+        $Reason | Should -Not -BeNullOrEmpty -Because "each exclusion must document why it is outside the topology switch"
+    }
+
+    It "engine overlay '<Name>' is tracked, connection-bearing, and documents why it is excluded" -ForEach $script:engineOverlayExclusions {
+        $IsTracked | Should -BeTrue -Because "$Name must be a tracked file (git ls-files, case-sensitive) or the exclusion is stale"
+        $IsConnectionBearing | Should -BeTrue -Because "$Name is a connection-bearing engine overlay (it still routes through the seam, checked above) or the exclusion is stale"
+        $Reason | Should -Not -BeNullOrEmpty -Because "each exclusion must document why it is outside the standalone-base contract"
+    }
+
+    It "data-standard overlay '<Name>' is tracked, carries no standalone CMS connection, and documents why it is excluded" -ForEach $script:dataStandardOverlayExclusions {
+        $IsTracked | Should -BeTrue -Because "$Name must be a tracked file (git ls-files, case-sensitive) or the exclusion is stale"
+        $IsConnectionBearing | Should -BeFalse -Because "$Name is an overlay composed onto a base; if it gained a standalone CMS connection it must become a switch-capable base instead"
+        $Reason | Should -Not -BeNullOrEmpty -Because "each exclusion must document why it is outside the switch-capable base contract"
+    }
+}
+
+Describe "Get-EnvValueReferenceKey" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    It "returns the key for an unquoted whole-value reference" {
+        Get-EnvValueReferenceKey -Value '${POSTGRES_DB_NAME}' | Should -Be "POSTGRES_DB_NAME"
+    }
+
+    It "returns the key for a double-quoted whole-value reference" {
+        # The unquoting must match Resolve-EnvValueReference so the guard key is not dropped for a
+        # value docker-compose would still interpolate.
+        Get-EnvValueReferenceKey -Value '"${POSTGRES_DB_NAME}"' | Should -Be "POSTGRES_DB_NAME"
+    }
+
+    It "returns null for a single-quoted value (docker-compose treats single quotes literally, not as a reference)" {
+        # docker compose config proves '${VAR}' is preserved literally, so it must NOT be treated as a
+        # resolvable reference - otherwise the host would expand it while CMS receives the literal.
+        Get-EnvValueReferenceKey -Value '''${MSSQL_DB_NAME}''' | Should -BeNullOrEmpty
+    }
+
+    It "returns the key for a whitespace- and quote-padded whole-value reference" {
+        Get-EnvValueReferenceKey -Value '  "${POSTGRES_DB_NAME}"  ' | Should -Be "POSTGRES_DB_NAME"
+    }
+
+    It "returns null for a literal value" {
+        Get-EnvValueReferenceKey -Value "edfi_configurationservice" | Should -BeNullOrEmpty
+    }
+
+    It "returns null for a quoted literal value" {
+        Get-EnvValueReferenceKey -Value '"edfi_configurationservice"' | Should -BeNullOrEmpty
+    }
+
+    It "returns null for a partial or embedded reference (not a whole-value reference)" {
+        Get-EnvValueReferenceKey -Value 'prefix_${POSTGRES_DB_NAME}' | Should -BeNullOrEmpty
+    }
+
+    It "returns null for an empty value" {
+        Get-EnvValueReferenceKey -Value "" | Should -BeNullOrEmpty
+    }
+}
+
+Describe "Resolve-EnvValueReference -TreatUnresolvedReferenceAsEmpty" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    It "resolves a reference to an ABSENT variable as empty (models docker-compose bare `${VAR})" {
+        Resolve-EnvValueReference -Value '${MSSQL_ROOT_PASSWORD}' -EnvValues @{} -TreatUnresolvedReferenceAsEmpty |
+            Should -BeNullOrEmpty
+    }
+
+    It "resolves a reference to a BLANK variable as empty" {
+        Resolve-EnvValueReference -Value '${MSSQL_ROOT_PASSWORD}' -EnvValues @{ MSSQL_ROOT_PASSWORD = "   " } -TreatUnresolvedReferenceAsEmpty |
+            Should -BeNullOrEmpty
+    }
+
+    It "resolves a NESTED reference whose target is absent as empty (the switch threads through recursion)" {
+        Resolve-EnvValueReference -Value '${A}' -EnvValues @{ A = '${B}' } -TreatUnresolvedReferenceAsEmpty |
+            Should -BeNullOrEmpty
+    }
+
+    It "still THROWS on an absent reference by default (the switch is opt-in; other callers keep the hard error)" {
+        { Resolve-EnvValueReference -Value '${MSSQL_ROOT_PASSWORD}' -EnvValues @{} } |
+            Should -Throw "*cannot be resolved*absent*"
+    }
+
+    It "still resolves a present reference to its value with the switch set" {
+        Resolve-EnvValueReference -Value '${MSSQL_ROOT_PASSWORD}' -EnvValues @{ MSSQL_ROOT_PASSWORD = "real-pw" } -TreatUnresolvedReferenceAsEmpty |
+            Should -Be "real-pw"
     }
 }

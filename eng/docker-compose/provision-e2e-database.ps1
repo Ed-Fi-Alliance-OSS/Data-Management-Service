@@ -189,133 +189,35 @@ function Assert-SafeDatabaseName {
     }
 }
 
-function Resolve-EnvironmentValueReference {
-    param(
-        [string]$Value,
-        [hashtable]$EnvironmentValues,
-        [System.Collections.Generic.HashSet[string]]$VisitedKeys
-    )
-
-    $Value = ConvertFrom-ComposeEnvironmentValue -Value $Value
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $Value
-    }
-
-    $match = [Regex]::Match($Value, '^\$\{(?<key>[^}]+)\}$')
-
-    if (-not $match.Success) {
-        return $Value
-    }
-
-    $referencedKey = $match.Groups["key"].Value
-    if (-not $EnvironmentValues.ContainsKey($referencedKey)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is not defined."
-    }
-
-    $resolvedValue = [string]$EnvironmentValues[$referencedKey]
-    if ([string]::IsNullOrWhiteSpace($resolvedValue)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is blank."
-    }
-
-    if ($null -eq $VisitedKeys) {
-        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    }
-    if (-not $VisitedKeys.Add($referencedKey)) {
-        throw "Environment value reference '$Value' is cyclic at '$referencedKey'."
-    }
-
-    try {
-        return Resolve-EnvironmentValueReference `
-            -Value $resolvedValue `
-            -EnvironmentValues $EnvironmentValues `
-            -VisitedKeys $VisitedKeys
-    }
-    finally {
-        $null = $VisitedKeys.Remove($referencedKey)
-    }
-}
-
-function Get-DatabaseNameFromConnectionString {
-    param(
-        [string]$ConnectionString,
-        [hashtable]$EnvironmentValues
-    )
-
-    $ConnectionString = ConvertFrom-ComposeEnvironmentValue -Value $ConnectionString
-
-    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-        return $null
-    }
-
-    try {
-        $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
-        # DbConnectionStringBuilder implements IDictionary, so PowerShell's adapted view treats
-        # `.ConnectionString = ...` as an item named "ConnectionString". PSBase selects the real
-        # CLR property and exposes the parsed keys/items.
-        $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
-
-        foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
-                return Resolve-EnvironmentValueReference `
-                    -Value ([string]$connectionStringBuilder.PSBase.get_Item($key)) `
-                    -EnvironmentValues $EnvironmentValues
-            }
-        }
-    }
-    catch {
-        throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
-    }
-
-    return $null
-}
-
 function Assert-E2EDatabaseIsDedicated {
     param(
-        [hashtable]$EnvironmentValues,
+        # Concrete, already-resolved protected database targets: records of @{ Source; DatabaseName }.
+        # Every name is resolved UPSTREAM by the single authorities - Docker Compose for interpolation
+        # (Get-ComposeResolvedConfiguration) and the api-schema-tools 'connection validate' verb for
+        # connection-string parsing (Resolve-EffectiveConfigRuntimeContract / Get-CmsConnectionStringDatabaseName).
+        # This guard never reads or expands a ${...} expression itself; there is no second interpolation model.
+        [object[]]$ProtectedDatabaseTarget,
         [string]$EnvironmentFilePath,
         [string]$E2EDatabaseName
     )
 
     Assert-SafeDatabaseName -DatabaseName $E2EDatabaseName
 
-    # All comparisons are case-insensitive: SQL Server's default collation treats database
-    # identifiers case-insensitively, so a case-variant of a protected name IS the same database
-    # there and would still be dropped. PostgreSQL names are case-sensitive, so this is stricter
-    # than required on that engine - acceptable for a guard in front of DROP DATABASE, where a
-    # false positive costs a rename and a false negative drops shared state.
-    foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
-        $protectedDatabaseName = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$databaseNameKey]) `
-            -EnvironmentValues $EnvironmentValues
-
-        if (-not [string]::IsNullOrWhiteSpace($protectedDatabaseName) -and $E2EDatabaseName -ieq $protectedDatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
+    # Fail closed: a protected target that did not resolve to a concrete name aborts the reset rather than
+    # silently skipping a comparison in front of a destructive DROP DATABASE.
+    foreach ($target in $ProtectedDatabaseTarget) {
+        if ([string]::IsNullOrWhiteSpace([string]$target.DatabaseName)) {
+            throw "E2E database safety check could not resolve a concrete database name for the $($target.Source) in '$EnvironmentFilePath'; refusing to reset '$E2EDatabaseName'."
         }
     }
 
-    foreach ($connectionStringKey in @(
-            "DATABASE_CONNECTION_STRING_ADMIN",
-            "DMS_CONFIG_DATABASE_CONNECTION_STRING"
-        )) {
-        $connectionString = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$connectionStringKey]) `
-            -EnvironmentValues $EnvironmentValues
-
-        if ([string]::IsNullOrWhiteSpace($connectionString)) {
-            continue
-        }
-
-        $connectionStringDatabaseName = Get-DatabaseNameFromConnectionString `
-            -ConnectionString $connectionString `
-            -EnvironmentValues $EnvironmentValues
-
-        if ([string]::IsNullOrWhiteSpace($connectionStringDatabaseName)) {
-            throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
-        }
-
-        if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
+    # Case-insensitive on purpose: SQL Server identifiers are case-insensitive, so a case variant IS the same
+    # database there and would still be dropped. PostgreSQL names are case-sensitive, so this is stricter than
+    # required on that engine - the deliberately conservative choice in front of DROP DATABASE, where a false
+    # positive costs a rename and a false negative drops shared state.
+    foreach ($target in $ProtectedDatabaseTarget) {
+        if ($E2EDatabaseName -ieq [string]$target.DatabaseName) {
+            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and must stay separate from $($target.Source) ('$([string]$target.DatabaseName)')."
         }
     }
 }
@@ -544,8 +446,63 @@ else {
 Write-Information "E2E database: $e2eDatabaseName" -InformationAction Continue
 Write-Information "Configuration: $Configuration" -InformationAction Continue
 
+# Resolve the concrete protected database targets through the SINGLE authorities the stack itself uses -
+# Docker Compose for interpolation and the api-schema-tools 'connection validate' verb for connection-string
+# parsing - never a second PowerShell interpolation/parsing model. The safety-relevant Compose fields (db
+# datastore key, config DatabaseSettings__DatabaseConnection, dms DATABASE_CONNECTION_STRING_ADMIN) are
+# byte-identical between the local and published DMS/config compose files (locked by the parity test in
+# RuntimeConfigContract.Tests.ps1), so this local compose set renders the same protected names the E2E stack
+# runs under, regardless of image lane, without threading the caller's file selection through.
+Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1") -Force
+# Anchor the safety compose files to this script's directory so `docker compose config` resolves them
+# regardless of the caller's working directory (the C# process-level tests deliberately launch from the
+# repository root). Absolute -f paths also set the Compose project directory to eng/docker-compose, so the
+# relative references inside those files resolve exactly as a normal stack start would.
+$safetyDatabaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+$safetyComposeFiles = @(
+    "-f", (Join-Path $PSScriptRoot $safetyDatabaseComposeFile),
+    "-f", (Join-Path $PSScriptRoot "local-dms.yml"),
+    "-f", (Join-Path $PSScriptRoot "local-config.yml")
+)
+$resolvedCompose = Get-ComposeResolvedConfiguration `
+    -ComposeFiles $safetyComposeFiles `
+    -EnvironmentFile $environmentFilePath `
+    -ProjectName "dms-e2e-safety" `
+    -InfrastructureEngine $DatabaseEngine
+$connectionValidator = Resolve-DmsConnectionValidator -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -DmsImage $resolvedCompose.DmsImage
+$safetyContract = Resolve-EffectiveConfigRuntimeContract `
+    -InfrastructureEngine $DatabaseEngine `
+    -ConfigServiceIncluded $true `
+    -DmsServiceIncluded $true `
+    -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
+    -ResolvedDmsProvider $resolvedCompose.DmsProvider `
+    -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
+    -SchemaToolPath $connectionValidator `
+    -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
+    -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName
+
+# The DMS admin/readiness connection is parsed by the provider verb; require EXACTLY one concrete target so a
+# zero- or multi-target parse fails before any reset rather than under-protecting the destructive DROP.
+$adminDatabaseTargets = @(Get-CmsConnectionStringDatabaseName `
+        -Engine $DatabaseEngine `
+        -ConnectionString $resolvedCompose.DmsAdminConnectionString `
+        -SchemaToolPath $connectionValidator)
+if ($adminDatabaseTargets.Count -ne 1) {
+    throw "E2E database safety check expected exactly one provider-parsed DMS admin database target from DATABASE_CONNECTION_STRING_ADMIN, but found $($adminDatabaseTargets.Count). Refusing to reset '$e2eDatabaseName'."
+}
+
+# Name the concrete authority behind each protected target so the operator-facing diagnostic stays actionable
+# even though the names are now Compose/provider-resolved: the topology datastore anchor is the engine's own
+# db-service key, and the admin/readiness target is DATABASE_CONNECTION_STRING_ADMIN.
+$topologyAnchorKey = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
+$protectedDatabaseTargets = @(
+    @{ Source = "topology datastore anchor ($topologyAnchorKey)"; DatabaseName = $safetyContract.TopologyDatastoreDatabaseName }
+    @{ Source = "CMS persistence target"; DatabaseName = $safetyContract.CmsDatabaseName }
+    @{ Source = "DATABASE_CONNECTION_STRING_ADMIN (the DMS admin/readiness target)"; DatabaseName = $adminDatabaseTargets[0] }
+)
+
 Assert-E2EDatabaseIsDedicated `
-    -EnvironmentValues $environmentValues `
+    -ProtectedDatabaseTarget $protectedDatabaseTargets `
     -EnvironmentFilePath $environmentFilePath `
     -E2EDatabaseName $e2eDatabaseName
 

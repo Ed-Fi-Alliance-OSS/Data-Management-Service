@@ -368,7 +368,10 @@ function Invoke-DbQuery {
     param(
         [string]$Sql,
         [switch]$Debug,
-        [switch]$UseMasterDatabase
+        # Connect to the engine's maintenance database ('postgres' on PostgreSQL, 'master' on
+        # SQL Server) instead of the target database. Used by the guarded CREATE DATABASE path,
+        # where the target configuration database may not exist yet.
+        [switch]$UseMaintenanceDatabase
     )
 
     if ($Debug) {
@@ -388,9 +391,33 @@ function Invoke-DbQuery {
         }
         $dbHost = $params['Host']
         $port = $params['Port']
-        $db = $params['Database']
         $user = $params['Username']
 
+        if ($UseMaintenanceDatabase) {
+            # Guarded CREATE DATABASE / existence probe: connect to the always-present 'postgres'
+            # maintenance database (the target database may not exist yet) and capture the result
+            # with -tA (tuples-only, unaligned) so a probe returns a bare scalar the caller can test.
+            if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
+                Write-Verbose "Executing psql in container: $($script:PostgresContainerName)"
+                $output = docker exec $script:PostgresContainerName psql -U $user -d postgres -tA -c $Sql 2>&1
+            }
+            elseif ($port) {
+                $output = psql -h $dbHost -p $port -U $user -d postgres -tA -c $Sql 2>&1
+            }
+            else {
+                $output = psql -h $dbHost -U $user -d postgres -tA -c $Sql 2>&1
+            }
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "PostgreSQL command failed with exit code $LASTEXITCODE.`n$output"
+            }
+            return $output
+        }
+
+        # Normal path: aligned psql output streamed to the caller. Get-ScalarResult reads the value
+        # line by index, so this format must not change (see the maintenance branch above for the
+        # only path that alters it).
+        $db = $params['Database']
         if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
             Write-Verbose "Executing psql in container: $($script:PostgresContainerName)"
             docker exec $script:PostgresContainerName psql -U $user -d $db -c $Sql
@@ -417,7 +444,8 @@ function Invoke-DbQuery {
                 $params[$kv[0].Trim()] = $kv[1].Trim()
             }
         }
-        $db = if ($UseMasterDatabase) { 'master' } else { $params['Database'] }
+        # Honor both the Database and Initial Catalog SqlClient aliases for the target database.
+        $db = if ($UseMaintenanceDatabase) { 'master' } elseif ($params['Database']) { $params['Database'] } else { $params['Initial Catalog'] }
         $user = $params['User Id']
         $password = Resolve-EnvValue $DbPassword
 
@@ -491,6 +519,36 @@ function Invoke-MssqlParameterizedQuery {
 }
 
 # Main logic
+function Test-SafeDatabaseIdentifier {
+    <#
+    .SYNOPSIS
+        Returns $true when the value is accepted as a configuration/datastore database name for the
+        guarded self-contained CREATE DATABASE path.
+
+    .DESCRIPTION
+        The name is always emitted as a quoted identifier ("<name>" on PostgreSQL, [<name>] on SQL
+        Server) and as a quoted string literal in the existence probe, so the accepted set is broad and
+        matches the names the Keycloak CMS EnsureDatabase path also creates: Unicode letters and digits
+        (including a leading digit), spaces, hyphens, underscores, and periods. Rejecting these would
+        make self-contained reject a selected POSTGRES_DB_NAME / MSSQL_DB_NAME that Keycloak accepts.
+
+        SQL metacharacters that could break out of the quoted identifier or literal (quotes, brackets,
+        semicolons, dollar signs, parentheses, backslashes) and control characters are rejected: the
+        local self-contained tooling embeds the name into interpolated SQL and parses it through an
+        ad-hoc connection string, neither of which can carry those characters safely. \A...\z anchors
+        (not ^...$) reject a trailing newline.
+    #>
+    param(
+        [AllowEmptyString()]
+        [string]$Name
+    )
+
+    # Reject empty / all-whitespace names outright (a space is an accepted interior character, but a
+    # name that is only whitespace is not a usable database name), then require the accepted character
+    # set.
+    return (-not [string]::IsNullOrWhiteSpace($Name)) -and ($Name -match '\A[\p{L}\p{N} ._-]+\z')
+}
+
 function Invoke-InitDbScripts {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function runs a sequence of database initialization scripts.')]
     param()
@@ -500,7 +558,10 @@ function Invoke-InitDbScripts {
     if ($DbType -eq "MSSQL") {
         Write-Host "Create database if not exists"
         $dbName = Resolve-EnvValue $DbName
-        Invoke-DbQuery -UseMasterDatabase "IF DB_ID(N'$dbName') IS NULL CREATE DATABASE [$dbName];"
+        if (-not (Test-SafeDatabaseIdentifier -Name $dbName)) {
+            throw "Refusing to create SQL Server database: '$dbName' is not an accepted database name. Use letters, digits, spaces, hyphens, underscores, or periods; the local self-contained tooling cannot safely carry other characters (such as quotes or semicolons) in a database name."
+        }
+        Invoke-DbQuery -UseMaintenanceDatabase "IF DB_ID(N'$dbName') IS NULL CREATE DATABASE [$dbName];"
 
         Write-Host "Create schema if not exists: dmscs"
         Invoke-DbQuery "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'dmscs') EXEC('CREATE SCHEMA dmscs');"
@@ -532,6 +593,27 @@ END;
         Invoke-MssqlParameterizedQuery -Sql $keyInsertCommand.Sql -Parameters $keyInsertCommand.Parameters
         Write-Host "Database initialization scripts completed."
         return
+    }
+
+    # Create the Configuration Service database if it does not exist. On a fresh volume the shared
+    # datastore database is created by the Postgres container entrypoint (postgresql-init.sh), but a
+    # dedicated separate configuration database has no such entrypoint, so create it here through the
+    # always-present 'postgres' maintenance database - guarded and idempotent, mirroring the SQL
+    # Server guarded creation above. CMS EnsureDatabase owns this creation in Keycloak mode; this
+    # pre-CMS path owns it for self-contained mode, where -InitDb runs before CMS starts. PostgreSQL
+    # has no CREATE DATABASE IF NOT EXISTS, so probe pg_database first.
+    Write-Host "Create database if not exists"
+    $dbName = Resolve-EnvValue $script:DbName
+    if (-not (Test-SafeDatabaseIdentifier -Name $dbName)) {
+        throw "Refusing to create PostgreSQL database: '$dbName' is not an accepted database name. Use letters, digits, spaces, hyphens, underscores, or periods; the local self-contained tooling cannot safely carry other characters (such as quotes or semicolons) in a database name."
+    }
+    $databaseExists = Invoke-DbQuery -UseMaintenanceDatabase "SELECT 1 FROM pg_database WHERE datname = '$dbName';"
+    if (($databaseExists | Out-String) -match '(?m)^\s*1\s*$') {
+        Write-Host "Database '$dbName' already exists."
+    }
+    else {
+        Write-Host "Creating database '$dbName'..."
+        Invoke-DbQuery -UseMaintenanceDatabase "CREATE DATABASE ""$dbName"";" | Out-Null
     }
 
     # Run embedded SQL script contents
