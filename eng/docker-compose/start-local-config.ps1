@@ -70,7 +70,7 @@ else {
     # .NET SDK is present.
     Import-Module ./bootstrap-schema-tool.psm1 -Force
     $schemaToolPath = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH -BuildIfMissing
-    $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "cs-local"
+    $resolvedCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "cs-local" -InfrastructureEngine $datastore
     # The standalone lane exists to run the Configuration Service, so it always participates and the CMS
     # invariants are always validated. It composes NO dms service, so DMS participation is explicitly false
     # (no DMS provider or datastore-name agreement to validate) - never inferred from the null DmsProvider.
@@ -81,7 +81,8 @@ else {
         -ResolvedConfigProvider $resolvedCompose.ConfigProvider `
         -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
         -SchemaToolPath $schemaToolPath `
-        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword
+        -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
+        -ResolvedDbLocalEndpoint $resolvedCompose.DbLocalEndpoint
 
     $existingNetwork = docker network ls --filter name="dms" -q
     if (! $existingNetwork) {
@@ -137,8 +138,15 @@ else {
         $identityDbArgs = @{
             DbType = $contract.OpenIddict.DbType
             DbUser = $contract.OpenIddict.DbUser
+            DbHost = $contract.OpenIddict.DbHost
             DbPort = $contract.OpenIddict.DbPort
             DbName = $contract.OpenIddict.DbName
+        }
+        if ($datastore -eq "mssql") {
+            $identityDbArgs.MssqlContainerName = $contract.OpenIddict.DbContainerName
+        }
+        else {
+            $identityDbArgs.PostgresContainerName = $contract.OpenIddict.DbContainerName
         }
         if ($contract.OpenIddict.DbPassword) {
             $identityDbArgs.DbPassword = $contract.OpenIddict.DbPassword

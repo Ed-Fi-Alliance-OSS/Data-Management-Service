@@ -454,7 +454,8 @@ else {
             -ResolvedCmsConnectionString $resolvedCompose.CmsConnectionString `
             -SchemaToolPath $schemaToolPath `
             -ResolvedMssqlSaPassword $resolvedCompose.MssqlSaPassword `
-            -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName
+            -ResolvedTopologyDatastoreDatabaseName $resolvedCompose.TopologyDatastoreDatabaseName `
+            -ResolvedDbLocalEndpoint $resolvedCompose.DbLocalEndpoint
     }
 
     if ($PreflightOnly) {
@@ -615,16 +616,17 @@ else {
             throw "Failed to start $databaseDisplayName. Exit code $LASTEXITCODE"
         }
 
+        # Resolve the db container name (and, for SQL Server, the SA password) the container is initialized
+        # with by asking Docker Compose itself, so the readiness poll targets the Compose-resolved container
+        # and authenticates with the credential the container actually uses. This diagnostic slice resolves the
+        # Compose identity only - not the full CMS runtime contract or the validator.
+        $dbOnlyCompose = Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local" -InfrastructureEngine $DatabaseEngine
+        $dbContainerName = $dbOnlyCompose.DbLocalEndpoint.ContainerName
         if ($DatabaseEngine -eq "mssql") {
-            # Resolve the SA password the container is initialized with by asking Docker Compose itself
-            # (the resolved db-service MSSQL_SA_PASSWORD, a shell export over the env file), so the readiness
-            # poll authenticates with the credential the container actually uses. This diagnostic slice
-            # starts only the database, so it reads just the credential, not the full runtime contract.
-            $mssqlSaPassword = (Get-ComposeResolvedConfiguration -ComposeFiles $files -EnvironmentFile $EnvironmentFile -ProjectName "dms-local").MssqlSaPassword
-            Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+            Wait-MssqlReady -ContainerName $dbContainerName -Password $dbOnlyCompose.MssqlSaPassword
         }
         else {
-            Wait-PostgresqlReady -ContainerName "dms-postgresql"
+            Wait-PostgresqlReady -ContainerName $dbContainerName
         }
 
         Write-Output "Database phase complete. Only the database container was started."
@@ -658,19 +660,27 @@ else {
 
     if ($DatabaseEngine -eq "mssql") {
         # SQL Server accepts connections noticeably later than its container reports running; poll before
-        # the phase commands need it, using the contract's effective SA credential (resolved above).
-        Wait-MssqlReady -ContainerName "dms-mssql" -Password $contract.MssqlSaPassword
+        # the phase commands need it, using the Compose-resolved container name and SA credential.
+        Wait-MssqlReady -ContainerName $resolvedCompose.DbLocalEndpoint.ContainerName -Password $contract.MssqlSaPassword
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below, all from the one contract.
     # Built (and $contract.OpenIddict read) only for self-contained identity - the sole consumer of these
-    # parameters. A Keycloak run never reads them.
+    # parameters. A Keycloak run never reads them. Host, port, container name, and user are the Compose-resolved
+    # local-db endpoint (no ENV: sentinel), so OpenIddict targets exactly the database CMS uses.
     if ($IdentityProvider -eq "self-contained") {
         $identityDbParams = @{
             DbType = $contract.OpenIddict.DbType
             DbUser = $contract.OpenIddict.DbUser
+            DbHost = $contract.OpenIddict.DbHost
             DbPort = $contract.OpenIddict.DbPort
             DbName = $contract.OpenIddict.DbName
+        }
+        if ($DatabaseEngine -eq "mssql") {
+            $identityDbParams.MssqlContainerName = $contract.OpenIddict.DbContainerName
+        }
+        else {
+            $identityDbParams.PostgresContainerName = $contract.OpenIddict.DbContainerName
         }
         if ($contract.OpenIddict.DbPassword) {
             $identityDbParams.DbPassword = $contract.OpenIddict.DbPassword

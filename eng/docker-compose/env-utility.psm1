@@ -1182,6 +1182,217 @@ function Get-CmsConnectionStringDatabaseName {
     return @([string]$result.database)
 }
 
+function Get-DbLocalEndpointIdentity {
+    <#
+    .SYNOPSIS
+        Derives the structured, non-secret identity of the local docker-compose `db` service from the
+        Compose-resolved service objects: the in-network names by which the Configuration Service reaches it,
+        the container-internal port, the host-side published dial address/port, and the PostgreSQL admin user.
+        It is what the OpenIddict host-side initialization targets, and (in a later iteration) what a caller CMS
+        connection's endpoint is compared against. FAIL-CLOSED: every ambiguity throws rather than guessing.
+
+    .DESCRIPTION
+        Published-port extraction is fail-closed: EXACTLY ONE TCP publication must target the engine's
+        container-internal port (5432 PostgreSQL / 1433 SQL Server); its published port must be a concrete
+        integer in 1-65535; and the published host address (host_ip) must be an IPv4 loopback. Zero, multiple,
+        non-TCP, ranged, or malformed bindings, an absent/non-concrete container_name, or a non-loopback
+        host_ip all throw. InNetworkNames is the set of names that resolve DETERMINISTICALLY to the db over a
+        network BOTH services join - the service name, container_name, and shared-network aliases (NOT the
+        container's own hostname, which Docker does not make a peer-resolvable alias) - for a consumer to compare
+        case-insensitively. Names another service also answers to on a Configuration-Service network are dropped
+        as ambiguous (uniqueness is proven against the whole Compose service model via -AllServices, which is
+        REQUIRED whenever a Configuration Service is present). Network-key matching is case-sensitive (Compose map
+        identifiers). When a Configuration Service is composed it MUST share at least one network with the db (a
+        disjoint topology throws); a database-only compose set (no Configuration Service) keeps the host-side
+        coordinates but claims no CMS-reachable names.
+    #>
+    param(
+        [AllowNull()][object]$DbService,
+        [AllowNull()][object]$ConfigService,
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$InfrastructureEngine,
+        [string]$DbServiceName = 'db',
+        [AllowNull()][object]$AllServices
+    )
+
+    if ($null -eq $DbService) {
+        throw "Configuration runtime-contract error: the compose set has no '$DbServiceName' database service, so the local database endpoint cannot be resolved."
+    }
+
+    $canonicalEngine = ConvertTo-CanonicalDatabaseEngine -Engine $InfrastructureEngine
+    $containerPort = if ($canonicalEngine -eq 'mssql') { 1433 } else { 5432 }
+
+    function Get-DbServiceProperty {
+        param([object]$Object, [string]$Name)
+        if ($null -eq $Object -or ($Object.PSObject.Properties.Name -notcontains $Name)) {
+            return $null
+        }
+        $raw = $Object.$Name
+        if ($null -eq $raw) {
+            return $null
+        }
+        return ([string]$raw -replace '\$\$', '$')
+    }
+
+    # A concrete container_name is required: the host-side database tooling reaches the db via `docker exec`.
+    $containerName = Get-DbServiceProperty -Object $DbService -Name 'container_name'
+    if ([string]::IsNullOrWhiteSpace($containerName)) {
+        throw "Configuration runtime-contract error: the '$DbServiceName' service resolves to no concrete container_name; the host-side database tooling (docker exec) requires one."
+    }
+    $dbHostname = Get-DbServiceProperty -Object $DbService -Name 'hostname'
+
+    # Whole-model uniqueness is MANDATORY when a Configuration Service is present: without the complete Compose
+    # service model the reachable names cannot be proven unique against other services, so the guarantee would
+    # be silently bypassed. A database-only composition (no Configuration Service) explicitly supplies no model.
+    if ($null -ne $ConfigService -and $null -eq $AllServices) {
+        throw "Configuration runtime-contract error: resolving the '$DbServiceName' local endpoint with a Configuration Service present requires the complete Compose service model to prove name uniqueness, but none was supplied."
+    }
+
+    # In-network names by which the Configuration Service reaches the db, restricted to names Docker resolves to
+    # the db DETERMINISTICALLY: the service name and container_name (both peer-resolved by the embedded DNS) and
+    # aliases declared on a network BOTH services join. The container's own `hostname` is deliberately excluded -
+    # Docker does not make it a peer-resolvable network alias, so a divergent hostname would not identify the db.
+    # These names are claimed ONLY when CMS can actually reach the db, so when a Configuration Service IS composed
+    # at least one shared network is required - a disjoint topology fails closed rather than advertising names the
+    # CMS container cannot resolve (a later iteration would otherwise accept an unreachable connection). A
+    # database-only compose set (no Configuration Service) keeps the host-side coordinates below but claims no
+    # CMS-reachable names.
+    $dbNetworks = if ($DbService.PSObject.Properties.Name -contains 'networks') { $DbService.networks } else { $null }
+    $configNetworks =
+        if ($null -ne $ConfigService -and $ConfigService.PSObject.Properties.Name -contains 'networks') { $ConfigService.networks }
+        else { $null }
+    # Network keys are Compose map identifiers, so the shared-network intersection is CASE-SENSITIVE: 'dms' and
+    # 'DMS' are different networks and must not establish reachability.
+    $configNetworkNames = if ($null -ne $configNetworks) { @($configNetworks.PSObject.Properties.Name) } else { @() }
+    $sharedNetworkProperties = @()
+    if ($null -ne $dbNetworks -and $null -ne $configNetworks) {
+        $sharedNetworkProperties = @($dbNetworks.PSObject.Properties | Where-Object { $configNetworkNames -ccontains $_.Name })
+    }
+
+    # Collision detection against the WHOLE Compose service model: Docker permits an alias (and, across services,
+    # a service/container name) to be answered by more than one container, making CMS's resolution of that name
+    # nondeterministic. Any name another service ALSO exposes on a network the Configuration Service joins is
+    # contested and dropped, so only names that resolve uniquely to the db survive. DNS resolution is
+    # case-insensitive, so the contest set is case-insensitive (distinct from the case-sensitive network-key
+    # intersection above).
+    $contestedNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    if ($null -ne $ConfigService -and $null -ne $AllServices) {
+        foreach ($serviceProperty in $AllServices.PSObject.Properties) {
+            if ($serviceProperty.Name -ceq $DbServiceName) { continue }
+            $otherService = $serviceProperty.Value
+            $otherNetworks = if ($null -ne $otherService -and $otherService.PSObject.Properties.Name -contains 'networks') { $otherService.networks } else { $null }
+            if ($null -eq $otherNetworks) { continue }
+            $otherSharedProperties = @($otherNetworks.PSObject.Properties | Where-Object { $configNetworkNames -ccontains $_.Name })
+            if ($otherSharedProperties.Count -eq 0) { continue }
+            [void]$contestedNames.Add([string]$serviceProperty.Name)
+            $otherContainerName = Get-DbServiceProperty -Object $otherService -Name 'container_name'
+            if (-not [string]::IsNullOrWhiteSpace($otherContainerName)) { [void]$contestedNames.Add($otherContainerName) }
+            foreach ($networkProperty in $otherSharedProperties) {
+                $networkConfig = $networkProperty.Value
+                if ($null -ne $networkConfig -and ($networkConfig.PSObject.Properties.Name -contains 'aliases')) {
+                    foreach ($alias in @($networkConfig.aliases)) {
+                        if (-not [string]::IsNullOrWhiteSpace([string]$alias)) { [void]$contestedNames.Add([string]$alias) }
+                    }
+                }
+            }
+        }
+    }
+
+    $inNetworkNames = [System.Collections.Generic.List[string]]::new()
+    if ($null -ne $ConfigService) {
+        if ($sharedNetworkProperties.Count -eq 0) {
+            throw "Configuration runtime-contract error: the '$DbServiceName' service and the Configuration Service share no docker network, so the Configuration Service cannot reach the database; the local database endpoint cannot be resolved."
+        }
+        $candidateNames = [System.Collections.Generic.List[string]]::new()
+        foreach ($candidate in @($DbServiceName, $containerName)) {
+            if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+                [void]$candidateNames.Add([string]$candidate)
+            }
+        }
+        # Aliases declared on a shared network. An alias on a network only the db joins is NOT reachable by CMS.
+        foreach ($networkProperty in $sharedNetworkProperties) {
+            $networkConfig = $networkProperty.Value
+            if ($null -ne $networkConfig -and ($networkConfig.PSObject.Properties.Name -contains 'aliases')) {
+                foreach ($alias in @($networkConfig.aliases)) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$alias)) {
+                        [void]$candidateNames.Add([string]$alias)
+                    }
+                }
+            }
+        }
+        # Keep only names no other service contests, so every returned name resolves uniquely to the db.
+        foreach ($candidate in $candidateNames) {
+            if (-not $contestedNames.Contains($candidate)) {
+                [void]$inNetworkNames.Add($candidate)
+            }
+        }
+    }
+    $inNetworkNamesUnique = @($inNetworkNames | Select-Object -Unique)
+
+    # Fail-closed published-port extraction: exactly one TCP publication of the container-internal port. Each
+    # candidate's container-port target is parsed explicitly (never a raw [int] cast), so a ranged or otherwise
+    # malformed target ('5432-5433', 'abc') yields the controlled runtime-contract diagnostic instead of a raw
+    # conversion exception escaping the fail-closed boundary.
+    $ports = if ($DbService.PSObject.Properties.Name -contains 'ports') { @($DbService.ports) } else { @() }
+    $tcpPublications = [System.Collections.Generic.List[object]]::new()
+    foreach ($portEntry in $ports) {
+        if ($null -eq $portEntry) { continue }
+        $protocol = [string]$portEntry.protocol
+        if ($protocol -ne 'tcp' -and -not [string]::IsNullOrEmpty($protocol)) { continue }
+        if ($null -eq $portEntry.target) { continue }
+        $targetPort = 0
+        if (-not [int]::TryParse([string]$portEntry.target, [ref]$targetPort)) {
+            throw "Configuration runtime-contract error: the '$DbServiceName' service publishes a non-integer container-port target '$([string]$portEntry.target)', so the host-side database endpoint cannot be resolved."
+        }
+        if ($targetPort -eq $containerPort) {
+            [void]$tcpPublications.Add($portEntry)
+        }
+    }
+    if ($tcpPublications.Count -eq 0) {
+        throw "Configuration runtime-contract error: the '$DbServiceName' service publishes no TCP mapping for container port $containerPort, so the host-side database endpoint cannot be resolved."
+    }
+    if ($tcpPublications.Count -gt 1) {
+        throw "Configuration runtime-contract error: the '$DbServiceName' service publishes $($tcpPublications.Count) TCP mappings for container port $containerPort; the host-side database endpoint is ambiguous."
+    }
+    $publication = $tcpPublications[0]
+    $publishedRaw = [string]$publication.published
+    $publishedPort = 0
+    if (
+        -not [int]::TryParse($publishedRaw, [ref]$publishedPort) -or
+        $publishedPort -lt 1 -or
+        $publishedPort -gt 65535
+    ) {
+        throw "Configuration runtime-contract error: the '$DbServiceName' service publishes port '$publishedRaw' for container port $containerPort, which is not a concrete port in 1-65535."
+    }
+
+    # host_ip normalization (IPv4 loopback only): 127.0.0.1 / 0.0.0.0 / unspecified -> 127.0.0.1. Reject every
+    # other explicit address, including IPv6: an IPv6-only publication does not prove 127.0.0.1 is reachable,
+    # and the SQL Server data-source construction is not bracket-safe for IPv6.
+    $hostIp = [string]$publication.host_ip
+    $publishedHost =
+        if ([string]::IsNullOrEmpty($hostIp) -or $hostIp -eq '0.0.0.0' -or $hostIp -eq '127.0.0.1') { '127.0.0.1' }
+        else { $null }
+    if ($null -eq $publishedHost) {
+        throw "Configuration runtime-contract error: the '$DbServiceName' service publishes container port $containerPort on host address '$hostIp', which is not an IPv4 loopback ('127.0.0.1', '0.0.0.0', or unspecified); the host-side dial address cannot be determined."
+    }
+
+    # PostgreSQL's administrator user is Compose-resolved (POSTGRES_USER, shell-over-file); SQL Server's is the
+    # image-fixed 'sa', so it is not read here (the consumer supplies 'sa').
+    $postgresAdminUser =
+        if ($canonicalEngine -eq 'mssql') { $null }
+        else { Get-DbServiceProperty -Object ($DbService.environment) -Name 'POSTGRES_USER' }
+
+    return [pscustomobject]@{
+        ServiceName       = $DbServiceName
+        ContainerName     = $containerName
+        Hostname          = $dbHostname
+        InNetworkNames    = $inNetworkNamesUnique
+        ContainerPort     = $containerPort
+        PublishedHost     = $publishedHost
+        PublishedPort     = $publishedPort
+        PostgresAdminUser = $postgresAdminUser
+    }
+}
+
 function Get-ComposeResolvedConfiguration {
     <#
     .SYNOPSIS
@@ -1199,7 +1410,7 @@ function Get-ComposeResolvedConfiguration {
         text the container receives and is compared literally by the runtime contract.
 
         Returns a record { ConfigProvider; DmsProvider; CmsConnectionString; MssqlSaPassword;
-        DmsAdminConnectionString; TopologyDatastoreDatabaseName; DmsImage }. ConfigProvider is the
+        DmsAdminConnectionString; TopologyDatastoreDatabaseName; DbLocalEndpoint; DmsImage }. ConfigProvider is the
         Configuration Service (config) service's AppSettings__Datastore (interpolated from DMS_CONFIG_DATASTORE);
         DmsProvider is the DMS (dms) service's AppSettings__Datastore (interpolated INDEPENDENTLY from
         DMS_DATASTORE). The two are deliberately separate fields so a consumer can never confuse the CMS runtime
@@ -1226,7 +1437,8 @@ function Get-ComposeResolvedConfiguration {
         The Configuration Service service name to read (default "config").
 
     .PARAMETER DbServiceName
-        The database service name to read for the SQL Server SA password (default "db").
+        The database service name to read for the SQL Server SA password, the topology datastore anchor, and the
+        local database endpoint identity (default "db").
 
     .PARAMETER DmsServiceName
         The DMS service name to read for the datastore admin connection (default "dms").
@@ -1280,13 +1492,17 @@ function Get-ComposeResolvedConfiguration {
     $dbEnvironment = $null
     $dmsEnvironment = $null
     $dmsImage = $null
+    $configService = $null
+    $dbService = $null
     $services = $parsed.services
     if ($null -ne $services) {
         if ($services.PSObject.Properties.Name -contains $ConfigServiceName) {
-            $configEnvironment = $services.$ConfigServiceName.environment
+            $configService = $services.$ConfigServiceName
+            $configEnvironment = $configService.environment
         }
         if ($services.PSObject.Properties.Name -contains $DbServiceName) {
-            $dbEnvironment = $services.$DbServiceName.environment
+            $dbService = $services.$DbServiceName
+            $dbEnvironment = $dbService.environment
         }
         if ($services.PSObject.Properties.Name -contains $DmsServiceName) {
             $dmsEnvironment = $services.$DmsServiceName.environment
@@ -1313,6 +1529,15 @@ function Get-ComposeResolvedConfiguration {
         $topologyDatastoreDatabaseName = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key $datastoreKeyName
     }
 
+    # The structured local database endpoint identity (in-network names, container port, published host dial +
+    # port, PostgreSQL admin user). Resolved only when the caller names the engine (the container port and
+    # admin-user key are engine-specific); fail-closed inside the helper. Every current caller names the engine
+    # (it is how the topology anchor is keyed too); a caller that omits -InfrastructureEngine receives $null.
+    $dbLocalEndpoint = $null
+    if (-not [string]::IsNullOrWhiteSpace($InfrastructureEngine)) {
+        $dbLocalEndpoint = Get-DbLocalEndpointIdentity -DbService $dbService -ConfigService $configService -InfrastructureEngine $InfrastructureEngine -DbServiceName $DbServiceName -AllServices $services
+    }
+
     return [pscustomobject]@{
         ConfigProvider                = Get-ComposeEnvironmentValue -EnvironmentObject $configEnvironment -Key "AppSettings__Datastore"
         DmsProvider                   = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "AppSettings__Datastore"
@@ -1320,6 +1545,7 @@ function Get-ComposeResolvedConfiguration {
         MssqlSaPassword               = Get-ComposeEnvironmentValue -EnvironmentObject $dbEnvironment -Key "MSSQL_SA_PASSWORD"
         DmsAdminConnectionString      = Get-ComposeEnvironmentValue -EnvironmentObject $dmsEnvironment -Key "DATABASE_CONNECTION_STRING_ADMIN"
         TopologyDatastoreDatabaseName = $topologyDatastoreDatabaseName
+        DbLocalEndpoint               = $dbLocalEndpoint
         DmsImage                      = $dmsImage
     }
 }
@@ -1431,7 +1657,11 @@ function Resolve-EffectiveConfigRuntimeContract {
         [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string]$ResolvedCmsConnectionString,
         [Parameter(Mandatory)][object]$SchemaToolPath,
         [AllowEmptyString()][AllowNull()][string]$ResolvedMssqlSaPassword,
-        [AllowEmptyString()][AllowNull()][string]$ResolvedTopologyDatastoreDatabaseName
+        [AllowEmptyString()][AllowNull()][string]$ResolvedTopologyDatastoreDatabaseName,
+        # The Compose-resolved local database endpoint identity (Get-ComposeResolvedConfiguration.DbLocalEndpoint):
+        # the host dial address/port, container name, and PostgreSQL admin user the OpenIddict host-side
+        # initialization targets. Iteration 2's endpoint classification is NOT enforced here yet.
+        [AllowNull()][object]$ResolvedDbLocalEndpoint
     )
 
     # Canonicalize the selected engine once at entry through the single engine-token boundary, so every
@@ -1576,15 +1806,23 @@ function Resolve-EffectiveConfigRuntimeContract {
             throw "Configuration runtime-contract error: the effective configuration database resolves to '$effectiveDatabaseName', which still contains an unexpanded variable reference. Docker Compose substitutes a shell-provided value verbatim without re-expanding it; set the referenced variable in the environment file, not only in the shell."
         }
 
-        # (5) OpenIddict host-side target, built from the EXPLICIT engine and the resolved name/password -
-        # never inferred from a string. Read only by the self-contained identity path (which always includes
-        # the config service), so it is populated exactly when a caller will consume it.
+        # (5) OpenIddict host-side target. The engine and the effective database name are authoritative; the
+        # host dial address, published port, container name, and PostgreSQL admin user are the Compose-resolved
+        # local-db endpoint - NOT an ENV: sentinel - so a shell MSSQL_PORT / POSTGRES_PORT / POSTGRES_USER /
+        # container_name override is reflected in what OpenIddict targets. Read only by the self-contained
+        # identity path (which always includes the config service). When no endpoint was resolved (a caller
+        # that did not name the engine), the local coordinates are null and only name/type/user/password carry.
         $openIddict = [pscustomobject]@{
-            DbType     = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
-            DbUser     = if ($InfrastructureEngine -eq 'mssql') { 'sa' } else { 'postgres' }
-            DbPort     = if ($InfrastructureEngine -eq 'mssql') { 'ENV:MSSQL_PORT' } else { 'ENV:POSTGRES_PORT' }
-            DbName     = $effectiveDatabaseName
-            DbPassword = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword } else { $null }
+            DbType          = if ($InfrastructureEngine -eq 'mssql') { 'MSSQL' } else { 'Postgresql' }
+            DbUser          =
+                if ($InfrastructureEngine -eq 'mssql') { 'sa' }
+                elseif ($null -ne $ResolvedDbLocalEndpoint -and -not [string]::IsNullOrWhiteSpace([string]$ResolvedDbLocalEndpoint.PostgresAdminUser)) { [string]$ResolvedDbLocalEndpoint.PostgresAdminUser }
+                else { 'postgres' }
+            DbHost          = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.PublishedHost } else { $null }
+            DbPort          = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.PublishedPort } else { $null }
+            DbContainerName = if ($null -ne $ResolvedDbLocalEndpoint) { $ResolvedDbLocalEndpoint.ContainerName } else { $null }
+            DbName          = $effectiveDatabaseName
+            DbPassword      = if ($InfrastructureEngine -eq 'mssql') { $mssqlSaPassword } else { $null }
         }
     }
 

@@ -189,6 +189,13 @@ class DockerShim
         {
             File.AppendAllText(capture, string.Join(" ", args) + Environment.NewLine);
         }
+        // 'docker compose ... config' must emit the canned resolution so the -DbOnly readiness path can
+        // resolve the Compose db identity (container name); every other invocation just records and exits 0.
+        if (Array.IndexOf(args, "config") >= 0)
+        {
+            string json = Environment.GetEnvironmentVariable("DMS_F7_COMPOSE_JSON");
+            if (!string.IsNullOrEmpty(json)) { Console.Out.WriteLine(json); }
+        }
         return 0;
     }
 }
@@ -205,6 +212,12 @@ class DockerShim
 if [ -n "$DMS_F7_DOCKER_CAPTURE" ]; then
   printf '%s\n' "$*" >> "$DMS_F7_DOCKER_CAPTURE"
 fi
+for a in "$@"; do
+  if [ "$a" = "config" ]; then
+    printf '%s\n' "$DMS_F7_COMPOSE_JSON"
+    break
+  fi
+done
 exit 0
 '@
             & chmod +x $shimScript
@@ -238,6 +251,7 @@ exit 0
             # would shadow the PATH executable and defeat the Process-probe interception, so both are removed).
             $priorPath = $env:PATH
             $priorCapture = $env:DMS_F7_DOCKER_CAPTURE
+            $priorComposeJson = $env:DMS_F7_COMPOSE_JSON
             $priorLastExit = $global:LASTEXITCODE
             $priorSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
             $priorDockerFn = if (Test-Path -LiteralPath Function:docker) { (Get-Item -LiteralPath Function:docker).ScriptBlock } else { $null }
@@ -264,6 +278,9 @@ exit 0
                 if ($null -ne $priorDockerFn) { Remove-Item -LiteralPath Function:docker -Force }
                 if ($null -ne $priorDockerAlias) { Remove-Alias -Name docker -Scope Global -Force }
                 $env:DMS_F7_DOCKER_CAPTURE = $captureFile
+                # The canned 'docker compose config' resolution for the -DbOnly readiness path: the db service
+                # carries the container_name/hostname/ports/networks the Compose-resolved identity requires.
+                $env:DMS_F7_COMPOSE_JSON = '{"services":{"db":{"container_name":"dms-postgresql","hostname":"dms-postgresql","networks":{"dms":null},"ports":[{"mode":"ingress","host_ip":"127.0.0.1","target":5432,"published":"5432","protocol":"tcp"}],"environment":{"POSTGRES_DB_NAME":"edfi_datamanagementservice","POSTGRES_USER":"postgres"}}}}'
                 $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:f7Dir ("no-such-tool-" + [guid]::NewGuid().ToString("N") + ".exe")
                 $env:PATH = $script:f7ShimDir + [System.IO.Path]::PathSeparator + $priorPath
                 function global:Resolve-DmsSchemaTool { throw "Resolve-DmsSchemaTool must not run on the -DbOnly path" }
@@ -302,6 +319,7 @@ exit 0
                 if ($null -ne $priorDockerAlias) { Set-Alias -Name docker -Value $priorDockerAlias.Definition -Option $priorDockerAlias.Options -Description $priorDockerAlias.Description -Scope Global -Force }
                 $env:PATH = $priorPath
                 if ($null -eq $priorCapture) { Remove-Item -LiteralPath Env:DMS_F7_DOCKER_CAPTURE -ErrorAction SilentlyContinue } else { $env:DMS_F7_DOCKER_CAPTURE = $priorCapture }
+                if ($null -eq $priorComposeJson) { Remove-Item -LiteralPath Env:DMS_F7_COMPOSE_JSON -ErrorAction SilentlyContinue } else { $env:DMS_F7_COMPOSE_JSON = $priorComposeJson }
                 if ($null -eq $priorSchemaToolPath) { Remove-Item -LiteralPath Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue } else { $env:DMS_SCHEMA_TOOL_PATH = $priorSchemaToolPath }
                 $global:LASTEXITCODE = $priorLastExit
             }
@@ -424,7 +442,7 @@ exit 0
             # The canned resolution: the topology datastore anchor (POSTGRES_DB_NAME=edfi_datamanagementservice)
             # differs from the CMS database (edfi_configurationservice), so the separate-topology contract
             # passes and execution reaches the datastore-target collision.
-            $env:DMS_PREFLIGHT_COMPOSE_JSON = '{"services":{"config":{"environment":{"AppSettings__Datastore":"postgresql","DatabaseSettings__DatabaseConnection":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_configurationservice;"}},"dms":{"image":"local/edfi-data-management-service","environment":{"AppSettings__Datastore":"postgresql","DATABASE_CONNECTION_STRING_ADMIN":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_admin;"}},"db":{"environment":{"POSTGRES_DB_NAME":"edfi_datamanagementservice"}}}}'
+            $env:DMS_PREFLIGHT_COMPOSE_JSON = '{"services":{"config":{"networks":{"dms":null},"environment":{"AppSettings__Datastore":"postgresql","DatabaseSettings__DatabaseConnection":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_configurationservice;"}},"dms":{"image":"local/edfi-data-management-service","environment":{"AppSettings__Datastore":"postgresql","DATABASE_CONNECTION_STRING_ADMIN":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_admin;"}},"db":{"container_name":"dms-postgresql","hostname":"dms-postgresql","networks":{"dms":null},"ports":[{"mode":"ingress","host_ip":"127.0.0.1","target":5432,"published":"5432","protocol":"tcp"}],"environment":{"POSTGRES_DB_NAME":"edfi_datamanagementservice","POSTGRES_USER":"postgres"}}}}'
 
             # Define the stub in the GLOBAL scope: the compose-config call originates inside the
             # env-utility module function Get-ComposeResolvedConfiguration, whose command resolution sees only
@@ -609,7 +627,7 @@ exit 0
 
         # Separate-topology compose resolution: the datastore anchor (edfi_datamanagementservice) differs from
         # the CMS database (edfi_configurationservice), so the separate contract passes.
-        $script:f9ComposeJson = '{"services":{"config":{"environment":{"AppSettings__Datastore":"postgresql","DatabaseSettings__DatabaseConnection":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_configurationservice;"}},"dms":{"image":"local/edfi-data-management-service","environment":{"AppSettings__Datastore":"postgresql","DATABASE_CONNECTION_STRING_ADMIN":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_admin;"}},"db":{"environment":{"POSTGRES_DB_NAME":"edfi_datamanagementservice"}}}}'
+        $script:f9ComposeJson = '{"services":{"config":{"networks":{"dms":null},"environment":{"AppSettings__Datastore":"postgresql","DatabaseSettings__DatabaseConnection":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_configurationservice;"}},"dms":{"image":"local/edfi-data-management-service","environment":{"AppSettings__Datastore":"postgresql","DATABASE_CONNECTION_STRING_ADMIN":"host=dms-postgresql;port=5432;username=postgres;password=x;database=edfi_admin;"}},"db":{"container_name":"dms-postgresql","hostname":"dms-postgresql","networks":{"dms":null},"ports":[{"mode":"ingress","host_ip":"127.0.0.1","target":5432,"published":"5432","protocol":"tcp"}],"environment":{"POSTGRES_DB_NAME":"edfi_datamanagementservice","POSTGRES_USER":"postgres"}}}}'
 
         function script:Invoke-HostToolPreflightWithDockerStub {
             param([string]$ScriptName, [hashtable]$ScriptParams)

@@ -886,9 +886,14 @@ $failureStatement
             $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
             $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
             $startScript | Should -Match '-DmsServiceIncluded \$true'
+            $startScript | Should -Match '-ResolvedDbLocalEndpoint \$resolvedCompose\.DbLocalEndpoint' -Because "the OpenIddict coordinates converge on the Compose-resolved local db endpoint"
             $startScript | Should -Match 'DbType = \$contract\.OpenIddict\.DbType'
+            $startScript | Should -Match 'DbHost = \$contract\.OpenIddict\.DbHost' -Because "OpenIddict targets the Compose-resolved host dial address, not an ENV: sentinel"
+            $startScript | Should -Match 'DbPort = \$contract\.OpenIddict\.DbPort'
             $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
-            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
+            $startScript | Should -Match 'PostgresContainerName = \$contract\.OpenIddict\.DbContainerName'
+            $startScript | Should -Match 'MssqlContainerName = \$contract\.OpenIddict\.DbContainerName'
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName \$resolvedCompose\.DbLocalEndpoint\.ContainerName -Password \$contract\.MssqlSaPassword\b'
             ([regex]::Matches($startScript, 'Resolve-ComposeVariable')).Count | Should -Be 0 -Because "the full-stack lane must not re-implement compose precedence; the SA password comes from the runtime contract"
 
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
@@ -909,8 +914,10 @@ $failureStatement
             $startScript | Should -Match '-ResolvedConfigProvider \$resolvedCompose\.ConfigProvider'
             $startScript | Should -Match '-ResolvedDmsProvider \$resolvedCompose\.DmsProvider'
             $startScript | Should -Match '-DmsServiceIncluded \$true'
+            $startScript | Should -Match '-ResolvedDbLocalEndpoint \$resolvedCompose\.DbLocalEndpoint' -Because "the OpenIddict coordinates converge on the Compose-resolved local db endpoint"
+            $startScript | Should -Match 'DbHost = \$contract\.OpenIddict\.DbHost' -Because "OpenIddict targets the Compose-resolved host dial address, not an ENV: sentinel"
             $startScript | Should -Match 'DbPassword = \$contract\.OpenIddict\.DbPassword'
-            $startScript | Should -Match 'Wait-MssqlReady -ContainerName "dms-mssql" -Password \$contract\.MssqlSaPassword\b'
+            $startScript | Should -Match 'Wait-MssqlReady -ContainerName \$resolvedCompose\.DbLocalEndpoint\.ContainerName -Password \$contract\.MssqlSaPassword\b'
             $startScript | Should -Match '-Password \$contract\.MssqlSaPassword\b' -Because "the datastore connection stored in CMS reuses the contract's effective SA password"
             $startScript | Should -Match '\$contract\.TopologyDatastoreDatabaseName' -Because "the registered datastore database sources from the runtime contract's Compose-resolved anchor (or an explicit -DataStoreDatabaseName replacement)"
             ([regex]::Matches($startScript, 'Resolve-ComposeVariable')).Count | Should -Be 0 -Because "the full-stack lane must not re-implement compose precedence; every SA password comes from the runtime contract"

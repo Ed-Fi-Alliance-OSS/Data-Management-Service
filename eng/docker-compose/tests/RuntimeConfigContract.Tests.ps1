@@ -373,6 +373,77 @@ Describe "Docker Compose behavioral oracle (live) - Compose is the authority" {
         }
     }
 
+    Context "the local db endpoint and OpenIddict coordinates converge on the real Compose db service (iteration 3)" {
+        # The self-contained OpenIddict host-side initialization must target EXACTLY the engine, host dial
+        # address, published port, container name, and admin user Compose renders for the `db` service - not an
+        # ENV: sentinel the start scripts re-expand independently. These run the real `docker compose config`,
+        # derive DbLocalEndpoint, feed it into the runtime contract, and assert the OpenIddict block carries the
+        # concrete Compose coordinates and follows a shell override at shell-over-env-file precedence. Endpoint
+        # CLASSIFICATION/enforcement is a later iteration; here the coordinates only have to converge.
+        BeforeAll {
+            $script:i3PgFiles = @("-f", (Join-Path $script:composeRoot "postgresql.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot "local-config.yml"))
+            $script:i3MssqlFiles = @("-f", (Join-Path $script:composeRoot "mssql.yml"), "-f", (Join-Path $script:composeRoot "local-dms.yml"), "-f", (Join-Path $script:composeRoot "local-config.yml"))
+            $script:i3Work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-endpoint-i3-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $script:i3Work -Force | Out-Null
+            $script:i3MssqlEnv = Join-Path $script:i3Work ".env.mssql.merged"
+            ((Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.example') -Raw) + "`n" + (Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.mssql') -Raw)) | Set-Content -LiteralPath $script:i3MssqlEnv -NoNewline
+        }
+        AfterAll {
+            Remove-Item -LiteralPath $script:i3Work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        It "PostgreSQL: DbLocalEndpoint resolves the container, loopback dial address, and admin user from real Compose" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:i3PgFiles -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql'
+            $resolved.DbLocalEndpoint | Should -Not -BeNullOrEmpty
+            $resolved.DbLocalEndpoint.ContainerName | Should -Be 'dms-postgresql'
+            $resolved.DbLocalEndpoint.ContainerPort | Should -Be 5432
+            $resolved.DbLocalEndpoint.PublishedHost | Should -Be '127.0.0.1'
+            $resolved.DbLocalEndpoint.PublishedPort | Should -BeGreaterThan 0
+            $resolved.DbLocalEndpoint.PostgresAdminUser | Should -Be 'postgres'
+            $resolved.DbLocalEndpoint.InNetworkNames | Should -Contain 'dms-postgresql'
+        }
+
+        It "PostgreSQL: the OpenIddict block carries the concrete Compose coordinates (no ENV sentinel)" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:i3PgFiles -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql'
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $resolved.ConfigProvider -ResolvedDmsProvider $resolved.DmsProvider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName $resolved.TopologyDatastoreDatabaseName -ResolvedDbLocalEndpoint $resolved.DbLocalEndpoint
+            $contract.OpenIddict.DbType | Should -Be 'Postgresql'
+            $contract.OpenIddict.DbUser | Should -Be 'postgres'
+            $contract.OpenIddict.DbHost | Should -Be $resolved.DbLocalEndpoint.PublishedHost
+            $contract.OpenIddict.DbPort | Should -Be $resolved.DbLocalEndpoint.PublishedPort
+            $contract.OpenIddict.DbContainerName | Should -Be 'dms-postgresql'
+            # The port is a concrete integer, never an unresolved '${...}' / 'ENV:' sentinel the caller re-expands.
+            [string]$contract.OpenIddict.DbPort | Should -Not -Match '\$\{|ENV:'
+            [string]$contract.OpenIddict.DbHost | Should -Not -Match '\$\{|ENV:'
+        }
+
+        It "PostgreSQL: a shell POSTGRES_PORT / POSTGRES_USER override flows through the endpoint into the OpenIddict block" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:i3PgFiles -EnvironmentFile $script:baseEnvFile -InfrastructureEngine 'postgresql' -ShellOverrides @{ POSTGRES_PORT = '5599'; POSTGRES_USER = 'alt_admin' }
+            $resolved.DbLocalEndpoint.PublishedPort | Should -Be 5599
+            $resolved.DbLocalEndpoint.PostgresAdminUser | Should -Be 'alt_admin'
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'postgresql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $resolved.ConfigProvider -ResolvedDmsProvider $resolved.DmsProvider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedTopologyDatastoreDatabaseName $resolved.TopologyDatastoreDatabaseName -ResolvedDbLocalEndpoint $resolved.DbLocalEndpoint
+            $contract.OpenIddict.DbPort | Should -Be 5599 -Because "the OpenIddict dial port is the Compose-resolved published port at shell-over-env-file precedence"
+            $contract.OpenIddict.DbUser | Should -Be 'alt_admin' -Because "the PostgreSQL admin user is the Compose-resolved POSTGRES_USER, not a hardcoded 'postgres'"
+        }
+
+        It "SQL Server: DbLocalEndpoint uses the 1433 container port and the OpenIddict block targets the mssql container as 'sa'" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:i3MssqlFiles -EnvironmentFile $script:i3MssqlEnv -InfrastructureEngine 'mssql'
+            $resolved.DbLocalEndpoint.ContainerName | Should -Be 'dms-mssql'
+            $resolved.DbLocalEndpoint.ContainerPort | Should -Be 1433
+            $resolved.DbLocalEndpoint.PostgresAdminUser | Should -BeNullOrEmpty -Because "SQL Server's admin user is the image-fixed 'sa', never read from POSTGRES_USER"
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $resolved.ConfigProvider -ResolvedDmsProvider $resolved.DmsProvider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword $resolved.MssqlSaPassword -ResolvedTopologyDatastoreDatabaseName $resolved.TopologyDatastoreDatabaseName -ResolvedDbLocalEndpoint $resolved.DbLocalEndpoint
+            $contract.OpenIddict.DbType | Should -Be 'MSSQL'
+            $contract.OpenIddict.DbUser | Should -Be 'sa'
+            $contract.OpenIddict.DbContainerName | Should -Be 'dms-mssql'
+        }
+
+        It "SQL Server: a shell MSSQL_PORT override moves the OpenIddict dial port" {
+            $resolved = Invoke-ComposeConfigResolution -ComposeFiles $script:i3MssqlFiles -EnvironmentFile $script:i3MssqlEnv -InfrastructureEngine 'mssql' -ShellOverrides @{ MSSQL_PORT = '1599' }
+            $resolved.DbLocalEndpoint.PublishedPort | Should -Be 1599
+            $contract = Resolve-EffectiveConfigRuntimeContract -InfrastructureEngine 'mssql' -ConfigServiceIncluded $true -DmsServiceIncluded $true -ResolvedConfigProvider $resolved.ConfigProvider -ResolvedDmsProvider $resolved.DmsProvider -ResolvedCmsConnectionString $resolved.CmsConnectionString -SchemaToolPath $script:schemaTool -ResolvedMssqlSaPassword $resolved.MssqlSaPassword -ResolvedTopologyDatastoreDatabaseName $resolved.TopologyDatastoreDatabaseName -ResolvedDbLocalEndpoint $resolved.DbLocalEndpoint
+            $contract.OpenIddict.DbPort | Should -Be 1599
+        }
+    }
+
     Context "every switch-capable full-stack base resolves the CMS database through real Compose (shared and separate)" {
         # Durable per-profile guard (not one-time evidence): for EVERY dynamically discovered switch-capable
         # base profile (Get-ConfigProfileInventory - the same single authority the static seam guard uses),
