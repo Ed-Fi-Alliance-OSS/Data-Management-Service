@@ -73,6 +73,112 @@ function ConvertFrom-ComposeEnvironmentValue {
     return ($trimmedValue -replace '[ \t]+#.*$', '').Trim()
 }
 
+function Resolve-ComposeEnvRawValue {
+    <#
+    .SYNOPSIS
+        Applies Docker Compose value semantics to a single raw env-file map value: strips surrounding
+        quotes and inline comments (ConvertFrom-ComposeEnvironmentValue), then resolves ${VAR}/$VAR
+        references EXCEPT when the raw value is single-quoted, which Compose treats as literal (no
+        interpolation). Single place that decides convert-then-resolve vs. literal, so the rule applies
+        identically to the top-level requested key and to every value reached through a ${VAR} chain.
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [AllowEmptyString()][string]$RawValue,
+        [int]$Depth = 0
+    )
+
+    $converted = ConvertFrom-ComposeEnvironmentValue -Value $RawValue
+
+    if ($RawValue.TrimStart().StartsWith("'")) {
+        # Single-quoted: Compose keeps the value literal (quotes stripped), no ${VAR} interpolation.
+        return $converted
+    }
+
+    return Resolve-ComposeEnvReference -EnvironmentValues $EnvironmentValues -Value $converted -Depth $Depth
+}
+
+function Resolve-ComposeEnvReference {
+    <#
+    .SYNOPSIS
+        Resolves ${VAR}/$VAR references in a Compose-converted value against the other environment
+        values, following Docker Compose interpolation: a literal '$' is written '$$' and preserved,
+        ${NAME}/$NAME expand (recursively, bounded), an unset reference expands to empty, and a value
+        set in the process/shell environment wins over the env file. A referenced value is resolved
+        through Resolve-ComposeEnvRawValue so its own quoting (single-quote literal) semantics hold.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'EnvironmentValues', Justification = 'Consumed inside the [regex]::Replace callback scriptblock to resolve ${VAR} references; the analyzer does not detect uses within the nested scriptblock.')]
+    param(
+        [hashtable]$EnvironmentValues,
+        [AllowEmptyString()][string]$Value,
+        [int]$Depth = 0
+    )
+
+    if ([string]::IsNullOrEmpty($Value) -or $Value.IndexOf('$') -lt 0 -or $Depth -ge 8) {
+        return $Value
+    }
+
+    # Protect Compose's literal-'$' escape ('$$') before resolving any reference, then restore it.
+    $placeholder = [char]0x1
+    $working = $Value.Replace('$$', $placeholder)
+
+    $working = [regex]::Replace($working, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', {
+        param($match)
+        $referenceName = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value }
+        # Docker Compose resolves ${VAR} from the shell/process environment with precedence over the
+        # env file, then from the env file, then to empty. Honour that so a reference whose value lives
+        # only in - or is overridden by - the ambient environment matches what the container receives.
+        $ambient = [System.Environment]::GetEnvironmentVariable($referenceName)
+        if ($null -ne $ambient) { return $ambient }
+        if ($null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($referenceName)) {
+            return Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$referenceName]) -Depth ($Depth + 1)
+        }
+        return ""
+    })
+
+    return $working.Replace($placeholder, '$')
+}
+
+function Get-ComposeResolvedEnvValue {
+    <#
+    .SYNOPSIS
+        Reads an env-file value the way Docker Compose does: a value set for the same key in the
+        process/shell environment wins (interpolation precedence); otherwise strips surrounding quotes
+        and inline comments and resolves ${VAR}/$VAR references (single-quoted values stay literal).
+        Falls back to the documented default when the key is absent, blank, or resolves to empty. This
+        is the single Compose-equivalent resolver shared by the connection-string factory, the
+        destructive-safety guard, and the E2E startup/provision phases. Never logs the value.
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [Parameter(Mandatory)][string]$Name,
+        [string]$DefaultValue = ""
+    )
+
+    # Docker Compose interpolation gives a value set in the process/shell environment precedence over
+    # the same key in the env file. Honour that for the requested key itself: when $Name is set in the
+    # ambient environment, the container receives that value verbatim (an interpolation result is not
+    # itself re-interpolated), so it wins over the file value. Otherwise use the file value through the
+    # shared convert + quote-aware resolver, or the documented default when the key is absent.
+    $ambient = [System.Environment]::GetEnvironmentVariable($Name)
+    $resolved =
+        if ($null -ne $ambient) {
+            $ambient
+        }
+        elseif ($null -eq $EnvironmentValues -or -not $EnvironmentValues.ContainsKey($Name)) {
+            $DefaultValue
+        }
+        else {
+            Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$Name])
+        }
+
+    if ([string]::IsNullOrWhiteSpace($resolved)) {
+        return $DefaultValue
+    }
+
+    return $resolved
+}
+
 function Assert-SafeDatabaseName {
     <#
     .SYNOPSIS
@@ -94,56 +200,28 @@ function Assert-SafeDatabaseName {
     }
 }
 
-function Resolve-EnvironmentValueReference {
+function Test-ProtectedKeyConfigured {
     <#
     .SYNOPSIS
-        Resolves a single ${OTHER_KEY} env-file indirection against the supplied value map,
-        following chains and throwing on unresolved, blank, or cyclic references.
+        Returns true when a protected key is configured for the running stack - set (non-blank) in the
+        env file or present in the process/shell environment (Docker Compose would consume an ambient
+        value even when the file omits it). Used so the dedicated-E2E guard fails closed on a
+        configured-but-unresolvable protected value while skipping a genuinely absent one.
     #>
     param(
-        [string]$Value,
         [hashtable]$EnvironmentValues,
-        [System.Collections.Generic.HashSet[string]]$VisitedKeys
+        [Parameter(Mandatory)][string]$Name
     )
 
-    $Value = ConvertFrom-ComposeEnvironmentValue -Value $Value
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $Value
+    if ($null -ne [System.Environment]::GetEnvironmentVariable($Name)) {
+        return $true
     }
 
-    $match = [Regex]::Match($Value, '^\$\{(?<key>[^}]+)\}$')
-
-    if (-not $match.Success) {
-        return $Value
+    if ($null -ne $EnvironmentValues -and $EnvironmentValues.ContainsKey($Name)) {
+        return -not [string]::IsNullOrWhiteSpace([string]$EnvironmentValues[$Name])
     }
 
-    $referencedKey = $match.Groups["key"].Value
-    if (-not $EnvironmentValues.ContainsKey($referencedKey)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is not defined."
-    }
-
-    $resolvedValue = [string]$EnvironmentValues[$referencedKey]
-    if ([string]::IsNullOrWhiteSpace($resolvedValue)) {
-        throw "Environment value reference '$Value' could not be resolved because '$referencedKey' is blank."
-    }
-
-    if ($null -eq $VisitedKeys) {
-        $VisitedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    }
-    if (-not $VisitedKeys.Add($referencedKey)) {
-        throw "Environment value reference '$Value' is cyclic at '$referencedKey'."
-    }
-
-    try {
-        return Resolve-EnvironmentValueReference `
-            -Value $resolvedValue `
-            -EnvironmentValues $EnvironmentValues `
-            -VisitedKeys $VisitedKeys
-    }
-    finally {
-        $null = $VisitedKeys.Remove($referencedKey)
-    }
+    return $false
 }
 
 function Get-DatabaseNameFromConnectionString {
@@ -172,9 +250,9 @@ function Get-DatabaseNameFromConnectionString {
 
         foreach ($key in $connectionStringBuilder.PSBase.Keys) {
             if ([string]$key -imatch '^(database|initial\s+catalog)$') {
-                return Resolve-EnvironmentValueReference `
-                    -Value ([string]$connectionStringBuilder.PSBase.get_Item($key)) `
-                    -EnvironmentValues $EnvironmentValues
+                return Resolve-ComposeEnvRawValue `
+                    -EnvironmentValues $EnvironmentValues `
+                    -RawValue ([string]$connectionStringBuilder.PSBase.get_Item($key))
             }
         }
     }
@@ -200,17 +278,34 @@ function Assert-E2EDatabaseIsDedicated {
 
     Assert-SafeDatabaseName -DatabaseName $E2EDatabaseName
 
-    # All comparisons are case-insensitive: SQL Server's default collation treats database
-    # identifiers case-insensitively, so a case-variant of a protected name IS the same database
-    # there and would still be dropped. PostgreSQL names are case-sensitive, so this is stricter
-    # than required on that engine - acceptable for a guard in front of DROP DATABASE, where a
-    # false positive costs a rename and a false negative drops shared state.
+    # Resolve every protected value the way Docker Compose does before comparing it to the E2E reset
+    # target: a value set in the process/shell environment wins over the env file, ${VAR} references
+    # (including ambient overrides) are followed, and single-quoted values stay literal. Evaluating the
+    # raw file value instead would let an ambient MSSQL_DB_NAME / POSTGRES_DB_NAME / admin/CMS
+    # connection-string override make the live shared database equal the reset target while this guard
+    # sees a different file value and permits a destructive reset/drop.
+    #
+    # All comparisons are case-insensitive: SQL Server's default collation treats database identifiers
+    # case-insensitively, so a case-variant of a protected name IS the same database there and would
+    # still be dropped. PostgreSQL names are case-sensitive, so this is stricter than required on that
+    # engine - acceptable for a guard in front of DROP DATABASE, where a false positive costs a rename
+    # and a false negative drops shared state. The guard fails closed: a protected key that is
+    # configured (in the file or the ambient environment) but cannot be resolved throws rather than
+    # silently skipping the collision check.
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
-        $protectedDatabaseName = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$databaseNameKey]) `
-            -EnvironmentValues $EnvironmentValues
+        if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $databaseNameKey)) {
+            continue
+        }
 
-        if (-not [string]::IsNullOrWhiteSpace($protectedDatabaseName) -and $E2EDatabaseName -ieq $protectedDatabaseName) {
+        # A protected database name that is empty (undefined reference) or still contains a '$'
+        # (an unresolved or cyclic reference the resolver could not expand) cannot be proven distinct
+        # from the reset target, so fail closed. A real database name never contains '$'.
+        $protectedDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $databaseNameKey
+        if ([string]::IsNullOrWhiteSpace($protectedDatabaseName) -or $protectedDatabaseName -match '\$') {
+            throw "E2E database safety check could not resolve $databaseNameKey in '$EnvironmentFilePath' (missing, or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
+        }
+
+        if ($E2EDatabaseName -ieq $protectedDatabaseName) {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
         }
     }
@@ -219,12 +314,13 @@ function Assert-E2EDatabaseIsDedicated {
             "DATABASE_CONNECTION_STRING_ADMIN",
             "DMS_CONFIG_DATABASE_CONNECTION_STRING"
         )) {
-        $connectionString = Resolve-EnvironmentValueReference `
-            -Value ([string]$EnvironmentValues[$connectionStringKey]) `
-            -EnvironmentValues $EnvironmentValues
-
-        if ([string]::IsNullOrWhiteSpace($connectionString)) {
+        if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $connectionStringKey)) {
             continue
+        }
+
+        $connectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $connectionStringKey
+        if ([string]::IsNullOrWhiteSpace($connectionString)) {
+            throw "E2E database safety check could not resolve $connectionStringKey in '$EnvironmentFilePath'; refusing a destructive reset that cannot be proven dedicated."
         }
 
         $connectionStringDatabaseName = Get-DatabaseNameFromConnectionString `
@@ -235,6 +331,12 @@ function Assert-E2EDatabaseIsDedicated {
             throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
         }
 
+        # A parsed database name that still contains a '$' came from an unresolved or cyclic reference
+        # the resolver could not expand; fail closed rather than compare an indeterminate value.
+        if ($connectionStringDatabaseName -match '\$') {
+            throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
+        }
+
         if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
         }
@@ -243,7 +345,9 @@ function Assert-E2EDatabaseIsDedicated {
 
 Export-ModuleMember -Function `
     ConvertFrom-ComposeEnvironmentValue, `
+    Resolve-ComposeEnvReference, `
+    Resolve-ComposeEnvRawValue, `
+    Get-ComposeResolvedEnvValue, `
     Assert-SafeDatabaseName, `
-    Resolve-EnvironmentValueReference, `
     Get-DatabaseNameFromConnectionString, `
     Assert-E2EDatabaseIsDedicated

@@ -3142,6 +3142,8 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
         }
 
         It "fails closed when a protected database reference is undefined" {
+            # An undefined reference resolves to empty the way Docker Compose does, leaving no database
+            # name to compare; the guard refuses rather than proceed.
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
@@ -3149,10 +3151,12 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     } `
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "shared"
-            } | Should -Throw "*SHARED_DB*not defined*"
+            } | Should -Throw "*could not determine a database name*DATABASE_CONNECTION_STRING_ADMIN*"
         }
 
         It "fails closed when protected database references are cyclic" {
+            # A cyclic reference cannot be expanded; the resolver leaves the '$' marker, which the guard
+            # treats as unresolved and refuses.
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
@@ -3162,7 +3166,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     } `
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "shared"
-            } | Should -Throw "*cyclic*SHARED_DB*"
+            } | Should -Throw "*unresolved or cyclic reference*"
         }
 
         It "fails closed when a configured protected connection string has no database name" {
@@ -3187,6 +3191,91 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "edfi_e2e"
             } | Should -Not -Throw
+        }
+
+        # FR8: Docker Compose gives a process/shell value precedence over the env file. The guard must
+        # resolve protected values with the same precedence, or an ambient override that makes the live
+        # shared database equal the reset target would pass while the guard evaluated a stale file value.
+        It "fails closed when an ambient <Key> override makes the live database the reset target" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME" }
+            @{ Key = "POSTGRES_DB_NAME" }
+        ) {
+            $priorExists = Test-Path "Env:$Key"
+            $priorValue = [System.Environment]::GetEnvironmentVariable($Key)
+            try {
+                [System.Environment]::SetEnvironmentVariable($Key, "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{ $Key = "main_db" } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must be dedicated*$Key*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable($Key, $priorValue) }
+                else { Remove-Item "Env:$Key" -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "fails closed when an ambient override of a referenced protected variable targets the reset database" {
+            $priorExists = Test-Path "Env:DMS1284_SHARED_DBNAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_SHARED_DBNAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_DBNAME", "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{
+                            MSSQL_DB_NAME         = '${DMS1284_SHARED_DBNAME}'
+                            DMS1284_SHARED_DBNAME = "main_db"
+                        } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must be dedicated*MSSQL_DB_NAME*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("DMS1284_SHARED_DBNAME", $priorValue) }
+                else { Remove-Item Env:DMS1284_SHARED_DBNAME -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "fails closed when an ambient override of a connection-string variable targets the reset database" {
+            $priorExists = Test-Path "Env:DMS1284_CONN_DBNAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_CONN_DBNAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("DMS1284_CONN_DBNAME", "shared_e2e")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{
+                            DATABASE_CONNECTION_STRING_ADMIN = 'Server=dms-mssql,1433;Database=${DMS1284_CONN_DBNAME};User ID=sa;Password=p;'
+                        } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Throw "*must stay separate*DATABASE_CONNECTION_STRING_ADMIN*"
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("DMS1284_CONN_DBNAME", $priorValue) }
+                else { Remove-Item Env:DMS1284_CONN_DBNAME -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It "accepts a dedicated E2E database when an ambient protected override differs from the reset target" {
+            # Ambient precedence must not create false positives: an ambient protected name that differs
+            # from the E2E target is still dedicated and must not throw.
+            $priorExists = Test-Path "Env:MSSQL_DB_NAME"
+            $priorValue = [System.Environment]::GetEnvironmentVariable("MSSQL_DB_NAME")
+            try {
+                [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", "still_the_main_db")
+                {
+                    Assert-E2EDatabaseIsDedicated `
+                        -EnvironmentValues @{ MSSQL_DB_NAME = "main_db" } `
+                        -EnvironmentFilePath ".env.e2e" `
+                        -E2EDatabaseName "shared_e2e"
+                } | Should -Not -Throw
+            }
+            finally {
+                if ($priorExists) { [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", $priorValue) }
+                else { Remove-Item Env:MSSQL_DB_NAME -ErrorAction SilentlyContinue }
+            }
         }
     }
 }
