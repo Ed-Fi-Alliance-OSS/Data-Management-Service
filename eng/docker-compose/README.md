@@ -273,9 +273,13 @@ independently interpolated runtime provider, so each is checked against the sele
 
 * **DMS service** (when its compose file is in the set): its runtime provider (`DMS_DATASTORE`, the
   `dms` service's `AppSettings__Datastore`) must be exactly `postgresql` or `mssql` and match the
-  selected engine; and the datastore database the containers actually receive (again from Compose, so
-  a shell override of `POSTGRES_DB_NAME` / `MSSQL_DB_NAME` - direct or through a referenced variable -
-  is reflected) must agree with the env file host-side tooling reads.
+  selected engine; and the topology datastore database is the engine-specific `POSTGRES_DB_NAME` /
+  `MSSQL_DB_NAME` that Compose resolves on the `db` service - the authoritative anchor, never
+  `DATABASE_CONNECTION_STRING_ADMIN` (a readiness/admin connection whose database can differ). A shell
+  override of that key - direct or through a referenced variable - is reflected; the runtime contract
+  validates that concrete resolved value, and host-side configuration and registration consume it by
+  default (an explicit `-DataStoreDatabaseName` can replace the registered datastore target without
+  changing this topology anchor).
 * **Configuration Service** (when its compose file is in the set): its runtime provider
   (`DMS_CONFIG_DATASTORE`, the `config` service's `AppSettings__Datastore`) must be exactly `postgresql`
   or `mssql` and match the selected engine; and the connection string must be a valid connection for
@@ -286,38 +290,50 @@ independently interpolated runtime provider, so each is checked against the sele
 
 Because `DMS_DATASTORE` and `DMS_CONFIG_DATASTORE` are separate variables, a shell override of either
 cannot silently point its container at a different engine than the one that starts. Each service is
-validated only when its compose file is actually selected (a published Keycloak start without
-`-EnableConfig` composes no local Configuration Service and skips only the CMS checks - the DMS and
-stack checks still run). Anything else fails fast with a clear diagnostic before any stack lifecycle
-mutation.
+validated only when its compose file is actually selected (a published Keycloak start whose compose set
+omits the local Configuration Service skips only the CMS checks - the DMS and stack checks still run;
+several modes include CMS, so participation is decided by the composed file set, not by `-EnableConfig`
+alone). Anything else fails fast with a clear diagnostic before any stack lifecycle mutation.
 
 > Because connection strings are parsed with the exact runtime providers, the start scripts need the
-> `api-schema-tools` executable (the same tool the provisioning phase uses). They call
-> `Resolve-DmsSchemaTool -BuildIfMissing`, which resolves it as follows:
+> `api-schema-tools` executable (the same tool the provisioning phase uses). How they obtain it differs by
+> lane, because only the published lane can run a source-less host.
+>
+> The **local start scripts** (`start-local-dms.ps1` and the standalone `start-local-config.ps1`) call
+> `Resolve-DmsSchemaTool -BuildIfMissing`, which resolves a host executable as follows:
 >
 > * an explicit `DMS_SCHEMA_TOOL_PATH` is authoritative (it must exist);
 > * otherwise a prebuilt copy is discovered under `eng/docker-compose/.bootstrap/tools/api-schema-tools`
 >   or the SchemaTools build output;
 > * otherwise, when no candidate exists and the .NET SDK and SchemaTools project are available, the
 >   start lane publishes the tool from source once to `.bootstrap/tools/api-schema-tools` and re-probes,
->   so a clean checkout self-heals without a manual build.
+>   so a clean checkout self-heals without a manual build;
+> * finally, an `api-schema-tools` already on `PATH` is accepted only when
+>   `DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true` opts in; otherwise resolution throws rather than silently
+>   using an unpinned tool.
 >
 > An already-existing executable is reused as-is; after pulling changes to SchemaTools, rebuild or
 > re-publish it (`dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools -c Release -o eng/docker-compose/.bootstrap/tools/api-schema-tools`,
-> or `build-dms.ps1 BuildAndPublish` / the bootstrap flow) so the resolver picks up the current tool.
-> A published Keycloak start with no local Configuration Service still resolves the tool, because the
-> DMS datastore validation above remains active even when the CMS checks are skipped. In contrast,
-> `prepare-dms-schema.ps1` does not auto-publish: it still requires an already-resolvable prebuilt tool.
+> or `build-dms.ps1 BuildAndPublish` / the bootstrap flow) so the resolver picks up the current tool. These
+> local lanes have **no image fallback**: on a host with neither a resolvable tool nor the SDK, resolution
+> fails with build/configuration guidance. (`prepare-dms-schema.ps1` likewise does not auto-publish - it
+> requires an already-resolvable prebuilt tool.)
 >
-> On a clean Docker/PowerShell-only **published-image** host (no .NET SDK and no source build),
-> `start-published-dms.ps1` cannot build the host tool. It instead runs the exact same
-> `connection validate` verb **inside the DMS image**, which bundles the `api-schema-tools` CLI at
-> `/app/ApiSchemaTools/` (invoked as `dotnet /app/ApiSchemaTools/api-schema-tools.dll ...` with
-> `docker run --network none`, so it only parses the string and never connects). Connection strings are
-> therefore still validated with the exact runtime providers - the parser is never weakened - without an
-> SDK. A resolvable host tool (`DMS_SCHEMA_TOOL_PATH`, a prebuilt copy, or an SDK build) is still preferred
-> when present. Only the database-only diagnostic startup and teardown skip the validator entirely, because
-> they do not initialize CMS.
+> `start-published-dms.ps1` instead calls `Resolve-DmsConnectionValidator`, which first attempts that same
+> host-first resolution (`Resolve-DmsSchemaTool -BuildIfMissing`, so a prebuilt host tool or an SDK build is
+> still preferred when present) and, **only** when no explicit `DMS_SCHEMA_TOOL_PATH` was supplied and no
+> host tool can be resolved or built - the clean Docker/PowerShell-only **published-image** host with no .NET
+> SDK and no source build - falls back to running the exact same `connection validate` verb **inside the DMS
+> image**, which bundles the `api-schema-tools` CLI at `/app/ApiSchemaTools/` (invoked as
+> `dotnet /app/ApiSchemaTools/api-schema-tools.dll ...` with `docker run --network none`, so it only parses
+> the string and never connects). Connection strings are therefore still validated with the exact runtime
+> providers - the parser is never weakened - without a host SDK. An explicit `DMS_SCHEMA_TOOL_PATH` stays
+> authoritative and is never masked by the image: a wrong or stale explicit path fails hard rather than
+> silently falling back to the container. A published Keycloak start with no local Configuration Service
+> still resolves the validator, because the DMS datastore validation above remains active even when the CMS
+> checks are skipped. Only the database-only diagnostic startup (`-DbOnly`) and teardown skip the validator
+> entirely - they do not participate in the DMS/CMS runtime contract or register a datastore, so there is
+> nothing for the preflight to validate.
 
 ```pwsh
 # Shared (default): CMS shares the DMS datastore database
