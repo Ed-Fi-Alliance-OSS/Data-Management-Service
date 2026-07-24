@@ -661,11 +661,13 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
         $contractIndex | Should -BeLessThan $networkIndex -Because "$Script must validate before 'docker network create' - the first stack-lifecycle mutation - which precedes image build, container up, and Keycloak/OpenIddict"
     }
 
-    It "build-dms.ps1 StartEnvironment runs the runtime-contract preflight before image build and teardown (finding 1)" {
-        # The inner start scripts validate before THEIR first mutation (above), but the outer StartEnvironment
-        # orchestration builds images and tears down volumes BEFORE it ever reaches a start script. It must run
-        # the SAME preflight (the start script's -PreflightOnly stop point) before either mutation, so an
-        # invalid provider/connection string is reported before existing databases are deleted.
+    It "build-dms.ps1 StartEnvironment runs the wrapper-owned preflight (staging + contract) before image build and teardown (finding 1)" {
+        # The outer StartEnvironment orchestration builds images and tears down volumes BEFORE it reaches a
+        # full wrapper run. It must first run the bootstrap WRAPPER in -PreflightOnly mode, which stages and
+        # completes the bootstrap workspace and then runs the start script's own -PreflightOnly runtime-contract
+        # validation - so an incompletable workspace or an invalid provider/connection string is reported
+        # before existing databases are deleted. One shared wrapper argument record drives both the preflight
+        # (with -PreflightOnly) and the full run (untouched).
         $buildScript = [System.IO.Path]::GetFullPath((Join-Path $script:composeRoot "../../build-dms.ps1"))
         Test-Path -LiteralPath $buildScript | Should -BeTrue -Because "build-dms.ps1 lives at the repository root"
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($buildScript, [ref]$null, [ref]$null)
@@ -677,16 +679,48 @@ Describe "Production call-graph invariants (single policy, before ALL mutation, 
             }, $true) | Select-Object -First 1
         $orchestrator | Should -Not -BeNullOrEmpty -Because "StartEnvironment dispatches to Start-BootstrapDockerEnvironment"
 
-        $body = $orchestrator.Body.Extent.Text
-        $preflightIndex = $body.IndexOf('-PreflightOnly')
-        $dockerBuildIndex = $body.IndexOf('Invoke-Step { DockerBuild }')
-        $stopIndex = $body.IndexOf('Stop-DockerEnvironment ')
+        $bodyAst = $orchestrator.Body
 
-        $preflightIndex | Should -BeGreaterThan -1 -Because "the orchestration must run the -PreflightOnly contract validation"
-        $stopIndex | Should -BeGreaterThan -1 -Because "the orchestration tears down (compose down -v / volume deletion)"
-        $dockerBuildIndex | Should -BeGreaterThan -1 -Because "the orchestration builds images"
-        $preflightIndex | Should -BeLessThan $dockerBuildIndex -Because "the preflight must precede image build"
-        $preflightIndex | Should -BeLessThan $stopIndex -Because "the preflight must precede teardown and volume deletion"
+        # Preflight commands: bootstrap-(local|published)-dms.ps1 invoked WITH a -PreflightOnly parameter.
+        # (The full-run invocations of the same scripts carry no -PreflightOnly, so they are excluded.)
+        $preflightCommands = @($bodyAst.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    ($null -ne $node.GetCommandName()) -and
+                    ($node.GetCommandName() -match 'bootstrap-(local|published)-dms\.ps1$') -and
+                    (@($node.CommandElements | Where-Object {
+                        $_ -is [System.Management.Automation.Language.CommandParameterAst] -and $_.ParameterName -eq 'PreflightOnly'
+                    }).Count -gt 0)
+                }, $true))
+
+        # The mutation command nodes (DockerBuild lives inside Invoke-Step { DockerBuild }).
+        $dockerBuildCommand = @($bodyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'DockerBuild' }, $true)) | Select-Object -First 1
+        $stopCommand = @($bodyAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Stop-DockerEnvironment' }, $true)) | Select-Object -First 1
+
+        $preflightCommands.Count | Should -Be 2 -Because "the outer preflight runs the local and published wrapper in -PreflightOnly mode"
+        $dockerBuildCommand | Should -Not -BeNullOrEmpty -Because "the orchestration builds images"
+        $stopCommand | Should -Not -BeNullOrEmpty -Because "the orchestration tears down (compose down -v / volume deletion)"
+
+        # Compare REAL command source offsets (not a substring search that a comment mentioning
+        # -PreflightOnly could satisfy): every preflight command must precede BOTH mutation nodes.
+        $lastPreflightEnd = ($preflightCommands | ForEach-Object { $_.Extent.EndOffset } | Measure-Object -Maximum).Maximum
+        $lastPreflightEnd | Should -BeLessThan $dockerBuildCommand.Extent.StartOffset -Because "both preflight commands must precede image build"
+        $lastPreflightEnd | Should -BeLessThan $stopCommand.Extent.StartOffset -Because "both preflight commands must precede teardown and volume deletion"
+
+        # One shared wrapper argument record drives both the preflight (a copy with -PreflightOnly) and the
+        # full run (untouched).
+        ([regex]::Matches($bodyAst.Extent.Text, '\$bootstrapArgs = @\{')).Count |
+            Should -Be 1 -Because "a single wrapper argument record is built once and shared by the preflight copy and the full run"
+    }
+
+    It "build-dms.ps1 and start-local-config.ps1 describe the preflight boundary as stack-lifecycle mutation, not 'external' action (finding 3)" {
+        $buildScript = Get-Content -LiteralPath ([System.IO.Path]::GetFullPath((Join-Path $script:composeRoot "../../build-dms.ps1"))) -Raw
+        $startLocalConfig = Get-Content -LiteralPath (Join-Path $script:composeRoot "start-local-config.ps1") -Raw
+
+        $buildScript | Should -Not -Match 'external mutation' -Because "the preflight stages and validates but is not 'before any external mutation'"
+        $buildScript | Should -Match 'stack-lifecycle mutation' -Because "the established boundary is stack-lifecycle mutation"
+        $startLocalConfig | Should -Not -Match 'BEFORE any external' -Because "resolving/building the validator writes persistent state, so 'before any external action' is inaccurate"
+        $startLocalConfig | Should -Match 'stack-lifecycle mutation' -Because "the established boundary is stack-lifecycle mutation"
     }
 
     It "bootstrap-schema-tool imports bootstrap-manifest WITHOUT -Force (so importing it cannot re-home a caller's manifest)" {

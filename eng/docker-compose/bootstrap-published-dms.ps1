@@ -152,7 +152,13 @@ param(
     # (shared, the default): the Configuration Service uses the selected DMS datastore database.
     # Supplied (separate): the Configuration Service uses the dedicated edfi_configurationservice
     # database, without changing the DMS datastore selection.
-    [Switch]$SeparateConfigDatabase
+    [Switch]$SeparateConfigDatabase,
+
+    # Wrapper-owned preflight: stage and complete the bootstrap workspace, then validate the runtime
+    # contract (delegating to start-published-dms.ps1 -PreflightOnly) and return before infrastructure,
+    # configure, provision, DMS startup, or seed. Used by build-dms.ps1 StartEnvironment to validate
+    # staging and the runtime contract before it builds images or tears down volumes.
+    [Switch]$PreflightOnly
 )
 
 $ErrorActionPreference = "Stop"

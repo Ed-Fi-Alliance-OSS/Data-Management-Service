@@ -53,11 +53,13 @@ if ($d) {
 }
 else {
 
-    # Resolve and validate the effective Configuration Service runtime contract ONCE, BEFORE any external
-    # action (network creation, image build, container start, Keycloak/OpenIddict). `docker compose config`
-    # is read-only and resolves the same files, env file, and shell the `up` calls below use, so what is
-    # validated here is exactly what the container receives; connection strings are parsed by the exact
-    # runtime providers via the api-schema-tools validator. The standalone lane composes no dms service, so
+    # Resolve and validate the effective Configuration Service runtime contract ONCE, before any
+    # stack-lifecycle mutation (network creation, image build, container start, Keycloak/OpenIddict
+    # initialization). Preflight may resolve Compose configuration (`docker compose config`, read-only) and
+    # resolve, reuse, or build the host validator tool; those are support operations, not stack-lifecycle
+    # changes. `docker compose config` resolves the same files, env file, and shell the `up` calls below
+    # use, so what is validated here is exactly what the container receives; connection strings are parsed
+    # by the exact runtime providers via the api-schema-tools validator. The standalone lane composes no dms service, so
     # DMS participation is false and there is no topology datastore anchor; the resolved CMS connection's own
     # single target IS the effective configuration database OpenIddict initializes.
     # bootstrap-schema-tool.psm1 provides Resolve-DmsSchemaTool (the connection-string validation tool);

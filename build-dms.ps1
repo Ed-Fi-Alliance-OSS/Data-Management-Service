@@ -902,19 +902,52 @@ function Start-BootstrapDockerEnvironment {
             $DatabaseEngine
         }
 
-    # Validate the effective runtime contract BEFORE any external mutation (image build, teardown, volume
-    # deletion). This invokes the SAME preflight the eventual start path runs - the start script's own
-    # -PreflightOnly stop point - so an invalid Compose-resolved provider or connection string is reported
-    # before existing databases are destroyed rather than after. The start script throws on a contract
-    # violation, aborting this orchestration ahead of the build and teardown steps that follow.
-    $preflightStartScript = if ($UsePublishedImage) { "start-published-dms.ps1" } else { "start-local-dms.ps1" }
+    # Build the ONE bootstrap wrapper argument record used for BOTH the preflight and the full run, so the
+    # preflight validates exactly the workspace, effective environment, and topology the full run executes.
+    # The preflight invocation adds -PreflightOnly to this record; the full invocation passes it untouched.
+    $bootstrapArgs = @{
+        EnvironmentFile = $environmentFilePath
+        EnableConfig = $true
+        IdentityProvider = $IdentityProvider
+        AddExtensionSecurityMetadata = $true
+    }
+
+    if ($LoadSeedData) {
+        $bootstrapArgs.LoadSeedData = $true
+    }
+
+    if ($DatabaseEngine) {
+        $bootstrapArgs.DatabaseEngine = $DatabaseEngine
+    }
+
+    if ($DataStandardVersionSupplied) {
+        $bootstrapArgs.DataStandardVersion = $DataStandardVersion
+    }
+
+    if ($SeparateConfigDatabase) {
+        $bootstrapArgs.SeparateConfigDatabase = $true
+    }
+
+    # Wrapper-owned preflight, before any stack-lifecycle mutation (image build, Compose down, volume
+    # deletion). The bootstrap wrapper resolves its exact effective environment, stages and completes the
+    # schema and claims/seed workspace (support operations only), asserts it, then runs the start script's
+    # own -PreflightOnly runtime-contract validation over that same environment. A staging or contract
+    # failure throws here, aborting this orchestration ahead of the build and teardown steps below - so the
+    # existing stack and its volumes are never destroyed on the strength of an invalid contract or an
+    # incompletable workspace. The workspace staged here is a host-side directory that survives volume
+    # deletion, so the full run below reuses it (idempotent staging never re-stages a current workspace).
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
             Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
-                & "./$preflightStartScript" -PreflightOnly -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $effectiveDatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase
+                if ($UsePublishedImage) {
+                    ./bootstrap-published-dms.ps1 @bootstrapArgs -PreflightOnly
+                }
+                else {
+                    ./bootstrap-local-dms.ps1 @bootstrapArgs -PreflightOnly
+                }
                 if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                    throw "$preflightStartScript -PreflightOnly failed with exit code $LASTEXITCODE."
+                    throw "bootstrap wrapper -PreflightOnly failed with exit code $LASTEXITCODE."
                 }
             }
         }
@@ -932,33 +965,11 @@ function Start-BootstrapDockerEnvironment {
         -IdentityProvider $IdentityProvider `
         -DatabaseEngine $effectiveDatabaseEngine
 
+    # Full run: the SAME record, without -PreflightOnly. The wrapper reuses the workspace the preflight
+    # staged above.
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
-
-            $bootstrapArgs = @{
-                EnvironmentFile = $environmentFilePath
-                EnableConfig = $true
-                IdentityProvider = $IdentityProvider
-                AddExtensionSecurityMetadata = $true
-            }
-
-            if ($LoadSeedData) {
-                $bootstrapArgs.LoadSeedData = $true
-            }
-
-            if ($DatabaseEngine) {
-                $bootstrapArgs.DatabaseEngine = $DatabaseEngine
-            }
-
-            if ($DataStandardVersionSupplied) {
-                $bootstrapArgs.DataStandardVersion = $DataStandardVersion
-            }
-
-            if ($SeparateConfigDatabase) {
-                $bootstrapArgs.SeparateConfigDatabase = $true
-            }
-
             Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
                 if ($UsePublishedImage) {
                     ./bootstrap-published-dms.ps1 @bootstrapArgs

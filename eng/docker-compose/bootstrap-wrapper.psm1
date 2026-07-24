@@ -562,7 +562,16 @@ function Invoke-BootstrapWrapper {
         # consistent and never resets separate mode back to shared. Shared (default): the
         # Configuration Service uses the DMS datastore database. Separate: the Configuration
         # Service uses the dedicated edfi_configurationservice database.
-        [Switch]$SeparateConfigDatabase
+        [Switch]$SeparateConfigDatabase,
+
+        # Wrapper-owned preflight. Resolve the effective environment and stage/complete the schema and
+        # claims/seed workspace (support operations only), assert it, then delegate to the target start
+        # script's own -PreflightOnly runtime-contract validation over this exact effective environment and
+        # compose shape, and return before configure, provision, DMS-only, or seed. build-dms.ps1
+        # StartEnvironment runs this before it builds images or tears down volumes, so a staging or contract
+        # failure aborts before the existing stack is destroyed. A later full (non-preflight) invocation
+        # reuses the workspace staged here (a host-side directory that survives volume deletion).
+        [Switch]$PreflightOnly
     )
 
     $ErrorActionPreference = "Stop"
@@ -841,6 +850,23 @@ function Invoke-BootstrapWrapper {
         $startArgs.DatabaseEngine = $DatabaseEngine
         $startArgs.SeparateConfigDatabase = $SeparateConfigDatabase
         $startArgs.EnvironmentFile = $effectiveEnvFile
+
+        if ($PreflightOnly) {
+            # Wrapper-owned preflight stop point. Staging and claims/seed completion ran above and the
+            # workspace is asserted - all support operations, before any stack-lifecycle mutation. Reuse
+            # the SAME infrastructure start-script argument record (so the preflight validates the exact
+            # compose shape and effective environment the full run uses) with -PreflightOnly added: the
+            # start script resolves and validates the runtime contract, then returns before Compose
+            # up/network/identity work. Return here before configure, provision, DMS-only, or seed. The
+            # workspace staged above is reused by a later full (non-preflight) invocation.
+            $startArgs.PreflightOnly = $true
+            $global:LASTEXITCODE = 0
+            & "$PSScriptRoot/$StartScriptName" @startArgs
+            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "$StartScriptName -PreflightOnly failed with exit code $LASTEXITCODE."
+            }
+            return
+        }
 
         # Reset the native exit-code sentinel so the check below reflects only this start invocation and
         # not a stale value left by an earlier command. The start scripts signal failure by throwing;

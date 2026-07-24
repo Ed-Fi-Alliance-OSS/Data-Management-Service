@@ -265,7 +265,13 @@ param(
     # (shared, the default): the Configuration Service uses the selected DMS datastore database.
     # Supplied (separate): the Configuration Service uses the dedicated edfi_configurationservice
     # database, without changing the DMS datastore selection.
-    [Switch]$SeparateConfigDatabase
+    [Switch]$SeparateConfigDatabase,
+
+    # Wrapper-owned preflight: stage and complete the bootstrap workspace, then validate the runtime
+    # contract (delegating to start-local-dms.ps1 -PreflightOnly) and return before infrastructure,
+    # configure, provision, DMS startup, or seed. Used by build-dms.ps1 StartEnvironment to validate
+    # staging and the runtime contract before it builds images or tears down volumes. Not valid with -d.
+    [Switch]$PreflightOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -275,6 +281,13 @@ $ErrorActionPreference = "Stop"
 # running any phase. -v maps to -v -RemoveBootstrap; -v without -d is meaningless, so reject it.
 if ($v -and -not $d) {
     throw "-v requires -d. Use bootstrap-local-dms.ps1 -d -v to stop services, delete volumes, and remove the .bootstrap workspace."
+}
+# Preflight is a startup-contract stop point (stage + validate before build/teardown) and is mutually
+# exclusive with teardown, which stops services and never validates. Reject the combination rather than
+# letting the teardown short-circuit silently win while the safety stop-point switch is present (which,
+# with -v, would delete volumes without running preflight). Mirrors start-local-dms.ps1's own guard.
+if ($PreflightOnly -and $d) {
+    throw "Parameter -PreflightOnly is not valid with -d (teardown). Preflight validates staging and the runtime contract before build and teardown; it does not stop services."
 }
 if ($d) {
     $teardownArgs = @{ d = $true }

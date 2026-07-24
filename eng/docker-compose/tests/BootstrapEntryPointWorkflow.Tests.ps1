@@ -5,6 +5,8 @@
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester stubs intentionally keep production-compatible signatures.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pester stubs shadow production state-changing helpers (e.g. Stop-DockerEnvironment) only to record orchestration order; they change no real state.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'The orchestration behavioral test intentionally shadows Push-Location/Pop-Location with no-op stubs so the extracted function (with an empty $PSScriptRoot) does not change the working directory away from the stub workspace.')]
 param()
 
 Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
@@ -1397,12 +1399,16 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials',
                 'SeparateConfigDatabase'
             )
+            # -PreflightOnly is neither forwarded to teardown nor an ignored start-path option: it is
+            # mutually exclusive with -d (a startup-contract stop point vs. teardown), rejected before the
+            # teardown short-circuit, and covered by its own It below - so it must NOT be bound with -d here.
+            $teardownIncompatible = @('PreflightOnly')
 
-            # Completeness guard: every parameter the entry script declares must be classified here
-            # as a teardown switch, forwarded, or excluded (and bound below), so a new parameter
-            # fails this assertion and forces an explicit forwarding decision.
+            # Completeness guard: every parameter the entry script declares must be classified here as a
+            # teardown switch, forwarded, excluded (and bound below), or teardown-incompatible, so a new
+            # parameter fails this assertion and forces an explicit forwarding decision.
             $declared = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
-            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded) | Sort-Object)
+            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded + $teardownIncompatible) | Sort-Object)
 
             # Binds every excluded parameter (the teardown short-circuit returns before the wrapper's
             # option-validation rules run, so all of them can be bound in one invocation); an unbound
@@ -2045,6 +2051,324 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             ) -Raw
 
             $buildScript | Should -Match '(?s)if \(\$SeparateConfigDatabase\) \{\s*\$bootstrapArgs\.SeparateConfigDatabase = \$true\s*\}'
+        }
+    }
+
+    # =========================================================================
+    # Wrapper-owned preflight: the wrapper resolves its exact effective environment, stages/completes
+    # the schema and claims/seed workspace, asserts it, then delegates to the start script's own
+    # -PreflightOnly runtime-contract validation and returns before configure/provision/DMS/seed. This
+    # is the seam build-dms.ps1 StartEnvironment runs before it builds images or tears down volumes, so
+    # staging and contract validation precede every destructive step.
+    # =========================================================================
+    Context "wrapper -PreflightOnly (staging + runtime-contract validation before build/teardown)" {
+        BeforeAll {
+            # Records one line per start-script invocation with the mode switches and the effective env
+            # file the wrapper resolved, so a test can assert the preflight delegated to the start script's
+            # -PreflightOnly stop point and can compare the preflight and full-run effective environments.
+            function script:New-RecordingPreflightStartScript {
+                param(
+                    [Parameter(Mandatory)][string]$Directory,
+                    [Parameter(Mandatory)][string]$CallLogPath
+                )
+                $scriptPath = Join-Path $Directory "start-local-dms.ps1"
+                @"
+param(
+    [switch] `$InfraOnly,
+    [switch] `$DmsOnly,
+    [switch] `$PreflightOnly,
+    [switch] `$EnableConfig,
+    [string] `$EnvironmentFile,
+    [string] `$IdentityProvider,
+    [string] `$DatabaseEngine,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$CallLogPath' -Value "start PreflightOnly=`$PreflightOnly InfraOnly=`$InfraOnly DmsOnly=`$DmsOnly EnableConfig=`$EnableConfig EnvironmentFile=`$EnvironmentFile"
+"@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
+                return $scriptPath
+            }
+
+            function script:Get-PreflightStartLines {
+                param([string[]]$Log)
+                # Unary comma prevents PowerShell from unrolling a single-element result to a scalar string
+                # (which would make [0] index the first character instead of the first line).
+                return , @($Log | Where-Object { $_ -like "start *" })
+            }
+
+            function script:Get-RecordedEnvironmentFile {
+                param([string]$StartLine)
+                return ($StartLine -replace '^.*\bEnvironmentFile=', '')
+            }
+
+            # Reads the SCHEMA_PACKAGES value from an env / overlay file (single- or double-quoted).
+            function script:Get-SchemaPackagesValue {
+                param([string]$Path)
+                $content = Get-Content -LiteralPath $Path -Raw
+                $match = [regex]::Match($content, "(?m)^\s*SCHEMA_PACKAGES=(['""]?)(?<value>.*?)\1\s*$")
+                return $match.Groups["value"].Value
+            }
+        }
+
+        It "fresh workspace stages schema and claims, then delegates -PreflightOnly, and returns before configure/provision/seed" {
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-fresh.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingPreflightStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -PreflightOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Contain "prepare-schema" -Because "a fresh workspace stages the schema before validation"
+            $log | Should -Contain "prepare-claims" -Because "a fresh workspace completes claims/seed before validation"
+
+            $startLines = Get-PreflightStartLines -Log $log
+            $startLines.Count | Should -Be 1 -Because "preflight delegates to the start script exactly once"
+            $startLines[0] | Should -Match "PreflightOnly=True" -Because "the wrapper delegates the runtime-contract preflight"
+            $startLines[0] | Should -Match "InfraOnly=True"
+            $startLines[0] | Should -Match "EnableConfig=True"
+
+            $log | Where-Object { $_ -like "configure*" } | Should -BeNullOrEmpty -Because "preflight returns before configure"
+            $log | Where-Object { $_ -like "provision*" }  | Should -BeNullOrEmpty -Because "preflight returns before provision"
+            $log | Where-Object { $_ -like "seed*" }       | Should -BeNullOrEmpty -Because "preflight returns before seed"
+        }
+
+        It "schema-only workspace completes claims and delegates -PreflightOnly without re-staging the schema" {
+            New-SchemaOnlyBootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-schema-only.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingPreflightStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -PreflightOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Not -Contain "prepare-schema" -Because "a present schema manifest is not re-staged"
+            $log | Should -Contain "prepare-claims" -Because "the schema-only manifest is completed with claims/seed"
+            (Get-PreflightStartLines -Log $log).Count | Should -Be 1
+            (Get-PreflightStartLines -Log $log)[0] | Should -Match "PreflightOnly=True"
+            $log | Where-Object { $_ -like "configure*" -or $_ -like "provision*" } | Should -BeNullOrEmpty
+        }
+
+        It "claims-without-seed workspace completes claims/seed before delegating -PreflightOnly" {
+            $manifestPath = New-SchemaOnlyBootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot
+            # Promote the schema-only manifest to claims-present/seed-missing: the completion gate
+            # (Test-WrapperManifestClaimsStaged) requires BOTH claims and seed, so a missing seed must still
+            # trigger prepare-dms-claims.ps1.
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $manifest | Add-Member -NotePropertyName claims -NotePropertyValue ([pscustomobject]@{ mode = "Embedded"; directory = "claims" }) -Force
+            $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-claims-no-seed.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingPreflightStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -PreflightOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Not -Contain "prepare-schema"
+            $log | Should -Contain "prepare-claims" -Because "a claims-without-seed manifest is incomplete and must be completed"
+            (Get-PreflightStartLines -Log $log)[0] | Should -Match "PreflightOnly=True"
+        }
+
+        It "complete workspace delegates -PreflightOnly without staging and leaves the manifest byte-for-byte unchanged" {
+            $manifestPath = New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot
+            $before = [System.IO.File]::ReadAllBytes($manifestPath)
+
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-complete.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingPreflightStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -PreflightOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Where-Object { $_ -like "prepare-*" } | Should -BeNullOrEmpty -Because "a complete current workspace is reused, not re-staged"
+            (Get-PreflightStartLines -Log $log).Count | Should -Be 1
+            (Get-PreflightStartLines -Log $log)[0] | Should -Match "PreflightOnly=True"
+            $log | Where-Object { $_ -like "configure*" -or $_ -like "provision*" -or $_ -like "seed*" } | Should -BeNullOrEmpty
+
+            $after = [System.IO.File]::ReadAllBytes($manifestPath)
+            [System.Convert]::ToBase64String($after) | Should -BeExactly ([System.Convert]::ToBase64String($before)) -Because "preflight reuse must not rewrite a current manifest"
+        }
+
+        # Bootstrap-environment snapshot/restore is proven authoritatively against the REAL start-script
+        # try/finally (success AND contract-failure paths) in StartScriptLifecycleParticipation.Tests.ps1;
+        # a wrapper-level stub start script cannot exercise that production restoration and is not asserted here.
+
+        It "a stale workspace throws before any prepare script and before delegating the preflight" {
+            $manifestPath = New-SchemaOnlyBootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot
+            # Force a package-set mismatch so the DMS-1255 stale-workspace guard fires.
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $manifest.schema.selectedPackages = @("Ed-Fi-Bogus@0.0.0")
+            $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-stale.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingPreflightStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -PreflightOnly } |
+                Should -Throw "*does not match the effective environment*"
+
+            if (Test-Path -LiteralPath $callLog) {
+                $log = @(Get-Content -LiteralPath $callLog)
+                $log | Where-Object { $_ -like "prepare-*" } | Should -BeNullOrEmpty -Because "the stale guard fires before staging"
+                Get-PreflightStartLines -Log $log | Should -BeNullOrEmpty -Because "the stale guard fires before delegating the preflight"
+            }
+        }
+
+        It "preflight and the full run resolve the identical effective environment (structural parity)" {
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-parity.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingPreflightStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -PreflightOnly
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $preflightLine = $log | Where-Object { $_ -like "start *" -and $_ -like "*PreflightOnly=True*" } | Select-Object -First 1
+            $infraLine     = $log | Where-Object { $_ -like "start *" -and $_ -like "*InfraOnly=True*" -and $_ -like "*PreflightOnly=False*" } | Select-Object -First 1
+
+            $preflightLine | Should -Not -BeNullOrEmpty
+            $infraLine     | Should -Not -BeNullOrEmpty
+
+            $preflightEnv = Get-RecordedEnvironmentFile -StartLine $preflightLine
+            $fullInfraEnv = Get-RecordedEnvironmentFile -StartLine $infraLine
+            (Get-Content -LiteralPath $preflightEnv -Raw) | Should -BeExactly (Get-Content -LiteralPath $fullInfraEnv -Raw) -Because "the preflight must validate the exact effective environment the full run executes"
+        }
+
+        It "DS 6.1 preflight resolves the .env.bootstrap.ds61 package surface, not the shared .env.ds61 overlay" {
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-ds61.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingPreflightStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DataStandardVersion "6.1" -PreflightOnly
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $startLine = (Get-PreflightStartLines -Log $log)[0]
+            $effectiveEnv = Get-RecordedEnvironmentFile -StartLine $startLine
+
+            $effectivePackages = Get-SchemaPackagesValue -Path $effectiveEnv
+            $ds61Packages = Get-SchemaPackagesValue -Path (Join-Path $script:repo.DockerComposeRoot ".env.bootstrap.ds61")
+            $ds52Packages = Get-SchemaPackagesValue -Path (Join-Path $script:repo.DockerComposeRoot ".env.bootstrap.ds52")
+
+            $effectivePackages | Should -BeExactly $ds61Packages -Because "the wrapper composes the local-bootstrap DS 6.1 overlay"
+            $effectivePackages | Should -Not -Be $ds52Packages -Because "the DS 6.1 bootstrap surface differs from DS 5.2 (core-only vs core + TPDM)"
+        }
+
+        It "bootstrap-local-dms.ps1 and bootstrap-published-dms.ps1 declare -PreflightOnly" {
+            $local = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1")
+            $published = Get-DeclaredScriptParameters -Path (Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1")
+            $local | Should -Contain "PreflightOnly"
+            $published | Should -Contain "PreflightOnly"
+        }
+
+        It "bootstrap-local-dms.ps1 rejects -PreflightOnly with -d (mutually exclusive with teardown)" {
+            $callLog = Join-Path $script:repo.RepoRoot "preflight-with-teardown.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -PreflightOnly -d } |
+                Should -Throw "*-PreflightOnly is not valid with -d*"
+
+            # The guard runs before the teardown short-circuit and before any phase, so nothing executes
+            # (the log file is only created when a stub is invoked).
+            Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no teardown, staging, or preflight delegation may run when -PreflightOnly is combined with -d"
+        }
+    }
+
+    # =========================================================================
+    # build-dms.ps1 StartEnvironment orchestration behavior: a preflight FAILURE must abort before image
+    # build, teardown, and the full wrapper run. Drives the real Start-BootstrapDockerEnvironment function
+    # (extracted from build-dms.ps1, without its Invoke-Main dispatch) with faithful stubs. Invoke-Execute /
+    # Invoke-Step propagate a thrown error (eng/build-helpers.psm1), so the stubs reproduce that behavior.
+    # =========================================================================
+    Context "build-dms.ps1 StartEnvironment orchestration ordering and abort (F2 behavioral)" {
+        BeforeAll {
+            $buildScript = Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($buildScript, [ref]$null, [ref]$null)
+            $script:startBootstrapFnText = ($ast.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -eq 'Start-BootstrapDockerEnvironment'
+                    }, $true) | Select-Object -First 1).Extent.Text
+            $script:startBootstrapFnText | Should -Not -BeNullOrEmpty -Because "Start-BootstrapDockerEnvironment must be extractable from build-dms.ps1"
+        }
+
+        It "<Case>" -ForEach @(
+            @{ Case = "a preflight failure aborts before DockerBuild, Stop-DockerEnvironment, and the full wrapper run"; FailPreflight = $true }
+            @{ Case = "a successful preflight proceeds to DockerBuild, then Stop-DockerEnvironment, then the full wrapper run"; FailPreflight = $false }
+        ) {
+            $workdir = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-orch-" + [guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $workdir -Force | Out-Null
+            $orchLog = Join-Path $workdir "orchestration.log"
+
+            # Stub bootstrap wrapper: records preflight vs full and throws on the preflight when asked.
+            @"
+param([switch] `$PreflightOnly, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+if (`$PreflightOnly) {
+    Add-Content -LiteralPath '$orchLog' -Value 'wrapper-preflight'
+    if (`$env:DMS_ORCH_FAIL_PREFLIGHT -eq '1') { throw 'simulated preflight failure' }
+} else {
+    Add-Content -LiteralPath '$orchLog' -Value 'wrapper-full'
+}
+"@ | Set-Content -LiteralPath (Join-Path $workdir "bootstrap-local-dms.ps1") -Encoding utf8
+
+            $priorLocation = Get-Location
+            $priorFail = $env:DMS_ORCH_FAIL_PREFLIGHT
+            $priorExit = $global:LASTEXITCODE
+            try {
+                $env:DMS_ORCH_FAIL_PREFLIGHT = if ($FailPreflight) { '1' } else { '0' }
+
+                # Faithful build-helper stubs: Invoke-Execute / Invoke-Step run the block and propagate a
+                # thrown error, matching eng/build-helpers.psm1, so a preflight throw aborts the orchestration.
+                function Invoke-Execute { param([ScriptBlock] $Command) & $Command }
+                function Invoke-Step { param([ScriptBlock] $block) & $block }
+                function Invoke-WithEnvironmentFileSchemaSettings { param([switch] $Enabled, [ScriptBlock] $Action) & $Action }
+                function Resolve-E2EEnvironmentFilePath { param($Path) return $Path }
+                function DockerBuild { Add-Content -LiteralPath $orchLog -Value 'DockerBuild' }
+                function Stop-DockerEnvironment { param($EnvironmentFilePath, $IdentityProvider, $DatabaseEngine) Add-Content -LiteralPath $orchLog -Value 'Stop-DockerEnvironment' }
+                # No-op Push/Pop-Location so the function's "$PSScriptRoot/eng/docker-compose" push does not
+                # move away from the stub workspace; ./bootstrap-local-dms.ps1 then resolves from $workdir.
+                function Push-Location { param([Parameter(ValueFromRemainingArguments = $true)] $Rest) }
+                function Pop-Location { param([Parameter(ValueFromRemainingArguments = $true)] $Rest) }
+
+                # $EnvironmentFile is a build-dms.ps1 script-level parameter the function reads.
+                $EnvironmentFile = Join-Path $workdir ".env"
+                "POSTGRES_DB_NAME=edfi_datamanagementservice" | Set-Content -LiteralPath $EnvironmentFile -Encoding utf8
+
+                Set-Location -LiteralPath $workdir
+                . ([scriptblock]::Create($script:startBootstrapFnText))
+                $global:LASTEXITCODE = 0
+
+                if ($FailPreflight) {
+                    { Start-BootstrapDockerEnvironment -DatabaseEngine postgresql -IdentityProvider self-contained } |
+                        Should -Throw "*simulated preflight failure*"
+                }
+                else {
+                    Start-BootstrapDockerEnvironment -DatabaseEngine postgresql -IdentityProvider self-contained
+                }
+
+                $log = @(Get-Content -LiteralPath $orchLog)
+                if ($FailPreflight) {
+                    ($log -join ',') | Should -Be 'wrapper-preflight' -Because "a preflight failure must abort before DockerBuild, Stop-DockerEnvironment, and the full wrapper run"
+                }
+                else {
+                    ($log -join ',') | Should -Be 'wrapper-preflight,DockerBuild,Stop-DockerEnvironment,wrapper-full' -Because "a successful preflight precedes image build, then teardown, then the full wrapper run"
+                }
+            }
+            finally {
+                if ($null -eq $priorFail) { Remove-Item Env:DMS_ORCH_FAIL_PREFLIGHT -ErrorAction SilentlyContinue } else { $env:DMS_ORCH_FAIL_PREFLIGHT = $priorFail }
+                Set-Location $priorLocation
+                $global:LASTEXITCODE = $priorExit
+                Remove-Item -LiteralPath $workdir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 }

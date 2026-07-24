@@ -758,4 +758,58 @@ exit 0
         $joined | Should -Not -Match "network create" -Because "no network may be created"
         $joined | Should -Not -Match "volume" -Because "no volume may be created or deleted"
     }
+
+    It "start-local-dms.ps1 -PreflightOnly restores the bootstrap environment snapshot on success and on contract failure (finding 2)" {
+        # Exercises the REAL start-script try/finally (start-local-dms.ps1: Get-BootstrapEnvSnapshot ->
+        # ... -> Restore-BootstrapEnvSnapshot). -AddExtensionSecurityMetadata makes the run set
+        # DMS_CONFIG_CLAIMS_SOURCE=Hybrid mid-preflight, so restoring the snapshot back to the seeded sentinel
+        # is an observable change, proved on both the success and the throw path.
+        $sentinelSource = "SENTINEL-SOURCE-" + [guid]::NewGuid().ToString("N")
+        $sentinelDir = "SENTINEL-DIR-" + [guid]::NewGuid().ToString("N")
+        $priorSource = $env:DMS_CONFIG_CLAIMS_SOURCE
+        $priorDir = $env:DMS_CONFIG_CLAIMS_DIRECTORY
+        $originalValidator = Get-Content -LiteralPath $script:f9Validator -Raw
+        try {
+            # SUCCESS: the valid separate topology reaches "Preflight validation complete"; the finally
+            # restores the snapshot over the Hybrid value the run set.
+            $env:DMS_CONFIG_CLAIMS_SOURCE = $sentinelSource
+            $env:DMS_CONFIG_CLAIMS_DIRECTORY = $sentinelDir
+            $success = Invoke-HostToolPreflightWithDockerStub -ScriptName 'start-local-dms.ps1' -ScriptParams @{
+                PreflightOnly          = $true
+                SeparateConfigDatabase = $true
+                EnvironmentFile        = $script:f9Env
+                DatabaseEngine         = "postgresql"
+                AddExtensionSecurityMetadata = $true
+            }
+            $success.Error | Should -BeNullOrEmpty -Because "the valid separate topology preflight must succeed"
+            $success.OutputText | Should -Match "Preflight validation complete"
+            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be $sentinelSource -Because "the start-script finally restores the bootstrap env snapshot after a successful preflight"
+            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be $sentinelDir
+
+            # FAILURE: point the fake validator at a wrong database so the separate contract throws AFTER the
+            # bootstrap env was activated; the finally must still restore the snapshot.
+            @'
+$null = @($input)
+Write-Output '{"valid":true,"database":"wrong_database"}'
+exit 0
+'@ | Set-Content -LiteralPath $script:f9Validator -Encoding utf8
+            $env:DMS_CONFIG_CLAIMS_SOURCE = $sentinelSource
+            $env:DMS_CONFIG_CLAIMS_DIRECTORY = $sentinelDir
+            $failure = Invoke-HostToolPreflightWithDockerStub -ScriptName 'start-local-dms.ps1' -ScriptParams @{
+                PreflightOnly          = $true
+                SeparateConfigDatabase = $true
+                EnvironmentFile        = $script:f9Env
+                DatabaseEngine         = "postgresql"
+                AddExtensionSecurityMetadata = $true
+            }
+            $failure.Error | Should -Not -BeNullOrEmpty -Because "the CMS connection targets wrong_database, not the expected edfi_configurationservice"
+            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be $sentinelSource -Because "the start-script finally restores the bootstrap env snapshot even when the contract throws"
+            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be $sentinelDir
+        }
+        finally {
+            $originalValidator | Set-Content -LiteralPath $script:f9Validator -Encoding utf8
+            if ($null -eq $priorSource) { Remove-Item Env:DMS_CONFIG_CLAIMS_SOURCE -ErrorAction SilentlyContinue } else { $env:DMS_CONFIG_CLAIMS_SOURCE = $priorSource }
+            if ($null -eq $priorDir) { Remove-Item Env:DMS_CONFIG_CLAIMS_DIRECTORY -ErrorAction SilentlyContinue } else { $env:DMS_CONFIG_CLAIMS_DIRECTORY = $priorDir }
+        }
+    }
 }
