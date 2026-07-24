@@ -169,11 +169,13 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
         # function's own Import-Module calls are shadowed to no-ops in BeforeEach.
         Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../Dms-Management.psm1"))) -Force
         Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../env-utility.psm1"))) -Force
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../database-safety.psm1"))) -Force
         . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Register-InstanceE2EFixture")))
     }
 
     AfterAll {
         Remove-Module Dms-Management -Force -ErrorAction SilentlyContinue
+        Remove-Module database-safety -Force -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
@@ -183,6 +185,8 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
         Mock Add-CmsClient { }
         Mock Get-CmsToken { "fake-access-token" }
         Mock Get-EnvValue { $DefaultValue }
+        # Mocked so an ambient POSTGRES_* value on the test host cannot leak into the fixture run.
+        Mock Get-ComposeResolvedEnvValue { $DefaultValue }
         Mock ConvertTo-PostgresCredential { [System.Management.Automation.PSCredential]::new("postgres", [System.Security.SecureString]::new()) }
         Mock Add-Tenant { 1 }
         $script:vendorSeq = 0
@@ -579,7 +583,10 @@ Describe "Instance E2E orchestration and setup ordering (DMS-1284)" {
     It "verifies PostgreSQL as the resolved POSTGRES_USER rather than a hardcoded superuser (C2)" {
         $script:setupSource | Should -Match "psql -U \`$PostgresUser"
         $script:setupSource | Should -Not -Match "psql -U postgres"
-        $script:setupSource | Should -Match "Get-EnvValue[^\n]*-Name ""POSTGRES_USER"""
+        # Compose interpolates POSTGRES_USER into the container with ambient precedence, and the
+        # same run's provisioning/registration reads resolve ambient-first, so the verification
+        # role must come from the shared Compose-equivalent resolver, not a file-only read.
+        $script:setupSource | Should -Match "Get-ComposeResolvedEnvValue[^\n]*-Name ""POSTGRES_USER"""
     }
 
     It "verifies SQL Server with an in-container SQLCMDPASSWORD and never exposes the SA password on the host (C3)" {

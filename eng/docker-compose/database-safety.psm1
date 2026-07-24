@@ -247,8 +247,12 @@ function Test-ProtectedKeyConfigured {
 function Get-DatabaseNameFromConnectionString {
     <#
     .SYNOPSIS
-        Parses the database / initial-catalog name out of an ADO.NET connection string,
-        resolving any env-file indirection, so the dedicated-E2E guard can compare it.
+        Parses every database / initial-catalog value out of an ADO.NET connection string,
+        resolving any env-file indirection, so the dedicated-E2E guard can compare each one.
+        Database and Initial Catalog are provider synonyms (SqlClient keeps the LAST occurrence),
+        but the generic parser stores both as distinct keys - a string carrying both could
+        effectively target the later value, so every candidate must be returned rather than only
+        the first. Returns an empty array when the string is blank or carries no database keyword.
     #>
     param(
         [string]$ConnectionString,
@@ -258,7 +262,7 @@ function Get-DatabaseNameFromConnectionString {
     $ConnectionString = ConvertFrom-ComposeEnvironmentValue -Value $ConnectionString
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-        return $null
+        return @()
     }
 
     try {
@@ -268,19 +272,20 @@ function Get-DatabaseNameFromConnectionString {
         # CLR property and exposes the parsed keys/items.
         $connectionStringBuilder.PSBase.ConnectionString = $ConnectionString
 
-        foreach ($key in $connectionStringBuilder.PSBase.Keys) {
-            if ([string]$key -imatch '^(database|initial\s+catalog)$') {
-                return Resolve-ComposeEnvRawValue `
-                    -EnvironmentValues $EnvironmentValues `
-                    -RawValue ([string]$connectionStringBuilder.PSBase.get_Item($key))
+        # Streamed (not comma-wrapped) so the caller's @(...) collects a flat string array.
+        return @(
+            foreach ($key in $connectionStringBuilder.PSBase.Keys) {
+                if ([string]$key -imatch '^(database|initial\s+catalog)$') {
+                    Resolve-ComposeEnvRawValue `
+                        -EnvironmentValues $EnvironmentValues `
+                        -RawValue ([string]$connectionStringBuilder.PSBase.get_Item($key))
+                }
             }
-        }
+        )
     }
     catch {
         throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
     }
-
-    return $null
 }
 
 function Assert-E2EDatabaseIsDedicated {
@@ -345,22 +350,31 @@ function Assert-E2EDatabaseIsDedicated {
             throw "E2E database safety check could not resolve $connectionStringKey in '$EnvironmentFilePath'; refusing a destructive reset that cannot be proven dedicated."
         }
 
-        $connectionStringDatabaseName = Get-DatabaseNameFromConnectionString `
+        $connectionStringDatabaseNames = @(Get-DatabaseNameFromConnectionString `
             -ConnectionString $connectionString `
-            -EnvironmentValues $EnvironmentValues
+            -EnvironmentValues $EnvironmentValues)
 
-        if ([string]::IsNullOrWhiteSpace($connectionStringDatabaseName)) {
+        if ($connectionStringDatabaseNames.Count -eq 0) {
             throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
         }
 
-        # A parsed database name that still contains a '$' came from an unresolved or cyclic reference
-        # the resolver could not expand; fail closed rather than compare an indeterminate value.
-        if ($connectionStringDatabaseName -match '\$') {
-            throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
-        }
+        # Database and Initial Catalog are provider synonyms; a connection string can carry both,
+        # and SqlClient uses the last occurrence. Every candidate is checked so the effective
+        # database can never skip the collision check behind a decoy first value.
+        foreach ($connectionStringDatabaseName in $connectionStringDatabaseNames) {
+            if ([string]::IsNullOrWhiteSpace($connectionStringDatabaseName)) {
+                throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
+            }
 
-        if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
-            throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
+            # A parsed database name that still contains a '$' came from an unresolved or cyclic reference
+            # the resolver could not expand; fail closed rather than compare an indeterminate value.
+            if ($connectionStringDatabaseName -match '\$') {
+                throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
+            }
+
+            if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
+                throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
+            }
         }
     }
 }

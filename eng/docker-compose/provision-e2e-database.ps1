@@ -89,6 +89,10 @@ function Resolve-ScriptRelativePath {
 function Get-EnvironmentValueMap {
     param([string]$EnvironmentFilePath)
 
+    # Store RAW env-file values (like every other resolver consumer): the shared Compose resolver
+    # applies quote/comment conversion itself, and its single-quote-literal rule keys off the raw
+    # leading quote. A pre-converted map would let a single-quoted value be interpolated ('$$'
+    # collapsed, ${VAR} expanded) even though Docker Compose gives the container the literal value.
     $environmentValues = @{}
 
     foreach ($line in Get-Content $EnvironmentFilePath) {
@@ -103,8 +107,7 @@ function Get-EnvironmentValueMap {
         }
 
         $key = $line.Substring(0, $separatorIndex).Trim()
-        $value = ConvertFrom-ComposeEnvironmentValue -Value $line.Substring($separatorIndex + 1)
-        $environmentValues[$key] = $value
+        $environmentValues[$key] = $line.Substring($separatorIndex + 1).Trim()
     }
 
     return $environmentValues

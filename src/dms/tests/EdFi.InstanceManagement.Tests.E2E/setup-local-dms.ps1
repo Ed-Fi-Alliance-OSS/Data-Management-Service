@@ -347,10 +347,12 @@ try {
         Write-Host "`nProvisioning and verifying route-context test databases..." -ForegroundColor Cyan
         $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
         # PostgreSQL verification connects as the resolved role, not a hardcoded superuser, so a stack
-        # started with a non-default POSTGRES_USER still verifies. MSSQL verification reads its password
-        # inside dms-mssql from the container-resident MSSQL_SA_PASSWORD, so no SA password is resolved
-        # or passed on the host here.
-        $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+        # started with a non-default POSTGRES_USER still verifies. Resolved with Compose precedence
+        # (ambient wins) because Compose interpolates POSTGRES_USER into the container the same way
+        # and provisioning/registration already resolve it ambient-first. MSSQL verification reads its
+        # password inside dms-mssql from the container-resident MSSQL_SA_PASSWORD, so no SA password
+        # is resolved or passed on the host here.
+        $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
 
         foreach ($db in $databases) {
             & $provisionE2EDatabaseScript `

@@ -1445,8 +1445,11 @@ function Register-InstanceE2EFixture {
         -ClientId $bootstrapAdmin.ClientId `
         -ClientSecret $bootstrapAdmin.ClientSecret
 
-    $postgresUser = Get-EnvValue -EnvValues $environmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
-    $postgresPassword = Get-EnvValue -EnvValues $environmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
+    # Resolved with Compose precedence for consistency with the registration connection strings;
+    # Add-DataStore ignores this credential whenever an explicit -ConnectionString is supplied, so
+    # this only matters if a future caller registers without one.
+    $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+    $postgresPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
     $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
 
     # Canonical fixture routes: three data stores under two tenants (255901/2024 and 255901/2025 under

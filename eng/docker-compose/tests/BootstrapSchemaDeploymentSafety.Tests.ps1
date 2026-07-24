@@ -3465,6 +3465,21 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             }
         }
 
+        It "rejects a connection string whose provider-synonym database keys include the reset target" {
+            # SqlClient treats Database and Initial Catalog as synonyms where the LAST occurrence
+            # wins, while the generic parser keeps both as distinct keys. A string carrying both can
+            # therefore effectively target the second value, so every candidate must be compared -
+            # returning only the first would let the effective database skip the collision check.
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues @{
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=edfi_e2e;User ID=sa;Password=p;"
+                    } `
+                    -EnvironmentFilePath ".env.e2e" `
+                    -E2EDatabaseName "edfi_e2e"
+            } | Should -Throw "*must stay separate*DATABASE_CONNECTION_STRING_ADMIN*"
+        }
+
         It "fails closed when an ambient override of a referenced POSTGRES_DB_NAME variable targets the reset database" {
             $priorExists = Test-Path "Env:DMS1284_SHARED_PG_DBNAME"
             $priorValue = [System.Environment]::GetEnvironmentVariable("DMS1284_SHARED_PG_DBNAME")

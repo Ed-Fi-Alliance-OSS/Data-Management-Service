@@ -78,6 +78,27 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
     }
 
+    Context "provision environment map preserves raw Compose values" {
+        It "keeps a single-quoted password literal through the shared resolver" {
+            # Get-EnvironmentValueMap must store RAW env-file values: the resolver's single-quote
+            # literal rule keys off the raw leading quote, so a pre-stripped map would let a
+            # single-quoted password be interpolated ('$$' collapsed to '$') while Docker Compose
+            # gives the container the literal value - the provision/reset phase would then use a
+            # password the running SQL Server never received.
+            $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "dms1284-raw-map-$([Guid]::NewGuid().ToString('N')).env"
+            'MSSQL_SA_PASSWORD=''Pa$$w0rd!''' | Set-Content -LiteralPath $envFile -Encoding utf8
+            try {
+                $map = Get-EnvironmentValueMap $envFile
+
+                Get-ComposeResolvedEnvValue -EnvironmentValues $map -Name "MSSQL_SA_PASSWORD" |
+                    Should -Be 'Pa$$w0rd!'
+            }
+            finally {
+                Remove-Item -LiteralPath $envFile -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     Context "setup-openiddict Resolve-EnvValue (ENV: indirection)" {
         BeforeAll {
             # Extract just the Resolve-EnvValue function from setup-openiddict.ps1 via the AST so the
