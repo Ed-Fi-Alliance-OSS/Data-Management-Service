@@ -313,10 +313,12 @@ public static class NoProfilePostAsUpdateScenarios
     /// ContentLastModifiedAt, IdentityLastModifiedAt, CreatedAt) — and the School row — including the
     /// root table's own replicated ContentVersion/ContentLastModifiedAt stamps — are byte-for-byte
     /// unchanged, the seeded base-address and collection-aligned extension rows are unchanged, the School
-    /// referential-identity row is unchanged, exactly one document remains, and no row was created for the
-    /// rejected request UUID. The base-address and aligned-extension collections must be non-empty so a
-    /// rejection that silently mutated those rows (or the referential identity) cannot pass a
-    /// document/School-only comparison.
+    /// referential-identity row is unchanged, the School tracked-change rowset is unchanged, exactly one
+    /// document remains, and no row was created for the rejected request UUID. The base-address and
+    /// aligned-extension collections must be non-empty so a rejection that silently mutated those rows
+    /// (or the referential identity) cannot pass a document/School-only comparison, and the
+    /// tracked-change count guards the one authoritative surface a direct insert could pollute without
+    /// disturbing any stamped row.
     /// </summary>
     public static void AssertRejectedPostAsUpdateCommittedNoChanges(
         AuthoritativeDocumentSnapshot documentBefore,
@@ -329,6 +331,8 @@ public static class NoProfilePostAsUpdateScenarios
         IReadOnlyList<SchoolExtensionAddressRow> extensionAddressesAfter,
         Guid schoolReferentialIdBefore,
         Guid schoolReferentialIdAfter,
+        long schoolTrackedChangeCountBefore,
+        long schoolTrackedChangeCountAfter,
         long documentCount,
         long incomingDocumentUuidCount
     )
@@ -349,6 +353,12 @@ public static class NoProfilePostAsUpdateScenarios
             .Be(
                 schoolReferentialIdBefore,
                 "a rejected immutable-identity change leaves the School referential identity unchanged"
+            );
+        schoolTrackedChangeCountAfter
+            .Should()
+            .Be(
+                schoolTrackedChangeCountBefore,
+                "a rejected immutable-identity change leaves the School tracked-change rowset unchanged"
             );
         documentCount.Should().Be(1);
         incomingDocumentUuidCount.Should().Be(0);
