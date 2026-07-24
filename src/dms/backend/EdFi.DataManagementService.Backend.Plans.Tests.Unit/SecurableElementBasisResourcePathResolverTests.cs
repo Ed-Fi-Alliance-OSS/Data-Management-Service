@@ -1328,7 +1328,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
     }
 
     [Test]
-    public void It_should_not_prefer_a_direct_exact_abstract_basis_over_higher_priority_concrete_member()
+    public void It_should_prefer_a_direct_exact_abstract_basis_over_higher_priority_concrete_member()
     {
         var schoolRoot = CreateRootTable(Table("School"));
         var subjectRoot = CreateRootTable(
@@ -1393,7 +1393,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
         );
 
         result.Should().ContainSingle();
-        result[0].SourceColumnName.Should().Be(Col("School_DocumentId"));
+        result[0].SourceColumnName.Should().Be(Col("EducationOrganization_DocumentId"));
         result[0].TargetTable.Should().BeNull();
         result[0].TargetColumnName.Should().BeNull();
     }

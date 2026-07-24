@@ -354,11 +354,7 @@ internal static class SecurableElementColumnPathResolver
                 };
 
                 foundCandidates.Add(
-                    (
-                        terminalHops,
-                        basisIsAbstract && binding.TargetResource == basisResource && hopsSoFar.Count > 0,
-                        terminalSteps
-                    )
+                    (terminalHops, basisIsAbstract && binding.TargetResource == basisResource, terminalSteps)
                 );
             }
 
