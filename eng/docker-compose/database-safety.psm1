@@ -179,6 +179,27 @@ function Get-ComposeResolvedEnvValue {
     return $resolved
 }
 
+function Get-RequiredComposeResolvedEnvValue {
+    <#
+    .SYNOPSIS
+        Resolves a required env value with Docker Compose precedence (ambient wins, references followed,
+        single quotes literal) and throws when it is absent in both the process environment and the env
+        file. Used by the E2E startup/provision phases so a required credential/port is read exactly as
+        the running stack sees it, and never logs the value.
+    #>
+    param(
+        [hashtable]$EnvironmentValues,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $value = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $Name
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Required environment value '$Name' is not set (checked the process environment and the env file)."
+    }
+
+    return $value
+}
+
 function Assert-SafeDatabaseName {
     <#
     .SYNOPSIS
@@ -348,6 +369,7 @@ Export-ModuleMember -Function `
     Resolve-ComposeEnvReference, `
     Resolve-ComposeEnvRawValue, `
     Get-ComposeResolvedEnvValue, `
+    Get-RequiredComposeResolvedEnvValue, `
     Assert-SafeDatabaseName, `
     Get-DatabaseNameFromConnectionString, `
     Assert-E2EDatabaseIsDedicated

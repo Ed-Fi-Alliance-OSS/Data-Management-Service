@@ -275,11 +275,28 @@ function Build-ConnectionString {
         [string]$Dialect = "pgsql"
     )
 
+    # Build through DbConnectionStringBuilder rather than string interpolation so a credential, database
+    # name, or host containing connection-string metacharacters (';', '=', '"', or whitespace) is quoted
+    # per the ADO.NET rules the SchemaTools SqlClient/Npgsql providers parse, instead of silently
+    # corrupting or truncating the connection string.
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+
     if ($Dialect -eq "mssql") {
-        return "Server=$ServerHost,$Port;Initial Catalog=$DatabaseName;User ID=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);TrustServerCertificate=true;"
+        $builder["Server"] = "$ServerHost,$Port"
+        $builder["Initial Catalog"] = $DatabaseName
+        $builder["User ID"] = $Credential.UserName
+        $builder["Password"] = $Credential.GetNetworkCredential().Password
+        $builder["TrustServerCertificate"] = "true"
+        return $builder.ConnectionString
     }
 
-    return "Host=$ServerHost;Port=$Port;Username=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);Database=$DatabaseName;NoResetOnClose=true;"
+    $builder["Host"] = $ServerHost
+    $builder["Port"] = "$Port"
+    $builder["Username"] = $Credential.UserName
+    $builder["Password"] = $Credential.GetNetworkCredential().Password
+    $builder["Database"] = $DatabaseName
+    $builder["NoResetOnClose"] = "true"
+    return $builder.ConnectionString
 }
 
 # Dot-sourcing stops here so tests can exercise the functions above without provisioning
@@ -299,18 +316,22 @@ $environmentValues = Get-EnvironmentValueMap $environmentFilePath
 # for backward compatibility with existing callers.
 $mssqlContainerName = "dms-mssql"
 
+# Resolve required credentials/ports with Docker Compose precedence (ambient process/shell value wins
+# over the env file, references are followed, single quotes stay literal) so provisioning connects with
+# exactly the port/password the running container received - not a stale file value an ambient override
+# replaced.
 if ($DatabaseEngine -eq "mssql") {
-    $mssqlPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "MSSQL_PORT"
-    $mssqlSaPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "MSSQL_SA_PASSWORD"
+    $mssqlPort = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "MSSQL_PORT"
+    $mssqlSaPassword = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "MSSQL_SA_PASSWORD"
 }
 else {
-    $postgresPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PORT"
-    $postgresPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PASSWORD"
+    $postgresPort = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PORT"
+    $postgresPassword = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PASSWORD"
 }
 
 $e2eDatabaseName =
     if ([string]::IsNullOrWhiteSpace($DatabaseName)) {
-        Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "E2E_DATABASE_NAME"
+        Get-RequiredComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "E2E_DATABASE_NAME"
     }
     else {
         $DatabaseName
@@ -328,13 +349,7 @@ if ($DatabaseEngine -eq "mssql") {
     )
 }
 else {
-    $postgresUsername =
-        if ([string]::IsNullOrWhiteSpace([string]$environmentValues["POSTGRES_USER"])) {
-            "postgres"
-        }
-        else {
-            [string]$environmentValues["POSTGRES_USER"]
-        }
+    $postgresUsername = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
     $securePostgresPassword = New-Object System.Security.SecureString
     foreach ($character in $postgresPassword.ToCharArray()) {
         $securePostgresPassword.AppendChar($character)
