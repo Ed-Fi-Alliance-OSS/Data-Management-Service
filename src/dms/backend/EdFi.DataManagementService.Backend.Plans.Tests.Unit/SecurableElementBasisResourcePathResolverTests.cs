@@ -1399,7 +1399,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
     }
 
     [Test]
-    public void It_should_apply_documented_priorities_before_exact_transitive_abstract_basis_matching()
+    public void It_should_prefer_an_exact_transitive_abstract_basis_over_a_concrete_union_arm()
     {
         var abstractIntermediateRoot = CreateRootTable(
             Table("AbstractIntermediate"),
@@ -1531,8 +1531,8 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
         );
 
         result.Should().HaveCount(2);
-        result[0].SourceColumnName.Should().Be(Col("ConcreteIntermediate_DocumentId"));
-        result[1].SourceColumnName.Should().Be(Col("School_DocumentId"));
+        result[0].SourceColumnName.Should().Be(Col("AbstractIntermediate_DocumentId"));
+        result[1].SourceColumnName.Should().Be(Col("EducationOrganization_DocumentId"));
     }
 
     [Test]

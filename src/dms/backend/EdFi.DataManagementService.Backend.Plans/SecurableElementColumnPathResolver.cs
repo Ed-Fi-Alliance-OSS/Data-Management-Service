@@ -216,6 +216,8 @@ internal static class SecurableElementColumnPathResolver
                         .Select(static arm => arm.ConcreteMemberResourceKey.Resource)
                         .ToHashSet()
             );
+        var basisIsAbstract = abstractBasisMembersByResource.ContainsKey(basisResource);
+
         if (IsBasisMatch(subjectModel.Resource, basisResource, abstractBasisMembersByResource))
         {
             return
@@ -252,6 +254,7 @@ internal static class SecurableElementColumnPathResolver
 
         List<(
             IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+            bool PreferExactAbstractBasis,
             IReadOnlyList<ColumnPathStep> Steps
         )> Explore(
             RelationalResourceModel currentModel,
@@ -263,6 +266,7 @@ internal static class SecurableElementColumnPathResolver
             var foundCandidates =
                 new List<(
                     IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+                    bool PreferExactAbstractBasis,
                     IReadOnlyList<ColumnPathStep> Steps
                 )>();
 
@@ -349,7 +353,13 @@ internal static class SecurableElementColumnPathResolver
                     GetBindingPriority((binding, currentModel)),
                 };
 
-                foundCandidates.Add((terminalHops, terminalSteps));
+                foundCandidates.Add(
+                    (
+                        terminalHops,
+                        basisIsAbstract && binding.TargetResource == basisResource && hopsSoFar.Count > 0,
+                        terminalSteps
+                    )
+                );
             }
 
             foreach (var descriptorEdge in currentModel.DescriptorEdgeSources)
@@ -384,7 +394,7 @@ internal static class SecurableElementColumnPathResolver
                     GetDescriptorEdgePriority(descriptorEdge, owningTable),
                 };
 
-                foundCandidates.Add((descriptorHops, descriptorSteps));
+                foundCandidates.Add((descriptorHops, false, descriptorSteps));
             }
 
             return foundCandidates;
@@ -446,14 +456,24 @@ internal static class SecurableElementColumnPathResolver
         static int CompareCandidates(
             (
                 IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+                bool PreferExactAbstractBasis,
                 IReadOnlyList<ColumnPathStep> Steps
             ) left,
             (
                 IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
+                bool PreferExactAbstractBasis,
                 IReadOnlyList<ColumnPathStep> Steps
             ) right
         )
         {
+            // auth.md requires StudentSchoolAssociation -> GraduationPlan -> EducationOrganization
+            // to win over the direct School union-arm route for an EducationOrganization basis.
+            // This exact-abstract terminal match intentionally precedes generic path ranking.
+            if (left.PreferExactAbstractBasis != right.PreferExactAbstractBasis)
+            {
+                return left.PreferExactAbstractBasis ? -1 : 1;
+            }
+
             var hopCount = Math.Min(left.Hops.Count, right.Hops.Count);
             for (var hopIndex = 0; hopIndex < hopCount; hopIndex++)
             {
