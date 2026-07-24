@@ -1440,10 +1440,12 @@ jobs:
           retention-days: 30
 
   # Dedicated per-PR DS 6.1 DMS E2E lane. DS 5.2 is the default and runs the full suite across the
-  # four shards above; for DS 6.1 we run only the version-coupled scenarios (XSD metadata + Discovery root,
-  # tagged @StandardVersion-6_1) against a 6.1 stack. Those scenarios carry no shard tag, so the DS 5.2
-  # shard lanes never pick them up. Full DS 6.1 coverage runs in the scheduled smoke test workflow. The
-  # filter has no shard, so RunE2E writes the filtered TRX (EdFi.DataManagementService.Tests.E2E.filtered.trx).
+  # four shards above; for DS 6.1 we run only the eight version-coupled scenarios tagged
+  # @StandardVersion-6_1 (XSD metadata, Discovery root, and a descriptor POST/GET smoke that
+  # exercises the relational datastore) against a 6.1 stack. Those scenarios carry no shard tag, so
+  # the DS 5.2 shard lanes never pick them up. Full DS 6.1 coverage runs in the scheduled smoke test
+  # workflow. The filter has no shard, so RunE2E writes the filtered TRX
+  # (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-ds61:
     name: Run PostgreSQL DMS E2E (DS 6.1, version-coupled)
     needs: build-ci-docker-images
@@ -1824,11 +1826,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # SQL Server DS 6.1 DMS E2E lane. The MSSQL analogue of run-e2e-tests-ds61: it runs the
-  # version-coupled @StandardVersion-6_1 scenarios (XSD metadata + Discovery root) against a 6.1 MSSQL
-  # stack. Those scenarios are metadata-only and the MSSQL stack is relational-only, so unlike the
-  # PostgreSQL DS 6.1 lane this lane needs no Kafka host entry or bootstrap env. The shardless filter
-  # writes the filtered TRX (EdFi.DataManagementService.Tests.E2E.filtered.trx).
+  # SQL Server DS 6.1 DMS E2E lane. The MSSQL analogue of run-e2e-tests-ds61: it runs the eight
+  # version-coupled @StandardVersion-6_1 scenarios (XSD metadata, Discovery root, and a descriptor
+  # POST/GET smoke that exercises the relational datastore) against a 6.1 MSSQL stack. The MSSQL
+  # stack is relational-only - writes and queries are served directly from SQL Server with no
+  # Debezium CDC - so unlike the PostgreSQL DS 6.1 lane this lane needs no Kafka host entry or
+  # bootstrap env. The shardless filter writes the filtered TRX
+  # (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-mssql-ds61:
     name: Run SQL Server DMS E2E (DS 6.1, version-coupled)
     needs: build-ci-docker-images
