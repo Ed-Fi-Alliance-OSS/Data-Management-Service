@@ -83,7 +83,7 @@ rejection of unsupported keywords match what the services do at runtime.
 # validate: print { valid, database, error }
 echo "Host=localhost;Database=edfi_dms;Username=postgres;Password=secret" | api-schema-tools connection validate --engine postgresql
 
-# inspect: print the non-secret canonical { valid, database, host, port, username, error }
+# inspect: print the non-secret canonical { valid, database, host, port, username, error, endpoint }
 echo "Server=dms-mssql,1433;Database=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" | api-schema-tools connection inspect --engine mssql
 ```
 
@@ -96,9 +96,29 @@ echo "Server=dms-mssql,1433;Database=edfi_dms;User Id=sa;Password=secret;TrustSe
 **`validate`** prints a JSON `{ valid, database, error }` result — the stable contract the docker-compose
 start scripts consume for host-side pre-flight validation. It never emits any other field.
 
-**`inspect`** prints a JSON `{ valid, database, host, port, username, error }` of the **non-secret** canonical
-coordinates. It never emits the password. `port` is `null` for SQL Server, which encodes the port inside the
-data source (`host,port`); split it host-side when a separate port is needed.
+**`inspect`** prints a JSON `{ valid, database, host, port, username, error, endpoint }` of the **non-secret**
+canonical coordinates. It never emits the password. The six leading fields keep their original semantics: in
+particular `port` is `null` for SQL Server, which encodes the port inside the data source (`host,port`).
+
+`endpoint` is an **additive**, non-secret classification of the connection's endpoint:
+
+```json
+{ "kind": "singleHost", "protocol": "tcp", "host": "dms-mssql", "port": 1433, "instance": null, "hasAlternateRouting": false }
+```
+
+- `kind` ∈ `missing | singleHost | multiHost | namedInstance | unsupported`; `protocol` ∈
+  `default | tcp | namedPipes | sharedMemory | unknown | admin`.
+- SQL Server data sources are interpreted here (the `[protocol:]server[\instance][,port]` grammar), so **there
+  is no need to split the data source yourself** — an omitted TCP port is canonicalized to `1433`, a named
+  instance is reported via `instance`, non-TCP transports and malformed port suffixes are `unsupported`, and a
+  `Failover Partner` sets `hasAlternateRouting`.
+- `endpoint` is `null` for an invalid connection (`valid: false`).
+
+This keeps three concerns distinct: **provider validity** (does the exact provider accept the string), the
+**endpoint classification** above, and **local-topology acceptability** (whether the endpoint is the single
+local database the docker-compose stack serves) — the last is a separate consumer policy, **not** decided by
+this verb, which only classifies. (A start-script runtime contract will own that locality enforcement in a
+later iteration.)
 
 Both verbs exit `0` with a `{ valid: false, ... }` result for a connection string the provider rejects, and
 exit `2` (a usage error) for an unsupported `--engine` value.

@@ -36,6 +36,15 @@ public interface IConnectionInspector
     /// provider (not a text scanner) owns which keyword carries the endpoint.
     /// </summary>
     string ApplyEndpointOverride(string connectionString, string host, int port);
+
+    /// <summary>
+    /// Parses the connection string with the exact runtime provider and returns the non-secret
+    /// CLASSIFICATION of its endpoint (see <see cref="ConnectionEndpointIdentity"/>). This is not a validity
+    /// judgment and not a local-topology judgment: a provider-valid connection can still classify as a named
+    /// instance, a multi-host list, a non-TCP protocol, or one carrying alternate routing. Throws when the
+    /// provider rejects the string (the same failure surface as <see cref="Parse"/>).
+    /// </summary>
+    ConnectionEndpointIdentity ClassifyEndpoint(string connectionString);
 }
 
 /// <summary>

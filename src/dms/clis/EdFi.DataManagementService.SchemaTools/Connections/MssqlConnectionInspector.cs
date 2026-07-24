@@ -34,5 +34,18 @@ public sealed class MssqlConnectionInspector : IConnectionInspector
         return builder.ConnectionString;
     }
 
+    public ConnectionEndpointIdentity ClassifyEndpoint(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        // SqlClient canonicalizes the endpoint KEYWORD to DataSource but leaves the value's internal grammar
+        // (protocol/host/instance/port) intact; SqlServerEndpointClassifier is the single interpreter of it.
+        // A non-blank Failover Partner is alternate routing (a locally named primary can redirect to a remote
+        // physical server), surfaced so the local-topology check can reject it.
+        return SqlServerEndpointClassifier.Classify(
+            builder.DataSource,
+            !string.IsNullOrWhiteSpace(builder.FailoverPartner)
+        );
+    }
+
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 }

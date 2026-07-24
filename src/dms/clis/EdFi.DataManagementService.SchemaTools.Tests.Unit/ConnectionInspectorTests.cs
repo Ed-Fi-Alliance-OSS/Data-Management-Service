@@ -134,6 +134,43 @@ public class ConnectionInspectorTests
             result.Should().Contain("s3cr3tP@ss");
             result.Should().Contain("Require");
         }
+
+        [Test]
+        public void ClassifyEndpoint_reports_a_single_TCP_host_with_its_port()
+        {
+            var endpoint = _inspector.ClassifyEndpoint("Host=dms-postgresql;Port=5432;Database=d");
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.SingleHost);
+            endpoint.Protocol.Should().Be(ConnectionEndpointProtocols.Tcp);
+            endpoint.Host.Should().Be("dms-postgresql");
+            endpoint.Port.Should().Be(5432);
+            endpoint.Instance.Should().BeNull();
+            endpoint.HasAlternateRouting.Should().BeFalse();
+        }
+
+        [Test]
+        public void ClassifyEndpoint_uses_the_provider_default_port_when_absent()
+        {
+            _inspector.ClassifyEndpoint("Host=dms-postgresql;Database=d").Port.Should().Be(5432);
+        }
+
+        [Test]
+        public void ClassifyEndpoint_reports_missing_when_no_host_is_specified()
+        {
+            var endpoint = _inspector.ClassifyEndpoint("Username=u;Database=d");
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.Missing);
+            endpoint.Host.Should().BeNull();
+            endpoint.Port.Should().BeNull();
+        }
+
+        [Test]
+        public void ClassifyEndpoint_reports_multi_host_for_a_comma_separated_host_list()
+        {
+            // PostgreSQL's own failover/load-balancing form is not a single local endpoint.
+            var endpoint = _inspector.ClassifyEndpoint("Host=primary,standby;Database=d");
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.MultiHost);
+            endpoint.Host.Should().BeNull();
+            endpoint.Port.Should().BeNull();
+        }
     }
 
     [TestFixture]
@@ -224,6 +261,173 @@ public class ConnectionInspectorTests
             result.Should().Contain("s3cr3tP@ss");
             // The exact provider canonicalizes the keyword to "Trust Server Certificate"; the option survives.
             result.Should().Contain("Trust Server Certificate");
+        }
+
+        [Test]
+        public void ClassifyEndpoint_reports_a_single_host_with_the_port_split_from_the_data_source()
+        {
+            var endpoint = _inspector.ClassifyEndpoint(
+                "Server=dms-mssql,1433;Database=d;User Id=sa;Password=p;TrustServerCertificate=true"
+            );
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.SingleHost);
+            endpoint.Host.Should().Be("dms-mssql");
+            endpoint.Port.Should().Be(1433);
+            endpoint.Instance.Should().BeNull();
+            endpoint.HasAlternateRouting.Should().BeFalse();
+        }
+
+        [Test]
+        public void ClassifyEndpoint_canonicalizes_an_omitted_single_host_port_to_1433()
+        {
+            var endpoint = _inspector.ClassifyEndpoint("Server=dms-mssql;Database=d;User Id=sa;Password=p");
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.SingleHost);
+            endpoint.Host.Should().Be("dms-mssql");
+            endpoint.Port.Should().Be(1433);
+        }
+
+        [Test]
+        public void ClassifyEndpoint_treats_a_dedicated_admin_connection_as_a_non_local_unsupported_shape()
+        {
+            var endpoint = _inspector.ClassifyEndpoint(
+                "Server=admin:dms-mssql;Database=d;User Id=sa;Password=p"
+            );
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.Unsupported);
+            endpoint.Protocol.Should().Be(ConnectionEndpointProtocols.Admin);
+            endpoint.Host.Should().BeNull();
+        }
+
+        [Test]
+        public void ClassifyEndpoint_strips_the_tcp_protocol_prefix()
+        {
+            var endpoint = _inspector.ClassifyEndpoint(
+                "Server=tcp:dms-mssql,1433;Database=d;User Id=sa;Password=p"
+            );
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.SingleHost);
+            endpoint.Protocol.Should().Be(ConnectionEndpointProtocols.Tcp);
+            endpoint.Host.Should().Be("dms-mssql");
+            endpoint.Port.Should().Be(1433);
+        }
+
+        [Test]
+        public void ClassifyEndpoint_reports_a_named_instance()
+        {
+            var endpoint = _inspector.ClassifyEndpoint(
+                "Server=dms-mssql\\SQLEXPRESS;Database=d;User Id=sa;Password=p"
+            );
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.NamedInstance);
+            endpoint.Host.Should().Be("dms-mssql");
+            endpoint.Instance.Should().Be("SQLEXPRESS");
+        }
+
+        [Test]
+        public void ClassifyEndpoint_flags_alternate_routing_when_a_failover_partner_is_present()
+        {
+            var endpoint = _inspector.ClassifyEndpoint(
+                "Server=dms-mssql,1433;Failover Partner=remote-mssql;Database=d;User Id=sa;Password=p"
+            );
+            // A locally named primary can redirect to a remote physical server.
+            endpoint.HasAlternateRouting.Should().BeTrue();
+            endpoint.Host.Should().Be("dms-mssql");
+        }
+
+        [Test]
+        public void ClassifyEndpoint_reports_missing_when_no_server_is_specified()
+        {
+            var endpoint = _inspector.ClassifyEndpoint("Database=d;User Id=sa;Password=p");
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.Missing);
+            endpoint.Host.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// The finite SQL Server data-source grammar interpreted by <see cref="SqlServerEndpointClassifier"/>
+    /// (SqlClient supplies the data-source value; this component splits it). Non-TCP transports remain
+    /// coherent, valid classifications - just not single local TCP endpoints.
+    /// </summary>
+    [TestFixture]
+    public class SqlServerDataSourceGrammar
+    {
+        [TestCase("np:dms-mssql", ConnectionEndpointProtocols.NamedPipes)]
+        [TestCase("lpc:dms-mssql", ConnectionEndpointProtocols.SharedMemory)]
+        [TestCase("via:dms-mssql", ConnectionEndpointProtocols.Unknown)]
+        [TestCase("admin:dms-mssql,1433", ConnectionEndpointProtocols.Admin)]
+        public void A_non_TCP_protocol_is_a_coherent_unsupported_shape(string dataSource, string protocol)
+        {
+            // The protocol is retained (never erased into tcp), and no host/port coordinates are invented, so a
+            // later locality check rejects it as a non-single-local-TCP shape.
+            var endpoint = SqlServerEndpointClassifier.Classify(dataSource, hasAlternateRouting: false);
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.Unsupported);
+            endpoint.Protocol.Should().Be(protocol);
+            endpoint.Host.Should().BeNull();
+            endpoint.Port.Should().BeNull();
+        }
+
+        [TestCase("dms-mssql,")]
+        [TestCase("dms-mssql,abc")]
+        [TestCase("dms-mssql,1433,extra")]
+        [TestCase("dms-mssql,70000")]
+        public void A_malformed_or_ambiguous_port_suffix_is_unsupported(string dataSource)
+        {
+            // An empty, non-numeric, out-of-range, or multi-comma port cannot be a TCP endpoint; it must not
+            // collapse to a null port that is indistinguishable from a bare host.
+            var endpoint = SqlServerEndpointClassifier.Classify(dataSource, hasAlternateRouting: false);
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.Unsupported);
+            endpoint.Protocol.Should().Be(ConnectionEndpointProtocols.Unknown);
+            endpoint.Host.Should().BeNull();
+            endpoint.Port.Should().BeNull();
+        }
+
+        [TestCase("dms-mssql\\")]
+        [TestCase("dms-mssql\\,1433")]
+        public void A_backslash_delimiter_with_no_instance_is_unsupported(string dataSource)
+        {
+            // An empty instance after the backslash is malformed routing syntax, not a bare host; it must not
+            // collapse into the local single-host identity (host + default port 1433).
+            var endpoint = SqlServerEndpointClassifier.Classify(dataSource, hasAlternateRouting: false);
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.Unsupported);
+            endpoint.Host.Should().BeNull();
+            endpoint.Port.Should().BeNull();
+            endpoint.Instance.Should().BeNull();
+        }
+
+        [Test]
+        public void An_empty_data_source_is_missing()
+        {
+            var endpoint = SqlServerEndpointClassifier.Classify("   ", hasAlternateRouting: false);
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.Missing);
+            endpoint.Protocol.Should().Be(ConnectionEndpointProtocols.Default);
+        }
+
+        [Test]
+        public void A_named_instance_with_an_explicit_port_reports_all_three_coordinates()
+        {
+            var endpoint = SqlServerEndpointClassifier.Classify(
+                "dms-mssql\\SQLEXPRESS,1444",
+                hasAlternateRouting: false
+            );
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.NamedInstance);
+            endpoint.Host.Should().Be("dms-mssql");
+            endpoint.Instance.Should().Be("SQLEXPRESS");
+            endpoint.Port.Should().Be(1444);
+        }
+
+        [Test]
+        public void A_bare_host_defaults_the_protocol_and_canonicalizes_the_port_to_1433()
+        {
+            var endpoint = SqlServerEndpointClassifier.Classify("dms-mssql", hasAlternateRouting: false);
+            endpoint.Kind.Should().Be(ConnectionEndpointKinds.SingleHost);
+            endpoint.Protocol.Should().Be(ConnectionEndpointProtocols.Default);
+            endpoint.Host.Should().Be("dms-mssql");
+            endpoint.Port.Should().Be(1433);
+        }
+
+        [Test]
+        public void Alternate_routing_is_carried_through_regardless_of_shape()
+        {
+            SqlServerEndpointClassifier
+                .Classify("dms-mssql,1433", hasAlternateRouting: true)
+                .HasAlternateRouting.Should()
+                .BeTrue();
         }
     }
 

@@ -21,8 +21,12 @@ namespace EdFi.DataManagementService.SchemaTools.Commands;
 /// <list type="bullet">
 /// <item><c>validate</c> prints a JSON <c>{ valid, database, error }</c> result - the stable contract the
 /// docker-compose start scripts consume for host-side pre-flight validation.</item>
-/// <item><c>inspect</c> prints a JSON <c>{ valid, database, host, port, username, error }</c> result of the
-/// non-secret canonical coordinates provisioning needs. It never emits the password.</item>
+/// <item><c>inspect</c> prints a JSON
+/// <c>{ valid, database, host, port, username, error, endpoint }</c> result of the non-secret canonical
+/// coordinates provisioning needs. The six leading fields keep their existing semantics (in particular SQL
+/// Server keeps <c>port: null</c>, its port stays inside the data source); <c>endpoint</c> is an additive,
+/// non-secret classification of the endpoint (<see cref="ConnectionEndpointIdentity"/>), null for an invalid
+/// connection. It never emits the password.</item>
 /// </list>
 ///
 /// Both use the same builder semantics the Configuration Service uses at runtime: alias canonicalization,
@@ -64,7 +68,7 @@ public static class ConnectionCommand
         var engineOption = NewEngineOption();
         var inspect = new Command(
             "inspect",
-            "Parse a connection string read from stdin with the exact runtime provider and print a JSON { valid, database, host, port, username, error } result of non-secret canonical fields"
+            "Parse a connection string read from stdin with the exact runtime provider and print a JSON { valid, database, host, port, username, error, endpoint } result of non-secret canonical fields (endpoint is an additive classification)"
         );
         inspect.Options.Add(engineOption);
         inspect.SetAction(parseResult =>
@@ -125,10 +129,14 @@ public static class ConnectionCommand
 
         bool valid;
         ConnectionTarget? target = null;
+        ConnectionEndpointIdentity? endpoint = null;
         string? error = null;
         try
         {
             target = inspector.Parse(connectionString);
+            // The endpoint classification is additive and only produced for a provider-valid string; an
+            // invalid string throws above (Parse), leaving endpoint null in the result.
+            endpoint = inspector.ClassifyEndpoint(connectionString);
             valid = true;
         }
         catch (Exception ex)
@@ -138,7 +146,8 @@ public static class ConnectionCommand
             logger.LogDebug(ex, "Connection-string inspection failed for engine {Engine}", engine);
         }
 
-        // Non-secret canonical fields only - the password is never read out of the builder or emitted.
+        // Non-secret canonical fields only - the password is never read out of the builder or emitted. The
+        // additive 'endpoint' projection is likewise non-secret and is null for an invalid connection.
         Console.Out.WriteLine(
             JsonSerializer.Serialize(
                 new ConnectionInspectResult(
@@ -147,7 +156,8 @@ public static class ConnectionCommand
                     target?.Host,
                     target?.Port,
                     target?.Username,
-                    error
+                    error,
+                    endpoint
                 ),
                 SerializerOptions
             )
@@ -172,6 +182,9 @@ public static class ConnectionCommand
         [property: JsonPropertyName("host")] string? Host,
         [property: JsonPropertyName("port")] int? Port,
         [property: JsonPropertyName("username")] string? Username,
-        [property: JsonPropertyName("error")] string? Error
+        [property: JsonPropertyName("error")] string? Error,
+        // Additive, non-secret endpoint classification (null for an invalid connection). Its nested fields
+        // (kind/protocol/host/port/instance/hasAlternateRouting) are camelCased by SerializerOptions.
+        [property: JsonPropertyName("endpoint")] ConnectionEndpointIdentity? Endpoint
     );
 }

@@ -33,5 +33,47 @@ public sealed class PgsqlConnectionInspector : IConnectionInspector
         return builder.ConnectionString;
     }
 
+    public ConnectionEndpointIdentity ClassifyEndpoint(string connectionString)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        string? host = builder.Host;
+        if (string.IsNullOrEmpty(host))
+        {
+            return new ConnectionEndpointIdentity(
+                ConnectionEndpointKinds.Missing,
+                ConnectionEndpointProtocols.Default,
+                Host: null,
+                Port: null,
+                Instance: null,
+                HasAlternateRouting: false
+            );
+        }
+
+        // Npgsql accepts a comma-separated multi-host list (PostgreSQL's own failover/load-balancing form).
+        // It is not a single local endpoint; classify it as multi-host without picking one host.
+        if (host.Contains(','))
+        {
+            return new ConnectionEndpointIdentity(
+                ConnectionEndpointKinds.MultiHost,
+                ConnectionEndpointProtocols.Tcp,
+                Host: null,
+                Port: null,
+                Instance: null,
+                HasAlternateRouting: false
+            );
+        }
+
+        // Npgsql exposes Port with its canonical default (5432) when the string omits it. PostgreSQL has no
+        // named instances, and multi-host is the only alternate-routing form (handled above).
+        return new ConnectionEndpointIdentity(
+            ConnectionEndpointKinds.SingleHost,
+            ConnectionEndpointProtocols.Tcp,
+            host,
+            builder.Port,
+            Instance: null,
+            HasAlternateRouting: false
+        );
+    }
+
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 }

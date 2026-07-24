@@ -917,11 +917,21 @@ function Invoke-ConnectionStringInspection {
         or an incoherent valid/error pairing). Only a COMPLETE, TYPED, COHERENT { valid = $false } result is
         RETURNED to the caller (which classifies stale vs invalid vs incomplete); a malformed invalid result
         throws as a tool-contract failure, not a datastore error.
+
+        The result also carries an ADDITIVE, non-secret 'endpoint' classification
+        ({ kind; protocol; host; port; instance; hasAlternateRouting }) - null for an invalid connection, a
+        coherent classification otherwise (single/multi-host, named instance, missing, or unsupported). It is
+        purely a classification: provider validity, endpoint classification, and local-topology acceptability
+        remain three distinct concepts and this function judges only the first two. Provisioning and other
+        existing consumers ignore the projection; only the endpoint-aware runtime consumer passes
+        -RequireEndpointIdentity, which makes a missing projection (a tool predating it) or a malformed one a
+        tool-contract/version failure. Without the switch, the projection is validated only when present.
     #>
     param(
         [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string]$Engine,
         [Parameter(Mandatory)][AllowEmptyString()][string]$ConnectionString,
-        [Parameter(Mandatory)][object]$SchemaToolPath
+        [Parameter(Mandatory)][object]$SchemaToolPath,
+        [switch]$RequireEndpointIdentity
     )
     # Canonicalize before the token crosses to the CLI, mirroring the validate verb boundary.
     $Engine = ConvertTo-CanonicalDatabaseEngine -Engine $Engine
@@ -1026,6 +1036,116 @@ function Invoke-ConnectionStringInspection {
             }
         }
     }
+
+    # ADDITIVE 'endpoint' classification. An older tool predates it (the property is absent); provisioning and
+    # other existing consumers tolerate that. -RequireEndpointIdentity (the endpoint-aware runtime consumer)
+    # makes its absence a tool-contract/version failure. When the property is present it is type- and
+    # state-checked so a malformed projection never reaches a consumer as data.
+    $hasEndpoint = @($result.PSObject.Properties.Name) -contains 'endpoint'
+    if ($RequireEndpointIdentity -and -not $hasEndpoint) {
+        throw "The connection-string inspector output for engine '$Engine' is missing the 'endpoint' projection; the tool predates the endpoint-aware inspect. Rebuild or re-publish api-schema-tools."
+    }
+    if ($hasEndpoint) {
+        $endpoint = $result.endpoint
+        if ($result.valid) {
+            # A valid result must carry a COMPLETE, TYPED, COHERENT endpoint classification. The endpoint-aware
+            # consumer trusts this gate, so any malformed or self-contradictory projection is a
+            # tool-contract/version failure, never data.
+            if ($null -eq $endpoint) {
+                throw "The connection-string inspector reported a valid result with a null 'endpoint' projection for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+            $endpointFields = @($endpoint.PSObject.Properties.Name)
+            foreach ($required in 'kind', 'protocol', 'host', 'port', 'instance', 'hasAlternateRouting') {
+                if ($endpointFields -notcontains $required) {
+                    throw "The connection-string inspector 'endpoint' projection for engine '$Engine' is missing the '$required' field; rebuild or re-publish api-schema-tools."
+                }
+            }
+
+            # Primitive types: host/instance string-or-null, port integer-or-null, hasAlternateRouting boolean.
+            foreach ($stringField in 'host', 'instance') {
+                if ($null -ne $endpoint.$stringField -and $endpoint.$stringField -isnot [string]) {
+                    throw "The connection-string inspector 'endpoint.$stringField' is not string-or-null for engine '$Engine'; rebuild or re-publish api-schema-tools."
+                }
+            }
+            if ($null -ne $endpoint.port -and $endpoint.port -isnot [int] -and $endpoint.port -isnot [long]) {
+                throw "The connection-string inspector 'endpoint.port' is not integer-or-null for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+            if ($endpoint.hasAlternateRouting -isnot [bool]) {
+                throw "The connection-string inspector 'endpoint.hasAlternateRouting' is not a boolean for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+
+            # Kind and protocol must be actual JSON strings FIRST (a JSON array such as ["singleHost"] would
+            # otherwise stringify to a valid-looking token and slip through), then exact, CASE-SENSITIVE tokens
+            # (a wrong-case token is a contract failure, not a value to coerce).
+            if ($endpoint.kind -isnot [string]) {
+                throw "The connection-string inspector 'endpoint.kind' is not a string for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+            if ($endpoint.protocol -isnot [string]) {
+                throw "The connection-string inspector 'endpoint.protocol' is not a string for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+            $kind = [string]$endpoint.kind
+            $protocol = [string]$endpoint.protocol
+            if ($kind -cnotin @('missing', 'singleHost', 'multiHost', 'namedInstance', 'unsupported')) {
+                throw "The connection-string inspector 'endpoint.kind' is '$kind', not a recognized classification for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+            if ($protocol -cnotin @('default', 'tcp', 'namedPipes', 'sharedMemory', 'unknown', 'admin')) {
+                throw "The connection-string inspector 'endpoint.protocol' is '$protocol', not a recognized protocol for engine '$Engine'; rebuild or re-publish api-schema-tools."
+            }
+
+            # Engine-specific kinds: PostgreSQL never has a named instance or a non-TCP (unsupported) transport;
+            # SQL Server never has a multi-host list (it uses Failover Partner, surfaced via hasAlternateRouting).
+            $allowedKinds =
+                if ($Engine -eq 'mssql') { @('missing', 'singleHost', 'namedInstance', 'unsupported') }
+                else { @('missing', 'singleHost', 'multiHost') }
+            if ($kind -cnotin $allowedKinds) {
+                throw "The connection-string inspector 'endpoint.kind' is '$kind', which is not valid for a '$Engine' connection; rebuild or re-publish api-schema-tools."
+            }
+
+            # PostgreSQL never carries alternate routing (its multi-host list is a distinct kind); a true flag
+            # there is incoherent tool output. SQL Server may carry it across classifications (Failover Partner).
+            if ($Engine -eq 'postgresql' -and $endpoint.hasAlternateRouting) {
+                throw "The connection-string inspector reported a PostgreSQL 'endpoint' with hasAlternateRouting=true, which PostgreSQL cannot produce; rebuild or re-publish api-schema-tools."
+            }
+
+            # Per-kind coherent-state invariants: coordinates must be present-and-nonblank or absent as the kind
+            # requires, any port must be in 1-65535, and the protocol must match the kind AND engine exactly
+            # (PostgreSQL single/multi-host is tcp; SQL Server single host is tcp/default).
+            $hostPresent = -not [string]::IsNullOrWhiteSpace([string]$endpoint.host)
+            $instancePresent = -not [string]::IsNullOrWhiteSpace([string]$endpoint.instance)
+            $portPresent = $null -ne $endpoint.port
+            # Compare the already-typed integer/long value directly; do NOT narrow to [int] (a long beyond
+            # Int32, e.g. 2147483648, would throw a raw conversion error instead of the controlled diagnostic).
+            $portInRange = $portPresent -and $endpoint.port -ge 1 -and $endpoint.port -le 65535
+            $noCoordinates = ($null -eq $endpoint.host) -and (-not $portPresent) -and ($null -eq $endpoint.instance)
+            $singleHostProtocolOk =
+                if ($Engine -eq 'postgresql') { $protocol -ceq 'tcp' } else { $protocol -cin @('default', 'tcp') }
+            $stateError = switch -CaseSensitive ($kind) {
+                'missing' {
+                    if (-not ($noCoordinates -and $protocol -ceq 'default')) { "a 'missing' endpoint must carry no coordinates over the default protocol" }
+                }
+                'singleHost' {
+                    if (-not $hostPresent -or ($null -ne $endpoint.instance) -or -not $portInRange -or -not $singleHostProtocolOk) { "a 'singleHost' endpoint must carry a nonblank host and an in-range (1-65535) port, exactly no instance (null), over the required protocol for the engine" }
+                }
+                'multiHost' {
+                    if (-not $noCoordinates -or $protocol -cne 'tcp') { "a 'multiHost' endpoint must carry no coordinates over the tcp protocol" }
+                }
+                'namedInstance' {
+                    if (-not $hostPresent -or -not $instancePresent -or ($portPresent -and -not $portInRange) -or $protocol -cnotin @('default', 'tcp')) { "a 'namedInstance' endpoint must carry a nonblank host and instance, an in-range or absent port, over the tcp/default protocol" }
+                }
+                'unsupported' {
+                    if (-not $noCoordinates -or ($protocol -cin @('default', 'tcp'))) { "an 'unsupported' endpoint must carry no coordinates and a non-tcp protocol" }
+                }
+            }
+            if ($stateError) {
+                throw "The connection-string inspector 'endpoint' projection is incoherent for engine '$Engine': $stateError. Rebuild or re-publish api-schema-tools."
+            }
+        }
+        elseif ($null -ne $endpoint) {
+            # An invalid result has no classified endpoint (coherent with the null coordinates above).
+            throw "The connection-string inspector reported an invalid result with a non-null 'endpoint' projection for engine '$Engine'; rebuild or re-publish api-schema-tools."
+        }
+    }
+
     return $result
 }
 
