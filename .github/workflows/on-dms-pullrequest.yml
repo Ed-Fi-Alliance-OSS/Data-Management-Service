@@ -375,6 +375,18 @@ jobs:
       - name: Run Unit Tests
         run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
+      - name: Run Instance Fixture Unit Tests
+        # The InstanceFixtureUnit [TestFixture] tests live in the Instance Management E2E project (so
+        # they can share its fixture types) but are pure unit tests that need no Docker. build-dms.ps1
+        # UnitTest only runs *.Tests.Unit projects and the instance E2E shard jobs filter on shard tags,
+        # so without this step these tests would run in no PR job. They are selected by the
+        # InstanceFixtureUnit category and run standalone here.
+        run: >-
+          dotnet test src/dms/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj
+          --configuration ${{ env.CONFIGURATION }}
+          --filter "Category=InstanceFixtureUnit"
+          --logger "trx;LogFileName=instance-fixture-unit.trx"
+
       - name: Generate Coverage Report
         if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
         run: ./build-dms.ps1 Coverage

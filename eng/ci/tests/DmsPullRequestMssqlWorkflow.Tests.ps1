@@ -432,4 +432,19 @@ Describe "on-dms-pullrequest.yml SQL Server E2E lane guardrails" {
                 -Because "an unfiltered enumeration of every container is rejected"
         }
     }
+
+    Context "InstanceFixtureUnit tests execute in PR CI" {
+        It "invokes the InstanceFixtureUnit category from a Docker-free PR job" {
+            # The InstanceFixtureUnit [TestFixture] tests live in the Instance Management E2E project (to
+            # share its fixture types) but need no Docker. build-dms.ps1 UnitTest runs only *.Tests.Unit
+            # projects and the instance E2E shard jobs filter on shard tags, so a dedicated step must run
+            # this category or it runs in no PR job.
+            $unitJob = Get-JobBlock -JobName "run-unit-tests"
+            $unitJob | Should -Not -BeNullOrEmpty
+            $unitJob | Should -Match ([regex]::Escape('--filter "Category=InstanceFixtureUnit"')) `
+                -Because "the InstanceFixtureUnit unit tests must execute in PR validation"
+            $unitJob | Should -Match ([regex]::Escape('EdFi.InstanceManagement.Tests.E2E.csproj')) `
+                -Because "the category is invoked against the Instance Management E2E project that hosts it"
+        }
+    }
 }
