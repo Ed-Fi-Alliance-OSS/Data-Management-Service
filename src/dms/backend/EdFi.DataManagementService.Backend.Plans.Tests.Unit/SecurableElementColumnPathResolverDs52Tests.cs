@@ -16,6 +16,9 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_SecurableElementColumnPathResolver_with_DS52_schema
 {
+    private static readonly DbSchemaName EdFiSchema = new("edfi");
+    private static readonly DbSchemaName DmsSchema = new("dms");
+
     private DerivedRelationalModelSet _modelSet = null!;
     private MappingSet _mappingSet = null!;
 
@@ -29,6 +32,23 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
     {
         return _modelSet.ConcreteResourcesInNameOrder.First(r =>
             r.ResourceKey.Resource.ResourceName == resourceName
+        );
+    }
+
+    private static QualifiedResourceName EdFiResource(string resourceName) => new("Ed-Fi", resourceName);
+
+    private static DbTableName EdFiTable(string tableName) => new(EdFiSchema, tableName);
+
+    private static DbTableName DmsTable(string tableName) => new(DmsSchema, tableName);
+
+    private static DbColumnName Column(string columnName) => new(columnName);
+
+    private IReadOnlyList<ColumnPathStep> ResolveBasisPath(string subjectResource, string basisResource)
+    {
+        return SecurableElementColumnPathResolver.ResolveSecurableElementColumnPath(
+            EdFiResource(subjectResource),
+            EdFiResource(basisResource),
+            _modelSet
         );
     }
 
@@ -140,5 +160,109 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
                 }
             }
         }
+    }
+
+    [Test]
+    public void It_should_resolve_the_view_basis_descriptor_example_from_authoritative_schema()
+    {
+        var path = ResolveBasisPath("StudentTransportation", "TransportationTypeDescriptor");
+
+        path.Should().ContainSingle();
+        path[0].SourceTable.Should().Be(EdFiTable("StudentTransportation"));
+        path[0].SourceColumnName.Should().Be(Column("TransportationTypeDescriptor_DescriptorId"));
+        path[0].TargetTable.Should().Be(DmsTable("Descriptor"));
+        path[0].TargetColumnName.Should().Be(Column("DocumentId"));
+    }
+
+    [Test]
+    public void It_should_resolve_an_indirect_descriptor_basis_from_authoritative_schema()
+    {
+        var path = ResolveBasisPath("StudentSectionAssociation", "MediumOfInstructionDescriptor");
+
+        path.Should().HaveCount(2);
+        path[0].SourceTable.Should().Be(EdFiTable("StudentSectionAssociation"));
+        path[0].SourceColumnName.Should().Be(Column("Section_DocumentId"));
+        path[0].TargetTable.Should().Be(EdFiTable("Section"));
+        path[0].TargetColumnName.Should().Be(Column("DocumentId"));
+        path[1].SourceTable.Should().Be(EdFiTable("Section"));
+        path[1].SourceColumnName.Should().Be(Column("MediumOfInstructionDescriptor_DescriptorId"));
+        path[1].TargetTable.Should().Be(DmsTable("Descriptor"));
+        path[1].TargetColumnName.Should().Be(Column("DocumentId"));
+    }
+
+    [Test]
+    public void It_should_resolve_a_transitive_view_basis_resource_path_from_authoritative_schema()
+    {
+        var path = ResolveBasisPath("CourseTranscript", "Student");
+
+        path.Should().HaveCount(2);
+        path[0].SourceTable.Should().Be(EdFiTable("CourseTranscript"));
+        path[0].SourceColumnName.Should().Be(Column("StudentAcademicRecord_DocumentId"));
+        path[0].TargetTable.Should().Be(EdFiTable("StudentAcademicRecord"));
+        path[0].TargetColumnName.Should().Be(Column("DocumentId"));
+        path[1].SourceTable.Should().Be(EdFiTable("StudentAcademicRecord"));
+        path[1].SourceColumnName.Should().Be(Column("Student_DocumentId"));
+        path[1].TargetTable.Should().BeNull();
+        path[1].TargetColumnName.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_resolve_abstract_basis_self_reference_from_authoritative_schema()
+    {
+        var path = ResolveBasisPath("School", "EducationOrganization");
+
+        path.Should().ContainSingle();
+        path[0].SourceTable.Should().Be(EdFiTable("School"));
+        path[0].SourceColumnName.Should().Be(Column("DocumentId"));
+        path[0].TargetTable.Should().BeNull();
+        path[0].TargetColumnName.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_resolve_direct_abstract_basis_reference_from_authoritative_schema()
+    {
+        var path = ResolveBasisPath("BellSchedule", "EducationOrganization");
+
+        path.Should().ContainSingle();
+        path[0].SourceTable.Should().Be(EdFiTable("BellSchedule"));
+        path[0].SourceColumnName.Should().Be(Column("School_DocumentId"));
+        path[0].TargetTable.Should().BeNull();
+        path[0].TargetColumnName.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_prefer_graduation_plan_over_school_for_StudentSchoolAssociation_abstract_basis()
+    {
+        var path = ResolveBasisPath("StudentSchoolAssociation", "EducationOrganization");
+
+        path.Should().NotBeEmpty();
+        path.Select(step => step.SourceColumnName.Value)
+            .Should()
+            .Contain(column => column.Contains("GraduationPlan", StringComparison.Ordinal));
+        path[0].SourceColumnName.Should().NotBe(Column("School_DocumentId"));
+    }
+
+    [Test]
+    public void It_should_resolve_direct_concrete_basis_reference_from_authoritative_schema()
+    {
+        var path = ResolveBasisPath("StaffSchoolAssociation", "School");
+
+        path.Should().ContainSingle();
+        path[0].SourceTable.Should().Be(EdFiTable("StaffSchoolAssociation"));
+        path[0].SourceColumnName.Should().Be(Column("School_DocumentId"));
+        path[0].TargetTable.Should().BeNull();
+        path[0].TargetColumnName.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_resolve_concrete_basis_through_abstract_reference_from_authoritative_schema()
+    {
+        var path = ResolveBasisPath("Intervention", "School");
+
+        path.Should().ContainSingle();
+        path[0].SourceTable.Should().Be(EdFiTable("Intervention"));
+        path[0].SourceColumnName.Should().Be(Column("EducationOrganization_DocumentId"));
+        path[0].TargetTable.Should().BeNull();
+        path[0].TargetColumnName.Should().BeNull();
     }
 }

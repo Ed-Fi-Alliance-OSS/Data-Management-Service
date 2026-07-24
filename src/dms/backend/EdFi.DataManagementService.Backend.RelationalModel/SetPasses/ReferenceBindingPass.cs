@@ -226,7 +226,12 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                             identityBinding.ReferenceJsonPath,
                             tableBuilder.Definition.Table,
                             descriptorColumnName,
-                            descriptorPath.DescriptorResource
+                            descriptorPath.DescriptorResource,
+                            IsRequired: mapping.IsRequired,
+                            IsRoleNamed: ReferenceRoleNameConventions.IsDocumentReferenceRoleNamed(
+                                mapping.ReferenceObjectPath,
+                                mapping.TargetResource
+                            )
                         )
                     );
 
@@ -317,7 +322,12 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     tableBuilder.Definition.Table,
                     fkColumnName,
                     mapping.TargetResource,
-                    identityBindings.ToArray()
+                    identityBindings.ToArray(),
+                    IsRequired: mapping.IsRequired,
+                    IsRoleNamed: ReferenceRoleNameConventions.IsDocumentReferenceRoleNamed(
+                        mapping.ReferenceObjectPath,
+                        mapping.TargetResource
+                    )
                 )
             );
         }

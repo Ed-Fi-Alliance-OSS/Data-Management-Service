@@ -102,6 +102,25 @@ public class Given_A_Relational_Model_Manifest_Emitter
         extensionSites.Count.Should().Be(2);
     }
 
+    [Test]
+    public void It_should_emit_descriptor_edge_ranking_metadata()
+    {
+        var root =
+            JsonNode.Parse(_manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        var descriptorEdges =
+            root["descriptor_edge_sources"] as JsonArray
+            ?? throw new InvalidOperationException("Expected descriptor_edge_sources to be an array.");
+
+        var descriptorEdge =
+            descriptorEdges.Should().ContainSingle().Subject as JsonObject
+            ?? throw new InvalidOperationException("Expected descriptor edge to be a JSON object.");
+
+        descriptorEdge["is_required"]!.GetValue<bool>().Should().BeTrue();
+        descriptorEdge["is_role_named"]!.GetValue<bool>().Should().BeFalse();
+    }
+
     /// <summary>
     /// It should emit descriptor storage kind.
     /// </summary>

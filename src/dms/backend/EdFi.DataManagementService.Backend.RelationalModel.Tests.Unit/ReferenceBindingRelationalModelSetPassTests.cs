@@ -25,6 +25,7 @@ public class Given_Reference_Binding
     private DocumentReferenceBinding _calendarBinding = default!;
     private DocumentReferenceBinding _personBinding = default!;
     private DocumentReferenceBinding _programBinding = default!;
+    private DocumentReferenceBinding _learningProgramBinding = default!;
     private DocumentReferenceBinding _extensionBinding = default!;
 
     /// <summary>
@@ -84,6 +85,9 @@ public class Given_Reference_Binding
         );
         _programBinding = _studentModel.DocumentReferenceBindings.Single(binding =>
             binding.ReferenceObjectPath.Canonical == "$.programReference"
+        );
+        _learningProgramBinding = _studentModel.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.learningProgramReference"
         );
         _extensionBinding = _studentModel.DocumentReferenceBindings.Single(binding =>
             binding.ReferenceObjectPath.Canonical == "$._ext.sample.sponsorReference"
@@ -170,6 +174,37 @@ public class Given_Reference_Binding
             .Columns.Should()
             .Contain(column => column.ColumnName.Value == "SponsorSchool_DocumentId");
     }
+
+    [Test]
+    public void It_should_populate_requiredness_and_role_named_metadata()
+    {
+        _schoolBinding.IsRequired.Should().BeTrue();
+        _schoolBinding.IsRoleNamed.Should().BeFalse();
+
+        _calendarBinding.IsRequired.Should().BeFalse();
+        _calendarBinding.IsRoleNamed.Should().BeFalse();
+
+        _programBinding.IsRequired.Should().BeFalse();
+        _programBinding.IsRoleNamed.Should().BeFalse();
+
+        var programDescriptorEdge = _studentModel.DescriptorEdgeSources.Single(edge =>
+            edge.DescriptorValuePath.Canonical == "$.programReference.programTypeDescriptor"
+        );
+        programDescriptorEdge.IsRequired.Should().BeFalse();
+        programDescriptorEdge.IsRoleNamed.Should().BeFalse();
+
+        _learningProgramBinding.IsRequired.Should().BeFalse();
+        _learningProgramBinding.IsRoleNamed.Should().BeTrue();
+
+        var learningProgramDescriptorEdge = _studentModel.DescriptorEdgeSources.Single(edge =>
+            edge.DescriptorValuePath.Canonical == "$.learningProgramReference.programTypeDescriptor"
+        );
+        learningProgramDescriptorEdge.IsRequired.Should().BeFalse();
+        learningProgramDescriptorEdge.IsRoleNamed.Should().BeTrue();
+
+        _extensionBinding.IsRequired.Should().BeFalse();
+        _extensionBinding.IsRoleNamed.Should().BeTrue();
+    }
 }
 
 /// <summary>
@@ -182,6 +217,7 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
     private DocumentReferenceBinding _classPeriodBinding = default!;
     private DocumentReferenceBinding _calendarBinding = default!;
     private DocumentReferenceBinding _programProgramBinding = default!;
+    private DocumentReferenceBinding _schoolYearTypeBinding = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -220,6 +256,9 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
         _programProgramBinding = _model.DocumentReferenceBindings.Single(binding =>
             binding.ReferenceObjectPath.Canonical == "$.programProgramReference"
         );
+        _schoolYearTypeBinding = _model.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.schoolYearTypeReference"
+        );
     }
 
     /// <summary>
@@ -253,6 +292,15 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
             .Be("ProgramProgram_EducationOrganizationId");
     }
 
+    [Test]
+    public void It_should_use_reference_object_leaf_names_for_role_named_metadata()
+    {
+        _schoolYearTypeBinding
+            .TargetResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "SchoolYearType"));
+        _schoolYearTypeBinding.IsRoleNamed.Should().BeFalse();
+    }
+
     /// <summary>
     /// Builds a project schema containing resources used to validate reference binding against nested target identity paths.
     /// </summary>
@@ -268,6 +316,7 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                 ["studentHomelessProgramAssociations"] = BuildStudentHomelessProgramAssociationSchema(),
                 ["classPeriods"] = BuildClassPeriodSchema(),
                 ["calendars"] = BuildCalendarSchema(),
+                ["schoolYearTypes"] = BuildSchoolYearTypeSchema(),
                 ["programPrograms"] = BuildProgramProgramSchema(),
             },
         };
@@ -305,6 +354,14 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                     ["properties"] = new JsonObject
                     {
                         ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+                ["schoolYearTypeReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolYear"] = new JsonObject { ["type"] = "integer" },
                     },
                 },
             },
@@ -365,6 +422,22 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                         {
                             ["identityJsonPath"] = "$.educationOrganizationReference.educationOrganizationId",
                             ["referenceJsonPath"] = "$.programProgramReference.educationOrganizationId",
+                        },
+                    },
+                },
+                ["SchoolYear"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "SchoolYearType",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolYear",
+                            ["referenceJsonPath"] = "$.schoolYearTypeReference.schoolYear",
                         },
                     },
                 },
@@ -455,6 +528,38 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
                     },
                 },
                 ["required"] = new JsonArray { "schoolYearTypeReference" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds a SchoolYearType schema.
+    /// </summary>
+    private static JsonObject BuildSchoolYearTypeSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "SchoolYearType",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolYear" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolYear"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.schoolYear",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["schoolYear"] = new JsonObject { ["type"] = "integer" } },
+                ["required"] = new JsonArray { "schoolYear" },
             },
         };
     }
@@ -797,6 +902,18 @@ internal static class ReferenceBindingTestSchemaBuilder
                         },
                     },
                 },
+                ["learningProgramReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["programTypeDescriptor"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["maxLength"] = 300,
+                        },
+                    },
+                },
                 ["addresses"] = new JsonObject
                 {
                     ["type"] = "array",
@@ -890,6 +1007,22 @@ internal static class ReferenceBindingTestSchemaBuilder
                         {
                             ["identityJsonPath"] = "$.programTypeDescriptor",
                             ["referenceJsonPath"] = "$.programReference.programTypeDescriptor",
+                        },
+                    },
+                },
+                ["LearningProgram"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Program",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programTypeDescriptor",
+                            ["referenceJsonPath"] = "$.learningProgramReference.programTypeDescriptor",
                         },
                     },
                 },
