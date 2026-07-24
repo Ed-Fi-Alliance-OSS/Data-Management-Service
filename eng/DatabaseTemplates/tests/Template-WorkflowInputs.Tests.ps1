@@ -100,9 +100,11 @@ Describe "Assert-TemplateWorkflowInputs" {
         { & $script:validator @parameters } | Should -Not -Throw
     }
 
-    It "accepts the two non-publishing PostgreSQL smoke tuples" -ForEach @(
-        @{ StandardVersion = "5.2.0"; EnvironmentFile = "./.env.smoke"; PackageName = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0" }
-        @{ StandardVersion = "6.1.0"; EnvironmentFile = "./.env.smoke.ds61"; PackageName = "EdFi.Api.Smoke.Template.PostgreSql.6.1.0" }
+    It "accepts the four non-publishing smoke tuples" -ForEach @(
+        @{ DatabaseEngine = "postgresql"; StandardVersion = "5.2.0"; EnvironmentFile = "./.env.smoke"; PackageName = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0" }
+        @{ DatabaseEngine = "postgresql"; StandardVersion = "6.1.0"; EnvironmentFile = "./.env.smoke.ds61"; PackageName = "EdFi.Api.Smoke.Template.PostgreSql.6.1.0" }
+        @{ DatabaseEngine = "mssql"; StandardVersion = "5.2.0"; EnvironmentFile = "./.env.smoke"; PackageName = "EdFi.Api.Smoke.Template.MsSql.5.2.0" }
+        @{ DatabaseEngine = "mssql"; StandardVersion = "6.1.0"; EnvironmentFile = "./.env.smoke.ds61"; PackageName = "EdFi.Api.Smoke.Template.MsSql.6.1.0" }
     ) {
         {
             & $script:validator `
@@ -110,7 +112,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 -StandardVersion $StandardVersion `
                 -PackageName $PackageName `
                 -EnvironmentFile $EnvironmentFile `
-                -DatabaseEngine "postgresql" `
+                -DatabaseEngine $DatabaseEngine `
                 -PublishPackage $false `
                 -VerifyRestore $true `
                 -RequirePopulatedData $true `
@@ -199,16 +201,17 @@ Describe "Assert-TemplateWorkflowInputs" {
         } | Should -Throw "*DATABASE_TEMPLATE_PACKAGE*must be*6.1.0*"
     }
 
-    It "rejects MSSQL smoke, publishing smoke, and Minimal smoke combinations" -ForEach @(
-        @{ WorkflowKind = "Populated"; DatabaseEngine = "mssql"; PublishPackage = $false; Expected = "*PostgreSQL-only*" }
-        @{ WorkflowKind = "Populated"; DatabaseEngine = "postgresql"; PublishPackage = $true; Expected = "*must not be published*" }
-        @{ WorkflowKind = "Minimal"; DatabaseEngine = "postgresql"; PublishPackage = $false; Expected = "*Minimal template workflow cannot use smoke*" }
+    It "rejects publishing smoke, Minimal smoke, and mismatched MSSQL smoke package combinations" -ForEach @(
+        @{ WorkflowKind = "Populated"; DatabaseEngine = "postgresql"; PackageName = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"; PublishPackage = $true; Expected = "*must not be published*" }
+        @{ WorkflowKind = "Minimal"; DatabaseEngine = "postgresql"; PackageName = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"; PublishPackage = $false; Expected = "*Minimal template workflow cannot use smoke*" }
+        @{ WorkflowKind = "Populated"; DatabaseEngine = "mssql"; PackageName = "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"; PublishPackage = $false; Expected = "*require package_name*" }
+        @{ WorkflowKind = "Populated"; DatabaseEngine = "mssql"; PackageName = "EdFi.Api.Smoke.Template.MsSql.5.2.0"; PublishPackage = $true; Expected = "*must not be published*" }
     ) {
         {
             & $script:validator `
                 -WorkflowKind $WorkflowKind `
                 -StandardVersion "5.2.0" `
-                -PackageName "EdFi.Api.Smoke.Template.PostgreSql.5.2.0" `
+                -PackageName $PackageName `
                 -EnvironmentFile "./.env.smoke" `
                 -DatabaseEngine $DatabaseEngine `
                 -PublishPackage $PublishPackage `
