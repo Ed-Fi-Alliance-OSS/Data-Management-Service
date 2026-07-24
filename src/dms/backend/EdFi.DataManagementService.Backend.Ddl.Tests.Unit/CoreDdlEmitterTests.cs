@@ -638,6 +638,31 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_emit_resource_key_equality_guard_before_the_no_op_guard()
+    {
+        // The denormalized dms.Descriptor.ResourceKeyId feeds descriptor list paging while
+        // GET-by-id trusts dms.Document.ResourceKeyId, and no FK ties the two copies together.
+        // The equality guard must cover INSERT and UPDATE, and must precede the no-op diff
+        // (which deliberately excludes ResourceKeyId) so a ResourceKeyId-only UPDATE cannot
+        // short-circuit past validation.
+        _ddl.Should().Contain("IF TG_OP IN ('INSERT', 'UPDATE') THEN");
+        _ddl.Should().Contain("AND \"ResourceKeyId\" = NEW.\"ResourceKeyId\"");
+        _ddl.Should()
+            .Contain(
+                "RAISE EXCEPTION 'dms.Descriptor.ResourceKeyId % diverges from the owning "
+                    + "dms.Document row for DocumentId %', NEW.\"ResourceKeyId\", NEW.\"DocumentId\";"
+            );
+
+        var equalityGuardIndex = _ddl.IndexOf(
+            "IF TG_OP IN ('INSERT', 'UPDATE') THEN",
+            StringComparison.Ordinal
+        );
+        var noOpGuardIndex = _ddl.IndexOf("IF TG_OP = 'UPDATE' THEN", StringComparison.Ordinal);
+        equalityGuardIndex.Should().BeGreaterOrEqualTo(0);
+        noOpGuardIndex.Should().BeGreaterThan(equalityGuardIndex);
+    }
+
+    [Test]
     public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
     {
         _ddl.Should().Contain("IF TG_OP = 'INSERT' THEN");
@@ -713,7 +738,8 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // The change-version mirror columns are stamp targets, not client content, so they are
         // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
         // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
-        // a migration backfill UPDATE of that column must not bump stamps.
+        // a migration backfill UPDATE of that column must not bump stamps. The trigger's
+        // separate equality guard still rejects values that diverge from dms.Document.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         string[] immutableColumns = ["ResourceKeyId"];
         var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
@@ -1303,6 +1329,30 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_emit_resource_key_equality_guard_before_any_stamping()
+    {
+        // Same intent as the PG sibling guard: the denormalized dms.Descriptor.ResourceKeyId
+        // feeds descriptor list paging while GET-by-id trusts dms.Document.ResourceKeyId, and
+        // no FK ties the two copies together. THROW aborts the batch before any row is
+        // stamped or mirrored; the inserted pseudo-table is empty on DELETE, so pure
+        // deletes skip the guard.
+        _ddl.Should().Contain("INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]");
+        _ddl.Should()
+            .Contain(
+                "THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;"
+            );
+
+        var equalityGuardIndex = _ddl.IndexOf(
+            "WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]",
+            StringComparison.Ordinal
+        );
+        var stampedDeclarationIndex = _ddl.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
+        equalityGuardIndex.Should().BeGreaterOrEqualTo(0);
+        stampedDeclarationIndex.Should().BeGreaterThan(equalityGuardIndex);
+    }
+
+    [Test]
     public void It_should_update_document_from_descriptor_stamping_trigger()
     {
         _ddl.Should().Contain("UPDATE d");
@@ -1349,7 +1399,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // The change-version mirror columns are stamp targets, not client content, so they are
         // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
         // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
-        // a migration backfill UPDATE of that column must not bump stamps.
+        // a migration backfill UPDATE of that column must not bump stamps. The trigger's
+        // separate equality guard still rejects values that diverge from dms.Document.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         string[] immutableColumns = ["ResourceKeyId"];
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);

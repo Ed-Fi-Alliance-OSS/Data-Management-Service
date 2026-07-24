@@ -424,6 +424,16 @@ CREATE INDEX IF NOT EXISTS "IX_DocumentCache_ProjectName_ResourceName_LastModifi
 CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
 RETURNS TRIGGER AS $func$
 BEGIN
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM "dms"."Document"
+            WHERE "DocumentId" = NEW."DocumentId"
+                AND "ResourceKeyId" = NEW."ResourceKeyId"
+        ) THEN
+            RAISE EXCEPTION 'dms.Descriptor.ResourceKeyId % diverges from the owning dms.Document row for DocumentId %', NEW."ResourceKeyId", NEW."DocumentId";
+        END IF;
+    END IF;
     IF TG_OP = 'UPDATE' THEN
         IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
             RETURN NEW;

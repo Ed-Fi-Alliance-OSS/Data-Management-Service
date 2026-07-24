@@ -398,6 +398,15 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
+        WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]
+    )
+    BEGIN
+        THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;
+    END
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
         [ContentVersion] bigint NOT NULL,
