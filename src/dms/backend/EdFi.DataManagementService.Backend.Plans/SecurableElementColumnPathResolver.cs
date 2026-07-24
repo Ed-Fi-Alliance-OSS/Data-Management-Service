@@ -216,8 +216,6 @@ internal static class SecurableElementColumnPathResolver
                         .Select(static arm => arm.ConcreteMemberResourceKey.Resource)
                         .ToHashSet()
             );
-        var basisIsAbstract = abstractBasisMembersByResource.ContainsKey(basisResource);
-
         if (IsBasisMatch(subjectModel.Resource, basisResource, abstractBasisMembersByResource))
         {
             return
@@ -254,7 +252,6 @@ internal static class SecurableElementColumnPathResolver
 
         List<(
             IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
-            bool PreferExactAbstractBasis,
             IReadOnlyList<ColumnPathStep> Steps
         )> Explore(
             RelationalResourceModel currentModel,
@@ -266,7 +263,6 @@ internal static class SecurableElementColumnPathResolver
             var foundCandidates =
                 new List<(
                     IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
-                    bool PreferExactAbstractBasis,
                     IReadOnlyList<ColumnPathStep> Steps
                 )>();
 
@@ -353,13 +349,7 @@ internal static class SecurableElementColumnPathResolver
                     GetBindingPriority((binding, currentModel)),
                 };
 
-                foundCandidates.Add(
-                    (
-                        terminalHops,
-                        basisIsAbstract && binding.TargetResource == basisResource && hopsSoFar.Count > 0,
-                        terminalSteps
-                    )
-                );
+                foundCandidates.Add((terminalHops, terminalSteps));
             }
 
             foreach (var descriptorEdge in currentModel.DescriptorEdgeSources)
@@ -394,7 +384,7 @@ internal static class SecurableElementColumnPathResolver
                     GetDescriptorEdgePriority(descriptorEdge, owningTable),
                 };
 
-                foundCandidates.Add((descriptorHops, false, descriptorSteps));
+                foundCandidates.Add((descriptorHops, descriptorSteps));
             }
 
             return foundCandidates;
@@ -456,21 +446,14 @@ internal static class SecurableElementColumnPathResolver
         static int CompareCandidates(
             (
                 IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
-                bool PreferExactAbstractBasis,
                 IReadOnlyList<ColumnPathStep> Steps
             ) left,
             (
                 IReadOnlyList<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)> Hops,
-                bool PreferExactAbstractBasis,
                 IReadOnlyList<ColumnPathStep> Steps
             ) right
         )
         {
-            if (left.PreferExactAbstractBasis != right.PreferExactAbstractBasis)
-            {
-                return left.PreferExactAbstractBasis ? -1 : 1;
-            }
-
             var hopCount = Math.Min(left.Hops.Count, right.Hops.Count);
             for (var hopIndex = 0; hopIndex < hopCount; hopIndex++)
             {

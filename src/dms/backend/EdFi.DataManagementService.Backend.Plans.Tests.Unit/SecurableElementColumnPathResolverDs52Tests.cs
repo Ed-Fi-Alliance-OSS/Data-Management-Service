@@ -231,15 +231,13 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
     }
 
     [Test]
-    public void It_should_prefer_graduation_plan_over_school_for_StudentSchoolAssociation_abstract_basis()
+    public void It_should_prefer_school_over_graduation_plan_for_StudentSchoolAssociation_abstract_basis()
     {
         var path = ResolveBasisPath("StudentSchoolAssociation", "EducationOrganization");
 
         path.Should().NotBeEmpty();
-        path.Select(step => step.SourceColumnName.Value)
-            .Should()
-            .Contain(column => column.Contains("GraduationPlan", StringComparison.Ordinal));
-        path[0].SourceColumnName.Should().NotBe(Column("School_DocumentId"));
+        path.Should().ContainSingle();
+        path[0].SourceColumnName.Should().Be(Column("School_DocumentId"));
     }
 
     [Test]

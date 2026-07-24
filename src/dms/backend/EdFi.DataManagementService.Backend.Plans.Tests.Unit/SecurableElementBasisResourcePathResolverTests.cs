@@ -1399,6 +1399,143 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
     }
 
     [Test]
+    public void It_should_apply_documented_priorities_before_exact_transitive_abstract_basis_matching()
+    {
+        var abstractIntermediateRoot = CreateRootTable(
+            Table("AbstractIntermediate"),
+            [
+                new DbColumnModel(
+                    Col("EducationOrganization_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    true,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "EducationOrganization")
+                ),
+            ]
+        );
+        var concreteIntermediateRoot = CreateRootTable(
+            Table("ConcreteIntermediate"),
+            [
+                new DbColumnModel(
+                    Col("School_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "School")
+                ),
+            ]
+        );
+        var subjectRoot = CreateRootTable(
+            Table("Subject"),
+            [
+                new DbColumnModel(
+                    Col("AbstractIntermediate_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "AbstractIntermediate")
+                ),
+                new DbColumnModel(
+                    Col("ConcreteIntermediate_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "ConcreteIntermediate")
+                ),
+            ]
+        );
+
+        var subjectToAbstractIntermediate = new DocumentReferenceBinding(
+            true,
+            Path("$.abstractIntermediateReference"),
+            subjectRoot.Table,
+            Col("AbstractIntermediate_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "AbstractIntermediate"),
+            [],
+            IsRequired: true
+        );
+        var subjectToConcreteIntermediate = new DocumentReferenceBinding(
+            true,
+            Path("$.concreteIntermediateReference"),
+            subjectRoot.Table,
+            Col("ConcreteIntermediate_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "ConcreteIntermediate"),
+            [],
+            IsRequired: true
+        );
+        var exactAbstractTerminal = new DocumentReferenceBinding(
+            true,
+            Path("$.roleNamedEducationOrganizationReference"),
+            abstractIntermediateRoot.Table,
+            Col("EducationOrganization_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+            [],
+            IsRequired: false,
+            IsRoleNamed: true
+        );
+        var concreteMemberTerminal = new DocumentReferenceBinding(
+            true,
+            Path("$.schoolReference"),
+            concreteIntermediateRoot.Table,
+            Col("School_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [],
+            IsRequired: true,
+            IsRoleNamed: false
+        );
+
+        var subjectModel = CreateModel(
+            "Ed-Fi",
+            "Subject",
+            subjectRoot,
+            [subjectToAbstractIntermediate, subjectToConcreteIntermediate]
+        );
+        var abstractIntermediateModel = CreateModel(
+            "Ed-Fi",
+            "AbstractIntermediate",
+            abstractIntermediateRoot,
+            [exactAbstractTerminal]
+        );
+        var concreteIntermediateModel = CreateModel(
+            "Ed-Fi",
+            "ConcreteIntermediate",
+            concreteIntermediateRoot,
+            [concreteMemberTerminal]
+        );
+        var schoolModel = CreateModel("Ed-Fi", "School", CreateRootTable(Table("School")));
+        var subject = CreateConcrete(1, "Ed-Fi", "Subject", subjectModel);
+        var abstractIntermediate = CreateConcrete(
+            2,
+            "Ed-Fi",
+            "AbstractIntermediate",
+            abstractIntermediateModel
+        );
+        var concreteIntermediate = CreateConcrete(
+            3,
+            "Ed-Fi",
+            "ConcreteIntermediate",
+            concreteIntermediateModel
+        );
+        var school = CreateConcrete(4, "Ed-Fi", "School", schoolModel);
+        var abstractView = CreateAbstractView("EducationOrganization", "School");
+
+        var result = SecurableElementColumnPathResolver.ResolveBasisResourcePath(
+            subject,
+            new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+            CreateLookup(subject, abstractIntermediate, concreteIntermediate, school),
+            [abstractView]
+        );
+
+        result.Should().HaveCount(2);
+        result[0].SourceColumnName.Should().Be(Col("ConcreteIntermediate_DocumentId"));
+        result[1].SourceColumnName.Should().Be(Col("School_DocumentId"));
+    }
+
+    [Test]
     public void It_should_resolve_a_direct_descriptor_basis_reference()
     {
         var subjectRoot = CreateRootTable(
