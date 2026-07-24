@@ -839,7 +839,7 @@ $failureStatement
                 Join-Path $script:sourceRepoRoot ".github/workflows/on-config-pullrequest.yml"
             ) -Raw
 
-            $cmsWorkflow | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$' -Because "the CMS integration-test services container is an authoritative runtime pin and must move with the supported SQL Server major version"
+            $cmsWorkflow | Should -Match '(?m)^\s*mssql:\s*\r?\n\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$' -Because "the services.mssql.image pin is the authoritative CMS integration-test runtime and must move with the supported SQL Server major version; matching the service key and its image line together keeps an unrelated 2025-latest occurrence from masking a stale pin"
         }
 
         It "keeps the template-workflow backup-coupling comments aligned with the SQL Server 2025 image (DMS-1279)" {
@@ -848,7 +848,7 @@ $failureStatement
                     Join-Path $script:sourceRepoRoot ".github/workflows/$workflowName"
                 ) -Raw
 
-                $workflow | Should -Match 'mcr\.microsoft\.com/mssql/server:2025-latest' -Because "$workflowName documents the exact image line its .bak template packages are coupled to, and that comment must move with the executable pins"
+                $workflow | Should -Match '(?m)^\s*#\s*backup is coupled to the mcr\.microsoft\.com/mssql/server:2025-latest image used to create\s*$' -Because "$workflowName documents the exact image line its .bak template packages are coupled to in this comment, and that comment must move with the executable pins"
                 $workflow | Should -Not -Match 'mssql/server:2022' -Because "$workflowName must not describe the backup coupling against the retired SQL Server 2022 image"
             }
         }

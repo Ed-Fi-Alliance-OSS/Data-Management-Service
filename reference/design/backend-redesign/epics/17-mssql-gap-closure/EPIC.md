@@ -51,10 +51,12 @@ cross-cutting local and CI workflows that do not have another active home.
   narrow package-producer extension and consumer validation for an external restore manifest; general template
   publication remains with `DMS-1255`.
 - `DMS-1279` separates the required SQL Server 2025 runtime upgrade from a conditional native `json` storage
-  change. A recorded defer decision does not block the runtime upgrade. Adoption applies to the optional
-  `DocumentCache` column, uses direct provider coverage unless a production cache path is separately assigned,
-  and requires a distinct MSSQL physical-schema version, reprovisioned databases/templates, and catalog-type
-  validation rather than an implicit migration or a PostgreSQL-affecting relational mapping-version bump.
+  change. The recorded decision is defer, which does not block the delivered runtime upgrade; `DMS-1328` owns
+  any future native-JSON adoption. Adoption applies to the always-provisioned `DocumentCache` column (only
+  cache usage is optional), uses direct provider coverage unless a production cache path is separately
+  assigned, and requires a distinct MSSQL physical-schema version, reprovisioned databases/templates, and
+  catalog-type validation rather than an implicit migration or a PostgreSQL-affecting relational
+  mapping-version bump.
 - `DMS-1284` owns the public HTTP and Docker-stack boundary for both the standard DMS E2E suite and the separate
   multi-datastore Instance Management E2E suite. Backend defects found there should be linked to their owning
   implementation or provider-integration story rather than absorbed into the E2E harness.

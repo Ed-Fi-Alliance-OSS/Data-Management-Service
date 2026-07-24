@@ -150,7 +150,8 @@ the connector and transform suites on the included Kafka Connect 4.3.0 runtime.
 
 This exact Debezium 3.6 connector combination is known to work with SQL Server 2025 and
 the current `nvarchar(max)` `DocumentJson` schema, so SQL Server 2025 is an Ed-Fi
-qualification target. If DMS-1279 later adopts SQL Server's native `json` type, that type's
+qualification target. DMS-1279 recorded a defer decision on SQL Server's native `json`
+type and transferred adoption to DMS-1328; if DMS-1328 later adopts it, that type's
 connector mapping requires separate qualification before CDC uses it. Debezium's upstream
 3.6 tested-version matrix lists SQL Server through 2022, so this is an Ed-Fi-tested
 compatibility statement, not a claim that SQL Server 2025 appears in Debezium's upstream
