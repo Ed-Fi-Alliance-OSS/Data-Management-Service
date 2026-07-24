@@ -13,18 +13,35 @@ on:
     paths: # Only run on PRs that change relevant files
       - 'src/Directory.Packages.props'
       - '**/OpenApiDocument.cs'
+      # Every pattern below is kept identical to the path map owned by
+      # eng/DatabaseTemplates/Select-SmokeTestLegs.ps1, which classifies each changed path into the
+      # specific engine/Data Standard legs it can affect (a Pester drift guard keeps this list and
+      # that map in sync). A PR run executes only the legs Select-SmokeTestLegs.ps1 selects for the
+      # files that changed; scheduled and workflow_dispatch runs always execute the full
+      # PostgreSQL/MSSQL x DS 5.2/6.1 matrix regardless of these paths.
+      #
       # SDK generation + smoke tooling this workflow exercises, so changes to them
       # are covered by PR validation instead of only the cron run (DMS-912).
       - '.github/workflows/scheduled-smoke-test.yml'
       - 'build-sdk.ps1'
       - 'eng/smoke_test/**'
       - 'eng/sdkGen/**'
-      # The populated-template build this workflow consumes per Data Standard version: its reusable
-      # workflow, the per-version smoke template env files, and the template build/restore/filtering
-      # logic (incl. the DS 6.1 educator-prep filter + tolerance). Listed so a change to the DS 6.1
-      # (or 5.2) smoke path is validated on PRs instead of only the cron run (DMS-1136).
+      # The populated-template build this workflow consumes per Data Standard version and database
+      # engine: its reusable workflow, the per-version smoke template env files, the engine compose
+      # files and shared local-stack infra, and the template build/restore/filtering logic (incl.
+      # the DS 6.1 educator-prep filter + tolerance). Listed so a change to any engine/DS leg is
+      # validated on PRs instead of only the cron run (DMS-1136).
       - '.github/workflows/build-populated-template.yml'
-      - 'eng/docker-compose/.env.smoke*'
+      - 'eng/docker-compose/mssql.yml'
+      - 'eng/docker-compose/.env.mssql'
+      - 'eng/docker-compose/postgresql.yml'
+      - 'eng/docker-compose/.env.smoke'
+      - 'eng/docker-compose/.env.smoke.ds61'
+      - 'eng/docker-compose/start-local-dms.ps1'
+      - 'eng/docker-compose/local-dms.yml'
+      - 'eng/docker-compose/local-config.yml'
+      - 'eng/docker-compose/env-utility.psm1'
+      - 'eng/Dms-Management.psm1'
       - 'eng/DatabaseTemplates/**'
 
 permissions:
@@ -37,26 +54,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Computes the engine x Data Standard matrix legs this run should execute: the full four-leg
+  # matrix on schedule/workflow_dispatch runs, or only the legs safely affected by the PR's changed
+  # files. The leg definitions and the changed-path-to-leg mapping both live in
+  # eng/DatabaseTemplates/Select-SmokeTestLegs.ps1, which is the single source of truth the
+  # downstream jobs below consume via ${{ needs.select-legs.outputs.include }}.
+  select-legs:
+    name: Select Smoke Legs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      include: ${{ steps.select.outputs.include }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Select smoke test legs
+        id: select
+        shell: pwsh
+        run: |
+          $changedFiles = @()
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            # fetch-depth 0 fetches all branches, so origin/<base> exists; on PR events HEAD is the
+            # merge commit, so this diff is exactly the PR's changes vs the base tip.
+            $changedFiles = @(git diff --name-only "$(git merge-base HEAD "origin/$env:GITHUB_BASE_REF")" HEAD)
+          }
+
+          $include = ./eng/DatabaseTemplates/Select-SmokeTestLegs.ps1 -EventName $env:GITHUB_EVENT_NAME -ChangedFiles $changedFiles
+          Write-Host "Selected smoke test legs: $include"
+          "include=$include" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
   build-populated-template:
-    name: Build Populated Template ${{ matrix.standard_version }}
-    # One leg per supported Ed-Fi Data Standard version (kept in sync with the smoke-test
-    # matrix below). To add or drop a version, edit both `include` blocks; see
-    # docs/DATA-STANDARD-VERSIONS.md. DS 5.2 is the default.
+    name: Build Populated Template ${{ matrix.database_engine }} ${{ matrix.standard_version }}
+    needs: select-legs
+    # One leg per supported database engine x Ed-Fi Data Standard version combination. The legs are
+    # defined once in eng/DatabaseTemplates/Select-SmokeTestLegs.ps1 (see
+    # docs/DATA-STANDARD-VERSIONS.md); this matrix simply builds whatever select-legs selected.
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - standard_version: "5.2.0"
-            package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
-            provenance_file: "populated.template.intoto.jsonl"
-            environment_file: "./.env.smoke"
-          - standard_version: "6.1.0"
-            package_name: "EdFi.Api.Smoke.Template.PostgreSql.6.1.0"
-            provenance_file: "populated.template.6.1.0.intoto.jsonl"
-            environment_file: "./.env.smoke.ds61"
+        include: ${{ fromJSON(needs.select-legs.outputs.include) }}
     uses: ./.github/workflows/build-populated-template.yml
     with:
       standard_version: ${{ matrix.standard_version }}
+      database_engine: ${{ matrix.database_engine }}
       package_name: ${{ matrix.package_name }}
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: ${{ matrix.provenance_file }}
@@ -172,29 +216,21 @@ jobs:
           cache-to: type=gha,mode=max,scope=smoke-config-image
 
   smoke-test:
-    name: Smoke Tests ${{ matrix.standard_version }}
-    needs: [build-populated-template, build-ci-docker-images]
+    name: Smoke Tests ${{ matrix.database_engine }} ${{ matrix.standard_version }}
+    needs: [select-legs, build-populated-template, build-ci-docker-images]
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
       packages: read
-    # Each leg smoke-tests the template built for the same version. Keep this matrix in sync
-    # with the build-populated-template matrix above.
+    # One leg per supported database engine x Ed-Fi Data Standard version combination. The legs
+    # are defined once in eng/DatabaseTemplates/Select-SmokeTestLegs.ps1 (see
+    # docs/DATA-STANDARD-VERSIONS.md); this matrix simply smoke-tests whatever select-legs
+    # selected, the same source the build-populated-template matrix above consumes.
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - standard_version: "5.2.0"
-            package_name: "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
-            environment_file: "./.env.smoke"
-            # The published ODS SDK sweep uses EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0,
-            # which is DS 5.2-specific, so it only runs on the 5.2 leg.
-            run_ods_sdk_tests: true
-          - standard_version: "6.1.0"
-            package_name: "EdFi.Api.Smoke.Template.PostgreSql.6.1.0"
-            environment_file: "./.env.smoke.ds61"
-            run_ods_sdk_tests: false
+        include: ${{ fromJSON(needs.select-legs.outputs.include) }}
 
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
@@ -295,7 +331,7 @@ jobs:
       - name: Start DMS with Core, TPDM, Sample, and Homograph (SmokeTest)
         run: |
           $env:LOG_LEVEL="Warning"
-          ./start-local-dms.ps1 -EnvironmentFile "${{ matrix.environment_file }}" -EnableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "${{ matrix.environment_file }}" -EnableConfig -DatabaseEngine "${{ matrix.database_engine }}"
         working-directory: eng/docker-compose/
 
       - name: Wait for the Configuration Service to be ready
@@ -320,7 +356,10 @@ jobs:
       - name: Restore the Populated Template artifact into the smoke database
         run: |
           Import-Module ./Template-Management.psm1 -Force
-          Restore-TemplatePackage -PackageDirectory "${{ github.workspace }}/template-package" -DatabaseName $env:SMOKE_DATABASE_NAME
+          Import-Module ../docker-compose/env-utility.psm1 -Force
+          $envValues = ReadValuesFromEnvFile (Join-Path "../docker-compose" "${{ matrix.environment_file }}")
+          $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+          Restore-TemplatePackage -PackageDirectory "${{ github.workspace }}/template-package" -DatabaseName $env:SMOKE_DATABASE_NAME -DatabaseEngine "${{ matrix.database_engine }}" -MssqlPassword $mssqlPassword
         working-directory: eng/DatabaseTemplates/
 
       # DMS fails fatally at startup when the Configuration Service has no data stores.
@@ -335,9 +374,21 @@ jobs:
           $envValues = ReadValuesFromEnvFile "${{ matrix.environment_file }}"
           $postgresUser = Get-EnvValue -EnvValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
           $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $envValues.POSTGRES_PASSWORD
+
+          # Add-DataStore always requires a PostgresCredential; for mssql it goes unused
+          # because -ConnectionString is supplied verbatim below. On the mssql leg the
+          # Configuration Service also runs on SQL Server (shared-database topology; no
+          # PostgreSQL container exists), so the credential is a required-parameter placeholder
+          # there, built from env values that are present in the smoke env file either way.
+          $dataStoreConnectionString = ""
+          if ("${{ matrix.database_engine }}" -eq "mssql") {
+            $mssqlPassword = Get-EnvValue -EnvValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+            $dataStoreConnectionString = New-DataStoreConnectionString -DatabaseEngine "mssql" -DbHost "dms-mssql" -Port 1433 -Username "sa" -Password $mssqlPassword -DatabaseName $env:SMOKE_DATABASE_NAME
+          }
+
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:SMOKE_DATABASE_NAME -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:SMOKE_DATABASE_NAME -ConnectionString $dataStoreConnectionString -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
           if (-not $dataStoreId) {
             throw "Failed to register the smoke test data store."
           }
@@ -432,7 +483,8 @@ jobs:
         working-directory: eng/smoke_test/
 
       # The ODS SDK sweep uses the published EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0 (DS 5.2),
-      # so it only runs on the DS 5.2 leg. DS 6.1 is still covered by the API + DMS SDK tests above.
+      # so it only runs on the DS 5.2 legs of both engines. DS 6.1 is still covered by the
+      # API + DMS SDK tests above.
       - name: Run NonDestructive ODS SDK Tests
         if: ${{ matrix.run_ods_sdk_tests }}
         run: |
@@ -462,7 +514,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Smoke-Tests-Docker-Logs
+          name: Smoke-Tests-Docker-Logs-${{ matrix.database_engine }}-${{ matrix.standard_version }}
           path: ${{ github.workspace }}/logs
           retention-days: 10
 
@@ -484,7 +536,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*DMS Backend:* Single backend path\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*DMS Backends:* PostgreSQL and MSSQL (each on DS 5.2 and 6.1)\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, and ODS NonDestructive/Destructive SDK on both engines\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK and DMS Destructive SDK on both engines (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -504,7 +556,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*DMS Backend:* Single backend path\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, ODS NonDestructive/Destructive SDK\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*DMS Backends:* PostgreSQL and MSSQL (each on DS 5.2 and 6.1)\n*DS 5.2:* Core + TPDM + Sample + Homograph; DMS NonDestructive API/SDK, DMS Destructive SDK, and ODS NonDestructive/Destructive SDK on both engines\n*DS 6.1:* Core (TPDM in-core) + Sample + Homograph; DMS NonDestructive API/SDK and DMS Destructive SDK on both engines (ODS SDK skipped, DS-5.2-specific)\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
