@@ -283,33 +283,38 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
     [Then("the response body contains validation errors")]
     public async Task ThenTheResponseBodyContainsValidationErrors()
     {
-        var response = GetLastApiResponse();
-        var responseBody = await response.TextAsync();
-        var responseJson = JsonNode.Parse(responseBody);
+        IAPIResponse response = GetLastApiResponse();
+        string responseBody = await response.TextAsync();
+        JsonObject body = JsonNode.Parse(responseBody)!.AsObject();
 
-        // Legacy upload responses carried a boolean "success" flag; the Ed-Fi error contract
-        // (DMS-1218) does not, but tolerate it if a response still includes one.
-        var success = responseJson!["success"]?.GetValue<bool>();
-        if (success.HasValue)
-        {
-            success.Should().BeFalse();
-        }
-
-        // Per the Ed-Fi error contract, field-level validation detail is carried in the
-        // "validationErrors" object (keyed by property path); "errors" is reserved for general
-        // developer messages and is "[]" when empty. A compliant data-validation response therefore
-        // surfaces the detail under "validationErrors". Accept either location so the step stays
-        // valid regardless of which the response uses, but require that detail is present.
-        var validationErrors = responseJson["validationErrors"]?.AsObject();
-        var errors = responseJson["errors"]?.AsArray();
-
-        int detailCount = (validationErrors?.Count ?? 0) + (errors?.Count ?? 0);
-        detailCount
+        // Exact Ed-Fi data-validation contract (DMS-1218 §12.2.1). This scenario posts a path-bearing
+        // schema-validation failure, so the response is a data-validation problem: the detail is
+        // carried in "validationErrors" and "errors" is empty.
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+        body["detail"]!
+            .GetValue<string>()
             .Should()
-            .BeGreaterThan(
-                0,
-                "Expected validation detail in the response body under 'validationErrors' or 'errors'"
-            );
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+
+        // Field-level validation detail lives in the "validationErrors" object (keyed by property path).
+        body["validationErrors"].Should().NotBeNull();
+        JsonObject validationErrors = body["validationErrors"]!.AsObject();
+        validationErrors
+            .Count.Should()
+            .BeGreaterThan(0, "path-bearing schema-validation failures populate 'validationErrors'");
+
+        // "errors" is reserved for general developer messages and is empty for a path-bearing
+        // data-validation response.
+        body["errors"].Should().NotBeNull();
+        JsonArray errors = body["errors"]!.AsArray();
+        errors.Count.Should().Be(0, "'errors' is empty for a path-bearing data-validation response");
+
+        // The legacy upload response shape (a boolean success flag) must be absent under the contract.
+        body.ContainsKey("success").Should().BeFalse();
+        body.ContainsKey("Success").Should().BeFalse();
     }
 
     private IAPIResponse GetLastApiResponse()
