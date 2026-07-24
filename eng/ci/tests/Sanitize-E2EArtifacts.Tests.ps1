@@ -94,6 +94,40 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $result | Should -Match "database=db"
     }
 
+    It "redacts a bare (unquoted) connection-string password containing commas through the semicolon terminator" {
+        # Commas are legal inside an unquoted ADO.NET value; the bare alternative must run to the real ';'
+        # terminator, not stop at the first comma and leak the remainder (e.g. Password=Aa1!,tail).
+        $result = Get-SanitizedText -Text "Server=dms-mssql,1433;User Id=sa;Password=Aa1!CFRAGA,CFRAGB,CFRAGC;TrustServerCertificate=true"
+
+        $result | Should -Not -Match "CFRAGA"
+        $result | Should -Not -Match "CFRAGB"
+        $result | Should -Not -Match "CFRAGC"
+        $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "User Id=sa"
+        $result | Should -Match "TrustServerCertificate=true"
+        # The Server host,port comma belongs to a non-password field and must be preserved.
+        $result | Should -Match "Server=dms-mssql,1433"
+    }
+
+    It "redacts a bare connection-string password containing internal spaces through the semicolon terminator" {
+        $result = Get-SanitizedText -Text "host=h;password=SFRAGX SFRAGY SFRAGZ;database=db"
+
+        $result | Should -Not -Match "SFRAGX"
+        $result | Should -Not -Match "SFRAGY"
+        $result | Should -Not -Match "SFRAGZ"
+        $result | Should -Match "password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "database=db"
+    }
+
+    It "redacts a comma-bearing ConnectionStrings__MssqlAdmin secret written to GITHUB_ENV" {
+        $result = Get-SanitizedText -Text "ConnectionStrings__MssqlAdmin=Server=localhost,1433;User Id=sa;Password=Aa1!GH,ENVTAIL;TrustServerCertificate=true;"
+
+        $result | Should -Not -Match "ENVTAIL"
+        $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "User Id=sa"
+        $result | Should -Match "TrustServerCertificate=true"
+    }
+
     It "redacts JSON credential properties but preserves benign properties" {
         $result = Get-SanitizedText -Text '{ "clientId": "svc-1", "clientSecret": "topSecretValue", "password": "pw12345", "tenant": "Tenant_255901" }'
 

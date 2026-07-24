@@ -41,16 +41,18 @@ $script:RedactionMarker = "***REDACTED***"
 # key name or scheme so ordinary diagnostics (ids, hostnames, ports, timings) are preserved.
 $script:RedactionRules = @(
     # Connection-string secrets: password=... / pwd=... in PostgreSQL and SQL Server connection
-    # strings. The value is redacted whether it is bare (up to the next ';'/','/whitespace) OR
-    # wrapped so it can legally contain spaces/';'/'=': double-quoted ("..."), single-quoted
-    # ('...'), or XML-escaped (&quot;...&quot;) as it appears inside a TRX. Each quoted form consumes
-    # ADO.NET-doubled quote pairs ("" / '' / &quot;&quot;) as part of the value so an embedded quote
-    # does not terminate the match early and leak the remainder; the loop stops only at a single
-    # (undoubled) closing delimiter, so a following key/value is not swallowed. The whole quoted or
-    # escaped span is matched so the enclosed secret is not left behind.
+    # strings. The value is redacted whether it is wrapped - double-quoted ("..."), single-quoted
+    # ('...'), or XML-escaped (&quot;...&quot;) as it appears inside a TRX - or bare. Each quoted form
+    # consumes ADO.NET-doubled quote pairs ("" / '' / &quot;&quot;) as part of the value so an embedded
+    # quote does not terminate the match early and leak the remainder, stopping only at a single
+    # (undoubled) closing delimiter. The bare (unquoted) alternative runs to the real ';' terminator
+    # (or end of line): commas and spaces are legal inside an unquoted ADO.NET value, so stopping at a
+    # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. The
+    # whole matched span is redacted so the enclosed secret is not left behind; a following key/value
+    # after the real delimiter is preserved.
     [pscustomobject]@{
         Name        = "connection-string-password"
-        Pattern     = "(?i)((?:password|pwd)\s*=\s*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;,\s""'\r\n]+)"
+        Pattern     = "(?i)((?:password|pwd)\s*=\s*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;\r\n]+)"
         Replacement = "`${1}$($script:RedactionMarker)"
     },
     # JSON string values for credential-bearing property names.
