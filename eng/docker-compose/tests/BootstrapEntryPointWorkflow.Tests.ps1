@@ -31,38 +31,6 @@ Describe "DMS-1153 bootstrap entry-point and IDE workflow" {
             )
         }
 
-        function script:Get-YamlSection {
-            # Indentation-scoped block extraction (not a YAML parser): returns the lines
-            # nested under the first matching "<Key>:" mapping line, so assertions can be
-            # anchored to an authoritative YAML path instead of matching anywhere in the
-            # file. -TopLevel restricts the key match to zero indentation.
-            param(
-                [string[]]$Lines,
-                [string]$Key,
-                [switch]$TopLevel
-            )
-
-            for ($i = 0; $i -lt $Lines.Count; $i++) {
-                if ($Lines[$i] -notmatch "^(\s*)$([regex]::Escape($Key)):\s*(#.*)?$") { continue }
-                $keyIndent = $Matches[1].Length
-                if ($TopLevel -and $keyIndent -ne 0) { continue }
-
-                $section = @()
-                for ($j = $i + 1; $j -lt $Lines.Count; $j++) {
-                    if ($Lines[$j] -match "^\s*$") {
-                        $section += $Lines[$j]
-                        continue
-                    }
-                    [void]($Lines[$j] -match "^(\s*)")
-                    if ($Matches[1].Length -le $keyIndent) { break }
-                    $section += $Lines[$j]
-                }
-                return ,$section
-            }
-
-            return ,@()
-        }
-
         function script:New-TestDirectory {
             $path = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1153-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $path -Force | Out-Null
@@ -847,50 +815,46 @@ $failureStatement
     }
 
     Context "MSSQL datastore engine compose selection and runtime isolation (DMS-1238, DMS-1279)" {
+        # The pin guards below assert uniqueness plus value: exactly one occurrence of each
+        # pinned line may exist in the file, and it must carry the pinned value. A reverted
+        # pin fails the value check, and any second occurrence (however it is nested) fails
+        # the count check, so no unrelated occurrence can mask a stale authoritative pin.
         It "isolates the SQL Server 2025 runtime from legacy SQL Server volumes (DMS-1279)" {
-            $mssqlComposeLines = Get-Content -LiteralPath (
+            $mssqlCompose = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "mssql.yml"
-            )
+            ) -Raw
 
-            $dbService = (
-                Get-YamlSection -Lines (
-                    Get-YamlSection -Lines $mssqlComposeLines -Key "services" -TopLevel
-                ) -Key "db"
-            ) -join "`n"
-            $dbService | Should -Not -BeNullOrEmpty -Because "mssql.yml must keep the shared db service that swaps in for postgresql.yml"
-            $dbService | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$'
-            $dbService | Should -Match '(?m)^\s*-\s*dms-mssql-2025:/var/opt/mssql\s*$'
-            $dbService | Should -Not -Match '(?m)^\s*-\s*dms-mssql:/var/opt/mssql\s*$'
+            $imagePins = [regex]::Matches($mssqlCompose, '(?m)^\s*image:\s*\S+\s*$')
+            $imagePins.Count | Should -Be 1 -Because "mssql.yml defines a single db service with a single image pin"
+            $imagePins[0].Value.Trim() | Should -Be 'image: mcr.microsoft.com/mssql/server:2025-latest'
 
-            $volumeDefinitions = (Get-YamlSection -Lines $mssqlComposeLines -Key "volumes" -TopLevel) -join "`n"
-            $volumeDefinitions | Should -Match '(?m)^\s*dms-mssql-2025:\s*$' -Because "the major-versioned named volume must be declared in the compose file's top-level volumes block"
+            $dataMounts = [regex]::Matches($mssqlCompose, '(?m)^\s*-\s*\S+:/var/opt/mssql\s*$')
+            $dataMounts.Count | Should -Be 1 -Because "the SQL Server data directory must be mounted from exactly one named volume"
+            $dataMounts[0].Value.Trim() | Should -Be '- dms-mssql-2025:/var/opt/mssql' -Because "attaching the 2025 runtime to a legacy SQL Server 2022 volume is not supported"
+
+            $volumeDeclarations = [regex]::Matches($mssqlCompose, '(?m)^\s*dms-mssql[\w-]*:\s*$')
+            $volumeDeclarations.Count | Should -Be 1 -Because "exactly one dms-mssql* named volume may be declared, keeping the legacy volume detached"
+            $volumeDeclarations[0].Value.Trim() | Should -Be 'dms-mssql-2025:'
         }
 
         It "pins the DMS CI MSSQL_IMAGE env to the SQL Server 2025 image (DMS-1279)" {
-            $dmsWorkflowLines = Get-Content -LiteralPath (
+            $dmsWorkflow = Get-Content -LiteralPath (
                 Join-Path $script:sourceRepoRoot ".github/workflows/on-dms-pullrequest.yml"
-            )
+            ) -Raw
 
-            $workflowEnv = (Get-YamlSection -Lines $dmsWorkflowLines -Key "env" -TopLevel) -join "`n"
-            $workflowEnv | Should -Match '(?m)^\s*MSSQL_IMAGE:\s*"mcr\.microsoft\.com/mssql/server:2025-latest"\s*$' -Because "the workflow-level env.MSSQL_IMAGE is the authoritative pin for the backend, DMS API, and SchemaTools MSSQL lanes: on an older runtime the native-json evaluation fixture ignores itself instead of failing, and a job-local MSSQL_IMAGE elsewhere must not satisfy this guard"
+            $imagePins = [regex]::Matches($dmsWorkflow, '(?m)^\s*MSSQL_IMAGE:\s*\S+\s*$')
+            $imagePins.Count | Should -Be 1 -Because "the workflow-level env is the single authoritative MSSQL_IMAGE pin for the backend, DMS API, and SchemaTools MSSQL lanes: on an older runtime the native-json evaluation fixture ignores itself instead of failing, so this pin must never be duplicated or reverted silently"
+            $imagePins[0].Value.Trim() | Should -Be 'MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2025-latest"'
         }
 
         It "pins the CMS CI integration-test mssql services container to the SQL Server 2025 image (DMS-1279)" {
-            $cmsWorkflowLines = Get-Content -LiteralPath (
+            $cmsWorkflow = Get-Content -LiteralPath (
                 Join-Path $script:sourceRepoRoot ".github/workflows/on-config-pullrequest.yml"
-            )
+            ) -Raw
 
-            $mssqlService = (
-                Get-YamlSection -Lines (
-                    Get-YamlSection -Lines (
-                        Get-YamlSection -Lines (
-                            Get-YamlSection -Lines $cmsWorkflowLines -Key "jobs" -TopLevel
-                        ) -Key "run-integration-tests"
-                    ) -Key "services"
-                ) -Key "mssql"
-            ) -join "`n"
-            $mssqlService | Should -Not -BeNullOrEmpty -Because "on-config-pullrequest.yml must keep the run-integration-tests mssql services container this pin guards"
-            $mssqlService | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$' -Because "jobs.run-integration-tests.services.mssql.image is the authoritative CMS integration-test runtime pin and must move with the supported SQL Server major version"
+            $mssqlImagePins = [regex]::Matches($cmsWorkflow, '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:\S+\s*$')
+            $mssqlImagePins.Count | Should -Be 1 -Because "the workflow runs exactly one SQL Server container (the run-integration-tests mssql service), so a second occurrence could only mask a stale pin"
+            $mssqlImagePins[0].Value.Trim() | Should -Be 'image: mcr.microsoft.com/mssql/server:2025-latest'
         }
 
         It "keeps the template-workflow backup-coupling comments aligned with the SQL Server 2025 image (DMS-1279)" {
